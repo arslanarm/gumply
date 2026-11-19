@@ -67,6 +67,71 @@ describe("backlinks", () => {
   });
 });
 
+describe("rename rewrites links", () => {
+  it("rewrites plain, aliased and heading links in other pages", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "Old Name" });
+    await createPage(app, { title: "Other" });
+    await createPage(app, {
+      title: "Source",
+      content: [
+        "A [[Old Name]]",
+        "B [[Old Name|alias]]",
+        "C [[Old Name#Q1]]",
+        "D [[Old Name#Q1|read this]]",
+        "E `[[Old Name]]`",
+        "F [[Other]]",
+      ].join("\n"),
+    });
+
+    const response = await jsonRequest(app, "PUT", "/api/pages/old-name", { title: "New Name" });
+    expect(response.status).toBe(200);
+    const updated = (await response.json()) as Record<string, unknown>;
+    expect(updated.title).toBe("New Name");
+    expect(updated.id).toBe("old-name");
+    expect(updated.rewrittenPages).toEqual(["source"]);
+
+    const source = await getJson<Record<string, unknown>>(app, "/api/pages/source");
+    expect(source.content).toBe(
+      [
+        "A [[New Name]]",
+        "B [[New Name|alias]]",
+        "C [[New Name#Q1]]",
+        "D [[New Name#Q1|read this]]",
+        "E `[[Old Name]]`",
+        "F [[Other]]",
+      ].join("\n"),
+    );
+
+    const backlinks = await getJson<Backlink[]>(app, "/api/pages/old-name/backlinks");
+    expect(backlinks.map((link) => link.page.id)).toEqual(["source"]);
+  });
+
+  it("matches link targets case-insensitively", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "Old Name" });
+    await createPage(app, { title: "Source", content: "[[old name]] and [[OLD NAME|a]]" });
+
+    const updated = (await (
+      await jsonRequest(app, "PUT", "/api/pages/old-name", { title: "New Name" })
+    ).json()) as Record<string, unknown>;
+    expect(updated.rewrittenPages).toEqual(["source"]);
+    expect((await getJson<Record<string, unknown>>(app, "/api/pages/source")).content).toBe(
+      "[[New Name]] and [[New Name|a]]",
+    );
+  });
+
+  it("omits rewrittenPages when the title does not change", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "Same" });
+
+    const updated = (await (
+      await jsonRequest(app, "PUT", "/api/pages/same", { content: "body" })
+    ).json()) as Record<string, unknown>;
+    expect(updated.rewrittenPages).toBeUndefined();
+  });
+});
+
 describe("graph", () => {
   it("returns nodes, resolved links, link counts and tags", async () => {
     const { app } = await createTestServer();

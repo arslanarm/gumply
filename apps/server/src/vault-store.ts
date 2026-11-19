@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
@@ -11,9 +12,12 @@ import {
   parentOf,
   parseFrontmatter,
   pathToPageId,
+  resolveWikilink,
+  rewriteWikilinkTargets,
   serializeNote,
   titleFromId,
   type Backlink,
+  type DeletePageResult,
   type Frontmatter,
   type GraphData,
   type GraphNode,
@@ -51,10 +55,18 @@ const MAX_GRAPH_DEPTH = 5;
 const MAX_TAGS = 200;
 
 /** Page plus the bits of on-disk state the index needs. */
-interface PageRecord extends Page {
+interface PageRecord extends Omit<Page, "childCount"> {
   filePath: string;
   /** Frontmatter tags only; `tags` is this plus inline tags. */
   fmTags: string[];
+}
+
+/** `.trash/<trashId>/meta.json` (D11). */
+interface TrashManifest {
+  id: PageId;
+  trashId: string;
+  deleted: PageId[];
+  deletedAt: string;
 }
 
 function toIso(value: unknown): string | undefined {
@@ -63,12 +75,13 @@ function toIso(value: unknown): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-function metaOf(record: PageRecord): PageMeta {
+function metaOf(record: PageRecord, childCount: number): PageMeta {
   const meta: PageMeta = {
     id: record.id,
     title: record.title,
     tags: [...record.tags],
     parentId: record.parentId,
+    childCount,
     created: record.created,
     updated: record.updated,
   };
@@ -87,7 +100,7 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-async function fileExists(path: string): Promise<boolean> {
+async function pathExists(path: string): Promise<boolean> {
   try {
     await stat(path);
     return true;
@@ -121,24 +134,34 @@ export class VaultStore {
 
   /** Flat list of every page, sorted by id. */
   list(): PageMeta[] {
-    return [...this.pages.values()].sort((a, b) => a.id.localeCompare(b.id)).map(metaOf);
+    const counts = new Map<PageId, number>();
+    for (const record of this.pages.values()) {
+      if (record.parentId) counts.set(record.parentId, (counts.get(record.parentId) ?? 0) + 1);
+    }
+    return [...this.pages.values()]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((record) => metaOf(record, counts.get(record.id) ?? 0));
   }
 
   get(id: PageId): Page {
     const record = this.require(id);
-    return { ...metaOf(record), content: record.content };
+    return { ...metaOf(record, this.directChildCount(id)), content: record.content };
   }
 
   create(input: CreatePageInput): Promise<Page> {
     return this.enqueue(() => this.createNow(input));
   }
 
-  update(id: PageId, patch: UpdatePageInput): Promise<Page> {
+  update(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
     return this.enqueue(() => this.updateNow(id, patch));
   }
 
-  remove(id: PageId): Promise<void> {
+  remove(id: PageId): Promise<DeletePageResult> {
     return this.enqueue(() => this.removeNow(id));
+  }
+
+  restore(trashId: string): Promise<PageMeta[]> {
+    return this.enqueue(() => this.restoreNow(trashId));
   }
 
   move(id: PageId, parentId: PageId | null): Promise<Page> {
@@ -156,7 +179,10 @@ export class VaultStore {
 
       const source = this.pages.get(sourceId);
       if (!source) continue;
-      out.push({ page: metaOf(source), snippet: this.linkSnippet(source, edge.targetTitle) });
+      out.push({
+        page: metaOf(source, this.directChildCount(sourceId)),
+        snippet: this.linkSnippet(source, edge.targetTitle),
+      });
     }
 
     return out.sort(
@@ -239,7 +265,7 @@ export class VaultStore {
 
       const bodyBoost = Math.min(occurrences, 10);
       results.push({
-        page: metaOf(record),
+        page: metaOf(record, this.directChildCount(record.id)),
         snippet: makeSnippet(record.content, trimmed, 80),
         score: titleScore > 0 ? titleScore + bodyBoost : bodyBoost + 1,
       });
@@ -305,7 +331,7 @@ export class VaultStore {
     return this.get(id);
   }
 
-  private async updateNow(id: PageId, patch: UpdatePageInput): Promise<Page> {
+  private async updateNow(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
     const record = this.require(id);
     const previousTitle = record.title;
 
@@ -337,6 +363,10 @@ export class VaultStore {
       updated,
     };
 
+    const titleChanged = nextTitle !== previousTitle;
+    // Snapshot before the rename so link resolution still sees the old title.
+    const beforeMetas = titleChanged ? this.list() : [];
+
     await this.writePage(record.filePath, frontmatter, nextContent);
 
     record.title = nextTitle;
@@ -347,22 +377,136 @@ export class VaultStore {
     else delete record.icon;
     this.refreshTags(record);
 
-    if (nextTitle !== previousTitle) this.reindexAll();
-    else this.recomputeSource(id);
+    const rewrittenPages: PageId[] = [];
 
-    return this.get(id);
+    if (titleChanged) {
+      // D12: keep link text truthful by rewriting `[[Old…]]` in other pages.
+      for (const other of [...this.pages.values()]) {
+        if (other.id === id) continue;
+
+        const result = rewriteWikilinkTargets(
+          other.content,
+          (link) => resolveWikilink(link.targetTitle, beforeMetas)?.id === id,
+          nextTitle,
+        );
+        if (result.count === 0) continue;
+
+        const rewrittenAt = new Date().toISOString();
+        await this.writePage(
+          other.filePath,
+          {
+            title: other.title,
+            ...(other.icon ? { icon: other.icon } : {}),
+            tags: other.fmTags,
+            created: other.created,
+            updated: rewrittenAt,
+          },
+          result.content,
+        );
+        other.content = result.content;
+        other.updated = rewrittenAt;
+        this.refreshTags(other);
+        rewrittenPages.push(other.id);
+      }
+
+      rewrittenPages.sort((a, b) => a.localeCompare(b));
+      this.reindexAll();
+    } else {
+      this.recomputeSource(id);
+    }
+
+    return { ...this.get(id), rewrittenPages };
   }
 
-  private async removeNow(id: PageId): Promise<void> {
+  private async removeNow(id: PageId): Promise<DeletePageResult> {
     const record = this.require(id);
+    const deleted = this.subtreeIds(id);
+    const trashId = await this.freeTrashId();
+    const trashDir = join(this.root, ".trash", trashId);
+    const pageInTrash = join(trashDir, `${id}.md`);
+    const childDir = join(this.root, id);
+    const childInTrash = join(trashDir, id);
 
-    await rm(record.filePath, { force: true });
-    await rm(join(this.root, id), { recursive: true, force: true });
+    const manifest: TrashManifest = {
+      id,
+      trashId,
+      deleted,
+      deletedAt: new Date().toISOString(),
+    };
 
-    for (const key of [...this.pages.keys()]) {
-      if (key === id || key.startsWith(`${id}/`)) this.pages.delete(key);
+    try {
+      await mkdir(dirname(pageInTrash), { recursive: true });
+      await writeFile(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2), "utf8");
+      await rename(record.filePath, pageInTrash);
+      if (await pathExists(childDir)) {
+        await mkdir(dirname(childInTrash), { recursive: true });
+        await rename(childDir, childInTrash);
+      }
+    } catch (error) {
+      // Best-effort rollback so a failed delete never loses the page.
+      await rename(pageInTrash, record.filePath).catch(() => undefined);
+      await rename(childInTrash, childDir).catch(() => undefined);
+      await rm(trashDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
     }
+
+    for (const deletedId of deleted) this.pages.delete(deletedId);
     this.reindexAll();
+    return { trashId, deleted };
+  }
+
+  private async restoreNow(trashId: string): Promise<PageMeta[]> {
+    if (!/^[A-Za-z0-9-]+$/.test(trashId)) throw badRequest("Invalid trash id");
+
+    const trashRoot = resolve(this.root, ".trash");
+    const trashDir = resolve(trashRoot, trashId);
+    if (!trashDir.startsWith(`${trashRoot}${sep}`)) throw badRequest("Invalid trash id");
+
+    let manifest: TrashManifest;
+    try {
+      const raw = await readFile(join(trashDir, "meta.json"), "utf8");
+      manifest = JSON.parse(raw) as TrashManifest;
+    } catch {
+      throw notFound("Trash entry not found");
+    }
+
+    if (
+      !manifest ||
+      typeof manifest.id !== "string" ||
+      !isValidPageId(manifest.id) ||
+      !Array.isArray(manifest.deleted)
+    ) {
+      throw notFound("Trash entry not found");
+    }
+
+    const pageSource = join(trashDir, `${manifest.id}.md`);
+    const pageTarget = this.filePathFor(manifest.id);
+    const childSource = join(trashDir, manifest.id);
+    const childTarget = join(this.root, manifest.id);
+
+    if (!(await pathExists(pageSource))) throw notFound("Trash entry not found");
+    if ((await pathExists(pageTarget)) || (await pathExists(childTarget))) {
+      throw conflict(`A page already exists at ${manifest.id}`);
+    }
+
+    await mkdir(dirname(pageTarget), { recursive: true });
+    await rename(pageSource, pageTarget);
+
+    if (await pathExists(childSource)) {
+      await mkdir(dirname(childTarget), { recursive: true });
+      try {
+        await rename(childSource, childTarget);
+      } catch (error) {
+        await rename(pageTarget, pageSource).catch(() => undefined);
+        throw error;
+      }
+    }
+
+    await rm(trashDir, { recursive: true, force: true });
+    await this.rebuild();
+
+    const restored = new Set(manifest.deleted);
+    return this.list().filter((meta) => restored.has(meta.id));
   }
 
   private async moveNow(id: PageId, parentId: PageId | null): Promise<Page> {
@@ -382,7 +526,7 @@ export class VaultStore {
     const newId = parentId ? `${parentId}/${segment}` : segment;
     if (newId === id) return this.get(id);
 
-    if (this.pages.has(newId) || (await fileExists(this.filePathFor(newId)))) {
+    if (this.pages.has(newId) || (await pathExists(this.filePathFor(newId)))) {
       throw conflict(`A page already exists at ${newId}`);
     }
 
@@ -572,11 +716,38 @@ export class VaultStore {
   private async freeId(baseId: string): Promise<PageId> {
     let candidate = baseId;
     let suffix = 2;
-    while (this.pages.has(candidate) || (await fileExists(this.filePathFor(candidate)))) {
+    while (this.pages.has(candidate) || (await pathExists(this.filePathFor(candidate)))) {
       candidate = `${baseId}-${suffix}`;
       suffix += 1;
     }
     return candidate;
+  }
+
+  private async freeTrashId(): Promise<string> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = randomUUID();
+      if (!(await pathExists(join(this.root, ".trash", candidate)))) return candidate;
+    }
+    throw new Error("Could not allocate a trash id");
+  }
+
+  private subtreeIds(id: PageId): PageId[] {
+    const ids = [...this.pages.keys()].filter(
+      (key) => key === id || key.startsWith(`${id}/`),
+    );
+    return ids.sort((a, b) => {
+      if (a === id) return -1;
+      if (b === id) return 1;
+      return a.localeCompare(b);
+    });
+  }
+
+  private directChildCount(id: PageId): number {
+    let count = 0;
+    for (const record of this.pages.values()) {
+      if (record.parentId === id) count += 1;
+    }
+    return count;
   }
 
   private filePathFor(id: PageId): string {

@@ -148,6 +148,45 @@ export function extractPageLinks(markdown: string): { links: WikiLink[]; tags: s
   return { links: extractWikilinks(markdown), tags: extractTags(markdown) };
 }
 
+export interface RewriteResult {
+  content: string;
+  /** Number of wikilinks that were rewritten. */
+  count: number;
+}
+
+/**
+ * Rewrite selected wikilink targets while keeping each link's alias and
+ * heading (`[[Old|alias]]` → `[[New|alias]]`). Code spans/blocks are left
+ * untouched because `extractWikilinks` ignores them.
+ */
+export function rewriteWikilinkTargets(
+  markdown: string,
+  shouldRewrite: (link: WikiLink) => boolean,
+  newTitle: string,
+): RewriteResult {
+  const links = extractWikilinks(markdown).filter(shouldRewrite);
+  if (links.length === 0) return { content: markdown, count: 0 };
+
+  const title = newTitle.trim();
+  let content = markdown;
+
+  // Replace from the end so earlier indexes stay valid.
+  for (const link of [...links].reverse()) {
+    const inner = link.raw.slice(2, -2);
+    const pipe = inner.indexOf("|");
+    const alias = pipe === -1 ? undefined : inner.slice(pipe + 1);
+    const beforePipe = pipe === -1 ? inner : inner.slice(0, pipe);
+    const hash = beforePipe.indexOf("#");
+    const heading = hash === -1 ? undefined : beforePipe.slice(hash + 1);
+
+    const suffix = `${heading !== undefined ? `#${heading}` : ""}${alias !== undefined ? `|${alias}` : ""}`;
+    const replacement = `[[${title}${suffix}]]`;
+    content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
+  }
+
+  return { content, count: links.length };
+}
+
 function normalise(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }

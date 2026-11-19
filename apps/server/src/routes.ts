@@ -1,10 +1,12 @@
 import type {
   ApiError,
   Backlink,
+  DeletePageResult,
   GraphData,
   Page,
   PageId,
   PageMeta,
+  PageUpdateResult,
   SearchResult,
 } from "@gumply/core";
 import { Hono, type Context } from "hono";
@@ -89,12 +91,21 @@ export function createApiRoutes(store: VaultStore): Hono {
     const tags = tagsValue(body);
     if (tags !== undefined) patch.tags = tags;
 
-    return c.json<Page>(await store.update(c.req.param("id"), patch));
+    const result = await store.update(c.req.param("id"), patch);
+    const { rewrittenPages, ...page } = result;
+    return c.json<PageUpdateResult>(
+      rewrittenPages.length > 0 ? { ...page, rewrittenPages } : page,
+    );
   });
 
   api.delete("/pages/:id", async (c) => {
-    await store.remove(c.req.param("id"));
-    return c.body(null, 204);
+    const result = await store.remove(c.req.param("id"));
+    return c.json<DeletePageResult>(result);
+  });
+
+  api.post("/trash/:trashId/restore", async (c) => {
+    const restored = await store.restore(c.req.param("trashId"));
+    return c.json<PageMeta[]>(restored);
   });
 
   api.post("/pages/:id/move", async (c) => {
