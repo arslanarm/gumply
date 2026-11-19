@@ -45,6 +45,12 @@ describe("extractWikilinks", () => {
     expect(extractWikilinks(markdown).map((link) => link.targetTitle)).toEqual(["Real"]);
   });
 
+  it("does not eat text after a code span containing an emoji", () => {
+    const markdown = "A `😀 emoji` span and [[After]] with #tag";
+    expect(extractWikilinks(markdown).map((link) => link.targetTitle)).toEqual(["After"]);
+    expect(extractTags(markdown)).toEqual(["tag"]);
+  });
+
   it("skips empty links", () => {
     expect(extractWikilinks("[[]] [[|alias]]")).toEqual([]);
   });
