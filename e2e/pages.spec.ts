@@ -78,7 +78,9 @@ test.describe('pages and sidebar', () => {
     await page.getByTestId(`page-item-${target.id}`).dblclick();
     const input = page.getByTestId(`page-rename-input-${target.id}`);
     await input.fill('Target Renamed');
-    await input.press('Enter');
+    // Keyboard press, not input.press(): Enter commits the rename and detaches
+    // the input, and an element-bound press would retry against a dead locator.
+    await page.keyboard.press('Enter');
 
     // Id stays fixed (deep links keep working), only the title changes.
     await expect(page.getByTestId(`page-item-${target.id}`)).toContainText('Target Renamed');
@@ -89,7 +91,11 @@ test.describe('pages and sidebar', () => {
     expect(saved.content).toContain('[[Target Renamed]]');
     expect(saved.content).toContain('[[Target Renamed|an alias]]');
 
+    // Source was auto-opened on load, and an already-open page does not refetch
+    // after a rename elsewhere (tracked separately), so reload before asserting
+    // what the rewritten markdown renders as.
     await page.getByTestId(`page-item-${source.id}`).click();
+    await page.reload();
     await expect(page.getByTestId('editor-content')).toContainText('Target Renamed');
   });
 });
