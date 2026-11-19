@@ -98,4 +98,53 @@ test.describe('pages and sidebar', () => {
     await page.reload();
     await expect(page.getByTestId('editor-content')).toContainText('Target Renamed');
   });
+
+  test('renaming a page issues exactly one write and keeps the rewrite (D12 invariant)', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    // Invariant behind #n8kk26sc: one rename must produce one PUT, and nothing
+    // may write the old title afterwards. (The original bug needed full-suite
+    // timing, so this is a guard, not a deterministic reproduction.)
+    const [target] = await vault.seed([{ title: 'Empty Target' }]);
+    const [source] = await vault.seed([
+      { title: 'Source', content: 'See [[Empty Target]].' },
+    ]);
+
+    const puts: string[] = [];
+    page.on('request', (req) => {
+      if (req.method() === 'PUT' && req.url().includes('/api/pages/')) {
+        const body = req.postData() ? (JSON.parse(req.postData() ?? '{}') as { title?: string }) : {};
+        if (body.title) puts.push(body.title);
+      }
+    });
+
+    await page.goto('/');
+    // Open the empty page: on an empty page the header puts its title into edit
+    // mode, which is the state that made the stale blur commit possible.
+    await page.getByTestId(`page-item-${target.id}`).click();
+    await expect(page.getByTestId('page-title')).toBeVisible();
+
+    await page.getByTestId(`page-item-${target.id}`).dblclick();
+    const input = page.getByTestId(`page-rename-input-${target.id}`);
+    await input.fill('Renamed Target');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId(`page-item-${target.id}`)).toContainText('Renamed Target');
+
+    // Give a stray duplicate commit time to land, then assert exactly one write.
+    await page.waitForTimeout(750);
+    expect(puts).toEqual(['Renamed Target']);
+
+    const renamed = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(target.id)}`)
+    ).json();
+    expect(renamed.title).toBe('Renamed Target');
+
+    // The rewrite into Source must survive.
+    const saved = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(source.id)}`)
+    ).json();
+    expect(saved.content).toContain('[[Renamed Target]]');
+  });
 });
