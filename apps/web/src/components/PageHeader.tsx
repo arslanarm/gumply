@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Page } from "@gumply/core";
+import { plannedTitleRename } from "../lib/rename.js";
 
 export interface PageHeaderProps {
   page: Page;
@@ -40,14 +41,27 @@ export function PageHeader({
   const [editing, setEditing] = useState(isEmpty);
   const [draft, setDraft] = useState(page.title);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  // The title this edit session started from. Commit compares against this,
+  // not the live prop, so a rename from the sidebar cannot be reverted by a
+  // stale header draft blurring afterwards (#n8kk26sc).
+  const draftOriginRef = useRef(page.title);
 
   // Focus the title for new/empty pages only; existing pages keep focus free.
   useEffect(() => {
+    draftOriginRef.current = page.title;
     setDraft(page.title);
     setEditing(page.content.trim().length === 0);
     // Reset only when the open page changes, not on every autosave.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page.id]);
+
+  // Follow an external rename while the draft is still untouched, so the
+  // header shows the new title and the next commit starts from it.
+  useEffect(() => {
+    if (!editing || draft !== draftOriginRef.current) return;
+    draftOriginRef.current = page.title;
+    setDraft(page.title);
+  }, [page.title, editing, draft]);
 
   // Never steal focus from an input the user is already using (e.g. an inline
   // sidebar rename that started while this page was still loading).
@@ -65,15 +79,20 @@ export function PageHeader({
   }, [editing, autoFocusTitle]);
 
   const startEditing = () => {
+    draftOriginRef.current = page.title;
     setDraft(page.title);
     setEditing(true);
   };
 
   const commit = () => {
-    const title = draft.trim();
+    const title = plannedTitleRename(draft, draftOriginRef.current);
     setEditing(false);
-    if (title.length > 0 && title !== page.title) void onRename(title);
-    else setDraft(page.title);
+    if (title !== null) {
+      draftOriginRef.current = title;
+      void onRename(title);
+    } else {
+      setDraft(page.title);
+    }
   };
 
   const cancel = () => {

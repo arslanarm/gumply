@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { openPageNeedsReload } from "../src/lib/rename.js";
+import { openPageNeedsReload, plannedTitleRename } from "../src/lib/rename.js";
+
+describe("plannedTitleRename", () => {
+  it("sends a title the user actually changed", () => {
+    expect(plannedTitleRename("Target Renamed", "Target")).toBe("Target Renamed");
+    expect(plannedTitleRename("  Target Renamed  ", "Target")).toBe("Target Renamed");
+  });
+
+  it("ignores a stale draft that still equals the title it started from", () => {
+    // Regression #n8kk26sc: the sidebar renamed Target -> Target Renamed while
+    // the header's auto-focused input still held the old draft. The header blur
+    // must not send "Target" back and revert the rename + link rewrite.
+    expect(plannedTitleRename("Target", "Target")).toBeNull();
+  });
+
+  it("ignores an empty title so the previous name is restored", () => {
+    expect(plannedTitleRename("", "Target")).toBeNull();
+    expect(plannedTitleRename("   ", "Target")).toBeNull();
+  });
+});
 
 describe("openPageNeedsReload", () => {
   it("reloads when the open page had links rewritten", () => {
