@@ -16,6 +16,8 @@ export interface PageMeta {
   tags: string[];
   /** Folder page that contains this page, if any. */
   parentId: PageId | null;
+  /** Direct sub-pages (used for delete confirm and tree chevrons). */
+  childCount: number;
   /** ISO 8601 timestamps. */
   created: string;
   updated: string;
@@ -24,6 +26,16 @@ export interface PageMeta {
 /** Full page: metadata plus the Markdown body (without frontmatter). */
 export interface Page extends PageMeta {
   content: string;
+}
+
+/** Response of `PUT /api/pages/:id`; `rewrittenPages` is set on a rename. */
+export type PageUpdateResult = Page & { rewrittenPages?: PageId[] };
+
+/** Response of `DELETE /api/pages/:id` (D11: files move to `.trash/`). */
+export interface DeletePageResult {
+  trashId: string;
+  /** The deleted page and all of its sub-pages. */
+  deleted: PageId[];
 }
 
 /**

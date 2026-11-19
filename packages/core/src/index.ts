@@ -6,6 +6,7 @@ export const CORE_VERSION = "0.1.0";
 export type {
   ApiError,
   Backlink,
+  DeletePageResult,
   GraphData,
   GraphNode,
   HealthResponse,
@@ -13,6 +14,7 @@ export type {
   Page,
   PageId,
   PageMeta,
+  PageUpdateResult,
   SearchResult,
 } from "./types.js";
 
@@ -44,5 +46,7 @@ export {
   makeSnippet,
   maskCode,
   resolveWikilink,
+  rewriteWikilinkTargets,
+  type RewriteResult,
   type WikiLink,
 } from "./links.js";

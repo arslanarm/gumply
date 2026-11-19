@@ -45,16 +45,19 @@ Base `/api`, JSON. Full contract in the team wiki (`spec/api`).
 | GET | `/pages` | flat `PageMeta[]` (client builds the tree from `parentId`) |
 | POST | `/pages` | create `{ title, parentId?, content?, icon? }` (201) |
 | GET | `/pages/:id` | page with Markdown body |
-| PUT | `/pages/:id` | update `{ title?, content?, icon?, tags? }` |
-| DELETE | `/pages/:id` | delete page + children (204) |
+| PUT | `/pages/:id` | update `{ title?, content?, icon?, tags? }`; a title change rewrites `[[old]]` links elsewhere and returns `rewrittenPages` |
+| DELETE | `/pages/:id` | move page + sub-pages to `.trash/`, returns `{ trashId, deleted }` |
+| POST | `/trash/:trashId/restore` | undo a delete; returns restored `PageMeta[]` (409 if the path is taken) |
 | POST | `/pages/:id/move` | `{ parentId }` (null = root) |
 | GET | `/pages/:id/backlinks` | `{ page, snippet }[]` |
 | GET | `/graph?center=&depth=` | nodes with `linkCount`, resolved links, tags |
 | GET | `/search?q=` | `{ page, snippet, score }[]`, title hits first |
 
-Ids are URL-encoded in paths (`projects%2Fgumply`). Writes go to plain Markdown files with YAML
-frontmatter (`title`, `icon`, `tags`, `created`, `updated`); the in-memory link index is rebuilt on
-start and kept in sync on every write. Invalid or `..`-style ids return `400`.
+Ids are URL-encoded in paths (`projects%2Fgumply`). `PageMeta` includes `childCount` (direct
+sub-pages). Writes go to plain Markdown files with YAML frontmatter (`title`, `icon`, `tags`,
+`created`, `updated`); the in-memory link index is rebuilt on start and kept in sync on every
+write. Deleted pages live under `vault/.trash/<trashId>/` and are invisible to the API. Invalid or
+`..`-style ids return `400`.
 
 ## Layout
 
@@ -68,6 +71,7 @@ packages/
 
 ## Status
 
-M0 scaffold + M1a vault server: page CRUD, nested move/delete, backlinks, graph and search with
-Vitest coverage. The UI is still the M0 placeholder (M1b).
+M0 scaffold + M1a vault server (spec/api v1.1): page CRUD, nested move, trash + restore, rename
+with link rewriting, backlinks, graph and search with Vitest coverage. The UI is still the M0
+placeholder (M1b).
 See the team wiki (`plan`, `decisions`, `spec/api`) for the API contract and roadmap.

@@ -125,6 +125,8 @@ describe("nested pages", () => {
 
     const list = await getJson<Array<Record<string, unknown>>>(app, "/api/pages");
     expect(list.map((page) => page.id).sort()).toEqual(["projects", "projects/gumply"]);
+    expect(list.find((page) => page.id === "projects")?.childCount).toBe(1);
+    expect(list.find((page) => page.id === "projects/gumply")?.childCount).toBe(0);
 
     const page = await getJson<Record<string, unknown>>(
       app,
@@ -133,19 +135,109 @@ describe("nested pages", () => {
     expect(page.title).toBe("Gumply");
   });
 
-  it("deletes children with their parent", async () => {
+  it("moves deleted children into .trash and restores them", async () => {
     const { app, dir } = await createTestServer();
-    await createPage(app, { title: "A" });
+    await createPage(app, { title: "A", content: "root" });
     await createPage(app, { title: "B", parentId: "a" });
     await createPage(app, { title: "C", parentId: "a/b" });
 
     const response = await jsonRequest(app, "DELETE", "/api/pages/a");
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as { trashId: string; deleted: string[] };
+    expect(typeof result.trashId).toBe("string");
+    expect(result.deleted).toEqual(["a", "a/b", "a/b/c"]);
 
     expect(await getJson<unknown[]>(app, "/api/pages")).toEqual([]);
+
     const fs = await import("node:fs/promises");
     await expect(fs.stat(`${dir}/a.md`)).rejects.toThrow();
     await expect(fs.stat(`${dir}/a`)).rejects.toThrow();
+    await expect(fs.stat(`${dir}/.trash/${result.trashId}/a.md`)).resolves.toBeTruthy();
+    await expect(fs.stat(`${dir}/.trash/${result.trashId}/a/b.md`)).resolves.toBeTruthy();
+
+    const restored = await jsonRequest(
+      app,
+      "POST",
+      `/api/trash/${encodeURIComponent(result.trashId)}/restore`,
+    );
+    expect(restored.status).toBe(200);
+    const metas = (await restored.json()) as Array<Record<string, unknown>>;
+    expect(metas.map((meta) => meta.id).sort()).toEqual(["a", "a/b", "a/b/c"]);
+    expect(metas.find((meta) => meta.id === "a")?.childCount).toBe(1);
+
+    expect((await getJson<Record<string, unknown>>(app, "/api/pages/a")).content).toBe("root");
+    expect(
+      (await getJson<Record<string, unknown>>(app, `/api/pages/${encodeURIComponent("a/b/c")}`)).id,
+    ).toBe("a/b/c");
+    await expect(fs.stat(`${dir}/.trash/${result.trashId}`)).rejects.toThrow();
+
+    // The trash entry is consumed.
+    expect(
+      (await jsonRequest(app, "POST", `/api/trash/${encodeURIComponent(result.trashId)}/restore`))
+        .status,
+    ).toBe(404);
+  });
+
+  it("keeps .trash out of the page tree and refuses to restore over a live page", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "A" });
+    await createPage(app, { title: "Keep" });
+
+    const deleted = (await (await jsonRequest(app, "DELETE", "/api/pages/a")).json()) as {
+      trashId: string;
+    };
+
+    // Re-create the same id, then undo: the original path is taken → 409.
+    await createPage(app, { title: "A" });
+    const list = await getJson<Array<Record<string, unknown>>>(app, "/api/pages");
+    expect(list.map((page) => page.id).sort()).toEqual(["a", "keep"]);
+
+    const restore = await jsonRequest(
+      app,
+      "POST",
+      `/api/trash/${encodeURIComponent(deleted.trashId)}/restore`,
+    );
+    expect(restore.status).toBe(409);
+    expect(await restore.json()).toEqual({ error: "A page already exists at a" });
+  });
+
+  it("restores a nested subtree under its original parent", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "A" });
+    await createPage(app, { title: "B", parentId: "a" });
+    await createPage(app, { title: "C", parentId: "a/b" });
+
+    const result = (await (
+      await jsonRequest(app, "DELETE", `/api/pages/${encodeURIComponent("a/b")}`)
+    ).json()) as { trashId: string; deleted: string[] };
+    expect(result.deleted).toEqual(["a/b", "a/b/c"]);
+
+    const listAfterDelete = await getJson<Array<Record<string, unknown>>>(app, "/api/pages");
+    expect(listAfterDelete.map((page) => page.id)).toEqual(["a"]);
+
+    const restored = await jsonRequest(
+      app,
+      "POST",
+      `/api/trash/${encodeURIComponent(result.trashId)}/restore`,
+    );
+    expect(restored.status).toBe(200);
+
+    const b = await getJson<Record<string, unknown>>(
+      app,
+      `/api/pages/${encodeURIComponent("a/b")}`,
+    );
+    expect(b.parentId).toBe("a");
+    expect(b.childCount).toBe(1);
+  });
+
+  it("rejects invalid trash ids", async () => {
+    const { app } = await createTestServer();
+    const response = await app.request(
+      `/api/trash/${encodeURIComponent("../../etc/passwd")}/restore`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(400);
+    expect((await jsonRequest(app, "POST", "/api/trash/nope/restore")).status).toBe(404);
   });
 
   it("moves a page and its children, then back to the root", async () => {
@@ -165,6 +257,10 @@ describe("nested pages", () => {
       `/api/pages/${encodeURIComponent("c/a/child")}`,
     );
     expect(child.parentId).toBe("c/a");
+
+    const afterMove = await getJson<Array<Record<string, unknown>>>(app, "/api/pages");
+    expect(afterMove.find((page) => page.id === "c")?.childCount).toBe(1);
+    expect(afterMove.find((page) => page.id === "c/a")?.childCount).toBe(1);
 
     const fs = await import("node:fs/promises");
     await expect(fs.stat(`${dir}/c/a.md`)).resolves.toBeTruthy();

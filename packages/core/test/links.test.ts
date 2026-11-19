@@ -5,6 +5,7 @@ import {
   extractWikilinks,
   makeSnippet,
   resolveWikilink,
+  rewriteWikilinkTargets,
   type PageMeta,
 } from "../src/index";
 
@@ -14,6 +15,7 @@ function page(id: string, title: string): PageMeta {
     title,
     tags: [],
     parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
+    childCount: 0,
     created: "2026-01-01T00:00:00.000Z",
     updated: "2026-01-01T00:00:00.000Z",
   };
@@ -49,6 +51,21 @@ describe("extractWikilinks", () => {
     const markdown = "A `😀 emoji` span and [[After]] with #tag";
     expect(extractWikilinks(markdown).map((link) => link.targetTitle)).toEqual(["After"]);
     expect(extractTags(markdown)).toEqual(["tag"]);
+  });
+
+  it("does not let astral chars in code spans eat adjacent links or tags", () => {
+    expect(extractWikilinks("`😀 [[H]]`[[Visible]]").map((link) => link.targetTitle)).toEqual([
+      "Visible",
+    ]);
+    expect(extractWikilinks("`😀 [[H]]`[[One]][[Two]]").map((link) => link.targetTitle)).toEqual([
+      "One",
+      "Two",
+    ]);
+    expect(extractTags("`😀 x`#tag")).toEqual(["tag"]);
+    // Guard: the same shape without astral chars already worked before the fix.
+    expect(extractWikilinks("`abcd`[[Visible]]").map((link) => link.targetTitle)).toEqual([
+      "Visible",
+    ]);
   });
 
   it("skips empty links", () => {
@@ -103,6 +120,54 @@ describe("collectLinkEdges", () => {
       { source: "gumply", target: "projects/graph-view", targetTitle: "Graph View" },
       { source: "gumply", target: null, targetTitle: "Missing" },
     ]);
+  });
+});
+
+describe("rewriteWikilinkTargets", () => {
+  const rewriteAll = () => true;
+
+  it("rewrites plain links, keeping aliases and headings", () => {
+    const source = "A [[Old]] B [[Old|alias]] C [[Old#Q1]] D [[Old#Q1|read this]] E [[Other]]";
+    const { content, count } = rewriteWikilinkTargets(
+      source,
+      (link) => link.targetTitle === "Old",
+      "New Title",
+    );
+    expect(count).toBe(4);
+    expect(content).toBe(
+      "A [[New Title]] B [[New Title|alias]] C [[New Title#Q1]] D [[New Title#Q1|read this]] E [[Other]]",
+    );
+  });
+
+  it("only rewrites links the predicate accepts", () => {
+    const source = "Keep [[Old]] and change [[Target]]";
+    const { content, count } = rewriteWikilinkTargets(
+      source,
+      (link) => link.targetTitle === "Target",
+      "Renamed",
+    );
+    expect(count).toBe(1);
+    expect(content).toBe("Keep [[Old]] and change [[Renamed]]");
+  });
+
+  it("leaves links in code spans and blocks alone", () => {
+    const source = "`[[Old]]`\n\n```md\n[[Old]]\n```\n\nreal [[Old]]";
+    const { content, count } = rewriteWikilinkTargets(source, rewriteAll, "New");
+    expect(count).toBe(1);
+    expect(content).toBe("`[[Old]]`\n\n```md\n[[Old]]\n```\n\nreal [[New]]");
+  });
+
+  it("returns the input unchanged when nothing matches", () => {
+    const source = "No links here";
+    expect(rewriteWikilinkTargets(source, rewriteAll, "New")).toEqual({
+      content: source,
+      count: 0,
+    });
+  });
+
+  it("handles an emoji in an earlier code span without shifting", () => {
+    const source = "`😀` then [[Old]]";
+    expect(rewriteWikilinkTargets(source, rewriteAll, "New").content).toBe("`😀` then [[New]]");
   });
 });
 

@@ -88,4 +88,28 @@ describe("VaultStore index on start", () => {
       new Date(created.updated).getTime(),
     );
   });
+
+  it("ignores .trash on start and restores entries after a restart", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    await store.create({ title: "A", content: "keep me" });
+    await store.create({ title: "Child", parentId: "a" });
+
+    const result = await store.remove("a");
+    expect(store.list()).toEqual([]);
+
+    // A new process only sees the vault: .trash must stay invisible…
+    const reopened = new VaultStore(dir);
+    await reopened.init();
+    expect(reopened.list()).toEqual([]);
+    expect(reopened.search("keep me")).toEqual([]);
+    expect(reopened.graph().nodes).toEqual([]);
+
+    // …but its entries remain restorable from disk.
+    const restored = await reopened.restore(result.trashId);
+    expect(restored.map((meta) => meta.id)).toEqual(["a", "a/child"]);
+    expect(reopened.get("a").content).toBe("keep me");
+    expect(reopened.get("a").childCount).toBe(1);
+  });
 });

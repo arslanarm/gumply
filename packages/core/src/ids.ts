@@ -40,7 +40,9 @@ export function isValidPageId(id: string): boolean {
   if (id.includes("\\") || id.includes("\0")) return false;
   if (id.length > 500) return false;
   const segments = id.split("/");
-  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+  return segments.every(
+    (segment) => segment.length > 0 && !segment.startsWith("."),
+  );
 }
 
 /** Build a child id: `child("projects", "Gumply")` -> `projects/gumply`. */

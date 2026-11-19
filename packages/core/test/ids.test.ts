@@ -61,6 +61,12 @@ describe("page ids", () => {
     expect(isValidPageId("a\\b")).toBe(false);
   });
 
+  it("rejects hidden/dot segments such as .trash", () => {
+    expect(isValidPageId(".trash")).toBe(false);
+    expect(isValidPageId(".trash/abc")).toBe(false);
+    expect(isValidPageId("notes/.hidden")).toBe(false);
+  });
+
   it("builds child ids and walks parents", () => {
     expect(childPageId(null, "My Page")).toBe("my-page");
     expect(childPageId("projects", "Gumply")).toBe("projects/gumply");
