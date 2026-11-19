@@ -59,6 +59,9 @@ export function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [focusTarget, setFocusTarget] = useState<SidebarFocusTarget | null>(null);
+  // D14 §5: after a delete, focus stays on the next sibling; don't let an empty
+  // next page's title steal it (walkthrough #4aepmkk4).
+  const [autoFocusTitle, setAutoFocusTitle] = useState(true);
 
   const selectedRef = useRef<PageId | null>(selectedId);
   selectedRef.current = selectedId;
@@ -196,6 +199,7 @@ export function App() {
   const handleOpen = useCallback(
     (id: PageId) => {
       setAuxView(null);
+      setAutoFocusTitle(true);
       if (id === selectedRef.current) {
         // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
         requestPageReload();
@@ -210,6 +214,7 @@ export function App() {
     async (parentId: PageId | null) => {
       setActionError(null);
       setAuxView(null);
+      setAutoFocusTitle(true);
       try {
         const created = await api.createPage({ title: "Untitled", parentId });
         await loadPages();
@@ -280,6 +285,7 @@ export function App() {
         if (current && isSelfOrDescendant(id, current)) {
           const fallback = list ? (buildPageTree(list)[0]?.page.id ?? null) : null;
           const target = nextId && list?.some((item) => item.id === nextId) ? nextId : fallback;
+          setAutoFocusTitle(false);
           navigate(target, true);
         }
 
@@ -292,6 +298,7 @@ export function App() {
                 try {
                   await api.restoreTrash(trashId);
                   await loadPages();
+                  setAutoFocusTitle(true);
                   navigate(id);
                 } catch (error) {
                   setActionError(errorMessage(error));
@@ -469,6 +476,7 @@ export function App() {
                 <>
                   <PageHeader
                     page={page}
+                    autoFocusTitle={autoFocusTitle}
                     localGraphOpen={localGraphOpen}
                     onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
                     onRename={(title) => handleRename(page.id, title)}

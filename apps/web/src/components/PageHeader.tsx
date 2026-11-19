@@ -10,6 +10,11 @@ export interface PageHeaderProps {
   /** Local graph panel is open for this page. */
   localGraphOpen?: boolean;
   onToggleLocalGraph?: () => void;
+  /**
+   * Focus and select the title for a new/empty page. Set false when the page
+   * was opened by deleting another page: focus must stay in the sidebar.
+   */
+  autoFocusTitle?: boolean;
 }
 
 function formatUpdated(value: string): string {
@@ -29,6 +34,7 @@ export function PageHeader({
   onStartBody,
   localGraphOpen = false,
   onToggleLocalGraph,
+  autoFocusTitle = true,
 }: PageHeaderProps) {
   const isEmpty = page.content.trim().length === 0;
   const [editing, setEditing] = useState(isEmpty);
@@ -46,7 +52,7 @@ export function PageHeader({
   // Never steal focus from an input the user is already using (e.g. an inline
   // sidebar rename that started while this page was still loading).
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || !autoFocusTitle) return;
     const active = document.activeElement;
     const busy =
       active instanceof HTMLElement &&
@@ -56,7 +62,7 @@ export function PageHeader({
     if (busy) return;
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
-  }, [editing]);
+  }, [editing, autoFocusTitle]);
 
   const startEditing = () => {
     setDraft(page.title);
