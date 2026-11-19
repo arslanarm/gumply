@@ -21,10 +21,10 @@ npm run dev
 ```
 
 - Web UI: http://localhost:5173
-- API: http://localhost:3001/api/health
+- API: http://localhost:8787/api/health
 
 The vault defaults to `./vault` and is created on first start. Point it elsewhere with
-`GUMPLY_VAULT=/path/to/notes`. Set the API port with `PORT` (default `3001`).
+`GUMPLY_VAULT=/path/to/notes`. Set the API port with `GUMPLY_PORT` (default `8787`).
 
 ## Scripts (from repo root)
 

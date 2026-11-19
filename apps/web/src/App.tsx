@@ -54,7 +54,7 @@ export function App() {
           </p>
           <ul>
             <li>
-              API: <code>http://localhost:3001/api/health</code>
+              API: <code>http://localhost:8787/api/health</code>
             </li>
             <li>
               Vault: <code>{vaultPath || "—"}</code>
