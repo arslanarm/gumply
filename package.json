@@ -1,0 +1,31 @@
+{
+  "name": "gumply",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gumply — Notion-simple notes with Obsidian-style links and graph view.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "predev": "npm run build -w @gumply/core",
+    "dev": "concurrently -k -n core,server,web -c blue,green,magenta \"npm:dev:core\" \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:core": "npm run dev -w @gumply/core",
+    "dev:server": "npm run dev -w @gumply/server",
+    "dev:web": "npm run dev -w @gumply/web",
+    "build": "npm run build -w @gumply/core && npm run build -w @gumply/server && npm run build -w @gumply/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck -ws --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.4.6",
+    "vitest": "^3.0.5"
+  }
+}
