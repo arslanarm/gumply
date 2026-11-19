@@ -46,7 +46,9 @@ function maskFencedCode(text: string): string {
 }
 
 function maskInlineCode(text: string): string {
-  const chars = [...text];
+  // `split("")` keeps UTF-16 units (not code points) so indexes line up with
+  // `text` even when the span contains emoji or other surrogate pairs.
+  const chars = text.split("");
   let i = 0;
 
   while (i < text.length) {
