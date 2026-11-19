@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { API_URL } from './support/env';
+import { expectPageTitle } from './support/ui';
 
 /**
  * Flow A (pages / sidebar) — see wiki `spec/e2e-tests`.
@@ -17,11 +18,11 @@ test.describe('pages and sidebar', () => {
     await page.goto('/');
 
     // P0 A1: a root page opens without a click.
-    await expect(page.getByTestId('page-title')).toHaveText('Projects');
+    await expectPageTitle(page, 'Projects');
     await expect(page.getByTestId('page-item-' + roadmap.id)).toBeVisible();
 
     await page.getByTestId(`page-item-${roadmap.id}`).click();
-    await expect(page.getByTestId('page-title')).toHaveText('Roadmap');
+    await expectPageTitle(page, 'Roadmap');
     // Hash routing keeps deep links readable: #/projects/roadmap
     expect(decodeURIComponent(page.url())).toContain(`#/${roadmap.id}`);
   });
@@ -32,7 +33,7 @@ test.describe('pages and sidebar', () => {
 
     await page.getByTestId('new-page-button').click();
 
-    await expect(page.getByTestId('page-title')).toHaveText('Untitled');
+    await expectPageTitle(page, 'Untitled');
     await expect(page.getByTestId('page-tree').getByText('Untitled')).toBeVisible();
     await expect(page.getByTestId('editor')).toBeVisible();
   });
@@ -41,7 +42,7 @@ test.describe('pages and sidebar', () => {
     const [page1] = await vault.seed([{ title: 'Autosave target' }]);
 
     await page.goto('/');
-    await expect(page.getByTestId('page-title')).toHaveText('Autosave target');
+    await expectPageTitle(page, 'Autosave target');
 
     const body = page.getByTestId('editor-content');
     await body.click();
@@ -59,5 +60,36 @@ test.describe('pages and sidebar', () => {
 
     await page.reload();
     await expect(page.getByTestId('editor-content')).toContainText('Hello autosave');
+  });
+
+  test('renaming a page rewrites links to it in other pages (D12)', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [source] = await vault.seed([
+      { title: 'Source', content: 'See [[Target]] and [[Target|an alias]].' },
+    ]);
+    const [target] = await vault.seed([{ title: 'Target' }]);
+
+    await page.goto('/');
+
+    // Inline rename from the tree: double-click the row, edit, Enter.
+    await page.getByTestId(`page-item-${target.id}`).dblclick();
+    const input = page.getByTestId(`page-rename-input-${target.id}`);
+    await input.fill('Target Renamed');
+    await input.press('Enter');
+
+    // Id stays fixed (deep links keep working), only the title changes.
+    await expect(page.getByTestId(`page-item-${target.id}`)).toContainText('Target Renamed');
+
+    const saved = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(source.id)}`)
+    ).json();
+    expect(saved.content).toContain('[[Target Renamed]]');
+    expect(saved.content).toContain('[[Target Renamed|an alias]]');
+
+    await page.getByTestId(`page-item-${source.id}`).click();
+    await expect(page.getByTestId('editor-content')).toContainText('Target Renamed');
   });
 });
