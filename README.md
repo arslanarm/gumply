@@ -34,6 +34,8 @@ The vault defaults to `./vault` and is created on first start. Point it elsewher
 | `npm test` | Vitest unit tests |
 | `npm run build` | Type-checks and builds core, server and web |
 | `npm run typecheck` | Type-checks every workspace |
+| `npm run test:e2e` | Playwright e2e suite (local, throwaway vault) |
+| `npm run seed:big` | Seed 200 linked pages via the API for graph/performance checks (`-- 500` for more) |
 
 ## API
 
@@ -59,19 +61,30 @@ sub-pages). Writes go to plain Markdown files with YAML frontmatter (`title`, `i
 write. Deleted pages live under `vault/.trash/<trashId>/` and are invisible to the API. Invalid or
 `..`-style ids return `400`.
 
+## Graph view
+
+`#graph` (or the sidebar **Graph** row) shows every page as a node: size follows the link count,
+colour follows the first tag (folder fallback), hovering highlights neighbours, clicking opens the
+page. Missing targets appear as dashed ghost nodes grouped by title — click one to create that page.
+The toolbar has a title filter and tag chips; `+`/`−`/**Fit** control the canvas. A page's header has
+a **Local graph** toggle that opens a 320px panel at depth 1 or 2. Testids: `graph-canvas`,
+`local-graph`.
+
 ## Layout
 
 ```
 apps/
   server/   Hono API (routes.ts), vault store + link index (vault-store.ts)
-  web/      React UI (Vite)
+  web/      React UI (Vite); graph view in src/graph/
 packages/
   core/     types, frontmatter, links, ids
+scripts/    seed-big.mjs
 ```
 
 ## Status
 
-M0 scaffold + M1a vault server (spec/api v1.1): page CRUD, nested move, trash + restore, rename
-with link rewriting, backlinks, graph and search with Vitest coverage. The UI is still the M0
-placeholder (M1b).
+M0 scaffold, M1a vault server (spec/api v1.2) and M3 graph view: page CRUD, nested move,
+trash + restore, rename with link rewriting, backlinks, global graph with ghost nodes, local
+graph panel and search, all with Vitest coverage. M1b provides the page shell and TipTap editor;
+wikilinks/backlinks UI (M2) and search overlay (M4) are next.
 See the team wiki (`plan`, `decisions`, `spec/api`) for the API contract and roadmap.

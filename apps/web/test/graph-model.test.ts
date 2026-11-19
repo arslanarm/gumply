@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GraphData, PageMeta } from "@gumply/core";
+import type { GraphData, GraphNode } from "@gumply/core";
 import {
   ariaSummary,
   buildGraphModel,
@@ -9,12 +9,13 @@ import {
   isGhostId,
   labelledNodeIds,
   maxReferenceCount,
+  neighbourIds,
   nodeColor,
   nodeRadius,
   nodeTooltip,
 } from "../src/graph/graph-model";
 
-function page(id: string, title: string, tags: string[] = []): PageMeta {
+function page(id: string, title: string, tags: string[] = []): GraphNode {
   return {
     id,
     title,
@@ -23,6 +24,7 @@ function page(id: string, title: string, tags: string[] = []): PageMeta {
     childCount: 0,
     created: "2026-01-01T00:00:00.000Z",
     updated: "2026-01-01T00:00:00.000Z",
+    linkCount: 0,
   };
 }
 
@@ -143,6 +145,17 @@ describe("filterGraph", () => {
 });
 
 describe("labels and sizing", () => {
+  it("finds direct neighbours in both directions", () => {
+    const links = [
+      { source: "a", target: "b" },
+      { source: "c", target: "a" },
+      { source: "a", target: "d" },
+    ];
+    expect([...neighbourIds(links, "a")].sort()).toEqual(["b", "c", "d"]);
+    expect([...neighbourIds(links, "b")]).toEqual(["a"]);
+    expect([...neighbourIds(links, "z")]).toEqual([]);
+  });
+
   it("labels every node when there are at most 30", () => {
     const nodes = Array.from({ length: 30 }, (_, index) =>
       page(`n${index}`, `N${index}`),

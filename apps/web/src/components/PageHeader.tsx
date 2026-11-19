@@ -7,6 +7,9 @@ export interface PageHeaderProps {
   onDelete: () => void;
   /** Enter in the title moves the caret into the first body block. */
   onStartBody: () => void;
+  /** Local graph panel is open for this page. */
+  localGraphOpen?: boolean;
+  onToggleLocalGraph?: () => void;
 }
 
 function formatUpdated(value: string): string {
@@ -19,7 +22,14 @@ function formatUpdated(value: string): string {
 }
 
 /** Title, rename affordance and metadata for the open page. */
-export function PageHeader({ page, onRename, onDelete, onStartBody }: PageHeaderProps) {
+export function PageHeader({
+  page,
+  onRename,
+  onDelete,
+  onStartBody,
+  localGraphOpen = false,
+  onToggleLocalGraph,
+}: PageHeaderProps) {
   const isEmpty = page.content.trim().length === 0;
   const [editing, setEditing] = useState(isEmpty);
   const [draft, setDraft] = useState(page.title);
@@ -105,7 +115,29 @@ export function PageHeader({ page, onRename, onDelete, onStartBody }: PageHeader
           </h1>
         )}
 
-        <div className="page-header-actions">
+        <div
+          className="page-header-actions"
+          onMouseDown={
+            editing
+              ? (event) => {
+                  // Keep focus in the title input so blurring does not swap the
+                  // input for the <h1> (and shift this row) before the click lands.
+                  event.preventDefault();
+                }
+              : undefined
+          }
+        >
+          {onToggleLocalGraph ? (
+            <button
+              type="button"
+              className={`button-secondary local-graph-toggle${localGraphOpen ? " is-active" : ""}`}
+              data-testid="local-graph-toggle"
+              aria-pressed={localGraphOpen}
+              onClick={onToggleLocalGraph}
+            >
+              Local graph
+            </button>
+          ) : null}
           <button
             type="button"
             className="icon-button"

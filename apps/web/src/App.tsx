@@ -8,14 +8,16 @@ import { SaveStatus } from "./components/SaveStatus.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
+import { GraphView } from "./graph/GraphView.js";
+import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
 import { focusAfterDelete } from "./lib/delete.js";
 import { openPageNeedsReload } from "./lib/rename.js";
-import { pageHash, pageIdFromHash } from "./lib/routing.js";
+import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
 import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
-type AuxView = "search" | "graph" | null;
+type AuxView = "search" | null;
 
 interface PendingDelete {
   page: PageMeta;
@@ -54,6 +56,15 @@ export function App() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
   const [auxView, setAuxView] = useState<AuxView>(null);
+  const [graphOpen, setGraphOpen] = useState(() => isGraphHash(window.location.hash));
+  const [lastPageId, setLastPageId] = useState<PageId | null>(null);
+  const [localGraphOpen, setLocalGraphOpen] = useState(() => {
+    try {
+      return sessionStorage.getItem("gumply:local-graph") === "open";
+    } catch {
+      return false;
+    }
+  });
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -91,6 +102,14 @@ export function App() {
       else window.location.hash = hash;
     }
     setSelectedId(id);
+    setGraphOpen(false);
+  }, []);
+
+  const navigateGraph = useCallback(() => {
+    if (window.location.hash !== GRAPH_HASH) window.location.hash = GRAPH_HASH;
+    setSelectedId(null);
+    setGraphOpen(true);
+    setAuxView(null);
   }, []);
 
   /** Refetch the open page and remount the editor with the new content. */
@@ -104,7 +123,7 @@ export function App() {
     void (async () => {
       const list = await loadPages();
       if (!list || list.length === 0) return;
-      if (selectedRef.current === null) {
+      if (selectedRef.current === null && !isGraphHash(window.location.hash)) {
         const first = buildPageTree(list)[0]?.page.id ?? null;
         if (first) navigate(first, true);
       }
@@ -112,10 +131,26 @@ export function App() {
   }, [loadPages, navigate]);
 
   useEffect(() => {
-    const onHashChange = () => setSelectedId(pageIdFromHash(window.location.hash));
+    const onHashChange = () => {
+      setSelectedId(pageIdFromHash(window.location.hash));
+      setGraphOpen(isGraphHash(window.location.hash));
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Remember the local graph panel for the session (spec/ux §9).
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("gumply:local-graph", localGraphOpen ? "open" : "closed");
+    } catch {
+      // Session storage is optional.
+    }
+  }, [localGraphOpen]);
+
+  useEffect(() => {
+    if (selectedId) setLastPageId(selectedId);
+  }, [selectedId]);
 
   // Load the selected page; ignore stale responses when the user clicks fast.
   useEffect(() => {
@@ -187,6 +222,20 @@ export function App() {
       setAuxView(null);
       try {
         const created = await api.createPage({ title: "Untitled", parentId });
+        await loadPages();
+        navigate(created.id);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    [loadPages, navigate],
+  );
+
+  const handleGraphCreatePage = useCallback(
+    async (title: string) => {
+      setActionError(null);
+      try {
+        const created = await api.createPage({ title });
         await loadPages();
         navigate(created.id);
       } catch (error) {
@@ -354,13 +403,16 @@ export function App() {
         <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
 
-      <div className="layout">
+      <div
+        className={`layout${!graphOpen && showingPage && localGraphOpen ? " layout-with-panel" : ""}`}
+      >
         <Sidebar
           pages={pages}
           selectedId={selectedId}
           status={listStatus}
           error={listError}
           focusTarget={focusTarget}
+          graphActive={graphOpen}
           onOpen={handleOpen}
           onCreate={(parentId) => void handleCreate(parentId)}
           onRename={handleRename}
@@ -368,7 +420,7 @@ export function App() {
           onMove={(id, parentId) => void handleMove(id, parentId)}
           onRetry={handleRetry}
           onSearch={() => setAuxView("search")}
-          onGraph={() => setAuxView("graph")}
+          onGraph={navigateGraph}
         />
 
         <main className="content">
@@ -381,82 +433,97 @@ export function App() {
             </div>
           ) : null}
 
-          <div className="editor-pane" data-testid="editor">
-            {auxView === "search" ? (
-              <div className="empty-state" data-testid="search-coming-soon">
-                <h2>Search is coming soon.</h2>
-                <p>You'll be able to find any page by title or text from here.</p>
-              </div>
-            ) : auxView === "graph" ? (
-              <div className="empty-state" data-testid="graph-coming-soon">
-                <h2>Graph is coming soon.</h2>
-                <p>You'll see how your pages connect here.</p>
-              </div>
-            ) : serverError ? (
-              <div className="empty-state" data-testid="server-error">
-                <h2>Can't reach Gumply's local server.</h2>
-                <p>Your pages are safe on disk. Start the app again to reconnect.</p>
-                <button type="button" className="button-primary" onClick={handleRetry}>
-                  Retry
-                </button>
-                <p className="empty-hint">
-                  Run <code>npm run dev</code> in the Gumply folder.
-                </p>
-              </div>
-            ) : selectedId === null ? (
-              <div className="empty-state" data-testid="empty-state">
-                <h2>{pages.length === 0 ? "No pages yet." : "No page selected"}</h2>
-                <p>
-                  {pages.length === 0
-                    ? "Create a page to get started."
-                    : "Choose a page in the sidebar, or create a new one."}
-                </p>
-                <button
-                  type="button"
-                  className="button-primary"
-                  data-testid="empty-new-page"
-                  onClick={() => void handleCreate(null)}
-                >
-                  New page
-                </button>
-              </div>
-            ) : showingPage ? (
-              <>
-                <PageHeader
-                  page={page}
-                  onRename={(title) => handleRename(page.id, title)}
-                  onDelete={() => requestDelete(page.id)}
-                  onStartBody={handleStartBody}
-                />
-                <Editor
-                  key={`${page.id}:${editorRevision}`}
-                  page={page}
-                  onSaveState={setSaveState}
-                  onReady={handleEditorReady}
-                />
-              </>
-            ) : pageStatus === "error" ? (
-              <div className="empty-state" data-testid="page-not-found">
-                <h2>This page doesn't exist.</h2>
-                <p>{pageError ?? "It may have been deleted or renamed."}</p>
-                <div className="empty-actions">
-                  <button type="button" className="button-secondary" onClick={goToWelcome}>
-                    Go to Welcome
+          {graphOpen ? (
+            <GraphView
+              highlightId={lastPageId}
+              onOpenPage={handleOpen}
+              onCreatePage={handleGraphCreatePage}
+              onNewPage={() => void handleCreate(null)}
+            />
+          ) : (
+            <div className="editor-pane" data-testid="editor">
+              {auxView === "search" ? (
+                <div className="empty-state" data-testid="search-coming-soon">
+                  <h2>Search is coming soon.</h2>
+                  <p>You'll be able to find any page by title or text from here.</p>
+                </div>
+              ) : serverError ? (
+                <div className="empty-state" data-testid="server-error">
+                  <h2>Can't reach Gumply's local server.</h2>
+                  <p>Your pages are safe on disk. Start the app again to reconnect.</p>
+                  <button type="button" className="button-primary" onClick={handleRetry}>
+                    Retry
                   </button>
+                  <p className="empty-hint">
+                    Run <code>npm run dev</code> in the Gumply folder.
+                  </p>
+                </div>
+              ) : selectedId === null ? (
+                <div className="empty-state" data-testid="empty-state">
+                  <h2>{pages.length === 0 ? "No pages yet." : "No page selected"}</h2>
+                  <p>
+                    {pages.length === 0
+                      ? "Create a page to get started."
+                      : "Choose a page in the sidebar, or create a new one."}
+                  </p>
                   <button
                     type="button"
                     className="button-primary"
+                    data-testid="empty-new-page"
                     onClick={() => void handleCreate(null)}
                   >
-                    Create page
+                    New page
                   </button>
                 </div>
-              </div>
-            ) : (
-              <p className="editor-note">Loading page…</p>
-            )}
-          </div>
+              ) : showingPage ? (
+                <>
+                  <PageHeader
+                    page={page}
+                    localGraphOpen={localGraphOpen}
+                    onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
+                    onRename={(title) => handleRename(page.id, title)}
+                    onDelete={() => requestDelete(page.id)}
+                    onStartBody={handleStartBody}
+                  />
+                  <Editor
+                    key={`${page.id}:${editorRevision}`}
+                    page={page}
+                    onSaveState={setSaveState}
+                    onReady={handleEditorReady}
+                  />
+                </>
+              ) : pageStatus === "error" ? (
+                <div className="empty-state" data-testid="page-not-found">
+                  <h2>This page doesn't exist.</h2>
+                  <p>{pageError ?? "It may have been deleted or renamed."}</p>
+                  <div className="empty-actions">
+                    <button type="button" className="button-secondary" onClick={goToWelcome}>
+                      Go to Welcome
+                    </button>
+                    <button
+                      type="button"
+                      className="button-primary"
+                      onClick={() => void handleCreate(null)}
+                    >
+                      Create page
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="editor-note">Loading page…</p>
+              )}
+            </div>
+          )}
         </main>
+
+        {!graphOpen && showingPage && localGraphOpen ? (
+          <LocalGraphPanel
+            pageId={page.id}
+            onOpenPage={handleOpen}
+            onCreatePage={handleGraphCreatePage}
+            onClose={() => setLocalGraphOpen(false)}
+          />
+        ) : null}
       </div>
 
       {pendingDelete ? (

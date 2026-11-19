@@ -181,27 +181,27 @@ export function maxReferenceCount(model: GraphModel): number {
 const LABEL_ALL_LIMIT = 30;
 const LABEL_TOP = 15;
 
+export interface LabelledEntry {
+  id: string;
+  count: number;
+}
+
 /**
  * Which nodes get a label: all when there are ≤30, otherwise the 15 with the
  * most links plus the hovered node and its direct neighbours (spec/ux §9).
  */
-export function labelledNodeIds(
-  model: GraphModel,
+export function labelledIds(
+  entries: readonly LabelledEntry[],
   hoveredId: string | null,
   neighbourIds: Iterable<string> = [],
 ): Set<string> {
-  const entries = [
-    ...model.nodes.map((node) => ({ id: node.id, count: node.linkCount })),
-    ...model.ghosts.map((ghost) => ({ id: ghost.id, count: ghost.refCount })),
-  ];
-
   const labelled = new Set<string>();
   if (entries.length <= LABEL_ALL_LIMIT) {
     for (const entry of entries) labelled.add(entry.id);
     return labelled;
   }
 
-  entries
+  [...entries]
     .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
     .slice(0, LABEL_TOP)
     .forEach((entry) => labelled.add(entry.id));
@@ -209,6 +209,32 @@ export function labelledNodeIds(
   if (hoveredId) labelled.add(hoveredId);
   for (const id of neighbourIds) labelled.add(id);
   return labelled;
+}
+
+export function labelledNodeIds(
+  model: GraphModel,
+  hoveredId: string | null,
+  neighbourIds: Iterable<string> = [],
+): Set<string> {
+  return labelledIds(
+    [
+      ...model.nodes.map((node) => ({ id: node.id, count: node.linkCount })),
+      ...model.ghosts.map((ghost) => ({ id: ghost.id, count: ghost.refCount })),
+    ],
+    hoveredId,
+    neighbourIds,
+  );
+}
+
+/** Direct neighbours of a node in either direction, from the current links. */
+export function neighbourIds(links: readonly GraphLink[], id: string): Set<string> {
+  const neighbours = new Set<string>();
+  for (const link of links) {
+    if (link.source === id) neighbours.add(link.target);
+    else if (link.target === id) neighbours.add(link.source);
+  }
+  neighbours.delete(id);
+  return neighbours;
 }
 
 const PALETTE = [
@@ -255,8 +281,8 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
 }
 
 /** Canvas aria-label, e.g. "12 pages, 20 links, 2 missing" (spec/ux §9). */
-export function ariaSummary(model: GraphModel): string {
-  return `${plural(model.nodes.length, "page")}, ${plural(model.links.length, "link")}, ${model.ghosts.length} missing`;
+export function ariaSummary(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
+  return `${plural(graph.nodes.length, "page")}, ${plural(graph.links.length, "link")}, ${graph.ghosts.length} missing`;
 }
 
 /** Tooltip copy for a real page: `Title · N links · #tag` (spec/ux §9). */
