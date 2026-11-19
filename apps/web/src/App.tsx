@@ -1,67 +1,461 @@
-import { APP_NAME, type HealthResponse } from "@gumply/core";
-import { useEffect, useState } from "react";
+import type { Page, PageId, PageMeta } from "@gumply/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiRequestError } from "./api/client.js";
+import { DeleteDialog } from "./components/DeleteDialog.js";
+import { Editor, type EditorControls } from "./components/Editor.js";
+import { PageHeader } from "./components/PageHeader.js";
+import { SaveStatus } from "./components/SaveStatus.js";
+import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
+import { UndoToast } from "./components/UndoToast.js";
+import type { SaveState } from "./editor/autosave.js";
+import { focusAfterDelete } from "./lib/delete.js";
+import { pageHash, pageIdFromHash } from "./lib/routing.js";
+import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
 
-type Status = "checking" | "ok" | "offline";
+type ListStatus = "loading" | "ready" | "error";
+type PageStatus = "idle" | "loading" | "ready" | "error";
+type AuxView = "search" | "graph" | null;
 
-/**
- * Placeholder shell for M0. @dev-ui owns this file from M1b on and will replace
- * it with the real layout, sidebar and editor.
- */
+interface PendingDelete {
+  page: PageMeta;
+  subPages: number;
+}
+
+interface ToastState {
+  message: string;
+  undo?: () => Promise<void>;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) return error.message;
+  if (error instanceof Error) {
+    if (/fetch|network|load failed/i.test(error.message)) {
+      return "Cannot reach the Gumply server. Is it running?";
+    }
+    return error.message;
+  }
+  return "Something went wrong.";
+}
+
 export function App() {
-  const [status, setStatus] = useState<Status>("checking");
-  const [vaultPath, setVaultPath] = useState<string>("");
+  const [pages, setPages] = useState<PageMeta[]>([]);
+  const [listStatus, setListStatus] = useState<ListStatus>("loading");
+  const [listError, setListError] = useState<string | null>(null);
+
+  const [selectedId, setSelectedId] = useState<PageId | null>(() =>
+    pageIdFromHash(window.location.hash),
+  );
+  const [page, setPage] = useState<Page | null>(null);
+  const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [pageReload, setPageReload] = useState(0);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [auxView, setAuxView] = useState<AuxView>(null);
+
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [focusTarget, setFocusTarget] = useState<SidebarFocusTarget | null>(null);
+
+  const selectedRef = useRef<PageId | null>(selectedId);
+  selectedRef.current = selectedId;
+  const editorControls = useRef<EditorControls | null>(null);
+  const focusNonce = useRef(0);
+
+  const moveFocus = useCallback((id: PageId | null) => {
+    focusNonce.current += 1;
+    setFocusTarget({ id, nonce: focusNonce.current });
+  }, []);
+
+  const loadPages = useCallback(async (): Promise<PageMeta[] | null> => {
+    try {
+      const list = await api.listPages();
+      setPages(list);
+      setListStatus("ready");
+      setListError(null);
+      return list;
+    } catch (error) {
+      setListStatus("error");
+      setListError(errorMessage(error));
+      return null;
+    }
+  }, []);
+
+  const navigate = useCallback((id: PageId | null, replace = false) => {
+    const hash = id ? pageHash(id) : "#/";
+    if (window.location.hash !== hash) {
+      if (replace) window.history.replaceState(null, "", hash);
+      else window.location.hash = hash;
+    }
+    setSelectedId(id);
+  }, []);
+
+  // Initial load: open the first root page when no page is in the URL.
+  useEffect(() => {
+    void (async () => {
+      const list = await loadPages();
+      if (!list || list.length === 0) return;
+      if (selectedRef.current === null) {
+        const first = buildPageTree(list)[0]?.page.id ?? null;
+        if (first) navigate(first, true);
+      }
+    })();
+  }, [loadPages, navigate]);
 
   useEffect(() => {
-    let cancelled = false;
+    const onHashChange = () => setSelectedId(pageIdFromHash(window.location.hash));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
-    fetch("/api/health")
-      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
-      .then((health: HealthResponse) => {
+  // Load the selected page; ignore stale responses when the user clicks fast.
+  useEffect(() => {
+    setSaveState("idle");
+
+    if (!selectedId) {
+      setPage(null);
+      setPageStatus("idle");
+      setPageError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPageStatus("loading");
+    setPageError(null);
+
+    api
+      .getPage(selectedId)
+      .then((loaded) => {
         if (cancelled) return;
-        setVaultPath(health.vaultPath);
-        setStatus("ok");
+        setPage(loaded);
+        setPageStatus("ready");
       })
-      .catch(() => {
-        if (!cancelled) setStatus("offline");
+      .catch((error) => {
+        if (cancelled) return;
+        setPage(null);
+        setPageStatus("error");
+        setPageError(errorMessage(error));
       });
 
     return () => {
       cancelled = true;
     };
+  }, [selectedId, pageReload]);
+
+  // beforeunload guard while edits are pending or a save has failed (D14 §7).
+  useEffect(() => {
+    if (saveState !== "saving" && saveState !== "error") return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [saveState]);
+
+  const handleOpen = useCallback(
+    (id: PageId) => {
+      setAuxView(null);
+      if (id === selectedRef.current) {
+        // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
+        setPageReload((value) => value + 1);
+        return;
+      }
+      navigate(id);
+    },
+    [navigate],
+  );
+
+  const handleCreate = useCallback(
+    async (parentId: PageId | null) => {
+      setActionError(null);
+      setAuxView(null);
+      try {
+        const created = await api.createPage({ title: "Untitled", parentId });
+        await loadPages();
+        navigate(created.id);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    [loadPages, navigate],
+  );
+
+  const handleRename = useCallback(
+    async (id: PageId, title: string) => {
+      setActionError(null);
+      try {
+        const updated = await api.updatePage(id, { title });
+        setPages((previous) =>
+          previous.map((item) =>
+            item.id === id ? { ...item, title: updated.title, updated: updated.updated } : item,
+          ),
+        );
+        setPage((previous) =>
+          previous && previous.id === id
+            ? { ...previous, title: updated.title, updated: updated.updated }
+            : previous,
+        );
+
+        // D12: the server rewrites links in other pages, so refresh the open one.
+        if (selectedRef.current !== null && selectedRef.current !== id) {
+          setPageReload((value) => value + 1);
+        }
+      } catch (error) {
+        setActionError(errorMessage(error));
+        void loadPages();
+      }
+    },
+    [loadPages],
+  );
+
+  const performDelete = useCallback(
+    async (id: PageId) => {
+      setActionError(null);
+
+      try {
+        const result = await api.deletePage(id);
+        const nextId = focusAfterDelete(pages, id);
+        const list = await loadPages();
+
+        const current = selectedRef.current;
+        if (current && isSelfOrDescendant(id, current)) {
+          const fallback = list ? (buildPageTree(list)[0]?.page.id ?? null) : null;
+          const target = nextId && list?.some((item) => item.id === nextId) ? nextId : fallback;
+          navigate(target, true);
+        }
+
+        moveFocus(nextId);
+        const trashId = result.trashId;
+        setToast({
+          message: "Page deleted",
+          undo: trashId
+            ? async () => {
+                try {
+                  await api.restoreTrash(trashId);
+                  await loadPages();
+                  navigate(id);
+                } catch (error) {
+                  setActionError(errorMessage(error));
+                }
+              }
+            : undefined,
+        });
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    [pages, loadPages, navigate, moveFocus],
+  );
+
+  const requestDelete = useCallback(
+    (id: PageId) => {
+      const target = pages.find((item) => item.id === id);
+      if (!target) return;
+      if (target.childCount > 0) {
+        setPendingDelete({ page: target, subPages: target.childCount });
+        return;
+      }
+      void performDelete(id);
+    },
+    [pages, performDelete],
+  );
+
+  const cancelDelete = useCallback(() => {
+    const pending = pendingDelete;
+    setPendingDelete(null);
+    if (pending) moveFocus(pending.page.id);
+  }, [pendingDelete, moveFocus]);
+
+  const confirmDelete = useCallback(() => {
+    const pending = pendingDelete;
+    if (!pending) return;
+    setPendingDelete(null);
+    void performDelete(pending.page.id);
+  }, [pendingDelete, performDelete]);
+
+  const handleMove = useCallback(
+    async (id: PageId, parentId: PageId | null) => {
+      setActionError(null);
+      try {
+        await api.movePage(id, parentId);
+        await loadPages();
+      } catch (error) {
+        setActionError(errorMessage(error));
+        void loadPages();
+      }
+    },
+    [loadPages],
+  );
+
+  const handleRetry = useCallback(() => {
+    void (async () => {
+      const list = await loadPages();
+      if (!list || list.length === 0) return;
+      if (selectedRef.current === null) {
+        const first = buildPageTree(list)[0]?.page.id ?? null;
+        if (first) navigate(first, true);
+      }
+    })();
+  }, [loadPages, navigate]);
+
+  const handleEditorReady = useCallback((controls: EditorControls) => {
+    editorControls.current = controls;
   }, []);
 
+  const handleStartBody = useCallback(() => {
+    editorControls.current?.focusBody();
+  }, []);
+
+  const handleRetrySave = useCallback(() => {
+    void editorControls.current?.flush();
+  }, []);
+
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  const goToWelcome = useCallback(() => {
+    const welcome = pages.find((item) => item.title.trim().toLowerCase() === "welcome");
+    setAuxView(null);
+    if (welcome) navigate(welcome.id);
+    else navigate(null);
+  }, [pages, navigate]);
+
+  const showingPage = selectedId !== null && page !== null && page.id === selectedId;
+
+  const serverError = listStatus === "error" && pages.length === 0;
+
   return (
-    <div className="shell">
+    <div className="app">
       <header className="topbar">
-        <span className="logo">◈</span>
-        <h1>{APP_NAME}</h1>
-        <span className={`status status-${status}`}>
-          {status === "checking" ? "connecting…" : status === "ok" ? "server online" : "server offline"}
+        <span className="logo" aria-hidden="true">
+          ◈
         </span>
+        <h1 className="app-name">Gumply</h1>
+        <span className="topbar-spacer" />
+        <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
 
       <div className="layout">
-        <aside className="sidebar">
-          <p className="sidebar-title">Pages</p>
-          <p className="placeholder">The page tree lands with M1b.</p>
-        </aside>
+        <Sidebar
+          pages={pages}
+          selectedId={selectedId}
+          status={listStatus}
+          error={listError}
+          focusTarget={focusTarget}
+          onOpen={handleOpen}
+          onCreate={(parentId) => void handleCreate(parentId)}
+          onRename={handleRename}
+          onDelete={requestDelete}
+          onMove={(id, parentId) => void handleMove(id, parentId)}
+          onRetry={handleRetry}
+          onSearch={() => setAuxView("search")}
+          onGraph={() => setAuxView("graph")}
+        />
 
         <main className="content">
-          <h2>Local-first notes with a graph</h2>
-          <p>
-            Scaffold is running. Pages, the block editor, wikilinks, backlinks and the graph view are
-            built on top of this shell.
-          </p>
-          <ul>
-            <li>
-              API: <code>http://localhost:8787/api/health</code>
-            </li>
-            <li>
-              Vault: <code>{vaultPath || "—"}</code>
-            </li>
-          </ul>
+          {actionError ? (
+            <div className="banner banner-error" role="alert">
+              <span>{actionError}</span>
+              <button type="button" className="banner-close" onClick={() => setActionError(null)}>
+                ×
+              </button>
+            </div>
+          ) : null}
+
+          <div className="editor-pane" data-testid="editor">
+            {auxView === "search" ? (
+              <div className="empty-state" data-testid="search-coming-soon">
+                <h2>Search is coming soon.</h2>
+                <p>You'll be able to find any page by title or text from here.</p>
+              </div>
+            ) : auxView === "graph" ? (
+              <div className="empty-state" data-testid="graph-coming-soon">
+                <h2>Graph is coming soon.</h2>
+                <p>You'll see how your pages connect here.</p>
+              </div>
+            ) : serverError ? (
+              <div className="empty-state" data-testid="server-error">
+                <h2>Can't reach Gumply's local server.</h2>
+                <p>Your pages are safe on disk. Start the app again to reconnect.</p>
+                <button type="button" className="button-primary" onClick={handleRetry}>
+                  Retry
+                </button>
+                <p className="empty-hint">
+                  Run <code>npm run dev</code> in the Gumply folder.
+                </p>
+              </div>
+            ) : selectedId === null ? (
+              <div className="empty-state" data-testid="empty-state">
+                <h2>{pages.length === 0 ? "No pages yet." : "No page selected"}</h2>
+                <p>
+                  {pages.length === 0
+                    ? "Create a page to get started."
+                    : "Choose a page in the sidebar, or create a new one."}
+                </p>
+                <button
+                  type="button"
+                  className="button-primary"
+                  data-testid="empty-new-page"
+                  onClick={() => void handleCreate(null)}
+                >
+                  New page
+                </button>
+              </div>
+            ) : showingPage ? (
+              <>
+                <PageHeader
+                  page={page}
+                  onRename={(title) => handleRename(page.id, title)}
+                  onDelete={() => requestDelete(page.id)}
+                  onStartBody={handleStartBody}
+                />
+                <Editor
+                  key={page.id}
+                  page={page}
+                  onSaveState={setSaveState}
+                  onReady={handleEditorReady}
+                />
+              </>
+            ) : pageStatus === "error" ? (
+              <div className="empty-state" data-testid="page-not-found">
+                <h2>This page doesn't exist.</h2>
+                <p>{pageError ?? "It may have been deleted or renamed."}</p>
+                <div className="empty-actions">
+                  <button type="button" className="button-secondary" onClick={goToWelcome}>
+                    Go to Welcome
+                  </button>
+                  <button
+                    type="button"
+                    className="button-primary"
+                    onClick={() => void handleCreate(null)}
+                  >
+                    Create page
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="editor-note">Loading page…</p>
+            )}
+          </div>
         </main>
       </div>
+
+      {pendingDelete ? (
+        <DeleteDialog
+          title={pendingDelete.page.title}
+          subPages={pendingDelete.subPages}
+          onCancel={cancelDelete}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
+
+      {toast ? (
+        <UndoToast
+          message={toast.message}
+          onUndo={toast.undo ? () => void toast.undo?.() : undefined}
+          onDismiss={dismissToast}
+        />
+      ) : null}
     </div>
   );
 }
