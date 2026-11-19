@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Page } from "@gumply/core";
 
 export interface PageHeaderProps {
@@ -23,6 +23,7 @@ export function PageHeader({ page, onRename, onDelete, onStartBody }: PageHeader
   const isEmpty = page.content.trim().length === 0;
   const [editing, setEditing] = useState(isEmpty);
   const [draft, setDraft] = useState(page.title);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
 
   // Focus the title for new/empty pages only; existing pages keep focus free.
   useEffect(() => {
@@ -31,6 +32,21 @@ export function PageHeader({ page, onRename, onDelete, onStartBody }: PageHeader
     // Reset only when the open page changes, not on every autosave.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page.id]);
+
+  // Never steal focus from an input the user is already using (e.g. an inline
+  // sidebar rename that started while this page was still loading).
+  useEffect(() => {
+    if (!editing) return;
+    const active = document.activeElement;
+    const busy =
+      active instanceof HTMLElement &&
+      (active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.closest('[data-testid^="page-rename-input-"]') !== null);
+    if (busy) return;
+    titleInputRef.current?.focus();
+    titleInputRef.current?.select();
+  }, [editing]);
 
   const startEditing = () => {
     setDraft(page.title);
@@ -57,11 +73,11 @@ export function PageHeader({ page, onRename, onDelete, onStartBody }: PageHeader
         {editing ? (
           <div className="page-title-block" data-testid="page-title">
             <input
+              ref={titleInputRef}
               className="page-title-input"
               data-testid="page-title-input"
               value={draft}
               placeholder="Untitled"
-              autoFocus
               onFocus={(event) => event.currentTarget.select()}
               onChange={(event) => setDraft(event.target.value)}
               onBlur={commit}

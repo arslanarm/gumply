@@ -12,6 +12,7 @@ import { SlashMenu } from "./SlashMenu.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
 import type { SlashItem } from "../editor/slash-items.js";
+import { normalizeEditorMarkdown } from "../lib/markdown.js";
 
 export interface EditorControls {
   flush: () => Promise<void>;
@@ -38,7 +39,7 @@ interface MarkdownStorage {
 
 function readMarkdown(editor: TipTapEditor): string {
   const storage = editor.storage as unknown as MarkdownStorage;
-  return storage.markdown?.getMarkdown?.() ?? "";
+  return normalizeEditorMarkdown(storage.markdown?.getMarkdown?.() ?? "");
 }
 
 /** TipTap block editor with `/` menu and debounced autosave. */

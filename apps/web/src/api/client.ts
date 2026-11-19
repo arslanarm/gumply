@@ -50,6 +50,9 @@ export interface UpdatePageInput {
   tags?: string[];
 }
 
+/** v1.1: a rename reports which other pages had their links rewritten (D12). */
+export type UpdatePageResult = Page & { rewrittenPages?: PageId[] };
+
 /** DELETE result: v1.1 returns a trash id; v1.0 returns 204 (no trash). */
 export interface DeletePageResult {
   trashId: string | null;
@@ -58,29 +61,54 @@ export interface DeletePageResult {
 
 const pagePath = (id: PageId): string => `/pages/${encodeURIComponent(id)}`;
 
+/**
+ * All writes go through one queue. This guarantees ordering between a pending
+ * autosave and a rename: the server's link rewrite (D12) must happen *after*
+ * any in-flight stale content write, never before it.
+ */
+let mutationChain: Promise<void> = Promise.resolve();
+
+function mutate<T>(task: () => Promise<T>): Promise<T> {
+  const result = mutationChain.then(task, task);
+  mutationChain = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 export const api = {
   listPages: (): Promise<PageMeta[]> => request("/pages"),
 
   getPage: (id: PageId): Promise<Page> => request(pagePath(id)),
 
   createPage: (input: CreatePageInput): Promise<Page> =>
-    request("/pages", { method: "POST", body: JSON.stringify(input) }),
+    mutate(() => request("/pages", { method: "POST", body: JSON.stringify(input) })),
 
-  updatePage: (id: PageId, patch: UpdatePageInput): Promise<Page> =>
-    request(pagePath(id), { method: "PUT", body: JSON.stringify(patch) }),
+  updatePage: (id: PageId, patch: UpdatePageInput): Promise<UpdatePageResult> =>
+    mutate(() =>
+      request(pagePath(id), { method: "PUT", body: JSON.stringify(patch) }),
+    ),
 
-  deletePage: async (id: PageId): Promise<DeletePageResult> => {
-    const result = await request<{ trashId?: string; deleted?: PageId[] } | undefined>(pagePath(id), {
-      method: "DELETE",
-    });
-    if (!result) return { trashId: null, deleted: [id] };
-    return { trashId: result.trashId ?? null, deleted: result.deleted ?? [id] };
-  },
+  deletePage: (id: PageId): Promise<DeletePageResult> =>
+    mutate(async () => {
+      const result = await request<{ trashId?: string; deleted?: PageId[] } | undefined>(
+        pagePath(id),
+        { method: "DELETE" },
+      );
+      if (!result) return { trashId: null, deleted: [id] };
+      return { trashId: result.trashId ?? null, deleted: result.deleted ?? [id] };
+    }),
 
   /** v1.1: restore a page (and its sub-pages) from the trash. */
   restoreTrash: (trashId: string): Promise<PageMeta[]> =>
-    request(`/trash/${encodeURIComponent(trashId)}/restore`, { method: "POST" }),
+    mutate(() => request(`/trash/${encodeURIComponent(trashId)}/restore`, { method: "POST" })),
 
   movePage: (id: PageId, parentId: PageId | null): Promise<Page> =>
-    request(`${pagePath(id)}/move`, { method: "POST", body: JSON.stringify({ parentId }) }),
+    mutate(() =>
+      request(`${pagePath(id)}/move`, {
+        method: "POST",
+        body: JSON.stringify({ parentId }),
+      }),
+    ),
 };
