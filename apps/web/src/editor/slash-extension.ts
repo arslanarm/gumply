@@ -4,11 +4,14 @@
  * editor instance.
  */
 import { Extension } from "@tiptap/core";
+import { PluginKey } from "@tiptap/pm/state";
 import Suggestion, {
   type SuggestionKeyDownProps,
   type SuggestionProps,
 } from "@tiptap/suggestion";
 import { filterSlashItems, SLASH_ITEMS, type SlashItem } from "./slash-items.js";
+
+const slashPluginKey = new PluginKey("slashMenuSuggestion");
 
 export interface SlashHandlers {
   onStart: (props: SuggestionProps<SlashItem>) => void;
@@ -25,6 +28,7 @@ export function createSlashExtension(handlers: { current: SlashHandlers }) {
       return [
         Suggestion<SlashItem>({
           editor: this.editor,
+          pluginKey: slashPluginKey,
           char: "/",
           startOfLine: false,
           allowSpaces: false,
