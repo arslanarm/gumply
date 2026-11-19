@@ -35,8 +35,19 @@ export function PageItem(props: PageItemProps) {
   const [dropTarget, setDropTarget] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLSpanElement | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   const canDrop = draggingId !== null && canMovePage(pages, draggingId, page.id);
+
+  // Rename opens with the whole title selected, so typing replaces it instead
+  // of appending to the end (walkthrough #7up8t6gm).
+  useEffect(() => {
+    if (!isRenaming) return;
+    const input = renameInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, [isRenaming]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -122,10 +133,10 @@ export function PageItem(props: PageItemProps) {
 
         {isRenaming ? (
           <input
+            ref={renameInputRef}
             className="page-rename-input"
             data-testid={`page-rename-input-${page.id}`}
             value={props.renameDraft}
-            autoFocus
             onChange={(event) => props.onRenameDraft(event.target.value)}
             onClick={(event) => event.stopPropagation()}
             onBlur={props.onCommitRename}
