@@ -13,9 +13,15 @@ import { Autosave, type SaveState } from "../editor/autosave.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
 import type { SlashItem } from "../editor/slash-items.js";
 
+export interface EditorControls {
+  flush: () => Promise<void>;
+  focusBody: () => void;
+}
+
 export interface EditorProps {
   page: Page;
   onSaveState: (state: SaveState) => void;
+  onReady?: (controls: EditorControls) => void;
 }
 
 interface MenuState {
@@ -36,7 +42,7 @@ function readMarkdown(editor: TipTapEditor): string {
 }
 
 /** TipTap block editor with `/` menu and debounced autosave. */
-export function Editor({ page, onSaveState }: EditorProps) {
+export function Editor({ page, onSaveState, onReady }: EditorProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const menuRef = useRef<MenuState | null>(null);
 
@@ -122,7 +128,7 @@ export function Editor({ page, onSaveState }: EditorProps) {
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Placeholder.configure({ placeholder: "Type “/” for commands…" }),
+      Placeholder.configure({ placeholder: "Type '/' for commands, '[[' to link a page" }),
       Markdown.configure({
         html: false,
         linkify: true,
@@ -163,8 +169,12 @@ export function Editor({ page, onSaveState }: EditorProps) {
   }, [autosave]);
 
   useEffect(() => {
-    editor?.commands.focus("end");
-  }, [editor]);
+    if (!editor) return;
+    onReady?.({
+      flush: () => autosave.flush(),
+      focusBody: () => editor.commands.focus("start"),
+    });
+  }, [editor, autosave, onReady]);
 
   return (
     <div className="editor-host">

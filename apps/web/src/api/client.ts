@@ -50,6 +50,12 @@ export interface UpdatePageInput {
   tags?: string[];
 }
 
+/** DELETE result: v1.1 returns a trash id; v1.0 returns 204 (no trash). */
+export interface DeletePageResult {
+  trashId: string | null;
+  deleted: PageId[];
+}
+
 const pagePath = (id: PageId): string => `/pages/${encodeURIComponent(id)}`;
 
 export const api = {
@@ -63,7 +69,17 @@ export const api = {
   updatePage: (id: PageId, patch: UpdatePageInput): Promise<Page> =>
     request(pagePath(id), { method: "PUT", body: JSON.stringify(patch) }),
 
-  deletePage: (id: PageId): Promise<void> => request(pagePath(id), { method: "DELETE" }),
+  deletePage: async (id: PageId): Promise<DeletePageResult> => {
+    const result = await request<{ trashId?: string; deleted?: PageId[] } | undefined>(pagePath(id), {
+      method: "DELETE",
+    });
+    if (!result) return { trashId: null, deleted: [id] };
+    return { trashId: result.trashId ?? null, deleted: result.deleted ?? [id] };
+  },
+
+  /** v1.1: restore a page (and its sub-pages) from the trash. */
+  restoreTrash: (trashId: string): Promise<PageMeta[]> =>
+    request(`/trash/${encodeURIComponent(trashId)}/restore`, { method: "POST" }),
 
   movePage: (id: PageId, parentId: PageId | null): Promise<Page> =>
     request(`${pagePath(id)}/move`, { method: "POST", body: JSON.stringify({ parentId }) }),

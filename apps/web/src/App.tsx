@@ -1,16 +1,30 @@
 import type { Page, PageId, PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "./api/client.js";
-import { Editor } from "./components/Editor.js";
+import { DeleteDialog } from "./components/DeleteDialog.js";
+import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
 import { SaveStatus } from "./components/SaveStatus.js";
-import { Sidebar } from "./components/Sidebar.js";
+import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
+import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
+import { focusAfterDelete } from "./lib/delete.js";
 import { pageHash, pageIdFromHash } from "./lib/routing.js";
 import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
+type AuxView = "search" | "graph" | null;
+
+interface PendingDelete {
+  page: PageMeta;
+  subPages: number;
+}
+
+interface ToastState {
+  message: string;
+  undo?: () => Promise<void>;
+}
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) return error.message;
@@ -34,11 +48,24 @@ export function App() {
   const [page, setPage] = useState<Page | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const [pageError, setPageError] = useState<string | null>(null);
+  const [pageReload, setPageReload] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [auxView, setAuxView] = useState<AuxView>(null);
+
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [focusTarget, setFocusTarget] = useState<SidebarFocusTarget | null>(null);
 
   const selectedRef = useRef<PageId | null>(selectedId);
   selectedRef.current = selectedId;
+  const editorControls = useRef<EditorControls | null>(null);
+  const focusNonce = useRef(0);
+
+  const moveFocus = useCallback((id: PageId | null) => {
+    focusNonce.current += 1;
+    setFocusTarget({ id, nonce: focusNonce.current });
+  }, []);
 
   const loadPages = useCallback(async (): Promise<PageMeta[] | null> => {
     try {
@@ -113,13 +140,36 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, pageReload]);
 
-  const handleOpen = useCallback((id: PageId) => navigate(id), [navigate]);
+  // beforeunload guard while edits are pending or a save has failed (D14 §7).
+  useEffect(() => {
+    if (saveState !== "saving" && saveState !== "error") return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [saveState]);
+
+  const handleOpen = useCallback(
+    (id: PageId) => {
+      setAuxView(null);
+      if (id === selectedRef.current) {
+        // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
+        setPageReload((value) => value + 1);
+        return;
+      }
+      navigate(id);
+    },
+    [navigate],
+  );
 
   const handleCreate = useCallback(
     async (parentId: PageId | null) => {
       setActionError(null);
+      setAuxView(null);
       try {
         const created = await api.createPage({ title: "Untitled", parentId });
         await loadPages();
@@ -146,6 +196,11 @@ export function App() {
             ? { ...previous, title: updated.title, updated: updated.updated }
             : previous,
         );
+
+        // D12: the server rewrites links in other pages, so refresh the open one.
+        if (selectedRef.current !== null && selectedRef.current !== id) {
+          setPageReload((value) => value + 1);
+        }
       } catch (error) {
         setActionError(errorMessage(error));
         void loadPages();
@@ -154,27 +209,70 @@ export function App() {
     [loadPages],
   );
 
-  const handleDelete = useCallback(
+  const performDelete = useCallback(
     async (id: PageId) => {
-      const target = pages.find((item) => item.id === id);
-      const label = target?.title ?? id;
-      if (!window.confirm(`Delete “${label}”? Child pages will be deleted too.`)) return;
-
       setActionError(null);
+
       try {
-        await api.deletePage(id);
+        const result = await api.deletePage(id);
+        const nextId = focusAfterDelete(pages, id);
         const list = await loadPages();
+
         const current = selectedRef.current;
         if (current && isSelfOrDescendant(id, current)) {
-          const next = list ? (buildPageTree(list)[0]?.page.id ?? null) : null;
-          navigate(next, true);
+          const fallback = list ? (buildPageTree(list)[0]?.page.id ?? null) : null;
+          const target = nextId && list?.some((item) => item.id === nextId) ? nextId : fallback;
+          navigate(target, true);
         }
+
+        moveFocus(nextId);
+        const trashId = result.trashId;
+        setToast({
+          message: "Page deleted",
+          undo: trashId
+            ? async () => {
+                try {
+                  await api.restoreTrash(trashId);
+                  await loadPages();
+                  navigate(id);
+                } catch (error) {
+                  setActionError(errorMessage(error));
+                }
+              }
+            : undefined,
+        });
       } catch (error) {
         setActionError(errorMessage(error));
       }
     },
-    [pages, loadPages, navigate],
+    [pages, loadPages, navigate, moveFocus],
   );
+
+  const requestDelete = useCallback(
+    (id: PageId) => {
+      const target = pages.find((item) => item.id === id);
+      if (!target) return;
+      if (target.childCount > 0) {
+        setPendingDelete({ page: target, subPages: target.childCount });
+        return;
+      }
+      void performDelete(id);
+    },
+    [pages, performDelete],
+  );
+
+  const cancelDelete = useCallback(() => {
+    const pending = pendingDelete;
+    setPendingDelete(null);
+    if (pending) moveFocus(pending.page.id);
+  }, [pendingDelete, moveFocus]);
+
+  const confirmDelete = useCallback(() => {
+    const pending = pendingDelete;
+    if (!pending) return;
+    setPendingDelete(null);
+    void performDelete(pending.page.id);
+  }, [pendingDelete, performDelete]);
 
   const handleMove = useCallback(
     async (id: PageId, parentId: PageId | null) => {
@@ -201,7 +299,30 @@ export function App() {
     })();
   }, [loadPages, navigate]);
 
+  const handleEditorReady = useCallback((controls: EditorControls) => {
+    editorControls.current = controls;
+  }, []);
+
+  const handleStartBody = useCallback(() => {
+    editorControls.current?.focusBody();
+  }, []);
+
+  const handleRetrySave = useCallback(() => {
+    void editorControls.current?.flush();
+  }, []);
+
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  const goToWelcome = useCallback(() => {
+    const welcome = pages.find((item) => item.title.trim().toLowerCase() === "welcome");
+    setAuxView(null);
+    if (welcome) navigate(welcome.id);
+    else navigate(null);
+  }, [pages, navigate]);
+
   const showingPage = selectedId !== null && page !== null && page.id === selectedId;
+
+  const serverError = listStatus === "error" && pages.length === 0;
 
   return (
     <div className="app">
@@ -211,7 +332,7 @@ export function App() {
         </span>
         <h1 className="app-name">Gumply</h1>
         <span className="topbar-spacer" />
-        <SaveStatus state={saveState} />
+        <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
 
       <div className="layout">
@@ -220,12 +341,15 @@ export function App() {
           selectedId={selectedId}
           status={listStatus}
           error={listError}
+          focusTarget={focusTarget}
           onOpen={handleOpen}
           onCreate={(parentId) => void handleCreate(parentId)}
           onRename={handleRename}
-          onDelete={(id) => void handleDelete(id)}
+          onDelete={requestDelete}
           onMove={(id, parentId) => void handleMove(id, parentId)}
           onRetry={handleRetry}
+          onSearch={() => setAuxView("search")}
+          onGraph={() => setAuxView("graph")}
         />
 
         <main className="content">
@@ -239,10 +363,35 @@ export function App() {
           ) : null}
 
           <div className="editor-pane" data-testid="editor">
-            {selectedId === null ? (
+            {auxView === "search" ? (
+              <div className="empty-state" data-testid="search-coming-soon">
+                <h2>Search is coming soon.</h2>
+                <p>You'll be able to find any page by title or text from here.</p>
+              </div>
+            ) : auxView === "graph" ? (
+              <div className="empty-state" data-testid="graph-coming-soon">
+                <h2>Graph is coming soon.</h2>
+                <p>You'll see how your pages connect here.</p>
+              </div>
+            ) : serverError ? (
+              <div className="empty-state" data-testid="server-error">
+                <h2>Can't reach Gumply's local server.</h2>
+                <p>Your pages are safe on disk. Start the app again to reconnect.</p>
+                <button type="button" className="button-primary" onClick={handleRetry}>
+                  Retry
+                </button>
+                <p className="empty-hint">
+                  Run <code>npm run dev</code> in the Gumply folder.
+                </p>
+              </div>
+            ) : selectedId === null ? (
               <div className="empty-state" data-testid="empty-state">
-                <h2>{pages.length === 0 ? "Your vault is empty" : "No page selected"}</h2>
-                <p>Start with a page — Markdown, nested pages and links are all local files.</p>
+                <h2>{pages.length === 0 ? "No pages yet." : "No page selected"}</h2>
+                <p>
+                  {pages.length === 0
+                    ? "Create a page to get started."
+                    : "Choose a page in the sidebar, or create a new one."}
+                </p>
                 <button
                   type="button"
                   className="button-primary"
@@ -257,17 +406,32 @@ export function App() {
                 <PageHeader
                   page={page}
                   onRename={(title) => handleRename(page.id, title)}
-                  onDelete={() => void handleDelete(page.id)}
+                  onDelete={() => requestDelete(page.id)}
+                  onStartBody={handleStartBody}
                 />
-                <Editor key={page.id} page={page} onSaveState={setSaveState} />
+                <Editor
+                  key={page.id}
+                  page={page}
+                  onSaveState={setSaveState}
+                  onReady={handleEditorReady}
+                />
               </>
             ) : pageStatus === "error" ? (
               <div className="empty-state" data-testid="page-not-found">
-                <h2>Page not found</h2>
-                <p>{pageError ?? "This page no longer exists."}</p>
-                <button type="button" className="button-secondary" onClick={() => navigate(null)}>
-                  Back to start
-                </button>
+                <h2>This page doesn't exist.</h2>
+                <p>{pageError ?? "It may have been deleted or renamed."}</p>
+                <div className="empty-actions">
+                  <button type="button" className="button-secondary" onClick={goToWelcome}>
+                    Go to Welcome
+                  </button>
+                  <button
+                    type="button"
+                    className="button-primary"
+                    onClick={() => void handleCreate(null)}
+                  >
+                    Create page
+                  </button>
+                </div>
               </div>
             ) : (
               <p className="editor-note">Loading page…</p>
@@ -275,6 +439,23 @@ export function App() {
           </div>
         </main>
       </div>
+
+      {pendingDelete ? (
+        <DeleteDialog
+          title={pendingDelete.page.title}
+          subPages={pendingDelete.subPages}
+          onCancel={cancelDelete}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
+
+      {toast ? (
+        <UndoToast
+          message={toast.message}
+          onUndo={toast.undo ? () => void toast.undo?.() : undefined}
+          onDismiss={dismissToast}
+        />
+      ) : null}
     </div>
   );
 }

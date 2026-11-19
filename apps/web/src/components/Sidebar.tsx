@@ -1,28 +1,51 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { buildPageTree } from "../lib/tree.js";
 import { PageItem } from "./PageItem.js";
+
+export interface SidebarFocusTarget {
+  id: PageId | null;
+  nonce: number;
+}
 
 export interface SidebarProps {
   pages: readonly PageMeta[];
   selectedId: PageId | null;
   status: "loading" | "ready" | "error";
   error: string | null;
+  focusTarget: SidebarFocusTarget | null;
   onOpen: (id: PageId) => void;
   onCreate: (parentId: PageId | null) => void;
   onRename: (id: PageId, title: string) => Promise<void>;
   onDelete: (id: PageId) => void;
   onMove: (id: PageId, parentId: PageId | null) => void;
   onRetry: () => void;
+  onSearch: () => void;
+  onGraph: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { pages, selectedId, status, error } = props;
+  const { pages, selectedId, status, error, focusTarget } = props;
   const tree = useMemo(() => buildPageTree(pages), [pages]);
 
   const [renamingId, setRenamingId] = useState<PageId | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [draggingId, setDraggingId] = useState<PageId | null>(null);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<PageId>>(() => new Set());
+
+  // D11: focus the next sibling after a delete, else the New page button.
+  useEffect(() => {
+    if (!focusTarget) return;
+    if (focusTarget.id) {
+      for (const item of document.querySelectorAll<HTMLElement>("[data-page-id]")) {
+        if (item.dataset.pageId === focusTarget.id) {
+          item.focus();
+          return;
+        }
+      }
+    }
+    document.querySelector<HTMLElement>('[data-testid="new-page-button"]')?.focus();
+  }, [focusTarget]);
 
   const startRename = (id: PageId, title: string) => {
     setRenamingId(id);
@@ -44,6 +67,25 @@ export function Sidebar(props: SidebarProps) {
     setRenameDraft("");
   };
 
+  const toggle = (id: PageId) => {
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const createChild = (parentId: PageId) => {
+    setCollapsed((previous) => {
+      if (!previous.has(parentId)) return previous;
+      const next = new Set(previous);
+      next.delete(parentId);
+      return next;
+    });
+    props.onCreate(parentId);
+  };
+
   return (
     <aside className="sidebar" data-testid="sidebar">
       <div className="sidebar-header">
@@ -52,13 +94,25 @@ export function Sidebar(props: SidebarProps) {
           type="button"
           className="icon-button"
           data-testid="new-page-button"
-          title="New page"
+          data-tooltip="New page"
           aria-label="New page"
           onClick={() => props.onCreate(null)}
         >
           +
         </button>
       </div>
+
+      <button
+        type="button"
+        className="sidebar-row"
+        data-testid="sidebar-search"
+        onClick={props.onSearch}
+      >
+        <span className="sidebar-row-icon" aria-hidden="true">
+          ⌕
+        </span>
+        Search
+      </button>
 
       <div
         className="page-tree"
@@ -88,7 +142,19 @@ export function Sidebar(props: SidebarProps) {
             </button>
           </div>
         ) : tree.length === 0 ? (
-          <p className="tree-note">No pages yet — create your first one.</p>
+          <div className="sidebar-empty" data-testid="sidebar-empty">
+            <p>
+              <strong>No pages yet.</strong> Create a page to get started.
+            </p>
+            <button
+              type="button"
+              className="button-primary"
+              data-testid="sidebar-new-page"
+              onClick={() => props.onCreate(null)}
+            >
+              New page
+            </button>
+          </div>
         ) : (
           tree.map((node) => (
             <PageItem
@@ -100,9 +166,11 @@ export function Sidebar(props: SidebarProps) {
               renamingId={renamingId}
               renameDraft={renameDraft}
               draggingId={draggingId}
+              collapsed={collapsed}
               onOpen={props.onOpen}
-              onCreateChild={(id) => props.onCreate(id)}
+              onCreateChild={createChild}
               onDelete={props.onDelete}
+              onToggle={toggle}
               onRenameDraft={setRenameDraft}
               onStartRename={startRename}
               onCommitRename={commitRename}
@@ -114,6 +182,18 @@ export function Sidebar(props: SidebarProps) {
           ))
         )}
       </div>
+
+      <button
+        type="button"
+        className="sidebar-row sidebar-row-bottom"
+        data-testid="sidebar-graph"
+        onClick={props.onGraph}
+      >
+        <span className="sidebar-row-icon" aria-hidden="true">
+          ◇
+        </span>
+        Graph
+      </button>
     </aside>
   );
 }

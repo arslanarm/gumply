@@ -14,6 +14,9 @@ function comparePages(a: PageMeta, b: PageMeta): number {
   return byTitle !== 0 ? byTitle : a.id.localeCompare(b.id);
 }
 
+/** Sibling ordering used by both the tree and focus-after-delete. */
+export { comparePages };
+
 /** True when `candidate` is `id` or one of its descendants. */
 export function isSelfOrDescendant(id: PageId, candidate: PageId): boolean {
   return candidate === id || candidate.startsWith(`${id}/`);

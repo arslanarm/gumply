@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { canMovePage, type PageTreeNode } from "../lib/tree.js";
 
@@ -10,9 +10,11 @@ export interface PageItemProps {
   renamingId: PageId | null;
   renameDraft: string;
   draggingId: PageId | null;
+  collapsed: ReadonlySet<PageId>;
   onOpen: (id: PageId) => void;
   onCreateChild: (id: PageId) => void;
   onDelete: (id: PageId) => void;
+  onToggle: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
   onStartRename: (id: PageId, title: string) => void;
   onCommitRename: () => void;
@@ -24,15 +26,33 @@ export interface PageItemProps {
 
 /** One row of the sidebar tree, rendered recursively for children. */
 export function PageItem(props: PageItemProps) {
-  const { node, depth, pages, selectedId, renamingId, draggingId } = props;
+  const { node, depth, pages, selectedId, renamingId, draggingId, collapsed } = props;
   const page = node.page;
   const hasChildren = node.children.length > 0;
   const isSelected = selectedId === page.id;
   const isRenaming = renamingId === page.id;
-  const [expanded, setExpanded] = useState(true);
+  const expanded = hasChildren && !collapsed.has(page.id);
   const [dropTarget, setDropTarget] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLSpanElement | null>(null);
 
   const canDrop = draggingId !== null && canMovePage(pages, draggingId, page.id);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
 
   return (
     <div className="tree-node">
@@ -41,13 +61,21 @@ export function PageItem(props: PageItemProps) {
         data-testid={`page-item-${page.id}`}
         data-page-id={page.id}
         role="treeitem"
+        tabIndex={0}
         aria-selected={isSelected}
         aria-expanded={hasChildren ? expanded : undefined}
-        style={{ paddingLeft: `${8 + depth * 14}px` }}
+        style={{ paddingLeft: `${6 + depth * 14}px` }}
         onClick={() => props.onOpen(page.id)}
         onDoubleClick={(event) => {
           event.stopPropagation();
           props.onStartRename(page.id, page.title);
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            props.onOpen(page.id);
+          }
         }}
         draggable={!isRenaming}
         onDragStart={(event) => {
@@ -80,10 +108,10 @@ export function PageItem(props: PageItemProps) {
             type="button"
             className="tree-toggle"
             data-testid={`tree-toggle-${page.id}`}
-            aria-label={expanded ? "Collapse" : "Expand"}
+            aria-label={expanded ? "Collapse sub-pages" : "Expand sub-pages"}
             onClick={(event) => {
               event.stopPropagation();
-              setExpanded((value) => !value);
+              props.onToggle(page.id);
             }}
           >
             {expanded ? "▾" : "▸"}
@@ -114,7 +142,9 @@ export function PageItem(props: PageItemProps) {
         ) : (
           <span className="page-item-label">
             {page.icon ? <span className="page-icon">{page.icon}</span> : null}
-            <span className="page-item-title">{page.title}</span>
+            <span className="page-item-title" title={page.title}>
+              {page.title}
+            </span>
           </span>
         )}
 
@@ -122,8 +152,9 @@ export function PageItem(props: PageItemProps) {
           <button
             type="button"
             className="tree-action"
-            title="New child page"
+            data-tooltip="New sub-page"
             data-testid={`new-child-button-${page.id}`}
+            aria-label="New sub-page"
             onClick={(event) => {
               event.stopPropagation();
               props.onCreateChild(page.id);
@@ -131,18 +162,54 @@ export function PageItem(props: PageItemProps) {
           >
             +
           </button>
-          <button
-            type="button"
-            className="tree-action"
-            title="Delete page"
-            data-testid={`delete-page-button-${page.id}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onDelete(page.id);
-            }}
-          >
-            ×
-          </button>
+
+          <span className="page-menu" ref={menuRef}>
+            <button
+              type="button"
+              className="tree-action"
+              data-tooltip="More actions"
+              data-testid={`page-menu-button-${page.id}`}
+              aria-label="More actions"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen((open) => !open);
+              }}
+            >
+              ⋯
+            </button>
+
+            {menuOpen ? (
+              <div className="page-menu-list" role="menu" data-testid={`page-menu-${page.id}`}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid={`rename-page-${page.id}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    props.onStartRename(page.id, page.title);
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="menu-danger"
+                  data-testid={`delete-page-${page.id}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    props.onDelete(page.id);
+                  }}
+                >
+                  Delete page
+                </button>
+              </div>
+            ) : null}
+          </span>
         </span>
       </div>
 

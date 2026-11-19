@@ -5,6 +5,8 @@ export interface PageHeaderProps {
   page: Page;
   onRename: (title: string) => Promise<void>;
   onDelete: () => void;
+  /** Enter in the title moves the caret into the first body block. */
+  onStartBody: () => void;
 }
 
 function formatUpdated(value: string): string {
@@ -17,14 +19,23 @@ function formatUpdated(value: string): string {
 }
 
 /** Title, rename affordance and metadata for the open page. */
-export function PageHeader({ page, onRename, onDelete }: PageHeaderProps) {
-  const [editing, setEditing] = useState(false);
+export function PageHeader({ page, onRename, onDelete, onStartBody }: PageHeaderProps) {
+  const isEmpty = page.content.trim().length === 0;
+  const [editing, setEditing] = useState(isEmpty);
   const [draft, setDraft] = useState(page.title);
 
+  // Focus the title for new/empty pages only; existing pages keep focus free.
   useEffect(() => {
-    setEditing(false);
     setDraft(page.title);
-  }, [page.id, page.title]);
+    setEditing(page.content.trim().length === 0);
+    // Reset only when the open page changes, not on every autosave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page.id]);
+
+  const startEditing = () => {
+    setDraft(page.title);
+    setEditing(true);
+  };
 
   const commit = () => {
     const title = draft.trim();
@@ -44,30 +55,35 @@ export function PageHeader({ page, onRename, onDelete }: PageHeaderProps) {
         {page.icon ? <span className="page-icon-large">{page.icon}</span> : null}
 
         {editing ? (
-          <input
-            className="page-title-input"
-            data-testid="page-title-input"
-            value={draft}
-            autoFocus
-            onFocus={(event) => event.currentTarget.select()}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={commit}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commit();
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                cancel();
-              }
-            }}
-          />
+          <div className="page-title-block" data-testid="page-title">
+            <input
+              className="page-title-input"
+              data-testid="page-title-input"
+              value={draft}
+              placeholder="Untitled"
+              autoFocus
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={commit}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commit();
+                  onStartBody();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancel();
+                }
+              }}
+            />
+            <span className="visually-hidden">{draft.trim().length > 0 ? draft : "Untitled"}</span>
+          </div>
         ) : (
           <h1
             className="page-title"
             data-testid="page-title"
             title="Double-click to rename"
-            onDoubleClick={() => setEditing(true)}
+            onDoubleClick={startEditing}
           >
             {page.title}
           </h1>
@@ -78,9 +94,9 @@ export function PageHeader({ page, onRename, onDelete }: PageHeaderProps) {
             type="button"
             className="icon-button"
             data-testid="rename-page-button"
-            title="Rename page"
+            data-tooltip="Rename page"
             aria-label="Rename page"
-            onClick={() => setEditing(true)}
+            onClick={startEditing}
           >
             ✎
           </button>
@@ -88,7 +104,7 @@ export function PageHeader({ page, onRename, onDelete }: PageHeaderProps) {
             type="button"
             className="icon-button icon-button-danger"
             data-testid="delete-page-button-page"
-            title="Delete page"
+            data-tooltip="Delete page"
             aria-label="Delete page"
             onClick={onDelete}
           >
