@@ -8,3 +8,7 @@ coverage/
 .DS_Store
 *.log
 .vite/
+vault/
+test-results/
+playwright-report/
+playwright/.cache/

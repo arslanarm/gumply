@@ -20,9 +20,11 @@
     "build": "npm run build -w @gumply/core && npm run build -w @gumply/server && npm run build -w @gumply/web",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "typecheck": "npm run typecheck -ws --if-present"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "concurrently": "^9.1.2",
     "typescript": "^5.7.3",
     "vite": "^6.4.6",
