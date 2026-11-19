@@ -2,13 +2,17 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * Ports / URLs per decision D7 (wiki `decisions`):
- *  - web: fixed on 5173, Vite `strictPort` (no fallback port)
- *  - server: `GUMPLY_PORT`, default 8787 — the same variable the server itself reads
- *  - Playwright `baseURL`: `GUMPLY_WEB_URL`, default http://localhost:5173
+ * Ports / URLs for e2e.
+ *
+ * Deliberately **not** the D7 dev ports and not 52xx/88xx used by parallel
+ * agents: the suite starts its own app so it never collides with someone's
+ * `npm run dev` (a reused server means tests run against the wrong code, or
+ * wipe the wrong vault). Override with `GUMPLY_WEB_PORT` / `GUMPLY_PORT`
+ * (the server reads GUMPLY_PORT itself, the web server gets GUMPLY_WEB_PORT
+ * via `vite --port`).
  */
-export const WEB_PORT = 5173;
-export const API_PORT = Number(process.env.GUMPLY_PORT ?? 8787);
+export const WEB_PORT = Number(process.env.GUMPLY_WEB_PORT ?? 5477);
+export const API_PORT = Number(process.env.GUMPLY_PORT ?? 8977);
 
 export const BASE_URL = process.env.GUMPLY_WEB_URL ?? `http://localhost:${WEB_PORT}`;
 

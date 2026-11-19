@@ -2,7 +2,9 @@
 
 Owned by **@qa**. Sibling teams: please don't edit `e2e/` — send a message instead.
 Full flow list, selector contract and bug format: wiki page **`spec/e2e-tests`**.
-Ports/URLs follow decision **D7**: web 5173 (strictPort), server 8787 via `GUMPLY_PORT`.
+Ports follow decision **D7** for the app, but the suite uses its **own** ports so it
+never collides with a dev server: **web 5477, API 8977** by default
+(`GUMPLY_WEB_PORT` / `GUMPLY_PORT` to override).
 
 ## Run
 
@@ -10,10 +12,11 @@ Ports/URLs follow decision **D7**: web 5173 (strictPort), server 8787 via `GUMPL
 npx playwright test --config e2e/playwright.config.ts   # = npm run test:e2e
 ```
 
-Stop any running `npm run dev` first. The suite boots its own app on 5173 + 8787
-with `GUMPLY_VAULT=<throwaway dir>` and **wipes that vault between tests**; it
-deliberately never reuses an existing server, because that server could be
-pointed at your real notes.
+Stop any running `npm run dev` first. The suite boots its own app on
+**5477 + 8977** with `GUMPLY_VAULT=<throwaway dir>` and **wipes that vault
+between tests**; it deliberately never reuses an existing server, because that
+server could be pointed at your real notes. Override ports with
+`GUMPLY_WEB_PORT` / `GUMPLY_PORT` if those are taken too.
 
 Root `package.json` needs (add once M0 lands):
 
