@@ -667,6 +667,20 @@ input {
   transform: translateY(0);
 }
 
+/* The page tree is a scroll container, so tooltips above a row action get
+   clipped. Place them inside the row, to the left of the button. */
+.tree-action[data-tooltip]::after {
+  right: calc(100% + 4px);
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tree-action[data-tooltip]:hover::after,
+.tree-action[data-tooltip]:focus-visible::after {
+  transform: translateY(-50%);
+}
+
 /* Save status: blank when idle but width reserved (D14 §7). */
 .save-status {
   min-width: 10.5rem;
@@ -764,15 +778,16 @@ input {
   font-weight: 600;
 }
 
-/* Row actions: + and ⋯ (D14 §6). */
+/* Row actions: + and ⋯ (D14 §6). Rows are 32px and hit targets >=28px. */
 .page-item {
-  padding-top: 0.32rem;
-  padding-bottom: 0.32rem;
+  min-height: 32px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
 .tree-action {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   font-size: 0.9rem;
 }
 
@@ -928,8 +943,20 @@ input {
 }
 
 .tree-action {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
+}
+
+.tree-toggle {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-toggle-spacer {
+  width: 28px;
 }
 
 /* Title row: keeps a stable text node for `page-title` while editing. */

@@ -1,6 +1,6 @@
 import type { Page, PageId, PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiRequestError } from "./api/client.js";
+import { api } from "./api/client.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
@@ -11,6 +11,7 @@ import type { SaveState } from "./editor/autosave.js";
 import { GraphView } from "./graph/GraphView.js";
 import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
 import { focusAfterDelete } from "./lib/delete.js";
+import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
 import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
@@ -27,17 +28,6 @@ interface PendingDelete {
 interface ToastState {
   message: string;
   undo?: () => Promise<void>;
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof ApiRequestError) return error.message;
-  if (error instanceof Error) {
-    if (/fetch|network|load failed/i.test(error.message)) {
-      return "Cannot reach the Gumply server. Is it running?";
-    }
-    return error.message;
-  }
-  return "Something went wrong.";
 }
 
 export function App() {
@@ -69,6 +59,9 @@ export function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [focusTarget, setFocusTarget] = useState<SidebarFocusTarget | null>(null);
+  // D14 §5: after a delete, focus stays on the next sibling; don't let an empty
+  // next page's title steal it (walkthrough #4aepmkk4).
+  const [autoFocusTitle, setAutoFocusTitle] = useState(true);
 
   const selectedRef = useRef<PageId | null>(selectedId);
   selectedRef.current = selectedId;
@@ -206,6 +199,7 @@ export function App() {
   const handleOpen = useCallback(
     (id: PageId) => {
       setAuxView(null);
+      setAutoFocusTitle(true);
       if (id === selectedRef.current) {
         // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
         requestPageReload();
@@ -220,6 +214,7 @@ export function App() {
     async (parentId: PageId | null) => {
       setActionError(null);
       setAuxView(null);
+      setAutoFocusTitle(true);
       try {
         const created = await api.createPage({ title: "Untitled", parentId });
         await loadPages();
@@ -290,6 +285,7 @@ export function App() {
         if (current && isSelfOrDescendant(id, current)) {
           const fallback = list ? (buildPageTree(list)[0]?.page.id ?? null) : null;
           const target = nextId && list?.some((item) => item.id === nextId) ? nextId : fallback;
+          setAutoFocusTitle(false);
           navigate(target, true);
         }
 
@@ -302,6 +298,7 @@ export function App() {
                 try {
                   await api.restoreTrash(trashId);
                   await loadPages();
+                  setAutoFocusTitle(true);
                   navigate(id);
                 } catch (error) {
                   setActionError(errorMessage(error));
@@ -449,7 +446,7 @@ export function App() {
                 </div>
               ) : serverError ? (
                 <div className="empty-state" data-testid="server-error">
-                  <h2>Can't reach Gumply's local server.</h2>
+                  <h2>{SERVER_DOWN_MESSAGE}</h2>
                   <p>Your pages are safe on disk. Start the app again to reconnect.</p>
                   <button type="button" className="button-primary" onClick={handleRetry}>
                     Retry
@@ -479,6 +476,7 @@ export function App() {
                 <>
                   <PageHeader
                     page={page}
+                    autoFocusTitle={autoFocusTitle}
                     localGraphOpen={localGraphOpen}
                     onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
                     onRename={(title) => handleRename(page.id, title)}

@@ -25,7 +25,7 @@ describe("Autosave", () => {
     expect(save).toHaveBeenCalledWith("three");
   });
 
-  it("reports saving then saved", async () => {
+  it("goes from blank idle to saved without flashing Saving for a fast write", async () => {
     vi.useFakeTimers();
     const states: SaveState[] = [];
     const autosave = new Autosave({
@@ -35,11 +35,44 @@ describe("Autosave", () => {
     });
 
     autosave.schedule("draft");
+    expect(states).toEqual([]);
+    await vi.advanceTimersByTimeAsync(299);
+    expect(states).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(states).toEqual(["saved"]);
+    expect(autosave.state).toBe("saved");
+  });
+
+  it("shows Saving only after the write has been in flight for 500ms", async () => {
+    vi.useFakeTimers();
+    const states: SaveState[] = [];
+    let resolveWrite: (() => void) | undefined;
+    const save = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    const autosave = new Autosave({
+      save,
+      delay: 300,
+      onState: (state) => states.push(state),
+    });
+
+    autosave.schedule("slow");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(states).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(499);
+    expect(states).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
     expect(states).toEqual(["saving"]);
 
-    await vi.advanceTimersByTimeAsync(300);
+    resolveWrite?.();
+    await autosave.flush();
     expect(states).toEqual(["saving", "saved"]);
-    expect(autosave.state).toBe("saved");
   });
 
   it("flushes immediately and cancels the pending timer", async () => {
