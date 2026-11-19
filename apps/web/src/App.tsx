@@ -1,6 +1,6 @@
 import type { Page, PageId, PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiRequestError } from "./api/client.js";
+import { api } from "./api/client.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
@@ -11,6 +11,7 @@ import type { SaveState } from "./editor/autosave.js";
 import { GraphView } from "./graph/GraphView.js";
 import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
 import { focusAfterDelete } from "./lib/delete.js";
+import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
 import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
@@ -27,17 +28,6 @@ interface PendingDelete {
 interface ToastState {
   message: string;
   undo?: () => Promise<void>;
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof ApiRequestError) return error.message;
-  if (error instanceof Error) {
-    if (/fetch|network|load failed/i.test(error.message)) {
-      return "Cannot reach the Gumply server. Is it running?";
-    }
-    return error.message;
-  }
-  return "Something went wrong.";
 }
 
 export function App() {
@@ -449,7 +439,7 @@ export function App() {
                 </div>
               ) : serverError ? (
                 <div className="empty-state" data-testid="server-error">
-                  <h2>Can't reach Gumply's local server.</h2>
+                  <h2>{SERVER_DOWN_MESSAGE}</h2>
                   <p>Your pages are safe on disk. Start the app again to reconnect.</p>
                   <button type="button" className="button-primary" onClick={handleRetry}>
                     Retry
