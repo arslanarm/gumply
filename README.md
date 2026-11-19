@@ -35,11 +35,32 @@ The vault defaults to `./vault` and is created on first start. Point it elsewher
 | `npm run build` | Type-checks and builds core, server and web |
 | `npm run typecheck` | Type-checks every workspace |
 
+## API
+
+Base `/api`, JSON. Full contract in the team wiki (`spec/api`).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | liveness + vault path |
+| GET | `/pages` | flat `PageMeta[]` (client builds the tree from `parentId`) |
+| POST | `/pages` | create `{ title, parentId?, content?, icon? }` (201) |
+| GET | `/pages/:id` | page with Markdown body |
+| PUT | `/pages/:id` | update `{ title?, content?, icon?, tags? }` |
+| DELETE | `/pages/:id` | delete page + children (204) |
+| POST | `/pages/:id/move` | `{ parentId }` (null = root) |
+| GET | `/pages/:id/backlinks` | `{ page, snippet }[]` |
+| GET | `/graph?center=&depth=` | nodes with `linkCount`, resolved links, tags |
+| GET | `/search?q=` | `{ page, snippet, score }[]`, title hits first |
+
+Ids are URL-encoded in paths (`projects%2Fgumply`). Writes go to plain Markdown files with YAML
+frontmatter (`title`, `icon`, `tags`, `created`, `updated`); the in-memory link index is rebuilt on
+start and kept in sync on every write. Invalid or `..`-style ids return `400`.
+
 ## Layout
 
 ```
 apps/
-  server/   Hono API + vault file store + link index
+  server/   Hono API (routes.ts), vault store + link index (vault-store.ts)
   web/      React UI (Vite)
 packages/
   core/     types, frontmatter, links, ids
@@ -47,5 +68,6 @@ packages/
 
 ## Status
 
-M0 scaffold: core types, frontmatter/link parsing with tests, health endpoint, placeholder UI.
+M0 scaffold + M1a vault server: page CRUD, nested move/delete, backlinks, graph and search with
+Vitest coverage. The UI is still the M0 placeholder (M1b).
 See the team wiki (`plan`, `decisions`, `spec/api`) for the API contract and roadmap.
