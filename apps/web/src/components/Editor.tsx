@@ -13,6 +13,7 @@ import { Autosave, type SaveState } from "../editor/autosave.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
 import type { SlashItem } from "../editor/slash-items.js";
 import { normalizeEditorMarkdown } from "../lib/markdown.js";
+import { taskCheckboxLabel } from "../lib/task.js";
 
 export interface EditorControls {
   flush: () => Promise<void>;
@@ -128,7 +129,12 @@ export function Editor({ page, onSaveState, onReady }: EditorProps) {
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       TaskList,
-      TaskItem.configure({ nested: true }),
+      TaskItem.configure({
+        nested: true,
+        a11y: {
+          checkboxLabel: (node, checked) => taskCheckboxLabel(node.textContent, checked),
+        },
+      }),
       Placeholder.configure({ placeholder: "Type '/' for commands, '[[' to link a page" }),
       Markdown.configure({
         html: false,
