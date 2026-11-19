@@ -764,15 +764,16 @@ input {
   font-weight: 600;
 }
 
-/* Row actions: + and ⋯ (D14 §6). */
+/* Row actions: + and ⋯ (D14 §6). Rows are 32px and hit targets >=28px. */
 .page-item {
-  padding-top: 0.32rem;
-  padding-bottom: 0.32rem;
+  min-height: 32px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
 .tree-action {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   font-size: 0.9rem;
 }
 
@@ -928,8 +929,20 @@ input {
 }
 
 .tree-action {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
+}
+
+.tree-toggle {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-toggle-spacer {
+  width: 28px;
 }
 
 /* Title row: keeps a stable text node for `page-title` while editing. */
