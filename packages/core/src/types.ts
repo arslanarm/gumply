@@ -59,6 +59,12 @@ export interface GraphData {
   nodes: GraphNode[];
   links: Array<{ source: PageId; target: PageId }>;
   tags: string[];
+  /**
+   * Links pointing at pages that do not exist (v1.2, ghost nodes). One pair
+   * per source page and missing title (case-insensitive); the UI groups them
+   * into one ghost node per title.
+   */
+  unresolved: Array<{ source: PageId; targetTitle: string }>;
 }
 
 /** Payload item of `GET /api/pages/:id/backlinks`. */

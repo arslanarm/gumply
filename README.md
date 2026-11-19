@@ -50,7 +50,7 @@ Base `/api`, JSON. Full contract in the team wiki (`spec/api`).
 | POST | `/trash/:trashId/restore` | undo a delete; returns restored `PageMeta[]` (409 if the path is taken) |
 | POST | `/pages/:id/move` | `{ parentId }` (null = root) |
 | GET | `/pages/:id/backlinks` | `{ page, snippet }[]` |
-| GET | `/graph?center=&depth=` | nodes with `linkCount`, resolved links, tags |
+| GET | `/graph?center=&depth=` | nodes with `linkCount`, resolved links, tags, and `unresolved` source/title pairs (ghost nodes) |
 | GET | `/search?q=` | `{ page, snippet, score }[]`, title hits first |
 
 Ids are URL-encoded in paths (`projects%2Fgumply`). `PageMeta` includes `childCount` (direct
