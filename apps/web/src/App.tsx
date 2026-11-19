@@ -9,6 +9,7 @@ import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 import { focusAfterDelete } from "./lib/delete.js";
+import { openPageNeedsReload } from "./lib/rename.js";
 import { pageHash, pageIdFromHash } from "./lib/routing.js";
 import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
 
@@ -49,6 +50,7 @@ export function App() {
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const [pageError, setPageError] = useState<string | null>(null);
   const [pageReload, setPageReload] = useState(0);
+  const [editorRevision, setEditorRevision] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
   const [auxView, setAuxView] = useState<AuxView>(null);
@@ -61,6 +63,7 @@ export function App() {
   selectedRef.current = selectedId;
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
+  const reloadEditorAfterFetch = useRef(false);
 
   const moveFocus = useCallback((id: PageId | null) => {
     focusNonce.current += 1;
@@ -88,6 +91,12 @@ export function App() {
       else window.location.hash = hash;
     }
     setSelectedId(id);
+  }, []);
+
+  /** Refetch the open page and remount the editor with the new content. */
+  const requestPageReload = useCallback(() => {
+    reloadEditorAfterFetch.current = true;
+    setPageReload((value) => value + 1);
   }, []);
 
   // Initial load: open the first root page when no page is in the URL.
@@ -129,6 +138,12 @@ export function App() {
         if (cancelled) return;
         setPage(loaded);
         setPageStatus("ready");
+        // Remount the editor once fresh content has arrived (D12 link rewrite,
+        // or a manual refresh) so TipTap doesn't keep stale text.
+        if (reloadEditorAfterFetch.current) {
+          reloadEditorAfterFetch.current = false;
+          setEditorRevision((value) => value + 1);
+        }
       })
       .catch((error) => {
         if (cancelled) return;
@@ -158,12 +173,12 @@ export function App() {
       setAuxView(null);
       if (id === selectedRef.current) {
         // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
-        setPageReload((value) => value + 1);
+        requestPageReload();
         return;
       }
       navigate(id);
     },
-    [navigate],
+    [navigate, requestPageReload],
   );
 
   const handleCreate = useCallback(
@@ -185,6 +200,10 @@ export function App() {
     async (id: PageId, title: string) => {
       setActionError(null);
       try {
+        // Flush body edits first: a pending autosave could otherwise overwrite
+        // the server's link rewrite with stale `[[Old Title]]` text.
+        await editorControls.current?.flush();
+
         const updated = await api.updatePage(id, { title });
         setPages((previous) =>
           previous.map((item) =>
@@ -197,16 +216,16 @@ export function App() {
             : previous,
         );
 
-        // D12: the server rewrites links in other pages, so refresh the open one.
-        if (selectedRef.current !== null && selectedRef.current !== id) {
-          setPageReload((value) => value + 1);
+        // D12: refetch the open page when the server rewrote its links.
+        if (openPageNeedsReload(updated.rewrittenPages, selectedRef.current, id)) {
+          requestPageReload();
         }
       } catch (error) {
         setActionError(errorMessage(error));
         void loadPages();
       }
     },
-    [loadPages],
+    [loadPages, requestPageReload],
   );
 
   const performDelete = useCallback(
@@ -410,7 +429,7 @@ export function App() {
                   onStartBody={handleStartBody}
                 />
                 <Editor
-                  key={page.id}
+                  key={`${page.id}:${editorRevision}`}
                   page={page}
                   onSaveState={setSaveState}
                   onReady={handleEditorReady}
