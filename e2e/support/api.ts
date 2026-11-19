@@ -75,7 +75,10 @@ export async function deletePage(
   // 404 = already gone, fine for fixture cleanup.
   if (res.status() === 404) return null;
   assertOk(res, `DELETE /pages/${id}`);
-  return res.json();
+  // Tolerate the pre-v1.1 204 response while the server catches up: cleanup
+  // only needs to know the page is gone, not the trash bookkeeping.
+  const body = await res.text();
+  return body ? (JSON.parse(body) as { trashId: string; deleted: string[] }) : { trashId: '', deleted: [id] };
 }
 
 /** Undo for D11. Throws on 409 — the original path was taken again. */

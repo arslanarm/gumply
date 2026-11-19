@@ -12,10 +12,15 @@ import { API_PORT, BASE_URL, E2E_VAULT } from './support/env';
 export default defineConfig({
   testDir: '.',
   testMatch: /.*\.spec\.ts$/,
-  fullyParallel: true,
+  // All specs share one app instance + one vault, so run them serially.
+  // Parallel workers would let one test's fixtures leak into another (e.g. the
+  // empty-vault smoke failing because a seeding test created a page mid-load).
+  // Per-test isolation needs a vault+server per worker — revisit if the suite
+  // gets slow enough to matter.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: 1,
   timeout: 30_000,
   expect: { timeout: 5_000 },
   reporter: [
