@@ -724,6 +724,18 @@ input {
   color: var(--text);
 }
 
+.sidebar-row-active,
+.sidebar-row-active:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.local-graph-toggle {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .sidebar-row-bottom {
   margin-top: 0.35rem;
   margin-bottom: 0.6rem;

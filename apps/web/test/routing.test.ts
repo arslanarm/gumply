@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageHash, pageIdFromHash } from "../src/lib/routing.js";
+import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "../src/lib/routing.js";
 
 describe("pageHash", () => {
   it("keeps root and nested ids readable", () => {
@@ -31,5 +31,18 @@ describe("pageIdFromHash", () => {
     expect(pageIdFromHash("#/a/../b")).toBeNull();
     expect(pageIdFromHash("#/a//b")).toBeNull();
     expect(pageIdFromHash("#/%E0%A4%A")).toBeNull();
+  });
+});
+
+describe("graph route", () => {
+  it("lives outside the page-id namespace", () => {
+    expect(GRAPH_HASH).toBe("#graph");
+    expect(isGraphHash("#graph")).toBe(true);
+    expect(pageIdFromHash("#graph")).toBeNull();
+  });
+
+  it("does not shadow a page called Graph", () => {
+    expect(isGraphHash("#/graph")).toBe(false);
+    expect(pageIdFromHash("#/graph")).toBe("graph");
   });
 });

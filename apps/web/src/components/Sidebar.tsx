@@ -22,6 +22,8 @@ export interface SidebarProps {
   onRetry: () => void;
   onSearch: () => void;
   onGraph: () => void;
+  /** The global graph view is open (sidebar active state). */
+  graphActive?: boolean;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -185,8 +187,9 @@ export function Sidebar(props: SidebarProps) {
 
       <button
         type="button"
-        className="sidebar-row sidebar-row-bottom"
+        className={`sidebar-row sidebar-row-bottom${props.graphActive ? " sidebar-row-active" : ""}`}
         data-testid="sidebar-graph"
+        aria-current={props.graphActive ? "page" : undefined}
         onClick={props.onGraph}
       >
         <span className="sidebar-row-icon" aria-hidden="true">

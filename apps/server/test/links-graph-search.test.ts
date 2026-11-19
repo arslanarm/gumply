@@ -181,6 +181,53 @@ describe("graph", () => {
     expect((await app.request("/api/graph?depth=2")).status).toBe(400);
     expect((await app.request("/api/graph?center=")).status).toBe(400);
   });
+  it("exposes unresolved links as source/title pairs for ghost nodes", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "A", content: "[[Missing]] and [[A]]" });
+    await createPage(app, { title: "B", content: "[[Missing]] and [[missing]]" });
+
+    const graph = await getJson<GraphData>(app, "/api/graph");
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["a", "b"]);
+    expect(graph.links).toEqual([]);
+    // One pair per source page + missing title (case-insensitive), self-links ignored.
+    expect(graph.unresolved).toEqual([
+      { source: "a", targetTitle: "Missing" },
+      { source: "b", targetTitle: "Missing" },
+    ]);
+  });
+
+  it("does not report code-masked or resolved links as unresolved", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "Target" });
+    await createPage(app, {
+      title: "Source",
+      content: "`[[CodeGhost]]` [[Target]] [[Ghost]]",
+    });
+
+    const graph = await getJson<GraphData>(app, "/api/graph");
+    expect(graph.unresolved).toEqual([{ source: "source", targetTitle: "Ghost" }]);
+  });
+
+  it("filters unresolved links by the local graph view", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "A", content: "[[B]] [[Ghost of A]]" });
+    await createPage(app, { title: "B" });
+    await createPage(app, { title: "C", content: "[[Ghost of C]]" });
+
+    const local = await getJson<GraphData>(app, "/api/graph?center=b&depth=1");
+    expect(local.unresolved).toEqual([{ source: "a", targetTitle: "Ghost of A" }]);
+  });
+
+  it("leaves .trash out of the graph after a delete", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "A", content: "[[Missing]]" });
+    await createPage(app, { title: "B", content: "No links here" });
+
+    await jsonRequest(app, "DELETE", "/api/pages/a");
+    const graph = await getJson<GraphData>(app, "/api/graph");
+    expect(graph.nodes.map((node) => node.id)).toEqual(["b"]);
+    expect(graph.unresolved).toEqual([]);
+  });
 });
 
 describe("search", () => {

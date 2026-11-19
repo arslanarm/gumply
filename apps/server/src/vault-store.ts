@@ -240,10 +240,27 @@ export class VaultStore {
       a.localeCompare(b),
     );
 
+    // v1.2 ghost nodes: unresolved links from pages in the current view. One
+    // pair per source + missing title (case-insensitive); ghosts are not nodes,
+    // so they never take part in the BFS above.
+    const seenMissing = new Set<string>();
+    const unresolved: GraphData["unresolved"] = [];
+    for (const edge of this.allEdges()) {
+      if (edge.target !== null || !included.has(edge.source)) continue;
+      const key = `${edge.source}\u0000${edge.targetTitle.toLowerCase()}`;
+      if (seenMissing.has(key)) continue;
+      seenMissing.add(key);
+      unresolved.push({ source: edge.source, targetTitle: edge.targetTitle });
+    }
+    unresolved.sort(
+      (a, b) => a.source.localeCompare(b.source) || a.targetTitle.localeCompare(b.targetTitle),
+    );
+
     return {
       nodes,
       links: edges.map((edge) => ({ source: edge.source, target: edge.target as PageId })),
       tags,
+      unresolved,
     };
   }
 

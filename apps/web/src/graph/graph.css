@@ -1,0 +1,344 @@
+/* Global graph view + local graph panel (M3, spec/ux §9). */
+
+.graph-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  min-width: 0;
+  padding: 1.1rem 1.5rem 1rem;
+}
+
+.graph-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: none;
+}
+
+.graph-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.graph-subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.graph-filter {
+  min-width: 210px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.graph-filter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.graph-legend-toggle.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.graph-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-height: 3.2rem;
+  overflow-y: auto;
+  flex: none;
+}
+
+.graph-chip {
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.graph-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.graph-chip.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.graph-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.graph-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.graph-canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-height: 360px;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.graph-canvas canvas {
+  border-radius: 10px;
+}
+
+.graph-controls {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.graph-control {
+  min-width: 30px;
+  height: 28px;
+  padding: 0 0.35rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.graph-control:hover {
+  background: var(--hover);
+}
+
+.graph-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.graph-hint {
+  flex: none;
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.graph-state {
+  flex: 1;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+.graph-state h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.graph-state p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.graph-state code,
+.graph-panel-state code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--hover);
+}
+
+.graph-legend {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 2;
+  max-width: 200px;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.72rem;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 10%);
+}
+
+.graph-legend-title {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.graph-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.15rem 0;
+}
+
+.graph-legend-solid,
+.graph-legend-dashed {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.graph-legend-solid {
+  background: var(--accent);
+}
+
+.graph-legend-dashed {
+  border: 1px dashed var(--muted);
+}
+
+.graph-legend-tag {
+  color: var(--muted);
+}
+
+.graph-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+
+/* ---------- Local graph panel ---------- */
+
+.layout-with-panel,
+.layout.layout-with-panel {
+  grid-template-columns: var(--sidebar-width) 1fr 320px;
+}
+
+.local-graph {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.local-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.local-graph-header h2 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.local-graph-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.local-graph-depth {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.local-graph-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+}
+
+.local-graph .graph-canvas {
+  min-height: 220px;
+  background: var(--bg);
+}
+
+.graph-panel-note {
+  margin: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.graph-panel-state {
+  padding: 1rem 0.5rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.graph-panel-state h3 {
+  margin: 0 0 0.35rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.graph-panel-state p {
+  margin: 0.25rem 0;
+}
+
+.local-graph-toggle.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 1100px) {
+  .layout-with-panel {
+    grid-template-columns: var(--sidebar-width) 1fr 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-chip,
+  .graph-control,
+  .local-graph {
+    transition: none;
+  }
+}

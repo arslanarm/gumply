@@ -2,7 +2,7 @@
  * Typed client for the local API (wiki `spec/api`). Vite proxies `/api` to the
  * server, so paths are relative and work in dev and in e2e.
  */
-import type { ApiError, Page, PageId, PageMeta } from "@gumply/core";
+import type { ApiError, GraphData, Page, PageId, PageMeta } from "@gumply/core";
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -111,4 +111,13 @@ export const api = {
         body: JSON.stringify({ parentId }),
       }),
     ),
+
+  /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */
+  getGraph: (options: { center?: PageId; depth?: number } = {}): Promise<GraphData> => {
+    const params = new URLSearchParams();
+    if (options.center !== undefined) params.set("center", options.center);
+    if (options.depth !== undefined) params.set("depth", String(options.depth));
+    const query = params.toString();
+    return request(`/graph${query.length > 0 ? `?${query}` : ""}`);
+  },
 };

@@ -32,3 +32,13 @@ export function pageIdFromHash(hash: string): PageId | null {
 
   return isValidPageId(id) ? id : null;
 }
+
+/**
+ * The graph view lives at `#graph` (no slash) so it can never collide with a
+ * page id — `#/graph` would be the page named "Graph".
+ */
+export const GRAPH_HASH = "#graph";
+
+export function isGraphHash(hash: string): boolean {
+  return hash === GRAPH_HASH;
+}

@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "seed:big": "node scripts/seed-big.mjs",
     "typecheck": "npm run typecheck -ws --if-present"
   },
   "devDependencies": {
