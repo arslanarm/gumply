@@ -13,6 +13,8 @@ export interface PageMeta {
   icon?: string;
   tags: string[];
   parentId: string | null;
+  /** Direct sub-pages (spec/api v1.1) — used by the delete confirm. */
+  childCount: number;
   created: string;
   updated: string;
 }
@@ -58,18 +60,32 @@ export async function updatePage(
   request: APIRequestContext,
   id: string,
   patch: { title?: string; content?: string; icon?: string; tags?: string[] },
-): Promise<Page> {
+): Promise<Page & { rewrittenPages?: string[] }> {
   const res = await request.put(api(`/pages/${encodeURIComponent(id)}`), { data: patch });
   assertOk(res, `PUT /pages/${id}`);
   return res.json();
 }
 
-export async function deletePage(request: APIRequestContext, id: string): Promise<void> {
+/** Move to `.trash/` (D11). Returns the trash id and every deleted id, subtree included. */
+export async function deletePage(
+  request: APIRequestContext,
+  id: string,
+): Promise<{ trashId: string; deleted: string[] } | null> {
   const res = await request.delete(api(`/pages/${encodeURIComponent(id)}`));
-  // 404 = already gone, fine for cleanup.
-  if (!res.ok() && res.status() !== 404) {
-    throw new Error(`DELETE /pages/${id} failed with ${res.status()}`);
-  }
+  // 404 = already gone, fine for fixture cleanup.
+  if (res.status() === 404) return null;
+  assertOk(res, `DELETE /pages/${id}`);
+  return res.json();
+}
+
+/** Undo for D11. Throws on 409 — the original path was taken again. */
+export async function restoreTrash(
+  request: APIRequestContext,
+  trashId: string,
+): Promise<PageMeta[]> {
+  const res = await request.post(api(`/trash/${encodeURIComponent(trashId)}/restore`));
+  assertOk(res, `POST /trash/${trashId}/restore`);
+  return res.json();
 }
 
 export async function backlinks(request: APIRequestContext, id: string) {
