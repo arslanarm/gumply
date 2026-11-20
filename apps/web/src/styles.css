@@ -2892,9 +2892,21 @@ input {
   box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
 }
 
-.table-col-handle {
+/* Slim pills straddling the table border (12px across), so they never sit
+   on a cell's text or on the line above the table. */
+.table-row-handle {
+  width: 12px;
+  height: 22px;
   letter-spacing: 0;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+}
+
+.table-col-handle {
+  width: 22px;
+  height: 12px;
+  letter-spacing: 0;
+  font-size: 0.8rem;
+  line-height: 1;
 }
 
 .table-handle:hover,

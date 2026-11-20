@@ -327,3 +327,25 @@ test('a table in a quote is not re-normalised; + column/row put the caret in the
   await waitSaved(page);
   expect(await fileOf(request, created!.id)).toContain('| a | b | Extra |\n|---|---|---|\n| 1 | 2 |  |\n| New |  |  |');
 });
+
+test('row/column handles never cover cell text or the line above the table (#pvp2ainf)', async ({
+  page,
+  vault,
+}) => {
+  const [created] = await vault.seed([
+    { title: 'Handles', content: '| Team | Target |\n|---|---|\n| Sales | 120 |' },
+  ]);
+  await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+  const cell = page.getByTestId('editor-content').locator('td').first();
+  await cell.hover();
+  const row = (await page.getByTestId('table-row-handle').boundingBox())!;
+  const col = (await page.getByTestId('table-col-handle').boundingBox())!;
+  const textLeft = await cell.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getBoundingClientRect().left;
+  });
+  const meta = (await page.locator('.page-meta-time').boundingBox())!;
+  expect(row.x + row.width).toBeLessThanOrEqual(textLeft);
+  expect(col.y).toBeGreaterThanOrEqual(meta.y + meta.height);
+});
