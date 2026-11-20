@@ -33,6 +33,14 @@ export {
 } from "./ids.js";
 
 export {
+  canonicalYaml,
+  editFrontmatterYaml,
+  parseNoteTemplate,
+  serializeNoteLike,
+  type NoteTemplate,
+} from "./note-template.js";
+
+export {
   normalizeTags,
   parseFrontmatter,
   serializeFrontmatter,
