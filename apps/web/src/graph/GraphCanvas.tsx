@@ -311,6 +311,10 @@ export function GraphCanvas({
   const [ready, setReady] = useState(false);
   /** Bumped on every applied fit; lets tests (and debugging) observe refits. */
   const [fitGeneration, setFitGeneration] = useState(0);
+  /** Why the last fit happened (data, resize, settle, engine, button); for tests and debugging. */
+  const [fitReason, setFitReason] = useState("");
+  /** The physics engine has stopped since the data last changed (tests wait for it). */
+  const [engineStopped, setEngineStopped] = useState(false);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   /** Set once the user zooms, pans or drags: auto-fit then stops moving the camera. */
@@ -471,24 +475,67 @@ export function GraphCanvas({
     };
   }, [nodes, nodeStyles, restingLabelIds, centerId, highlightId]);
 
+  // The running camera animation (fit), if any. force-graph's own animated
+  // `centerAt`/`zoom` can't be cancelled and keep writing the camera every
+  // frame, so a pan started while a fit was running snapped back when the
+  // layout settled. Ours stops as soon as the user takes the camera.
+  const cameraFrame = useRef<number | null>(null);
+
+  const stopCameraAnimation = useCallback((): void => {
+    if (cameraFrame.current !== null) window.cancelAnimationFrame(cameraFrame.current);
+    cameraFrame.current = null;
+  }, []);
+
+  const moveCamera = useCallback(
+    (target: { centerX: number; centerY: number; zoom: number }, duration: number): void => {
+      const graph = graphRef.current;
+      if (!graph) return;
+      stopCameraAnimation();
+      const apply = (x: number, y: number, k: number) => {
+        graph.zoom(k);
+        graph.centerAt(x, y);
+      };
+      if (duration <= 0) {
+        apply(target.centerX, target.centerY, target.zoom);
+        return;
+      }
+      const from = { ...graph.centerAt(), k: graph.zoom() };
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = t * (2 - t); // quadratic ease-out, like force-graph's
+        apply(
+          from.x + (target.centerX - from.x) * eased,
+          from.y + (target.centerY - from.y) * eased,
+          from.k + (target.zoom - from.k) * eased,
+        );
+        cameraFrame.current = t < 1 ? window.requestAnimationFrame(step) : null;
+      };
+      cameraFrame.current = window.requestAnimationFrame(step);
+    },
+    [stopCameraAnimation],
+  );
+
+  useEffect(() => stopCameraAnimation, [stopCameraAnimation]);
+
   const fitView = useCallback(
-    (duration: number): void => {
+    (duration: number, reason: string): void => {
       const graph = graphRef.current;
       const target = fitTarget();
       if (!graph || !target) return;
-      graph.centerAt(target.centerX, target.centerY, duration);
-      graph.zoom(target.zoom, duration);
+      moveCamera(target, duration);
       // The camera is "auto" again until the user moves it.
       userViewRef.current = false;
       setFitGeneration((generation) => generation + 1);
+      setFitReason(reason);
     },
-    [fitTarget],
+    [fitTarget, moveCamera],
   );
 
   /** Fit only if the user hasn't zoomed, panned or dragged since the last fit. */
   const autoFit = useCallback(
-    (duration: number): void => {
-      if (!userViewRef.current) fitView(duration);
+    (duration: number, reason: string): void => {
+      if (!userViewRef.current) fitView(duration, reason);
     },
     [fitView],
   );
@@ -506,12 +553,12 @@ export function GraphCanvas({
    * added nodes their first coordinates.
    */
   const scheduleFit = useCallback(
-    (duration: number, markReady: boolean): void => {
+    (duration: number, markReady: boolean, reason: string): void => {
       if (typeof window === "undefined") return;
       if (fitTimer.current !== null) window.clearTimeout(fitTimer.current);
       fitTimer.current = window.setTimeout(() => {
         fitTimer.current = null;
-        fitView(duration);
+        fitView(duration, reason);
         if (markReady) setReady(true);
       }, 80);
     },
@@ -519,24 +566,29 @@ export function GraphCanvas({
   );
 
   const lastDataKey = useRef<string | null>(null);
+  const lastSizeKey = useRef("");
   useEffect(() => {
     if (size.width <= 0 || size.height <= 0) return;
     const newData = lastDataKey.current !== dataKey;
     lastDataKey.current = dataKey;
+    const sizeKey = `${size.width}x${size.height}`;
+    const resized = lastSizeKey.current !== sizeKey;
+    lastSizeKey.current = sizeKey;
     if (newData) {
       setReady(false);
+      setEngineStopped(false);
       alphaCapRef.current = Number.POSITIVE_INFINITY;
     }
 
     // Draw the whole graph immediately (even while physics is still moving)…
-    scheduleFit(0, false);
+    scheduleFit(0, false, newData ? "data" : resized ? "resize" : "inputs");
     // …and mark the view ready once the layout has settled. Resize has no
     // engine stop, so it settles after the tween; new data normally settles on
     // `onEngineStop`, with a fallback if the engine reports nothing.
     clearSettleTimer();
     settleTimer.current = window.setTimeout(() => {
       settleTimer.current = null;
-      autoFit(0);
+      autoFit(0, "settle");
       setReady(true);
     }, newData ? 4000 : 600);
 
@@ -913,6 +965,8 @@ export function GraphCanvas({
 
     const onPointerDown = (event: PointerEvent): void => {
       if (event.button !== 0 || !event.isPrimary) return;
+      // Pan or node drag: the user has the camera now; stop any running fit.
+      stopCameraAnimation();
       const point = local(event);
       const node = pick(point);
       const graph = graphRef.current;
@@ -1005,6 +1059,7 @@ export function GraphCanvas({
     };
 
     const onWheel = (): void => {
+      stopCameraAnimation();
       userViewRef.current = true;
     };
 
@@ -1031,8 +1086,9 @@ export function GraphCanvas({
     clearSettleTimer();
     alphaCapRef.current = Number.POSITIVE_INFINITY;
     // Never yank the camera after the user zoomed, panned or dragged a node.
-    autoFit(reducedMotion ? 0 : 300);
+    autoFit(reducedMotion ? 0 : 300, "engine");
     setReady(true);
+    setEngineStopped(true);
   }, [clearSettleTimer, autoFit, reducedMotion]);
 
   // force-graph/d3 rewrite `link.source/target` from ids into node objects.
@@ -1085,6 +1141,7 @@ export function GraphCanvas({
             onClick={() => {
               const graph = graphRef.current;
               userViewRef.current = true;
+              stopCameraAnimation();
               if (graph) graph.zoom(Math.max(0.06, graph.zoom() / 1.5), 200);
             }}
           >
@@ -1095,7 +1152,7 @@ export function GraphCanvas({
             className="graph-control"
             data-testid="graph-fit"
             aria-label="Fit graph to view"
-            onClick={() => fitView(300)}
+            onClick={() => fitView(300, "button")}
           >
             Fit
           </button>
@@ -1107,6 +1164,7 @@ export function GraphCanvas({
             onClick={() => {
               const graph = graphRef.current;
               userViewRef.current = true;
+              stopCameraAnimation();
               if (graph) graph.zoom(Math.min(8, graph.zoom() * 1.5), 200);
             }}
           >
@@ -1121,6 +1179,8 @@ export function GraphCanvas({
         data-testid={testId}
         data-graph-ready={ready ? "true" : "false"}
         data-graph-fit={String(fitGeneration)}
+        data-graph-fit-reason={fitReason}
+        data-graph-engine={engineStopped ? "stopped" : "running"}
         role="img"
         aria-label={ariaLabel}
       >

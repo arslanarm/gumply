@@ -38,6 +38,9 @@ async function openGraph(page: Page): Promise<void> {
   await page.getByTestId('sidebar-graph').click();
   const canvas = page.getByTestId(CANVAS);
   await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  // Under load the 4 s fallback can mark the view ready before the physics
+  // stops; the engine-stop fit would then land in the middle of a test.
+  await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 15_000 });
   await waitForStill(page);
 }
 
@@ -186,6 +189,44 @@ test.describe('graph interaction (#74jpajdy)', () => {
     const ghost = await nodeByTitle(page, 'Future Topic');
     await page.mouse.click(origin.x + ghost.x, origin.y + ghost.y);
     await expect(page.getByTestId('page-title').first()).toContainText('Future Topic');
+  });
+
+  test('a pan started while the view is still fitting keeps the camera where the user left it', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed(fixture());
+    await openGraph(page);
+    const origin = await canvasOrigin(page);
+    const box = (await page.getByTestId(CANVAS).boundingBox())!;
+    await page.getByTestId('graph-zoom-in').click();
+    await waitForStill(page);
+    const zoomed = await probeNodes(page);
+    let spot: { x: number; y: number } | null = null;
+    for (let y = 40; y < box.height - 40 && !spot; y += 20) {
+      for (let x = 40; x < box.width - 140 && !spot; x += 20) {
+        if (zoomed.every((n) => Math.hypot(n.x - x, n.y - y) > 40)) spot = { x, y };
+      }
+    }
+    expect(spot).not.toBeNull();
+
+    // Fit animates the camera for 300 ms; grab the background right away.
+    await page.getByTestId('graph-fit').click();
+    await page.mouse.move(origin.x + spot!.x, origin.y + spot!.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 4; step += 1) {
+      await page.mouse.move(origin.x + spot!.x + step * 15, origin.y + spot!.y + step * 8);
+    }
+    await page.mouse.up();
+    const released = await probeNodes(page);
+    await page.waitForTimeout(700);
+    const later = await probeNodes(page);
+    // Before the fix, force-graph's fit tween kept running and snapped the
+    // camera back after the user let go.
+    for (const node of later) {
+      const then = released.find((n) => n.id === node.id)!;
+      expect(Math.hypot(node.x - then.x, node.y - then.y)).toBeLessThan(2);
+    }
   });
 
   test('dragging empty canvas pans the view instead of moving a node', async ({ page, vault }) => {
