@@ -1,0 +1,403 @@
+import type { Editor as TipTapEditor } from "@tiptap/react";
+import type { EditorView } from "@tiptap/pm/view";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  blockAt,
+  deleteBlock,
+  duplicateBlock,
+  moveBlock,
+  moveBlockTo,
+  type BlockRef,
+} from "../lib/blocks.js";
+import { insertBlockBelow, turnInto, type TurnIntoKind } from "../editor/block-editing.js";
+
+interface HoverState {
+  block: BlockRef;
+  left: number;
+  top: number;
+}
+
+interface MenuState extends HoverState {
+  menuLeft: number;
+  menuTop: number;
+}
+
+interface DropState {
+  left: number;
+  top: number;
+  width: number;
+  targetPos: number;
+}
+
+export interface BlockGutterProps {
+  editor: TipTapEditor;
+}
+
+const TURN_INTO: Array<{ kind: TurnIntoKind; label: string }> = [
+  { kind: "text", label: "Text" },
+  { kind: "h1", label: "Heading 1" },
+  { kind: "h2", label: "Heading 2" },
+  { kind: "h3", label: "Heading 3" },
+  { kind: "bullet", label: "Bullet list" },
+  { kind: "ordered", label: "Numbered list" },
+  { kind: "todo", label: "To-do" },
+  { kind: "quote", label: "Quote" },
+  { kind: "code", label: "Code" },
+];
+
+function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
+  try {
+    const direct = view.nodeDOM(block.from);
+    if (direct instanceof HTMLElement && direct.parentElement === view.dom) return direct;
+  } catch {
+    // Fall through to the DOM-at-position walk.
+  }
+
+  try {
+    const at = view.domAtPos(block.from + 1);
+    let element = at.node.nodeType === Node.ELEMENT_NODE ? (at.node as Element) : at.node.parentElement;
+    if (!element) return null;
+
+    const item = element.closest("li");
+    if (item && view.dom.contains(item)) return item as HTMLElement;
+
+    while (element.parentElement && element.parentElement !== view.dom) {
+      element = element.parentElement;
+    }
+    return element === view.dom ? null : (element as HTMLElement);
+  } catch {
+    return null;
+  }
+}
+
+function inRect(rect: DOMRect, x: number, y: number, pad = 6): boolean {
+  return x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
+}
+
+/** Hover gutter + block menu for the top-level block or list item under the pointer. */
+export function BlockGutter({ editor }: BlockGutterProps) {
+  const [hover, setHover] = useState<HoverState | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [drop, setDrop] = useState<DropState | null>(null);
+  const [dragging, setDragging] = useState<BlockRef | null>(null);
+
+  const hoverRef = useRef<HoverState | null>(null);
+  hoverRef.current = hover;
+  const menuRef = useRef<MenuState | null>(null);
+  menuRef.current = menu;
+  const draggingRef = useRef<BlockRef | null>(null);
+  draggingRef.current = dragging;
+  const gutterRef = useRef<HTMLDivElement | null>(null);
+  const menuElementRef = useRef<HTMLDivElement | null>(null);
+  const hideOnType = useRef(false);
+
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    editor.view.focus();
+  }, [editor]);
+
+  useEffect(() => {
+    const host = editor.view.dom.closest(".editor-host");
+    if (!(host instanceof HTMLElement)) return;
+
+    const onMove = (event: MouseEvent) => {
+      if (hideOnType.current) hideOnType.current = false;
+
+      const current = hoverRef.current;
+      if (gutterRef.current && current) {
+        if (inRect(gutterRef.current.getBoundingClientRect(), event.clientX, event.clientY)) return;
+      }
+      if (menuRef.current && menuElementRef.current) {
+        if (inRect(menuElementRef.current.getBoundingClientRect(), event.clientX, event.clientY, 0)) return;
+      }
+
+      const hostRect = host.getBoundingClientRect();
+      if (event.clientY < hostRect.top || event.clientY > hostRect.bottom) return;
+
+      const editorRect = editor.view.dom.getBoundingClientRect();
+      const left = Math.min(Math.max(event.clientX, editorRect.left + 4), editorRect.right - 4);
+      const found = editor.view.posAtCoords({ left, top: event.clientY });
+      if (!found) return;
+
+      const block = blockAt(editor.state.doc, found.pos);
+      if (!block) {
+        setHover(null);
+        return;
+      }
+      const dom = domForBlock(editor.view, block);
+      if (!dom) {
+        setHover(null);
+        return;
+      }
+      const rect = dom.getBoundingClientRect();
+      setHover({ block, left: Math.max(6, rect.left - 48), top: rect.top + 1 });
+    };
+
+    const onLeave = () => {
+      if (menuRef.current) return;
+      setHover(null);
+    };
+    const onHide = () => setHover(null);
+    const onUpdate = () => {
+      hideOnType.current = true;
+      setHover(null);
+      if (!draggingRef.current) setMenu(null);
+    };
+
+    const onDragOver = (event: DragEvent) => {
+      const source = draggingRef.current;
+      if (!source) return;
+      // Capture phase: stop ProseMirror's own drop handler from inserting the
+      // dragged data as text as well as moving the block.
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      const next = computeDrop(event, source);
+      dropRef.current = next;
+      setDrop(next);
+    };
+    const onDrop = (event: DragEvent) => {
+      const source = draggingRef.current;
+      const target = dropRef.current;
+      if (!source) return;
+      event.preventDefault();
+      event.stopPropagation();
+      draggingRef.current = null;
+      dropRef.current = null;
+      setDragging(null);
+      setDrop(null);
+      if (!target) return;
+      const tr = moveBlockTo(editor.state, source, target.targetPos);
+      if (tr) {
+        editor.view.dispatch(tr);
+        editor.view.focus();
+      }
+    };
+    const onDragEnd = () => {
+      draggingRef.current = null;
+      dropRef.current = null;
+      setDragging(null);
+      setDrop(null);
+    };
+
+    host.addEventListener("mousemove", onMove);
+    host.addEventListener("mouseleave", onLeave);
+    host.addEventListener("dragover", onDragOver, true);
+    host.addEventListener("drop", onDrop, true);
+    host.addEventListener("dragend", onDragEnd);
+    document.addEventListener("scroll", onHide, true);
+    window.addEventListener("resize", onHide);
+    editor.on("update", onUpdate);
+    return () => {
+      host.removeEventListener("mousemove", onMove);
+      host.removeEventListener("mouseleave", onLeave);
+      host.removeEventListener("dragover", onDragOver, true);
+      host.removeEventListener("drop", onDrop, true);
+      host.removeEventListener("dragend", onDragEnd);
+      document.removeEventListener("scroll", onHide, true);
+      window.removeEventListener("resize", onHide);
+      editor.off("update", onUpdate);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menuElementRef.current?.contains(target)) return;
+      if (gutterRef.current?.contains(target)) return;
+      setMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMenu(null);
+        editor.view.focus();
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menu, editor]);
+
+  const openMenu = (state: HoverState) => {
+    setMenu({
+      ...state,
+      menuLeft: Math.min(state.left + 44, window.innerWidth - 252),
+      menuTop: Math.min(state.top - 4, window.innerHeight - 430),
+    });
+  };
+
+  const run = (action: (block: BlockRef) => void) => {
+    const current = menuRef.current;
+    if (!current) return;
+    const block = blockAt(editor.state.doc, current.block.from + 1);
+    setMenu(null);
+    if (block) action(block);
+    editor.view.focus();
+  };
+
+  const move = (block: BlockRef, direction: "up" | "down") => {
+    const tr = moveBlock(editor.state, block, direction);
+    if (tr) editor.view.dispatch(tr);
+  };
+
+  // ---------- drag & drop ----------
+  const dropRef = useRef<DropState | null>(null);
+  dropRef.current = drop;
+
+  const computeDrop = (event: DragEvent, source: BlockRef): DropState | null => {
+    const target = event.target as Element | null;
+    if (target?.closest(".block-gutter") || target?.closest(".block-menu")) return null;
+
+    const editorRect = editor.view.dom.getBoundingClientRect();
+    const left = Math.min(Math.max(event.clientX, editorRect.left + 4), editorRect.right - 4);
+    const found = editor.view.posAtCoords({ left, top: event.clientY });
+    if (!found) return null;
+    const block = blockAt(editor.state.doc, found.pos);
+    if (!block) return null;
+
+    const sourceIsItem = source.node.type.name === "listItem" || source.node.type.name === "taskItem";
+    const targetIsItem = block.node.type.name === "listItem" || block.node.type.name === "taskItem";
+    if (sourceIsItem !== targetIsItem) return null;
+
+    const dom = domForBlock(editor.view, block);
+    if (!dom) return null;
+    const rect = dom.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
+    const targetPos = before ? block.from : block.to;
+    if (targetPos === source.from || targetPos === source.to) return null;
+    return {
+      left: rect.left,
+      width: rect.width,
+      top: before ? rect.top - 1 : rect.bottom - 1,
+      targetPos,
+    };
+  };
+
+  return (
+    <>
+      {hover ? (
+        <div
+          ref={gutterRef}
+          className="block-gutter"
+          data-testid="block-gutter"
+          style={{ left: hover.left, top: hover.top }}
+        >
+          <button
+            type="button"
+            className="block-gutter-button"
+            data-testid="block-insert"
+            aria-label="Insert block below"
+            title="Insert block below"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => insertBlockBelow(editor, hover.block)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="block-gutter-button block-gutter-handle"
+            data-testid="block-handle"
+            aria-label="Block actions"
+            aria-haspopup="menu"
+            title="Drag to move · click for actions"
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("application/x-gumply-block", "1");
+              draggingRef.current = hover.block;
+              setDragging(hover.block);
+              setMenu(null);
+            }}
+            onClick={() => {
+              if (draggingRef.current) return;
+              openMenu(hover);
+            }}
+          >
+            ⋮⋮
+          </button>
+        </div>
+      ) : null}
+
+      {drop ? (
+        <div
+          className="block-drop-indicator"
+          data-testid="block-drop-indicator"
+          style={{ left: drop.left, top: drop.top, width: drop.width }}
+        />
+      ) : null}
+
+      {menu ? (
+        <div
+          ref={menuElementRef}
+          className="block-menu"
+          role="menu"
+          aria-label="Block actions"
+          data-testid="block-menu"
+          style={{ left: menu.menuLeft, top: menu.menuTop }}
+        >
+          <p className="block-menu-heading">Turn into</p>
+          {TURN_INTO.map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              role="menuitem"
+              className="block-menu-item"
+              data-testid={`block-turn-into-${item.kind}`}
+              onClick={() => run((block) => turnInto(editor, block, item.kind))}
+            >
+              {item.label}
+            </button>
+          ))}
+          <div className="block-menu-separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item"
+            data-testid="block-menu-item-duplicate"
+            onClick={() => run((block) => {
+              const tr = duplicateBlock(editor.state, block);
+              if (tr) editor.view.dispatch(tr);
+            })}
+          >
+            Duplicate
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item"
+            data-testid="block-menu-item-move-up"
+            onClick={() => run((block) => move(block, "up"))}
+          >
+            Move up
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item"
+            data-testid="block-menu-item-move-down"
+            onClick={() => run((block) => move(block, "down"))}
+          >
+            Move down
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item is-danger"
+            data-testid="block-menu-item-delete"
+            onClick={() => run((block) => {
+              const tr = deleteBlock(editor.state, block);
+              if (tr) editor.view.dispatch(tr);
+            })}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}

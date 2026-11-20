@@ -48,6 +48,8 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: "```", label: "Code block" },
         { keys: `${modifier}Z`, label: "Undo" },
         { keys: `${modifier}S`, label: "Save now" },
+        { keys: `${modifier}+Shift+↑ / ↓`, label: "Move block up / down" },
+        { keys: `${modifier}D`, label: "Duplicate block" },
       ],
     },
     {

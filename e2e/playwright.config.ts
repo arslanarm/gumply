@@ -30,7 +30,9 @@ export default defineConfig({
     ['list'],
     ['html', { open: 'never', outputFolder: '../playwright-report' }],
   ],
-  outputDir: '../test-results',
+  // Keep run artifacts in a subdirectory: `test-results/screens/` holds review
+  // screenshots and must survive a normal suite run (Playwright clears outputDir).
+  outputDir: '../test-results/run',
   use: {
     baseURL: BASE_URL,
     trace: 'on-first-retry',
@@ -39,11 +41,13 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    // Q1b: the graph must draw in Firefox too. Keep Firefox scoped to the
-    // pixel spec so the rest of the suite stays fast; Chromium still runs it.
+    // Q1b cross-browser graph check: Firefox runs only the canvas-pixel specs,
+    // not the whole suite (keeps runtime and unrelated browser quirks out).
+    // `graph-visual` (dev-graph: fit geometry, resize, filter, DPR) supersedes
+    // the earlier `graph-pixels` smoke check, which is kept as a cheap guard.
     {
-      name: 'firefox-graph',
-      testMatch: /graph-visual\.spec\.ts$/,
+      name: 'firefox',
+      testMatch: /graph-(visual|pixels)\.spec\.ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
   ],

@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
 import type {
   ApiError,
+  Attachment,
   Backlink,
   DeletePageResult,
   GraphData,
@@ -10,7 +12,13 @@ import type {
   SearchResult,
 } from "@gumply/core";
 import { Hono, type Context } from "hono";
-import { badRequest } from "./errors.js";
+import {
+  listAttachments,
+  MAX_ATTACHMENT_BYTES,
+  resolveVaultFile,
+  saveAttachment,
+} from "./attachments.js";
+import { badRequest, notFound, payloadTooLarge } from "./errors.js";
 import type { GraphOptions, UpdatePageInput, VaultStore } from "./vault-store.js";
 
 type JsonObject = Record<string, unknown>;
@@ -57,6 +65,22 @@ function iconValue(body: JsonObject): string | null | undefined {
   const value = body.icon;
   if (value === null || typeof value === "string") return value;
   throw badRequest("icon must be a string or null");
+}
+
+interface UploadedFile {
+  name: string;
+  size: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+function isUploadedFile(value: unknown): value is UploadedFile {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as UploadedFile).name === "string" &&
+    typeof (value as UploadedFile).size === "number" &&
+    typeof (value as UploadedFile).arrayBuffer === "function"
+  );
 }
 
 /** All `/api` routes; mounted by `createApp`. */
@@ -142,6 +166,51 @@ export function createApiRoutes(store: VaultStore): Hono {
   api.get("/search", (c) => {
     const q = c.req.query("q") ?? "";
     return c.json<SearchResult[]>(store.search(q));
+  });
+
+  api.post("/attachments", async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.parseBody();
+    } catch {
+      throw badRequest("Attachment upload must be multipart/form-data with a `file` field");
+    }
+
+    const file = body["file"];
+    if (!isUploadedFile(file)) throw badRequest("file is required");
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      throw payloadTooLarge("File is too large (max 25 MB)");
+    }
+
+    const data = new Uint8Array(await file.arrayBuffer());
+    const attachment = await saveAttachment(store.root, {
+      name: file.name,
+      data,
+      mime: typeof body["mime"] === "string" ? body["mime"] : undefined,
+    });
+    return c.json<Attachment>(attachment, 201);
+  });
+
+  api.get("/attachments", async (c) => {
+    return c.json<Attachment[]>(await listAttachments(store.root));
+  });
+
+  api.get("/files/*", async (c) => {
+    const prefix = "/api/files/";
+    const raw = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";
+    const file = await resolveVaultFile(store.root, raw);
+    if (!file) throw notFound("File not found");
+
+    return c.body(await readFile(file.absolutePath), 200, {
+      "Content-Type": file.mime,
+      "Content-Length": String(file.size),
+      // Attachment names are deduped and never overwritten; other vault files
+      // (pages especially) change on every save and must not be cached.
+      "Cache-Control": file.attachmentPath
+        ? "private, max-age=31536000, immutable"
+        : "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    });
   });
 
   api.notFound((c) => c.json<ApiError>({ error: "Not found" }, 404));

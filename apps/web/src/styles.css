@@ -1,14 +1,18 @@
 :root {
   color-scheme: light;
-  --bg: #fbfbfa;
+  --bg: #f1f0ec;
   --panel: #ffffff;
+  --surface-canvas: #f1f0ec;
+  --surface-nav: #f8f7f4;
+  --surface-page: #ffffff;
+  --surface-topbar: #f8f7f4;
   --text: #26251f;
   --muted: #6f6d65;
-  --border: #e6e4dd;
+  --border: #e5e3dc;
   --accent: #4f46e5;
   --accent-soft: #eef2ff;
   --danger: #c0392b;
-  --hover: #f1f0ec;
+  --hover: #ebeae5;
   --success: #22a06b;
   --warning: #a16207;
   --on-accent: #ffffff;
@@ -30,15 +34,19 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #191919;
-  --panel: #202020;
+  --bg: #141414;
+  --panel: #242424;
+  --surface-canvas: #141414;
+  --surface-nav: #202020;
+  --surface-page: #191919;
+  --surface-topbar: #202020;
   --text: #ececec;
   --muted: #a3a39b;
-  --border: #343432;
+  --border: #333331;
   --accent: #8b8bf0;
   --accent-soft: #26264a;
   --danger: #ff7b72;
-  --hover: #262625;
+  --hover: #2a2a28;
   --success: #3ddc97;
   --warning: #e5c07b;
   --on-accent: #15132b;
@@ -68,7 +76,7 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background: var(--surface-canvas);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
@@ -77,6 +85,11 @@ button,
 input {
   font: inherit;
   color: inherit;
+}
+
+.icon {
+  display: block;
+  flex: none;
 }
 
 .app {
@@ -93,11 +106,13 @@ input {
   gap: 0.6rem;
   padding: 0.7rem 1.1rem;
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--surface-topbar);
   flex: none;
 }
 
 .topbar .logo {
+  display: inline-flex;
+  align-items: center;
   color: var(--accent);
   font-size: 1.15rem;
 }
@@ -157,7 +172,7 @@ input {
 
 .sidebar {
   border-right: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--surface-nav);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -344,6 +359,7 @@ input {
   overflow-y: auto;
   min-width: 0;
   position: relative;
+  background: var(--surface-page);
 }
 
 .editor-pane {
@@ -418,44 +434,59 @@ input {
 
 /* ---------- Editor ---------- */
 
-.gumply-editor {
+.gumply-editor,
+.gumply-editor:focus,
+.gumply-editor:focus-visible {
   outline: none;
+  box-shadow: none;
+}
+
+.gumply-editor {
   font-size: 1rem;
-  line-height: 1.65;
+  line-height: 1.6;
   min-height: 55vh;
   word-break: break-word;
 }
 
 .gumply-editor > * + * {
-  margin-top: 0.55em;
+  margin-top: 0.3em;
 }
 
 .gumply-editor p {
-  margin: 0;
+  margin: 0.12em 0;
 }
 
 .gumply-editor h1 {
-  font-size: 1.7rem;
+  font-size: 1.75rem;
   line-height: 1.25;
-  margin: 1.1em 0 0.2em;
-  letter-spacing: -0.015em;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  margin: 1.15em 0 0.2em;
 }
 
 .gumply-editor h2 {
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   line-height: 1.3;
-  margin: 1em 0 0.2em;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  margin: 1em 0 0.15em;
 }
 
 .gumply-editor h3 {
-  font-size: 1.12rem;
-  margin: 0.9em 0 0.15em;
+  font-size: 1.15rem;
+  line-height: 1.35;
+  font-weight: 600;
+  margin: 0.9em 0 0.1em;
 }
 
 .gumply-editor ul,
 .gumply-editor ol {
-  padding-left: 1.4rem;
-  margin: 0.25em 0;
+  padding-left: 1.5rem;
+  margin: 0.2em 0;
+}
+
+.gumply-editor li {
+  margin: 0.12em 0;
 }
 
 .gumply-editor li > p {
@@ -464,41 +495,38 @@ input {
 
 .gumply-editor blockquote {
   border-left: 3px solid var(--border);
-  margin: 0.6em 0;
+  margin: 0.5em 0;
   padding-left: 0.9rem;
-  color: var(--muted);
 }
 
 .gumply-editor pre {
-  background: var(--panel);
+  background: var(--hover);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 0.8rem 1rem;
+  padding: 0.85rem 1rem;
   overflow-x: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.86rem;
+  font-size: 0.85rem;
   line-height: 1.5;
 }
 
 .gumply-editor code {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--hover);
   border-radius: 4px;
-  padding: 0.08rem 0.28rem;
+  padding: 0.1rem 0.3rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.86em;
 }
 
 .gumply-editor pre code {
   background: none;
-  border: 0;
   padding: 0;
 }
 
 .gumply-editor hr {
   border: 0;
   border-top: 1px solid var(--border);
-  margin: 1.4em 0;
+  margin: 1.6em 0;
 }
 
 .gumply-editor ul[data-type="taskList"] {
@@ -513,19 +541,128 @@ input {
 }
 
 .gumply-editor ul[data-type="taskList"] li > label {
-  margin-top: 0.15rem;
+  margin-top: 0.18rem;
 }
 
 .gumply-editor ul[data-type="taskList"] li > div {
   flex: 1;
 }
 
-.gumply-editor p.is-editor-empty:first-child::before {
+.gumply-editor ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.gumply-editor .is-empty::before {
   content: attr(data-placeholder);
   color: var(--muted);
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* ---------- Block gutter & menu (Q1a) ---------- */
+
+.block-gutter {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 26px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.block-gutter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.block-gutter-button:hover,
+.block-gutter-button:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.block-gutter-handle {
+  cursor: grab;
+  font-size: 0.78rem;
+  letter-spacing: -2px;
+}
+
+.block-gutter-handle:active {
+  cursor: grabbing;
+}
+
+.block-drop-indicator {
+  position: fixed;
+  z-index: 31;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.block-menu {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: 236px;
+  max-height: 430px;
+  overflow-y: auto;
+  padding: 0.3rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+}
+
+.block-menu-heading {
+  margin: 0.1rem 0.45rem 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.block-menu-item {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0.38rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.block-menu-item:hover,
+.block-menu-item:focus-visible {
+  background: var(--accent-soft);
+}
+
+.block-menu-item.is-danger {
+  color: var(--danger);
+}
+
+.block-menu-separator {
+  height: 1px;
+  margin: 0.25rem 0.35rem;
+  background: var(--border);
 }
 
 /* ---------- Slash menu ---------- */
@@ -545,20 +682,38 @@ input {
 
 .slash-menu-item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.05rem;
+  align-items: center;
+  gap: 0.6rem;
   width: 100%;
   border: 0;
   background: transparent;
   border-radius: 5px;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.5rem;
   cursor: pointer;
   text-align: left;
 }
 
 .slash-menu-item.is-active {
   background: var(--accent-soft);
+}
+
+.slash-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  color: var(--muted);
+}
+
+.slash-menu-item.is-active .slash-menu-icon {
+  color: var(--accent);
+}
+
+.slash-menu-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
 }
 
 .slash-menu-title {
@@ -574,23 +729,51 @@ input {
 /* ---------- Empty states / banners ---------- */
 
 .empty-state {
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  padding: clamp(1.5rem, 5vw, 3rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 430px;
+  margin: clamp(4rem, 16vh, 10rem) auto 0;
+  padding: 0 1rem;
   text-align: center;
+  color: var(--muted);
+  background: transparent;
+}
+
+.empty-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 0.65rem;
+  border-radius: 14px;
+  background: var(--surface-nav);
   color: var(--muted);
 }
 
 .empty-state h2 {
   color: var(--text);
-  font-size: 1.15rem;
-  margin: 0 0 0.4rem;
+  font-size: 1.12rem;
+  letter-spacing: -0.01em;
+  margin: 0;
 }
 
 .empty-state p {
-  margin: 0 auto 1rem;
-  max-width: 38ch;
-  line-height: 1.5;
+  margin: 0.15rem auto 1.1rem;
+  max-width: 40ch;
+  line-height: 1.55;
+}
+
+.empty-state .empty-hint {
+  margin: 0.9rem auto 0;
+  font-size: 0.78rem;
+}
+
+.empty-state .button-primary,
+.empty-state .button-secondary {
+  padding: 0.45rem 0.95rem;
 }
 
 .button-primary,
@@ -773,6 +956,12 @@ input {
   color: var(--text);
 }
 
+.sidebar-new-page {
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: 0.1rem;
+}
+
 .sidebar-row-active,
 .sidebar-row-active:hover {
   background: var(--accent-soft);
@@ -792,9 +981,11 @@ input {
 }
 
 .sidebar-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1.1rem;
-  text-align: center;
-  font-size: 0.95rem;
+  color: var(--muted);
 }
 
 .sidebar-empty {
@@ -1056,9 +1247,10 @@ input {
 .quick-switcher-icon {
   flex: none;
   width: 1.1rem;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
-  line-height: 1.35;
 }
 
 .quick-switcher-text {
@@ -1266,8 +1458,10 @@ input {
 
 .link-menu-icon {
   width: 1.1rem;
-  text-align: center;
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
 }
 
@@ -1329,7 +1523,7 @@ input {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.4rem;
 }
 
 .backlink {
@@ -1339,7 +1533,7 @@ input {
   border: 1px solid transparent;
   background: transparent;
   border-radius: 7px;
-  padding: 0.45rem 0.55rem;
+  padding: 0.55rem 0.65rem;
   cursor: pointer;
 }
 
@@ -1353,7 +1547,7 @@ input {
   font-size: 0.87rem;
   font-weight: 500;
   color: var(--text);
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.15rem;
 }
 
 .backlink-snippet {

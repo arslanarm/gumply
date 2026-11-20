@@ -1,8 +1,17 @@
 /** Pure helpers for the “Linked from” panel (spec/ux §8). */
+import { parseWikiLinkText } from "./wikilinks.js";
 
 export interface SnippetPart {
   text: string;
   highlight: boolean;
+}
+
+/** What a `[[...]]` fragment reads as in a snippet (alias > title, plus #heading). */
+function wikiLinkLabel(raw: string): string {
+  const parsed = parseWikiLinkText(raw);
+  if (!parsed) return raw;
+  const label = parsed.alias.length > 0 ? parsed.alias : parsed.title;
+  return parsed.heading.length > 0 ? `${label}#${parsed.heading}` : label;
 }
 
 /** Split a backlink snippet so `[[Page]]` fragments can be highlighted. */
@@ -14,7 +23,7 @@ export function splitSnippet(snippet: string): SnippetPart[] {
   for (const match of snippet.matchAll(pattern)) {
     const index = match.index ?? 0;
     if (index > last) parts.push({ text: snippet.slice(last, index), highlight: false });
-    parts.push({ text: match[0], highlight: true });
+    parts.push({ text: wikiLinkLabel(match[0]), highlight: true });
     last = index + match[0].length;
   }
 

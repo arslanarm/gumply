@@ -7,9 +7,11 @@ import type { Page, PageMeta } from "@gumply/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
 import { api } from "../api/client.js";
+import { BlockGutter } from "./BlockGutter.js";
 import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
+import { BlockEditing } from "../editor/block-editing.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
 import type { SlashItem } from "../editor/slash-items.js";
@@ -247,7 +249,17 @@ export function Editor({
           checkboxLabel: (node, checked) => taskCheckboxLabel(node.textContent, checked),
         },
       }),
-      Placeholder.configure({ placeholder: "Type '/' for commands, '[[' to link a page" }),
+      Placeholder.configure({
+        showOnlyCurrent: true,
+        placeholder: ({ node, editor: instance, pos }) => {
+          if (node.type.name === "heading") return `Heading ${node.attrs.level}`;
+          if (node.type.name !== "paragraph") return "";
+          // Only top-level paragraphs get the hint (list items/quote lines don't).
+          return instance.state.doc.resolve(pos + 1).depth === 1
+            ? "Type '/' for commands…"
+            : "";
+        },
+      }),
       Markdown.configure({
         html: false,
         linkify: true,
@@ -258,6 +270,7 @@ export function Editor({
       WikiLink,
       slashExtension,
       wikiLinkExtension,
+      BlockEditing,
       TaskShortcut,
       ShortcutHistory,
     ],
@@ -330,6 +343,7 @@ export function Editor({
   return (
     <div className="editor-host">
       <EditorContent editor={editor} />
+      {editor ? <BlockGutter editor={editor} /> : null}
       {menu ? (
         <SlashMenu
           items={menu.items}

@@ -88,6 +88,37 @@ export interface HealthResponse {
   vaultPath: string;
 }
 
+/** A file stored under `vault/attachments/` (D18). */
+export interface Attachment {
+  /** Vault-relative path, e.g. `attachments/photo.png`. */
+  path: string;
+  /** File name inside `attachments/`, e.g. `photo.png`. */
+  name: string;
+  /** Size in bytes. */
+  size: number;
+  /** MIME type, e.g. `image/png`. */
+  mime: string;
+}
+
+export type EmbedKind = "image" | "file";
+
+/** One image/file reference found in Markdown (D19). */
+export interface Embed {
+  kind: EmbedKind;
+  /** Vault-relative path; Obsidian names get `attachments/` prefixed. */
+  path: string;
+  /** File name (last path segment). */
+  name: string;
+  /** Alt text / link text as written (empty when absent). */
+  alt: string;
+  /** Original matched Markdown. */
+  raw: string;
+  /** Index of `raw` in the source Markdown. */
+  index: number;
+  /** How the reference was written. */
+  syntax: "markdown" | "obsidian";
+}
+
 /** Error body used for 400/404/409 responses. */
 export interface ApiError {
   error: string;
