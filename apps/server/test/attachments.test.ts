@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { VaultStore } from "../src/vault-store";
-import { cleanupVaults, createPage, createTestServer } from "./helpers";
+import { cleanupVaults, createPage, createTestServer, getJson } from "./helpers";
 
 afterEach(cleanupVaults);
 
@@ -97,6 +97,7 @@ describe("attachments API", () => {
     const markdown = await app.request("/api/files/doc.md");
     expect(markdown.status).toBe(200);
     expect(markdown.headers.get("content-type")).toContain("text/markdown");
+    expect(markdown.headers.get("cache-control")).toBe("no-cache");
     expect(await markdown.text()).toContain("hello");
 
     await writeFile(join(dir, "secret.txt"), "outside", "utf8");
@@ -126,5 +127,21 @@ describe("attachments API", () => {
     await store.init();
     expect(store.list()).toEqual([]);
     expect(store.search("not a page")).toEqual([]);
+  });
+
+  it("does not create graph ghost nodes for attachment links", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, {
+      title: "Source",
+      content: "See [[Target]], [[manual.pdf]] and ![[photo.png]].",
+    });
+    await createPage(app, { title: "Target" });
+
+    const graph = await getJson<{
+      links: Array<{ source: string; target: string }>;
+      unresolved: Array<{ source: string; targetTitle: string }>;
+    }>(app, "/api/graph");
+    expect(graph.links).toEqual([{ source: "source", target: "target" }]);
+    expect(graph.unresolved).toEqual([]);
   });
 });

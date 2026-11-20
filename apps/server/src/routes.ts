@@ -204,7 +204,11 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.body(await readFile(file.absolutePath), 200, {
       "Content-Type": file.mime,
       "Content-Length": String(file.size),
-      "Cache-Control": "private, max-age=31536000, immutable",
+      // Attachment names are deduped and never overwritten; other vault files
+      // (pages especially) change on every save and must not be cached.
+      "Cache-Control": file.attachmentPath
+        ? "private, max-age=31536000, immutable"
+        : "no-cache",
       "X-Content-Type-Options": "nosniff",
     });
   });

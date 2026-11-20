@@ -5,7 +5,7 @@
  * `[name](attachments/x.pdf)`. Obsidian compatibility: `![[x.png]]` and
  * `[[x.pdf]]` when the target name has a file extension.
  */
-import { maskCode } from "./links.js";
+import { hasFileExtension, maskCode } from "./links.js";
 import type { Embed, EmbedKind } from "./types.js";
 
 const IMAGE_EXTENSIONS = new Set([
@@ -20,15 +20,14 @@ const IMAGE_EXTENSIONS = new Set([
   "webp",
 ]);
 
-const EXTENSION = /\.[a-z0-9]{1,10}$/i;
-
 function basename(path: string): string {
   return path.split("/").pop() ?? path;
 }
 
 function extensionOf(name: string): string {
-  const match = EXTENSION.exec(name);
-  return match ? match[0].slice(1).toLowerCase() : "";
+  if (!hasFileExtension(name)) return "";
+  const dot = name.lastIndexOf(".");
+  return dot === -1 ? "" : name.slice(dot + 1).toLowerCase();
 }
 
 function isImage(name: string): boolean {
@@ -86,7 +85,7 @@ export function parseEmbeds(markdown: string): Embed[] {
   while ((match = obsidianPattern.exec(text)) !== null) {
     const embedded = match[1] === "!";
     const inner = (match[2] ?? "").split("|")[0]?.trim() ?? "";
-    if (!EXTENSION.test(inner)) continue;
+    if (!hasFileExtension(inner)) continue;
     const path = inner.includes("/") ? inner : `attachments/${inner}`;
     const raw = markdown.slice(match.index, match.index + match[0].length);
     embeds.push({

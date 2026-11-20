@@ -26,6 +26,7 @@ describe("parseEmbeds", () => {
 
   it("does not treat ordinary links as file embeds", () => {
     expect(parseEmbeds("[Gumply](https://example.com) [other](docs/other.md)")).toEqual([]);
+    expect(parseEmbeds("[[v1.2]]")).toEqual([]);
   });
 
   it("parses Obsidian image embeds and file links with extensions", () => {

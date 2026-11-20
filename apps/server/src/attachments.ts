@@ -160,6 +160,8 @@ export interface VaultFile {
   name: string;
   size: number;
   mime: string;
+  /** True when the file lives under `attachments/` (safe to cache forever). */
+  attachmentPath: boolean;
 }
 
 function safeDecode(value: string): string {
@@ -199,6 +201,7 @@ export async function resolveVaultFile(
       name: pathBasename(absolutePath),
       size: info.size,
       mime: mimeForName(absolutePath),
+      attachmentPath: segments[0] === ATTACHMENTS_DIR,
     };
   } catch {
     return null;
