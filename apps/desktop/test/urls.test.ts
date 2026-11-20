@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNavigation } from "../src/urls";
+import { classifyNavigation, vaultFileAction } from "../src/urls";
 
 const origin = "http://127.0.0.1:43123";
 
@@ -32,6 +32,26 @@ describe("desktop navigation policy (D26)", () => {
     expect(classifyNavigation(`${origin}/api/files/a/../../b`, origin)).toEqual({ kind: "app" });
     for (const bad of ["/api/files/..%2Fsecret", "/api/files/a%2F..%2F..%2Fb", "/api/files/.gumply/x", "/api/files/%2Fetc%2Fpasswd", "/api/files/", "/api/files/%E0%A4%A"]) {
       expect(classifyNavigation(`${origin}${bad}`, origin), bad).toEqual({ kind: "ignore" });
+    }
+  });
+});
+
+describe("vault files: open documents, only reveal anything that could run", () => {
+  it("opens documents, media and archives with the default app", () => {
+    for (const path of ["attachments/report.pdf", "a/b/Photo.JPG", "notes.md", "data.csv", "deck.pptx", "clip.mp4", "song.flac", "backup.tar.gz", "x.zip"]) {
+      expect(vaultFileAction(path), path).toBe("open");
+    }
+  });
+
+  it("never opens programs, scripts or launchers: they are revealed instead", () => {
+    for (const path of [
+      "attachments/x.exe", "x.bat", "x.cmd", "x.com", "x.ps1", "x.vbs", "x.vbe", "x.js", "x.jse", "x.wsf", "x.hta",
+      "x.lnk", "x.url", "x.msi", "x.scr", "x.cpl", "x.jar", "x.reg",
+      "x.sh", "x.bash", "x.desktop", "x.AppImage", "x.run", "x.bin", "x.py", "x.pl", "x.deb", "x.rpm",
+      "x.app", "x.command", "x.dmg", "x.pkg", "x.html", "x.svg", "x.pdf.exe",
+      "noextension", ".hidden", "folder/.bashrc",
+    ]) {
+      expect(vaultFileAction(path), path).toBe("reveal");
     }
   });
 });

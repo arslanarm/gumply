@@ -10,7 +10,7 @@
  * - Settings (last/recent vaults, window state) live in `userData`, never in
  *   a vault.
  */
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
@@ -23,7 +23,7 @@ import {
   type DesktopSettings,
   type WindowState,
 } from "./settings.js";
-import { classifyNavigation } from "./urls.js";
+import { classifyNavigation, vaultFileAction } from "./urls.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** The built web app, copied next to this bundle by scripts/build.mjs. */
@@ -232,11 +232,25 @@ function createWindow(): void {
   });
 }
 
+/**
+ * Open a vault file the app links to (e.g. a PDF card). Documents open in
+ * their default app; anything that could run (scripts, programs, launchers)
+ * is only shown in the file manager. Checked on the real path, so a symlink
+ * named `x.pdf` pointing at a program, or out of the vault, isn't opened.
+ */
 function openVaultFile(path: string): void {
   if (!vaultPath) return;
-  const absolute = resolve(vaultPath, path);
-  if (!absolute.startsWith(`${vaultPath}${sep}`) || !existsSync(absolute)) return;
-  void shell.openPath(absolute);
+  let real: string;
+  let vaultReal: string;
+  try {
+    real = realpathSync(resolve(vaultPath, path));
+    vaultReal = realpathSync(vaultPath);
+  } catch {
+    return; // missing file
+  }
+  if (!real.startsWith(`${vaultReal}${sep}`) || !statSync(real).isFile()) return;
+  if (vaultFileAction(real) === "open") void shell.openPath(real);
+  else shell.showItemInFolder(real);
 }
 
 function sendCommand(command: "new-page" | "new-whiteboard" | "search"): void {

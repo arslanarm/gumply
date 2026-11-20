@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -200,3 +200,39 @@ function readdirSafe(dir: string): string[] {
     return [];
   }
 }
+
+test('vault files: documents open in their app, scripts and programs are only revealed', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    mkdirSync(join(vault, 'attachments'), { recursive: true });
+    writeFileSync(join(vault, 'attachments', 'report.pdf'), '%PDF-1.4');
+    writeFileSync(join(vault, 'attachments', 'run.sh'), '#!/bin/sh\necho pwned\n', { mode: 0o755 });
+    // A harmless-looking name pointing at the script.
+    symlinkSync(join(vault, 'attachments', 'run.sh'), join(vault, 'attachments', 'innocent.pdf'));
+
+    await app.evaluate(({ shell }) => {
+      const log: string[] = [];
+      (globalThis as { __files?: string[] }).__files = log;
+      shell.openPath = async (path: string) => {
+        log.push(`open ${path}`);
+        return '';
+      };
+      shell.showItemInFolder = (path: string) => {
+        log.push(`reveal ${path}`);
+      };
+    });
+    for (const name of ['report.pdf', 'run.sh', 'innocent.pdf', '..%2F..%2Fetc%2Fpasswd']) {
+      await window.evaluate((file) => window.open(`/api/files/attachments/${file}`), name);
+    }
+    await window.waitForTimeout(500);
+    const log = await app.evaluate(() => (globalThis as { __files?: string[] }).__files ?? []);
+    expect(log.map((entry) => entry.replace(vault, '<vault>'))).toEqual([
+      'open <vault>/attachments/report.pdf',
+      'reveal <vault>/attachments/run.sh',
+      'reveal <vault>/attachments/run.sh',
+    ]);
+  } finally {
+    await app.close();
+  }
+});
