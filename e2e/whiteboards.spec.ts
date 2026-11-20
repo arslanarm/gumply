@@ -325,6 +325,18 @@ test.describe('whiteboards in the app (W2a)', () => {
     await expect(page.getByTestId('board-page')).toBeVisible();
     await pressNKeepsName();
 
+    // @opus-hunter's path: a tool key, then a click on the canvas (no Enter).
+    await page.reload();
+    await expect(page.getByTestId('board-sticky')).toContainText('Keep me');
+    await page.keyboard.press('c');
+    await expect(page.getByTestId('board-tool-connector')).toHaveAttribute('aria-pressed', 'true');
+    const surface = await page.getByTestId('board').boundingBox();
+    if (!surface) throw new Error('no board');
+    await page.mouse.click(surface.x + surface.width * 0.8, surface.y + surface.height * 0.8);
+    await expect(page).toHaveURL(/#\/Project%20map\.canvas$/);
+    await expect(page.getByTestId('page-title')).toContainText('Project map');
+    expect((await api.listPages(request)).map((item) => item.id)).toContain('Project map.canvas');
+
     // A board created just now still opens with its title selected.
     await page.getByTestId('new-board-button').click();
     await expect(page.getByTestId('page-title-input')).toBeFocused();
