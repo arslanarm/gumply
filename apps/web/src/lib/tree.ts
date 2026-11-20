@@ -10,7 +10,10 @@ export interface PageTreeNode {
 }
 
 function comparePages(a: PageMeta, b: PageMeta): number {
-  const byTitle = a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+  const byTitle = a.title.localeCompare(b.title, undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
   return byTitle !== 0 ? byTitle : a.id.localeCompare(b.id);
 }
 

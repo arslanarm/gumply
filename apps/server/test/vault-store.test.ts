@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -90,6 +90,83 @@ describe("VaultStore index on start", () => {
     );
   });
 
+  it("preserves unknown frontmatter byte-for-byte on a body edit", async () => {
+    const original = [
+      "---",
+      "# Obsidian-managed",
+      "title: Imported",
+      "aliases:",
+      "  - One",
+      "cssclasses: [wide, cards]   # keep flow",
+      "date: 2026-01-02",
+      "tags: [x, y]",
+      "updated: 2026-01-01T00:00:00.000Z",
+      "---",
+      "",
+      "Old body.",
+      "",
+    ].join("\n");
+    const dir = await tempVault(async (root) => {
+      await writeFile(join(root, "imported.md"), original, "utf8");
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+
+    const updated = await store.update("imported", { content: "New body." });
+    const written = await readFile(join(dir, "imported.md"), "utf8");
+    expect(written).toBe(
+      original
+        .replace("Old body.", "New body.")
+        .replace("2026-01-01T00:00:00.000Z", updated.updated),
+    );
+  });
+
+  it("keeps unknown keys, order, comments and flow tags when the title changes", async () => {
+    const original = [
+      "---",
+      "title: Imported",
+      "aliases: [One, Two]",
+      "cssclasses: [wide, cards]   # keep flow",
+      "date: 2026-01-02",
+      "tags: [x, y]",
+      "---",
+      "",
+      "Body.",
+      "",
+    ].join("\n");
+    const dir = await tempVault(async (root) => {
+      await writeFile(join(root, "imported.md"), original, "utf8");
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+
+    await store.update("imported", { title: "Renamed", content: "Body." });
+    const written = await readFile(join(dir, "imported.md"), "utf8");
+    expect(written).toContain("title: Renamed");
+    expect(written).toContain("aliases: [One, Two]");
+    expect(written).toContain("cssclasses: [wide, cards]   # keep flow");
+    expect(written).toContain("date: 2026-01-02");
+    expect(written).toContain("tags: [x, y]");
+    expect(written.indexOf("title:")).toBeLessThan(written.indexOf("aliases:"));
+    expect(written.indexOf("aliases:")).toBeLessThan(written.indexOf("date:"));
+  });
+
+  it("preserves CRLF and a missing final newline", async () => {
+    const original = "---\r\ntitle: Win\r\nupdated: old\r\n---\r\nBody";
+    const dir = await tempVault(async (root) => {
+      await writeFile(join(root, "win.md"), original, "utf8");
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+
+    const updated = await store.update("win", { content: "Body" });
+    const written = await readFile(join(dir, "win.md"), "utf8");
+    expect(written).toBe(
+      original.replace("old", updated.updated).replace("---\r\nBody", "---\r\n\r\nBody"),
+    );
+    expect(written.endsWith("\n")).toBe(false);
+  });
+
   it("ignores .trash on start and restores entries after a restart", async () => {
     const dir = await tempVault();
     const store = new VaultStore(dir);
@@ -150,5 +227,103 @@ describe("VaultStore index on start", () => {
     expect(log).toContain(`delete ${page.id} failed`);
     expect(log).toContain("ENOTDIR");
     expect(log).toContain(`${page.id}.md`);
+  });
+});
+
+async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Timed out waiting for the vault watcher");
+}
+
+describe("external vault changes", () => {
+  it("watches created, changed and deleted Markdown files", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    store.startWatching();
+    try {
+      const external = join(dir, "external.md");
+      await writeFile(external, "External body", "utf8");
+      await waitFor(() => store.list().some((page) => page.id === "external"));
+      expect(store.get("external").content).toContain("External body");
+
+      await writeFile(external, "External changed", "utf8");
+      await waitFor(() => store.get("external").content.includes("External changed"));
+
+      await rm(external);
+      await waitFor(() => !store.list().some((page) => page.id === "external"));
+    } finally {
+      store.stopWatching();
+    }
+  });
+
+  it("rejects a stale conditional save and allows Keep mine", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const page = await store.create({ title: "Conflict", content: "original" });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await writeFile(join(dir, "conflict.md"), "external body", "utf8");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(
+      store.update("conflict", { content: "mine", expectedUpdated: page.updated }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    await store.rescan();
+    expect(store.get("conflict").content).toContain("external body");
+
+    const forced = await store.update("conflict", {
+      content: "mine",
+      expectedUpdated: page.updated,
+      force: true,
+    });
+    expect(forced.content).toBe("mine");
+    expect(forced.conflictBackup).toMatch(/^\.gumply\/conflicts\//);
+
+    const backups = await readdir(join(dir, ".gumply", "conflicts"));
+    expect(backups).toHaveLength(1);
+    expect(await readFile(join(dir, ".gumply", "conflicts", backups[0]!), "utf8")).toContain(
+      "external body",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("writes atomically without leaving temporary files", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const page = await store.create({ title: "Atomic", content: "one" });
+    await store.update(page.id, { content: "two" });
+    const files = await readdir(dir);
+    expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
+    expect(await readFile(join(dir, "atomic.md"), "utf8")).toContain("two");
+  });
+
+  it("picks up several external files in one rescan", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    store.startWatching();
+    try {
+      await Promise.all(
+        ["bulk-a", "bulk-b", "bulk-c"].map((id) =>
+          writeFile(join(dir, `${id}.md`), `# ${id}`, "utf8"),
+        ),
+      );
+      await waitFor(() =>
+        ["bulk-a", "bulk-b", "bulk-c"].every((id) =>
+          store.list().some((page) => page.id === id),
+        ),
+      );
+      expect(store.list().filter((page) => page.id.startsWith("bulk-"))).toHaveLength(3);
+    } finally {
+      store.stopWatching();
+    }
   });
 });

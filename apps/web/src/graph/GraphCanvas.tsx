@@ -7,17 +7,28 @@ import ForceGraph2D, {
 } from "react-force-graph-2d";
 import {
   FALLBACK_GRAPH_PALETTE,
-  ghostTooltip,
+  ghostDetail,
   graphPaletteFromStyles,
   isGhostId,
   labelledIds,
   neighbourIds,
   nodeColor,
   nodeRadius,
-  nodeTooltip,
+  nodeDetail,
+  PAGE_NODE_COLOR,
   type GhostNode,
   type GraphLink,
 } from "./graph-model.js";
+import {
+  DRAG_ALPHA,
+  DRAG_THRESHOLD_PX,
+  capAlpha,
+  fitZoom,
+  pickNode,
+  visibleBounds,
+  type AlphaForce,
+  type FitItem,
+} from "./graph-interaction.js";
 
 export type CanvasNode = GraphNode | GhostNode;
 
@@ -26,6 +37,11 @@ export interface GraphCanvasProps {
   links: readonly GraphLink[];
   /** Page to ring when arriving from a page. */
   highlightId?: string | null;
+  /**
+   * Local graph: keep this page pinned in the middle and fit the view around
+   * it, so its neighbours spread around the centre (#z5abndiz).
+   */
+  centerId?: string | null;
   testId: string;
   ariaLabel: string;
   showControls?: boolean;
@@ -40,10 +56,12 @@ interface ThemeColors {
   panel: string;
   accent: string;
   border: string;
+  /** Untagged pages (`--graph-page`). */
+  page: string;
   palette: readonly string[];
 }
 
-type ThemeColorToken = Exclude<keyof ThemeColors, "palette">;
+type ThemeColorToken = Exclude<keyof ThemeColors, "palette" | "page">;
 
 const FALLBACK_COLORS: ThemeColors = {
   text: "#26251f",
@@ -51,6 +69,7 @@ const FALLBACK_COLORS: ThemeColors = {
   panel: "#ffffff",
   accent: "#4f46e5",
   border: "#e6e4dd",
+  page: PAGE_NODE_COLOR,
   palette: FALLBACK_GRAPH_PALETTE,
 };
 
@@ -66,7 +85,13 @@ const MIN_FIT_ZOOM = 0.06;
 const LABEL_FADE_START = 0.8;
 const LABEL_FADE_END = 1.1;
 const LABEL_FONT_PX = 11;
+const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
+/** Gap between a node and its label, and the label line height (CSS px). */
+const LABEL_GAP_PX = 4;
+const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
+/** Dash for links into a "not created yet" page (graph units, as before). */
+const GHOST_LINK_DASH = [4, 3];
 
 function readThemeColors(): ThemeColors {
   if (typeof window === "undefined") return FALLBACK_COLORS;
@@ -79,6 +104,7 @@ function readThemeColors(): ThemeColors {
     panel: read("panel"),
     accent: read("accent"),
     border: read("border"),
+    page: styles.getPropertyValue("--graph-page").trim() || PAGE_NODE_COLOR,
     palette: graphPaletteFromStyles(styles),
   };
 }
@@ -210,11 +236,54 @@ interface FitTarget {
   zoom: number;
 }
 
+/** Per-node drawing data, computed once per data/theme change, not per frame. */
+interface NodeStyle {
+  /** Drawn radius in CSS px. */
+  radius: number;
+  ghost: boolean;
+  /** Fill colour (pages only). */
+  fill: string;
+  /** Truncated label text. */
+  label: string;
+  /** Label width at LABEL_FONT_PX, in CSS px (for label-aware fitting). */
+  labelWidth: number;
+  tooltip: string;
+}
+
+let measureContext: CanvasRenderingContext2D | null | undefined;
+
+/** Width of a label in CSS px; a rough estimate where canvas text isn't available. */
+function measureLabel(text: string): number {
+  if (measureContext === undefined) {
+    measureContext =
+      typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+    if (measureContext) measureContext.font = `${LABEL_FONT_PX}px ${LABEL_FONT_FAMILY}`;
+  }
+  return measureContext ? measureContext.measureText(text).width : text.length * LABEL_FONT_PX * 0.56;
+}
+
+type PositionedNode = CanvasNode & { x?: number; y?: number; fx?: number; fy?: number };
+
+interface DragState {
+  node: PositionedNode;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  /** Graph-space offset from the pointer to the node centre, kept while dragging. */
+  offsetX: number;
+  offsetY: number;
+  moved: boolean;
+}
+
+const TOOLTIP_OFFSET_X = 14;
+const TOOLTIP_OFFSET_Y = 16;
+
 /** Shared canvas for the global graph and the local panel. */
 export function GraphCanvas({
   nodes,
   links,
   highlightId = null,
+  centerId = null,
   testId,
   ariaLabel,
   showControls = false,
@@ -223,6 +292,7 @@ export function GraphCanvas({
   onCreatePage,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphMethods<CanvasNode, GraphLink> | undefined>(undefined);
   const fitTimer = useRef<number | null>(null);
   const size = useElementSize(containerRef);
@@ -234,6 +304,10 @@ export function GraphCanvas({
   const [fitGeneration, setFitGeneration] = useState(0);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  /** Set once the user zooms, pans or drags: auto-fit then stops moving the camera. */
+  const userViewRef = useRef(false);
+  /** Highest alpha the forces see (see `capAlpha`); lowered while dragging. */
+  const alphaCapRef = useRef(Number.POSITIVE_INFINITY);
 
   /** Identity of the drawn data set; fit again when it (not just render) changes. */
   const dataKey = useMemo(
@@ -257,7 +331,7 @@ export function GraphCanvas({
   );
 
   const maxCount = useMemo(
-    () => Math.max(0, ...nodes.map((node) => countOf(node))),
+    () => nodes.reduce((max, node) => Math.max(max, countOf(node)), 0),
     [nodes],
   );
 
@@ -266,10 +340,49 @@ export function GraphCanvas({
     [nodes],
   );
 
-  const isDimmed = useCallback(
-    (id: string): boolean =>
-      hoveredId !== null && id !== hoveredId && !neighbours.has(id),
-    [hoveredId, neighbours],
+  const nodeStyles = useMemo(() => {
+    const styles = new Map<string, NodeStyle>();
+    for (const node of nodes) {
+      const ghost = isGhostId(node.id);
+      const title = titleOf(node);
+      const truncated = title.length > MAX_LABEL_CHARS;
+      const label = truncated ? `${title.slice(0, MAX_LABEL_CHARS - 1)}…` : title;
+      const detail = ghost ? ghostDetail(node as GhostNode) : nodeDetail(node as GraphNode);
+      styles.set(node.id, {
+        radius: nodeRadius(countOf(node), maxCount),
+        ghost,
+        fill: ghost ? "" : nodeColor(node as GraphNode, colors.palette, colors.page),
+        label,
+        labelWidth: measureLabel(label),
+        // The hovered node's label already shows the title; only repeat it
+        // when the label had to be truncated.
+        tooltip: truncated ? `${title} · ${detail}` : detail,
+      });
+    }
+    return styles;
+  }, [nodes, maxCount, colors.palette, colors.page]);
+
+  /** Labels drawn when nothing is hovered: what the fit has to keep in view. */
+  const restingLabelIds = useMemo(
+    () =>
+      labelledIds(
+        nodes.map((node) => ({ id: node.id, count: countOf(node) })),
+        null,
+        new Set<string>(),
+      ),
+    [nodes],
+  );
+
+  /** Link colours parsed once per theme, not once per link per frame. */
+  const linkPaint = useMemo(
+    () => ({
+      idle: withAlpha(colors.muted, 0.32),
+      faded: withAlpha(colors.muted, 0.08),
+      active: withAlpha(colors.accent, 0.85),
+      halo: withAlpha(colors.accent, 0.14),
+      labelHalo: withAlpha(colors.panel, 0.82),
+    }),
+    [colors],
   );
 
   /**
@@ -286,38 +399,61 @@ export function GraphCanvas({
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
-    let maxRadius = 0;
-    let positioned = 0;
+    const bare: FitItem[] = [];
+    const withLabels: FitItem[] = [];
+    let focus: PositionedNode | null = null;
 
-    for (const node of nodes) {
-      const x = (node as CanvasNode & { x?: number }).x;
-      const y = (node as CanvasNode & { y?: number }).y;
+    for (const node of nodes as PositionedNode[]) {
+      const { x, y } = node;
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-      positioned += 1;
-      minX = Math.min(minX, x as number);
-      maxX = Math.max(maxX, x as number);
-      minY = Math.min(minY, y as number);
-      maxY = Math.max(maxY, y as number);
-      maxRadius = Math.max(maxRadius, nodeRadius(countOf(node), maxCount));
-    }
-    if (positioned === 0) return null;
+      const px = x as number;
+      const py = y as number;
+      minX = Math.min(minX, px);
+      maxX = Math.max(maxX, px);
+      minY = Math.min(minY, py);
+      maxY = Math.max(maxY, py);
+      if (centerId !== null && node.id === centerId) focus = node;
 
-    const spanX = maxX - minX;
-    const spanY = maxY - minY;
-    const availableWidth = Math.max(20, width - FIT_PADDING * 2 - maxRadius * 2);
-    const availableHeight = Math.max(
-      20,
-      height - FIT_PADDING * 2 - maxRadius * 2 - LABEL_ALLOWANCE,
-    );
-    const zoomX = spanX > 1 ? availableWidth / spanX : MAX_FIT_ZOOM;
-    const zoomY = spanY > 1 ? availableHeight / spanY : MAX_FIT_ZOOM;
+      const style = nodeStyles.get(node.id);
+      const r = style?.radius ?? 4;
+      // Without labels: the node plus the old fixed label allowance below it.
+      bare.push({ x: px, y: py, left: r, right: r, top: r, bottom: r + LABEL_ALLOWANCE });
+      // With labels: the full label width and height (labels can be wide).
+      const pinned = node.id === highlightId || node.id === centerId;
+      const labelled = style && (restingLabelIds.has(node.id) || pinned);
+      const half = labelled ? Math.max(r, style.labelWidth / 2 + 2) : r;
+      withLabels.push({
+        x: px,
+        y: py,
+        left: half,
+        right: half,
+        top: r,
+        bottom: labelled ? r + LABEL_GAP_PX + LABEL_LINE_PX : r,
+      });
+    }
+    if (minX > maxX) return null;
+
+    // Local graph: the current page is the centre of the view; otherwise the
+    // middle of the drawing.
+    const centerX = focus ? (focus.x as number) : (minX + maxX) / 2;
+    const centerY = focus ? (focus.y as number) : (minY + maxY) / 2;
+    const halfWidth = width / 2 - FIT_PADDING;
+    const halfHeight = height / 2 - FIT_PADDING;
+
+    // Labels only show from LABEL_FADE_START on. If the graph only fits below
+    // that zoom, they are hidden anyway and only the nodes have to fit.
+    const labelZoom = fitZoom(withLabels, centerX, centerY, halfWidth, halfHeight);
+    const zoom =
+      labelZoom >= LABEL_FADE_START
+        ? labelZoom
+        : Math.min(fitZoom(bare, centerX, centerY, halfWidth, halfHeight), LABEL_FADE_START);
 
     return {
-      centerX: (minX + maxX) / 2,
-      centerY: (minY + maxY) / 2,
-      zoom: clamp(Math.min(zoomX, zoomY), MIN_FIT_ZOOM, MAX_FIT_ZOOM),
+      centerX,
+      centerY,
+      zoom: clamp(Number.isFinite(zoom) ? zoom : MAX_FIT_ZOOM, MIN_FIT_ZOOM, MAX_FIT_ZOOM),
     };
-  }, [nodes, maxCount]);
+  }, [nodes, nodeStyles, restingLabelIds, centerId, highlightId]);
 
   const fitView = useCallback(
     (duration: number): void => {
@@ -326,9 +462,19 @@ export function GraphCanvas({
       if (!graph || !target) return;
       graph.centerAt(target.centerX, target.centerY, duration);
       graph.zoom(target.zoom, duration);
+      // The camera is "auto" again until the user moves it.
+      userViewRef.current = false;
       setFitGeneration((generation) => generation + 1);
     },
     [fitTarget],
+  );
+
+  /** Fit only if the user hasn't zoomed, panned or dragged since the last fit. */
+  const autoFit = useCallback(
+    (duration: number): void => {
+      if (!userViewRef.current) fitView(duration);
+    },
+    [fitView],
   );
 
   const settleTimer = useRef<number | null>(null);
@@ -361,7 +507,10 @@ export function GraphCanvas({
     if (size.width <= 0 || size.height <= 0) return;
     const newData = lastDataKey.current !== dataKey;
     lastDataKey.current = dataKey;
-    if (newData) setReady(false);
+    if (newData) {
+      setReady(false);
+      alphaCapRef.current = Number.POSITIVE_INFINITY;
+    }
 
     // Draw the whole graph immediately (even while physics is still moving)…
     scheduleFit(0, false);
@@ -371,7 +520,7 @@ export function GraphCanvas({
     clearSettleTimer();
     settleTimer.current = window.setTimeout(() => {
       settleTimer.current = null;
-      fitView(0);
+      autoFit(0);
       setReady(true);
     }, newData ? 4000 : 600);
 
@@ -380,7 +529,7 @@ export function GraphCanvas({
       fitTimer.current = null;
       clearSettleTimer();
     };
-  }, [dataKey, size.width, size.height, scheduleFit, fitView, clearSettleTimer]);
+  }, [dataKey, size.width, size.height, scheduleFit, autoFit, clearSettleTimer]);
 
   // Physics: springy but calm, and every component (even a page with no links)
   // is pulled towards the middle so auto-fit never has to chase a far corner.
@@ -391,137 +540,239 @@ export function GraphCanvas({
     const graph = graphRef.current;
     if (!graph || !hasSize) return;
 
-    const link = graph.d3Force("link") as
-      | { distance: (value: number) => unknown; strength: (value: number) => unknown }
-      | undefined;
-    link?.distance(52);
-    link?.strength(0.45);
+    const link = graph.d3Force("link") as AlphaForce | undefined;
+    (link?.distance as ((value: number) => unknown) | undefined)?.(52);
+    (link?.strength as ((value: number) => unknown) | undefined)?.(0.45);
+    if (link) graph.d3Force("link", capAlpha(link, alphaCapRef) as never);
 
-    const charge = graph.d3Force("charge") as
-      | { strength: (value: number) => unknown; distanceMax: (value: number) => unknown }
-      | undefined;
-    charge?.strength(-60 - Math.min(180, nodes.length * 0.6));
-    charge?.distanceMax(1400);
+    const charge = graph.d3Force("charge") as AlphaForce | undefined;
+    (charge?.strength as ((value: number) => unknown) | undefined)?.(
+      -60 - Math.min(180, nodes.length * 0.6),
+    );
+    (charge?.distanceMax as ((value: number) => unknown) | undefined)?.(1400);
+    if (charge) graph.d3Force("charge", capAlpha(charge, alphaCapRef) as never);
 
     // Small vaults need a firmer centring pull so an isolated page doesn't
     // drift away from a 3-node cluster; big vaults stay airy.
     const centerStrength = nodes.length <= 12 ? 0.22 : nodes.length <= 60 ? 0.16 : 0.12;
-    graph.d3Force("x", axisForce("x", centerStrength) as never);
-    graph.d3Force("y", axisForce("y", centerStrength) as never);
+    // Local graph: pin the current page in the middle, and shape the layout
+    // like the (tall, narrow) panel instead of a circle that leaves half of it
+    // empty (#z5abndiz).
+    let stretchX = 1;
+    let stretchY = 1;
+    if (centerId !== null) {
+      const focus = nodes.find((node) => node.id === centerId) as PositionedNode | undefined;
+      if (focus) {
+        focus.fx = 0;
+        focus.fy = 0;
+      }
+      // Only with enough nodes to fill an area: a 2–3 node star would just
+      // collapse into a line along the panel's long side.
+      if (nodes.length >= 5) {
+        const { width, height } = sizeRef.current;
+        const aspect = clamp(height / Math.max(1, width), 0.5, 2.5);
+        stretchX = aspect ** 0.35;
+        stretchY = 1 / stretchX;
+      }
+    }
+    graph.d3Force(
+      "x",
+      capAlpha(axisForce("x", centerStrength * stretchX) as never, alphaCapRef) as never,
+    );
+    graph.d3Force(
+      "y",
+      capAlpha(axisForce("y", centerStrength * stretchY) as never, alphaCapRef) as never,
+    );
     graph.d3ReheatSimulation();
-  }, [dataKey, hasSize, nodes.length]);
+  }, [dataKey, hasSize, nodes, centerId]);
 
-  const isDimmedRef = useRef(isDimmed);
-  isDimmedRef.current = isDimmed;
-  const labelIdsRef = useRef(labelIds);
-  labelIdsRef.current = labelIds;
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const nodeStylesRef = useRef(nodeStyles);
+  nodeStylesRef.current = nodeStyles;
   const ghostByIdRef = useRef(ghostById);
   ghostByIdRef.current = ghostById;
   const hoveredRef = useRef(hoveredId);
   hoveredRef.current = hoveredId;
+  const centerIdRef = useRef(centerId);
+  centerIdRef.current = centerId;
 
-  const drawNode = useCallback(
-    (rawNode: NodeObject<CanvasNode>, ctx: CanvasRenderingContext2D, scale: number) => {
-      const node = rawNode as CanvasNode & { x?: number; y?: number };
-      const id = node.id;
-      const ghost = isGhostId(id);
-      const x = node.x ?? 0;
-      const y = node.y ?? 0;
-      const safeScale = Math.max(scale, 0.05);
-      const radiusPx = nodeRadius(countOf(node), maxCount);
-      const radius = radiusPx / safeScale;
-      const dimmed = isDimmedRef.current(id);
-      const hovered = hoveredRef.current === id;
+  // Dev/e2e-only probe: node positions in container CSS px.
+  useEffect(() => {
+    if (!import.meta.env.DEV || typeof window === "undefined") return;
+    const registry = ((window as unknown as { __gumplyGraphs?: Record<string, unknown> })
+      .__gumplyGraphs ??= {});
+    registry[testId] = {
+      nodes: () => {
+        const graph = graphRef.current;
+        if (!graph) return [];
+        return nodesRef.current.map((node) => {
+          const positioned = node as PositionedNode;
+          const point = graph.graph2ScreenCoords(positioned.x ?? 0, positioned.y ?? 0);
+          return {
+            id: node.id,
+            x: point.x,
+            y: point.y,
+            r: nodeStylesRef.current.get(node.id)?.radius ?? 0,
+          };
+        });
+      },
+      zoom: () => graphRef.current?.zoom() ?? 1,
+      hovered: () => hoveredRef.current,
+    };
+    return () => {
+      delete registry[testId];
+    };
+  }, [testId]);
+
+  /**
+   * Draws every node and label in one pass after the links, batched by colour
+   * (one fill per tag colour instead of one per node) and skipping nodes outside
+   * the viewport. Replaces force-graph's per-node `nodeCanvasObject` calls.
+   */
+  const drawNodes = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number): void => {
+      const k = Math.max(scale, 0.05);
+      const styles = nodeStylesRef.current;
+      const transform = ctx.getTransform();
+      const dpr = transform.a / k || 1;
+      const bounds = visibleBounds(transform, ctx.canvas.width, ctx.canvas.height, 80 * dpr);
+
+      const fade = clamp((scale - LABEL_FADE_START) / (LABEL_FADE_END - LABEL_FADE_START), 0, 1);
+      const dimmedPass: Array<[PositionedNode, NodeStyle]> = [];
+      const brightPass: Array<[PositionedNode, NodeStyle]> = [];
+      for (const node of nodesRef.current as PositionedNode[]) {
+        const x = node.x;
+        const y = node.y;
+        if (x === undefined || y === undefined) continue;
+        if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) continue;
+        const style = styles.get(node.id);
+        if (!style) continue;
+        (hoveredId !== null && node.id !== hoveredId && !neighbours.has(node.id)
+          ? dimmedPass
+          : brightPass
+        ).push([node, style]);
+      }
 
       ctx.save();
-      ctx.globalAlpha = dimmed ? 0.18 : 1;
 
       // Soft halo for the page the user came from, like Obsidian's active note.
-      if (highlightId === id) {
+      const highlighted = highlightId
+        ? (nodesRef.current.find((node) => node.id === highlightId) as PositionedNode | undefined)
+        : undefined;
+      const highlightStyle = highlightId ? styles.get(highlightId) : undefined;
+      if (highlighted?.x !== undefined && highlighted.y !== undefined && highlightStyle) {
+        const dimmed =
+          hoveredId !== null && highlightId !== hoveredId && !neighbours.has(highlightId as string);
+        ctx.globalAlpha = dimmed ? 0.18 : 1;
         ctx.beginPath();
-        ctx.arc(x, y, radius + 6 / safeScale, 0, Math.PI * 2);
-        ctx.fillStyle = withAlpha(colors.accent, 0.14);
+        ctx.arc(highlighted.x, highlighted.y, (highlightStyle.radius + 6) / k, 0, Math.PI * 2);
+        ctx.fillStyle = linkPaint.halo;
         ctx.fill();
       }
 
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      const paintCircles = (items: Array<[PositionedNode, NodeStyle]>, alpha: number): void => {
+        if (items.length === 0) return;
+        ctx.globalAlpha = alpha;
+        const fills = new Map<string, Path2D>();
+        const outlines = new Path2D();
+        const ghosts = new Path2D();
+        let ghostCount = 0;
+        for (const [node, style] of items) {
+          const x = node.x as number;
+          const y = node.y as number;
+          const r = style.radius / k;
+          if (style.ghost) {
+            ghosts.moveTo(x + r, y);
+            ghosts.arc(x, y, r, 0, Math.PI * 2);
+            ghostCount += 1;
+            continue;
+          }
+          let path = fills.get(style.fill);
+          if (!path) {
+            path = new Path2D();
+            fills.set(style.fill, path);
+          }
+          path.moveTo(x + r, y);
+          path.arc(x, y, r, 0, Math.PI * 2);
+          outlines.moveTo(x + r, y);
+          outlines.arc(x, y, r, 0, Math.PI * 2);
+        }
+        for (const [fill, path] of fills) {
+          ctx.fillStyle = fill;
+          ctx.fill(path);
+        }
+        if (fills.size > 0) {
+          ctx.lineWidth = 1.2 / k;
+          ctx.strokeStyle = colors.panel;
+          ctx.stroke(outlines);
+        }
+        if (ghostCount > 0) {
+          ctx.setLineDash([4 / k, 3 / k]);
+          ctx.lineWidth = 1.4 / k;
+          ctx.strokeStyle = colors.muted;
+          ctx.stroke(ghosts);
+          ctx.setLineDash([]);
+        }
+      };
+      paintCircles(dimmedPass, 0.18);
+      paintCircles(brightPass, 1);
 
-      if (ghost) {
-        ctx.setLineDash([4 / safeScale, 3 / safeScale]);
-        ctx.lineWidth = 1.4 / safeScale;
-        ctx.strokeStyle = colors.muted;
-        ctx.stroke();
-        ctx.setLineDash([]);
-      } else {
-        ctx.fillStyle = nodeColor(node as GraphNode, colors.palette);
-        ctx.fill();
-        ctx.lineWidth = 1.2 / safeScale;
-        ctx.strokeStyle = colors.panel;
-        ctx.stroke();
-      }
-
-      if (highlightId === id || hovered) {
+      // Accent ring: current page and hovered node.
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.6 / k;
+      ctx.strokeStyle = colors.accent;
+      for (const [node, style] of brightPass) {
+        if (node.id !== highlightId && node.id !== hoveredId) continue;
         ctx.beginPath();
-        ctx.arc(x, y, radius + 3 / safeScale, 0, Math.PI * 2);
-        ctx.lineWidth = 1.6 / safeScale;
-        ctx.strokeStyle = colors.accent;
+        ctx.arc(node.x as number, node.y as number, (style.radius + 3) / k, 0, Math.PI * 2);
         ctx.stroke();
       }
 
-      const hoveredLabel = hovered || highlightId === id;
-      const fade = clamp(
-        (scale - LABEL_FADE_START) / (LABEL_FADE_END - LABEL_FADE_START),
-        0,
-        1,
-      );
-      const labelAlpha = dimmed ? 0.18 : hoveredLabel ? 1 : fade;
-
-      if ((labelIdsRef.current.has(id) || highlightId === id) && labelAlpha > 0.02) {
-        const title = titleOf(node);
-        const label =
-          title.length > MAX_LABEL_CHARS ? `${title.slice(0, MAX_LABEL_CHARS - 1)}…` : title;
-        const fontSize = LABEL_FONT_PX / safeScale;
-        ctx.globalAlpha = labelAlpha;
-        ctx.font = `${fontSize}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        // Halo in the canvas background colour keeps labels legible over links
-        // and neighbouring nodes (Obsidian does the same).
-        ctx.lineWidth = 3 / safeScale;
-        ctx.strokeStyle = withAlpha(colors.panel, 0.82);
-        ctx.lineJoin = "round";
-        ctx.strokeText(label, x, y + radius + 4 / safeScale);
-        ctx.fillStyle = ghost ? colors.muted : colors.text;
-        ctx.fillText(label, x, y + radius + 4 / safeScale);
-      }
+      // Labels last, so they sit above every node (Obsidian does the same).
+      const labelled = labelIds;
+      ctx.font = `${LABEL_FONT_PX / k}px ${LABEL_FONT_FAMILY}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 3 / k;
+      ctx.strokeStyle = linkPaint.labelHalo;
+      const paintLabels = (items: Array<[PositionedNode, NodeStyle]>, dimmed: boolean): void => {
+        for (const [node, style] of items) {
+          const id = node.id;
+          if (!labelled.has(id) && highlightId !== id) continue;
+          const pinned = id === hoveredId || id === highlightId;
+          const alpha = dimmed ? 0.18 : pinned ? 1 : fade;
+          if (alpha <= 0.02) continue;
+          ctx.globalAlpha = alpha;
+          const x = node.x as number;
+          const y = (node.y as number) + (style.radius + LABEL_GAP_PX) / k;
+          ctx.strokeText(style.label, x, y);
+          ctx.fillStyle = style.ghost ? colors.muted : colors.text;
+          ctx.fillText(style.label, x, y);
+        }
+      };
+      paintLabels(dimmedPass, true);
+      paintLabels(brightPass, false);
 
       ctx.restore();
     },
-    [colors, highlightId, hoveredId, maxCount],
+    [colors, highlightId, hoveredId, neighbours, labelIds, linkPaint],
   );
 
-  const drawPointerArea = useCallback(
-    (
-      rawNode: NodeObject<CanvasNode>,
-      paintColor: string,
-      ctx: CanvasRenderingContext2D,
-      scale: number,
-    ) => {
-      const node = rawNode as CanvasNode & { x?: number; y?: number };
-      const safeScale = Math.max(scale, 0.05);
-      const radius = (nodeRadius(countOf(node), maxCount) + 5) / safeScale;
-      ctx.beginPath();
-      ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, Math.PI * 2);
-      ctx.fillStyle = paintColor;
-      ctx.fill();
-    },
-    [maxCount],
-  );
+  /**
+   * force-graph only repaints when it thinks something changed. Our node layer
+   * is drawn in `onRenderFramePost`, so hand it a new (no-op) node accessor
+   * whenever that layer's inputs change: that prop change requests a redraw.
+   */
+  const hideBuiltInNodes = useMemo(() => {
+    void drawNodes;
+    void nodeStyles;
+    return () => false;
+  }, [drawNodes, nodeStyles]);
 
   const handleNodeClick = useCallback(
-    (rawNode: NodeObject<CanvasNode>) => {
-      const node = rawNode as CanvasNode;
+    (node: CanvasNode) => {
       const ghost = ghostByIdRef.current.get(node.id);
       if (ghost) {
         if (onCreatePage) onCreatePage(ghost.title);
@@ -531,12 +782,197 @@ export function GraphCanvas({
     },
     [onCreatePage, onOpenPage],
   );
+  const handleNodeClickRef = useRef(handleNodeClick);
+  handleNodeClickRef.current = handleNodeClick;
+
+  /**
+   * Pointer handling (#74jpajdy): hover, click and drag pick nodes against
+   * their live positions with a ≥28 px target (see graph-interaction.ts).
+   * A press on a node is kept away from d3-zoom, so it drags the node instead
+   * of panning; a press on empty canvas still pans.
+   */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let drag: DragState | null = null;
+    let lastPointer: { x: number; y: number } | null = null;
+    let hoverFrame = 0;
+
+    const local = (event: PointerEvent | MouseEvent): { x: number; y: number } => {
+      const rect = container.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+
+    const pick = (point: { x: number; y: number }): PositionedNode | null => {
+      const graph = graphRef.current;
+      if (!graph) return null;
+      const g = graph.screen2GraphCoords(point.x, point.y);
+      const styles = nodeStylesRef.current;
+      return pickNode(nodesRef.current as PositionedNode[], g.x, g.y, graph.zoom(), (node) =>
+        styles.get(node.id)?.radius ?? 0,
+      );
+    };
+
+    const showTooltip = (node: PositionedNode | null, point: { x: number; y: number } | null): void => {
+      const tip = tooltipRef.current;
+      if (!tip) return;
+      const text = node ? nodeStylesRef.current.get(node.id)?.tooltip : undefined;
+      if (!text || !point) {
+        tip.hidden = true;
+        return;
+      }
+      if (tip.textContent !== text) tip.textContent = text;
+      tip.hidden = false;
+      // Above the pointer: the node's label sits below the node, so a tooltip
+      // underneath would cover it.
+      const maxX = container.clientWidth - tip.offsetWidth - 8;
+      const maxY = container.clientHeight - tip.offsetHeight - 8;
+      const x = clamp(point.x + TOOLTIP_OFFSET_X, 8, Math.max(8, maxX));
+      const above = point.y - tip.offsetHeight - TOOLTIP_OFFSET_Y;
+      const y = above >= 8 ? above : Math.min(maxY, point.y + TOOLTIP_OFFSET_Y + LABEL_LINE_PX);
+      tip.style.transform = `translate(${x}px, ${y}px)`;
+    };
+
+    const setHover = (node: PositionedNode | null): void => {
+      const id = node ? node.id : null;
+      if (hoveredRef.current !== id) {
+        hoveredRef.current = id;
+        setHoveredId(id);
+      }
+      container.style.cursor = drag?.moved ? "grabbing" : node ? "pointer" : "";
+    };
+
+    const updateHover = (): void => {
+      hoverFrame = 0;
+      if (drag || !lastPointer) return;
+      const node = pick(lastPointer);
+      setHover(node);
+      showTooltip(node, lastPointer);
+    };
+
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0 || !event.isPrimary) return;
+      const point = local(event);
+      const node = pick(point);
+      const graph = graphRef.current;
+      if (!node || !graph) return;
+      const g = graph.screen2GraphCoords(point.x, point.y);
+      drag = {
+        node,
+        pointerId: event.pointerId,
+        startX: point.x,
+        startY: point.y,
+        offsetX: (node.x ?? g.x) - g.x,
+        offsetY: (node.y ?? g.y) - g.y,
+        moved: false,
+      };
+      container.setPointerCapture?.(event.pointerId);
+    };
+
+    // d3-zoom (pan) and force-graph listen for mousedown on the canvas: a press
+    // that starts on a node must not reach them.
+    const onMouseDown = (event: MouseEvent): void => {
+      if (!drag) return;
+      event.stopPropagation();
+      event.preventDefault();
+    };
+
+    const onPointerMove = (event: PointerEvent): void => {
+      const point = local(event);
+      lastPointer = point;
+      if (drag && event.pointerId === drag.pointerId) {
+        const graph = graphRef.current;
+        if (!graph) return;
+        if (!drag.moved) {
+          if (Math.hypot(point.x - drag.startX, point.y - drag.startY) < DRAG_THRESHOLD_PX) return;
+          drag.moved = true;
+          userViewRef.current = true;
+          alphaCapRef.current = DRAG_ALPHA;
+          showTooltip(null, null);
+          setHover(drag.node);
+        }
+        const g = graph.screen2GraphCoords(point.x, point.y);
+        drag.node.fx = drag.node.x = g.x + drag.offsetX;
+        drag.node.fy = drag.node.y = g.y + drag.offsetY;
+        // Keep the simulation awake (alpha is capped, so this stays calm).
+        graph.d3ReheatSimulation();
+        return;
+      }
+      if (event.buttons !== 0) {
+        // Panning the background: the user owns the camera now.
+        userViewRef.current = true;
+        showTooltip(null, null);
+        return;
+      }
+      if (!hoverFrame) hoverFrame = window.requestAnimationFrame(updateHover);
+    };
+
+    const endDrag = (event: PointerEvent, cancelled: boolean): void => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const { node, moved } = drag;
+      drag = null;
+      if (container.hasPointerCapture?.(event.pointerId)) {
+        container.releasePointerCapture(event.pointerId);
+      }
+      if (moved) {
+        // Release the node (Obsidian-like); the local graph's centre page
+        // stays pinned where it was dropped.
+        if (node.id !== centerIdRef.current) {
+          node.fx = undefined;
+          node.fy = undefined;
+        }
+        // Let neighbours settle; alpha stays capped until the engine stops.
+        graphRef.current?.d3ReheatSimulation();
+      } else if (!cancelled) {
+        handleNodeClickRef.current(node);
+      }
+      const point = local(event);
+      lastPointer = point;
+      const hovered = pick(point);
+      setHover(hovered);
+      showTooltip(hovered, point);
+    };
+
+    const onPointerUp = (event: PointerEvent): void => endDrag(event, false);
+    const onPointerCancel = (event: PointerEvent): void => endDrag(event, true);
+
+    const onPointerLeave = (): void => {
+      if (drag) return;
+      lastPointer = null;
+      setHover(null);
+      showTooltip(null, null);
+    };
+
+    const onWheel = (): void => {
+      userViewRef.current = true;
+    };
+
+    container.addEventListener("pointerdown", onPointerDown, true);
+    container.addEventListener("mousedown", onMouseDown, true);
+    container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("pointerup", onPointerUp);
+    container.addEventListener("pointercancel", onPointerCancel);
+    container.addEventListener("pointerleave", onPointerLeave);
+    container.addEventListener("wheel", onWheel, { capture: true, passive: true });
+    return () => {
+      if (hoverFrame) window.cancelAnimationFrame(hoverFrame);
+      container.removeEventListener("pointerdown", onPointerDown, true);
+      container.removeEventListener("mousedown", onMouseDown, true);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerup", onPointerUp);
+      container.removeEventListener("pointercancel", onPointerCancel);
+      container.removeEventListener("pointerleave", onPointerLeave);
+      container.removeEventListener("wheel", onWheel, true);
+    };
+  }, []);
 
   const handleEngineStop = useCallback(() => {
     clearSettleTimer();
-    fitView(reducedMotion ? 0 : 300);
+    alphaCapRef.current = Number.POSITIVE_INFINITY;
+    // Never yank the camera after the user zoomed, panned or dragged a node.
+    autoFit(reducedMotion ? 0 : 300);
     setReady(true);
-  }, [clearSettleTimer, fitView, reducedMotion]);
+  }, [clearSettleTimer, autoFit, reducedMotion]);
 
   const graphData = useMemo(
     () => ({ nodes: [...nodes], links: [...links] }),
@@ -545,24 +981,28 @@ export function GraphCanvas({
 
   const linkColor = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) => {
+      if (hoveredId === null) return linkPaint.idle;
       const source = endpointId(link.source);
       const target = endpointId(link.target);
-      const connected =
-        hoveredId !== null && (source === hoveredId || target === hoveredId);
-      if (connected) return withAlpha(colors.accent, 0.85);
-      if (hoveredId !== null) return withAlpha(colors.muted, 0.08);
-      return withAlpha(colors.muted, 0.32);
+      return source === hoveredId || target === hoveredId ? linkPaint.active : linkPaint.faded;
     },
-    [colors, hoveredId],
+    [linkPaint, hoveredId],
   );
 
   const linkWidth = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) => {
+      if (hoveredId === null) return 1;
       const source = endpointId(link.source);
       const target = endpointId(link.target);
-      return hoveredId !== null && (source === hoveredId || target === hoveredId) ? 1.7 : 1;
+      return source === hoveredId || target === hoveredId ? 1.7 : 1;
     },
     [hoveredId],
+  );
+
+  const linkLineDash = useCallback(
+    (link: LinkObject<CanvasNode, GraphLink>) =>
+      isGhostId(endpointId(link.target)) ? GHOST_LINK_DASH : null,
+    [],
   );
 
   return (
@@ -576,6 +1016,7 @@ export function GraphCanvas({
             aria-label="Zoom out"
             onClick={() => {
               const graph = graphRef.current;
+              userViewRef.current = true;
               if (graph) graph.zoom(Math.max(0.06, graph.zoom() / 1.5), 200);
             }}
           >
@@ -597,6 +1038,7 @@ export function GraphCanvas({
             aria-label="Zoom in"
             onClick={() => {
               const graph = graphRef.current;
+              userViewRef.current = true;
               if (graph) graph.zoom(Math.min(8, graph.zoom() * 1.5), 200);
             }}
           >
@@ -622,22 +1064,11 @@ export function GraphCanvas({
             graphData={graphData}
             nodeId="id"
             backgroundColor="transparent"
-            nodeCanvasObjectMode={() => "replace"}
-            nodeCanvasObject={drawNode}
-            nodePointerAreaPaint={drawPointerArea}
-            nodeLabel={(node) => {
-              const value = node as CanvasNode;
-              const ghost = ghostByIdRef.current.get(value.id);
-              return ghost ? ghostTooltip(ghost) : nodeTooltip(value as GraphNode);
-            }}
+            nodeVisibility={hideBuiltInNodes}
+            onRenderFramePost={drawNodes}
             linkColor={linkColor}
             linkWidth={linkWidth}
-            linkLineDash={(link) => {
-              const target = endpointId((link as LinkObject<CanvasNode, GraphLink>).target);
-              return isGhostId(target) ? [4, 3] : null;
-            }}
-            onNodeClick={handleNodeClick}
-            onNodeHover={(node) => setHoveredId(node ? String(node.id) : null)}
+            linkLineDash={linkLineDash}
             onEngineStop={handleEngineStop}
             cooldownTicks={reducedMotion ? 2 : 140}
             warmupTicks={reducedMotion ? 90 : 40}
@@ -645,9 +1076,11 @@ export function GraphCanvas({
             d3VelocityDecay={0.38}
             minZoom={0.06}
             maxZoom={8}
-            enableNodeDrag
+            enablePointerInteraction={false}
+            enableNodeDrag={false}
           />
         ) : null}
+        <div ref={tooltipRef} className="graph-tooltip" role="presentation" hidden />
       </div>
     </div>
   );

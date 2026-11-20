@@ -72,10 +72,17 @@ export interface UpdatePageInput {
   content?: string;
   icon?: string | null;
   tags?: string[];
+  /** Version the client loaded; server returns 409 if the file changed. */
+  expectedUpdated?: string;
+  /** Force-save after a conflict ("Keep mine"). */
+  force?: boolean;
 }
 
 /** v1.1: a rename reports which other pages had their links rewritten (D12). */
-export type UpdatePageResult = Page & { rewrittenPages?: PageId[] };
+export type UpdatePageResult = Page & {
+  rewrittenPages?: PageId[];
+  conflictBackup?: string;
+};
 
 /** DELETE result: v1.1 returns a trash id; v1.0 returns 204 (no trash). */
 export interface DeletePageResult {

@@ -37,6 +37,15 @@ describe("buildPageTree", () => {
     ]);
   });
 
+  it("sorts numeric titles naturally", () => {
+    const tree = buildPageTree([
+      meta("b10", "Bulk 10"),
+      meta("b2", "Bulk 2"),
+      meta("b1", "Bulk 1"),
+    ]);
+    expect(tree.map((node) => node.page.title)).toEqual(["Bulk 1", "Bulk 2", "Bulk 10"]);
+  });
+
   it("promotes pages with a missing parent to roots", () => {
     const tree = buildPageTree([meta("orphan", "Orphan", "gone")]);
     expect(shape(tree)).toEqual([{ id: "orphan", children: [] }]);

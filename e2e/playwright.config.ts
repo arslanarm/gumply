@@ -47,7 +47,7 @@ export default defineConfig({
     // the earlier `graph-pixels` smoke check, which is kept as a cheap guard.
     {
       name: 'firefox',
-      testMatch: /graph-(visual|pixels)\.spec\.ts$/,
+      testMatch: /graph-(visual|pixels|interaction)\.spec\.ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
   ],

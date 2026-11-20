@@ -5,7 +5,7 @@ import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion
 import type { Attachment, Page, PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
-import { api } from "../api/client.js";
+import { api, ApiRequestError } from "../api/client.js";
 import { BlockGutter } from "./BlockGutter.js";
 import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
@@ -48,20 +48,30 @@ export interface EditorControls {
   pageId: string;
   flush: () => Promise<void>;
   focusBody: () => void;
+  /** Current Markdown buffer (for Restore page). */
+  getMarkdown: () => string;
+  /** Current selection, used to restore the caret after an external reload. */
+  getSelection: () => { from: number; to: number } | null;
+  /** Focus the body at a clamped position. */
+  focusAt: (position: number) => void;
+  /** True while local edits are newer than the last save. */
+  isDirty: () => boolean;
+  /** Force-save the current buffer after a conflict ("Keep mine"). */
+  keepMine: () => Promise<void>;
 }
 
 export interface EditorProps {
   page: Page;
   pages: readonly PageMeta[];
   onSaveState: (state: SaveState) => void;
+  onSaved?: (page: Page) => void;
+  onConflictBackup?: (path: string) => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
   onCreateLink: (title: string) => void;
   headingToReveal?: string | null;
   onHeadingResult?: (found: boolean) => void;
   onAttachmentError?: (message: string) => void;
-  /** After each autosave, with the server's view of the page (e.g. `updated`). */
-  onSaved?: (page: { id: string; updated: string }) => void;
   /** ArrowUp / Backspace at the very start of the body: go to the title. */
   onExitTop?: () => void;
 }
@@ -101,6 +111,8 @@ export function Editor({
   page,
   pages,
   onSaveState,
+  onSaved,
+  onConflictBackup,
   onReady,
   onOpenLink,
   onCreateLink,
@@ -108,7 +120,6 @@ export function Editor({
   onHeadingResult,
   onAttachmentError,
   onExitTop,
-  onSaved,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -122,22 +133,45 @@ export function Editor({
 
   const onSaveStateRef = useRef(onSaveState);
   onSaveStateRef.current = onSaveState;
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
+  const onConflictBackupRef = useRef(onConflictBackup);
+  onConflictBackupRef.current = onConflictBackup;
   const onHeadingResultRef = useRef(onHeadingResult);
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
-  const onSavedRef = useRef(onSaved);
-  onSavedRef.current = onSaved;
   const onExitTopRef = useRef(onExitTop);
   onExitTopRef.current = onExitTop;
   const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
+  const versionRef = useRef(page.updated);
+  const forceRef = useRef(false);
+
+  // A rename/reload from App updates the version this editor must send.
+  useEffect(() => {
+    versionRef.current = page.updated;
+  }, [page.updated]);
 
   const autosave = useMemo(() => {
     const instance = new Autosave({
       save: async (content) => {
-        const result = await api.updatePage(page.id, { content });
-        onSavedRef.current?.(result);
+        const force = forceRef.current;
+        try {
+          const updated = await api.updatePage(page.id, {
+            content,
+            expectedUpdated: versionRef.current,
+            ...(force ? { force: true } : {}),
+          });
+          forceRef.current = false;
+          versionRef.current = updated.updated;
+          onSavedRef.current?.(updated);
+          if (updated.conflictBackup) onConflictBackupRef.current?.(updated.conflictBackup);
+        } catch (error) {
+          if (!force) forceRef.current = false;
+          throw error;
+        }
       },
+      isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
       onState: (state) => onSaveStateRef.current(state),
     });
     instance.reset(page.content);
@@ -464,6 +498,20 @@ export function Editor({
       // Synchronous on purpose: TipTap's focus() command waits a frame, and
       // keys typed right after Enter in the title were lost meanwhile (#d636gdxx).
       focusBody: () => focusStartNow(editor),
+      getMarkdown: () => readMarkdown(editor),
+      getSelection: () => ({
+        from: editor.state.selection.from,
+        to: editor.state.selection.to,
+      }),
+      focusAt: (position: number) => {
+        const max = editor.state.doc.content.size;
+        editor.commands.focus(Math.min(Math.max(position, 0), max));
+      },
+      isDirty: () => autosave.isDirty(),
+      keepMine: async () => {
+        forceRef.current = true;
+        await autosave.retry();
+      },
     });
   }, [editor, autosave, onReady, page.id]);
 

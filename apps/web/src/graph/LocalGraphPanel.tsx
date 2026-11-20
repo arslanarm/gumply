@@ -136,6 +136,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
             nodes={canvasNodes}
             links={canvasLinks}
             highlightId={pageId}
+            centerId={pageId}
             testId="local-graph-canvas"
             ariaLabel={ariaSummary(model)}
             reducedMotion={reducedMotion}

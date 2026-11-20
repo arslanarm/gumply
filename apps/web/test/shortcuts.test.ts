@@ -16,6 +16,8 @@ describe("shortcut platform label", () => {
     const other = shortcutGroups("Ctrl");
     expect(mac[0]?.items[0]?.keys).toBe("⌘K");
     expect(other[0]?.items[0]?.keys).toBe("CtrlK");
+    expect(mac[0]?.items[1]?.keys).toBe("⌘\\");
+    expect(other[0]?.items[1]?.keys).toBe("Ctrl\\");
     expect(mac[1]?.items.some((item) => item.keys === "⌘Z")).toBe(true);
     expect(mac[1]?.items.some((item) => item.keys === "⌘S")).toBe(true);
     expect(other[1]?.items.some((item) => item.keys === "CtrlZ")).toBe(true);

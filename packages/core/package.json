@@ -20,5 +20,8 @@
     "dev": "tsc -b --watch --preserveWatchOutput",
     "typecheck": "tsc -b --pretty false",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
   }
 }

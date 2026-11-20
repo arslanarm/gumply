@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { watch, type FSWatcher } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
@@ -11,10 +12,11 @@ import {
   normalizeTags,
   parentOf,
   parseFrontmatter,
+  parseNoteTemplate,
+  serializeNoteLike,
   pathToPageId,
   resolveWikilink,
   rewriteWikilinkTargets,
-  serializeNote,
   titleFromId,
   type Backlink,
   type DeletePageResult,
@@ -42,6 +44,10 @@ export interface UpdatePageInput {
   content?: string;
   icon?: string | null;
   tags?: string[];
+  /** Version the client loaded; a mismatch means the file changed on disk. */
+  expectedUpdated?: string;
+  /** User chose "Keep mine" after a conflict. */
+  force?: boolean;
 }
 
 export interface GraphOptions {
@@ -58,6 +64,8 @@ const MAX_TAGS = 200;
 /** Page plus the bits of on-disk state the index needs. */
 interface PageRecord extends Omit<Page, "childCount"> {
   filePath: string;
+  /** File mtime at the last read/write, for conditional saves. */
+  fileMtimeMs: number;
   /** Frontmatter tags only; `tags` is this plus inline tags. */
   fmTags: string[];
 }
@@ -123,6 +131,8 @@ export class VaultStore {
   private readonly pages = new Map<PageId, PageRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
   private writeQueue: Promise<unknown> = Promise.resolve();
+  private watcher: FSWatcher | null = null;
+  private watchTimer: ReturnType<typeof setTimeout> | null = null;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
   private newVaultPage: PageId | null = null;
 
@@ -133,6 +143,99 @@ export class VaultStore {
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true });
     await this.rebuild();
+  }
+
+  /** Start watching the vault for external create/change/delete events. */
+  startWatching(): void {
+    if (this.watcher) return;
+    try {
+      this.watcher = watch(this.root, { recursive: true }, (_event, filename) => {
+        const relative = filename === null ? "" : String(filename).replace(/\\/g, "/");
+        if (relative.length === 0) return;
+        if (
+          relative.startsWith(".") ||
+          relative.includes("/.") ||
+          relative.includes("attachments/") ||
+          relative.includes("node_modules") ||
+          relative.endsWith(".tmp") ||
+          !relative.toLowerCase().endsWith(".md")
+        ) {
+          return;
+        }
+        this.scheduleRescan();
+      });
+      this.watcher.on("error", () => undefined);
+    } catch {
+      // A platform without recursive watch still works; polling can be added later.
+      this.watcher = null;
+    }
+  }
+
+  /** Stop the vault watcher (used by tests and shutdown). */
+  stopWatching(): void {
+    if (this.watchTimer !== null) {
+      clearTimeout(this.watchTimer);
+      this.watchTimer = null;
+    }
+    this.watcher?.close();
+    this.watcher = null;
+  }
+
+  /** Re-read the vault and return whether the page index actually changed. */
+  rescan(): Promise<boolean> {
+    return this.enqueue(() => this.refreshFromDisk());
+  }
+
+  private scheduleRescan(): void {
+    if (this.watchTimer !== null) clearTimeout(this.watchTimer);
+    this.watchTimer = setTimeout(() => {
+      this.watchTimer = null;
+      void this.enqueue(() => this.refreshFromDisk());
+    }, 120);
+  }
+
+  private async refreshFromDisk(): Promise<boolean> {
+    const next = new Map<PageId, PageRecord>();
+    for (const absolute of await this.scan(this.root)) {
+      const rel = relative(this.root, absolute).split(sep).join("/");
+      const id = pathToPageId(rel);
+      if (!isValidPageId(id)) continue;
+      const record = await this.readRecord(absolute, id);
+      this.refreshTags(record);
+      next.set(id, record);
+    }
+
+    for (const [key, value] of next) {
+      const parent = parentOf(key);
+      value.parentId = parent !== null && next.has(parent) ? parent : null;
+    }
+
+    let changed = next.size !== this.pages.size;
+    if (!changed) {
+      for (const [id, record] of next) {
+        const current = this.pages.get(id);
+        if (!current || this.recordSignature(current) !== this.recordSignature(record)) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) return false;
+
+    this.pages.clear();
+    for (const [id, record] of next) this.pages.set(id, record);
+    this.reindexAll();
+    return true;
+  }
+
+  private recordSignature(record: PageRecord): string {
+    return JSON.stringify([
+      record.title,
+      record.icon ?? null,
+      record.content,
+      record.fmTags,
+      record.parentId,
+    ]);
   }
 
   /**
@@ -381,7 +484,7 @@ export class VaultStore {
     const now = new Date().toISOString();
     const filePath = this.filePathFor(id);
 
-    await this.writePage(
+    const fileMtimeMs = await this.writePage(
       filePath,
       { title, ...(icon ? { icon } : {}), tags: [], created: now, updated: now },
       content,
@@ -396,6 +499,7 @@ export class VaultStore {
       updated: now,
       content,
       filePath,
+      fileMtimeMs,
       fmTags: [],
     };
     if (icon) record.icon = icon;
@@ -406,8 +510,32 @@ export class VaultStore {
     return this.get(id);
   }
 
-  private async updateNow(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
+  private async updateNow(
+    id: PageId,
+    patch: UpdatePageInput,
+  ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string }> {
     const record = this.require(id);
+
+    let info;
+    try {
+      info = await stat(record.filePath);
+    } catch {
+      info = null;
+    }
+    const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
+    const versionChanged =
+      patch.expectedUpdated !== undefined && patch.expectedUpdated !== record.updated;
+    const changedOnDisk = mtimeChanged || versionChanged;
+
+    let conflictBackup: string | undefined;
+    if (patch.force) {
+      // Keep mine still preserves the version it is replacing, outside the page
+      // index, so an accidental overwrite can be recovered.
+      if (changedOnDisk) conflictBackup = await this.backupConflict(record);
+    } else if (changedOnDisk) {
+      throw conflict("This page changed on disk.");
+    }
+
     const previousTitle = record.title;
 
     const nextTitle = patch.title === undefined ? record.title : patch.title.trim();
@@ -442,11 +570,22 @@ export class VaultStore {
     // Snapshot before the rename so link resolution still sees the old title.
     const beforeMetas = titleChanged ? this.list() : [];
 
-    await this.writePage(record.filePath, frontmatter, nextContent);
+    const changes = ["updated"];
+    if (nextTitle !== previousTitle) changes.push("title");
+    if (nextIcon !== record.icon) changes.push("icon");
+    if (JSON.stringify(fmTags) !== JSON.stringify(record.fmTags)) changes.push("tags");
+
+    const fileMtimeMs = await this.writePage(
+      record.filePath,
+      frontmatter,
+      nextContent,
+      changes,
+    );
 
     record.title = nextTitle;
     record.content = nextContent;
     record.updated = updated;
+    record.fileMtimeMs = fileMtimeMs;
     record.fmTags = fmTags;
     if (nextIcon) record.icon = nextIcon;
     else delete record.icon;
@@ -467,7 +606,7 @@ export class VaultStore {
         if (result.count === 0) continue;
 
         const rewrittenAt = new Date().toISOString();
-        await this.writePage(
+        const otherMtime = await this.writePage(
           other.filePath,
           {
             title: other.title,
@@ -477,9 +616,11 @@ export class VaultStore {
             updated: rewrittenAt,
           },
           result.content,
+          ["updated"],
         );
         other.content = result.content;
         other.updated = rewrittenAt;
+        other.fileMtimeMs = otherMtime;
         this.refreshTags(other);
         rewrittenPages.push(other.id);
       }
@@ -490,7 +631,11 @@ export class VaultStore {
       this.recomputeSource(id);
     }
 
-    return { ...this.get(id), rewrittenPages };
+    return {
+      ...this.get(id),
+      rewrittenPages,
+      ...(conflictBackup ? { conflictBackup } : {}),
+    };
   }
 
   private async removeNow(id: PageId): Promise<DeletePageResult> {
@@ -751,7 +896,11 @@ export class VaultStore {
     const stats = await stat(absolute);
 
     const created = toIso(frontmatter.created) ?? stats.birthtime.toISOString();
-    const updated = toIso(frontmatter.updated) ?? stats.mtime.toISOString();
+    const mtime = stats.mtime.toISOString();
+    const fmUpdated = toIso(frontmatter.updated);
+    // External editors don't rewrite frontmatter. The newer of frontmatter and
+    // file mtime is the version clients use for conditional saves.
+    const updated = fmUpdated !== undefined && fmUpdated > mtime ? fmUpdated : mtime;
     const title =
       typeof frontmatter.title === "string" && frontmatter.title.trim().length > 0
         ? frontmatter.title.trim()
@@ -770,22 +919,51 @@ export class VaultStore {
       updated,
       content,
       filePath: absolute,
+      fileMtimeMs: stats.mtimeMs,
       fmTags: normalizeTags(frontmatter.tags),
     };
     if (icon) record.icon = icon;
     return record;
   }
 
+  private async backupConflict(record: PageRecord): Promise<string | undefined> {
+    let raw: string;
+    try {
+      raw = await readFile(record.filePath, "utf8");
+    } catch {
+      return undefined;
+    }
+    const dir = join(this.root, ".gumply", "conflicts");
+    await mkdir(dir, { recursive: true });
+    const safeId = record.id.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 120);
+    const file = join(dir, `${safeId}-${Date.now()}.md`);
+    await writeFile(file, raw, "utf8");
+    const relativePath = relative(this.root, file).split(sep).join("/");
+    console.warn(`[gumply] conflict backup for ${record.id}: ${file}`);
+    return relativePath;
+  }
+
   private async writePage(
     filePath: string,
     frontmatter: Frontmatter,
     content: string,
-  ): Promise<void> {
+    changes?: readonly string[],
+  ): Promise<number> {
     await mkdir(dirname(filePath), { recursive: true });
+    // Use the current file as the byte template so unknown frontmatter keys,
+    // comments, key order, flow style, CRLF and the trailing newline survive
+    // (#tterskg4). Only the keys in `changes` are touched.
+    let template = null;
+    try {
+      template = parseNoteTemplate(await readFile(filePath, "utf8"));
+    } catch {
+      // New file: write canonical frontmatter.
+    }
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      await writeFile(temporary, serializeNote(frontmatter, content), "utf8");
+      await writeFile(temporary, serializeNoteLike(template, frontmatter, content, changes), "utf8");
       await rename(temporary, filePath);
+      return (await stat(filePath)).mtimeMs;
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;

@@ -56,9 +56,19 @@ export function App() {
   const [editorRevision, setEditorRevision] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deletedOnDisk, setDeletedOnDisk] = useState<Page | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [movingId, setMovingId] = useState<PageId | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      const stored = localStorage.getItem("gumply:sidebar");
+      if (stored !== null) return stored !== "closed";
+    } catch {
+      // fall through to the width default
+    }
+    return window.innerWidth > 900;
+  });
   const [graphOpen, setGraphOpen] = useState(() => isGraphHash(window.location.hash));
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
@@ -81,11 +91,14 @@ export function App() {
 
   const selectedRef = useRef<PageId | null>(selectedId);
   selectedRef.current = selectedId;
+  const pageRef = useRef<Page | null>(page);
+  pageRef.current = page;
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
   const reloadEditorAfterFetch = useRef(false);
   const focusBodyAfterOpen = useRef(false);
+  const restoreSelection = useRef<{ from: number; to: number } | null>(null);
   const backlinksRequest = useRef(0);
   const initialLoadStarted = useRef(false);
 
@@ -142,6 +155,31 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pendingDelete, searchOpen, shortcutsOpen, movingId]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("gumply:sidebar", sidebarOpen ? "open" : "closed");
+    } catch {
+      // storage unavailable: keep the in-memory state
+    }
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "\\") return;
+      event.preventDefault();
+      setSidebarOpen((open) => !open);
+    };
+    const onResize = () => {
+      if (window.innerWidth <= 900) setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
   const loadPages = useCallback(async (): Promise<PageMeta[] | null> => {
     try {
       const list = await api.listPages();
@@ -191,6 +229,98 @@ export function App() {
     reloadEditorAfterFetch.current = true;
     setPageReload((value) => value + 1);
   }, []);
+
+  const handlePageSaved = useCallback((updated: Page) => {
+    setPages((previous) =>
+      previous.map((item) =>
+        item.id === updated.id
+          ? {
+              ...item,
+              title: updated.title,
+              icon: updated.icon,
+              tags: updated.tags,
+              updated: updated.updated,
+            }
+          : item,
+      ),
+    );
+    setPage((previous) =>
+      previous && previous.id === updated.id
+        ? {
+            ...previous,
+            title: updated.title,
+            icon: updated.icon,
+            tags: updated.tags,
+            updated: updated.updated,
+          }
+        : previous,
+    );
+  }, []);
+
+  const handleConflictReload = useCallback(() => {
+    requestPageReload();
+  }, [requestPageReload]);
+
+  const handleConflictKeepMine = useCallback(() => {
+    void editorControls.current?.keepMine();
+  }, []);
+
+  // Poll the lightweight page index so external file changes appear without a
+  // restart. Only reload the open page when it has no local unsaved edits.
+  const refreshFromDisk = useCallback(async () => {
+    let list: PageMeta[] | null = null;
+    try {
+      list = await api.listPages();
+    } catch {
+      return;
+    }
+    setPages((previous) =>
+      JSON.stringify(previous) === JSON.stringify(list) ? previous : (list as PageMeta[]),
+    );
+
+    const currentId = selectedRef.current;
+    if (!currentId) return;
+    const meta = list.find((item) => item.id === currentId);
+    const loaded = pageRef.current;
+
+    if (!meta) {
+      if (loaded) {
+        // An external rename keeps the title in frontmatter; follow it.
+        const moved = list.find((item) => item.title === loaded.title);
+        if (moved && !editorControls.current?.isDirty()) {
+          setDeletedOnDisk(null);
+          navigate(moved.id, true);
+          return;
+        }
+      }
+      if (editorControls.current?.isDirty()) {
+        setDeletedOnDisk(loaded);
+        return;
+      }
+      setPage(null);
+      setPageStatus("error");
+      return;
+    }
+
+    if (
+      loaded &&
+      loaded.id === currentId &&
+      meta.updated !== loaded.updated &&
+      !editorControls.current?.isDirty()
+    ) {
+      const active = document.activeElement;
+      restoreSelection.current =
+        active instanceof HTMLElement && active.closest('[data-testid="editor-content"]')
+          ? (editorControls.current?.getSelection() ?? null)
+          : null;
+      requestPageReload();
+    }
+  }, [navigate, requestPageReload]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void refreshFromDisk(), 2000);
+    return () => window.clearInterval(timer);
+  }, [refreshFromDisk]);
 
   // Initial load: the server seeds a fresh vault; open its Welcome page once.
   // Otherwise open the first root page.
@@ -301,6 +431,8 @@ export function App() {
     (id: PageId) => {
       setAutoFocusTitle(true);
       setPendingHeading(null);
+      setDeletedOnDisk(null);
+      if (window.innerWidth <= 900) setSidebarOpen(false);
       if (id === selectedRef.current) {
         // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
         requestPageReload();
@@ -315,6 +447,7 @@ export function App() {
     async (parentId: PageId | null) => {
       setActionError(null);
       setAutoFocusTitle(true);
+      if (window.innerWidth <= 900) setSidebarOpen(false);
       try {
         const created = await api.createPage({ title: "Untitled", parentId });
         await loadPages();
@@ -635,6 +768,10 @@ export function App() {
     if (focusBodyAfterOpen.current) {
       focusBodyAfterOpen.current = false;
       controls.focusBody();
+    } else if (restoreSelection.current) {
+      const position = restoreSelection.current.to;
+      restoreSelection.current = null;
+      controls.focusAt(position);
     }
   }, []);
 
@@ -648,23 +785,40 @@ export function App() {
     controls.focusBody();
   }, []);
 
-  // Keep "Updated …" and the Recent order current after autosaves (#smwaixfp).
-  const handleSaved = useCallback((saved: { id: string; updated: string }) => {
-    if (!saved.updated) return;
-    setPage((previous) =>
-      previous && previous.id === saved.id ? { ...previous, updated: saved.updated } : previous,
-    );
-    setPages((previous) =>
-      previous.map((item) => (item.id === saved.id ? { ...item, updated: saved.updated } : item)),
-    );
-  }, []);
-
   // ArrowUp / Backspace at the top of the body moves to the title (#d636gdxx).
   const [titleFocusSignal, setTitleFocusSignal] = useState(0);
   const handleExitTop = useCallback(() => setTitleFocusSignal((value) => value + 1), []);
 
   const handleRetrySave = useCallback(() => {
     void editorControls.current?.flush();
+  }, []);
+
+  const restoreDeletedPage = useCallback(async () => {
+    const loaded = deletedOnDisk ?? pageRef.current;
+    if (!loaded) return;
+    const content = editorControls.current?.getMarkdown() ?? loaded.content;
+    try {
+      const created = await api.createPage({
+        title: loaded.title,
+        parentId: loaded.parentId,
+        content,
+        icon: loaded.icon,
+      });
+      setDeletedOnDisk(null);
+      setActionError(null);
+      await loadPages();
+      focusBodyAfterOpen.current = true;
+      // Restoring usually recreates the same id; force a refetch so the editor
+      // baseline matches the new file instead of the deleted one.
+      navigate(created.id);
+      requestPageReload();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }, [deletedOnDisk, loadPages, navigate, requestPageReload]);
+
+  const handleConflictBackup = useCallback((path: string) => {
+    setToast({ message: `Other version kept in ${path}` });
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
@@ -682,8 +836,19 @@ export function App() {
   const breadcrumb = selectedId ? pageTrail(pages, selectedId) : [];
 
   return (
-    <div className="app">
+    <div className={`app${sidebarOpen ? "" : " sidebar-collapsed"}`}>
       <header className="topbar">
+        <button
+          type="button"
+          className="icon-button sidebar-toggle"
+          data-testid="sidebar-toggle"
+          data-tooltip={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          aria-pressed={sidebarOpen}
+          onClick={() => setSidebarOpen((open) => !open)}
+        >
+          <Icon name="sidebar" size={17} />
+        </button>
         <span className="logo" aria-hidden="true">
           <Icon name="brand" size={18} />
         </span>
@@ -711,6 +876,12 @@ export function App() {
           </nav>
         ) : null}
         <span className="topbar-spacer" />
+        <SaveStatus
+          state={saveState}
+          onRetry={handleRetrySave}
+          onReload={handleConflictReload}
+          onKeepMine={handleConflictKeepMine}
+        />
         <ThemeToggle />
         <button
           type="button"
@@ -722,7 +893,6 @@ export function App() {
         >
           <Icon name="keyboard" size={16} />
         </button>
-        <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
 
       <div
@@ -747,7 +917,22 @@ export function App() {
         />
 
         <main className="content">
-          {actionError ? (
+          {deletedOnDisk ? (
+            <div className="banner banner-error" role="alert" data-testid="deleted-on-disk-banner">
+              <span>This page was deleted on disk. Your unsaved text is still here.</span>
+              <button type="button" className="link-button" onClick={() => void restoreDeletedPage()}>
+                Restore page
+              </button>
+              <button
+                type="button"
+                className="banner-close"
+                aria-label="Dismiss"
+                onClick={() => setDeletedOnDisk(null)}
+              >
+                ×
+              </button>
+            </div>
+          ) : actionError ? (
             <div className="banner banner-error" role="alert">
               <span>{actionError}</span>
               <button type="button" className="banner-close" onClick={() => setActionError(null)}>
@@ -817,6 +1002,8 @@ export function App() {
                     page={page}
                     pages={pages}
                     onSaveState={setSaveState}
+                    onSaved={handlePageSaved}
+                    onConflictBackup={handleConflictBackup}
                     onReady={handleEditorReady}
                     onOpenLink={handleOpenLink}
                     onCreateLink={createLinkedPage}
@@ -828,7 +1015,6 @@ export function App() {
                     onHeadingResult={handleHeadingResult}
                     onAttachmentError={setActionError}
                     onExitTop={handleExitTop}
-                    onSaved={handleSaved}
                   />
                   <BacklinksPanel
                     items={backlinks}
