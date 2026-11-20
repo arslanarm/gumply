@@ -250,6 +250,9 @@ const PALETTE = [
   "#9d174d",
 ];
 
+/** Fallback palette when CSS variables are unavailable (unit tests, SSR). */
+export const FALLBACK_GRAPH_PALETTE: readonly string[] = PALETTE;
+
 function hashKey(key: string): number {
   let hash = 2166136261;
   for (let i = 0; i < key.length; i += 1) {
@@ -259,21 +262,28 @@ function hashKey(key: string): number {
   return Math.abs(hash);
 }
 
-function colorFor(key: string): string {
-  return PALETTE[hashKey(key) % PALETTE.length] ?? PALETTE[0]!;
+/** Which `--graph-N` colour a tag/folder uses; stable across themes. */
+export function paletteIndex(key: string): number {
+  return hashKey(key.toLowerCase()) % PALETTE.length;
+}
+
+function colorFor(key: string, palette: readonly string[] = PALETTE): string {
+  return palette[paletteIndex(key)] ?? palette[0] ?? PALETTE[0]!;
 }
 
 /** Colour by first tag, falling back to the top-level folder (spec/ux §9). */
-export function nodeColor(meta: PageMeta): string {
+export function nodeColor(meta: PageMeta, palette: readonly string[] = PALETTE): string {
   const tag = meta.tags[0];
-  if (tag) return colorFor(tag.toLowerCase());
+  if (tag) return colorFor(tag, palette);
   const folder = meta.id.split("/")[0] ?? meta.id;
-  return colorFor(folder.toLowerCase());
+  return colorFor(folder, palette);
 }
 
-/** Stable colour for a legend row / ghost (ghosts use the muted token). */
-export function legendColor(key: string): string {
-  return colorFor(key.toLowerCase());
+/** Resolve `--graph-0…9` from the current theme for canvas/legend use. */
+export function graphPaletteFromStyles(styles: CSSStyleDeclaration): readonly string[] {
+  return PALETTE.map(
+    (fallback, index) => styles.getPropertyValue(`--graph-${index}`).trim() || fallback,
+  );
 }
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {

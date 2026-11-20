@@ -7,7 +7,7 @@ import {
   buildGraphModel,
   filterGraph,
   graphSubtitle,
-  legendColor,
+  paletteIndex,
   type GhostNode,
 } from "./graph-model.js";
 import { usePrefersReducedMotion } from "./use-reduced-motion.js";
@@ -213,7 +213,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
               <p key={tag} className="graph-legend-row graph-legend-tag">
                 <span
                   className="graph-legend-dot"
-                  style={{ background: legendColor(tag) }}
+                  style={{ background: `var(--graph-${paletteIndex(tag)})` }}
                   aria-hidden="true"
                 />
                 #{tag}
