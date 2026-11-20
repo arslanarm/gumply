@@ -42,6 +42,12 @@ import { taskCheckboxLabel } from "../lib/task.js";
 export interface EditorControls {
   flush: () => Promise<void>;
   focusBody: () => void;
+  /** Current Markdown buffer (for Restore page). */
+  getMarkdown: () => string;
+  /** Current selection, used to restore the caret after an external reload. */
+  getSelection: () => { from: number; to: number } | null;
+  /** Focus the body at a clamped position. */
+  focusAt: (position: number) => void;
   /** True while local edits are newer than the last save. */
   isDirty: () => boolean;
   /** Force-save the current buffer after a conflict ("Keep mine"). */
@@ -53,6 +59,7 @@ export interface EditorProps {
   pages: readonly PageMeta[];
   onSaveState: (state: SaveState) => void;
   onSaved?: (page: Page) => void;
+  onConflictBackup?: (path: string) => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
   onCreateLink: (title: string) => void;
@@ -97,6 +104,7 @@ export function Editor({
   pages,
   onSaveState,
   onSaved,
+  onConflictBackup,
   onReady,
   onOpenLink,
   onCreateLink,
@@ -118,6 +126,8 @@ export function Editor({
   onSaveStateRef.current = onSaveState;
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const onConflictBackupRef = useRef(onConflictBackup);
+  onConflictBackupRef.current = onConflictBackup;
   const onHeadingResultRef = useRef(onHeadingResult);
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
@@ -143,6 +153,7 @@ export function Editor({
           forceRef.current = false;
           versionRef.current = updated.updated;
           onSavedRef.current?.(updated);
+          if (updated.conflictBackup) onConflictBackupRef.current?.(updated.conflictBackup);
         } catch (error) {
           if (!force) forceRef.current = false;
           throw error;
@@ -454,6 +465,15 @@ export function Editor({
     onReady?.({
       flush: () => autosave.flush(),
       focusBody: () => editor.commands.focus("start"),
+      getMarkdown: () => readMarkdown(editor),
+      getSelection: () => ({
+        from: editor.state.selection.from,
+        to: editor.state.selection.to,
+      }),
+      focusAt: (position: number) => {
+        const max = editor.state.doc.content.size;
+        editor.commands.focus(Math.min(Math.max(position, 0), max));
+      },
       isDirty: () => autosave.isDirty(),
       keepMine: async () => {
         forceRef.current = true;

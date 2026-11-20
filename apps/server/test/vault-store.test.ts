@@ -207,6 +207,7 @@ describe("external vault changes", () => {
       force: true,
     });
     expect(forced.content).toBe("mine");
+    expect(forced.conflictBackup).toMatch(/^\.gumply\/conflicts\//);
 
     const backups = await readdir(join(dir, ".gumply", "conflicts"));
     expect(backups).toHaveLength(1);
