@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
 import { api, ApiRequestError } from "../api/client.js";
 import { BlockGutter } from "./BlockGutter.js";
+import { EmojiMenu } from "./EmojiMenu.js";
+import { EmojiPicker } from "./EmojiPicker.js";
 import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
@@ -21,6 +23,9 @@ import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
 import { NotionCodeBlock } from "../editor/code-block.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
+import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
+import { setEmojiPickerOpener } from "../editor/emoji/store.js";
+import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
 import {
   MarkdownHeading,
@@ -96,6 +101,14 @@ interface LinkMenuState {
   left: number;
   top: number;
   command: (item: LinkSuggestion) => void;
+}
+
+interface EmojiMenuState {
+  items: EmojiEntry[];
+  index: number;
+  left: number;
+  top: number;
+  command: (item: EmojiEntry) => void;
 }
 
 interface MarkdownStorage {
@@ -386,6 +399,113 @@ export function Editor({
     [],
   );
 
+  // ---------- `:` emoji suggestions (#6v8tyxfd) ----------
+
+  const [emojiMenu, setEmojiMenu] = useState<EmojiMenuState | null>(null);
+  const emojiMenuRef = useRef<EmojiMenuState | null>(null);
+  // Esc keeps the typed text and closes the menu for this `:query` only.
+  const emojiDismissedAt = useRef<number | null>(null);
+
+  const showEmojiMenu = (props: SuggestionProps<EmojiEntry>) => {
+    if (emojiDismissedAt.current === props.range.from || props.items.length === 0) {
+      emojiMenuRef.current = null;
+      setEmojiMenu(null);
+      return;
+    }
+    const previous = emojiMenuRef.current;
+    const next: EmojiMenuState = {
+      items: props.items,
+      index: previous ? Math.min(previous.index, props.items.length - 1) : 0,
+      ...menuRect(props),
+      command: (item) => props.command(item),
+    };
+    if (previous && previous.items !== props.items) next.index = 0;
+    emojiMenuRef.current = next;
+    setEmojiMenu(next);
+  };
+
+  const hideEmojiMenu = () => {
+    emojiMenuRef.current = null;
+    setEmojiMenu(null);
+  };
+
+  const emojiHandlersRef = useRef<EmojiHandlers>({
+    onStart: showEmojiMenu,
+    onUpdate: showEmojiMenu,
+    onKeyDown: () => false,
+    onExit: hideEmojiMenu,
+  });
+
+  emojiHandlersRef.current = {
+    onStart: (props) => {
+      emojiDismissedAt.current = null;
+      showEmojiMenu(props);
+    },
+    onUpdate: showEmojiMenu,
+    onExit: () => {
+      emojiDismissedAt.current = null;
+      hideEmojiMenu();
+    },
+    onKeyDown: ({ event, range }: SuggestionKeyDownProps) => {
+      const current = emojiMenuRef.current;
+      if (!current || current.items.length === 0) return false;
+      if (event.key === "Escape") {
+        emojiDismissedAt.current = range.from;
+        hideEmojiMenu();
+        return true;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        const index = (current.index + delta + current.items.length) % current.items.length;
+        const next = { ...current, index };
+        emojiMenuRef.current = next;
+        setEmojiMenu(next);
+        return true;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        const item = current.items[current.index];
+        if (!item) return false;
+        hideEmojiMenu();
+        current.command(item);
+        return true;
+      }
+      return false;
+    },
+  };
+
+  const emojiExtension = useMemo(() => createEmojiExtension(emojiHandlersRef), []);
+
+  // `/emoji`: the full picker at the caret.
+  const [emojiPicker, setEmojiPicker] = useState<{ left: number; top: number; pos: number } | null>(
+    null,
+  );
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setEmojiPickerOpener(() => {
+      const instance = editorRef.current;
+      if (!instance) return;
+      const pos = instance.state.selection.from;
+      const coords = instance.view.coordsAtPos(pos);
+      const height = 420;
+      const top =
+        coords.bottom + 6 + height > window.innerHeight
+          ? Math.max(8, coords.top - 6 - height)
+          : coords.bottom + 6;
+      setEmojiPicker({ left: Math.min(coords.left, window.innerWidth - 380), top, pos });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!emojiPicker) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (emojiPickerRef.current?.contains(event.target as Node)) return;
+      setEmojiPicker(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [emojiPicker]);
+
   // ---------- editor ----------
 
   const editor = useEditor({
@@ -443,6 +563,7 @@ export function Editor({
       WikiLink,
       slashExtension,
       wikiLinkExtension,
+      emojiExtension,
       BlockEditing,
       MarkdownTaskListFix,
       TaskListTight,
@@ -590,6 +711,47 @@ export function Editor({
             setMenu(next);
           }}
         />
+      ) : null}
+      {emojiMenu ? (
+        <EmojiMenu
+          items={emojiMenu.items}
+          index={emojiMenu.index}
+          left={emojiMenu.left}
+          top={emojiMenu.top}
+          onSelect={(item) => {
+            hideEmojiMenu();
+            emojiMenu.command(item);
+          }}
+          onHover={(index) => {
+            const current = emojiMenuRef.current;
+            if (!current) return;
+            const next = { ...current, index };
+            emojiMenuRef.current = next;
+            setEmojiMenu(next);
+          }}
+        />
+      ) : null}
+      {emojiPicker && editor ? (
+        <div
+          ref={emojiPickerRef}
+          className="editor-emoji-popover"
+          style={{ left: emojiPicker.left, top: emojiPicker.top }}
+        >
+          <EmojiPicker
+            label="Insert emoji"
+            testId="editor-emoji-picker"
+            onSelect={(emoji) => {
+              const pos = Math.min(emojiPicker.pos, editor.state.doc.content.size);
+              setEmojiPicker(null);
+              // The picker already records the emoji as recent.
+              editor.chain().focus().insertContentAt(pos, emoji).run();
+            }}
+            onClose={() => {
+              setEmojiPicker(null);
+              editor.commands.focus();
+            }}
+          />
+        </div>
       ) : null}
       {linkMenu ? (
         <LinkMenu

@@ -28,3 +28,26 @@ describe("emoji `:` trigger (#6v8tyxfd)", () => {
     expect(findEmojiQuery(":rocket:")).toBeNull();
   });
 });
+
+describe("emoji suggestions ranking", () => {
+  it("puts recently used emoji first, keeping search order otherwise", async () => {
+    const { rankEmoji } = await import("../src/editor/emoji/extension.js");
+    const entry = (emoji: string) => ({ emoji, name: emoji, keywords: [], shortcodes: [], category: "objects", version: 1 }) as never;
+    const results = [entry("a"), entry("b"), entry("c"), entry("d")];
+    expect(rankEmoji(results, ["c", "z", "b"]).map((e: { emoji: string }) => e.emoji)).toEqual(["c", "b", "a", "d"]);
+    expect(rankEmoji(results, [], 2).map((e: { emoji: string }) => e.emoji)).toEqual(["a", "b"]);
+  });
+});
+
+describe("emoji suggestions use the real data", () => {
+  it(":part offers 🎉 before 〽️, :rocket gives 🚀 first, :+1 gives 👍", async () => {
+    const { rankEmoji } = await import("../src/editor/emoji/extension.js");
+    const { loadEmojiData, searchEmoji } = await import("../src/lib/emoji/data.js");
+    const entries = await loadEmojiData();
+    const first = (q: string) => rankEmoji(searchEmoji(entries, q, 40), [])[0]?.emoji;
+    const part = rankEmoji(searchEmoji(entries, "part", 40), []).map((e) => e.emoji);
+    expect(part.indexOf("🎉")).toBeLessThan(part.indexOf("〽️"));
+    expect(first("rocket")).toBe("🚀");
+    expect(first("+1")).toBe("👍");
+  });
+});
