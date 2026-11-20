@@ -798,6 +798,8 @@ export class VaultStore {
 
     for (const entry of entries) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      // Attachments are files, never pages (D18). Skip the root attachments dir.
+      if (dir === this.root && entry.name === "attachments") continue;
       if (entry.isSymbolicLink()) continue;
 
       const absolute = join(dir, entry.name);

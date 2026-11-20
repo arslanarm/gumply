@@ -5,8 +5,11 @@ export const CORE_VERSION = "0.1.0";
 
 export type {
   ApiError,
+  Attachment,
   Backlink,
   DeletePageResult,
+  Embed,
+  EmbedKind,
   GraphData,
   GraphNode,
   HealthResponse,
@@ -50,3 +53,5 @@ export {
   type RewriteResult,
   type WikiLink,
 } from "./links.js";
+
+export { parseEmbeds } from "./embeds.js";
