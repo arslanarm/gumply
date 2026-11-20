@@ -14,10 +14,14 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node scripts/build.mjs && electron .",
-    "dist:linux": "node scripts/build.mjs && electron-builder --linux AppImage deb",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "dist:linux": "node scripts/build.mjs && electron-builder --linux AppImage deb --publish never",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist:win": "node scripts/build.mjs && electron-builder --win --publish never",
+    "dist:mac": "node scripts/build.mjs && electron-builder --mac --publish never",
+    "check:fuses": "node scripts/check-fuses.mjs --release release"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "electron": "45.4.1",
     "electron-builder": "^26.18.0"
   },
@@ -47,6 +51,58 @@
       "description": "Gumply keeps your notes as plain Markdown files in a folder you choose (any Obsidian vault works), with a Notion-style editor, links, a graph and whiteboards.",
       "maintainer": "Gumply <noreply@gumply.invalid>",
       "syncDesktopName": true
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "enableCookieEncryption": true,
+      "grantFileProtocolExtraPrivileges": false,
+      "resetAdHocDarwinSignature": true
+    },
+    "appImage": {
+      "executableArgs": []
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Gumply-Setup-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false
     }
   }
 }
