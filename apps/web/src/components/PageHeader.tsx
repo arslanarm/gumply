@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Page } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
 import { loadEmojiData } from "../lib/emoji/data.js";
+import { preloadGraph } from "../lazy-parts.js";
 import { EmojiPicker } from "./EmojiPicker.js";
 import { Icon } from "./Icon.js";
 
@@ -30,13 +31,12 @@ export interface PageHeaderProps {
   sessionKey?: string;
 }
 
+const updatedFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+
 function formatUpdated(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "just now";
-  return date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return updatedFormat.format(date);
 }
 
 /** Title, rename affordance and metadata for the open page. */
@@ -312,6 +312,8 @@ export function PageHeader({
               className={`button-secondary local-graph-toggle${localGraphOpen ? " is-active" : ""}`}
               data-testid="local-graph-toggle"
               aria-pressed={localGraphOpen}
+              onPointerEnter={preloadGraph}
+              onFocus={preloadGraph}
               onClick={onToggleLocalGraph}
             >
               Local graph

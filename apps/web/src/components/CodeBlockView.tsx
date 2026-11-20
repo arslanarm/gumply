@@ -19,6 +19,9 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
   const [copied, setCopied] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const known = findLanguage(language);
+  // An unknown fence shows as written: `{r echo=FALSE}`, not `{r`.
+  const info = String(node.attrs.markdownInfo ?? "");
+  const label = !known && language && info.startsWith(language) ? info : languageLabel(language);
 
   useEffect(() => {
     if (!copied) return;
@@ -67,7 +70,7 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setOpen((value) => !value)}
         >
-          {languageLabel(language)}
+          <span className="code-block-language-text">{label}</span>
           <Icon name="chevronDown" size={12} />
         </button>
         <button

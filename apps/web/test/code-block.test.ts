@@ -3,7 +3,15 @@ import StarterKit from "@tiptap/starter-kit";
 import MarkdownIt from "markdown-it";
 import { MarkdownSerializer, defaultMarkdownSerializer } from "prosemirror-markdown";
 import { describe, expect, it } from "vitest";
-import { EditorState } from "@tiptap/pm/state";
+import { EditorState, TextSelection } from "@tiptap/pm/state";
+import {
+  indentCommand,
+  indentUnit,
+  lineIndent,
+  newlineKeepIndent,
+  outdentCommand,
+  outdentWidth,
+} from "../src/editor/code/indent.js";
 import { NotionCodeBlock, fenceFor, fenceInfo, serializeCodeBlock } from "../src/editor/code-block.js";
 import {
   CODE_LANGUAGES,
@@ -131,5 +139,55 @@ describe("highlighting", () => {
     // Never auto-detected: plain and unknown languages stay plain text.
     expect(decorations({ language: null }, "const answer = 42;")).toHaveLength(0);
     expect(decorations({ language: "dataviewjs" }, "const answer = 42;")).toHaveLength(0);
+  });
+});
+
+describe("indent in code blocks (#zyyce7rj)", () => {
+  it("picks the block's own indent, else the language convention", () => {
+    expect(indentUnit("a\n\tb", "python")).toBe("\t");
+    expect(indentUnit("if x:\n  y", "python")).toBe("  ");
+    expect(indentUnit("def f():", "python")).toBe("    ");
+    expect(indentUnit("const x = 1;", "ts")).toBe("  ");
+    expect(indentUnit("all:", "makefile")).toBe("\t");
+    expect(indentUnit("", null)).toBe("    ");
+  });
+
+  it("reads the current line's indent and how much to outdent", () => {
+    expect(lineIndent("def f():\n    return 1", 22)).toBe("    ");
+    expect(lineIndent("a\n\t\tb", 5)).toBe("\t\t");
+    expect(lineIndent("abc", 3)).toBe("");
+    expect(outdentWidth("      x", "    ")).toBe(4);
+    expect(outdentWidth("  x", "    ")).toBe(2);
+    expect(outdentWidth("\tx", "  ")).toBe(1);
+    expect(outdentWidth("x", "  ")).toBe(0);
+  });
+
+  const stateWith = (text: string, from: number, to = from) => {
+    const doc = code(text, { language: "python" });
+    return EditorState.create({ schema, doc, selection: TextSelection.create(doc, 1 + from, 1 + to) });
+  };
+  const run = (
+    command: (s: EditorState, d: (tr: import("@tiptap/pm/state").Transaction) => void, t: string) => boolean,
+    state: EditorState,
+  ) => {
+    let next = state;
+    const handled = command(state, (tr) => (next = state.apply(tr)), "codeBlock");
+    return { handled, text: next.doc.textContent, next };
+  };
+
+  it("Tab inserts at the caret; with lines selected indents each line", () => {
+    expect(run(indentCommand, stateWith("def f():\n", 9))).toMatchObject({ handled: true, text: "def f():\n    " });
+    expect(run(indentCommand, stateWith("a\nb\nc", 0, 3)).text).toBe("    a\n    b\nc");
+  });
+
+  it("Shift+Tab outdents the current or selected lines and is always handled", () => {
+    expect(run(outdentCommand, stateWith("    a\n    b", 7)).text).toBe("    a\nb");
+    expect(run(outdentCommand, stateWith("    a\n    b", 0, 10)).text).toBe("a\nb");
+    expect(run(outdentCommand, stateWith("a", 1))).toMatchObject({ handled: true, text: "a" });
+  });
+
+  it("Enter keeps the indent; an unindented line falls back to the default", () => {
+    expect(run(newlineKeepIndent, stateWith("def f():\n    return 1", 21)).text).toBe("def f():\n    return 1\n    ");
+    expect(run(newlineKeepIndent, stateWith("x = 1", 5)).handled).toBe(false);
   });
 });
