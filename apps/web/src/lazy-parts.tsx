@@ -61,37 +61,96 @@ export function lazyPart<P>(load: () => Promise<ComponentType<P>>): LazyPart<P> 
   };
 }
 
+/**
+ * Why a part's code could not load:
+ * - "updated": the chunk is gone (404), e.g. a tab left open across
+ *   `git pull && npm run build` changed the hashed file names. Only a reload
+ *   fetches the new build.
+ * - "unreachable": offline, server stopped, or anything else; trying again
+ *   may work.
+ */
+export type LoadFailure = "updated" | "unreachable";
+
+const CHUNK_URL = /(https?:\/\/[^\s'"]+?\.(?:m?js|tsx?|jsx|css))(?:[?#][^\s'"]*)?/;
+
+/** Classify a failed dynamic import by asking the server for the chunk again. */
+export async function classifyLoadFailure(
+  error: unknown,
+  fetchImpl: typeof fetch = (...args) => fetch(...args),
+): Promise<LoadFailure> {
+  const message = error instanceof Error ? error.message : String(error);
+  const url = CHUNK_URL.exec(message)?.[1];
+  if (!url) return "unreachable";
+  try {
+    const response = await fetchImpl(url, { method: "HEAD", cache: "no-store" });
+    return response.status === 404 ? "updated" : "unreachable";
+  } catch {
+    return "unreachable";
+  }
+}
+
+/** What an error state can offer: try again, or reload for a new build. */
+export interface PartFailure {
+  updated: boolean;
+  retry: () => void;
+}
+
 interface PartBoundaryProps {
   children: ReactNode;
   /** Shown instead of the part when its code could not load (or it crashed). */
-  renderError: (retry: () => void) => ReactNode;
+  renderError: (failure: PartFailure) => ReactNode;
+}
+
+interface PartBoundaryState {
+  failed: boolean;
+  updated: boolean;
+  attempt: number;
 }
 
 /**
- * Keeps a failed chunk load (server stopped, offline) from blanking the whole
- * app: the part shows a calm message with "Try again", which remounts it and
- * fetches its code again.
+ * Keeps a failed chunk load (server stopped, offline, new build) from blanking
+ * the whole app (#fzfrkpta): the part shows a calm message instead. "Try
+ * again" remounts it and fetches its code again; after an update the message
+ * offers a reload.
  */
-class PartBoundary extends ReactComponent<PartBoundaryProps, { failed: boolean; attempt: number }> {
-  override state = { failed: false, attempt: 0 };
+class PartBoundary extends ReactComponent<PartBoundaryProps, PartBoundaryState> {
+  override state: PartBoundaryState = { failed: false, updated: false, attempt: 0 };
 
-  static getDerivedStateFromError() {
-    return { failed: true };
+  static getDerivedStateFromError(): Partial<PartBoundaryState> {
+    return { failed: true, updated: false };
   }
 
   override componentDidCatch(error: unknown) {
     console.error("[gumply] could not show part:", error);
+    const attempt = this.state.attempt;
+    void classifyLoadFailure(error).then((kind) => {
+      if (kind === "updated" && this.state.failed && this.state.attempt === attempt) {
+        this.setState({ updated: true });
+      }
+    });
   }
 
-  retry = () => this.setState((state) => ({ failed: false, attempt: state.attempt + 1 }));
+  retry = () => this.setState((state) => ({ failed: false, updated: false, attempt: state.attempt + 1 }));
 
   override render() {
-    if (this.state.failed) return this.props.renderError(this.retry);
+    if (this.state.failed) return this.props.renderError({ updated: this.state.updated, retry: this.retry });
     return <Fragment key={this.state.attempt}>{this.props.children}</Fragment>;
   }
 }
 
 const LOAD_ERROR_HINT = "Check that Gumply is still running, then try again.";
+const UPDATED_HINT = "Reload to get the new version. Your saved pages are safe.";
+
+function reloadApp(): void {
+  window.location.reload();
+}
+
+/** The message and button(s) for a failed part, shared by every error state. */
+function failureText(failure: PartFailure, what: string) {
+  return failure.updated
+    ? { title: "Gumply was updated.", hint: UPDATED_HINT, action: "Reload", onAction: reloadApp }
+    : { title: `Could not load ${what}.`, hint: LOAD_ERROR_HINT, action: "Try again", onAction: failure.retry };
+}
 
 /** Renders a part, with `fallback` only while its code is still loading. */
 function Part<P extends object>({
@@ -103,7 +162,7 @@ function Part<P extends object>({
   part: LazyPart<P>;
   fallback: ReactNode;
   props: P;
-  renderError: (retry: () => void) => ReactNode;
+  renderError: (failure: PartFailure) => ReactNode;
 }) {
   return (
     <PartBoundary renderError={renderError}>
@@ -191,20 +250,23 @@ export function GraphView(props: GraphViewProps) {
           </div>
         </GraphShell>
       }
-      renderError={(retry) => (
-        <GraphShell>
-          <div className="empty-state" data-testid="graph-error">
-            <span className="empty-state-icon" aria-hidden="true">
-              <Icon name="monitor" size={26} />
-            </span>
-            <h2>Could not load the graph.</h2>
-            <p>{LOAD_ERROR_HINT}</p>
-            <button type="button" className="button-primary" onClick={retry}>
-              Try again
-            </button>
-          </div>
-        </GraphShell>
-      )}
+      renderError={(failure) => {
+        const text = failureText(failure, "the graph");
+        return (
+          <GraphShell>
+            <div className="empty-state" data-testid="graph-error" data-failure={failure.updated ? "updated" : "unreachable"}>
+              <span className="empty-state-icon" aria-hidden="true">
+                <Icon name="monitor" size={26} />
+              </span>
+              <h2>{text.title}</h2>
+              <p>{text.hint}</p>
+              <button type="button" className="button-primary" onClick={text.onAction}>
+                {text.action}
+              </button>
+            </div>
+          </GraphShell>
+        );
+      }}
     />
   );
 }
@@ -251,23 +313,31 @@ export function LocalGraphPanel(props: LocalGraphPanelProps) {
           <p className="graph-panel-note">Loading…</p>
         </LocalGraphShell>
       }
-      renderError={(retry) => (
-        <LocalGraphShell onClose={props.onClose}>
-          <div className="graph-panel-state" data-testid="local-graph-error">
-            <p>Could not load the local graph.</p>
-            <p>{LOAD_ERROR_HINT}</p>
-            <button type="button" className="button-secondary" onClick={retry}>
-              Try again
-            </button>
-          </div>
-        </LocalGraphShell>
-      )}
+      renderError={(failure) => {
+        const text = failureText(failure, "the local graph");
+        return (
+          <LocalGraphShell onClose={props.onClose}>
+            <div
+              className="graph-panel-state"
+              data-testid="local-graph-error"
+              data-failure={failure.updated ? "updated" : "unreachable"}
+            >
+              <p>{text.title}</p>
+              <p>{text.hint}</p>
+              <button type="button" className="button-secondary" onClick={text.onAction}>
+                {text.action}
+              </button>
+            </div>
+          </LocalGraphShell>
+        );
+      }}
     />
   );
 }
 
 /** Small modal shown when a dialog's code could not load. */
-function DialogLoadError({ onClose, retry }: { onClose: () => void; retry: () => void }) {
+function DialogLoadError({ onClose, failure }: { onClose: () => void; failure: PartFailure }) {
+  const text = failureText(failure, "this");
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -288,15 +358,16 @@ function DialogLoadError({ onClose, retry }: { onClose: () => void; retry: () =>
         aria-modal="true"
         aria-labelledby="part-error-title"
         data-testid="dialog-load-error"
+        data-failure={failure.updated ? "updated" : "unreachable"}
       >
-        <h2 id="part-error-title">Could not open this.</h2>
-        <p>{LOAD_ERROR_HINT}</p>
+        <h2 id="part-error-title">{failure.updated ? text.title : "Could not open this."}</h2>
+        <p>{text.hint}</p>
         <div className="modal-actions">
           <button type="button" className="button-secondary" onClick={onClose}>
             Close
           </button>
-          <button type="button" className="button-primary" onClick={retry} autoFocus>
-            Try again
+          <button type="button" className="button-primary" onClick={text.onAction} autoFocus>
+            {text.action}
           </button>
         </div>
       </div>
@@ -310,7 +381,7 @@ export function ShortcutsDialog(props: ShortcutsDialogProps) {
       part={shortcutsPart}
       props={props}
       fallback={null}
-      renderError={(retry) => <DialogLoadError onClose={props.onClose} retry={retry} />}
+      renderError={(failure) => <DialogLoadError onClose={props.onClose} failure={failure} />}
     />
   );
 }
@@ -321,7 +392,7 @@ export function MoveDialog(props: MoveDialogProps) {
       part={movePart}
       props={props}
       fallback={null}
-      renderError={(retry) => <DialogLoadError onClose={props.onCancel} retry={retry} />}
+      renderError={(failure) => <DialogLoadError onClose={props.onCancel} failure={failure} />}
     />
   );
 }

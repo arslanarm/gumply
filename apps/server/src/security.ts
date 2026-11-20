@@ -10,7 +10,9 @@
  *   configured host) is refused. A rebinding attack reaches 127.0.0.1 under
  *   the attacker's domain name, so its `Host` gives it away.
  * - **CSRF**: a state-changing request (POST/PUT/PATCH/DELETE) carrying an
- *   `Origin` from anywhere but the Gumply web app is refused. This covers
+ *   `Origin` from anywhere but the Gumply web app is refused. The web app is
+ *   recognised by its port (`GUMPLY_WEB_PORT`) or, on any port, by being
+ *   same-origin with the (loopback) `Host` it reached us through. This covers
  *   "simple" requests (form posts, `text/plain`, multipart) that skip CORS
  *   preflight. Requests without `Origin` (curl, scripts, tests) pass: browsers
  *   always send `Origin` on cross-site POSTs.
@@ -61,6 +63,33 @@ export function isAllowedOrigin(origin: string, options: SecurityOptions): boole
   return options.webPorts.includes(port) || port === options.apiPort;
 }
 
+/**
+ * Same-origin through a proxy (#kmff9wkt): Vite (any port, `vite preview`)
+ * passes the browser's `Host` through, so the web app's own requests have
+ * `Origin` host:port equal to `Host`. `Host` has already passed the loopback
+ * check above, so this can't let another website in.
+ */
+export function isSameOrigin(origin: string, host: string | undefined): boolean {
+  if (!host) return false;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  return url.host.toLowerCase() === host.trim().toLowerCase();
+}
+
+const warned = new Set<string>();
+function warnOnce(origin: string): void {
+  if (warned.has(origin) || warned.size > 50) return;
+  warned.add(origin);
+  console.warn(
+    `[gumply] refused a write from ${origin}. If that is your Gumply web app, set GUMPLY_WEB_PORT to its port.`,
+  );
+}
+
 function refuse(message: string) {
   return { error: message } satisfies ApiError;
 }
@@ -79,7 +108,8 @@ export function localOnly(options: SecurityOptions): MiddlewareHandler {
     if (UNSAFE_METHODS.has(c.req.method)) {
       const origin = c.req.header("origin");
       // "null" is what sandboxed frames and file:// pages send: refuse too.
-      if (origin !== undefined && !isAllowedOrigin(origin, options)) {
+      if (origin !== undefined && !isAllowedOrigin(origin, options) && !isSameOrigin(origin, host)) {
+        warnOnce(origin);
         return c.json(refuse("Requests from other websites are not allowed."), 403);
       }
     }
