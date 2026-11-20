@@ -14,7 +14,7 @@ import {
   searchSections,
   type SearchRow,
 } from "../lib/search.js";
-import { useActiveOptionVisible } from "./use-active-option.js";
+import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 
 export interface QuickSwitcherProps {
   pages: readonly PageMeta[];
@@ -25,6 +25,7 @@ export interface QuickSwitcherProps {
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
 export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitcherProps) {
+  const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [settled, setSettled] = useState("");
@@ -153,7 +154,9 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
           event.preventDefault();
           select(row);
         }}
-        onMouseEnter={() => setIndex(rowIndex)}
+        onMouseMove={(event) => {
+          if (pointerMoved(event) && rowIndex !== activeIndex) setIndex(rowIndex);
+        }}
       >
         <span className="quick-switcher-icon" aria-hidden="true">
           {row.kind === "create" ? (

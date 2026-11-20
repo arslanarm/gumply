@@ -125,3 +125,30 @@ describe("highlightSegments", () => {
     ]);
   });
 });
+
+describe("plainTextSnippet (#smwaixfp)", () => {
+  it("reads like the page, not like Markdown", async () => {
+    const { plainTextSnippet } = await import("../src/lib/search.js");
+    expect(plainTextSnippet("…Back to [[Welcome]], or read [[Getting started|the guide]]…")).toBe(
+      "…Back to Welcome, or read the guide…",
+    );
+    expect(plainTextSnippet("# Welcome to Gumply Type `[[` to link")).toBe("Welcome to Gumply Type [[ to link");
+    expect(plainTextSnippet("- [ ] buy **milk** and _eggs_ ~~now~~ ==hl== see [docs](https://x.y)")).toBe(
+      "buy milk and eggs now hl see docs",
+    );
+    expect(plainTextSnippet("> quoted <kbd>K</kbd> snake_case 2 * 3 a\\*b")).toBe("quoted K snake_case 2 * 3 a*b");
+    expect(plainTextSnippet("[[Plan#Q3]] and ![[pic.png]]")).toBe("Plan#Q3 and pic.png");
+  });
+});
+
+describe("duplicate titles in the same folder (#smwaixfp)", () => {
+  it("are told apart by their edit time", async () => {
+    const { recentRows, relativeTime } = await import("../src/lib/search.js");
+    const now = Date.now();
+    const meta = (id: string, minutesAgo: number) =>
+      ({ id, title: "Race", parentId: null, path: `${id}.md`, updated: new Date(now - minutesAgo * 60_000).toISOString(), created: "" }) as unknown as PageMeta;
+    const rows = recentRows([meta("a", 0), meta("b", 5)]);
+    expect(rows.map((row) => row.path)).toEqual(["Edited just now", "Edited 5 min ago"]);
+    expect(relativeTime(new Date(now - 3 * 3_600_000).toISOString(), now)).toBe("3 h ago");
+  });
+});

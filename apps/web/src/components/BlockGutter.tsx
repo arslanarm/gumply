@@ -1,6 +1,6 @@
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   blockAt,
   deleteBlock,
@@ -20,7 +20,15 @@ interface HoverState {
 interface MenuState extends HoverState {
   menuLeft: number;
   menuTop: number;
+  /** The block's own extent: the menu opens below or above it, never over it. */
+  blockTop: number;
+  blockBottom: number;
+  maxHeight?: number;
+  placed: boolean;
 }
+
+const MENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
 
 interface DropState {
   left: number;
@@ -271,13 +279,43 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     };
   }, [menu, editor]);
 
+  // Like Notion: the menu opens under the block it acts on (aligned with the
+  // handle) and flips above it when there's no room below (#smwaixfp).
   const openMenu = (state: HoverState) => {
+    const dom = domForBlock(editor.view, state.block);
+    const rect = dom?.getBoundingClientRect();
+    const blockTop = rect?.top ?? state.top;
+    const blockBottom = rect?.bottom ?? state.top + 26;
     setMenu({
       ...state,
-      menuLeft: Math.min(state.left + 50, window.innerWidth - 252),
-      menuTop: Math.min(state.top - 4, window.innerHeight - 430),
+      menuLeft: Math.max(VIEWPORT_MARGIN, Math.min(state.left, window.innerWidth - 244)),
+      menuTop: blockBottom + MENU_GAP,
+      blockTop,
+      blockBottom,
+      placed: false,
     });
   };
+
+  useLayoutEffect(() => {
+    const element = menuElementRef.current;
+    if (!menu || menu.placed || !element) return;
+    const height = element.scrollHeight;
+    const below = window.innerHeight - VIEWPORT_MARGIN - (menu.blockBottom + MENU_GAP);
+    const above = menu.blockTop - MENU_GAP - VIEWPORT_MARGIN;
+    let menuTop = menu.blockBottom + MENU_GAP;
+    let maxHeight: number | undefined;
+    if (height > below) {
+      if (height <= above) {
+        menuTop = menu.blockTop - MENU_GAP - height;
+      } else if (above > below) {
+        maxHeight = above;
+        menuTop = VIEWPORT_MARGIN;
+      } else {
+        maxHeight = below;
+      }
+    }
+    setMenu({ ...menu, menuTop, maxHeight, placed: true });
+  }, [menu]);
 
   const run = (action: (block: BlockRef) => void) => {
     const current = menuRef.current;
@@ -386,22 +424,13 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           role="menu"
           aria-label="Block actions"
           data-testid="block-menu"
-          style={{ left: menu.menuLeft, top: menu.menuTop }}
+          style={{
+            left: menu.menuLeft,
+            top: menu.menuTop,
+            maxHeight: menu.maxHeight,
+            visibility: menu.placed ? "visible" : "hidden",
+          }}
         >
-          <p className="block-menu-heading">Turn into</p>
-          {TURN_INTO.map((item) => (
-            <button
-              key={item.kind}
-              type="button"
-              role="menuitem"
-              className="block-menu-item"
-              data-testid={`block-turn-into-${item.kind}`}
-              onClick={() => run((block) => turnInto(editor, block, item.kind))}
-            >
-              {item.label}
-            </button>
-          ))}
-          <div className="block-menu-separator" />
           <button
             type="button"
             role="menuitem"
@@ -444,6 +473,20 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           >
             Delete
           </button>
+          <div className="block-menu-separator" />
+          <p className="block-menu-heading">Turn into</p>
+          {TURN_INTO.map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              role="menuitem"
+              className="block-menu-item"
+              data-testid={`block-turn-into-${item.kind}`}
+              onClick={() => run((block) => turnInto(editor, block, item.kind))}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       ) : null}
     </>
