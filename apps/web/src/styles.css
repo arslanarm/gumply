@@ -1450,7 +1450,7 @@ input {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.4rem;
 }
 
 .backlink {
@@ -1460,7 +1460,7 @@ input {
   border: 1px solid transparent;
   background: transparent;
   border-radius: 7px;
-  padding: 0.45rem 0.55rem;
+  padding: 0.55rem 0.65rem;
   cursor: pointer;
 }
 
@@ -1474,7 +1474,7 @@ input {
   font-size: 0.87rem;
   font-weight: 500;
   color: var(--text);
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.15rem;
 }
 
 .backlink-snippet {

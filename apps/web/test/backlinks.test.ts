@@ -8,12 +8,30 @@ describe("splitSnippet", () => {
     ]);
   });
 
-  it("highlights wiki links, including at the edges", () => {
+  it("shows link text without the brackets, including at the edges", () => {
     expect(splitSnippet("[[Source]] links to [[Target]] here.")).toEqual([
-      { text: "[[Source]]", highlight: true },
+      { text: "Source", highlight: true },
       { text: " links to ", highlight: false },
-      { text: "[[Target]]", highlight: true },
+      { text: "Target", highlight: true },
       { text: " here.", highlight: false },
+    ]);
+  });
+
+  it("uses the alias and keeps the heading for alias/heading links", () => {
+    expect(splitSnippet("See [[Source|the source]] and [[Target#Intro]].")).toEqual([
+      { text: "See ", highlight: false },
+      { text: "the source", highlight: true },
+      { text: " and ", highlight: false },
+      { text: "Target#Intro", highlight: true },
+      { text: ".", highlight: false },
+    ]);
+  });
+
+  it("leaves malformed brackets alone", () => {
+    expect(splitSnippet("An empty [[]] and array[0].")).toEqual([
+      { text: "An empty ", highlight: false },
+      { text: "[[]]", highlight: true },
+      { text: " and array[0].", highlight: false },
     ]);
   });
 });
