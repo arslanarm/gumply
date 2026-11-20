@@ -482,3 +482,53 @@ test.describe('whiteboards in the app (W2a)', () => {
     });
   }
 });
+
+test.describe('board uploads that fail (#f6v8z4ti)', () => {
+  async function dropFile(page: Page, name: string, size: number, type = 'application/octet-stream') {
+    const canvas = page.getByTestId('board');
+    const box = (await canvas.boundingBox())!;
+    await canvas.evaluate(
+      (element, file) => {
+        const data = new DataTransfer();
+        data.items.add(new File([new Uint8Array(file.size)], file.name, { type: file.type }));
+        const point = { clientX: file.x, clientY: file.y, bubbles: true, cancelable: true, dataTransfer: data };
+        element.dispatchEvent(new DragEvent('dragover', point));
+        element.dispatchEvent(new DragEvent('drop', point));
+      },
+      { name, size, type, x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    );
+  }
+
+  test('an oversize drop shows a calm message, uploads nothing and throws nothing', async ({ page, request }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    let uploads = 0;
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().includes('/api/attachments')) uploads += 1;
+    });
+    const created = await createBoard(request, 'Drops');
+    await openBoard(page, created.meta.id);
+
+    await dropFile(page, 'huge.bin', 25 * 1024 * 1024 + 300);
+    const notice = page.getByTestId('board-upload-notice');
+    await expect(notice).toHaveText(/huge\.bin is too large \(max 25 MB\)/);
+    await notice.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(notice).toHaveCount(0);
+    expect(uploads).toBe(0);
+    expect(errors).toEqual([]);
+    expect((await getBoard(request, created.meta.id)).board.nodes).toHaveLength(0);
+  });
+
+  test('a server failure on upload is a notice too, not an uncaught error', async ({ page, request }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.route('**/api/attachments', (route) =>
+      route.request().method() === 'POST' ? route.fulfill({ status: 500, body: 'boom' }) : route.continue(),
+    );
+    const created = await createBoard(request, 'Drops 500');
+    await openBoard(page, created.meta.id);
+    await dropFile(page, 'note.txt', 12, 'text/plain');
+    await expect(page.getByTestId('board-upload-notice')).toHaveText(/Couldn't add note\.txt\. Can't reach Gumply's local server\./);
+    expect(errors).toEqual([]);
+  });
+});
