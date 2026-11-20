@@ -16,8 +16,8 @@ const shots = process.env.GUMPLY_DESKTOP_SHOTS;
 // Linux: only on the virtual display set up by `npm run desktop:test`
 // (xvfb-run). Run directly, X11 would draw on the user's real desktop.
 test.skip(
-  process.platform === 'linux' && process.env.GUMPLY_DESKTOP_HEADLESS !== '1',
-  'Run via `npm run desktop:test` (virtual display); refusing to open windows on the real desktop.',
+  process.platform === 'linux' && (process.env.GUMPLY_DESKTOP_HEADLESS !== '1' || !process.env.GUMPLY_TEST_DBUS),
+  'Run via `npm run desktop:test` (virtual display + private D-Bus); refusing to touch the real desktop session.',
 );
 
 let scratch: string;
@@ -31,12 +31,46 @@ test.beforeEach(() => {
 });
 test.afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
-async function launch(env: Record<string, string> = {}): Promise<{ app: ElectronApplication; window: Page }> {
+/** Variables that would let the app reach the user's real session or files. */
+// Every XDG_* variable is dropped (and the dirs replaced below), plus these.
+const SESSION_VARS = new Set([
+  'WAYLAND_DISPLAY',
+  'DBUS_SESSION_BUS_ADDRESS',
+  'DESKTOP_SESSION',
+  'KDE_FULL_SESSION',
+  'KDE_SESSION_VERSION',
+  'GNOME_DESKTOP_SESSION_ID',
+  'GDK_BACKEND',
+  'QT_QPA_PLATFORM',
+  'SESSION_MANAGER',
+]);
+
+/**
+ * Team rule (platform-issues P11): X11 on the virtual display only, a private
+ * D-Bus that can't start any service, and a scratch HOME/XDG_* per launch, so
+ * nothing (a file manager, a portal, a keyring) can touch the user's session.
+ */
+function isolatedEnv(): Record<string, string> {
   const base: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    // Never on the user's Wayland desktop: X11 (xvfb-run) only.
-    if (value !== undefined && key !== 'WAYLAND_DISPLAY') base[key] = value;
+    if (value !== undefined && !key.startsWith('XDG_') && !SESSION_VARS.has(key)) base[key] = value;
   }
+  const home = join(scratch, 'home');
+  const dirs = {
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, '.config'),
+    XDG_DATA_HOME: join(home, '.local', 'share'),
+    XDG_CACHE_HOME: join(home, '.cache'),
+    XDG_STATE_HOME: join(home, '.local', 'state'),
+    XDG_RUNTIME_DIR: join(scratch, 'runtime'),
+  };
+  for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (process.env.GUMPLY_TEST_DBUS) base.DBUS_SESSION_BUS_ADDRESS = process.env.GUMPLY_TEST_DBUS;
+  return { ...base, ...dirs };
+}
+
+async function launch(env: Record<string, string> = {}): Promise<{ app: ElectronApplication; window: Page }> {
+  const base = isolatedEnv();
   const app = await electron.launch({
     args: ['--ozone-platform=x11', appDir],
     env: {
@@ -231,6 +265,55 @@ test('vault files: documents open in their app, scripts and programs are only re
       'open <vault>/attachments/report.pdf',
       'reveal <vault>/attachments/run.sh',
       'reveal <vault>/attachments/run.sh',
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('opening a folder that already has files writes nothing into it (#pc3wvc2u)', async () => {
+  mkdirSync(vault, { recursive: true });
+  writeFileSync(join(vault, 'report.pdf'), '%PDF-1.4');
+  writeFileSync(join(vault, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 });
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    // An empty sidebar with the "No pages yet" state, not the demo.
+    await expect(window.getByTestId('empty-state')).toBeVisible();
+    await expect(window.getByTestId('page-item-Welcome')).toHaveCount(0);
+    await window.waitForTimeout(500);
+    expect(readdirSafe(vault).sort()).toEqual(['report.pdf', 'run.sh']);
+  } finally {
+    await app.close();
+  }
+  // Still nothing after the app has closed (no marker, no settings).
+  expect(readdirSafe(vault).sort()).toEqual(['report.pdf', 'run.sh']);
+});
+
+test('the app under test is isolated from the real session (P11)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    const seen = await app.evaluate(() => ({
+      home: process.env.HOME,
+      bus: process.env.DBUS_SESSION_BUS_ADDRESS,
+      wayland: process.env.WAYLAND_DISPLAY ?? null,
+      xdg: Object.entries(process.env).filter(([key]) => key.startsWith('XDG_')),
+    }));
+    expect(seen.home).toBe(join(scratch, 'home'));
+    expect(seen.bus).toBe(process.env.GUMPLY_TEST_DBUS);
+    expect(seen.bus).not.toBe(undefined);
+    expect(seen.wayland).toBeNull();
+    // Every XDG_* dir (config, data, cache, state, runtime) is a scratch dir;
+    // none of the user's session/desktop variables reach the app.
+    for (const [key, value] of seen.xdg) {
+      expect(value, key).toMatch(new RegExp(`^${scratch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`));
+    }
+    expect(seen.xdg.map(([key]) => key).sort()).toEqual([
+      'XDG_CACHE_HOME',
+      'XDG_CONFIG_HOME',
+      'XDG_DATA_HOME',
+      'XDG_RUNTIME_DIR',
+      'XDG_STATE_HOME',
     ]);
   } finally {
     await app.close();
