@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { api } from "../api/client.js";
+import { Icon } from "./Icon.js";
 import {
   highlightSegments,
   recentRows,
@@ -155,7 +156,13 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
         onMouseEnter={() => setIndex(rowIndex)}
       >
         <span className="quick-switcher-icon" aria-hidden="true">
-          {row.kind === "create" ? "+" : (row.page?.icon ?? "▤")}
+          {row.kind === "create" ? (
+            <Icon name="plus" size={16} />
+          ) : row.page?.icon ? (
+            row.page.icon
+          ) : (
+            <Icon name="file" size={16} />
+          )}
         </span>
         <span className="quick-switcher-text">
           <span className="quick-switcher-title">{row.label}</span>

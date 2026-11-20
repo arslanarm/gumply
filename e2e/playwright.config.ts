@@ -30,14 +30,25 @@ export default defineConfig({
     ['list'],
     ['html', { open: 'never', outputFolder: '../playwright-report' }],
   ],
-  outputDir: '../test-results',
+  // Keep run artifacts in a subdirectory: `test-results/screens/` holds review
+  // screenshots and must survive a normal suite run (Playwright clears outputDir).
+  outputDir: '../test-results/run',
   use: {
     baseURL: BASE_URL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Q1b cross-browser graph check: Firefox runs only the canvas-pixel spec,
+    // not the whole suite (keeps runtime and unrelated browser quirks out).
+    {
+      name: 'firefox',
+      testMatch: /graph-pixels\.spec\.ts$/,
+      use: { ...devices['Desktop Firefox'] },
+    },
+  ],
   // One app instance for the whole suite. Tests isolate themselves through
   // the API (resetVault fixture) instead of restarting the server.
   // reuseExistingServer is deliberately false: attaching to an already running

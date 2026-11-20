@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon, type IconName } from "./Icon.js";
 import {
   applyThemePreference,
   browserStorage,
@@ -10,10 +11,10 @@ import {
   type ThemePreference,
 } from "../lib/theme.js";
 
-const ICONS: Record<ThemePreference, string> = {
-  system: "◐",
-  light: "☀",
-  dark: "☾",
+const ICONS: Record<ThemePreference, IconName> = {
+  system: "monitor",
+  light: "sun",
+  dark: "moon",
 };
 
 /** Topbar toggle: System → Light → Dark, persisted in localStorage. */
@@ -52,7 +53,9 @@ export function ThemeToggle() {
       aria-label={label}
       onClick={cycle}
     >
-      <span aria-hidden="true">{ICONS[preference]}</span>
+      <span aria-hidden="true">
+        <Icon name={ICONS[preference]} size={16} />
+      </span>
     </button>
   );
 }
