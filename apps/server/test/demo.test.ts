@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildDemoPages, DEMO_FOLDER_TITLE, WELCOME_TITLE } from "../src/demo";
+import { parseCanvas, serializeCanvas } from "@gumply/core";
+import { buildDemoBoard, buildDemoPages, DEMO_BOARD_TITLE, DEMO_FOLDER_TITLE, WELCOME_TITLE } from "../src/demo";
 import { VaultStore } from "../src/vault-store";
 
 const dirs: string[] = [];
@@ -63,6 +64,7 @@ describe("server-side demo seeding", () => {
       "Getting started",
       "Graph view",
       "Gumply demo",
+      "Project map",
       "Welcome",
     ]);
     expect(store.consumeNewVaultPage()).toBe("Welcome");
@@ -75,7 +77,7 @@ describe("server-side demo seeding", () => {
 
     // A second call in the same process sees the marker.
     expect(await store.seedDemoIfFirstRun()).toBeNull();
-    expect(store.list()).toHaveLength(4);
+    expect(store.list()).toHaveLength(5);
   });
 
   it("never re-seeds after the user deletes the demo", async () => {
@@ -131,5 +133,57 @@ describe("server-side demo seeding", () => {
     expect(await reopened.seedDemoIfFirstRun()).toBeNull();
     expect(reopened.consumeNewVaultPage()).toBeNull();
     expect(reopened.list()).toHaveLength(2);
+  });
+});
+
+describe("demo whiteboard (#dvnb8n2n)", () => {
+  it("seeds `Gumply demo/Project map.canvas` once, in Obsidian's layout", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    await store.seedDemoIfFirstRun();
+
+    const id = `${DEMO_FOLDER_TITLE}/${DEMO_BOARD_TITLE}.canvas`;
+    const doc = store.getBoard(id);
+    expect(doc.meta).toMatchObject({ id, kind: "whiteboard", title: "Project map", icon: "🗺️", parentId: "Gumply demo" });
+    const raw = await readFile(join(dir, "Gumply demo", "Project map.canvas"), "utf8");
+    // Byte-stable: re-serialising what we read gives the same file.
+    expect(serializeCanvas(parseCanvas(raw))).toBe(raw);
+    expect(raw).not.toMatch(/\n$/);
+
+    // A frame (first, behind the cards), three page cards, a sticky and a labelled arrow.
+    const kinds = doc.board.nodes.map((node) => node.type);
+    expect(kinds).toEqual(["group", "file", "file", "file", "text"]);
+    expect(doc.board.nodes[4]).toMatchObject({ text: "Start here: double-click to add a sticky", gumply: { kind: "sticky" }, color: "3" });
+    expect(doc.board.edges.find((edge) => edge.label)).toMatchObject({ label: "read next" });
+    // Obsidian key order: content, gumply, then geometry, then color.
+    expect(Object.keys(doc.board.nodes[4]!)).toEqual(["id", "type", "text", "gumply", "x", "y", "width", "height", "color"]);
+
+    // Only once: a second call does nothing.
+    expect(await store.seedDemoIfFirstRun()).toBeNull();
+    expect(store.list().filter((meta) => meta.kind === "whiteboard")).toHaveLength(1);
+  });
+
+  it("its cards resolve, the graph has the edges, and Welcome links to it", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    await store.seedDemoIfFirstRun();
+    const id = "Gumply demo/Project map.canvas";
+
+    const graph = store.graph();
+    const fromBoard = graph.links.filter((link) => link.source === id).map((link) => link.target).sort();
+    expect(fromBoard).toEqual(["Gumply demo/Getting started", "Gumply demo/Graph view", "Welcome"]);
+    expect(graph.unresolved.filter((item) => item.source === id)).toEqual([]);
+    // Welcome links to the board (Obsidian-style target with alias).
+    expect(graph.links).toContainEqual({ source: "Welcome", target: id });
+    expect(store.get("Welcome").content).toContain("[[Project map.canvas|Project map]]");
+    expect(store.backlinks(id).map((item) => item.page.id)).toEqual(["Welcome"]);
+    expect(store.backlinks("Welcome").map((item) => item.page.id)).toContain(id);
+  });
+
+  it("buildDemoBoard points its cards at the demo pages' files", () => {
+    const files = buildDemoBoard().nodes.flatMap((node) => (node.type === "file" ? [node.file] : []));
+    expect(files).toEqual(["Welcome.md", "Gumply demo/Getting started.md", "Gumply demo/Graph view.md"]);
   });
 });

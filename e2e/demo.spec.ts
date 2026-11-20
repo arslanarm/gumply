@@ -11,7 +11,8 @@ import { expectPageTitle } from './support/ui';
  */
 test.use({ baseURL: DEMO_WEB_URL });
 
-const DEMO_TITLES = ['Getting started', 'Graph view', 'Gumply demo', 'Welcome'];
+// #dvnb8n2n: the demo folder also holds the "Project map" whiteboard.
+const DEMO_TITLES = ['Getting started', 'Graph view', 'Gumply demo', 'Project map', 'Welcome'];
 
 let app: DemoApp;
 
@@ -60,7 +61,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
     id: string;
     title: string;
   }[];
-  expect(first).toHaveLength(4);
+  expect(first).toHaveLength(5);
   expect(first.map((item) => item.title).sort()).toEqual(DEMO_TITLES);
 
   // Second load on the same server: no new-vault signal, no duplicate pages.
@@ -78,8 +79,8 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
     id: string;
     title: string;
   }[];
-  expect(afterRestart).toHaveLength(4);
-  expect(new Set(afterRestart.map((item) => item.id)).size).toBe(4);
+  expect(afterRestart).toHaveLength(5);
+  expect(new Set(afterRestart.map((item) => item.id)).size).toBe(5);
   expect(afterRestart.map((item) => item.title).sort()).toEqual(DEMO_TITLES);
 
   await page.getByTestId('page-item-Welcome').click();
@@ -97,7 +98,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   await page.getByTestId('delete-page-button-page').click();
   const dialog = page.getByRole('dialog', { name: 'Delete “Gumply demo”?' });
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText('Its 2 sub-pages will be deleted too.');
+  await expect(dialog).toContainText('Its 3 sub-pages will be deleted too.');
   await page.getByTestId('delete-confirm').click();
   await expect(page.getByTestId('empty-state')).toBeVisible();
   await expect(page.getByTestId('sidebar-empty')).toBeVisible();
