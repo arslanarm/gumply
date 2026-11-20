@@ -22,6 +22,11 @@ describe("emoji `:` trigger (#6v8tyxfd)", () => {
     expect(findEmojiQuery("C::std")).toBeNull();
   });
 
+  it("stays closed inside a code span that is still being typed", () => {
+    expect(findEmojiQuery("`x :smile")).toBeNull();
+    expect(findEmojiQuery("`a` and :smile")).toEqual({ query: "smile", colon: 8 });
+  });
+
   it("stops at spaces and odd characters", () => {
     expect(findEmojiQuery(":not this")).toBeNull();
     expect(findEmojiQuery(":ro.")).toBeNull();
