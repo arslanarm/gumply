@@ -93,6 +93,37 @@ The toolbar has a title filter and tag chips; `+`/`−`/**Fit** control the canv
 a **Local graph** toggle that opens a 320px panel at depth 1 or 2. Testids: `graph-canvas`,
 `local-graph`.
 
+## Whiteboards
+
+Miro-style boards that live in the page tree next to your pages (D25, spec in the wiki
+`spec/whiteboard`).
+
+**Create one** with **New whiteboard** in the sidebar, **Add whiteboard inside** in a page's ⋯ menu,
+`/whiteboard` in the editor (creates it inside the current page and links to it), or Cmd/Ctrl+K →
+**Create whiteboard “X”**. Boards can be renamed, moved, deleted and restored like pages; they have
+no sub-pages.
+
+**On the board:** stickies, text, shapes, frames, connectors with labels, the pen, images and files,
+and page cards (drag a page from the sidebar onto the board). Shortcuts: V select, H hand, N sticky,
+T text, S shape, C/L connector, F frame, P pen, Shift+1 fit; `?` lists them all. Everything autosaves,
+and undo/redo covers every change.
+
+**Your files:** a board is a plain `<Title>.canvas` file in the open
+[JSON Canvas](https://jsoncanvas.org) format, written exactly as Obsidian writes it, so boards open
+and save in Obsidian without changes, and Obsidian's own boards open in Gumply.
+- Gumply-only details (sticky/shape/pen data, a board's icon and tags) are extra keys Obsidian keeps;
+  Gumply never invents new node types.
+- Page cards and `[[links]]` on a board count as links: they show up in **Linked from**, the graph
+  (boards are squares) and search. Renaming or moving a page updates the boards that show it.
+- Links Gumply writes to a board include the extension, e.g. `[[Project map.canvas|Project map]]`,
+  because Obsidian only resolves `.canvas` links that way. `[[Project map]]` also works in Gumply.
+- **Display titles:** the file name follows the title (D20). When the title has characters a file
+  name can't hold, e.g. "Roadmap: Q3?" in `Roadmap Q3.canvas`, the full title is kept inside the
+  board (`"gumply": { "title": … }`). Renaming the file in Obsidian makes the new file name the title.
+- Edits made outside Gumply are never silently overwritten: a save that would replace them asks
+  **Reload** or **Keep mine** (Keep mine keeps a backup), as for pages. A board file with entries Gumply can't keep is
+  backed up to `.gumply/conflicts/` before the first save.
+
 ## Layout
 
 ```
