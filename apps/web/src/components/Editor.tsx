@@ -1,5 +1,4 @@
 import Placeholder from "@tiptap/extension-placeholder";
-import TaskList from "@tiptap/extension-task-list";
 import { EditorContent, useEditor, type Editor as TipTapEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
@@ -22,6 +21,9 @@ import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { MarkdownLink } from "../editor/link.js";
+import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
+import { MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
+import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/raw-markdown/list-style.js";
 import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
@@ -333,10 +335,21 @@ export function Editor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] }, paragraph: false }),
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3] },
+        paragraph: false,
+        text: false,
+        hardBreak: false,
+        bulletList: false,
+      }),
+      MarkdownBulletList,
       EmptyLineParagraph,
+      MarkdownText,
+      MarkdownHardBreak,
+      RawBlock,
+      RawInline,
       MarkdownLink,
-      TaskList,
+      MarkdownTaskList,
       AccessibleTaskItem.configure({
         nested: true,
         a11y: {
@@ -395,6 +408,10 @@ export function Editor({
         uploadRef.current(files, at?.pos ?? view.state.selection.from);
         return true;
       },
+    },
+    onCreate: ({ editor: instance }) => {
+      // Write lists back with the page's own bullet marker and indent.
+      setListStyle(instance, page.content);
     },
     onUpdate: ({ editor: instance }) => {
       autosave.schedule(readMarkdown(instance));

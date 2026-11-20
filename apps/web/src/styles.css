@@ -704,17 +704,17 @@ input {
   padding-left: 0.2rem;
 }
 
-.gumply-editor ul[data-type="taskList"] li {
+.gumply-editor ul[data-type="taskList"] > li {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
 }
 
-.gumply-editor ul[data-type="taskList"] li > label {
+.gumply-editor ul[data-type="taskList"] > li > label {
   margin-top: 0.18rem;
 }
 
-.gumply-editor ul[data-type="taskList"] li > div {
+.gumply-editor ul[data-type="taskList"] > li > div {
   flex: 1;
 }
 
@@ -1992,4 +1992,183 @@ input {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0 0.2rem;
+}
+
+/* ---------- #82x82ek7: raw Markdown blocks (tables, callouts, HTML, …) ---------- */
+
+.raw-block {
+  position: relative;
+  margin: 0.5em 0;
+  border-radius: 6px;
+  cursor: text;
+}
+
+.raw-block:hover,
+.raw-block.is-selected {
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.raw-block.is-selected {
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 1px var(--accent);
+}
+
+.raw-block-table {
+  overflow-x: auto;
+}
+
+.raw-block-table table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+  line-height: 1.5;
+  min-width: 40%;
+}
+
+.raw-block-table th,
+.raw-block-table td {
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.raw-block-table th {
+  background: var(--hover);
+  font-weight: 600;
+}
+
+.raw-block-table td[style*="right"],
+.raw-block-table th[style*="right"] {
+  text-align: right;
+}
+
+.raw-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 6px;
+  background: var(--hover);
+  border-left: 3px solid var(--accent);
+}
+
+.raw-callout[data-callout="warning"],
+.raw-callout[data-callout="caution"],
+.raw-callout[data-callout="attention"] {
+  border-left-color: var(--warning);
+}
+
+.raw-callout[data-callout="danger"],
+.raw-callout[data-callout="error"],
+.raw-callout[data-callout="bug"] {
+  border-left-color: var(--danger);
+}
+
+.raw-callout[data-callout="tip"],
+.raw-callout[data-callout="success"],
+.raw-callout[data-callout="check"],
+.raw-callout[data-callout="done"] {
+  border-left-color: var(--success);
+}
+
+.raw-callout-title {
+  font-weight: 600;
+}
+
+.raw-callout-body > :first-child {
+  margin-top: 0;
+}
+
+.raw-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+.raw-footnote {
+  display: flex;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.raw-footnote-label,
+.raw-inline-footnote {
+  color: var(--accent);
+  font-size: 0.75em;
+}
+
+.raw-block-math,
+.raw-block-source pre {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--hover);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.raw-block-source {
+  position: relative;
+}
+
+.raw-block-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.5rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.raw-block-editor {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface-page);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  overflow: hidden;
+}
+
+.raw-block-hint {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.raw-inline {
+  cursor: default;
+}
+
+.raw-inline-highlight {
+  background: color-mix(in srgb, #f5d90a 45%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.raw-inline-math,
+.raw-inline-source {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--hover);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+
+.raw-inline-source {
+  color: var(--muted);
+}
+
+.raw-block:has(.raw-block-editor) {
+  box-shadow: none;
 }
