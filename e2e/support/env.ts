@@ -22,5 +22,11 @@ export const API_URL = `http://localhost:${API_PORT}`;
 /**
  * Dedicated throwaway vault for e2e. The `vault` fixture wipes it between
  * tests, so this must never point at a real vault (`./vault`).
+ *
+ * The default is keyed by the API port: several agents run the suite on one
+ * machine at the same time (on their own ports), and a shared fixed path let
+ * one run's `resetVault` delete another run's pages mid-test. That showed up as
+ * random "No pages yet" / "Page not found" failures.
  */
-export const E2E_VAULT = process.env.GUMPLY_VAULT ?? path.join(os.tmpdir(), 'gumply-e2e-vault');
+export const E2E_VAULT =
+  process.env.GUMPLY_VAULT ?? path.join(os.tmpdir(), `gumply-e2e-vault-${API_PORT}`);
