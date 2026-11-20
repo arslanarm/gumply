@@ -50,11 +50,24 @@ function OpenButton({ node, label }: { node: CanvasNode; label: string }) {
 const previewCache = new Map<string, string | null>();
 const PREVIEW_LINES = 6;
 
-/** The first lines of a page as plain text (no Markdown syntax). */
-export function previewText(markdown: string): string {
+const sameText = (a: string, b: string) =>
+  a.trim().toLowerCase().replace(/\s+/g, " ") === b.trim().toLowerCase().replace(/\s+/g, " ");
+
+/**
+ * The first lines of a page as plain text (no Markdown syntax). A leading H1
+ * that just repeats the page title is skipped: the card already shows the
+ * title (#5kcn4jfc).
+ */
+export function previewText(markdown: string, title?: string): string {
   const lines: string[] = [];
   let inFence = false;
+  let first = true;
   for (const raw of markdown.split("\n")) {
+    if (first && raw.trim()) {
+      first = false;
+      const heading = /^\s{0,3}#\s+(.*?)\s*#*\s*$/.exec(raw);
+      if (heading && title && sameText(plainTextSnippet(heading[1] ?? ""), title)) continue;
+    }
     if (/^\s*(```|~~~)/.test(raw)) {
       inFence = !inFence;
       continue;
@@ -68,9 +81,9 @@ export function previewText(markdown: string): string {
   return lines.join("\n");
 }
 
-function usePagePreview(path: string, version: string | undefined): string | null {
+function usePagePreview(path: string, version: string | undefined, title: string | undefined): string | null {
   const { loadPage } = useBoardContent();
-  const key = `${path}\u0000${version ?? ""}`;
+  const key = `${path}\u0000${version ?? ""}\u0000${title ?? ""}`;
   const [text, setText] = useState<string | null>(() => previewCache.get(key) ?? null);
   useEffect(() => {
     if (!loadPage) return;
@@ -81,7 +94,7 @@ function usePagePreview(path: string, version: string | undefined): string | nul
     let cancelled = false;
     void loadPage(path)
       .then((markdown) => {
-        const value = markdown === null ? null : previewText(markdown);
+        const value = markdown === null ? null : previewText(markdown, title);
         previewCache.set(key, value);
         if (!cancelled) setText(value);
       })
@@ -91,7 +104,7 @@ function usePagePreview(path: string, version: string | undefined): string | nul
     return () => {
       cancelled = true;
     };
-  }, [key, loadPage, path]);
+  }, [key, loadPage, path, title]);
   return text;
 }
 
@@ -99,7 +112,7 @@ function PageCard({ node }: { node: CanvasNode }) {
   const { pages } = useBoardContent();
   const path = typeof node.file === "string" ? node.file : "";
   const page = pages.find((item) => item.path === path);
-  const preview = usePagePreview(path, page?.updated);
+  const preview = usePagePreview(path, page?.updated, page?.title);
   if (!page) {
     return (
       <div className="board-card-body is-missing" data-testid="board-page-card" data-missing="true">
