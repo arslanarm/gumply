@@ -242,16 +242,16 @@ export function neighbourIds(links: readonly GraphLink[], id: string): Set<strin
 }
 
 const PALETTE = [
-  "#4f46e5",
-  "#0e7490",
-  "#b45309",
-  "#15803d",
-  "#be185d",
-  "#7c3aed",
-  "#0f766e",
-  "#a16207",
-  "#4338ca",
-  "#9d174d",
+  "#2f5f8f",
+  "#b35c00",
+  "#b23a3c",
+  "#2f7a75",
+  "#3f7a34",
+  "#8a6d00",
+  "#7a4f6d",
+  "#a63b7a",
+  "#6b4a37",
+  "#6f6864",
 ];
 
 /** Fallback palette when CSS variables are unavailable (unit tests, SSR). */
