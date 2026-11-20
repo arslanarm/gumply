@@ -54,6 +54,7 @@ import { errorMessage } from "../lib/errors.js";
 import { ApiRequestError } from "../api/client.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
 import { GROUP_DRAG_MIN, setGroupOffset } from "./group-drag.js";
+import { lodLevel, type LodLevel } from "./lod.js";
 import {
   amend,
   canRedo,
@@ -963,8 +964,17 @@ function BoardCanvas(props: BoardEditorProps) {
   }, []);
 
   /** Keep handles a constant screen size at any zoom (#8ht6zhdv item 2). */
+  const lod = useRef<LodLevel>(0);
   const syncZoomVar = useCallback((zoom: number) => {
-    rootRef.current?.style.setProperty("--board-zoom", String(Math.max(0.3, zoom)));
+    const root = rootRef.current;
+    if (!root) return;
+    root.style.setProperty("--board-zoom", String(Math.max(0.3, zoom)));
+    // Level of detail: unreadably small text is drawn as bars (lod.ts).
+    const level = lodLevel(zoom, lod.current);
+    if (level !== lod.current || !root.dataset.lod) {
+      lod.current = level;
+      root.dataset.lod = String(level);
+    }
   }, []);
   const onViewportChange = useCallback((viewport: Viewport) => syncZoomVar(viewport.zoom), [syncZoomVar]);
   useOnViewportChange({ onChange: onViewportChange });
