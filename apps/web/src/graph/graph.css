@@ -308,6 +308,14 @@
   background: var(--graph-page);
 }
 
+.graph-legend-emoji {
+  width: 10px;
+  display: inline-flex;
+  justify-content: center;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 .graph-legend-caption {
   margin: 0.4rem 0 0.1rem;
   color: var(--muted);
