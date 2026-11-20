@@ -60,6 +60,7 @@ test('graph code failing to download shows a calm error, and Try again recovers'
   await page.getByTestId('sidebar-graph').click();
   const error = page.getByTestId('graph-error');
   await expect(error).toContainText('Could not load the graph.');
+  await expect(error).toHaveAttribute('data-failure', 'unreachable');
   // The rest of the app is still there.
   await expect(page.getByTestId('sidebar')).toBeVisible();
 
@@ -117,4 +118,29 @@ test('a dialog whose code fails to download shows a small error that Esc closes'
   await unblock();
   await page.keyboard.press('?');
   await expect(page.getByTestId('shortcuts-dialog')).toBeVisible();
+});
+
+test('after a rebuild (graph chunk 404) the graph offers Reload, which brings it back (#fzfrkpta)', async ({
+  page,
+  vault,
+}) => {
+  const [alpha] = await seedLinked(vault);
+  // A tab left open across `npm run build`: the old hashed chunk is gone.
+  const gone = (route: Route) => route.fulfill({ status: 404, body: 'Not found' });
+  await page.route(GRAPH_VIEW_CODE, gone);
+  await page.goto(`/#/${alpha!.id}`);
+  const body = page.getByTestId('editor-content');
+  await body.getByText('Links to').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' typed first');
+
+  await page.getByTestId('sidebar-graph').click();
+  const error = page.getByTestId('graph-error');
+  await expect(error).toHaveAttribute('data-failure', 'updated');
+  await expect(error).toContainText('Gumply was updated.');
+  await expect(page.getByTestId('sidebar')).toBeVisible();
+
+  await page.unroute(GRAPH_VIEW_CODE, gone);
+  await error.getByRole('button', { name: 'Reload' }).click();
+  await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible();
 });
