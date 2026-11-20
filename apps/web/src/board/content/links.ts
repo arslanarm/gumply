@@ -62,9 +62,5 @@ export function wikiLinkFor(page: BoardPageOption, pages: readonly BoardPageOpti
   return target === page.title ? `[[${target}]]` : `[[${target}|${page.title}]]`;
 }
 
-/** Web links that may be opened from a board: http(s) and mailto only. */
-export function safeWebUrl(url: string): string | null {
-  const value = url.trim();
-  if (/^https?:\/\//i.test(value) || /^mailto:[^\s]+$/i.test(value)) return value;
-  return null;
-}
+/** Web links that may be opened from a board: the engine's one check (http(s)/mailto). */
+export { safeExternalUrl as safeWebUrl } from "../model.js";

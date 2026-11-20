@@ -87,6 +87,7 @@ import {
   pasteClipboard,
   rectFromPoints,
   reorderNodes,
+  safeExternalUrl,
   STICKY_SIZE,
   updateEdge,
   updateNode,
@@ -480,9 +481,12 @@ function BoardCanvas(props: BoardEditorProps) {
       },
       openNode: (node) => {
         if (node.type === "file" && typeof node.file === "string") onOpenFile?.(node.file);
-        else if (node.type === "link" && typeof node.url === "string") {
-          if (onOpenUrl) onOpenUrl(node.url);
-          else window.open(node.url, "_blank", "noopener,noreferrer");
+        else if (node.type === "link") {
+          // Only http(s)/mailto ever open: a board from elsewhere may hold javascript: or data: URLs.
+          const url = safeExternalUrl(node.url);
+          if (!url) return;
+          if (onOpenUrl) onOpenUrl(url);
+          else window.open(url, "_blank", "noopener,noreferrer");
         }
       },
     }),
@@ -534,7 +538,8 @@ function BoardCanvas(props: BoardEditorProps) {
           addAndSelect(createShape(moved ? atLeast(dragged, 24, 24) : centred(160, 110), shape), { edit: true });
           break;
         case "frame":
-          addAndSelect(createFrame(moved ? atLeast(dragged, 80, 60) : centred(640, 400)), { frame: true });
+          // Name it right away (typing must not hit the tool shortcuts).
+          addAndSelect(createFrame(moved ? atLeast(dragged, 80, 60) : centred(640, 400)), { frame: true, edit: true });
           break;
         default:
           return;

@@ -24,13 +24,22 @@ export interface BoardViewControls {
 }
 
 export interface BoardViewProps {
+  /** The board's id; when a rename changes it, pass the new one (same mount). */
   boardId: string;
+  /**
+   * The board's `meta.updated` as the app last saw it. After the app renames
+   * the board (its own PUT), pass the new value so autosave doesn't 409.
+   */
+  updated?: string;
   pages?: readonly BoardPageOption[];
   onSaveState: (state: SaveState) => void;
   /** After a save: the server's metadata and the id it was saved under. */
   onSaved?: (meta: PageMeta, savedId: string) => void;
   onConflictBackup?: (path: string) => void;
-  /** The file had invalid entries (dropped); the original was backed up here. */
+  /**
+   * The file had entries Gumply couldn't keep; the original was backed up
+   * here on the first save. The view shows its own notice too.
+   */
   onRepairBackup?: (path: string) => void;
   onOpenFile?: (path: string) => void;
   onLoadError?: (error: unknown) => void;
@@ -51,6 +60,7 @@ export function BoardView(props: BoardViewProps) {
   const { boardId, pages, onOpenFile, renderers } = props;
   const [loaded, setLoaded] = useState<{ meta: PageMeta; board: CanvasBoard } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const [repairNotice, setRepairNotice] = useState<string | null>(null);
   const latest = useRef(props);
   latest.current = props;
   const idRef = useRef(boardId);
@@ -75,7 +85,10 @@ export function BoardView(props: BoardViewProps) {
             versionRef.current = result.meta.updated;
             latest.current.onSaved?.(result.meta, savedId);
             if (result.conflictBackup) latest.current.onConflictBackup?.(result.conflictBackup);
-            if (result.repairBackup) latest.current.onRepairBackup?.(result.repairBackup);
+            if (result.repairBackup) {
+              setRepairNotice(result.repairBackup);
+              latest.current.onRepairBackup?.(result.repairBackup);
+            }
           } catch (error) {
             if (!force) forceRef.current = false;
             throw error;
@@ -114,6 +127,11 @@ export function BoardView(props: BoardViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A rename by the app (its own PUT) moves the version this view must send.
+  useEffect(() => {
+    if (props.updated) versionRef.current = props.updated;
+  }, [props.updated]);
+
   // Never lose the last edits when the view goes away.
   useEffect(() => () => autosave.dispose(), [autosave]);
 
@@ -150,7 +168,18 @@ export function BoardView(props: BoardViewProps) {
   if (!loaded) return <div className="board-loading" data-testid="board-loading" />;
 
   return (
-    <Suspense fallback={<div className="board-loading" data-testid="board-loading" />}>
+    <div className="board-view">
+      {repairNotice ? (
+        <div className="board-notice" role="status" data-testid="board-repair-notice">
+          <span>
+            Some entries this board couldn't keep were removed. The original is kept in <code>{repairNotice}</code>.
+          </span>
+          <button type="button" className="board-notice-close" aria-label="Dismiss" onClick={() => setRepairNotice(null)}>
+            ×
+          </button>
+        </div>
+      ) : null}
+      <Suspense fallback={<div className="board-loading" data-testid="board-loading" />}>
       <LazyBoardEditor
         boardId={boardId}
         board={loaded.board}
@@ -162,6 +191,7 @@ export function BoardView(props: BoardViewProps) {
         loadPage={loadPagePreview}
         onReady={onEditorReady}
       />
-    </Suspense>
+      </Suspense>
+    </div>
   );
 }

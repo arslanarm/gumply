@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { test as vaultTest } from './fixtures';
+import { E2E_VAULT } from './support/env';
 
 /**
  * Whiteboard engine (W1, #cq6wyr46, spec/whiteboard §3), driven through the
@@ -133,6 +137,51 @@ test.describe('board engine (W1)', () => {
     expect(text.startsWith('{\n\t"nodes":[\n')).toBe(true);
     expect(text).toMatch(/"text":"Sticky",\n\t\t\t"gumply":\{"kind":"sticky"\},\n\t\t\t"x":/);
     expect(text).toContain('"text":"Plain text","x":');
+  });
+
+  test('a new frame is named right away; typing never triggers tool shortcuts', async ({ page }) => {
+    await openLab(page);
+    await page.keyboard.press('f');
+    await drag(page, { x: 300, y: 250 }, { x: 700, y: 550 });
+    await expect(page.getByTestId('board-frame-input')).toBeFocused();
+    // P, h and s would switch to Pen, Hand and Shape if they reached the board.
+    await page.keyboard.type('Phase 1 shapes');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('board-frame')).toContainText('Phase 1 shapes');
+    await expect(page.getByTestId('board-tool-select')).toHaveAttribute('aria-pressed', 'true');
+    expect((await board(page)).nodes[0]).toMatchObject({ type: 'group', label: 'Phase 1 shapes' });
+    // Drawing and naming the frame is one undo step.
+    await page.keyboard.press('Control+z');
+    expect((await board(page)).nodes).toHaveLength(0);
+  });
+
+  test('link cards open only http(s)/mailto URLs (a javascript: card is inert)', async ({ page }) => {
+    const unsafe = {
+      nodes: [
+        { id: 'bad0000000000001', type: 'link', url: 'javascript:window.__pwned=1', x: 0, y: 0, width: 300, height: 160 },
+        { id: 'good000000000001', type: 'link', url: 'https://jsoncanvas.org', x: 400, y: 0, width: 300, height: 160 },
+      ],
+      edges: [],
+    };
+    await page.addInitScript((value) => {
+      window.localStorage.setItem('gumply:board-lab:links', value);
+      (window as unknown as { __opened: string[] }).__opened = [];
+      window.open = ((url?: string | URL) => {
+        (window as unknown as { __opened: string[] }).__opened.push(String(url));
+        return null;
+      }) as typeof window.open;
+    }, JSON.stringify(unsafe));
+    await page.goto('/board-lab.html?id=links&theme=light');
+    const cards = page.getByTestId('board-card-link');
+    await expect(cards).toHaveCount(2);
+    // The unsafe card shows its URL as text and has no Open button.
+    await expect(cards.first()).toContainText('javascript:window.__pwned=1');
+    await expect(cards.first().getByTestId('board-card-open')).toHaveCount(0);
+    await cards.first().dblclick();
+    await cards.nth(1).dblclick();
+    const opened = await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened);
+    expect(opened).toEqual(['https://jsoncanvas.org/']);
+    expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
   });
 
   test('connectors snap to the nearest side, carry a label and follow moved objects', async ({ page }) => {
@@ -460,8 +509,14 @@ test.describe('board view: autosave and conflicts', () => {
       conflictNext = false;
       version += 1;
       disk = body.board as typeof diskBoard;
+      const repair = puts.length === 1 ? { repairBackup: '.gumply/conflicts/Map.2026.canvas' } : {};
       await route.fulfill({
-        json: { meta: { ...META, updated: `v${version}` }, board: body.board, ...(body.force ? { conflictBackup: '.trash/conflicts/Map.canvas' } : {}) },
+        json: {
+          meta: { ...META, updated: `v${version}` },
+          board: body.board,
+          ...(body.force ? { conflictBackup: '.trash/conflicts/Map.canvas' } : {}),
+          ...repair,
+        },
       });
     });
 
@@ -477,6 +532,10 @@ test.describe('board view: autosave and conflicts', () => {
     expect(puts).toHaveLength(1);
     expect(puts[0]).toMatchObject({ expectedUpdated: 'v1' });
     expect((puts[0]?.board as typeof diskBoard).nodes[0]?.text).toBe('From disk + mine');
+    // The first save of a repaired file says where the original went.
+    await expect(page.getByTestId('board-repair-notice')).toContainText('.gumply/conflicts/Map.2026.canvas');
+    await page.getByTestId('board-repair-notice').getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.getByTestId('board-repair-notice')).toHaveCount(0);
 
     // Someone else changed the file: the next save is refused → Keep mine.
     conflictNext = true;
@@ -516,4 +575,32 @@ test.describe('board view: autosave and conflicts', () => {
     await page.waitForLoadState('networkidle');
     expect(scripts.some((url) => /@xyflow|perfect-freehand|BoardEditor/.test(url))).toBe(false);
   });
+});
+
+/** BoardView against the real boards API (W0b, spec/api v1.7). */
+vaultTest('board view saves to a real .canvas file and keeps saving after each save', async ({ page, request, vault }) => {
+  void vault;
+  const created = await request.post('/api/boards', { data: { title: 'Engine check' } });
+  expect(created.status()).toBe(201);
+  const { meta } = (await created.json()) as { meta: { id: string; kind: string } };
+  expect(meta).toMatchObject({ id: 'Engine check.canvas', kind: 'whiteboard' });
+
+  await page.goto(`/board-lab.html?api=${encodeURIComponent(meta.id)}`);
+  await expect(page.getByTestId('board-empty')).toBeVisible();
+  await addSticky(page, 500, 400, 'Saved for real [[Welcome]]');
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+
+  // A second edit must be accepted too (the view sends the new meta.updated).
+  await page.getByTestId('board-color-5').click();
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+
+  const loaded = (await (await request.get(`/api/boards/${encodeURIComponent(meta.id)}`)).json()) as { board: BoardLike };
+  expect(loaded.board.nodes).toHaveLength(1);
+  expect(loaded.board.nodes[0]).toMatchObject({ text: 'Saved for real [[Welcome]]', color: '5', gumply: { kind: 'sticky' } });
+
+  // On disk: Obsidian's layout (tabs, no trailing newline).
+  const file = readFileSync(path.join(E2E_VAULT, 'Engine check.canvas'), 'utf8');
+  expect(file.startsWith('{\n\t"nodes":[\n')).toBe(true);
+  expect(file.endsWith('}')).toBe(true);
+  expect(file).toContain('"gumply":{"kind":"sticky"}');
 });
