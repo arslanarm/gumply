@@ -491,8 +491,8 @@ input {
   top: calc(100% + 0.45rem);
   left: 0;
   z-index: 70;
-  width: 222px;
-  padding: 0.5rem;
+  width: 262px;
+  padding: 0.55rem;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -502,19 +502,19 @@ input {
 .page-icon-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 0.15rem;
+  gap: 0.25rem;
 }
 
 .page-icon-choice {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   cursor: pointer;
 }
 
@@ -708,6 +708,12 @@ input {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
+}
+
+.gumply-editor input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
 }
 
 .gumply-editor ul[data-type="taskList"] li > label {

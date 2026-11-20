@@ -768,6 +768,12 @@ export function App() {
           </nav>
         ) : null}
         <span className="topbar-spacer" />
+        <SaveStatus
+          state={saveState}
+          onRetry={handleRetrySave}
+          onReload={handleConflictReload}
+          onKeepMine={handleConflictKeepMine}
+        />
         <ThemeToggle />
         <button
           type="button"
@@ -779,12 +785,6 @@ export function App() {
         >
           <Icon name="keyboard" size={16} />
         </button>
-        <SaveStatus
-          state={saveState}
-          onRetry={handleRetrySave}
-          onReload={handleConflictReload}
-          onKeepMine={handleConflictKeepMine}
-        />
       </header>
 
       <div

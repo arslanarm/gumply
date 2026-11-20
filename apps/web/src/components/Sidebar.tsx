@@ -100,7 +100,6 @@ export function Sidebar(props: SidebarProps) {
         type="button"
         className="sidebar-row sidebar-new-page"
         data-testid="new-page-button"
-        data-tooltip="New page"
         aria-label="New page"
         onClick={() => props.onCreate(null)}
       >
