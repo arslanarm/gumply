@@ -11,6 +11,7 @@ import { useBoardActions, useBoardRenderers, type BoardCardRenderProps } from ".
 import type { BoardFlowNode } from "./flow.js";
 import { BoardIcon } from "./icons.js";
 import { inkExtent, inkPath } from "./ink.js";
+import { safeExternalUrl } from "./model.js";
 
 type BoardNodeProps = NodeProps<BoardFlowNode>;
 
@@ -408,14 +409,16 @@ export function DefaultCard({ node, kind }: BoardCardRenderProps) {
       );
     case "link": {
       const url = typeof node.url === "string" ? node.url : "";
+      const safe = safeExternalUrl(url);
+      // Unsafe URLs (javascript:, data:…) are shown as inert text, never opened.
       return (
         <div className="board-card-body">
           <div className="board-card-title">
             <BoardIcon name="link" size={16} />
-            <span>{hostOf(url)}</span>
+            <span>{safe ? hostOf(url) : "Link"}</span>
           </div>
           <div className="board-card-sub">{url}</div>
-          <OpenButton node={node} label="Open link" />
+          {safe ? <OpenButton node={node} label="Open link" /> : null}
         </div>
       );
     }

@@ -137,6 +137,51 @@ test.describe('board engine (W1)', () => {
     expect(text).toContain('"text":"Plain text","x":');
   });
 
+  test('a new frame is named right away; typing never triggers tool shortcuts', async ({ page }) => {
+    await openLab(page);
+    await page.keyboard.press('f');
+    await drag(page, { x: 300, y: 250 }, { x: 700, y: 550 });
+    await expect(page.getByTestId('board-frame-input')).toBeFocused();
+    // P, h and s would switch to Pen, Hand and Shape if they reached the board.
+    await page.keyboard.type('Phase 1 shapes');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('board-frame')).toContainText('Phase 1 shapes');
+    await expect(page.getByTestId('board-tool-select')).toHaveAttribute('aria-pressed', 'true');
+    expect((await board(page)).nodes[0]).toMatchObject({ type: 'group', label: 'Phase 1 shapes' });
+    // Drawing and naming the frame is one undo step.
+    await page.keyboard.press('Control+z');
+    expect((await board(page)).nodes).toHaveLength(0);
+  });
+
+  test('link cards open only http(s)/mailto URLs (a javascript: card is inert)', async ({ page }) => {
+    const unsafe = {
+      nodes: [
+        { id: 'bad0000000000001', type: 'link', url: 'javascript:window.__pwned=1', x: 0, y: 0, width: 300, height: 160 },
+        { id: 'good000000000001', type: 'link', url: 'https://jsoncanvas.org', x: 400, y: 0, width: 300, height: 160 },
+      ],
+      edges: [],
+    };
+    await page.addInitScript((value) => {
+      window.localStorage.setItem('gumply:board-lab:links', value);
+      (window as unknown as { __opened: string[] }).__opened = [];
+      window.open = ((url?: string | URL) => {
+        (window as unknown as { __opened: string[] }).__opened.push(String(url));
+        return null;
+      }) as typeof window.open;
+    }, JSON.stringify(unsafe));
+    await page.goto('/board-lab.html?id=links&theme=light');
+    const cards = page.getByTestId('board-card-link');
+    await expect(cards).toHaveCount(2);
+    // The unsafe card shows its URL as text and has no Open button.
+    await expect(cards.first()).toContainText('javascript:window.__pwned=1');
+    await expect(cards.first().getByTestId('board-card-open')).toHaveCount(0);
+    await cards.first().dblclick();
+    await cards.nth(1).dblclick();
+    const opened = await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened);
+    expect(opened).toEqual(['https://jsoncanvas.org/']);
+    expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
+  });
+
   test('connectors snap to the nearest side, carry a label and follow moved objects', async ({ page }) => {
     await openLab(page);
     await addSticky(page, 400, 350, 'From');
