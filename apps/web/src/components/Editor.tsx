@@ -11,8 +11,10 @@ import { api } from "../api/client.js";
 import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
+import { ShortcutHistory } from "../editor/shortcut-history.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
 import type { SlashItem } from "../editor/slash-items.js";
+import { TaskShortcut } from "../editor/task-shortcut.js";
 import { setWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { WikiLink } from "../editor/wikilink/node.js";
 import {
@@ -256,6 +258,8 @@ export function Editor({
       WikiLink,
       slashExtension,
       wikiLinkExtension,
+      TaskShortcut,
+      ShortcutHistory,
     ],
     content: page.content,
     editorProps: {
