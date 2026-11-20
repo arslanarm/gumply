@@ -118,6 +118,31 @@
   display: block;
 }
 
+/* Node tooltip (positioned by GraphCanvas next to the pointer). */
+.graph-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  max-width: 280px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-tooltip[hidden] {
+  display: none;
+}
+
 .graph-controls {
   position: absolute;
   top: 0.7rem;
