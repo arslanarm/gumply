@@ -4,6 +4,7 @@ import { api, consumeNewVaultPage } from "./api/client.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
+import { MoveDialog } from "./components/MoveDialog.js";
 import { PageHeader } from "./components/PageHeader.js";
 import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
@@ -15,6 +16,7 @@ import { GraphView } from "./graph/GraphView.js";
 import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
 import { focusAfterDelete } from "./lib/delete.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
+import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
 import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
@@ -53,6 +55,7 @@ export function App() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [movingId, setMovingId] = useState<PageId | null>(null);
   const [graphOpen, setGraphOpen] = useState(() => isGraphHash(window.location.hash));
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
@@ -114,14 +117,14 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
-      if (pendingDelete) return;
+      if (pendingDelete || movingId) return;
       event.preventDefault();
       if (searchOpen) closeSearch();
       else openSearch();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [searchOpen, openSearch, closeSearch, pendingDelete]);
+  }, [searchOpen, openSearch, closeSearch, pendingDelete, movingId]);
 
   const loadPages = useCallback(async (): Promise<PageMeta[] | null> => {
     try {
@@ -500,18 +503,83 @@ export function App() {
     void performDelete(pending.page.id);
   }, [pendingDelete, performDelete]);
 
+  /** Focus a page row if it is still rendered (after a move). */
+  const focusPageRow = useCallback((id: PageId) => {
+    window.requestAnimationFrame(() => {
+      for (const item of document.querySelectorAll<HTMLElement>("[data-page-id]")) {
+        if (item.dataset.pageId === id) {
+          item.focus();
+          return;
+        }
+      }
+    });
+  }, []);
+
+  /** Moves change path-based ids; keep the open page (or a moved ancestor) open. */
+  const followMovedPage = useCallback(
+    (oldId: PageId, newId: PageId) => {
+      const current = selectedRef.current;
+      if (current === null) return;
+      if (current !== oldId && !current.startsWith(`${oldId}/`)) return;
+      navigate(`${newId}${current.slice(oldId.length)}`, true);
+    },
+    [navigate],
+  );
+
   const handleMove = useCallback(
-    async (id: PageId, parentId: PageId | null) => {
+    async (id: PageId, parentId: PageId | null, focusAfter = false) => {
       setActionError(null);
+      // A move changes path-based ids; flush pending edits against the old id
+      // first so a late autosave cannot 404 after the page has moved.
+      const open = selectedRef.current;
+      if (open === id || (open !== null && open.startsWith(`${id}/`))) {
+        await editorControls.current?.flush();
+      }
+      const previousParent = pages.find((page) => page.id === id)?.parentId ?? null;
       try {
-        await api.movePage(id, parentId);
+        const moved = await api.movePage(id, parentId);
         await loadPages();
+        followMovedPage(id, moved.id);
+        if (focusAfter) focusPageRow(moved.id);
+        // Dropping onto the current parent is a no-op: don't claim it moved.
+        if (moved.id !== id) {
+          setToast({
+            message: moveToastMessage(pages, parentId),
+            undo: async () => {
+              try {
+                const restored = await api.movePage(moved.id, previousParent);
+                await loadPages();
+                followMovedPage(moved.id, restored.id);
+              } catch (error) {
+                setActionError(errorMessage(error));
+                void loadPages();
+              }
+            },
+          });
+        }
       } catch (error) {
         setActionError(errorMessage(error));
         void loadPages();
       }
     },
-    [loadPages],
+    [pages, loadPages, followMovedPage, focusPageRow],
+  );
+
+  const startMove = useCallback((id: PageId) => setMovingId(id), []);
+
+  const cancelMove = useCallback(() => {
+    const id = movingId;
+    setMovingId(null);
+    if (id) focusPageRow(id);
+  }, [movingId, focusPageRow]);
+
+  const chooseMoveTarget = useCallback(
+    (parentId: PageId | null) => {
+      const id = movingId;
+      setMovingId(null);
+      if (id) void handleMove(id, parentId, true);
+    },
+    [movingId, handleMove],
   );
 
   const handleRetry = useCallback(() => {
@@ -557,6 +625,7 @@ export function App() {
   }, [pages, navigate]);
 
   const showingPage = selectedId !== null && page !== null && page.id === selectedId;
+  const movingPage = movingId ? (pages.find((item) => item.id === movingId) ?? null) : null;
 
   const serverError = listStatus === "error" && pages.length === 0;
 
@@ -587,6 +656,7 @@ export function App() {
           onRename={handleRename}
           onDelete={requestDelete}
           onMove={(id, parentId) => void handleMove(id, parentId)}
+          onStartMove={startMove}
           onRetry={handleRetry}
           onSearch={openSearch}
           onGraph={navigateGraph}
@@ -711,6 +781,15 @@ export function App() {
           subPages={pendingDelete.subPages}
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
+        />
+      ) : null}
+
+      {movingPage ? (
+        <MoveDialog
+          page={movingPage}
+          pages={pages}
+          onCancel={cancelMove}
+          onSelect={chooseMoveTarget}
         />
       ) : null}
 
