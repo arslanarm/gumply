@@ -66,6 +66,13 @@ export {
 
 export { parseEmbeds } from "./embeds.js";
 export {
+  formatWikilink,
+  linkTargetFor,
+  pageBasename,
+  rewriteLinksToPage,
+  type LinkTarget,
+} from "./link-target.js";
+export {
   ATTACHMENTS_DIR,
   attachmentHref,
   encodeHref,
