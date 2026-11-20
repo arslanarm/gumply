@@ -11,6 +11,7 @@ import {
   paletteIndex,
   type GhostNode,
 } from "./graph-model.js";
+import { normaliseIcon } from "./emoji-sprites.js";
 import { usePrefersReducedMotion } from "./use-reduced-motion.js";
 import "./graph.css";
 
@@ -93,6 +94,15 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   };
 
   const hasPages = (data?.nodes.length ?? 0) > 0;
+  // Legend row for emoji nodes, only when some page actually has an icon;
+  // shows one of the vault's own icons as the sample.
+  const sampleIcon = useMemo(() => {
+    for (const node of data?.nodes ?? []) {
+      const icon = normaliseIcon(node.icon);
+      if (icon) return icon;
+    }
+    return null;
+  }, [data]);
   const hasVisible = (filtered?.nodes.length ?? 0) + (filtered?.ghosts.length ?? 0) > 0;
   const filtersActive = query.trim().length > 0 || selectedTags.length > 0;
 
@@ -252,6 +262,14 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             <p className="graph-legend-row">
               <span className="graph-legend-dashed" aria-hidden="true" /> dashed = not created yet
             </p>
+            {sampleIcon ? (
+              <p className="graph-legend-row" data-testid="graph-legend-icon">
+                <span className="graph-legend-emoji" aria-hidden="true">
+                  {sampleIcon}
+                </span>{" "}
+                emoji = page icon
+              </p>
+            ) : null}
             {(data?.tags ?? []).length > 0 ? (
               <p className="graph-legend-caption">Colour = first tag</p>
             ) : null}
