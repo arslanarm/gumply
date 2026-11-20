@@ -86,6 +86,12 @@ describe("extractWikilinks", () => {
     ]);
   });
 
+  it("does not treat Obsidian attachment embeds as wikilinks", () => {
+    expect(extractWikilinks("![[audit-image.png]]")).toEqual([]);
+    expect(extractWikilinks("[[report.pdf]]")).toEqual([]);
+    expect(collectLinkEdges("q1-embed", "![[audit-image.png]]", [])).toEqual([]);
+  });
+
   it("does not create graph edges for attachments", () => {
     const edges = collectLinkEdges(
       "source",

@@ -137,11 +137,19 @@ describe("attachments API", () => {
     });
     await createPage(app, { title: "Target" });
 
+    const embedOnly = await createPage(app, {
+      title: "Embed only",
+      content: "![[audit-image.png]] and [[manual.pdf]]",
+    });
+
     const graph = await getJson<{
       links: Array<{ source: string; target: string }>;
       unresolved: Array<{ source: string; targetTitle: string }>;
     }>(app, "/api/graph");
     expect(graph.links).toEqual([{ source: "source", target: "target" }]);
     expect(graph.unresolved).toEqual([]);
+
+    // Attachments must never appear as backlinks either (#jm34p5ai).
+    expect(await getJson<unknown[]>(app, `/api/pages/${embedOnly.id}/backlinks`)).toEqual([]);
   });
 });
