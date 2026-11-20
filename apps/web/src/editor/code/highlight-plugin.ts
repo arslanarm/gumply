@@ -33,10 +33,18 @@ let lowlight: Lowlight | null = null;
 const grammarLoads = new Map<string, Promise<void>>();
 
 function loadLowlight(): Promise<Lowlight> {
-  lowlightPromise ??= import("./lowlight-core.js").then((module) => {
-    lowlight = module.createLowlight() as unknown as Lowlight;
-    return lowlight;
-  });
+  lowlightPromise ??= import("./lowlight-core.js").then(
+    (module) => {
+      lowlight = module.createLowlight() as unknown as Lowlight;
+      return lowlight;
+    },
+    (error: unknown) => {
+      // Offline or server restarted: let the next code block try again
+      // instead of staying unhighlighted until a reload (#fzfrkpta).
+      lowlightPromise = null;
+      throw error;
+    },
+  );
   return lowlightPromise;
 }
 
