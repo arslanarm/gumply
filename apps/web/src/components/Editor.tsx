@@ -19,6 +19,7 @@ import {
 import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
 import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
+import { NotionCodeBlock } from "../editor/code-block.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { MarkdownLink } from "../editor/link.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
@@ -59,6 +60,8 @@ export interface EditorProps {
   headingToReveal?: string | null;
   onHeadingResult?: (found: boolean) => void;
   onAttachmentError?: (message: string) => void;
+  /** After each autosave, with the server's view of the page (e.g. `updated`). */
+  onSaved?: (page: { id: string; updated: string }) => void;
   /** ArrowUp / Backspace at the very start of the body: go to the title. */
   onExitTop?: () => void;
 }
@@ -105,6 +108,7 @@ export function Editor({
   onHeadingResult,
   onAttachmentError,
   onExitTop,
+  onSaved,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -122,6 +126,8 @@ export function Editor({
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
   const onExitTopRef = useRef(onExitTop);
   onExitTopRef.current = onExitTop;
   const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
@@ -129,7 +135,8 @@ export function Editor({
   const autosave = useMemo(() => {
     const instance = new Autosave({
       save: async (content) => {
-        await api.updatePage(page.id, { content });
+        const result = await api.updatePage(page.id, { content });
+        onSavedRef.current?.(result);
       },
       onState: (state) => onSaveStateRef.current(state),
     });
@@ -350,7 +357,9 @@ export function Editor({
         text: false,
         hardBreak: false,
         bulletList: false,
+        codeBlock: false,
       }),
+      NotionCodeBlock,
       MarkdownBulletList,
       EmptyLineParagraph,
       MarkdownText,

@@ -648,6 +648,17 @@ export function App() {
     controls.focusBody();
   }, []);
 
+  // Keep "Updated …" and the Recent order current after autosaves (#smwaixfp).
+  const handleSaved = useCallback((saved: { id: string; updated: string }) => {
+    if (!saved.updated) return;
+    setPage((previous) =>
+      previous && previous.id === saved.id ? { ...previous, updated: saved.updated } : previous,
+    );
+    setPages((previous) =>
+      previous.map((item) => (item.id === saved.id ? { ...item, updated: saved.updated } : item)),
+    );
+  }, []);
+
   // ArrowUp / Backspace at the top of the body moves to the title (#d636gdxx).
   const [titleFocusSignal, setTitleFocusSignal] = useState(0);
   const handleExitTop = useCallback(() => setTitleFocusSignal((value) => value + 1), []);
@@ -817,6 +828,7 @@ export function App() {
                     onHeadingResult={handleHeadingResult}
                     onAttachmentError={setActionError}
                     onExitTop={handleExitTop}
+                    onSaved={handleSaved}
                   />
                   <BacklinksPanel
                     items={backlinks}

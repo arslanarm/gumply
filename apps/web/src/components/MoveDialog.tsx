@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Icon } from "./Icon.js";
 import { moveTargets, type MoveTarget } from "../lib/move.js";
-import { useActiveOptionVisible } from "./use-active-option.js";
+import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 
 export interface MoveDialogProps {
   page: PageMeta;
@@ -20,6 +20,7 @@ export interface MoveDialogProps {
 
 /** Searchable “Move to…” picker from the sidebar `⋯` menu (spec/ux §6). */
 export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps) {
+  const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -131,7 +132,9 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
                     event.preventDefault();
                     select(row);
                   }}
-                  onMouseEnter={() => setIndex(rowIndex)}
+                  onMouseMove={(event) => {
+                    if (pointerMoved(event)) setIndex(rowIndex);
+                  }}
                 >
                   <span className="quick-switcher-icon" aria-hidden="true">
                     {row.kind === "top" ? (

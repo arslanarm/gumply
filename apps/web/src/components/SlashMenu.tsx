@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon.js";
 import type { SlashItem } from "../editor/slash-items.js";
-import { useActiveOptionVisible } from "./use-active-option.js";
+import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 
 export interface SlashMenuProps {
   items: readonly SlashItem[];
@@ -26,6 +26,7 @@ const SLASH_ICONS: Record<string, IconName> = {
 
 /** Floating `/` menu. Positioned from the suggestion's client rect. */
 export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashMenuProps) {
+  const pointerMoved = usePointerMovedSinceOpen();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [overflowing, setOverflowing] = useState(false);
   useActiveOptionVisible(menuRef, index, items.length);
@@ -57,7 +58,9 @@ export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashM
             event.preventDefault();
             onSelect(item);
           }}
-          onMouseEnter={() => onHover(itemIndex)}
+          onMouseMove={(event) => {
+            if (pointerMoved(event) && itemIndex !== index) onHover(itemIndex);
+          }}
         >
           <span className="slash-menu-icon">
             <Icon name={SLASH_ICONS[item.key] ?? "file"} size={17} />

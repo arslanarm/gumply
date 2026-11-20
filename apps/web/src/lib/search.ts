@@ -2,7 +2,7 @@
  * Pure helpers for the Cmd/Ctrl+K quick switcher (D13, spec/ux §10).
  */
 import type { PageMeta, SearchResult } from "@gumply/core";
-import { folderPath } from "./wikilinks.js";
+import { folderPath, parseWikiLinkText } from "./wikilinks.js";
 
 export const MAX_SEARCH_ROWS = 8;
 export const RECENT_LIMIT = 5;
@@ -14,7 +14,7 @@ export interface SearchRow {
   page?: PageMeta;
   /** Primary text (page title, or `Create “X”`). */
   label: string;
-  /** Folder path shown when two pages share a title. */
+  /** Folder path (or edit time, same folder) shown when two pages share a title. */
   path?: string;
   /** Body context for text matches. */
   snippet?: string;
@@ -41,6 +41,18 @@ function titleCounts(pages: readonly PageMeta[]): Map<string, number> {
   return counts;
 }
 
+/** "just now", "5 min ago", "3 h ago", then a short date. */
+export function relativeTime(iso: string, now: number = Date.now()): string {
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return "recently";
+  const minutes = Math.round((now - time) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return new Date(time).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function toRow(
   page: PageMeta,
   counts: Map<string, number>,
@@ -48,7 +60,8 @@ function toRow(
   snippet?: string,
 ): SearchRow {
   const duplicate = (counts.get(normalise(page.title)) ?? 0) > 1;
-  const path = duplicate ? folderPath(page) : "";
+  // Same title in the same folder: the edit time is what tells them apart.
+  const path = duplicate ? folderPath(page) || `Edited ${relativeTime(page.updated)}` : "";
   return {
     kind,
     key: page.id,
@@ -71,6 +84,38 @@ export function recentPages(pages: readonly PageMeta[], limit = RECENT_LIMIT): P
 export function recentRows(pages: readonly PageMeta[]): SearchRow[] {
   const counts = titleCounts(pages);
   return recentPages(pages).map((page) => toRow(page, counts, "page"));
+}
+
+/**
+ * What a Markdown snippet reads as on the page (#smwaixfp): `[[Page|alias]]`
+ * → alias, `[text](url)` → text, no `#`, `>`, list or emphasis markers, no
+ * tags. Applied to body-match snippets before highlighting.
+ */
+export function plainTextSnippet(snippet: string): string {
+  return snippet
+    .replace(/!\[\[([^\]]*)\]\]/g, (_m, inner: string) => inner.split("|")[0] ?? inner)
+    .replace(/\[\[([^[\]]*)\]\]/g, (match, inner: string) => {
+      const parsed = parseWikiLinkText(match);
+      if (!parsed) return inner;
+      const label = parsed.alias.length > 0 ? parsed.alias : parsed.title;
+      return parsed.heading.length > 0 ? `${label}#${parsed.heading}` : label;
+    })
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<\/?[A-Za-z][^>]*>/g, "")
+    // Snippets arrive with newlines collapsed, so block markers can sit
+    // mid-text: headings and to-do boxes are unambiguous anywhere; quote and
+    // list markers only at the start (`2 * 3`, `a > b` stay).
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
+    .replace(/(^|\s)[-*+]\s+\[[ xX]\]\s+/g, "$1")
+    .replace(/^(…\s*)?(>\s*)+/, "$1")
+    .replace(/^(…\s*)?([-*+]|\d+[.)])\s+/, "$1")
+    .replace(/(\*\*|__|~~|==)(?=\S)([^]*?\S)\1/g, "$2")
+    .replace(/(^|[^\w*])\*(?=\S)([^*]*?\S)\*(?!\w)/g, "$1$2")
+    .replace(/(^|[^\w])_(?=\S)([^_]*?\S)_(?!\w)/g, "$1$2")
+    .replace(/`+([^`]*)`+/g, "$1")
+    .replace(/\\([!-/:-@[-`{-~])/g, "$1")
+    .replace(/\s+/g, " ");
 }
 
 function hasExactTitle(pages: readonly PageMeta[], query: string): boolean {
@@ -102,7 +147,7 @@ export function searchSections(
     if (title.includes(needle)) {
       if (pagesRows.length < MAX_SEARCH_ROWS) pagesRows.push(toRow(result.page, counts, "page"));
     } else if (textRows.length < MAX_SEARCH_ROWS) {
-      textRows.push(toRow(result.page, counts, "text", result.snippet));
+      textRows.push(toRow(result.page, counts, "text", plainTextSnippet(result.snippet)));
     }
   }
 
