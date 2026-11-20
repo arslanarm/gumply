@@ -102,5 +102,39 @@ test.describe('title ↔ body', () => {
     await page.keyboard.type('Next');
     await expect(title).toHaveValue('Next');
   });
+
+  test('typing in the title while a rename (D20 id change) is in flight keeps every key', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed([{ title: 'Home', content: 'Hello' }]);
+    await page.goto('/');
+    await expect(page.getByTestId('editor-content')).toContainText('Hello');
+
+    // Hold title renames for 400ms so the id change lands mid-typing.
+    await page.route('**/api/pages/**', async (route) => {
+      const request = route.request();
+      if (request.method() === 'PUT' && (request.postData() ?? '').includes('"title"')) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      await route.continue();
+    });
+
+    await page.getByTestId('new-page-button').click();
+    await expect(page.getByTestId('page-title-input')).toBeFocused();
+    await page.keyboard.type('Slow');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('body');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.type(' rename');
+    // The first rename ("Slow") resolves now and changes the page id.
+    await page.waitForTimeout(600);
+    await page.keyboard.type('!');
+    await expect(page.getByTestId('page-title-input')).toHaveValue('Slow rename!');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('page-title')).toContainText('Slow rename!');
+    await expect(page.getByTestId('editor-content')).toContainText('body');
+  });
 });
 

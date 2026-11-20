@@ -84,7 +84,9 @@ export function PageHeader({
   // remounts on page switches and must not replay an old request (that put
   // the caret after "Untitled" on the next new page).
   const handledSignal = useRef(focusTitleSignal);
-  useEffect(() => {
+  // Layout effect + App's flushSync: the title is focused before the next
+  // key event, so fast typing after ArrowUp never lands in the body.
+  useLayoutEffect(() => {
     if (focusTitleSignal === handledSignal.current) return;
     handledSignal.current = focusTitleSignal;
     if (editing) {
