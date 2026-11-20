@@ -65,10 +65,15 @@ Before moving a task to review, run `npm run typecheck`: it type-checks every wo
 Use the Node version in `.nvmrc` (24 LTS). On Node 20/22 the vault watcher misses outside edits to
 files Gumply has saved (#3ugdxhzu).
 
-**CI** (`.github/workflows/ci.yml`, GitHub Actions): every push to `main`, every `v*` tag and
-manual runs execute typecheck, unit tests, build and the full e2e suite (Chromium, plus Firefox
-for the graph specs) on Node from `.nvmrc`. A newer push cancels an older run. On failure the
-Playwright report and `test-results/` are uploaded as an artifact.
+**CI** (`.github/workflows/ci.yml`, GitHub Actions) runs on every push to `main` and `ci/**`, on
+every `v*` tag, and by hand. Pushing a branch as `ci/<task-id>` is how unmerged work gets a real
+run; only @lead pushes to GitHub.
+- **checks:** typecheck, unit tests and build on **Node 22 and 24**. Node 22 stays in so the
+  vault-watcher regression test keeps running there.
+- **e2e:** the full suite (Chromium, plus Firefox for the graph specs) on the Node in `.nvmrc`.
+
+A newer push cancels an older run. On failure the Playwright report and `test-results/` are
+uploaded as an artifact.
 
 ## API
 

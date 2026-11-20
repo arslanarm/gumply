@@ -1,11 +1,11 @@
 # CI (#rzpnittv): typecheck, unit tests, build and the full Playwright e2e suite.
-# Runs on every push to main, on release tags and by hand. A newer run on the
-# same ref cancels an older one.
+# Runs on every push to main, to ci/** (how unmerged work gets a real run) and on
+# release tags, plus by hand. A newer run on the same ref cancels an older one.
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "ci/**"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -17,9 +17,17 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # Typecheck, unit tests and build on both supported LTS lines. Node 22 stays in
+  # the matrix so the vault-watcher regression test (#3ugdxhzu: Node 20/22's
+  # recursive fs.watch loses atomically replaced files) keeps running there.
+  checks:
+    name: checks (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
     env:
       CI: "1"
     steps:
@@ -27,9 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Node 24 LTS. Node 20/22's recursive fs.watch loses files that are
-          # replaced atomically, which breaks the vault watcher (#3ugdxhzu).
-          node-version-file: .nvmrc
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Install
@@ -43,6 +49,23 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # The full browser suite on the Node in .nvmrc (24 LTS).
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
 
       # Cache the browsers by Playwright version; system deps are installed
       # every run (they live outside the cache).
@@ -65,8 +88,8 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium firefox
 
-      # The suite starts its own app on its own ports with a fresh temp vault
-      # per run (e2e/support/env.ts), so nothing else needs to run here.
+      # The suite builds core itself and starts its own app on its own ports
+      # with a fresh temp vault per run (e2e/support/env.ts).
       - name: E2E
         run: npm run test:e2e
 
