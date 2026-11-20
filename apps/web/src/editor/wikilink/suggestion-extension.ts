@@ -32,8 +32,15 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
           char: "[[",
           startOfLine: false,
           allowSpaces: true,
-          allow: ({ state, range }) =>
-            state.doc.resolve(range.from).parent.type.name !== "codeBlock",
+          allow: ({ state, range }) => {
+            const $from = state.doc.resolve(range.from);
+            if ($from.parent.type.name === "codeBlock") return false;
+            if ($from.marks().some((mark) => mark.type.spec.code)) return false;
+            // A completed `[[Title]]` is converted by the wikiLink input rule.
+            // Keeping the menu open would leave a suggestion decoration and
+            // offer Create with the brackets in the title (walkthrough #2).
+            return !state.doc.textBetween(range.from, range.to).includes("]]");
+          },
           items: ({ query }) => buildLinkSuggestions(getWikiLinkEnvironment().pages, query),
           command: ({ editor, range, props }) => {
             // Duplicate titles are inserted as a path link with the title as
