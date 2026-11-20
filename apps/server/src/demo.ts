@@ -90,15 +90,17 @@ export function buildDemoPages(): DemoPage[] {
 /**
  * The demo board: page cards for the demo pages inside a frame, a sticky and
  * a labelled arrow. Cards use vault-root paths (JSON Canvas); keys follow
- * Obsidian's order (id, type, content, gumply, x, y, width, height, color),
- * and the frame comes first so it sits behind its cards.
+ * Obsidian's order (id, type, content, gumply, x, y, width, height, color;
+ * a frame's `label` comes last), and the frame comes first so it sits behind
+ * its cards.
  */
 export function buildDemoBoard(): CanvasBoard {
   const folderId = childPageId(null, DEMO_FOLDER_TITLE);
   const md = (id: string) => `${id}.md`;
   return {
     nodes: [
-      { id: "a1f0c2d3e4b5a6f7", type: "group", label: "Start with these pages", x: -40, y: -80, width: 1160, height: 400 },
+      // Frames: Obsidian writes `label` last (after geometry and color).
+      { id: "a1f0c2d3e4b5a6f7", type: "group", x: -40, y: -80, width: 1160, height: 400, label: "Start with these pages" },
       { id: "b2e1d3c4f5a6b7c8", type: "file", file: md(childPageId(null, WELCOME_TITLE)), x: 0, y: 0, width: 320, height: 280 },
       { id: "c3d2e4f5a6b7c8d9", type: "file", file: md(childPageId(folderId, "Getting started")), x: 400, y: 0, width: 320, height: 280 },
       { id: "d4c3f5a6b7c8d9e0", type: "file", file: md(childPageId(folderId, "Graph view")), x: 800, y: 0, width: 280, height: 280 },

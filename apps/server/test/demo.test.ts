@@ -158,6 +158,8 @@ describe("demo whiteboard (#dvnb8n2n)", () => {
     expect(doc.board.edges.find((edge) => edge.label)).toMatchObject({ label: "read next" });
     // Obsidian key order: content, gumply, then geometry, then color.
     expect(Object.keys(doc.board.nodes[4]!)).toEqual(["id", "type", "text", "gumply", "x", "y", "width", "height", "color"]);
+    // Frames end with `label`, as Obsidian writes them (and createFrame does).
+    expect(Object.keys(doc.board.nodes[0]!)).toEqual(["id", "type", "x", "y", "width", "height", "label"]);
 
     // Only once: a second call does nothing.
     expect(await store.seedDemoIfFirstRun()).toBeNull();
