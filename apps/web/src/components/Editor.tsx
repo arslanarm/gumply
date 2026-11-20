@@ -12,6 +12,7 @@ import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
 import { BlockEditing } from "../editor/block-editing.js";
+import { MarkdownTaskListFix } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
 import type { SlashItem } from "../editor/slash-items.js";
@@ -271,6 +272,7 @@ export function Editor({
       slashExtension,
       wikiLinkExtension,
       BlockEditing,
+      MarkdownTaskListFix,
       TaskShortcut,
       ShortcutHistory,
     ],
