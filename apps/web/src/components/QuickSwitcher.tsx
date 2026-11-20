@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { api } from "../api/client.js";
+import { isBoard } from "../lib/boards.js";
 import { Icon } from "./Icon.js";
 import {
   highlightSegments,
@@ -20,11 +21,13 @@ export interface QuickSwitcherProps {
   pages: readonly PageMeta[];
   onOpen: (id: PageId) => void;
   onCreate: (title: string) => void;
+  /** `Create whiteboard “X”`; without it the row isn't offered. */
+  onCreateBoard?: (title: string) => void;
   onClose: () => void;
 }
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
-export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitcherProps) {
+export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose }: QuickSwitcherProps) {
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -79,7 +82,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
     () =>
       needle.length > 0
         ? searchSections(visibleResults, pages, query)
-        : { pages: [], text: [], create: null },
+        : { pages: [], text: [], create: null, createBoard: null },
     [visibleResults, pages, query, needle],
   );
 
@@ -89,6 +92,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
           ...sections.pages,
           ...sections.text,
           ...(sections.create ? [sections.create] : []),
+          ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
         ]
       : recents;
 
@@ -108,6 +112,10 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
     if (!row) return;
     if (row.kind === "create") {
       if (row.title) onCreate(row.title);
+      return;
+    }
+    if (row.kind === "create-board") {
+      if (row.title) onCreateBoard?.(row.title);
       return;
     }
     if (row.page) onOpen(row.page.id);
@@ -148,7 +156,9 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
         tabIndex={-1}
         aria-selected={active}
         className={`quick-switcher-option${active ? " is-active" : ""}`}
-        data-testid={row.page ? `search-result-${row.page.id}` : "search-create"}
+        data-testid={
+          row.page ? `search-result-${row.page.id}` : row.kind === "create-board" ? "search-create-board" : "search-create"
+        }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
           event.preventDefault();
@@ -161,10 +171,12 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
         <span className="quick-switcher-icon" aria-hidden="true">
           {row.kind === "create" ? (
             <Icon name="plus" size={16} />
+          ) : row.kind === "create-board" ? (
+            <Icon name="board" size={16} />
           ) : row.page?.icon ? (
             row.page.icon
           ) : (
-            <Icon name="file" size={16} />
+            <Icon name={isBoard(row.page) ? "board" : "file"} size={16} />
           )}
         </span>
         <span className="quick-switcher-text">
@@ -265,6 +277,12 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
               {searching ? <p className="quick-switcher-empty">Searching…</p> : null}
               {sections.create
                 ? renderRow(sections.create, sections.pages.length + sections.text.length)
+                : null}
+              {sections.createBoard && onCreateBoard
+                ? renderRow(
+                    sections.createBoard,
+                    sections.pages.length + sections.text.length + (sections.create ? 1 : 0),
+                  )
                 : null}
             </>
           )}

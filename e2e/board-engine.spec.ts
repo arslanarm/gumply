@@ -591,10 +591,13 @@ vaultTest('board view saves to a real .canvas file and keeps saving after each s
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
 
   // A second edit must be accepted too (the view sends the new meta.updated).
+  // "Saved" is already showing from the first save, so wait for the file itself.
   await page.getByTestId('board-color-5').click();
+  const read = async () => ((await (await request.get(`/api/boards/${encodeURIComponent(meta.id)}`)).json()) as { board: BoardLike }).board;
+  await expect.poll(async () => (await read()).nodes[0]?.color, { timeout: 10_000 }).toBe('5');
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
 
-  const loaded = (await (await request.get(`/api/boards/${encodeURIComponent(meta.id)}`)).json()) as { board: BoardLike };
+  const loaded = { board: await read() };
   expect(loaded.board.nodes).toHaveLength(1);
   expect(loaded.board.nodes[0]).toMatchObject({ text: 'Saved for real [[Welcome]]', color: '5', gumply: { kind: 'sticky' } });
 

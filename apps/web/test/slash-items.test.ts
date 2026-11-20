@@ -18,8 +18,15 @@ describe("filterSlashItems", () => {
       "emoji",
       "image",
       "file",
+      "whiteboard",
       "divider",
     ]);
+  });
+
+  it("finds /whiteboard by board words", () => {
+    for (const query of ["white", "board", "canvas", "miro"]) {
+      expect(keys(filterSlashItems(SLASH_ITEMS, query))).toContain("whiteboard");
+    }
   });
 
   it("matches headings by title and h1/h2/h3 aliases", () => {

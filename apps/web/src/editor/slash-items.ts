@@ -5,6 +5,7 @@
 import type { Editor, Range } from "@tiptap/core";
 import { requestAttachmentPicker } from "./attachments/store.js";
 import { requestEmojiPicker } from "./emoji/store.js";
+import { requestWhiteboard } from "./whiteboard-link.js";
 
 export interface SlashItem {
   key: string;
@@ -120,6 +121,16 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
       requestAttachmentPicker("file");
+    },
+  },
+  {
+    key: "whiteboard",
+    title: "Whiteboard",
+    hint: "New whiteboard inside this page",
+    keywords: ["whiteboard", "board", "canvas", "miro", "sticky", "diagram", "draw"],
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      requestWhiteboard();
     },
   },
   {

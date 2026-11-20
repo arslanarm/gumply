@@ -2,6 +2,7 @@
  * Pure helpers for the sidebar: turn the flat `PageMeta[]` from
  * `GET /api/pages` into a sorted tree, and validate drag-and-drop moves.
  */
+import { isBoard } from "./boards.js";
 import type { PageId, PageMeta } from "@gumply/core";
 
 export interface PageTreeNode {
@@ -96,7 +97,10 @@ export function canMovePage(
   if (!pages.some((page) => page.id === id)) return false;
   if (newParentId === null) return true;
   if (newParentId === id || isSelfOrDescendant(id, newParentId)) return false;
-  if (!pages.some((page) => page.id === newParentId)) return false;
+  const parent = pages.find((page) => page.id === newParentId);
+  if (!parent) return false;
+  // Boards have no sub-pages (spec/whiteboard §2).
+  if (isBoard(parent)) return false;
 
   // Ids normally nest by path, but walk parentId links as well so imported
   // vaults with irregular ids still cannot create a cycle.

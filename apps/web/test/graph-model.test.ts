@@ -293,6 +293,7 @@ describe("accessible copy", () => {
   it("hover details don't repeat the title shown by the label (#z5abndiz)", () => {
     expect(nodeDetail({ ...page("a", "Alpha", ["work"]), linkCount: 3 })).toBe("3 links · #work");
     expect(nodeDetail({ ...page("b", "Beta"), linkCount: 1 })).toBe("1 link");
+    expect(nodeDetail({ ...page("m.canvas", "Map"), kind: "whiteboard", linkCount: 2 })).toBe("Whiteboard · 2 links");
     const ghost = buildGraphModel(
       graphData({ nodes: [page("a", "A")], unresolved: [{ source: "a", targetTitle: "Missing Page" }] }),
     ).ghosts[0]!;

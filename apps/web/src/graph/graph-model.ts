@@ -373,7 +373,8 @@ export function nodeTooltip(node: GraphNode): string {
  */
 export function nodeDetail(node: GraphNode): string {
   const tag = node.tags[0];
-  return `${plural(node.linkCount, "link")}${tag ? ` · #${tag}` : ""}`;
+  const kind = node.kind === "whiteboard" ? "Whiteboard · " : "";
+  return `${kind}${plural(node.linkCount, "link")}${tag ? ` · #${tag}` : ""}`;
 }
 
 /** Ghost tooltip details: `Not created yet · 1 link · Click to create`. */
