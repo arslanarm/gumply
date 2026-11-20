@@ -296,3 +296,34 @@ test('deleting the last column removes the table; a table in a list item stays u
   await waitSaved(page);
   expect(await fileOf(request, created!.id)).toBe('- item\n\n  | X | Y |\n  |:-|-:|\n  | 1 | 2 |\n\nSolo');
 });
+
+test('a table in a quote is not re-normalised; + column/row put the caret in the new cell (#pvp2ainf)', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const content = 'Intro\n\n> Quoted:\n>\n> |  Q | R   |\n> |---|---|\n> | x  | y |\n\n| a | b |\n|---|---|\n| 1 | 2 |';
+  const [created] = await vault.seed([{ title: 'Quote table', content }]);
+  await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+  const body = page.getByTestId('editor-content');
+  await expect(body.locator('table')).toHaveCount(2);
+
+  await body.getByText('Intro', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('!');
+  await waitSaved(page);
+  expect(await fileOf(request, created!.id)).toBe(content.replace('Intro', 'Intro!'));
+
+  const table = body.locator('table').nth(1);
+  await table.locator('td').nth(1).click();
+  await table.locator('td').nth(1).hover();
+  await page.getByTestId('table-add-col').click();
+  await page.keyboard.type('Extra');
+  await expect(table.locator('th').nth(2)).toHaveText('Extra');
+  await table.locator('td').first().hover();
+  await page.getByTestId('table-add-row').click();
+  await page.keyboard.type('New');
+  await expect(table.locator('tr').nth(2).locator('td').first()).toHaveText('New');
+  await waitSaved(page);
+  expect(await fileOf(request, created!.id)).toContain('| a | b | Extra |\n|---|---|---|\n| 1 | 2 |  |\n| New |  |  |');
+});

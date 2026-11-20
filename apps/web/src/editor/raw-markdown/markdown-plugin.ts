@@ -115,14 +115,20 @@ export function lastParsedTableSources(): Array<string | null> {
 
 /**
  * Source of a table nested in a list item, dedented to its own column so it
- * can be written back inside the item. Tables in quotes (`>` prefixes) are
- * re-serialized instead (null).
+ * can be written back inside the item or quote (prefixes are re-added by the
+ * serializer). Lazily continued quote lines can't be paired (null).
  */
 function nestedTableSource(lines: string[], [start, end]: [number, number]): string | null {
   let last = end;
   while (last > start && isBlank(lines[last - 1])) last -= 1;
-  const block = lines.slice(start, last);
-  if (block.some((line) => /^\s*>/.test(line))) return null;
+  let block = lines.slice(start, last);
+  // Inside a quote: strip the quote markers; the serializer writes them back.
+  const depth = (/^\s*((?:>\s?)+)/.exec(block[0] ?? "")?.[1] ?? "").replace(/[^>]/g, "").length;
+  if (depth > 0) {
+    const prefix = new RegExp(`^\\s*(?:>\\s?){${depth}}`);
+    if (!block.every((line) => prefix.test(line))) return null;
+    block = block.map((line) => line.replace(prefix, ""));
+  }
   // A table starting on the list marker line (`- | a |`) can't be dedented.
   if (/^\s*([-*+]|\d+[.)])\s/.test(block[0] ?? "")) return null;
   const indent = Math.min(...block.filter((line) => line.trim()).map((line) => line.length - line.trimStart().length));
