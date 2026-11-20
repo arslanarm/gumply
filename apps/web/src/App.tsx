@@ -94,6 +94,13 @@ export function App() {
   selectedRef.current = selectedId;
   const pageRef = useRef<Page | null>(page);
   pageRef.current = page;
+  // D20: stable identity of an open page across renames (new id → first id).
+  const sessionKeys = useRef(new Map<PageId, string>());
+  const sessionKeyOf = (id: PageId): string => sessionKeys.current.get(id) ?? id;
+  // Set when App itself moved the URL to a renamed page's new id, so the load
+  // effect keeps the open page instead of refetching and remounting it.
+  const followedRename = useRef<PageId | null>(null);
+  const lastPageReload = useRef(0);
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
@@ -231,38 +238,71 @@ export function App() {
     setPageReload((value) => value + 1);
   }, []);
 
-  /** D20: a rename changes the id; keep the list, open page and URL in sync. */
+  /**
+   * D20: the id follows the title, so a rename changes it (and the ids of
+   * every sub-page). Keep the list, the open page and the URL in sync without
+   * refetching or remounting: the open editor stays as it is and simply saves
+   * to the new id. `sessionKeys` gives the open page a stable identity across
+   * such renames.
+   */
   const applySavedPage = useCallback(
     (previousId: PageId, updated: Page) => {
+      const newId = updated.id;
+      const remap = (id: PageId): PageId =>
+        newId === previousId
+          ? id
+          : id === previousId
+            ? newId
+            : id.startsWith(`${previousId}/`)
+              ? `${newId}${id.slice(previousId.length)}`
+              : id;
+
       setPages((previous) =>
-        previous.map((item) =>
-          item.id === previousId
-            ? {
-                ...item,
-                id: updated.id,
-                title: updated.title,
-                icon: updated.icon,
-                tags: updated.tags,
-                parentId: updated.parentId,
-                updated: updated.updated,
-              }
-            : item,
-        ),
-      );
-      setPage((previous) =>
-        previous && previous.id === previousId
-          ? {
-              ...previous,
-              id: updated.id,
+        previous.map((item) => {
+          if (item.id === previousId) {
+            return {
+              ...item,
+              id: newId,
               title: updated.title,
               icon: updated.icon,
               tags: updated.tags,
+              parentId: updated.parentId,
               updated: updated.updated,
-            }
-          : previous,
+            };
+          }
+          const id = remap(item.id);
+          return id === item.id
+            ? item
+            : { ...item, id, parentId: item.parentId === null ? null : remap(item.parentId) };
+        }),
       );
-      if (updated.id !== previousId && selectedRef.current === previousId) {
-        navigate(updated.id, true);
+      setPage((previous) => {
+        if (!previous) return previous;
+        if (previous.id === previousId) {
+          return {
+            ...previous,
+            id: newId,
+            title: updated.title,
+            icon: updated.icon,
+            tags: updated.tags,
+            parentId: updated.parentId,
+            updated: updated.updated,
+          };
+        }
+        const id = remap(previous.id);
+        return id === previous.id
+          ? previous
+          : { ...previous, id, parentId: previous.parentId === null ? null : remap(previous.parentId) };
+      });
+
+      const open = selectedRef.current;
+      if (open !== null && newId !== previousId) {
+        const openNext = remap(open);
+        if (openNext !== open) {
+          sessionKeys.current.set(openNext, sessionKeyOf(open));
+          followedRename.current = openNext;
+          navigate(openNext, true);
+        }
       }
     },
     [navigate],
@@ -392,6 +432,17 @@ export function App() {
 
   // Load the selected page; ignore stale responses when the user clicks fast.
   useEffect(() => {
+    if (followedRename.current !== null) {
+      const followed = followedRename.current;
+      followedRename.current = null;
+      if (followed === selectedId && pageRef.current?.id === selectedId && pageReload === lastPageReload.current) {
+        return;
+      }
+    }
+    lastPageReload.current = pageReload;
+    // A real (re)load starts a new page session; old rename keys must not make
+    // a different page that reuses a freed id look like the same editor.
+    sessionKeys.current.clear();
     setSaveState("idle");
 
     if (!selectedId) {
@@ -606,16 +657,12 @@ export function App() {
     setActionError(null);
     try {
       const updated = await api.updatePage(id, { icon });
-      setPages((previous) =>
-        previous.map((item) => (item.id === id ? { ...item, icon: updated.icon } : item)),
-      );
-      setPage((previous) =>
-        previous && previous.id === id ? { ...previous, icon: updated.icon } : previous,
-      );
+      // Also takes the new `updated`, so the editor's next save isn't a 409.
+      applySavedPage(id, updated);
     } catch (error) {
       setActionError(errorMessage(error));
     }
-  }, []);
+  }, [applySavedPage]);
 
   const performDelete = useCallback(
     async (id: PageId) => {
@@ -1014,9 +1061,10 @@ export function App() {
                     onDelete={() => requestDelete(page.id)}
                     onStartBody={handleStartBody}
                     focusTitleSignal={titleFocusSignal}
+                    sessionKey={sessionKeyOf(page.id)}
                   />
                   <Editor
-                    key={`${page.id}:${editorRevision}`}
+                    key={`${sessionKeyOf(page.id)}:${editorRevision}`}
                     page={page}
                     pages={pages}
                     onSaveState={setSaveState}

@@ -151,6 +151,10 @@ export function Editor({
   onExitTopRef.current = onExitTop;
   const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
   const versionRef = useRef(page.updated);
+  // D20: a rename changes the id while this editor stays mounted; always save
+  // to the current one.
+  const pageIdRef = useRef(page.id);
+  pageIdRef.current = page.id;
   const forceRef = useRef(false);
 
   // A rename/reload from App updates the version this editor must send.
@@ -163,7 +167,7 @@ export function Editor({
       save: async (content) => {
         const force = forceRef.current;
         try {
-          const updated = await api.updatePage(page.id, {
+          const updated = await api.updatePage(pageIdRef.current, {
             content,
             expectedUpdated: versionRef.current,
             ...(force ? { force: true } : {}),
@@ -182,9 +186,10 @@ export function Editor({
     });
     instance.reset(page.content);
     return instance;
-    // page.id is stable while this component is mounted (it is keyed by id).
+    // One instance per mount: App keys the editor by page session, and a
+    // rename (new id, same page) must not reset it to stale content.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page.id]);
+  }, []);
 
   // Node views read page resolution and attachment metadata from this store.
   useEffect(() => {
