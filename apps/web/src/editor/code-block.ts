@@ -12,13 +12,14 @@
  *   which split the block on the next load.
  */
 import CodeBlock from "@tiptap/extension-code-block";
-import { InputRule } from "@tiptap/core";
+import { InputRule, type Editor } from "@tiptap/core";
 import type { Node as PMNode, NodeType } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockView } from "../components/CodeBlockView.js";
 import { codeHighlightPlugin } from "./code/highlight-plugin.js";
+import { indentCommand, newlineKeepIndent, outdentCommand } from "./code/indent.js";
 import { typedLanguage } from "./code/languages.js";
 
 export const FENCE_ATTR = "data-md-fence";
@@ -142,31 +143,35 @@ export const NotionCodeBlock = CodeBlock.extend({
   },
 
   addKeyboardShortcuts() {
+    const parent = this.parent?.() ?? {};
+    const typeName = this.name;
     return {
-      ...this.parent?.(),
-      // ```python + Enter: the word typed in a brand-new block is its language.
-      Enter: ({ editor }) => {
+      ...parent,
+      Enter: (props) => {
+        const { editor } = props;
         const { state } = editor;
         const { $from, empty } = state.selection;
-        if (!empty || $from.parent.type !== this.type) return false;
-        const fresh = freshFenceKey.getState(state);
-        const blockPos = $from.before();
-        if (fresh !== blockPos || $from.parent.attrs.language) return false;
-        if ($from.parentOffset !== $from.parent.content.size) return false;
-        const language = typedLanguage($from.parent.textContent);
-        if (!language) return false;
-        return editor
-          .chain()
-          .command(({ tr }) => {
-            // Its own undo step: Ctrl+Z right after brings the word back as
-            // code text (e.g. a `make` that was meant as a command).
-            closeHistory(tr);
-            tr.delete(blockPos + 1, blockPos + 1 + $from.parent.content.size);
-            tr.setNodeMarkup(blockPos, undefined, { ...$from.parent.attrs, language });
-            tr.setMeta(freshFenceKey, null);
-            return true;
-          })
-          .run();
+        if (empty && $from.parent.type === this.type && convertTypedLanguage(editor, this.type)) return true;
+        // Keep the indent of the current line (#zyyce7rj); unindented lines
+        // fall through to the default, which keeps the triple-Enter exit.
+        if (editor.view.state.selection.$from.parent.type === this.type) {
+          if (newlineKeepIndent(editor.view.state, editor.view.dispatch, typeName)) return true;
+        }
+        return parent.Enter?.(props) ?? false;
+      },
+      // Tab / Shift+Tab indent inside code and never move focus (#zyyce7rj).
+      Tab: ({ editor }) => indentCommand(editor.view.state, editor.view.dispatch, typeName),
+      "Shift-Tab": ({ editor }) => outdentCommand(editor.view.state, editor.view.dispatch, typeName),
+      // A deliberate keyboard route to the block's toolbar: Esc focuses the
+      // language button (Tab then reaches Copy).
+      Escape: ({ editor }) => {
+        const { $from } = editor.state.selection;
+        if ($from.parent.type !== this.type) return false;
+        const dom = editor.view.nodeDOM($from.before()) as HTMLElement | null;
+        const button = dom?.querySelector<HTMLElement>('[data-testid="code-language-button"]');
+        if (!button) return false;
+        button.focus();
+        return true;
       },
     };
   },
@@ -242,4 +247,28 @@ function fenceInputRule(find: RegExp, type: NodeType): InputRule {
       return undefined;
     },
   });
+}
+
+/** ```python + Enter: the word typed in a brand-new block is its language. */
+function convertTypedLanguage(editor: Editor, type: NodeType): boolean {
+  const { state } = editor;
+  const { $from } = state.selection;
+  const fresh = freshFenceKey.getState(state);
+  const blockPos = $from.before();
+  if (fresh !== blockPos || $from.parent.type !== type || $from.parent.attrs.language) return false;
+  if ($from.parentOffset !== $from.parent.content.size) return false;
+  const language = typedLanguage($from.parent.textContent);
+  if (!language) return false;
+  return editor
+    .chain()
+    .command(({ tr }) => {
+      // Its own undo step: Ctrl+Z right after brings the word back as
+      // code text (e.g. a `make` that was meant as a command).
+      closeHistory(tr);
+      tr.delete(blockPos + 1, blockPos + 1 + $from.parent.content.size);
+      tr.setNodeMarkup(blockPos, undefined, { ...$from.parent.attrs, language });
+      tr.setMeta(freshFenceKey, null);
+      return true;
+    })
+    .run();
 }
