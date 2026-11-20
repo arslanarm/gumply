@@ -1,10 +1,10 @@
 /**
  * Pure helpers for the `[[` autocomplete (D4, spec/ux §8).
  */
-import type { PageId, PageMeta } from "@gumply/core";
+import type { Attachment, PageId, PageMeta } from "@gumply/core";
 
 export interface LinkSuggestion {
-  kind: "page" | "create";
+  kind: "page" | "attachment" | "create";
   /** Stable key: page id, or `create` for the create row. */
   key: string;
   /** Text shown in the menu (folder path when titles collide). */
@@ -14,9 +14,12 @@ export interface LinkSuggestion {
   /** Title written into the `[[...]]` node. */
   title: string;
   pageId?: PageId;
+  /** File/image row from `vault/attachments/`. */
+  attachment?: Attachment;
 }
 
 const MAX_PAGES = 8;
+const MAX_ATTACHMENTS = 8;
 
 function normalise(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
@@ -47,6 +50,7 @@ export function folderLabel(page: PageMeta): string {
 export function buildLinkSuggestions(
   pages: readonly PageMeta[],
   query: string,
+  attachments: readonly Attachment[] = [],
 ): LinkSuggestion[] {
   const needle = normalise(query);
   const counts = new Map<string, number>();
@@ -72,8 +76,21 @@ export function buildLinkSuggestions(
     pageId: page.id,
   }));
 
+  const fileMatches = [...attachments]
+    .filter((item) => needle.length === 0 || normalise(item.name).includes(needle))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+    .slice(0, MAX_ATTACHMENTS)
+    .map<LinkSuggestion>((attachment) => ({
+      kind: "attachment",
+      key: `${attachment.path}`,
+      label: attachment.name,
+      title: attachment.name,
+      attachment,
+    }));
+
   const exact = needle.length > 0 && pages.some((page) => normalise(page.title) === needle);
   const typed = query.trim();
+  items.push(...fileMatches);
   if (typed.length > 0 && !exact) {
     items.push({
       kind: "create",

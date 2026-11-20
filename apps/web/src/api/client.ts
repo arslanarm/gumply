@@ -4,6 +4,7 @@
  */
 import type {
   ApiError,
+  Attachment,
   Backlink,
   GraphData,
   Page,
@@ -34,7 +35,9 @@ export function consumeNewVaultPage(): PageId | null {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (init.body !== undefined) headers.set("Content-Type", "application/json");
+  if (init.body !== undefined && !(init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
 
   const response = await fetch(`/api${path}`, { ...init, headers });
 
@@ -82,6 +85,12 @@ export interface DeletePageResult {
 
 const pagePath = (id: PageId): string => `/pages/${encodeURIComponent(id)}`;
 
+/** Vault-relative path → the API URL that serves it (`/api/files/...`). */
+export function fileUrl(path: string): string {
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(path)) return path;
+  return `/api/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
 /**
  * All writes go through one queue. This guarantees ordering between a pending
  * autosave and a rename: the server's link rewrite (D12) must happen *after*
@@ -108,6 +117,16 @@ export const api = {
   /** Full-text search (D13): title and body matches, ranked by the server. */
   search: (query: string): Promise<SearchResult[]> =>
     request(`/search?q=${encodeURIComponent(query)}`),
+
+  /** D18: files in `vault/attachments/`, sorted by name. */
+  listAttachments: (): Promise<Attachment[]> => request("/attachments"),
+
+  /** D18: multipart upload; the server dedupes the name and writes the file. */
+  uploadAttachment: (file: File): Promise<Attachment> => {
+    const body = new FormData();
+    body.set("file", file);
+    return request("/attachments", { method: "POST", body });
+  },
 
   createPage: (input: CreatePageInput): Promise<Page> =>
     mutate(() => request("/pages", { method: "POST", body: JSON.stringify(input) })),

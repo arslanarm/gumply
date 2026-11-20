@@ -3,14 +3,22 @@ import TaskList from "@tiptap/extension-task-list";
 import { EditorContent, useEditor, type Editor as TipTapEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
-import type { Page, PageMeta } from "@gumply/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { Attachment, Page, PageMeta } from "@gumply/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
 import { api } from "../api/client.js";
 import { BlockGutter } from "./BlockGutter.js";
 import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
+import {
+  findUploadNode,
+  finishUpload,
+  insertUploadPlaceholder,
+  removeUpload,
+} from "../editor/attachments/insert.js";
+import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
+import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
 import { MarkdownTaskListFix } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
@@ -24,6 +32,7 @@ import {
   createWikiLinkExtension,
   type LinkMenuHandlers,
 } from "../editor/wikilink/suggestion-extension.js";
+import { errorMessage } from "../lib/errors.js";
 import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { normalizeEditorMarkdown } from "../lib/markdown.js";
 import { taskCheckboxLabel } from "../lib/task.js";
@@ -42,6 +51,7 @@ export interface EditorProps {
   onCreateLink: (title: string) => void;
   headingToReveal?: string | null;
   onHeadingResult?: (found: boolean) => void;
+  onAttachmentError?: (message: string) => void;
 }
 
 interface SlashMenuState {
@@ -84,16 +94,24 @@ export function Editor({
   onCreateLink,
   headingToReveal,
   onHeadingResult,
+  onAttachmentError,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
   const [linkMenu, setLinkMenu] = useState<LinkMenuState | null>(null);
   const linkMenuRef = useRef<LinkMenuState | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pickerKind = useRef<"image" | "file">("file");
+  const uploadRef = useRef<(files: File[], pos: number) => void>(() => {});
+  const editorRef = useRef<TipTapEditor | null>(null);
 
   const onSaveStateRef = useRef(onSaveState);
   onSaveStateRef.current = onSaveState;
   const onHeadingResultRef = useRef(onHeadingResult);
   onHeadingResultRef.current = onHeadingResult;
+  const onAttachmentErrorRef = useRef(onAttachmentError);
+  onAttachmentErrorRef.current = onAttachmentError;
 
   const autosave = useMemo(() => {
     const instance = new Autosave({
@@ -108,10 +126,80 @@ export function Editor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page.id]);
 
-  // Node views read page resolution from this store.
+  // Node views read page resolution and attachment metadata from this store.
   useEffect(() => {
-    setWikiLinkEnvironment({ pages, openLink: onOpenLink, createLink: onCreateLink });
-  }, [pages, onOpenLink, onCreateLink]);
+    setWikiLinkEnvironment({
+      pages,
+      attachments,
+      openLink: onOpenLink,
+      createLink: onCreateLink,
+    });
+  }, [pages, attachments, onOpenLink, onCreateLink]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .listAttachments()
+      .then((list) => {
+        if (!cancelled) setAttachments(list);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The slash items ask this picker to open a file dialog.
+  useEffect(() => {
+    setAttachmentPicker((kind) => {
+      pickerKind.current = kind;
+      const input = fileInputRef.current;
+      if (!input) return;
+      input.value = "";
+      input.accept = kind === "image" ? "image/*" : "";
+      input.click();
+    });
+  }, []);
+
+  const refreshAttachments = useCallback(async () => {
+    try {
+      setAttachments(await api.listAttachments());
+    } catch {
+      // The editor keeps working with the rows it already has.
+    }
+  }, []);
+
+  const uploadFiles = useCallback(
+    async (files: File[], pos: number) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      let insertPos = pos;
+      for (const file of files.slice(0, 12)) {
+        if (file.size > 25 * 1024 * 1024) {
+          onAttachmentErrorRef.current?.("File is too large (max 25 MB)");
+          continue;
+        }
+
+        const { id } = insertUploadPlaceholder(editor, file, insertPos);
+        const placeholder = findUploadNode(editor.state.doc, id);
+        if (placeholder) insertPos = placeholder.pos + placeholder.node.nodeSize;
+
+        try {
+          const attachment = await api.uploadAttachment(file);
+          finishUpload(editor, id, attachment);
+          await refreshAttachments();
+        } catch (error) {
+          removeUpload(editor, id);
+          onAttachmentErrorRef.current?.(errorMessage(error));
+        }
+      }
+    },
+    [refreshAttachments],
+  );
+
+  useEffect(() => {
+    uploadRef.current = (files, pos) => void uploadFiles(files, pos);
+  }, [uploadFiles]);
 
   // ---------- `/` menu ----------
 
@@ -241,6 +329,7 @@ export function Editor({
   // ---------- editor ----------
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       TaskList,
@@ -261,6 +350,8 @@ export function Editor({
             : "";
         },
       }),
+      ImageBlock,
+      FileAttachment,
       Markdown.configure({
         html: false,
         linkify: true,
@@ -283,11 +374,29 @@ export function Editor({
         "aria-label": "Page content",
         "data-testid": "editor-content",
       },
+      handlePaste: (view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        uploadRef.current(files, view.state.selection.from);
+        return true;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        uploadRef.current(files, at?.pos ?? view.state.selection.from);
+        return true;
+      },
     },
     onUpdate: ({ editor: instance }) => {
       autosave.schedule(readMarkdown(instance));
     },
   });
+
+  editorRef.current = editor;
 
   useEffect(() => {
     return () => {
@@ -344,6 +453,19 @@ export function Editor({
 
   return (
     <div className="editor-host">
+      <input
+        ref={fileInputRef}
+        type="file"
+        hidden
+        data-testid="attachment-input"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          if (files.length > 0 && editor) {
+            uploadRef.current(files, editor.state.selection.from);
+          }
+        }}
+      />
       <EditorContent editor={editor} />
       {editor ? <BlockGutter editor={editor} /> : null}
       {menu ? (

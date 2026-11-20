@@ -9,6 +9,7 @@ import Suggestion, {
   type SuggestionProps,
 } from "@tiptap/suggestion";
 import { buildLinkSuggestions, type LinkSuggestion } from "../../lib/wikilinks.js";
+import { insertImageAttachment } from "../attachments/insert.js";
 import { getWikiLinkEnvironment } from "./link-store.js";
 
 const wikiLinkPluginKey = new PluginKey("wikiLinkSuggestion");
@@ -41,8 +42,37 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             // offer Create with the brackets in the title (walkthrough #2).
             return !state.doc.textBetween(range.from, range.to).includes("]]");
           },
-          items: ({ query }) => buildLinkSuggestions(getWikiLinkEnvironment().pages, query),
+          items: ({ query }) =>
+            buildLinkSuggestions(
+              getWikiLinkEnvironment().pages,
+              query,
+              getWikiLinkEnvironment().attachments,
+            ),
           command: ({ editor, range, props }) => {
+            if (props.kind === "attachment" && props.attachment) {
+              const attachment = props.attachment;
+              if (attachment.mime.startsWith("image/")) {
+                editor.chain().focus().deleteRange(range).run();
+                insertImageAttachment(editor, attachment, editor.state.selection.from);
+              } else {
+                editor
+                  .chain()
+                  .focus()
+                  .deleteRange(range)
+                  .insertContent({
+                    type: "fileAttachment",
+                    attrs: {
+                      path: attachment.path,
+                      name: attachment.name,
+                      size: attachment.size,
+                      mime: attachment.mime,
+                    },
+                  })
+                  .run();
+              }
+              return;
+            }
+
             // Duplicate titles are inserted as a path link with the title as
             // alias, so picking the second “Plan” resolves to that page.
             const isDuplicate = props.kind === "page" && props.pageId !== undefined && props.label !== props.title;

@@ -37,7 +37,11 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
             aria-selected={itemIndex === index}
             className={`link-menu-item${itemIndex === index ? " is-active" : ""}`}
             data-testid={
-              item.kind === "page" ? `link-suggestion-${item.pageId}` : "link-suggestion-create"
+              item.kind === "page"
+                ? `link-suggestion-${item.pageId}`
+                : item.kind === "attachment"
+                  ? `link-suggestion-attachment-${item.attachment?.name}`
+                  : "link-suggestion-create"
             }
             onMouseDown={(event) => {
               event.preventDefault();
@@ -48,6 +52,11 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
             <span className="link-menu-icon" aria-hidden="true">
               {item.kind === "create" ? (
                 <Icon name="plus" size={16} />
+              ) : item.kind === "attachment" ? (
+                <Icon
+                  name={item.attachment?.mime.startsWith("image/") ? "image" : "file"}
+                  size={16}
+                />
               ) : item.icon ? (
                 item.icon
               ) : (

@@ -3,11 +3,12 @@
  * A React context would not reach `ReactNodeViewRenderer` (it mounts in its
  * own root), so node views subscribe here instead.
  */
-import type { PageMeta } from "@gumply/core";
+import type { Attachment, PageMeta } from "@gumply/core";
 import { useSyncExternalStore } from "react";
 
 export interface WikiLinkEnvironment {
   pages: readonly PageMeta[];
+  attachments: readonly Attachment[];
   openLink: (link: { targetTitle: string; heading: string }) => void;
   createLink: (title: string) => void;
 }
@@ -16,6 +17,7 @@ const noop = () => {};
 
 let environment: WikiLinkEnvironment = {
   pages: [],
+  attachments: [],
   openLink: noop,
   createLink: noop,
 };
