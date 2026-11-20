@@ -38,8 +38,7 @@ async function openGraph(page: Page): Promise<void> {
   await page.getByTestId('sidebar-graph').click();
   const canvas = page.getByTestId(CANVAS);
   await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
-  // Let the fit tween finish.
-  await page.waitForTimeout(700);
+  await waitForStill(page);
 }
 
 async function probeNodes(page: Page, testId = CANVAS): Promise<ProbeNode[]> {
@@ -59,6 +58,29 @@ async function probeZoom(page: Page): Promise<number> {
         .__gumplyGraphs[id]!.zoom(),
     CANVAS,
   );
+}
+
+/**
+ * Wait until the layout and the fit tween have stopped moving: positions read
+ * twice in a row agree. A fixed sleep after `data-graph-ready` was flaky on a
+ * loaded machine (the 300 ms fit tween could still be running).
+ */
+async function waitForStill(page: Page, testId = CANVAS): Promise<void> {
+  let previous: ProbeNode[] = [];
+  let stableReads = 0;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const current = await probeNodes(page, testId);
+    const moved = current.some((node) => {
+      const before = previous.find((p) => p.id === node.id);
+      return !before || Math.hypot(node.x - before.x, node.y - before.y) > 0.5;
+    });
+    stableReads = moved || current.length === 0 ? 0 : stableReads + 1;
+    if (stableReads >= 2) return;
+    previous = current;
+    await page.waitForTimeout(150);
+  }
+  throw new Error(`graph ${testId} never stopped moving`);
 }
 
 async function nodeByTitle(page: Page, title: string): Promise<ProbeNode> {
@@ -160,7 +182,7 @@ test.describe('graph interaction (#74jpajdy)', () => {
     await expect(page.getByTestId(CANVAS)).toHaveAttribute('data-graph-ready', 'true', {
       timeout: 15_000,
     });
-    await page.waitForTimeout(700);
+    await waitForStill(page);
     const ghost = await nodeByTitle(page, 'Future Topic');
     await page.mouse.click(origin.x + ghost.x, origin.y + ghost.y);
     await expect(page.getByTestId('page-title').first()).toContainText('Future Topic');
@@ -225,7 +247,7 @@ test.describe('graph polish (#z5abndiz)', () => {
     await page.getByTestId('local-graph-toggle').click();
     const local = page.getByTestId('local-graph-canvas');
     await expect(local).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
-    await page.waitForTimeout(800);
+    await waitForStill(page, 'local-graph-canvas');
 
     const box = (await local.boundingBox())!;
     const nodes = await probeNodes(page, 'local-graph-canvas');
@@ -260,14 +282,12 @@ test.describe('graph polish (#z5abndiz)', () => {
       { title: 'Plain', content: 'Links [[Tagged]].' },
       { title: 'Tagged', content: '#work\n\nBack to [[Plain]].' },
     ]);
-    await page.goto('/');
-    await page.getByTestId('sidebar-graph').click();
-    await expect(page.getByTestId(CANVAS)).toHaveAttribute('data-graph-ready', 'true', {
-      timeout: 15_000,
-    });
+    await openGraph(page);
     const legend = page.getByTestId('graph-legend');
     await expect(legend).toContainText('Colour = first tag');
     await expect(legend).toContainText('#work');
+    // No page has an icon: no emoji row (#emmyabbj follow-up).
+    await expect(page.getByTestId('graph-legend-icon')).toHaveCount(0);
 
     const pageDot = await legend.locator('.graph-legend-solid').evaluate(
       (el) => getComputedStyle(el).backgroundColor,
@@ -333,6 +353,8 @@ test.describe('page icons in the graph (#emmyabbj)', () => {
     ]);
     await openGraph(page);
     const origin = await canvasOrigin(page);
+    // The legend explains emoji nodes once at least one page has an icon.
+    await expect(page.getByTestId('graph-legend-icon')).toHaveText(/emoji = page icon/);
 
     const iconNode = await nodeByTitle(page, 'Rocket');
     const plainNode = await nodeByTitle(page, 'Plain');
@@ -358,8 +380,72 @@ test.describe('page icons in the graph (#emmyabbj)', () => {
     await page.getByTestId('local-graph-toggle').click();
     const local = page.getByTestId('local-graph-canvas');
     await expect(local).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
-    await page.waitForTimeout(800);
+    await waitForStill(page, 'local-graph-canvas');
     const centre = (await probeNodes(page, 'local-graph-canvas')).find((n) => n.id === rocket!.id)!;
     expect(await colourfulPixels(page, 'local-graph-canvas', centre.x, centre.y, centre.r)).toBeGreaterThan(30);
+  });
+});
+
+test.describe('filter keeps links (#pyx74enx)', () => {
+  /** Painted pixels away from every node and its label: i.e. link pixels. */
+  async function linkPixels(page: Page): Promise<number> {
+    const nodes = await probeNodes(page);
+    return page.evaluate(
+      ({ id, nodes }) => {
+        const canvas = document.querySelector(`[data-testid="${id}"] canvas`) as HTMLCanvasElement;
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / rect.width;
+        const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+        let count = 0;
+        for (let y = 0; y < canvas.height; y += 2) {
+          for (let x = 0; x < canvas.width; x += 2) {
+            if ((data[(y * canvas.width + x) * 4 + 3] ?? 0) <= 8) continue;
+            const cx = x / scale;
+            const cy = y / scale;
+            const nearNode = nodes.some(
+              (n) => Math.abs(cx - n.x) < 70 && cy > n.y - n.r - 6 && cy < n.y + n.r + 24,
+            );
+            if (!nearNode) count += 1;
+          }
+        }
+        return count;
+      },
+      { id: CANVAS, nodes },
+    );
+  }
+
+  test('links come back after clearing the filter with Backspace, Esc and ✕', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed(fixture());
+    await openGraph(page);
+    const subtitle = page.getByTestId('graph-subtitle');
+    const canvas = page.getByTestId(CANVAS);
+    const initialText = await subtitle.innerText();
+    expect(initialText).toMatch(/[1-9]\d* links/);
+    const initialPixels = await linkPixels(page);
+    expect(initialPixels).toBeGreaterThan(100);
+
+    const filter = page.getByTestId('graph-filter');
+    const clears: Array<[string, () => Promise<void>]> = [
+      ['Backspace', async () => {
+        for (let i = 0; i < 5; i += 1) await filter.press('Backspace');
+      }],
+      ['Escape', () => filter.press('Escape')],
+      ['clear button', () => page.getByTestId('graph-filter-clear').click()],
+    ];
+    for (const [how, clear] of clears) {
+      await filter.click();
+      await filter.pressSequentially('Loner');
+      await expect(subtitle, how).toContainText('0 links');
+      await clear();
+      await expect(filter, how).toHaveValue('');
+      await expect(subtitle, how).toHaveText(initialText);
+      await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+      await waitForStill(page);
+      // Relayouts change the exact count; without links it drops to ~0.
+      expect(await linkPixels(page), how).toBeGreaterThan(Math.max(100, initialPixels * 0.3));
+    }
   });
 });

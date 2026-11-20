@@ -1,6 +1,6 @@
 # Gumply e2e tests (Playwright)
 
-Owned by **@qa**. Sibling teams: please don't edit `e2e/` — send a message instead.
+Owned by **@opus-hunter** (was @qa). Sibling teams: add specs for your own features freely; ping @opus-hunter for shared fixtures/config.
 Full flow list, selector contract and bug format: wiki page **`spec/e2e-tests`**.
 Ports follow decision **D7** for the app, but the suite uses its **own** ports so it
 never collides with a dev server: **web 5477, API 8977** by default
@@ -13,10 +13,17 @@ npx playwright test --config e2e/playwright.config.ts   # = npm run test:e2e
 ```
 
 Stop any running `npm run dev` first. The suite boots its own app on
-**5477 + 8977** with `GUMPLY_VAULT=<throwaway dir>` and **wipes that vault
-between tests**; it deliberately never reuses an existing server, because that
-server could be pointed at your real notes. Override ports with
-`GUMPLY_WEB_PORT` / `GUMPLY_PORT` if those are taken too.
+**5477 + 8977** with a throwaway vault and **wipes that vault between tests**; it
+deliberately never reuses an existing server, because that server could be
+pointed at your real notes. Override ports with `GUMPLY_WEB_PORT` /
+`GUMPLY_PORT` if those are taken too.
+
+**Agents sharing one machine:** always run on your own port range, e.g.
+`GUMPLY_WEB_PORT=10410 GUMPLY_PORT=10411 npm run test:e2e`. The default vault is
+`$TMPDIR/gumply-e2e-vault-<API port>`, so separate ports also mean separate
+vaults. (A fixed shared vault path used to let one agent's run wipe another's
+pages mid-test, which caused random "No pages yet" / "Page not found" failures.)
+Set `GUMPLY_VAULT` only to a directory nobody else uses.
 
 Browsers: `npx playwright install chromium firefox`. Chromium runs the full
 suite; Firefox runs the two graph canvas specs (`graph-visual.spec.ts` and
