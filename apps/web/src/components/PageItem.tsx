@@ -15,6 +15,7 @@ export interface PageItemProps {
   onCreateChild: (id: PageId) => void;
   onDelete: (id: PageId) => void;
   onToggle: (id: PageId) => void;
+  onStartMove: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
   onStartRename: (id: PageId, title: string) => void;
   onCommitRename: () => void;
@@ -207,6 +208,18 @@ export function PageItem(props: PageItemProps) {
                   }}
                 >
                   Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid={`move-page-${page.id}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    props.onStartMove(page.id);
+                  }}
+                >
+                  Move to…
                 </button>
                 <button
                   type="button"

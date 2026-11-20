@@ -19,6 +19,7 @@ export interface SidebarProps {
   onRename: (id: PageId, title: string) => Promise<void>;
   onDelete: (id: PageId) => void;
   onMove: (id: PageId, parentId: PageId | null) => void;
+  onStartMove: (id: PageId) => void;
   onRetry: () => void;
   onSearch: () => void;
   onGraph: () => void;
@@ -173,6 +174,7 @@ export function Sidebar(props: SidebarProps) {
               onCreateChild={createChild}
               onDelete={props.onDelete}
               onToggle={toggle}
+              onStartMove={props.onStartMove}
               onRenameDraft={setRenameDraft}
               onStartRename={startRename}
               onCommitRename={commitRename}
