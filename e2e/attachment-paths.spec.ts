@@ -91,3 +91,85 @@ test('legacy vault-root and Obsidian links in a nested page render and stay unto
     content.replace('Intro', 'Intro edited'),
   );
 });
+
+test('Move to… keeps images working: the server rewrites the moved page’s links (#gma39xw2)', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const upload = await request.post(`${API_URL}/api/attachments`, {
+    multipart: { file: { name: 'moved.svg', mimeType: 'image/svg+xml', buffer: SVG } },
+  });
+  const attachment = (await upload.json()) as { path: string };
+
+  const [parent] = await vault.seed([{ title: 'Projects', content: 'Folder page' }]);
+  const [child] = await vault.seed([
+    { title: 'Sketch', content: `Intro\n\n![sketch](../${attachment.path})`, parentId: parent!.id },
+  ]);
+  await page.goto(`/#/${encodeURIComponent(child!.id)}`);
+  await imageLoaded(page);
+
+  await page.getByTestId(`page-menu-button-${child!.id}`).click();
+  await page.getByTestId(`move-page-${child!.id}`).click();
+  await page.getByTestId('move-target-top-level').click();
+  await expect(page.getByTestId('undo-toast')).toContainText('Moved to top level');
+
+  // The open page followed the move, shows the image, and the file on disk
+  // now links from the top level.
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe('#/Sketch');
+  await imageLoaded(page);
+  expect((await api.getPage(request, 'Sketch')).content).toBe(
+    `Intro\n\n![sketch](${attachment.path})`,
+  );
+
+  // Editing afterwards saves cleanly (no conflict with the server's rewrite).
+  await page.getByTestId('editor-content').getByText('Intro', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' more');
+  await waitSaved(page);
+  expect((await api.getPage(request, 'Sketch')).content).toBe(
+    `Intro more\n\n![sketch](${attachment.path})`,
+  );
+
+  // Undo moves it back under Projects with ../ again.
+  await page.getByTestId('undo-toast').getByRole('button', { name: 'Undo' }).click();
+  await expect
+    .poll(async () =>
+      api.getPage(request, 'Projects/Sketch').then((saved) => saved.content, () => 'not moved yet'),
+    )
+    .toBe(`Intro more\n\n![sketch](../${attachment.path})`);
+});
+
+test('renaming the parent of an open page with a legacy image link reloads it, no conflict', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const upload = await request.post(`${API_URL}/api/attachments`, {
+    multipart: { file: { name: 'legacy2.svg', mimeType: 'image/svg+xml', buffer: SVG } },
+  });
+  const attachment = (await upload.json()) as { path: string };
+  const [parent] = await vault.seed([{ title: 'Projects', content: 'Folder page' }]);
+  // Pre-D23 vault-root link: the server makes it note-relative on the move.
+  const [child] = await vault.seed([
+    { title: 'Plan', content: `Intro\n\n![p](${attachment.path})`, parentId: parent!.id },
+  ]);
+  await page.goto(`/#/${encodeURIComponent(child!.id)}`);
+  await imageLoaded(page);
+
+  await page.getByTestId(`page-item-${parent!.id}`).hover();
+  await page.getByTestId(`page-menu-button-${parent!.id}`).click();
+  await page.getByTestId(`rename-page-${parent!.id}`).click();
+  await page.getByTestId(`page-rename-input-${parent!.id}`).fill('Work');
+  await page.keyboard.press('Enter');
+
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe('#/Work/Plan');
+  await imageLoaded(page);
+  await page.getByTestId('editor-content').getByText('Intro', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' edited');
+  await waitSaved(page);
+  expect((await api.getPage(request, 'Work/Plan')).content).toBe(
+    `Intro edited\n\n![p](../${attachment.path})`,
+  );
+});

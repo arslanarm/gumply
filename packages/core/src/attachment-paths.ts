@@ -123,11 +123,31 @@ const MARKDOWN_LINK = /(!?)\[((?:[^\]\\]|\\.)*)\]\(\s*(<[^>\n]*>|[^)\s]+)((?:\s+
  * page links and code are left alone. Returns the input unchanged when
  * nothing needs rewriting.
  */
+export interface RelinkOptions {
+  /**
+   * Leave a link alone when it already resolves, relative to the note's new
+   * folder, to an existing file (`exists` required). For moves done outside
+   * Gumply: Obsidian or a git checkout may have fixed the links already.
+   */
+  keepValidAtDestination?: boolean;
+}
+
+/** Strictly note-relative target of `href` (no vault-root fallback). */
+function strictTarget(noteId: string, href: string): string | null {
+  const raw = href.trim().replace(/^<|>$/g, "");
+  if (raw.length === 0 || isExternal(raw)) return null;
+  const path = decodeHref(raw.split(/[?#]/)[0] ?? raw);
+  if (path.startsWith("/")) return null;
+  const folder = noteFolder(noteId);
+  return normaliseVaultPath(folder ? `${folder}/${path}` : path);
+}
+
 export function relinkAttachments(
   markdown: string,
   fromNoteId: string,
   toNoteId: string,
   exists?: (vaultPath: string) => boolean,
+  options: RelinkOptions = {},
 ): string {
   if (noteFolder(fromNoteId) === noteFolder(toNoteId)) return markdown;
   const masked = maskCode(markdown);
@@ -137,6 +157,10 @@ export function relinkAttachments(
   let match: RegExpExecArray | null;
   while ((match = MARKDOWN_LINK.exec(masked)) !== null) {
     const href = match[3] ?? "";
+    if (options.keepValidAtDestination && exists) {
+      const here = strictTarget(toNoteId, href);
+      if (isAttachmentPath(here) && exists(here)) continue;
+    }
     const target = resolveAttachmentHref(fromNoteId, href, exists);
     if (!isAttachmentPath(target)) continue;
     const next = attachmentHref(toNoteId, target);
