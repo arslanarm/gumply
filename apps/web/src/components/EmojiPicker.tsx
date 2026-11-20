@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   EMOJI_CATEGORIES,
   findEmoji,
@@ -122,11 +122,32 @@ export function EmojiPicker({
   const flat = useMemo(() => sections.flatMap((section) => section.items), [sections]);
   const sizes = useMemo(() => sections.map((section) => section.items.length), [sections]);
 
+  // A category-bar jump waiting for its section to be rendered and measured.
+  const pendingJump = useRef<Section["id"] | null>(null);
+  const [jumpRequest, setJumpRequest] = useState(0);
+  // Clearing the filter for a jump must not then reset the list to the top.
+  const skipQueryScroll = useRef(false);
+
   // Typing a filter puts the highlight on the best match; clearing removes it.
   useEffect(() => {
     setActive(query.trim() ? 0 : -1);
-    scrollRef.current?.scrollTo({ top: 0 });
+    if (skipQueryScroll.current) skipQueryScroll.current = false;
+    else scrollRef.current?.scrollTo({ top: 0 });
   }, [query]);
+
+  // Runs after the sections for the current filter are in the DOM, so the
+  // offset is real (first open, data just loaded, or a filter just cleared).
+  // Only the list scrolls, and the last section is clamped to the bottom.
+  useLayoutEffect(() => {
+    const id = pendingJump.current;
+    const scroller = scrollRef.current;
+    if (!id || !scroller) return;
+    const element = scroller.querySelector<HTMLElement>(`[data-section="${id}"]`);
+    if (!element) return; // Not rendered yet (data still loading): try again.
+    pendingJump.current = null;
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    scroller.scrollTop = Math.min(element.offsetTop, max);
+  }, [jumpRequest, sections]);
 
   useEffect(() => {
     if (active < 0) return;
@@ -197,7 +218,13 @@ export function EmojiPicker({
 
   const onScroll = () => {
     const scroller = scrollRef.current;
-    if (!scroller || query.trim()) return;
+    if (!scroller || query.trim() || pendingJump.current) return;
+    // At the very bottom the last section can't reach the top: it's the one
+    // being looked at.
+    if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+      setActiveCategory(sections.at(-1)?.id ?? null);
+      return;
+    }
     const top = scroller.scrollTop + 8;
     let current: Section["id"] | null = null;
     for (const section of sections) {
@@ -208,15 +235,16 @@ export function EmojiPicker({
   };
 
   const jumpTo = (id: Section["id"]) => {
-    setQuery("");
-    requestAnimationFrame(() => {
-      const scroller = scrollRef.current;
-      const element = scroller?.querySelector<HTMLElement>(`[data-section="${id}"]`);
-      if (scroller && element) scroller.scrollTo({ top: element.offsetTop });
-      setActiveCategory(id);
-      inputRef.current?.focus({ preventScroll: true });
-    });
+    pendingJump.current = id;
+    if (query) {
+      skipQueryScroll.current = true;
+      setQuery("");
+    }
+    setActiveCategory(id);
+    setJumpRequest((value) => value + 1);
+    inputRef.current?.focus({ preventScroll: true });
   };
+
 
   const activeItem = flat[active];
   const preview = hovered ?? activeItem ?? null;
@@ -328,7 +356,6 @@ export function EmojiPicker({
                 }`}
                 aria-label={category.label}
                 data-tooltip={category.label}
-                disabled={!entries}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => jumpTo(category.id)}
               >
