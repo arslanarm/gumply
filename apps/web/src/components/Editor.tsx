@@ -22,6 +22,7 @@ import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
 import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
 import { NotionCodeBlock } from "../editor/code-block.js";
+import { pastedTablesToMarkdown } from "../editor/paste-table.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
@@ -579,6 +580,8 @@ export function Editor({
         "aria-label": "Page content",
         "data-testid": "editor-content",
       },
+      // Pasted HTML tables become a GFM table block (#y5iqswjf).
+      transformPastedHTML: (html) => pastedTablesToMarkdown(html),
       handlePaste: (view, event) => {
         const files = Array.from(event.clipboardData?.files ?? []);
         if (files.length === 0) return false;

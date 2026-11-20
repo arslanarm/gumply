@@ -164,3 +164,83 @@ test.describe('imported Markdown survives editing', () => {
     });
   }
 });
+
+test.describe('pasting HTML tables (#y5iqswjf)', () => {
+  async function pasteHtml(page: import('@playwright/test').Page, html: string, text: string) {
+    await page.getByTestId('editor-content').evaluate(
+      (element, data) => {
+        const transfer = new DataTransfer();
+        transfer.setData('text/html', data.html);
+        transfer.setData('text/plain', data.text);
+        element.dispatchEvent(
+          new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
+        );
+      },
+      { html, text },
+    );
+  }
+
+  test('a web-page table becomes a GFM table block, no stray empty line', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [created] = await vault.seed([{ title: 'Paste HTML', content: 'Intro' }]);
+    await page.goto('/');
+    const body = page.getByTestId('editor-content');
+    await body.getByText('Intro', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+
+    await pasteHtml(
+      page,
+      '<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>',
+      'A\tB\n1\t2',
+    );
+    await expect(body.locator('table td').first()).toHaveText('1');
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', {
+      timeout: 10_000,
+    });
+    expect((await api.getPage(request, created!.id)).content).toBe(
+      'Intro\n\n| A | B |\n|---|---|\n| 1 | 2 |',
+    );
+  });
+
+  test('Sheets/Notion-style: no <th>, formatting, links, pipes and merged cells', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [created] = await vault.seed([{ title: 'Paste rich', content: 'Intro' }]);
+    await page.goto('/');
+    const body = page.getByTestId('editor-content');
+    await body.getByText('Intro', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+
+    const html = [
+      '<meta charset="utf-8"><google-sheets-html-origin><style>td{border:1px solid}</style>',
+      '<table><tbody>',
+      '<tr><td><span style="font-weight:bold">Name</span></td><td>Notes</td><td>Link</td></tr>',
+      '<tr><td>snake_case</td><td>a | b<br>next</td><td><a href="https://x.y/a_b">site</a></td></tr>',
+      '<tr><td colspan="2"><em>merged</em></td><td><code>x|y</code></td></tr>',
+      '</tbody></table></google-sheets-html-origin>',
+    ].join('');
+    await pasteHtml(page, html, 'Name\tNotes\tLink');
+
+    await expect(body.locator('table th').first()).toHaveText('Name');
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', {
+      timeout: 10_000,
+    });
+    expect((await api.getPage(request, created!.id)).content).toBe(
+      [
+        'Intro',
+        '',
+        '| **Name** | Notes | Link |',
+        '|---|---|---|',
+        '| snake_case | a \\| b next | [site](https://x.y/a_b) |',
+        '| *merged* |  | `x\\|y` |',
+      ].join('\n'),
+    );
+  });
+});
