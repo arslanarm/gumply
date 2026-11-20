@@ -524,10 +524,11 @@ input {
   animation: emoji-picker-in 120ms ease-out;
 }
 
+/* Fade only: a moving box makes the first click land on a moving target
+   (and test runners retry by scrolling the page to it). */
 @keyframes emoji-picker-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
   }
 }
 

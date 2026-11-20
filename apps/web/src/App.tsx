@@ -665,8 +665,15 @@ export function App() {
           renameEpoch.current += 1;
         }
 
-        // D12: refetch the open page when the server rewrote its links.
-        if (openPageNeedsReload(updated.rewrittenPages, selectedRef.current, id)) {
+        // D12/D23: refetch the open page when the server rewrote it. Under a
+        // renamed parent the open sub-page has a new id (D20) by now.
+        const open = selectedRef.current;
+        const openNow =
+          open !== null && open.startsWith(`${id}/`)
+            ? `${updated.id}${open.slice(id.length)}`
+            : open;
+        // The renamed page itself is the live editor: never reload it.
+        if (open !== id && openPageNeedsReload(updated.rewrittenPages, openNow, updated.id)) {
           requestPageReload();
         }
       } catch (error) {

@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect, api } from './fixtures';
 import { expectPageTitle } from './support/ui';
 
@@ -5,6 +6,31 @@ import { expectPageTitle } from './support/ui';
  * Page-icon emoji picker (#dsc8skxj): the full emoji set with search,
  * categories, Recent, Random/Remove and paste-any-emoji.
  */
+/**
+ * After a category jump only the picker's list has scrolled: the section is at
+ * the top of the list (or the list is at its bottom for the last sections),
+ * and the page behind did not move.
+ */
+async function expectJumpedTo(page: Page, section: string) {
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const scroller = document.querySelector<HTMLElement>('.emoji-picker-scroll');
+        const target = scroller?.querySelector<HTMLElement>(`[data-section="${id}"]`);
+        if (!scroller || !target) return 'not rendered';
+        const max = scroller.scrollHeight - scroller.clientHeight;
+        const want = Math.min(target.offsetTop, max);
+        if (Math.abs(scroller.scrollTop - want) > 1) return `list at ${scroller.scrollTop}, want ${want}`;
+        const moved = [document.scrollingElement, ...document.querySelectorAll('main, .content, .app-main')]
+          .filter((element): element is Element => element !== null)
+          .filter((element) => element.scrollTop !== 0)
+          .map((element) => element.className || element.tagName);
+        return moved.length ? `page scrolled: ${moved.join(', ')}` : 'ok';
+      }, section),
+    )
+    .toBe('ok');
+}
+
 test.describe('page icon emoji picker', () => {
   test('searches by name and sets the icon on disk', async ({ page, vault, request }) => {
     const [doc] = await vault.seed([{ title: 'Launch plan', content: 'Body' }]);
@@ -80,13 +106,20 @@ test.describe('page icon emoji picker', () => {
     await page.getByTestId('page-icon-button').click();
     const picker = page.getByTestId('page-icon-picker');
 
-    // Wait until the list (and the enabled category bar) is in, so the click
-    // doesn't race the lazy data load.
-    await expect(picker.locator('[data-section="smileys"] .emoji-picker-cell').first()).toBeVisible();
-    await expect(picker.getByRole('button', { name: 'Flags' })).toBeEnabled();
+    // Click straight away: a jump requested while the list is still loading
+    // must land once it has rendered (#jraykif8).
     await picker.getByRole('button', { name: 'Flags' }).click();
+    await expectJumpedTo(page, 'flags');
     await expect(picker.getByRole('heading', { name: 'Flags' })).toBeInViewport();
     await expect(picker.getByRole('button', { name: 'Flags' })).toHaveClass(/is-active/);
+
+    // And back up, from a filter with no results (the jump clears it first).
+    await page.keyboard.type('qqqq');
+    await picker.getByRole('button', { name: 'Food & drink' }).click();
+    await expect(page.getByTestId('emoji-search')).toHaveValue('');
+    await expectJumpedTo(page, 'food');
+    await expect(picker.getByRole('heading', { name: 'Food & drink' })).toBeInViewport();
+    await expect(picker.getByRole('button', { name: 'Food & drink' })).toHaveClass(/is-active/);
 
     await page.keyboard.type('zzqqxx');
     await expect(picker.getByTestId('emoji-empty')).toHaveText('No emoji match “zzqqxx”.');

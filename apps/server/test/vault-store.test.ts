@@ -573,3 +573,108 @@ describe("D20 redirects", () => {
     expect(store.get("Gamma two").id).toBe("Gamma two");
   });
 });
+
+describe("D23: attachment links follow the note's folder (#gma39xw2)", () => {
+  async function vaultWith(files: Record<string, string>): Promise<{ dir: string; store: VaultStore }> {
+    const fs = await import("node:fs/promises");
+    const dir = await tempVault(async (root) => {
+      for (const [path, text] of Object.entries(files)) {
+        await fs.mkdir(join(root, path, ".."), { recursive: true });
+        await writeFile(join(root, path), text, "utf8");
+      }
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+    return { dir, store };
+  }
+
+  const PIC = { "attachments/pic.png": "png", "attachments/my doc.pdf": "pdf" };
+
+  it("Move to… rewrites the moved page's links, and its sub-pages'", async () => {
+    const { dir, store } = await vaultWith({
+      ...PIC,
+      "Inbox.md": "---\ntitle: Inbox\n---\nI\n",
+      "Projects.md": "---\ntitle: Projects\n---\nP\n",
+      "Projects/Plan.md":
+        "---\ntitle: Plan\n---\n![pic](../attachments/pic.png) [doc](../attachments/my%20doc.pdf \"Doc\") ![[pic.png]] `![x](../attachments/pic.png)`\n",
+      "Projects/Plan/Step.md": "---\ntitle: Step\n---\n![s](../../attachments/pic.png)\n",
+    });
+
+    // Deeper: Projects/Plan → Inbox/Plan … same depth, links unchanged.
+    await store.move("Projects/Plan", "Inbox");
+    expect(store.get("Inbox/Plan").content).toContain("](../attachments/pic.png)");
+
+    // To the top level: one level up.
+    await store.move("Inbox/Plan", null);
+    const plan = await readFile(join(dir, "Plan.md"), "utf8");
+    expect(plan).toContain("![pic](attachments/pic.png)");
+    expect(plan).toContain('[doc](attachments/my%20doc.pdf "Doc")');
+    expect(plan).toContain("![[pic.png]]");
+    // Code is never touched.
+    expect(plan).toContain("`![x](../attachments/pic.png)`");
+    await expect(readFile(join(dir, "Plan", "Step.md"), "utf8")).resolves.toContain(
+      "![s](../attachments/pic.png)",
+    );
+    expect(store.get("Plan/Step").content).toContain("](../attachments/pic.png)");
+
+    // And down two levels.
+    await store.move("Plan", "Projects");
+    await expect(readFile(join(dir, "Projects", "Plan", "Step.md"), "utf8")).resolves.toContain(
+      "![s](../../attachments/pic.png)",
+    );
+  });
+
+  it("keeps a plain note plain while relinking it", async () => {
+    const { dir, store } = await vaultWith({
+      ...PIC,
+      "Projects.md": "---\ntitle: Projects\n---\nP\n",
+      "Projects/Sketch.md": "![p](../attachments/pic.png)\n",
+    });
+    await store.move("Projects/Sketch", null);
+    await expect(readFile(join(dir, "Sketch.md"), "utf8")).resolves.toBe(
+      "![p](attachments/pic.png)\n",
+    );
+  });
+
+  it("renaming a parent reports relinked sub-pages as rewritten", async () => {
+    const { store } = await vaultWith({
+      ...PIC,
+      "Projects.md": "---\ntitle: Projects\n---\nP\n",
+      // Legacy vault-root link from before D23: resolved, then made relative.
+      "Projects/Plan.md": "---\ntitle: Plan\n---\n![pic](attachments/pic.png)\n",
+    });
+    const renamed = await store.update("Projects", { title: "Work" });
+    expect(renamed.id).toBe("Work");
+    expect(renamed.rewrittenPages).toContain("Work/Plan");
+    expect(store.get("Work/Plan").content).toContain("![pic](../attachments/pic.png)");
+  });
+
+  it("relinks a file moved outside Gumply, keeping links the other tool fixed", async () => {
+    const { dir, store } = await vaultWith({
+      ...PIC,
+      "Note.md": "---\ntitle: Note\n---\n![a](attachments/pic.png)\n",
+      "Fixed.md": "---\ntitle: Fixed\n---\n![b](attachments/pic.png)\n",
+      "Archive/Keep.md": "---\ntitle: Keep\n---\nK\n",
+    });
+    store.startWatching();
+    try {
+      const fs = await import("node:fs/promises");
+      await fs.rename(join(dir, "Note.md"), join(dir, "Archive", "Note.md"));
+      await waitFor(() => store.list().some((page) => page.id === "Archive/Note"));
+      await waitFor(() => store.get("Archive/Note").content.includes("../attachments/pic.png"));
+      await expect(readFile(join(dir, "Archive", "Note.md"), "utf8")).resolves.toContain(
+        "![a](../attachments/pic.png)",
+      );
+
+      // Another tool moved and fixed the link already: leave the file alone.
+      const fixed = "---\ntitle: Fixed\n---\n![b](../attachments/pic.png)\n";
+      await fs.rm(join(dir, "Fixed.md"));
+      await writeFile(join(dir, "Archive", "Fixed.md"), fixed, "utf8");
+      await waitFor(() => store.list().some((page) => page.id === "Archive/Fixed"));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await expect(readFile(join(dir, "Archive", "Fixed.md"), "utf8")).resolves.toBe(fixed);
+    } finally {
+      store.stopWatching();
+    }
+  });
+});
