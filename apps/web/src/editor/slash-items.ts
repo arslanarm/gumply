@@ -4,6 +4,7 @@
  */
 import type { Editor, Range } from "@tiptap/core";
 import { requestAttachmentPicker } from "./attachments/store.js";
+import { requestEmojiPicker } from "./emoji/store.js";
 
 export interface SlashItem {
   key: string;
@@ -77,6 +78,16 @@ export const SLASH_ITEMS: SlashItem[] = [
     keywords: ["code", "pre", "snippet"],
     run: (editor, range) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+  },
+  {
+    key: "emoji",
+    title: "Emoji",
+    hint: "Insert an emoji",
+    keywords: ["emoji", "smiley", "icon", "face"],
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      requestEmojiPicker();
+    },
   },
   {
     key: "image",

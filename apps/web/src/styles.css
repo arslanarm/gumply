@@ -2416,3 +2416,43 @@ input {
 .raw-block:has(.raw-block-editor) {
   box-shadow: none;
 }
+
+/* ---------- #6v8tyxfd: emoji in text ---------- */
+
+.emoji-menu {
+  width: 280px;
+}
+
+.emoji-menu-item {
+  gap: 0.55rem;
+}
+
+.emoji-menu-glyph {
+  width: 1.5rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.emoji-menu-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emoji-menu-code {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.slash-menu-emoji {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.editor-emoji-popover {
+  position: fixed;
+  z-index: 45;
+}

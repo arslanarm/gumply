@@ -63,7 +63,11 @@ export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashM
           }}
         >
           <span className="slash-menu-icon">
-            <Icon name={SLASH_ICONS[item.key] ?? "file"} size={17} />
+            {item.key === "emoji" ? (
+              <span className="slash-menu-emoji" aria-hidden="true">😀</span>
+            ) : (
+              <Icon name={SLASH_ICONS[item.key] ?? "file"} size={17} />
+            )}
           </span>
           <span className="slash-menu-copy">
             <span className="slash-menu-title">{item.title}</span>
