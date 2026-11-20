@@ -133,6 +133,21 @@ function expectDrawnAndFitted(stats: PixelStats): void {
 }
 
 test.describe('graph pixels', () => {
+  test('empty graph uses the calm empty state, with no canvas or dead controls', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.getByTestId('sidebar-graph').click();
+
+    await expect(page.getByTestId('graph-empty')).toBeVisible();
+    await expect(page.getByTestId('graph-canvas')).toHaveCount(0);
+    // Q1d: an empty graph is not a filterable/legend-able surface.
+    await expect(page.getByTestId('graph-filter')).toHaveCount(0);
+    await expect(page.getByTestId('graph-legend')).toHaveCount(0);
+    // Q1d: no dashed placeholder box around the whole pane.
+    await expect(page.getByTestId('graph-empty')).not.toHaveCSS('border-style', 'dashed');
+  });
+
   test('auto-fits and paints in light and dark (canvas pixels, not just aria)', async ({
     page,
     vault,

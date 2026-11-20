@@ -164,27 +164,24 @@
   flex: 1;
   min-height: 360px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
   padding: 2rem;
+  color: var(--muted);
   text-align: center;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-}
-
-.graph-state h3 {
-  margin: 0;
-  font-size: 1.05rem;
 }
 
 .graph-state p {
   margin: 0;
-  color: var(--muted);
 }
 
-.graph-state code,
+/* Calm empty states (Q1d): same pattern as the shell's empty pages, never a
+   dashed placeholder box around the whole canvas. */
+.graph-view .empty-state {
+  margin-top: clamp(3rem, 14vh, 7rem);
+}
+
+.graph-view .empty-state code,
 .graph-panel-state code {
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
