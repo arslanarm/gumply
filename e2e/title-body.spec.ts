@@ -65,4 +65,42 @@ test.describe('title ↔ body', () => {
     await expect(page.getByTestId('page-title-input')).toBeFocused();
     await expect(page.getByTestId('page-title-input')).toHaveValue('Draft');
   });
+
+  test('after editing a title via ArrowUp, the next new page still selects "Untitled"', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed([{ title: 'Home', content: 'Hello' }]);
+    await page.goto('/');
+    await expect(page.getByTestId('editor-content')).toContainText('Hello');
+
+    let renames = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'PUT' && (request.postData() ?? '').includes('"title"')) renames += 1;
+    });
+
+    await page.getByTestId('new-page-button').click();
+    await expect(page.getByTestId('page-title-input')).toBeFocused();
+    await page.keyboard.type('P0');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('body');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByTestId('page-title-input')).toBeFocused();
+    await page.keyboard.type('!');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Q');
+    await expect(page.getByTestId('page-title')).toContainText('P0!');
+    // One rename per commit: "P0", then "P0!".
+    await expect.poll(() => renames).toBe(2);
+
+    await page.getByTestId('new-page-button').click();
+    const title = page.getByTestId('page-title-input');
+    await expect(title).toBeFocused();
+    await expect(title).toHaveValue('Untitled');
+    expect(await title.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 8]);
+    await page.keyboard.type('Next');
+    await expect(title).toHaveValue('Next');
+  });
 });
+

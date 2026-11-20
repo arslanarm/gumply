@@ -54,26 +54,34 @@ export function PageHeader({
   // stale header draft blurring afterwards (#n8kk26sc).
   const draftOriginRef = useRef(page.title);
 
-  // Coming up from the body: caret at the end of the title, no select-all.
+  // Caret placement without select-all: coming up from the body (end of
+  // the title) or a click on the title (where the user clicked).
   const caretAtEnd = useRef(false);
   const skipBlurCommit = useRef(false);
-  const pendingTitleFocus = useRef(false);
-  const focusTitleAtEnd = () => {
+  const pendingCaret = useRef<number | null>(null);
+  const focusTitleAt = (offset?: number) => {
     const input = titleInputRef.current;
     if (!input) return;
+    const at = Math.min(offset ?? input.value.length, input.value.length);
     caretAtEnd.current = true;
     input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
+    input.setSelectionRange(at, at);
     caretAtEnd.current = false;
   };
+  const focusTitleAtEnd = () => focusTitleAt();
 
+  // Only a signal raised while this header is mounted counts: the header
+  // remounts on page switches and must not replay an old request (that put
+  // the caret after "Untitled" on the next new page).
+  const handledSignal = useRef(focusTitleSignal);
   useEffect(() => {
-    if (focusTitleSignal === 0) return;
+    if (focusTitleSignal === handledSignal.current) return;
+    handledSignal.current = focusTitleSignal;
     if (editing) {
       focusTitleAtEnd();
       return;
     }
-    pendingTitleFocus.current = true;
+    pendingCaret.current = page.title.length;
     draftOriginRef.current = page.title;
     setDraft(page.title);
     setEditing(true);
@@ -82,10 +90,32 @@ export function PageHeader({
   }, [focusTitleSignal]);
 
   useLayoutEffect(() => {
-    if (!editing || !pendingTitleFocus.current) return;
-    pendingTitleFocus.current = false;
-    focusTitleAtEnd();
+    if (!editing || pendingCaret.current === null) return;
+    const offset = pendingCaret.current;
+    pendingCaret.current = null;
+    focusTitleAt(offset);
   }, [editing]);
+
+  // Like Notion, one click on the title edits it with the caret where the
+  // user clicked (#smwaixfp item 7); the pencil still selects all.
+  const editAtPointer = (event: React.MouseEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const heading = event.currentTarget;
+    let offset = page.title.length;
+    const doc = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    };
+    const position = doc.caretPositionFromPoint?.(event.clientX, event.clientY);
+    if (position && heading.contains(position.offsetNode)) {
+      offset = position.offset;
+    } else {
+      const range = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+      if (range && heading.contains(range.startContainer)) offset = range.startOffset;
+    }
+    pendingCaret.current = offset;
+    startEditing();
+  };
 
   // Focus the title for new/empty pages only; existing pages keep focus free.
   useEffect(() => {
@@ -255,8 +285,7 @@ export function PageHeader({
           <h1
             className="page-title"
             data-testid="page-title"
-            title="Double-click to rename"
-            onDoubleClick={startEditing}
+            onMouseDown={editAtPointer}
           >
             {page.title}
           </h1>

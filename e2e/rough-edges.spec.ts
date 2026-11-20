@@ -85,3 +85,29 @@ test('search snippets read as plain text', async ({ page, vault }) => {
   await expect(snippet).not.toContainText('[[');
   await expect(snippet).not.toContainText('**');
 });
+
+test('one click on an existing title edits it at the clicked spot', async ({ page, vault, request }) => {
+  const [created] = await vault.seed([{ title: 'Weekly plan', content: 'Body' }]);
+  await page.goto('/');
+  const heading = page.getByTestId('page-title');
+  await expect(heading).toHaveText('Weekly plan');
+
+  // Click right after "Weekly" (between the "y" and the space).
+  const offsetX = await heading.evaluate((el) => {
+    const range = document.createRange();
+    range.setStart(el.firstChild!, 0);
+    range.setEnd(el.firstChild!, 6);
+    return range.getBoundingClientRect().width;
+  });
+  const box = (await heading.boundingBox())!;
+  await page.mouse.click(box.x + offsetX - 1, box.y + box.height / 2);
+
+  const input = page.getByTestId('page-title-input');
+  await expect(input).toBeFocused();
+  expect(await input.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([6, 6]);
+  await page.keyboard.type(' team');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('editor-content')).toBeFocused();
+  await expect(heading).toHaveText('Weekly team plan');
+  await expect.poll(async () => (await api.getPage(request, created!.id)).title).toBe('Weekly team plan');
+});
