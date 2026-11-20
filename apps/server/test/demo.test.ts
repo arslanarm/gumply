@@ -112,4 +112,24 @@ describe("server-side demo seeding", () => {
     expect(await reopened.seedDemoIfFirstRun()).toBeNull();
     expect(reopened.list()).toEqual([]);
   });
+
+  it("opens an existing Welcome once when upgrading a pre-marker demo vault", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    await store.create({ title: "Gumply demo" });
+    await store.create({ title: "Welcome" });
+
+    expect(await store.seedDemoIfFirstRun()).toBeNull();
+    expect(store.list().map((page) => page.title).sort()).toEqual(["Gumply demo", "Welcome"]);
+    expect(store.consumeNewVaultPage()).toBe("welcome");
+    expect(store.consumeNewVaultPage()).toBeNull();
+
+    // The marker is written, so a restart must not announce (or seed) again.
+    const reopened = new VaultStore(dir);
+    await reopened.init();
+    expect(await reopened.seedDemoIfFirstRun()).toBeNull();
+    expect(reopened.consumeNewVaultPage()).toBeNull();
+    expect(reopened.list()).toHaveLength(2);
+  });
 });
