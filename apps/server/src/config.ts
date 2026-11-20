@@ -8,6 +8,8 @@ export interface ServerConfig {
   /** Absolute path of the Markdown vault (D2). */
   vaultPath: string;
   port: number;
+  /** Seed the demo vault on an empty first run (default true). */
+  seedDemo: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -16,8 +18,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new Error(`Invalid GUMPLY_PORT: ${env.GUMPLY_PORT ?? ""}`);
   }
 
+  const demoFlag = env.GUMPLY_SEED_DEMO;
   return {
     vaultPath: resolve(REPO_ROOT, env.GUMPLY_VAULT ?? "vault"),
     port,
+    seedDemo: demoFlag === undefined ? true : demoFlag !== "0" && demoFlag !== "false",
   };
 }

@@ -63,7 +63,11 @@ function iconValue(body: JsonObject): string | null | undefined {
 export function createApiRoutes(store: VaultStore): Hono {
   const api = new Hono();
 
-  api.get("/pages", (c) => c.json<PageMeta[]>(store.list()));
+  api.get("/pages", (c) => {
+    const firstPage = store.consumeNewVaultPage();
+    if (firstPage) c.header("X-Gumply-New-Vault", firstPage);
+    return c.json<PageMeta[]>(store.list());
+  });
 
   api.post("/pages", async (c) => {
     const body = await readJson(c);

@@ -25,6 +25,18 @@ describe("GET /api/health", () => {
 });
 
 describe("pages CRUD", () => {
+  it("announces the seeded welcome page once via header", async () => {
+    const { app, store } = await createTestServer();
+    expect(await store.seedDemoIfFirstRun()).toBe("welcome");
+
+    const first = await app.request("/api/pages");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-gumply-new-vault")).toBe("welcome");
+
+    const second = await app.request("/api/pages");
+    expect(second.headers.get("x-gumply-new-vault")).toBeNull();
+  });
+
   it("creates a page, writes Markdown and reads it back", async () => {
     const { app, dir } = await createTestServer();
     const created = await createPage(app, { title: "My Page", content: "Hello **world**" });

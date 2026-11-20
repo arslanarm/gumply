@@ -16,7 +16,12 @@ export interface AppOptions {
 export function createApp(options: AppOptions): Hono {
   const app = new Hono();
 
-  app.use("/api/*", cors());
+  app.use(
+    "/api/*",
+    cors({
+      exposeHeaders: ["X-Gumply-New-Vault"],
+    }),
+  );
 
   app.get("/api/health", (c) => {
     const body: HealthResponse = {

@@ -10,12 +10,19 @@ describe("loadConfig", () => {
     const config = loadConfig({});
     expect(config.vaultPath).toBe(resolve(REPO_ROOT, "vault"));
     expect(config.port).toBe(8787);
+    expect(config.seedDemo).toBe(true);
   });
 
   it("honours GUMPLY_VAULT and GUMPLY_PORT", () => {
     const config = loadConfig({ GUMPLY_VAULT: "/tmp/notes", GUMPLY_PORT: "4444" });
     expect(config.vaultPath).toBe("/tmp/notes");
     expect(config.port).toBe(4444);
+  });
+
+  it("lets automation disable demo seeding", () => {
+    expect(loadConfig({ GUMPLY_SEED_DEMO: "0" }).seedDemo).toBe(false);
+    expect(loadConfig({ GUMPLY_SEED_DEMO: "false" }).seedDemo).toBe(false);
+    expect(loadConfig({ GUMPLY_SEED_DEMO: "1" }).seedDemo).toBe(true);
   });
 
   it("rejects invalid ports", () => {

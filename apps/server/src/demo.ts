@@ -1,16 +1,11 @@
 /**
- * Demo vault seeded once on a truly empty first run (D10, spec/ux §2).
- * Contents are fixed so tests can rely on the copy.
+ * Demo vault seeded by the server once on a truly empty first run
+ * (D10, spec/ux §2). Contents are fixed so tests can rely on the copy.
  */
 import { childPageId } from "@gumply/core";
 
 export const WELCOME_TITLE = "Welcome";
 export const DEMO_FOLDER_TITLE = "Gumply demo";
-export const DEMO_SEEDED_KEY = "gumply:demo-seeded";
-/** Tests/manual runs can set this to "1" to start on an empty vault. */
-export const DEMO_DISABLED_KEY = "gumply:demo-disabled";
-/** Automation skips seeding (so e2e keeps a predictable empty vault) unless forced. */
-export const DEMO_FORCE_KEY = "gumply:demo-force";
 
 export interface DemoPage {
   title: string;
