@@ -45,6 +45,9 @@ import { EDGE_TYPES } from "./BoardEdge.js";
 import { ConnectorToolbar } from "./ConnectorToolbar.js";
 import { BOARD_DRAG_MIME } from "./constants.js";
 import { BoardActionsContext, BoardRenderersContext, type BoardActions, type BoardRenderers } from "./context.js";
+import { BoardContentContext, type BoardContent } from "./content/context.js";
+import { boardContentRenderers } from "./content/renderers.js";
+import { resolveBoardLink } from "./content/links.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
 import {
   amend,
@@ -102,6 +105,8 @@ export interface BoardPageOption {
   path: string;
   title: string;
   icon?: string;
+  /** Last change (PageMeta.updated): live page cards refresh when it moves (W2b). */
+  updated?: string;
 }
 
 export interface BoardEditorControls {
@@ -127,11 +132,14 @@ export interface BoardEditorProps {
   onOpenUrl?: (url: string) => void;
   /** Upload a dropped/pasted/picked file into the vault; resolves to its vault path. */
   uploadFile?: (file: File) => Promise<string>;
+  /** Card/text renderers; defaults to W2b's rich content (Markdown, live page cards). */
   renderers?: BoardRenderers;
+  /** Markdown body of a page, for live page cards (W2b). */
+  loadPage?: (path: string) => Promise<string | null>;
   onReady?: (controls: BoardEditorControls) => void;
 }
 
-const NO_RENDERERS: BoardRenderers = {};
+const NO_OPEN = () => {};
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
 const CLICK_SLOP = 5;
@@ -326,7 +334,13 @@ interface CreateDraft {
 }
 
 function BoardCanvas(props: BoardEditorProps) {
-  const { boardId, onChange, pages = [], onOpenFile, onOpenUrl, uploadFile, renderers, onReady } = props;
+  const { boardId, onChange, pages = [], onOpenFile, onOpenUrl, uploadFile, renderers, loadPage, onReady } = props;
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const content = useMemo<BoardContent>(
+    () => ({ pages, openFile: onOpenFile ?? NO_OPEN, loadPage }),
+    [pages, onOpenFile, loadPage],
+  );
   const flow = useReactFlow<BoardFlowNode, BoardFlowEdge>();
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -997,6 +1011,18 @@ function BoardCanvas(props: BoardEditorProps) {
         return;
       }
       const trimmed = text.trim();
+      // W2b: a pasted `[[Page]]` (or `[[Map.canvas|Map]]`) becomes a page/board card.
+      const wiki = /^\[\[([^[\]|#]+)(?:#[^[\]|]*)?(?:\|[^[\]]*)?\]\]$/.exec(trimmed);
+      const linked = wiki ? resolveBoardLink(wiki[1] ?? "", pagesRef.current) : null;
+      if (linked) {
+        addAndSelect(
+          createFileNode(
+            { x: at.x - PAGE_CARD_SIZE.width / 2, y: at.y - PAGE_CARD_SIZE.height / 2, ...PAGE_CARD_SIZE },
+            linked.path,
+          ),
+        );
+        return;
+      }
       if (URL_PATTERN.test(trimmed)) {
         addAndSelect(createLinkNode({ x: at.x - 200, y: at.y - 150, width: 400, height: 300 }, trimmed));
       } else {
@@ -1121,7 +1147,8 @@ function BoardCanvas(props: BoardEditorProps) {
 
   return (
     <BoardActionsContext.Provider value={actions}>
-      <BoardRenderersContext.Provider value={renderers ?? NO_RENDERERS}>
+      <BoardContentContext.Provider value={content}>
+      <BoardRenderersContext.Provider value={renderers ?? boardContentRenderers}>
         <div
           ref={rootRef}
           className={`board-root board-tool-${tool}${dragging ? " is-dragging" : ""}`}
@@ -1354,6 +1381,7 @@ function BoardCanvas(props: BoardEditorProps) {
           ) : null}
         </div>
       </BoardRenderersContext.Provider>
+      </BoardContentContext.Provider>
     </BoardActionsContext.Provider>
   );
 }

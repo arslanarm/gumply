@@ -82,14 +82,16 @@ test.describe('board engine (W1)', () => {
 
     await addSticky(page, 600, 400, 'Hello [[Roadmap]]');
     await expect(page.getByTestId('board-empty')).toHaveCount(0);
-    await expect(page.getByTestId('board-sticky')).toContainText('Hello [[Roadmap]]');
+    // W2b renders sticky text as Markdown: `[[Roadmap]]` shows as a link.
+    await expect(page.getByTestId('board-sticky')).toContainText('Hello Roadmap');
+    await expect(page.getByTestId('board-sticky').locator('wiki-link')).toHaveText('Roadmap');
 
     const saved = await board(page);
     expect(saved.nodes).toHaveLength(1);
     expect(saved.nodes[0]).toMatchObject({ type: 'text', text: 'Hello [[Roadmap]]', color: '3', gumply: { kind: 'sticky' } });
 
     await openLab(page, { reset: false });
-    await expect(page.getByTestId('board-sticky')).toContainText('Hello [[Roadmap]]');
+    await expect(page.getByTestId('board-sticky').locator('wiki-link')).toHaveText('Roadmap');
   });
 
   test('tools create stickies, text, shapes and frames in Obsidian-compatible JSON', async ({ page }) => {

@@ -11,6 +11,8 @@ import { useBoardActions, useBoardRenderers, type BoardCardRenderProps } from ".
 import type { BoardFlowNode } from "./flow.js";
 import { BoardIcon } from "./icons.js";
 import { inkExtent, inkPath } from "./ink.js";
+import { useBoardContent } from "./content/context.js";
+import { useLinkAutocomplete } from "./content/LinkAutocomplete.js";
 
 type BoardNodeProps = NodeProps<BoardFlowNode>;
 
@@ -89,6 +91,8 @@ function TextEditor({ node, className, placeholder, onHeight }: {
   const ref = useRef<HTMLTextAreaElement>(null);
   const done = useRef(false);
   const initial = typeof node.text === "string" ? node.text : "";
+  // W2b: `[[` opens page/board suggestions under the caret.
+  const links = useLinkAutocomplete(ref, useBoardContent().pages);
 
   useLayoutEffect(() => {
     const area = ref.current;
@@ -106,6 +110,7 @@ function TextEditor({ node, className, placeholder, onHeight }: {
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     event.stopPropagation();
+    if (links.onKeyDown(event)) return;
     if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) {
       event.preventDefault();
       finish();
@@ -113,6 +118,7 @@ function TextEditor({ node, className, placeholder, onHeight }: {
   };
 
   return (
+    <>
     <textarea
       ref={ref}
       className={`${className} nodrag nowheel nopan`}
@@ -122,8 +128,15 @@ function TextEditor({ node, className, placeholder, onHeight }: {
       data-testid="board-text-editor"
       onBlur={finish}
       onKeyDown={onKeyDown}
+      onInput={links.update}
+      onKeyUp={(event) => {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") links.update();
+      }}
+      onClick={links.update}
       onPointerDown={(event) => event.stopPropagation()}
     />
+    {links.popup}
+    </>
   );
 }
 
