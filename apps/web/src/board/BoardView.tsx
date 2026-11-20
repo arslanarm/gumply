@@ -63,6 +63,8 @@ export function BoardView(props: BoardViewProps) {
   const [loaded, setLoaded] = useState<{ meta: PageMeta; board: CanvasBoard } | null>(props.initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
   const [repairNotice, setRepairNotice] = useState<string | null>(null);
+  // #f6v8z4ti: a dropped/pasted file that couldn't be added.
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const latest = useRef(props);
   latest.current = props;
   const idRef = useRef(boardId);
@@ -177,6 +179,14 @@ export function BoardView(props: BoardViewProps) {
 
   return (
     <div className="board-view">
+      {uploadNotice ? (
+        <div className="board-notice" role="status" data-testid="board-upload-notice">
+          <span>{uploadNotice}</span>
+          <button type="button" className="board-notice-close" aria-label="Dismiss" onClick={() => setUploadNotice(null)}>
+            ×
+          </button>
+        </div>
+      ) : null}
       {repairNotice ? (
         <div className="board-notice" role="status" data-testid="board-repair-notice">
           <span>
@@ -195,6 +205,7 @@ export function BoardView(props: BoardViewProps) {
         pages={pages}
         onOpenFile={onOpenFile}
         uploadFile={async (file) => (await api.uploadAttachment(file)).path}
+        onUploadError={setUploadNotice}
         renderers={renderers}
         loadPage={loadPagePreview}
         onReady={onEditorReady}

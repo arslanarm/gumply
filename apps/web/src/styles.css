@@ -787,12 +787,17 @@ input {
   min-width: 0;
   font-size: 2.5rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  /* Same box as the title heading, so starting/finishing a rename never
+     shifts the page (a first click on a new board missed its target, #f6v8z4ti).
+     The underline is drawn inside the box instead of adding a border. */
+  line-height: 1.15;
+  height: 1.15em;
+  letter-spacing: -0.02em;
   border: 0;
-  border-bottom: 1px solid var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
   background: transparent;
   outline: none;
-  padding: 0 0 0.1rem;
+  padding: 0;
 }
 
 .page-header-actions {
