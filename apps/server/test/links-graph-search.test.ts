@@ -282,6 +282,25 @@ describe("search", () => {
     expect(results[0]?.snippet).toContain("needle");
   });
 
+  it("finds phrases across formatting and links, with plain snippets (#6zifz7da)", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "Getting started", content: "Start here." });
+    await createPage(app, {
+      title: "Formatted",
+      content: "Plain **bold** text. See [[Getting started]] end. Ask [[Ideas Q3|the ideas page]] or [the docs](https://example.com/x_y).",
+    });
+
+    for (const phrase of ["bold text", "Plain bold", "See Getting started end", "Ask the ideas page", "or the docs"]) {
+      const results = await getJson<SearchResult[]>(app, `/api/search?q=${encodeURIComponent(phrase)}`);
+      expect(results.map((result) => result.page.id), phrase).toEqual(["Formatted"]);
+    }
+    const [hit] = await getJson<SearchResult[]>(app, "/api/search?q=bold%20text");
+    expect(hit!.snippet).toContain("Plain bold text");
+    expect(hit!.snippet).not.toMatch(/\*\*|\[\[|\]\(/);
+    // Markup itself is not content: "**" or a URL isn't a body match.
+    expect(await getJson<SearchResult[]>(app, "/api/search?q=example.com")).toEqual([]);
+  });
+
   it("is case-insensitive and empty for a blank query", async () => {
     const { app } = await createTestServer();
     await createPage(app, { title: "Alpha", content: "BETA" });

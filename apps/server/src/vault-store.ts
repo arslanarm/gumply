@@ -9,6 +9,7 @@ import {
   extractWikilinks,
   isValidPageId,
   makeSnippet,
+  plainText,
   normalizeTags,
   parentOf,
   parseFrontmatter,
@@ -775,13 +776,16 @@ export class VaultStore {
       else if (title.startsWith(needle)) titleScore = 80;
       else if (title.includes(needle)) titleScore = 60;
 
-      const occurrences = countOccurrences(record.content.toLowerCase(), needle);
+      // #6zifz7da: match what the page reads as, not its Markdown, so a
+      // phrase across formatting or a link is found; snippets are plain too.
+      const text = this.searchText(record);
+      const occurrences = countOccurrences(text.toLowerCase(), needle);
       if (titleScore === 0 && occurrences === 0) continue;
 
       const bodyBoost = Math.min(occurrences, 10);
       results.push({
         page: metaOf(record, this.directChildCount(record.id)),
-        snippet: makeSnippet(record.content, trimmed, 80),
+        snippet: makeSnippet(text, trimmed, 80),
         score: titleScore > 0 ? titleScore + bodyBoost : bodyBoost + 1,
       });
     }
@@ -789,6 +793,21 @@ export class VaultStore {
     return results.sort(
       (a, b) => b.score - a.score || a.page.title.localeCompare(b.page.title),
     );
+  }
+
+  /** Plain text of a page for search, cached until its content changes. */
+  private readonly searchTexts = new Map<PageId, { content: string; text: string }>();
+  private searchText(record: PageRecord): string {
+    const cached = this.searchTexts.get(record.id);
+    if (cached && cached.content === record.content) return cached.text;
+    // Boards: `content` is already plain board text (canvasText) apart from
+    // the Markdown inside stickies, which plainText handles the same way.
+    const text = plainText(record.content);
+    this.searchTexts.set(record.id, { content: record.content, text });
+    if (this.searchTexts.size > this.pages.size * 2 + 100) {
+      for (const id of this.searchTexts.keys()) if (!this.pages.has(id)) this.searchTexts.delete(id);
+    }
+    return text;
   }
 
   private resolveId(id: PageId): PageId {
