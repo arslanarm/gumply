@@ -4,8 +4,9 @@
  * during editor lifecycle work.
  */
 import { resolveWikilink } from "@gumply/core";
-import { Node, mergeAttributes } from "@tiptap/core";
+import { InputRule, Node, mergeAttributes } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { parseWikiLinkText } from "../../lib/wikilinks.js";
 import {
   getWikiLinkEnvironment,
   subscribeWikiLinkEnvironment,
@@ -49,6 +50,41 @@ export const WikiLink = Node.create({
 
   parseHTML() {
     return [{ tag: "wiki-link" }];
+  },
+
+  addInputRules() {
+    return [
+      new InputRule({
+        // Completing a typed link with `]]` renders it immediately instead of
+        // leaving raw text (and the `[[` suggestion decoration) until reload
+        // (walkthrough #2, #c62p7zfp). Input rules already skip code blocks
+        // and code marks, so `[[X]]` in code stays literal.
+        find: /\[\[([^[\]]+)\]\]$/,
+        handler: ({ state, range, match }) => {
+          const parsed = parseWikiLinkText(match[0] ?? "");
+          if (!parsed) return null;
+          const type = state.schema.nodes.wikiLink;
+          if (!type) return null;
+
+          // While a code span is being typed (`` `[[X]]` ``) the code mark does
+          // not exist yet; an unmatched backtick to the left means the link is
+          // code, not a link. Code blocks/marks are already skipped upstream.
+          const $from = state.doc.resolve(range.from);
+          const before = $from.parent.textBetween(0, $from.parentOffset);
+          if ((before.match(/`/g)?.length ?? 0) % 2 === 1) return null;
+
+          state.tr.replaceWith(
+            range.from,
+            range.to,
+            type.create({
+              targetTitle: parsed.title,
+              alias: parsed.alias,
+              heading: parsed.heading,
+            }),
+          );
+        },
+      }),
+    ];
   },
 
   renderHTML({ node, HTMLAttributes }) {

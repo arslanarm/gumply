@@ -29,7 +29,22 @@ export const ShortcutHistory = Extension.create({
       // With no typing since the shortcut, undo the transform itself: the
       // literal characters (including the trigger space) come back, which is
       // what "undo restores the literal characters" means in `spec/ux` §7.
-      "Mod-z": () => this.editor.commands.undoInputRule() || this.editor.commands.undo(),
+      // Always consume the key: after a manual `undoInputRule` the history
+      // redo branch is empty, and letting the browser do a native undo on the
+      // contenteditable desyncs it from ProseMirror.
+      "Mod-z": () => {
+        if (this.editor.commands.undoInputRule()) return true;
+        this.editor.commands.undo();
+        return true;
+      },
+      "Shift-Mod-z": () => {
+        this.editor.commands.redo();
+        return true;
+      },
+      "Mod-y": () => {
+        this.editor.commands.redo();
+        return true;
+      },
     };
   },
 
