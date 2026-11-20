@@ -1,6 +1,7 @@
 import type { GraphData, PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiRequestError } from "../api/client.js";
+import { Icon } from "../components/Icon.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import {
   ariaSummary,
@@ -105,24 +106,28 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
           </p>
         </div>
         <div className="graph-toolbar">
-          <input
-            className="graph-filter"
-            data-testid="graph-filter"
-            type="search"
-            placeholder="Filter pages…"
-            aria-label="Filter pages by title"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <button
-            type="button"
-            className={`button-secondary graph-legend-toggle${legendOpen ? " is-active" : ""}`}
-            aria-expanded={legendOpen}
-            aria-controls="graph-legend"
-            onClick={() => setLegendOpen((value) => !value)}
-          >
-            Legend
-          </button>
+          {hasPages ? (
+            <>
+              <input
+                className="graph-filter"
+                data-testid="graph-filter"
+                type="search"
+                placeholder="Filter pages…"
+                aria-label="Filter pages by title"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <button
+                type="button"
+                className={`button-secondary graph-legend-toggle${legendOpen ? " is-active" : ""}`}
+                aria-expanded={legendOpen}
+                aria-controls="graph-legend"
+                onClick={() => setLegendOpen((value) => !value)}
+              >
+                Legend
+              </button>
+            </>
+          ) : null}
         </div>
       </header>
 
@@ -158,20 +163,26 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
 
       <div className="graph-body">
         {status === "loading" ? (
-          <div className="graph-state" data-testid="graph-loading">
+          <div className="graph-state graph-state-loading" data-testid="graph-loading">
             <p>Loading graph…</p>
           </div>
         ) : status === "error" ? (
-          <div className="graph-state" data-testid="graph-error">
-            <h3>Could not load the graph.</h3>
+          <div className="empty-state" data-testid="graph-error">
+            <span className="empty-state-icon" aria-hidden="true">
+              <Icon name="monitor" size={26} />
+            </span>
+            <h2>Could not load the graph.</h2>
             <p>{error ?? "Something went wrong."}</p>
             <button type="button" className="button-primary" onClick={() => void load()}>
               Retry
             </button>
           </div>
         ) : !hasPages ? (
-          <div className="graph-state" data-testid="graph-empty">
-            <h3>Your graph is empty.</h3>
+          <div className="empty-state" data-testid="graph-empty">
+            <span className="empty-state-icon" aria-hidden="true">
+              <Icon name="graph" size={26} />
+            </span>
+            <h2>Your graph is empty.</h2>
             <p>
               Create a page and link it with <code>[[</code>.
             </p>
@@ -180,8 +191,11 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             </button>
           </div>
         ) : !hasVisible ? (
-          <div className="graph-state" data-testid="graph-filter-empty">
-            <h3>No pages match this filter.</h3>
+          <div className="empty-state" data-testid="graph-filter-empty">
+            <span className="empty-state-icon" aria-hidden="true">
+              <Icon name="search" size={26} />
+            </span>
+            <h2>No pages match this filter.</h2>
             <button type="button" className="button-secondary" onClick={clearFilters}>
               Clear filter
             </button>
