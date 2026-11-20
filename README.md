@@ -87,8 +87,9 @@ Before moving a task to review, run `npm run typecheck`: it type-checks every wo
 (core, server, web) and exits non-zero on the first error. `npm test` runs the Vitest suite;
 `npm run test:e2e` runs the Playwright flows against a throwaway vault.
 
-Use the Node version in `.nvmrc` (24 LTS). On Node 20/22 the vault watcher misses outside edits to
-files Gumply has saved (#3ugdxhzu).
+Use the Node version in `.nvmrc` (24 LTS); Node 22 is also tested in CI. (Node 20/22's recursive
+`fs.watch` loses files that are replaced atomically, so the vault watcher uses one watcher per folder;
+see #3ugdxhzu.)
 
 **CI** (`.github/workflows/ci.yml`, GitHub Actions) runs on every push to `main` and `ci/**`, on
 every `v*` tag, and by hand. Pushing a branch as `ci/<task-id>` is how unmerged work gets a real
