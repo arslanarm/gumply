@@ -166,11 +166,14 @@ export function filterGraph(model: GraphModel, filter: GraphFilter = {}): Filter
   };
 }
 
-/** Node radius in px: 6 for isolated pages, up to 24 for the busiest node. */
+/**
+ * Node radius in CSS px (constant on screen at every zoom, Q1b): 4 for
+ * isolated pages, up to 9 for the busiest node. Obsidian-sized, not blobs.
+ */
 export function nodeRadius(count: number, maxCount: number): number {
-  if (count <= 0) return 6;
+  if (count <= 0) return 4;
   const max = Math.max(1, maxCount);
-  return 6 + 18 * Math.min(1, Math.sqrt(count) / Math.sqrt(max));
+  return 4 + 5 * Math.min(1, Math.sqrt(count) / Math.sqrt(max));
 }
 
 /** Largest reference count across pages and ghosts (for `nodeRadius`). */

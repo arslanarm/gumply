@@ -1,7 +1,7 @@
 import type { GraphData, PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiRequestError } from "../api/client.js";
-import { GraphCanvas } from "./GraphCanvas.js";
+import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import { ariaSummary, buildGraphModel } from "./graph-model.js";
 import { usePrefersReducedMotion } from "./use-reduced-motion.js";
 
@@ -65,6 +65,11 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
   }, [load]);
 
   const model = useMemo(() => (data ? buildGraphModel(data) : null), [data]);
+  const canvasNodes = useMemo<CanvasNode[]>(
+    () => (model ? [...model.nodes, ...model.ghosts] : []),
+    [model],
+  );
+  const canvasLinks = useMemo(() => model?.links ?? [], [model]);
   const empty =
     status === "ready" &&
     data !== null &&
@@ -128,8 +133,8 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
           </div>
         ) : (
           <GraphCanvas
-            nodes={[...model.nodes, ...model.ghosts]}
-            links={model.links}
+            nodes={canvasNodes}
+            links={canvasLinks}
             highlightId={pageId}
             testId="local-graph-canvas"
             ariaLabel={ariaSummary(model)}

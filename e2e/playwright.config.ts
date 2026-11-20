@@ -41,11 +41,13 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    // Q1b cross-browser graph check: Firefox runs only the canvas-pixel spec,
+    // Q1b cross-browser graph check: Firefox runs only the canvas-pixel specs,
     // not the whole suite (keeps runtime and unrelated browser quirks out).
+    // `graph-visual` (dev-graph: fit geometry, resize, filter, DPR) supersedes
+    // the earlier `graph-pixels` smoke check, which is kept as a cheap guard.
     {
       name: 'firefox',
-      testMatch: /graph-pixels\.spec\.ts$/,
+      testMatch: /graph-(visual|pixels)\.spec\.ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
   ],
