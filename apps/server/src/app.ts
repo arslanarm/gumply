@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { VaultError } from "./errors.js";
 import { createApiRoutes } from "./routes.js";
 import { localOnly, type SecurityOptions } from "./security.js";
+import { serveWebApp } from "./static.js";
 import type { VaultStore } from "./vault-store.js";
 
 export interface AppOptions {
@@ -10,6 +11,8 @@ export interface AppOptions {
   store: VaultStore;
   /** Local-only guard (#rv57cvhm); defaults to loopback + web port 5173. */
   security?: SecurityOptions;
+  /** Serve the built web app from this folder at `/` (desktop shell, D26). */
+  webRoot?: string;
 }
 
 /**
@@ -33,6 +36,8 @@ export function createApp(options: AppOptions): Hono {
   });
 
   app.route("/api", createApiRoutes(options.store));
+
+  if (options.webRoot) app.use("*", serveWebApp(options.webRoot));
 
   app.notFound((c) => c.json<ApiError>({ error: "Not found" }, 404));
 

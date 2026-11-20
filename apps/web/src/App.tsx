@@ -651,6 +651,19 @@ export function App() {
     [loadPages, navigate],
   );
 
+  // D26: the desktop app's native menu (New page, New whiteboard, Search)
+  // sends the same commands as the in-app buttons and shortcuts.
+  useEffect(() => {
+    const onCommand = (event: Event) => {
+      const command = (event as CustomEvent<unknown>).detail;
+      if (command === "new-page") void handleCreate(null);
+      else if (command === "new-whiteboard") void handleCreateBoard(null);
+      else if (command === "search") openSearch();
+    };
+    window.addEventListener("gumply:command", onCommand);
+    return () => window.removeEventListener("gumply:command", onCommand);
+  }, [handleCreate, handleCreateBoard, openSearch]);
+
   /** `/whiteboard`: a board inside the open page; the editor links to it. */
   const createBoardForLink = useCallback(async (): Promise<PageMeta | null> => {
     const parentId = selectedRef.current;
