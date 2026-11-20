@@ -43,7 +43,7 @@ so nothing needs configuring.
 File names follow page titles, like Obsidian: "Q1 plan" is `Q1 plan.md`, and renaming the page
 renames the file (and its sub-page folder). Notes you wrote without frontmatter stay without it.
 
-## Desktop app (Linux)
+## Desktop app (Linux, Windows, macOS)
 
 Gumply also runs as a desktop app (Electron, D26). It contains the same local server and web app,
 so your notes are still plain Markdown files in a folder you choose.
@@ -52,7 +52,17 @@ so your notes are still plain Markdown files in a folder you choose.
   the window. (Rebuilds on every start; for UI work, `npm run dev` in a browser is faster.)
 - **Build installers:** `npm run desktop:build:linux` writes `apps/desktop/release/Gumply-<version>-x86_64.AppImage`
   and `Gumply-<version>-amd64.deb`. Run the AppImage directly (`chmod +x` it first), or install the
-  .deb with `sudo apt install ./Gumply-<version>-amd64.deb`. Windows and macOS builds come later.
+  .deb with `sudo apt install ./Gumply-<version>-amd64.deb`.
+- **Windows and macOS:** built on GitHub Actions (`.github/workflows/desktop.yml`). A `v*` tag builds
+  all three platforms (Windows installer `.exe`; macOS `.dmg`/`.zip` for Apple silicon and Intel)
+  and attaches them, with `SHA256SUMS.txt`, to a **draft** GitHub Release that is published after
+  the release check. `ci/**` branches build the same installers as workflow artifacts. The builds
+  are **not signed yet**: Windows SmartScreen asks you to confirm ("More info → Run anyway"), and on
+  macOS open the app with right-click → Open the first time (or run
+  `xattr -dr com.apple.quarantine /Applications/Gumply.app`).
+- **Hardened builds:** the shipped app can't be started as plain Node, ignores `NODE_OPTIONS` and
+  debugging flags, and only loads its own integrity-checked app archive (Electron fuses). CI checks
+  this in every installer with `npm run check:fuses -w @gumply/desktop`.
 - **Vaults:** on first start Gumply asks you to open a folder (any Obsidian vault works) or create
   a new vault; a new or empty folder gets the demo notes. **File → Open Vault… / Create New Vault… /
   Open Recent / Reveal Vault in File Manager** switch and find vaults. The list of vaults and the

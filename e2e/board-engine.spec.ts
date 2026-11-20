@@ -307,6 +307,45 @@ test.describe('board engine (W1)', () => {
     expect(short.y + short.height).toBeLessThanOrEqual(line.y + 1);
   });
 
+  test('zoomed far out (15%), dots and resize handles stay >= 10 px and still work (#zk6etvae)', async ({ page }) => {
+    const seed = {
+      nodes: [
+        { id: 'zzzz000000000001', type: 'text', text: 'A', gumply: { kind: 'sticky' }, x: 0, y: 0, width: 400, height: 400, color: '3' },
+        { id: 'zzzz000000000002', type: 'text', text: 'B', gumply: { kind: 'sticky' }, x: 1400, y: 0, width: 400, height: 400, color: '3' },
+      ],
+      edges: [],
+    };
+    await page.addInitScript((value) => {
+      window.localStorage.setItem('gumply:board-lab:far', value);
+      // The remembered view: 15% zoom, board near the top-left.
+      window.localStorage.setItem('gumply:board-view:lab:far', JSON.stringify({ x: 400, y: 250, zoom: 0.15 }));
+    }, JSON.stringify(seed));
+    await page.goto('/board-lab.html?id=far&theme=light');
+    await expect(page.getByTestId('board-zoom-value')).toHaveText('15%');
+
+    const a = page.getByTestId('board-sticky').first();
+    await a.hover();
+    const dot = await a.locator('xpath=..').getByTestId('board-handle-right').boundingBox();
+    if (!dot) throw new Error('no dot');
+    expect(dot.width).toBeGreaterThanOrEqual(10);
+    expect(dot.height).toBeGreaterThanOrEqual(10);
+
+    // A connector from the dot to B.
+    const b = await centre(page, 'board-sticky', 1);
+    await drag(page, { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }, b);
+    expect((await board(page)).edges).toHaveLength(1);
+
+    // Select A: its resize handle is >= 10 px and resizes.
+    await a.click();
+    const handle = page.locator('.react-flow__resize-control.handle.bottom.right');
+    const box = await handle.boundingBox();
+    if (!box) throw new Error('no resize handle');
+    expect(box.width).toBeGreaterThanOrEqual(10);
+    const before = (await board(page)).nodes[0]?.width ?? 0;
+    await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { x: box.x + box.width / 2 + 30, y: box.y + box.height / 2 + 30 });
+    expect(((await board(page)).nodes[0]?.width ?? 0) - before).toBeGreaterThan(100);
+  });
+
   test('frames carry what is inside them; arrow keys nudge', async ({ page }) => {
     await openLab(page);
     await page.keyboard.press('f');
