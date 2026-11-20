@@ -56,4 +56,58 @@ test.describe('editor visual quality', () => {
       hostBorderTopWidth: '0px',
     });
   });
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`checked to-dos are struck through and muted on the text node (${theme})`, async ({
+      page,
+      vault,
+    }) => {
+      // #amh3bgc5: the wrapper decorated the text visually, but its <p> computed
+      // `none`; assert the text node itself, as the UX audit did.
+      await vault.seed([
+        { title: 'To-do styles', content: '- [x] Done task\n- [ ] Open task' },
+      ]);
+      await page.addInitScript(
+        ({ key, value }) => window.localStorage.setItem(key, value),
+        { key: 'gumply:theme', value: theme },
+      );
+      await page.goto('/');
+      const body = page.getByTestId('editor-content');
+      await expect(body).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+      const tokens = await page.evaluate(() => {
+        const styles = getComputedStyle(document.documentElement);
+        const resolve = (name: string) => {
+          const probe = document.createElement('span');
+          probe.style.color = styles.getPropertyValue(name).trim();
+          document.body.appendChild(probe);
+          const color = getComputedStyle(probe).color;
+          probe.remove();
+          return color;
+        };
+        return { muted: resolve('--muted'), text: resolve('--text') };
+      });
+
+      const checked = body.locator('li[data-checked="true"] p').first();
+      const unchecked = body.locator('li[data-checked="false"] p').first();
+      await expect(checked).toHaveText('Done task');
+      await expect(unchecked).toHaveText('Open task');
+
+      const styleOf = (locator: typeof checked) =>
+        locator.evaluate((element) => {
+          const styles = getComputedStyle(element);
+          return { decoration: styles.textDecorationLine, color: styles.color };
+        });
+
+      expect(await styleOf(checked)).toEqual({
+        decoration: 'line-through',
+        color: tokens.muted,
+      });
+      expect(await styleOf(unchecked)).toEqual({
+        decoration: 'none',
+        color: tokens.text,
+      });
+    });
+  }
 });
