@@ -1,0 +1,72 @@
+import type { Backlink, PageId } from "@gumply/core";
+import { useState } from "react";
+import { splitSnippet, visibleBacklinks } from "../lib/backlinks.js";
+
+export interface BacklinksPanelProps {
+  items: readonly Backlink[];
+  loading: boolean;
+  onOpen: (id: PageId) => void;
+}
+
+/** “Linked from” panel shown under the editor. */
+export function BacklinksPanel({ items, loading, onOpen }: BacklinksPanelProps) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = visibleBacklinks(items, expanded);
+
+  return (
+    <section className="backlinks" data-testid="backlinks-panel" aria-labelledby="backlinks-title">
+      <h2 className="backlinks-title" id="backlinks-title">
+        Linked from
+        {items.length > 0 ? <span className="backlinks-count">{items.length}</span> : null}
+      </h2>
+
+      {loading && items.length === 0 ? (
+        <p className="backlinks-empty">Loading links…</p>
+      ) : items.length === 0 ? (
+        <p className="backlinks-empty">
+          No pages link here yet. Type <code>[[</code> on any page to link to this one.
+        </p>
+      ) : (
+        <>
+          <ul className="backlinks-list">
+            {visible.map(({ page, snippet }) => (
+              <li key={page.id}>
+                <button
+                  type="button"
+                  className="backlink"
+                  data-testid={`backlink-${page.id}`}
+                  onClick={() => onOpen(page.id)}
+                >
+                  <span className="backlink-title">
+                    {page.icon ? `${page.icon} ` : ""}
+                    {page.title}
+                  </span>
+                  <span className="backlink-snippet">
+                    {splitSnippet(snippet).map((part, index) =>
+                      part.highlight ? (
+                        <mark key={index}>{part.text}</mark>
+                      ) : (
+                        <span key={index}>{part.text}</span>
+                      ),
+                    )}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {items.length > 5 ? (
+            <button
+              type="button"
+              className="backlinks-toggle"
+              data-testid="backlinks-toggle"
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? "Show fewer" : `Show all ${items.length}`}
+            </button>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}

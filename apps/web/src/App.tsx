@@ -1,6 +1,7 @@
-import type { Page, PageId, PageMeta } from "@gumply/core";
+import { resolveWikilink, type Backlink, type Page, type PageId, type PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api/client.js";
+import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
@@ -10,6 +11,13 @@ import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 import { GraphView } from "./graph/GraphView.js";
 import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
+import {
+  buildDemoPages,
+  DEMO_DISABLED_KEY,
+  DEMO_FORCE_KEY,
+  DEMO_SEEDED_KEY,
+  WELCOME_TITLE,
+} from "./lib/demo.js";
 import { focusAfterDelete } from "./lib/delete.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { openPageNeedsReload } from "./lib/rename.js";
@@ -30,6 +38,33 @@ interface ToastState {
   undo?: () => Promise<void>;
 }
 
+interface PendingHeading {
+  pageId: PageId;
+  heading: string;
+}
+
+function readFlag(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string): void {
+  try {
+    window.localStorage.setItem(key, "1");
+  } catch {
+    // Private mode / storage disabled: seeding still works for this session.
+  }
+}
+
+function demoSeedingEnabled(): boolean {
+  if (readFlag(DEMO_DISABLED_KEY)) return false;
+  if (readFlag(DEMO_FORCE_KEY)) return true;
+  // E2E/automation expects a predictable empty vault; QA forces seeding to test it.
+  return typeof navigator === "undefined" || !navigator.webdriver;
+}
 export function App() {
   const [pages, setPages] = useState<PageMeta[]>([]);
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
@@ -62,12 +97,18 @@ export function App() {
   // D14 §5: after a delete, focus stays on the next sibling; don't let an empty
   // next page's title steal it (walkthrough #4aepmkk4).
   const [autoFocusTitle, setAutoFocusTitle] = useState(true);
+  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  const [backlinksLoading, setBacklinksLoading] = useState(false);
+  const [pendingHeading, setPendingHeading] = useState<PendingHeading | null>(null);
 
   const selectedRef = useRef<PageId | null>(selectedId);
   selectedRef.current = selectedId;
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
   const reloadEditorAfterFetch = useRef(false);
+  const focusBodyAfterOpen = useRef(false);
+  const backlinksRequest = useRef(0);
+  const demoSeedStarted = useRef(false);
 
   const moveFocus = useCallback((id: PageId | null) => {
     focusNonce.current += 1;
@@ -87,6 +128,34 @@ export function App() {
       return null;
     }
   }, []);
+
+  const loadBacklinks = useCallback(async (id: PageId) => {
+    const token = backlinksRequest.current + 1;
+    backlinksRequest.current = token;
+    setBacklinksLoading(true);
+    try {
+      const items = await api.backlinks(id);
+      if (backlinksRequest.current === token) setBacklinks(items);
+    } catch {
+      if (backlinksRequest.current === token) setBacklinks([]);
+    } finally {
+      if (backlinksRequest.current === token) setBacklinksLoading(false);
+    }
+  }, []);
+
+  /** Create the demo vault once, on a truly empty first run (D10). */
+  const seedDemo = useCallback(async (): Promise<PageMeta[] | null> => {
+    for (const demo of buildDemoPages()) {
+      await api.createPage({
+        title: demo.title,
+        parentId: demo.parentId,
+        content: demo.content,
+        icon: demo.icon,
+      });
+    }
+    writeFlag(DEMO_SEEDED_KEY);
+    return loadPages();
+  }, [loadPages]);
 
   const navigate = useCallback((id: PageId | null, replace = false) => {
     const hash = id ? pageHash(id) : "#/";
@@ -111,17 +180,39 @@ export function App() {
     setPageReload((value) => value + 1);
   }, []);
 
-  // Initial load: open the first root page when no page is in the URL.
+  // Initial load: seed the demo on a first empty run, else open the first root.
   useEffect(() => {
     void (async () => {
       const list = await loadPages();
-      if (!list || list.length === 0) return;
+      if (!list) return;
+
+      if (
+        list.length === 0 &&
+        !demoSeedStarted.current &&
+        !readFlag(DEMO_SEEDED_KEY) &&
+        demoSeedingEnabled()
+      ) {
+        demoSeedStarted.current = true;
+        try {
+          const seeded = await seedDemo();
+          const welcome = seeded?.find((item) => item.title === WELCOME_TITLE);
+          if (welcome) {
+            focusBodyAfterOpen.current = true;
+            navigate(welcome.id, true);
+          }
+          return;
+        } catch (error) {
+          setActionError(errorMessage(error));
+        }
+      }
+
+      if (list.length === 0) return;
       if (selectedRef.current === null && !isGraphHash(window.location.hash)) {
         const first = buildPageTree(list)[0]?.page.id ?? null;
         if (first) navigate(first, true);
       }
     })();
-  }, [loadPages, navigate]);
+  }, [loadPages, navigate, seedDemo]);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -196,10 +287,22 @@ export function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [saveState]);
 
+  // backlinks follow the open page and refresh after a successful save.
+  useEffect(() => {
+    if (!selectedId || pageStatus !== "ready") return;
+    void loadBacklinks(selectedId);
+  }, [selectedId, pageStatus, loadBacklinks]);
+
+  useEffect(() => {
+    if (saveState !== "saved" || !selectedId) return;
+    void loadBacklinks(selectedId);
+  }, [saveState, selectedId, loadBacklinks]);
+
   const handleOpen = useCallback(
     (id: PageId) => {
       setAuxView(null);
       setAutoFocusTitle(true);
+      setPendingHeading(null);
       if (id === selectedRef.current) {
         // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
         requestPageReload();
@@ -239,6 +342,56 @@ export function App() {
     },
     [loadPages, navigate],
   );
+
+  const openWikiLink = useCallback(
+    async (link: { targetTitle: string; heading: string }) => {
+      const resolved = resolveWikilink(link.targetTitle, pages);
+      setAuxView(null);
+
+      if (!resolved) {
+        try {
+          const created = await api.createPage({
+            title: link.targetTitle,
+            parentId: page?.parentId ?? null,
+          });
+          focusBodyAfterOpen.current = true;
+          setPendingHeading(null);
+          await loadPages();
+          navigate(created.id);
+        } catch (error) {
+          setActionError(errorMessage(error));
+        }
+        return;
+      }
+
+      setPendingHeading(
+        link.heading.length > 0 ? { pageId: resolved.id, heading: link.heading } : null,
+      );
+      if (resolved.id === selectedRef.current) requestPageReload();
+      else navigate(resolved.id);
+    },
+    [pages, page, loadPages, navigate, requestPageReload],
+  );
+
+  /** `Create “X”` in the `[[` menu: create but stay on the current page. */
+  const createLinkedPage = useCallback(
+    (title: string) => {
+      void (async () => {
+        try {
+          await api.createPage({ title, parentId: page?.parentId ?? null });
+          await loadPages();
+        } catch (error) {
+          setActionError(errorMessage(error));
+        }
+      })();
+    },
+    [page, loadPages],
+  );
+
+  const handleHeadingResult = useCallback((found: boolean) => {
+    setPendingHeading(null);
+    if (!found) setToast({ message: "Couldn't find that heading" });
+  }, []);
 
   const handleRename = useCallback(
     async (id: PageId, title: string) => {
@@ -364,8 +517,19 @@ export function App() {
     })();
   }, [loadPages, navigate]);
 
+  const handleOpenLink = useCallback(
+    (link: { targetTitle: string; heading: string }) => {
+      void openWikiLink(link);
+    },
+    [openWikiLink],
+  );
+
   const handleEditorReady = useCallback((controls: EditorControls) => {
     editorControls.current = controls;
+    if (focusBodyAfterOpen.current) {
+      focusBodyAfterOpen.current = false;
+      controls.focusBody();
+    }
   }, []);
 
   const handleStartBody = useCallback(() => {
@@ -486,8 +650,22 @@ export function App() {
                   <Editor
                     key={`${page.id}:${editorRevision}`}
                     page={page}
+                    pages={pages}
                     onSaveState={setSaveState}
                     onReady={handleEditorReady}
+                    onOpenLink={handleOpenLink}
+                    onCreateLink={createLinkedPage}
+                    headingToReveal={
+                      pendingHeading && pendingHeading.pageId === page.id
+                        ? pendingHeading.heading
+                        : null
+                    }
+                    onHeadingResult={handleHeadingResult}
+                  />
+                  <BacklinksPanel
+                    items={backlinks}
+                    loading={backlinksLoading}
+                    onOpen={handleOpen}
                   />
                 </>
               ) : pageStatus === "error" ? (
