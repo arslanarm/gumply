@@ -23,10 +23,40 @@ function inCell(editor: Editor, target: CellTarget) {
   });
 }
 
-export const addRowBefore = (editor: Editor, t: CellTarget) => inCell(editor, t).addRowBefore().run();
-export const addRowAfter = (editor: Editor, t: CellTarget) => inCell(editor, t).addRowAfter().run();
-export const addColumnBefore = (editor: Editor, t: CellTarget) => inCell(editor, t).addColumnBefore().run();
-export const addColumnAfter = (editor: Editor, t: CellTarget) => inCell(editor, t).addColumnAfter().run();
+/** Put the caret in the cell at (row, column) of the table around the selection. */
+function caretInCell(editor: Editor, row: number, column: number): void {
+  const { state } = editor;
+  const table = findTable(state.selection.$from);
+  if (!table) return;
+  const map = TableMap.get(table.node);
+  const offset = map.map[Math.min(row, map.height - 1) * map.width + Math.min(column, map.width - 1)];
+  if (offset === undefined) return;
+  const pos = table.start + offset + 1;
+  editor.view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(pos))));
+}
+
+// After inserting, the caret goes into the new row's first cell / the new
+// column's top cell, ready to type (like `/table`).
+export function addRowBefore(editor: Editor, t: CellTarget): boolean {
+  const done = inCell(editor, t).addRowBefore().run();
+  if (done) caretInCell(editor, t.row, 0);
+  return done;
+}
+export function addRowAfter(editor: Editor, t: CellTarget): boolean {
+  const done = inCell(editor, t).addRowAfter().run();
+  if (done) caretInCell(editor, t.row + 1, 0);
+  return done;
+}
+export function addColumnBefore(editor: Editor, t: CellTarget): boolean {
+  const done = inCell(editor, t).addColumnBefore().run();
+  if (done) caretInCell(editor, 0, t.column);
+  return done;
+}
+export function addColumnAfter(editor: Editor, t: CellTarget): boolean {
+  const done = inCell(editor, t).addColumnAfter().run();
+  if (done) caretInCell(editor, 0, t.column + 1);
+  return done;
+}
 /** Deleting the last remaining row/column removes the table cleanly. */
 export function deleteRowAt(editor: Editor, t: CellTarget): boolean {
   if ((tableSize(editor, t)?.height ?? 0) <= 1) return deleteTableAt(editor, t);
