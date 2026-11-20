@@ -105,10 +105,30 @@ export function buildGraphModel(data: GraphData): GraphModel {
     (a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target),
   );
 
+  const links: GraphLink[] = [
+    ...data.links.map((link) => ({ source: link.source, target: link.target })),
+    ...ghostLinks,
+  ];
+
+  // A page's count is its number of *distinct* neighbours in this view (pages
+  // and ghosts): a two-way link is one connection, so the count matches what
+  // hover highlights (#z5abndiz).
+  const neighbours = new Map<string, Set<string>>();
+  const connect = (from: string, to: string): void => {
+    if (from === to) return;
+    const set = neighbours.get(from) ?? new Set<string>();
+    set.add(to);
+    neighbours.set(from, set);
+  };
+  for (const link of links) {
+    connect(link.source, link.target);
+    connect(link.target, link.source);
+  }
+
   return {
-    nodes: [...data.nodes],
+    nodes: data.nodes.map((node) => ({ ...node, linkCount: neighbours.get(node.id)?.size ?? 0 })),
     ghosts,
-    links: [...data.links.map((link) => ({ source: link.source, target: link.target })), ...ghostLinks],
+    links,
     tags: [...data.tags],
     linkCount: data.links.length + ghostLinks.length,
   };
@@ -254,7 +274,7 @@ const PALETTE = [
   "#7a4f6d",
   "#a63b7a",
   "#6b4a37",
-  "#6f6864",
+  "#6b7a2a",
 ];
 
 /** Fallback palette when CSS variables are unavailable (unit tests, SSR). */
@@ -278,12 +298,21 @@ function colorFor(key: string, palette: readonly string[] = PALETTE): string {
   return palette[paletteIndex(key)] ?? palette[0] ?? PALETTE[0]!;
 }
 
-/** Colour by first tag, falling back to the top-level folder (spec/ux §9). */
-export function nodeColor(meta: PageMeta, palette: readonly string[] = PALETTE): string {
+/** Colour of a page without tags (legend: "page"). Matches `--graph-page`. */
+export const PAGE_NODE_COLOR = "#8c8a84";
+
+/**
+ * Colour by first tag; pages without tags share one neutral page colour, so
+ * every colour on the canvas is explained by the legend (#z5abndiz — the old
+ * folder-hash fallback produced colours the legend never mentioned).
+ */
+export function nodeColor(
+  meta: PageMeta,
+  palette: readonly string[] = PALETTE,
+  pageColor: string = PAGE_NODE_COLOR,
+): string {
   const tag = meta.tags[0];
-  if (tag) return colorFor(tag, palette);
-  const folder = meta.id.split("/")[0] ?? meta.id;
-  return colorFor(folder, palette);
+  return tag ? colorFor(tag, palette) : pageColor;
 }
 
 /** Resolve `--graph-0…9` from the current theme for canvas/legend use. */
@@ -336,6 +365,20 @@ export function ariaSummary(graph: Pick<GraphModel, "nodes" | "ghosts" | "links"
 export function nodeTooltip(node: GraphNode): string {
   const tag = node.tags[0];
   return `${node.title} · ${plural(node.linkCount, "link")}${tag ? ` · #${tag}` : ""}`;
+}
+
+/**
+ * Hover tooltip details, shown next to a node whose label already shows the
+ * title, so the title isn't repeated (#z5abndiz): `4 links · #work`.
+ */
+export function nodeDetail(node: GraphNode): string {
+  const tag = node.tags[0];
+  return `${plural(node.linkCount, "link")}${tag ? ` · #${tag}` : ""}`;
+}
+
+/** Ghost tooltip details: `Not created yet · 1 link · Click to create`. */
+export function ghostDetail(ghost: GhostNode): string {
+  return `Not created yet · ${plural(ghost.refCount, "link")} · Click to create`;
 }
 
 /** Tooltip copy for a ghost: `“Title” — not created yet · N links · Click to create`. */

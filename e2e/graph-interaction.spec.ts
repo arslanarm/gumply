@@ -42,13 +42,13 @@ async function openGraph(page: Page): Promise<void> {
   await page.waitForTimeout(700);
 }
 
-async function probeNodes(page: Page): Promise<ProbeNode[]> {
+async function probeNodes(page: Page, testId = CANVAS): Promise<ProbeNode[]> {
   return page.evaluate(
     (id) =>
       (
         window as unknown as { __gumplyGraphs: Record<string, { nodes: () => ProbeNode[] }> }
       ).__gumplyGraphs[id]!.nodes(),
-    CANVAS,
+    testId,
   );
 }
 
@@ -137,7 +137,11 @@ test.describe('graph interaction (#74jpajdy)', () => {
     const tooltip = page.locator('.graph-tooltip');
     // Picking uses live positions: no waiting for a stale hit canvas.
     await expect(tooltip).toBeVisible({ timeout: 300 });
-    await expect(tooltip).toContainText('Node 03');
+    // The hovered label already shows the title: the tooltip only adds details
+    // (#z5abndiz), and sits above the pointer so it doesn't cover the label.
+    await expect(tooltip).toHaveText(/^\d+ links?$/);
+    const tipBox = (await tooltip.boundingBox())!;
+    expect(tipBox.y + tipBox.height).toBeLessThan(origin.y + target.y);
 
     await page.mouse.move(origin.x + 4, origin.y + 4);
     await expect(tooltip).toBeHidden();
@@ -196,5 +200,102 @@ test.describe('graph interaction (#74jpajdy)', () => {
       expect(Math.abs(shift.dx - 60)).toBeLessThan(6);
       expect(Math.abs(shift.dy - 30)).toBeLessThan(6);
     }
+  });
+});
+
+test.describe('graph polish (#z5abndiz)', () => {
+  test('local graph keeps the current page in the middle with every label inside', async ({
+    page,
+    vault,
+  }) => {
+    const [welcome] = await vault.seed([
+      {
+        title: 'Welcome',
+        content: 'See [[Getting started]], [[Graph view]], [[Obsidian note]] and [[Open only]].',
+      },
+      { title: 'Getting started', content: 'Back to [[Welcome]] and [[Graph view]].' },
+      { title: 'Graph view', content: 'Graph.' },
+      { title: 'Obsidian note', content: 'Note.' },
+      { title: 'Open only', content: 'Open.' },
+    ]);
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    await page.getByTestId(`page-item-${welcome!.id}`).click();
+    await page.getByTestId('local-graph-toggle').click();
+    const local = page.getByTestId('local-graph-canvas');
+    await expect(local).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+    await page.waitForTimeout(800);
+
+    const box = (await local.boundingBox())!;
+    const nodes = await probeNodes(page, 'local-graph-canvas');
+    expect(nodes).toHaveLength(5);
+    const centre = nodes.find((node) => node.id === welcome!.id)!;
+    expect(Math.abs(centre.x - box.width / 2)).toBeLessThan(box.width * 0.08);
+    expect(Math.abs(centre.y - box.height / 2)).toBeLessThan(box.height * 0.08);
+
+    // Labels (drawn centred under each node) fit: measure them like the canvas does.
+    const titles = ['Welcome', 'Getting started', 'Graph view', 'Obsidian note', 'Open only'];
+    const widths = await page.evaluate((list) => {
+      const ctx = document.createElement('canvas').getContext('2d')!;
+      ctx.font = '11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
+      return list.map((title) => ctx.measureText(title).width);
+    }, titles);
+    const pages = (await page.request.get('/api/pages').then((r) => r.json())) as Array<{ id: string; title: string }>;
+    for (const node of nodes) {
+      const title = pages.find((p) => p.id === node.id)!.title;
+      const half = widths[titles.indexOf(title)]! / 2;
+      expect(node.x - half, title).toBeGreaterThan(0);
+      expect(node.x + half, title).toBeLessThan(box.width);
+      expect(node.y - node.r, title).toBeGreaterThan(0);
+      expect(node.y + node.r + 18, title).toBeLessThan(box.height);
+    }
+  });
+
+  test('legend explains every colour: untagged pages use the legend page colour', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed([
+      { title: 'Plain', content: 'Links [[Tagged]].' },
+      { title: 'Tagged', content: '#work\n\nBack to [[Plain]].' },
+    ]);
+    await page.goto('/');
+    await page.getByTestId('sidebar-graph').click();
+    await expect(page.getByTestId(CANVAS)).toHaveAttribute('data-graph-ready', 'true', {
+      timeout: 15_000,
+    });
+    const legend = page.getByTestId('graph-legend');
+    await expect(legend).toContainText('Colour = first tag');
+    await expect(legend).toContainText('#work');
+
+    const pageDot = await legend.locator('.graph-legend-solid').evaluate(
+      (el) => getComputedStyle(el).backgroundColor,
+    );
+    // Sample the canvas at the untagged node's centre: same colour as the dot.
+    const plain = await nodeByTitle(page, 'Plain');
+    const pixel = await page.evaluate(
+      ({ x, y }) => {
+        const canvas = document.querySelector('[data-testid="graph-canvas"] canvas') as HTMLCanvasElement;
+        const scale = canvas.width / canvas.getBoundingClientRect().width;
+        const [r, g, b] = canvas.getContext('2d')!.getImageData(Math.round(x * scale), Math.round(y * scale), 1, 1).data;
+        return `rgb(${r}, ${g}, ${b})`;
+      },
+      { x: plain.x, y: plain.y },
+    );
+    expect(pixel).toBe(pageDot);
+  });
+
+  test('filter has a line-icon clear button instead of the native one', async ({ page, vault }) => {
+    await vault.seed(fixture());
+    await openGraph(page);
+    const filter = page.getByTestId('graph-filter');
+    await expect(page.getByTestId('graph-filter-clear')).toHaveCount(0);
+    await filter.fill('Node 1');
+    await page.getByTestId('graph-filter-clear').click();
+    await expect(filter).toHaveValue('');
+    await filter.fill('Node 1');
+    await filter.press('Escape');
+    await expect(filter).toHaveValue('');
   });
 });

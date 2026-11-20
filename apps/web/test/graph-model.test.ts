@@ -6,16 +6,20 @@ import {
   FALLBACK_GRAPH_PALETTE,
   filterGraph,
   ghostId,
+  ghostDetail,
   ghostTooltip,
   graphCounts,
   graphSubtitle,
   isGhostId,
+  labelledIds,
   labelledNodeIds,
   maxReferenceCount,
   neighbourIds,
   nodeColor,
   nodeRadius,
+  nodeDetail,
   nodeTooltip,
+  PAGE_NODE_COLOR,
   paletteIndex,
 } from "../src/graph/graph-model";
 
@@ -184,19 +188,37 @@ describe("labels and sizing", () => {
   });
 
   it("labels the top 15 by links plus hovered and neighbours above 30", () => {
-    const nodes = Array.from({ length: 40 }, (_, index) => {
-      const node = page(`n${index}`, `N${index}`);
-      return { ...node, linkCount: index };
-    });
-    const model = buildGraphModel(graphData({ nodes }));
+    const items = Array.from({ length: 40 }, (_, index) => ({ id: `n${index}`, count: index }));
 
-    const labelled = labelledNodeIds(model, "n0", ["n1"]);
+    const labelled = labelledIds(items, "n0", new Set(["n1"]));
     expect(labelled.has("n0")).toBe(true);
     expect(labelled.has("n1")).toBe(true);
     expect(labelled.has("n39")).toBe(true);
     // n39..n25 are the top 15 by count; n24 must not be there.
     expect(labelled.has("n25")).toBe(true);
     expect(labelled.has("n24")).toBe(false);
+  });
+
+  it("counts distinct neighbours, so a two-way link is one connection (#z5abndiz)", () => {
+    const model = buildGraphModel(
+      graphData({
+        nodes: [
+          { ...page("a", "A"), linkCount: 4 },
+          { ...page("b", "B"), linkCount: 2 },
+          { ...page("c", "C"), linkCount: 1 },
+        ],
+        links: [
+          { source: "a", target: "b" },
+          { source: "b", target: "a" },
+          { source: "a", target: "c" },
+        ],
+        unresolved: [{ source: "a", targetTitle: "Missing" }],
+      }),
+    );
+    const count = (id: string) => model.nodes.find((node) => node.id === id)!.linkCount;
+    expect(count("a")).toBe(3); // b, c and the ghost
+    expect(count("b")).toBe(1);
+    expect(count("c")).toBe(1);
   });
 
   it("sizes from 4 to 9 px on a sqrt scale, isolated pages at 4 (Q1b)", () => {
@@ -267,16 +289,31 @@ describe("accessible copy", () => {
     ).ghosts[0]!;
     expect(ghostTooltip(ghost)).toBe("“Missing Page” — not created yet · 1 link · Click to create");
   });
+
+  it("hover details don't repeat the title shown by the label (#z5abndiz)", () => {
+    expect(nodeDetail({ ...page("a", "Alpha", ["work"]), linkCount: 3 })).toBe("3 links · #work");
+    expect(nodeDetail({ ...page("b", "Beta"), linkCount: 1 })).toBe("1 link");
+    const ghost = buildGraphModel(
+      graphData({ nodes: [page("a", "A")], unresolved: [{ source: "a", targetTitle: "Missing Page" }] }),
+    ).ghosts[0]!;
+    expect(ghostDetail(ghost)).toBe("Not created yet · 1 link · Click to create");
+  });
 });
 
 describe("colours", () => {
-  it("uses the first tag and falls back to the top-level folder", () => {
+  it("uses the first tag; untagged pages share the legend's page colour (#z5abndiz)", () => {
     const tagged = page("projects/a", "A", ["work"]);
     expect(nodeColor(tagged)).toBe(nodeColor(page("b", "B", ["work"])));
+    expect(nodeColor(tagged)).not.toBe(PAGE_NODE_COLOR);
 
-    const untagged = page("projects/c", "C");
-    const otherFolder = page("notes/d", "D");
-    expect(nodeColor(untagged)).not.toBe(nodeColor(otherFolder));
+    // No folder-hash colours the legend can't explain.
+    expect(nodeColor(page("projects/c", "C"))).toBe(PAGE_NODE_COLOR);
+    expect(nodeColor(page("notes/d", "D"))).toBe(PAGE_NODE_COLOR);
+    expect(nodeColor(page("e", "E"), undefined, "#123456")).toBe("#123456");
+  });
+
+  it("no tag colour looks like the neutral page colour", () => {
+    expect(FALLBACK_GRAPH_PALETTE).not.toContain(PAGE_NODE_COLOR);
   });
 
   it("builds stable synthetic ghost ids", () => {

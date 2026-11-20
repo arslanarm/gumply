@@ -7,14 +7,15 @@ import ForceGraph2D, {
 } from "react-force-graph-2d";
 import {
   FALLBACK_GRAPH_PALETTE,
-  ghostTooltip,
+  ghostDetail,
   graphPaletteFromStyles,
   isGhostId,
   labelledIds,
   neighbourIds,
   nodeColor,
   nodeRadius,
-  nodeTooltip,
+  nodeDetail,
+  PAGE_NODE_COLOR,
   type GhostNode,
   type GraphLink,
 } from "./graph-model.js";
@@ -22,9 +23,11 @@ import {
   DRAG_ALPHA,
   DRAG_THRESHOLD_PX,
   capAlpha,
+  fitZoom,
   pickNode,
   visibleBounds,
   type AlphaForce,
+  type FitItem,
 } from "./graph-interaction.js";
 
 export type CanvasNode = GraphNode | GhostNode;
@@ -34,6 +37,11 @@ export interface GraphCanvasProps {
   links: readonly GraphLink[];
   /** Page to ring when arriving from a page. */
   highlightId?: string | null;
+  /**
+   * Local graph: keep this page pinned in the middle and fit the view around
+   * it, so its neighbours spread around the centre (#z5abndiz).
+   */
+  centerId?: string | null;
   testId: string;
   ariaLabel: string;
   showControls?: boolean;
@@ -48,10 +56,12 @@ interface ThemeColors {
   panel: string;
   accent: string;
   border: string;
+  /** Untagged pages (`--graph-page`). */
+  page: string;
   palette: readonly string[];
 }
 
-type ThemeColorToken = Exclude<keyof ThemeColors, "palette">;
+type ThemeColorToken = Exclude<keyof ThemeColors, "palette" | "page">;
 
 const FALLBACK_COLORS: ThemeColors = {
   text: "#26251f",
@@ -59,6 +69,7 @@ const FALLBACK_COLORS: ThemeColors = {
   panel: "#ffffff",
   accent: "#4f46e5",
   border: "#e6e4dd",
+  page: PAGE_NODE_COLOR,
   palette: FALLBACK_GRAPH_PALETTE,
 };
 
@@ -74,6 +85,10 @@ const MIN_FIT_ZOOM = 0.06;
 const LABEL_FADE_START = 0.8;
 const LABEL_FADE_END = 1.1;
 const LABEL_FONT_PX = 11;
+const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
+/** Gap between a node and its label, and the label line height (CSS px). */
+const LABEL_GAP_PX = 4;
+const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
 /** Dash for links into a "not created yet" page (graph units, as before). */
 const GHOST_LINK_DASH = [4, 3];
@@ -89,6 +104,7 @@ function readThemeColors(): ThemeColors {
     panel: read("panel"),
     accent: read("accent"),
     border: read("border"),
+    page: styles.getPropertyValue("--graph-page").trim() || PAGE_NODE_COLOR,
     palette: graphPaletteFromStyles(styles),
   };
 }
@@ -229,7 +245,21 @@ interface NodeStyle {
   fill: string;
   /** Truncated label text. */
   label: string;
+  /** Label width at LABEL_FONT_PX, in CSS px (for label-aware fitting). */
+  labelWidth: number;
   tooltip: string;
+}
+
+let measureContext: CanvasRenderingContext2D | null | undefined;
+
+/** Width of a label in CSS px; a rough estimate where canvas text isn't available. */
+function measureLabel(text: string): number {
+  if (measureContext === undefined) {
+    measureContext =
+      typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+    if (measureContext) measureContext.font = `${LABEL_FONT_PX}px ${LABEL_FONT_FAMILY}`;
+  }
+  return measureContext ? measureContext.measureText(text).width : text.length * LABEL_FONT_PX * 0.56;
 }
 
 type PositionedNode = CanvasNode & { x?: number; y?: number; fx?: number; fy?: number };
@@ -253,6 +283,7 @@ export function GraphCanvas({
   nodes,
   links,
   highlightId = null,
+  centerId = null,
   testId,
   ariaLabel,
   showControls = false,
@@ -314,16 +345,33 @@ export function GraphCanvas({
     for (const node of nodes) {
       const ghost = isGhostId(node.id);
       const title = titleOf(node);
+      const truncated = title.length > MAX_LABEL_CHARS;
+      const label = truncated ? `${title.slice(0, MAX_LABEL_CHARS - 1)}…` : title;
+      const detail = ghost ? ghostDetail(node as GhostNode) : nodeDetail(node as GraphNode);
       styles.set(node.id, {
         radius: nodeRadius(countOf(node), maxCount),
         ghost,
-        fill: ghost ? "" : nodeColor(node as GraphNode, colors.palette),
-        label: title.length > MAX_LABEL_CHARS ? `${title.slice(0, MAX_LABEL_CHARS - 1)}…` : title,
-        tooltip: ghost ? ghostTooltip(node as GhostNode) : nodeTooltip(node as GraphNode),
+        fill: ghost ? "" : nodeColor(node as GraphNode, colors.palette, colors.page),
+        label,
+        labelWidth: measureLabel(label),
+        // The hovered node's label already shows the title; only repeat it
+        // when the label had to be truncated.
+        tooltip: truncated ? `${title} · ${detail}` : detail,
       });
     }
     return styles;
-  }, [nodes, maxCount, colors.palette]);
+  }, [nodes, maxCount, colors.palette, colors.page]);
+
+  /** Labels drawn when nothing is hovered: what the fit has to keep in view. */
+  const restingLabelIds = useMemo(
+    () =>
+      labelledIds(
+        nodes.map((node) => ({ id: node.id, count: countOf(node) })),
+        null,
+        new Set<string>(),
+      ),
+    [nodes],
+  );
 
   /** Link colours parsed once per theme, not once per link per frame. */
   const linkPaint = useMemo(
@@ -351,38 +399,61 @@ export function GraphCanvas({
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
-    let maxRadius = 0;
-    let positioned = 0;
+    const bare: FitItem[] = [];
+    const withLabels: FitItem[] = [];
+    let focus: PositionedNode | null = null;
 
-    for (const node of nodes) {
-      const x = (node as PositionedNode).x;
-      const y = (node as PositionedNode).y;
+    for (const node of nodes as PositionedNode[]) {
+      const { x, y } = node;
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-      positioned += 1;
-      minX = Math.min(minX, x as number);
-      maxX = Math.max(maxX, x as number);
-      minY = Math.min(minY, y as number);
-      maxY = Math.max(maxY, y as number);
-      maxRadius = Math.max(maxRadius, nodeRadius(countOf(node), maxCount));
-    }
-    if (positioned === 0) return null;
+      const px = x as number;
+      const py = y as number;
+      minX = Math.min(minX, px);
+      maxX = Math.max(maxX, px);
+      minY = Math.min(minY, py);
+      maxY = Math.max(maxY, py);
+      if (centerId !== null && node.id === centerId) focus = node;
 
-    const spanX = maxX - minX;
-    const spanY = maxY - minY;
-    const availableWidth = Math.max(20, width - FIT_PADDING * 2 - maxRadius * 2);
-    const availableHeight = Math.max(
-      20,
-      height - FIT_PADDING * 2 - maxRadius * 2 - LABEL_ALLOWANCE,
-    );
-    const zoomX = spanX > 1 ? availableWidth / spanX : MAX_FIT_ZOOM;
-    const zoomY = spanY > 1 ? availableHeight / spanY : MAX_FIT_ZOOM;
+      const style = nodeStyles.get(node.id);
+      const r = style?.radius ?? 4;
+      // Without labels: the node plus the old fixed label allowance below it.
+      bare.push({ x: px, y: py, left: r, right: r, top: r, bottom: r + LABEL_ALLOWANCE });
+      // With labels: the full label width and height (labels can be wide).
+      const pinned = node.id === highlightId || node.id === centerId;
+      const labelled = style && (restingLabelIds.has(node.id) || pinned);
+      const half = labelled ? Math.max(r, style.labelWidth / 2 + 2) : r;
+      withLabels.push({
+        x: px,
+        y: py,
+        left: half,
+        right: half,
+        top: r,
+        bottom: labelled ? r + LABEL_GAP_PX + LABEL_LINE_PX : r,
+      });
+    }
+    if (minX > maxX) return null;
+
+    // Local graph: the current page is the centre of the view; otherwise the
+    // middle of the drawing.
+    const centerX = focus ? (focus.x as number) : (minX + maxX) / 2;
+    const centerY = focus ? (focus.y as number) : (minY + maxY) / 2;
+    const halfWidth = width / 2 - FIT_PADDING;
+    const halfHeight = height / 2 - FIT_PADDING;
+
+    // Labels only show from LABEL_FADE_START on. If the graph only fits below
+    // that zoom, they are hidden anyway and only the nodes have to fit.
+    const labelZoom = fitZoom(withLabels, centerX, centerY, halfWidth, halfHeight);
+    const zoom =
+      labelZoom >= LABEL_FADE_START
+        ? labelZoom
+        : Math.min(fitZoom(bare, centerX, centerY, halfWidth, halfHeight), LABEL_FADE_START);
 
     return {
-      centerX: (minX + maxX) / 2,
-      centerY: (minY + maxY) / 2,
-      zoom: clamp(Math.min(zoomX, zoomY), MIN_FIT_ZOOM, MAX_FIT_ZOOM),
+      centerX,
+      centerY,
+      zoom: clamp(Number.isFinite(zoom) ? zoom : MAX_FIT_ZOOM, MIN_FIT_ZOOM, MAX_FIT_ZOOM),
     };
-  }, [nodes, maxCount]);
+  }, [nodes, nodeStyles, restingLabelIds, centerId, highlightId]);
 
   const fitView = useCallback(
     (duration: number): void => {
@@ -484,10 +555,36 @@ export function GraphCanvas({
     // Small vaults need a firmer centring pull so an isolated page doesn't
     // drift away from a 3-node cluster; big vaults stay airy.
     const centerStrength = nodes.length <= 12 ? 0.22 : nodes.length <= 60 ? 0.16 : 0.12;
-    graph.d3Force("x", capAlpha(axisForce("x", centerStrength) as never, alphaCapRef) as never);
-    graph.d3Force("y", capAlpha(axisForce("y", centerStrength) as never, alphaCapRef) as never);
+    // Local graph: pin the current page in the middle, and shape the layout
+    // like the (tall, narrow) panel instead of a circle that leaves half of it
+    // empty (#z5abndiz).
+    let stretchX = 1;
+    let stretchY = 1;
+    if (centerId !== null) {
+      const focus = nodes.find((node) => node.id === centerId) as PositionedNode | undefined;
+      if (focus) {
+        focus.fx = 0;
+        focus.fy = 0;
+      }
+      // Only with enough nodes to fill an area: a 2–3 node star would just
+      // collapse into a line along the panel's long side.
+      if (nodes.length >= 5) {
+        const { width, height } = sizeRef.current;
+        const aspect = clamp(height / Math.max(1, width), 0.5, 2.5);
+        stretchX = aspect ** 0.35;
+        stretchY = 1 / stretchX;
+      }
+    }
+    graph.d3Force(
+      "x",
+      capAlpha(axisForce("x", centerStrength * stretchX) as never, alphaCapRef) as never,
+    );
+    graph.d3Force(
+      "y",
+      capAlpha(axisForce("y", centerStrength * stretchY) as never, alphaCapRef) as never,
+    );
     graph.d3ReheatSimulation();
-  }, [dataKey, hasSize, nodes.length]);
+  }, [dataKey, hasSize, nodes, centerId]);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -497,6 +594,8 @@ export function GraphCanvas({
   ghostByIdRef.current = ghostById;
   const hoveredRef = useRef(hoveredId);
   hoveredRef.current = hoveredId;
+  const centerIdRef = useRef(centerId);
+  centerIdRef.current = centerId;
 
   // Dev/e2e-only probe: node positions in container CSS px.
   useEffect(() => {
@@ -632,7 +731,7 @@ export function GraphCanvas({
 
       // Labels last, so they sit above every node (Obsidian does the same).
       const labelled = labelIds;
-      ctx.font = `${LABEL_FONT_PX / k}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`;
+      ctx.font = `${LABEL_FONT_PX / k}px ${LABEL_FONT_FAMILY}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.lineJoin = "round";
@@ -647,7 +746,7 @@ export function GraphCanvas({
           if (alpha <= 0.02) continue;
           ctx.globalAlpha = alpha;
           const x = node.x as number;
-          const y = (node.y as number) + (style.radius + 4) / k;
+          const y = (node.y as number) + (style.radius + LABEL_GAP_PX) / k;
           ctx.strokeText(style.label, x, y);
           ctx.fillStyle = style.ghost ? colors.muted : colors.text;
           ctx.fillText(style.label, x, y);
@@ -724,13 +823,13 @@ export function GraphCanvas({
       }
       if (tip.textContent !== text) tip.textContent = text;
       tip.hidden = false;
+      // Above the pointer: the node's label sits below the node, so a tooltip
+      // underneath would cover it.
       const maxX = container.clientWidth - tip.offsetWidth - 8;
       const maxY = container.clientHeight - tip.offsetHeight - 8;
       const x = clamp(point.x + TOOLTIP_OFFSET_X, 8, Math.max(8, maxX));
-      const y =
-        point.y + TOOLTIP_OFFSET_Y > maxY
-          ? Math.max(8, point.y - tip.offsetHeight - 10)
-          : point.y + TOOLTIP_OFFSET_Y;
+      const above = point.y - tip.offsetHeight - TOOLTIP_OFFSET_Y;
+      const y = above >= 8 ? above : Math.min(maxY, point.y + TOOLTIP_OFFSET_Y + LABEL_LINE_PX);
       tip.style.transform = `translate(${x}px, ${y}px)`;
     };
 
@@ -816,8 +915,12 @@ export function GraphCanvas({
         container.releasePointerCapture(event.pointerId);
       }
       if (moved) {
-        node.fx = undefined;
-        node.fy = undefined;
+        // Release the node (Obsidian-like); the local graph's centre page
+        // stays pinned where it was dropped.
+        if (node.id !== centerIdRef.current) {
+          node.fx = undefined;
+          node.fy = undefined;
+        }
         // Let neighbours settle; alpha stays capped until the engine stops.
         graphRef.current?.d3ReheatSimulation();
       } else if (!cancelled) {

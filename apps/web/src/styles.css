@@ -27,7 +27,8 @@
   --graph-6: #7a4f6d;
   --graph-7: #a63b7a;
   --graph-8: #6b4a37;
-  --graph-9: #6f6864;
+  --graph-9: #6b7a2a;
+  --graph-page: #8c8a84;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --sidebar-width: 264px;
 }
@@ -61,7 +62,8 @@
   --graph-6: #c9a0bd;
   --graph-7: #ff9dc2;
   --graph-8: #c49a82;
-  --graph-9: #d8d0cc;
+  --graph-9: #b9c46e;
+  --graph-page: #9a968e;
 }
 
 * {
