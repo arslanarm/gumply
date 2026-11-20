@@ -206,3 +206,93 @@ test('Shift+Tab and arrows move between cells; marks and [[links]] in cells; Del
   await waitSaved(page);
   expect(await fileOf(request, created!.id)).toBe('Intro\n\nOutro');
 });
+
+/** @opus-hunter's release-gate cases (#ir9zia5u). */
+const FX_TABLES = "Intro paragraph.\n\n| Left | Center | Right |\n|:--|:-:|--:|\n| a \\| b | `code|x` | [[Welcome|alias]] |\n| [link](https://x.y/a_b) |  | **bold** |\n\nNo | leading | pipes\n--- | --- | ---\n1 | 2 | 3\n\nTail paragraph.";
+
+test('fx-tables: editing one cell changes only that row; the overflowing table stays raw', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const [created] = await vault.seed([{ title: 'FX tables', content: FX_TABLES }]);
+  await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+  const body = page.getByTestId('editor-content');
+  // The first table has unescaped pipes in code/[[x|alias]] (more cells than
+  // its header): kept as a raw block, never flattened.
+  await expect(body.getByTestId('raw-block')).toHaveCount(1);
+  const editable = body.locator('table.gumply-table');
+  await expect(editable).toHaveCount(1);
+  await editable.locator('td').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('!');
+  await waitSaved(page);
+  expect(await fileOf(request, created!.id)).toBe(FX_TABLES.replace('1 | 2 | 3', '| 1! | 2 | 3 |'));
+});
+
+test('typed | and multi-line paste stay valid GFM; Undo; arrows leave the table', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const [created] = await vault.seed([
+    { title: 'Typing', content: 'Above\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nBelow' },
+  ]);
+  await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+  const body = page.getByTestId('editor-content');
+  const table = body.locator('table');
+  await table.locator('td').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' a|b');
+  await body.evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.setData('text/plain', 'line one\nline two\n');
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+  });
+  await expect(table.locator('td').first()).toHaveText('1 a|bline one line two');
+  await expect(table.locator('tr')).toHaveCount(2);
+
+  // Add a row with the + bar, then undo it.
+  await table.locator('td').first().hover();
+  await page.getByTestId('table-add-row').click();
+  await expect(table.locator('tr')).toHaveCount(3);
+  await table.locator('td').first().click();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(table.locator('tr')).toHaveCount(2);
+
+  await waitSaved(page);
+  expect(await fileOf(request, created!.id)).toBe(
+    'Above\n\n| A | B |\n|---|---|\n| 1 a\\|bline one line two | 2 |\n\nBelow',
+  );
+
+  // ArrowDown from the last row leaves the table; ArrowUp from the header too.
+  await table.locator('td').nth(1).click();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('>');
+  await expect(body.locator('p', { hasText: 'Below' })).toHaveText(/^>?Below>?$/);
+  await table.locator('th').first().click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.type('<');
+  await expect(body.locator('p').first()).toContainText('<');
+});
+
+test('deleting the last column removes the table; a table in a list item stays untouched', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const content = '- item\n\n  | X | Y |\n  |:-|-:|\n  | 1 | 2 |\n\nSolo\n\n| Only |\n|---|\n| one |';
+  const [created] = await vault.seed([{ title: 'Edges', content }]);
+  await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+  const body = page.getByTestId('editor-content');
+  await expect(body.locator('table')).toHaveCount(2);
+
+  const solo = body.locator('table').nth(1);
+  await solo.locator('td').first().hover();
+  await page.getByTestId('table-col-handle').click();
+  await page.getByTestId('table-menu-delete-column').click();
+  await expect(body.locator('table')).toHaveCount(1);
+
+  await waitSaved(page);
+  expect(await fileOf(request, created!.id)).toBe('- item\n\n  | X | Y |\n  |:-|-:|\n  | 1 | 2 |\n\nSolo');
+});

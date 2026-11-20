@@ -27,8 +27,16 @@ export const addRowBefore = (editor: Editor, t: CellTarget) => inCell(editor, t)
 export const addRowAfter = (editor: Editor, t: CellTarget) => inCell(editor, t).addRowAfter().run();
 export const addColumnBefore = (editor: Editor, t: CellTarget) => inCell(editor, t).addColumnBefore().run();
 export const addColumnAfter = (editor: Editor, t: CellTarget) => inCell(editor, t).addColumnAfter().run();
-export const deleteRowAt = (editor: Editor, t: CellTarget) => inCell(editor, t).deleteRow().run();
-export const deleteColumnAt = (editor: Editor, t: CellTarget) => inCell(editor, t).deleteColumn().run();
+/** Deleting the last remaining row/column removes the table cleanly. */
+export function deleteRowAt(editor: Editor, t: CellTarget): boolean {
+  if ((tableSize(editor, t)?.height ?? 0) <= 1) return deleteTableAt(editor, t);
+  return inCell(editor, t).deleteRow().run();
+}
+
+export function deleteColumnAt(editor: Editor, t: CellTarget): boolean {
+  if ((tableSize(editor, t)?.width ?? 0) <= 1) return deleteTableAt(editor, t);
+  return inCell(editor, t).deleteColumn().run();
+}
 export const deleteTableAt = (editor: Editor, t: CellTarget) => inCell(editor, t).deleteTable().run();
 export const toggleHeaderRowAt = (editor: Editor, t: CellTarget) => inCell(editor, t).toggleHeaderRow().run();
 

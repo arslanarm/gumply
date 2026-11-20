@@ -33,19 +33,84 @@ interface TableSerializerState {
   inTable?: boolean;
 }
 
-// ---------- untouched tables: original source by node identity ----------
+// ---------- untouched tables and rows: original source by node identity ----------
+//
+// ProseMirror nodes are immutable: an edit replaces the edited cell, its row
+// and the table, but every untouched row keeps its node object. So:
+// - an untouched table is written back byte-for-byte;
+// - in an edited table, untouched rows keep their exact source line, and the
+//   header + alignment lines are kept while the header row and the column
+//   count/alignment are unchanged. Only edited rows are re-written.
+
+interface HeaderSource {
+  /** Original header line ("" when the table had an empty header row). */
+  headerLine: string;
+  delimiterLine: string;
+  width: number;
+  aligns: string;
+}
 
 const tableSources = new WeakMap<PMNode, string>();
+const rowSources = new WeakMap<PMNode, string>();
+const headerSources = new WeakMap<PMNode, HeaderSource>();
 
-/** Remember the Markdown source of each top-level table in a freshly loaded doc. */
-export function registerTableSources(doc: PMNode, sources: readonly string[]): void {
+function alignsKey(aligns: readonly Align[]): string {
+  return aligns.map((align) => align ?? "-").join(",");
+}
+
+function sourceAligns(delimiterLine: string): Align[] {
+  let text = delimiterLine.trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").map((part) => {
+    const cell = part.trim();
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    return left && right ? "center" : right ? "right" : left ? "left" : null;
+  });
+}
+
+function registerTable(table: PMNode, source: string): void {
+  tableSources.set(table, source);
+  const lines = source.split("\n");
+  const headerLine = lines[0] ?? "";
+  const delimiterLine = lines[1] ?? "";
+  const bodyLines = lines.slice(2);
+  const rows: PMNode[] = [];
+  table.forEach((row) => rows.push(row));
+  const first = rows[0];
+  if (!first) return;
+  const headerRow = rowIsHeader(first);
+  // With an empty header row the parser dropped it: rows are all body rows.
+  const bodyRows = headerRow ? rows.slice(1) : rows;
+  if (bodyRows.length !== bodyLines.length) return;
+  if (headerRow) rowSources.set(first, headerLine);
+  bodyRows.forEach((row, index) => rowSources.set(row, bodyLines[index]!));
+  const aligns = sourceAligns(delimiterLine);
+  headerSources.set(first, {
+    headerLine,
+    delimiterLine,
+    width: aligns.length,
+    aligns: alignsKey(aligns),
+  });
+}
+
+/** Remember the Markdown source of each table in a freshly loaded doc (document order). */
+export function registerTableSources(doc: PMNode, sources: ReadonlyArray<string | null>): void {
   const tables: PMNode[] = [];
-  doc.forEach((child) => {
-    if (child.type.name === "table") tables.push(child);
+  doc.descendants((node) => {
+    if (node.type.name === "table") {
+      tables.push(node);
+      return false;
+    }
+    return true;
   });
   // Only when every table can be paired: otherwise just re-serialize them.
   if (tables.length !== sources.length) return;
-  tables.forEach((table, index) => tableSources.set(table, sources[index]!));
+  tables.forEach((table, index) => {
+    const source = sources[index];
+    if (source != null) registerTable(table, source);
+  });
 }
 
 // ---------- GFM serialization ----------
@@ -101,6 +166,11 @@ export function serializeTable(state: TableSerializerState, node: PMNode): void 
   while (aligns.length < width) aligns.push(null);
 
   const writeRow = (row: PMNode | null) => {
+    const kept = row ? rowSources.get(row) : undefined;
+    if (kept !== undefined) {
+      state.write(kept);
+      return;
+    }
     state.write("|");
     let written = 0;
     row?.forEach((cell) => {
@@ -117,10 +187,17 @@ export function serializeTable(state: TableSerializerState, node: PMNode): void 
     for (; written < width; written += 1) state.write("  |");
   };
 
+  // Header + alignment lines: kept while the first row and the column
+  // count/alignment are unchanged.
+  const header = first ? headerSources.get(first) : undefined;
+  const keepHeader = header && header.width === width && header.aligns === alignsKey(aligns);
+
   state.inTable = true;
-  writeRow(hasHeader ? first! : null);
+  if (hasHeader) writeRow(first!);
+  else if (keepHeader) state.write(header.headerLine);
+  else writeRow(null);
   state.ensureNewLine();
-  state.write(`|${aligns.map(alignMarker).join("|")}|`);
+  state.write(keepHeader ? header.delimiterLine : `|${aligns.map(alignMarker).join("|")}|`);
   for (const row of rows.slice(hasHeader ? 1 : 0)) {
     state.ensureNewLine();
     writeRow(row);

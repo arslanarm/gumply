@@ -616,6 +616,17 @@ export function Editor({
         }),
       handlePaste: (view, event) => {
         const files = Array.from(event.clipboardData?.files ?? []);
+        // A GFM cell holds one line: multi-line text pasted into a table
+        // cell is joined with spaces instead of splitting the table (#7witbbun).
+        const instance = editorRef.current;
+        if (files.length === 0 && instance?.isActive("table")) {
+          const text = event.clipboardData?.getData("text/plain") ?? "";
+          if (/\n/.test(text.trim())) {
+            event.preventDefault();
+            instance.commands.insertContent({ type: "text", text: text.trim().replace(/\s*\n+\s*/g, " ") });
+            return true;
+          }
+        }
         if (files.length === 0) return false;
         event.preventDefault();
         uploadRef.current(files, view.state.selection.from);
