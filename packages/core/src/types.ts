@@ -3,12 +3,20 @@
  * wiki page `spec/api` and is imported by both the server and the web app.
  */
 
-/** Vault-relative path without `.md`, e.g. `"projects/gumply"`. */
+/**
+ * Vault-relative path without `.md`, e.g. `"projects/gumply"`. Whiteboards
+ * (D25) keep their extension: `"projects/Map.canvas"` (spec/api v1.7).
+ */
 export type PageId = string;
+
+/** D25: a tree item is a Markdown page or a JSON Canvas whiteboard. */
+export type PageKind = "page" | "whiteboard";
 
 /** Metadata stored in a note's YAML frontmatter (plus derived fields). */
 export interface PageMeta {
   id: PageId;
+  /** v1.7: always sent by the server; absent means "page" (older fixtures). */
+  kind?: PageKind;
   /** Frontmatter `title`, else a readable form of the file name. */
   title: string;
   /** Single emoji, if set. */
@@ -33,6 +41,25 @@ export type PageUpdateResult = Page & {
   rewrittenPages?: PageId[];
   /** Vault-relative backup path when "Keep mine" replaced an external edit. */
   conflictBackup?: string;
+};
+
+/** `GET /api/boards/:id` (v1.7, D25): the tree item plus its JSON Canvas. */
+export interface BoardDocument {
+  meta: PageMeta;
+  board: import("./canvas.js").CanvasBoard;
+}
+
+/** `PUT /api/boards/:id` response. */
+export type BoardUpdateResult = BoardDocument & {
+  /** Pages/boards whose links were rewritten by a rename (D12). */
+  rewrittenPages?: PageId[];
+  /** Backup of the version "Keep mine" replaced (D22). */
+  conflictBackup?: string;
+  /**
+   * The file had entries the editor can't keep (duplicate node ids, edges to
+   * missing nodes); the original was copied here before this first save.
+   */
+  repairBackup?: string;
 };
 
 /** Response of `DELETE /api/pages/:id` (D11: files move to `.trash/`). */

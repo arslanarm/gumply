@@ -24,6 +24,18 @@ import {
   noteFolder,
   relinkAttachments,
   type RelinkOptions,
+  canvasLinks,
+  canvasMeta,
+  canvasText,
+  emptyCanvas,
+  parseCanvas,
+  rewriteCanvas,
+  serializeCanvas,
+  withCanvasMeta,
+  CanvasParseError,
+  type CanvasBoard,
+  type BoardDocument,
+  type PageKind,
   type Backlink,
   type DeletePageResult,
   type Frontmatter,
@@ -56,6 +68,21 @@ export interface UpdatePageInput {
   force?: boolean;
 }
 
+export interface CreateBoardInput {
+  title: string;
+  parentId?: string | null;
+  icon?: string;
+}
+
+export interface UpdateBoardInput {
+  board?: unknown;
+  title?: string;
+  icon?: string | null;
+  tags?: string[];
+  expectedUpdated?: string;
+  force?: boolean;
+}
+
 export interface GraphOptions {
   center?: PageId;
   /** BFS radius around `center`; defaults to 1 when `center` is set. */
@@ -79,6 +106,18 @@ interface PageRecord extends Omit<Page, "childCount"> {
    * name (typical Obsidian note), and the file is never renamed to "fix" it.
    */
   explicitTitle: boolean;
+  /** D25: a Markdown page or a JSON Canvas whiteboard. */
+  kind: PageKind;
+  /**
+   * Whiteboards only: the parsed board. `content` then holds its searchable
+   * text (`canvasText`), so search, tags and `[[link]]` edges work unchanged.
+   */
+  board?: CanvasBoard;
+  /**
+   * Whiteboards only: the file had entries `parseCanvas` drops (duplicate node
+   * ids, edges to missing nodes). The first save backs up the original.
+   */
+  boardRepaired?: boolean;
 }
 
 /** `.trash/<trashId>/meta.json` (D11). */
@@ -87,6 +126,36 @@ interface TrashManifest {
   trashId: string;
   deleted: PageId[];
   deletedAt: string;
+  /** Vault-relative file of `id` (v1.7: `.md` or `.canvas`); old manifests: `${id}.md`. */
+  file?: string;
+}
+
+const BOARD_EXTENSION = ".canvas";
+
+/** D25 (spec/api v1.7): board ids keep their `.canvas` extension. */
+export function isBoardId(id: string): boolean {
+  return id.toLowerCase().endsWith(BOARD_EXTENSION);
+}
+
+/**
+ * The name used for collisions across both kinds (D20 + v1.7): a page "Map"
+ * and a board "Map.canvas" compete for the same title in a folder.
+ */
+function collisionKey(id: string): string {
+  const lower = id.toLowerCase();
+  return lower.endsWith(BOARD_EXTENSION) ? lower.slice(0, -BOARD_EXTENSION.length) : lower;
+}
+
+/** How many entries `parseCanvas` would drop from this file (0 when unsure). */
+function droppedCanvasEntries(source: string, board: CanvasBoard): number {
+  try {
+    const raw = JSON.parse(source) as { nodes?: unknown; edges?: unknown };
+    const nodes = Array.isArray(raw.nodes) ? raw.nodes.length : 0;
+    const edges = Array.isArray(raw.edges) ? raw.edges.length : 0;
+    return Math.max(0, nodes - board.nodes.length) + Math.max(0, edges - board.edges.length);
+  } catch {
+    return 0;
+  }
 }
 
 /** `segment` is `title` or `title N` (a duplicate suffix), ignoring case. */
@@ -107,6 +176,7 @@ function toIso(value: unknown): string | undefined {
 function metaOf(record: PageRecord, childCount: number): PageMeta {
   const meta: PageMeta = {
     id: record.id,
+    kind: record.kind,
     title: record.title,
     tags: [...record.tags],
     parentId: record.parentId,
@@ -180,7 +250,7 @@ export class VaultStore {
           relative.includes("attachments/") ||
           relative.includes("node_modules") ||
           relative.endsWith(".tmp") ||
-          !relative.toLowerCase().endsWith(".md")
+          !/\.(md|canvas)$/i.test(relative)
         ) {
           return;
         }
@@ -216,21 +286,40 @@ export class VaultStore {
     }, 120);
   }
 
-  private async refreshFromDisk(): Promise<boolean> {
+  /**
+   * Read every page and board (D25). Ids: pages are paths without `.md`,
+   * boards keep `.canvas`. A page whose id would equal a board's (a file
+   * `Map.canvas.md` next to `Map.canvas`) keeps its `.md` so both stay.
+   */
+  private async scanRecords(): Promise<Map<PageId, PageRecord>> {
     const next = new Map<PageId, PageRecord>();
-    for (const absolute of await this.scan(this.root)) {
-      const rel = relative(this.root, absolute).split(sep).join("/");
-      const id = pathToPageId(rel);
+    const files = (await this.scan(this.root)).map((absolute) => ({
+      absolute,
+      rel: relative(this.root, absolute).split(sep).join("/"),
+    }));
+    const boards = new Set(files.filter((file) => isBoardId(file.rel)).map((file) => file.rel.toLowerCase()));
+    for (const { absolute, rel } of files) {
+      let id = isBoardId(rel) ? rel : pathToPageId(rel);
+      if (!isBoardId(rel) && boards.has(id.toLowerCase())) id = rel;
       if (!isValidPageId(id)) continue;
       const record = await this.readRecord(absolute, id);
       this.refreshTags(record);
       next.set(id, record);
     }
+    VaultStore.assignParents(next);
+    return next;
+  }
 
-    for (const [key, value] of next) {
+  /** Folder pages are parents; boards never have sub-pages (v0.4). */
+  private static assignParents(records: Map<PageId, PageRecord>): void {
+    for (const [key, value] of records) {
       const parent = parentOf(key);
-      value.parentId = parent !== null && next.has(parent) ? parent : null;
+      value.parentId = parent !== null && records.get(parent)?.kind === "page" ? parent : null;
     }
+  }
+
+  private async refreshFromDisk(): Promise<boolean> {
+    const next = await this.scanRecords();
 
     let changed = next.size !== this.pages.size;
     if (!changed) {
@@ -248,8 +337,16 @@ export class VaultStore {
     const externalMoves: Array<{ from: PageId; to: PageId }> = [];
     for (const [oldId, oldRecord] of this.pages) {
       if (next.has(oldId)) continue;
+      // Pages keep their frontmatter title across a rename; a board's title
+      // is its file name, so a renamed board is recognised by its content.
+      const oldBoard = oldRecord.board ? serializeCanvas(oldRecord.board) : null;
       const moved = [...next.values()].find(
-        (record) => record.title === oldRecord.title && !this.pages.has(record.id),
+        (record) =>
+          !this.pages.has(record.id) &&
+          record.kind === oldRecord.kind &&
+          (oldBoard !== null
+            ? record.board !== undefined && serializeCanvas(record.board) === oldBoard
+            : record.title === oldRecord.title),
       );
       if (!moved) continue;
       this.addRedirect(oldId, moved.id);
@@ -270,6 +367,8 @@ export class VaultStore {
 
   private recordSignature(record: PageRecord): string {
     return JSON.stringify([
+      record.kind,
+      record.board ? serializeCanvas(record.board) : null,
       record.title,
       record.icon ?? null,
       record.content,
@@ -376,8 +475,8 @@ export class VaultStore {
   private async planFilenameSync(): Promise<Array<{ from: PageId; to: PageId }>> {
     const plans: Array<{ from: PageId; to: PageId }> = [];
     const planned = new Map<PageId, PageId>();
-    const taken = new Set([...this.pages.keys()].map((id) => id.toLowerCase()));
-    const records = [...this.pages.values()].sort(
+    const taken = new Set([...this.pages.keys()].map(collisionKey));
+    const records = [...this.pages.values()].filter((record) => record.kind === "page").sort(
       (a, b) => a.id.split("/").length - b.id.split("/").length || a.id.localeCompare(b.id),
     );
 
@@ -393,7 +492,7 @@ export class VaultStore {
       if (record.explicitTitle) {
         const desired = pageSegment(record.title);
         if (!matchesTitleSegment(segment, desired)) {
-          taken.delete(here.toLowerCase());
+          taken.delete(collisionKey(here));
           const hasChildren = this.hasChildren(record.id);
           target = await this.freeTarget(
             childPageId(plannedFolder, record.title),
@@ -403,7 +502,7 @@ export class VaultStore {
           plans.push({ from: record.id, to: target });
         }
       }
-      taken.add(target.toLowerCase());
+      taken.add(collisionKey(target));
       planned.set(record.id, target);
     }
     return plans;
@@ -423,6 +522,9 @@ export class VaultStore {
   get(id: PageId): Page {
     const resolved = this.resolveId(id);
     const record = this.require(resolved);
+    if (record.kind === "whiteboard") {
+      throw notFound("This is a whiteboard; read it with GET /api/boards/:id");
+    }
     return {
       ...metaOf(record, this.directChildCount(resolved)),
       content: record.content,
@@ -447,6 +549,25 @@ export class VaultStore {
 
   move(id: PageId, parentId: PageId | null): Promise<Page> {
     return this.enqueue(() => this.moveNow(this.resolveId(id), parentId));
+  }
+
+  // --- whiteboards (D25, spec/api v1.7) -----------------------------------
+
+  getBoard(id: PageId): BoardDocument {
+    const resolved = this.resolveId(id);
+    const record = this.requireBoard(resolved);
+    return { meta: metaOf(record, 0), board: record.board as CanvasBoard };
+  }
+
+  createBoard(input: CreateBoardInput): Promise<BoardDocument> {
+    return this.enqueue(() => this.createBoardNow(input));
+  }
+
+  updateBoard(
+    id: PageId,
+    patch: UpdateBoardInput,
+  ): Promise<BoardDocument & { rewrittenPages: PageId[]; conflictBackup?: string; repairBackup?: string }> {
+    return this.enqueue(() => this.updateBoardNow(this.resolveId(id), patch));
   }
 
   backlinks(id: PageId): Backlink[] {
@@ -644,6 +765,7 @@ export class VaultStore {
       fileMtimeMs,
       fmTags: [],
       explicitTitle: true,
+      kind: "page",
     };
     if (icon) record.icon = icon;
 
@@ -653,11 +775,160 @@ export class VaultStore {
     return this.get(id);
   }
 
+  private async createBoardNow(input: CreateBoardInput): Promise<BoardDocument> {
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    if (title.length === 0) throw badRequest("title is required");
+    if (title.length > MAX_TITLE_LENGTH) {
+      throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
+    }
+    const parentId = input.parentId ?? null;
+    if (parentId !== null) {
+      if (typeof parentId !== "string" || !isValidPageId(parentId)) {
+        throw badRequest("parentId must be a valid page id or null");
+      }
+      if (this.require(parentId).kind !== "page") throw badRequest("Whiteboards can't have sub-pages");
+    }
+    const icon = typeof input.icon === "string" && input.icon.trim().length > 0 ? input.icon.trim() : undefined;
+
+    const id = await this.freeId(childPageId(parentId, title), "whiteboard");
+    this.redirects.delete(id);
+    const filePath = this.filePathFor(id);
+    const board = emptyCanvas(icon ? { icon } : undefined);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, serializeCanvas(board), { encoding: "utf8", flag: "wx" });
+    const record = await this.readBoardRecord(filePath, id);
+    record.parentId = parentId;
+    this.pages.set(id, record);
+    this.refreshTags(record);
+    this.reindexAll();
+    return this.getBoard(id);
+  }
+
+  /**
+   * Save a board (and/or rename it, set icon/tags). Conditional like pages
+   * (D22): a file changed on disk is a 409 unless `force` (Keep mine), which
+   * backs up the disk version first.
+   */
+  private async updateBoardNow(
+    id: PageId,
+    patch: UpdateBoardInput,
+  ): Promise<BoardDocument & { rewrittenPages: PageId[]; conflictBackup?: string; repairBackup?: string }> {
+    let record = this.requireBoard(id);
+
+    let info;
+    try {
+      info = await stat(record.filePath);
+    } catch {
+      info = null;
+    }
+    const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
+    const versionChanged = patch.expectedUpdated !== undefined && patch.expectedUpdated !== record.updated;
+    let conflictBackup: string | undefined;
+    if (mtimeChanged || versionChanged) {
+      if (!patch.force) throw conflict("This whiteboard changed on disk.");
+      conflictBackup = await this.backupConflict(record);
+    }
+
+    // Validate the new board through the same parser the files go through.
+    let board = record.board as CanvasBoard;
+    if (patch.board !== undefined) {
+      if (typeof patch.board !== "object" || patch.board === null || Array.isArray(patch.board)) {
+        throw badRequest("board must be a JSON Canvas object");
+      }
+      const text = JSON.stringify(patch.board);
+      if (text.length > MAX_CONTENT_LENGTH) throw badRequest("board is too large");
+      try {
+        board = parseCanvas(text);
+      } catch (error) {
+        throw badRequest(error instanceof Error ? error.message : "Invalid board");
+      }
+    }
+    if (patch.icon !== undefined || patch.tags !== undefined) {
+      if (patch.icon !== undefined && patch.icon !== null && typeof patch.icon !== "string") {
+        throw badRequest("icon must be a string or null");
+      }
+      board = withCanvasMeta(board, {
+        ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
+        ...(patch.tags !== undefined ? { tags: normalizeTags(patch.tags).slice(0, MAX_TAGS) } : {}),
+      });
+    }
+
+    const previousTitle = record.title;
+    const nextTitle = patch.title === undefined ? record.title : String(patch.title).trim();
+    if (nextTitle.length === 0) throw badRequest("title must not be empty");
+    if (nextTitle.length > MAX_TITLE_LENGTH) {
+      throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
+    }
+    const titleChanged = nextTitle !== previousTitle;
+    const beforeMetas = titleChanged ? this.list() : [];
+
+    const repairBackup = await this.saveBoardRecord(record, board);
+
+    const rewrittenPages: PageId[] = [];
+    let targetId = id;
+    if (titleChanged) {
+      // D20: the file name is the title; the id keeps `.canvas`.
+      targetId = await this.renameTarget(id, record.parentId, nextTitle, "whiteboard");
+      if (targetId !== id) {
+        rewrittenPages.push(...(await this.relocateNow(id, targetId)));
+        record = this.pages.get(targetId) ?? record;
+      }
+      record.title = (targetId.split("/").pop() ?? targetId).slice(0, -BOARD_EXTENSION.length);
+      rewrittenPages.push(...(await this.rewriteLinksTo(id, record, previousTitle, beforeMetas)));
+      this.reindexAll();
+    } else {
+      this.recomputeSource(id);
+    }
+
+    return {
+      ...this.getBoard(targetId),
+      rewrittenPages: [...new Set(rewrittenPages)].sort((a, b) => a.localeCompare(b)),
+      ...(conflictBackup ? { conflictBackup } : {}),
+      ...(repairBackup ? { repairBackup } : {}),
+    };
+  }
+
+  /**
+   * Write a board file atomically and refresh its record. When the file had
+   * entries a board can't keep (or wasn't valid JSON Canvas), the original is
+   * copied to `.gumply/conflicts/` first, once. Returns that backup path.
+   */
+  private async saveBoardRecord(record: PageRecord, board: CanvasBoard): Promise<string | undefined> {
+    let repairBackup: string | undefined;
+    if (record.boardRepaired) {
+      repairBackup = await this.backupConflict(record);
+      record.boardRepaired = false;
+    }
+    const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      await mkdir(dirname(record.filePath), { recursive: true });
+      await writeFile(temporary, serializeCanvas(board), "utf8");
+      await rename(temporary, record.filePath);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    const stats = await stat(record.filePath);
+    const meta = canvasMeta(board);
+    record.board = board;
+    record.content = canvasText(board);
+    record.fileMtimeMs = stats.mtimeMs;
+    record.updated = stats.mtime.toISOString();
+    record.fmTags = normalizeTags(meta.tags);
+    if (meta.icon) record.icon = meta.icon;
+    else delete record.icon;
+    this.refreshTags(record);
+    return repairBackup;
+  }
+
   private async updateNow(
     id: PageId,
     patch: UpdatePageInput,
   ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string }> {
     let record = this.require(id);
+    if (record.kind === "whiteboard") {
+      throw notFound("This is a whiteboard; save it with PUT /api/boards/:id");
+    }
 
     let info;
     try {
@@ -754,43 +1025,7 @@ export class VaultStore {
     const rewrittenPages: PageId[] = [];
 
     if (titleChanged) {
-      // D12: keep link text truthful by rewriting `[[Old…]]` in other pages.
-      // #mp8eadhk: when the title and file name differ, links become
-      // `[[file name|Title]]` so Obsidian (by file name) resolves them too.
-      const afterMetas = this.list();
-      const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
-      for (const other of [...this.pages.values()]) {
-        if (other.id === id || other.id === targetId) continue;
-
-        const isTarget = (link: { targetTitle: string }) =>
-          resolveWikilink(link.targetTitle, beforeMetas)?.id === id;
-        const result = renamedMeta
-          ? rewriteLinksToPage(other.content, isTarget, renamedMeta, afterMetas, previousTitle)
-          : rewriteWikilinkTargets(other.content, isTarget, nextTitle);
-        if (result.count === 0) continue;
-
-        const rewrittenAt = new Date().toISOString();
-        const otherWritten = await this.writePage(
-          other.filePath,
-          {
-            title: other.title,
-            ...(other.icon ? { icon: other.icon } : {}),
-            tags: other.fmTags,
-            created: other.created,
-            updated: rewrittenAt,
-          },
-          result.content,
-          ["updated"],
-          titleFromId(other.id),
-        );
-        other.content = result.content;
-        other.updated = otherWritten.frontmatter
-          ? rewrittenAt
-          : new Date(otherWritten.mtimeMs).toISOString();
-        other.fileMtimeMs = otherWritten.mtimeMs;
-        this.refreshTags(other);
-        rewrittenPages.push(other.id);
-      }
+      rewrittenPages.push(...(await this.rewriteLinksTo(id, record, previousTitle, beforeMetas)));
 
       // D23: sub-pages whose attachment links moved with their folder.
       for (const relinkedId of relinked) {
@@ -809,21 +1044,82 @@ export class VaultStore {
     };
   }
 
-  /** D20: the id (and therefore file path) follows the title. */
+  /**
+   * D12: after `oldId` was renamed to `record` (title `previousTitle` before),
+   * rewrite `[[links]]` to it in every other page and board. #mp8eadhk: when
+   * title and file name differ, links become `[[file name|Title]]` (for a
+   * board always `[[Map.canvas|Map]]`, v1.7) so Obsidian resolves them too.
+   */
+  private async rewriteLinksTo(
+    oldId: PageId,
+    record: PageRecord,
+    previousTitle: string,
+    beforeMetas: readonly PageMeta[],
+  ): Promise<PageId[]> {
+    const rewritten: PageId[] = [];
+    const afterMetas = this.list();
+    const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
+    const isTarget = (link: { targetTitle: string }) =>
+      resolveWikilink(link.targetTitle, beforeMetas)?.id === oldId;
+    const rewriteText = (markdown: string) =>
+      renamedMeta
+        ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
+        : rewriteWikilinkTargets(markdown, isTarget, record.title);
+
+    for (const other of [...this.pages.values()]) {
+      if (other.id === oldId || other.id === record.id) continue;
+
+      if (other.board) {
+        const result = rewriteCanvas(other.board, { text: (markdown) => rewriteText(markdown).content });
+        if (result.count === 0) continue;
+        await this.saveBoardRecord(other, result.board);
+        rewritten.push(other.id);
+        continue;
+      }
+
+      const result = rewriteText(other.content);
+      if (result.count === 0) continue;
+
+      const rewrittenAt = new Date().toISOString();
+      const otherWritten = await this.writePage(
+        other.filePath,
+        {
+          title: other.title,
+          ...(other.icon ? { icon: other.icon } : {}),
+          tags: other.fmTags,
+          created: other.created,
+          updated: rewrittenAt,
+        },
+        result.content,
+        ["updated"],
+        titleFromId(other.id),
+      );
+      other.content = result.content;
+      other.updated = otherWritten.frontmatter
+        ? rewrittenAt
+        : new Date(otherWritten.mtimeMs).toISOString();
+      other.fileMtimeMs = otherWritten.mtimeMs;
+      this.refreshTags(other);
+      rewritten.push(other.id);
+    }
+    return rewritten;
+  }
+
+  /** D20: the id (and therefore file path) follows the title. Boards keep `.canvas`. */
   private async renameTarget(
     id: PageId,
     parentId: PageId | null,
     title: string,
+    kind: PageKind = "page",
   ): Promise<PageId> {
     const folder = parentOf(id) ?? parentId;
-    const desired = childPageId(folder, title);
+    const stem = childPageId(folder, title);
+    const desired = kind === "whiteboard" ? `${stem}${BOARD_EXTENSION}` : stem;
     if (desired === id) return id;
     // Case-only change: same file on case-insensitive file systems.
     if (desired.toLowerCase() === id.toLowerCase()) return desired;
-    const taken = new Set(
-      [...this.pages.keys()].filter((key) => key !== id).map((key) => key.toLowerCase()),
-    );
-    return this.freeTarget(desired, this.hasChildren(id), taken);
+    const taken = new Set([...this.pages.keys()].filter((key) => key !== id).map(collisionKey));
+    return this.freeTarget(stem, this.hasChildren(id), taken, kind);
   }
 
   private hasChildren(id: PageId): boolean {
@@ -833,22 +1129,35 @@ export class VaultStore {
   }
 
   /**
-   * First of `base`, `base 2`, `base 3`, … that no other page uses (compared
-   * case-insensitively) and that is free on disk. A page with sub-pages also
-   * needs its folder name free.
+   * First of `base`, `base 2`, `base 3`, … that no other page **or board**
+   * uses (compared case-insensitively, v1.7) and that is free on disk as both
+   * `.md` and `.canvas`. A page with sub-pages also needs its folder name free.
+   * `base` is the id without extension; boards get `.canvas` appended.
    */
   private async freeTarget(
     base: PageId,
     withFolder: boolean,
     taken: ReadonlySet<string>,
+    kind: PageKind = "page",
   ): Promise<PageId> {
     for (let suffix = 1; ; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base} ${suffix}`;
       if (taken.has(candidate.toLowerCase())) continue;
+      // A page id ending in `.canvas` would read as a board id.
+      if (kind === "page" && isBoardId(candidate)) continue;
       if (await pathExists(this.filePathFor(candidate))) continue;
+      if (await pathExists(this.filePathFor(`${candidate}${BOARD_EXTENSION}`))) continue;
       if (withFolder && (await pathExists(join(this.root, candidate)))) continue;
-      return candidate;
+      return kind === "whiteboard" ? `${candidate}${BOARD_EXTENSION}` : candidate;
     }
+  }
+
+  /** Where a record's file goes when its id becomes `newId` (same extension). */
+  private movedFilePath(record: PageRecord, newId: PageId): string {
+    const suffix = record.filePath.slice(resolve(this.root, record.id).length);
+    const absolute = resolve(this.root, `${newId}${suffix}`);
+    if (!absolute.startsWith(`${this.root}${sep}`)) throw badRequest("Page id escapes the vault");
+    return absolute;
   }
 
   /** Move a page file and its child folder, remapping ids without rewriting content. */
@@ -861,14 +1170,15 @@ export class VaultStore {
     const newDir = join(this.root, newId);
     const hasChildren = [...this.pages.keys()].some((key) => key.startsWith(`${id}/`));
 
-    await mkdir(dirname(this.filePathFor(newId)), { recursive: true });
+    const newFile = this.movedFilePath(record, newId);
+    await mkdir(dirname(newFile), { recursive: true });
     if (hasChildren) {
       await mkdir(dirname(newDir), { recursive: true });
       await rename(oldDir, newDir);
     }
 
     try {
-      await rename(record.filePath, this.filePathFor(newId));
+      await rename(record.filePath, newFile);
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
       throw error;
@@ -881,7 +1191,7 @@ export class VaultStore {
       const movedId = `${newId}${key.slice(id.length)}`;
       moved.push({
         oldId: key,
-        record: { ...value, id: movedId, filePath: this.filePathFor(movedId) },
+        record: { ...value, id: movedId, filePath: this.movedFilePath(value, movedId) },
       });
     }
     for (const { oldId, record: value } of moved) {
@@ -890,13 +1200,14 @@ export class VaultStore {
       this.addRedirect(oldId, value.id);
     }
 
-    for (const [key, value] of this.pages) {
-      const parent = parentOf(key);
-      value.parentId = parent !== null && this.pages.has(parent) ? parent : null;
-    }
+    VaultStore.assignParents(this.pages);
 
+    const moves = moved.map(({ oldId, record: value }) => ({ from: oldId, to: value.id }));
     // D23: sub-pages now live in another folder; fix their attachment links.
-    return this.relinkMoved(moved.map(({ oldId, record: value }) => ({ from: oldId, to: value.id })));
+    const relinked = await this.relinkMoved(moves);
+    // D25: board cards pointing at moved pages/boards follow them.
+    const boards = await this.rewriteBoardCards(moves);
+    return [...new Set([...relinked, ...boards])];
   }
 
   /**
@@ -914,7 +1225,8 @@ export class VaultStore {
     const changed: PageId[] = [];
     for (const { from, to } of relevant) {
       const record = this.pages.get(to);
-      if (!record) continue;
+      // Boards reference attachments vault-root (JSON Canvas), never relative.
+      if (!record || record.kind !== "page") continue;
       const next = relinkAttachments(record.content, from, to, exists, options);
       if (next === record.content) continue;
       const at = new Date().toISOString();
@@ -965,11 +1277,13 @@ export class VaultStore {
     const deleted = this.subtreeIds(id);
     const trashId = await this.freeTrashId();
     const trashDir = join(this.root, ".trash", trashId);
-    const pageInTrash = join(trashDir, `${id}.md`);
+    const file = relative(this.root, record.filePath).split(sep).join("/");
+    const pageInTrash = join(trashDir, file);
     const childDir = join(this.root, id);
     const childInTrash = join(trashDir, id);
     const pageExists = await pathExists(record.filePath);
-    const childExists = await pathExists(childDir);
+    // Only pages have a sub-page folder; for a board `id` is the file itself.
+    const childExists = record.kind === "page" && (await pathExists(childDir));
 
     // The in-memory index can briefly outlive the files (e.g. a late autosave
     // racing a delete, or a partially completed trash move). If the page and
@@ -989,6 +1303,7 @@ export class VaultStore {
       trashId,
       deleted,
       deletedAt: new Date().toISOString(),
+      file,
     };
 
     try {
@@ -1041,20 +1356,28 @@ export class VaultStore {
       throw notFound("Trash entry not found");
     }
 
-    const pageSource = join(trashDir, `${manifest.id}.md`);
-    const pageTarget = this.filePathFor(manifest.id);
+    // v1.7 manifests name the file (`.md` or `.canvas`); older ones mean `.md`.
+    const file =
+      typeof manifest.file === "string" && manifest.file.length > 0 ? manifest.file : `${manifest.id}.md`;
+    const pageSource = resolve(trashDir, file);
+    const pageTarget = resolve(this.root, file);
+    if (!pageSource.startsWith(`${trashDir}${sep}`) || !pageTarget.startsWith(`${this.root}${sep}`)) {
+      throw notFound("Trash entry not found");
+    }
+    // Boards (`.canvas`) have no sub-page folder.
+    const hasFolder = !isBoardId(file);
     const childSource = join(trashDir, manifest.id);
     const childTarget = join(this.root, manifest.id);
 
     if (!(await pathExists(pageSource))) throw notFound("Trash entry not found");
-    if ((await pathExists(pageTarget)) || (await pathExists(childTarget))) {
+    if ((await pathExists(pageTarget)) || (hasFolder && (await pathExists(childTarget)))) {
       throw conflict(`A page already exists at ${manifest.id}`);
     }
 
     await mkdir(dirname(pageTarget), { recursive: true });
     await rename(pageSource, pageTarget);
 
-    if (await pathExists(childSource)) {
+    if (hasFolder && (await pathExists(childSource))) {
       await mkdir(dirname(childTarget), { recursive: true });
       try {
         await rename(childSource, childTarget);
@@ -1078,7 +1401,7 @@ export class VaultStore {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
         throw badRequest("parentId must be a valid page id or null");
       }
-      this.require(parentId);
+      if (this.require(parentId).kind !== "page") throw badRequest("Whiteboards can't have sub-pages");
       if (parentId === id || parentId.startsWith(`${id}/`)) {
         throw badRequest("cannot move a page into itself or one of its children");
       }
@@ -1086,9 +1409,13 @@ export class VaultStore {
 
     const segment = id.split("/").pop() ?? id;
     const newId = parentId ? `${parentId}/${segment}` : segment;
-    if (newId === id) return this.get(id);
+    if (newId === id) return this.getAny(id);
 
-    if (this.pages.has(newId) || (await pathExists(this.filePathFor(newId)))) {
+    const newFile = this.movedFilePath(record, newId);
+    const clash = [...this.pages.keys()].some(
+      (key) => key !== id && collisionKey(key) === collisionKey(newId),
+    );
+    if (this.pages.has(newId) || clash || (await pathExists(newFile))) {
       throw conflict(`A page already exists at ${newId}`);
     }
 
@@ -1096,14 +1423,14 @@ export class VaultStore {
     const newDir = join(this.root, newId);
     const hasChildren = [...this.pages.keys()].some((key) => key.startsWith(`${id}/`));
 
-    await mkdir(dirname(this.filePathFor(newId)), { recursive: true });
+    await mkdir(dirname(newFile), { recursive: true });
     if (hasChildren) {
       await mkdir(dirname(newDir), { recursive: true });
       await rename(oldDir, newDir);
     }
 
     try {
-      await rename(record.filePath, this.filePathFor(newId));
+      await rename(record.filePath, newFile);
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
       throw error;
@@ -1115,48 +1442,39 @@ export class VaultStore {
       this.pages.delete(key);
       const suffix = key.slice(id.length);
       const movedId = `${newId}${suffix}`;
-      moved.push({ ...value, id: movedId, filePath: this.filePathFor(movedId) });
+      moved.push({ ...value, id: movedId, filePath: this.movedFilePath(value, movedId) });
     }
     for (const value of moved) this.pages.set(value.id, value);
 
     const movedRoot = this.pages.get(newId);
     if (movedRoot) movedRoot.parentId = parentId;
 
-    for (const [key, value] of this.pages) {
-      const parent = parentOf(key);
-      value.parentId = parent !== null && this.pages.has(parent) ? parent : null;
-    }
+    VaultStore.assignParents(this.pages);
 
+    const moves = moved.map((value) => ({ from: `${id}${value.id.slice(newId.length)}`, to: value.id }));
     // D23: the moved page and its sub-pages are in another folder now.
-    await this.relinkMoved(
-      moved.map((value) => ({ from: `${id}${value.id.slice(newId.length)}`, to: value.id })),
-    );
+    await this.relinkMoved(moves);
+    // D25: board cards pointing at them follow.
+    await this.rewriteBoardCards(moves);
 
     this.reindexAll();
-    return this.get(newId);
+    return this.getAny(newId);
+  }
+
+  /** A page, or a board's meta with empty content (shared endpoints: move). */
+  private getAny(id: PageId): Page {
+    const record = this.require(id);
+    if (record.kind === "whiteboard") return { ...metaOf(record, 0), content: "" };
+    return this.get(id);
   }
 
   // --- index -------------------------------------------------------------
 
   private async rebuild(): Promise<void> {
+    const next = await this.scanRecords();
     this.pages.clear();
     this.edgesBySource.clear();
-
-    for (const absolute of await this.scan(this.root)) {
-      const rel = relative(this.root, absolute).split(sep).join("/");
-      const id = pathToPageId(rel);
-      if (!isValidPageId(id)) continue;
-
-      const record = await this.readRecord(absolute, id);
-      this.pages.set(id, record);
-      this.refreshTags(record);
-    }
-
-    for (const [key, value] of this.pages) {
-      const parent = parentOf(key);
-      value.parentId = parent !== null && this.pages.has(parent) ? parent : null;
-    }
-
+    for (const [id, record] of next) this.pages.set(id, record);
     this.reindexAll();
   }
 
@@ -1166,7 +1484,7 @@ export class VaultStore {
     for (const meta of metas) {
       const record = this.pages.get(meta.id);
       if (!record) continue;
-      this.edgesBySource.set(meta.id, collectLinkEdges(meta.id, record.content, metas));
+      this.edgesBySource.set(meta.id, this.edgesFor(record, metas));
     }
   }
 
@@ -1176,7 +1494,75 @@ export class VaultStore {
       this.edgesBySource.delete(id);
       return;
     }
-    this.edgesBySource.set(id, collectLinkEdges(id, record.content, this.list()));
+    this.edgesBySource.set(id, this.edgesFor(record, this.list()));
+  }
+
+  /**
+   * Link edges from a page (`[[links]]`) or a board (D25: `[[links]]` in its
+   * text plus page/board cards, i.e. file nodes).
+   */
+  private edgesFor(record: PageRecord, metas: readonly PageMeta[]): LinkEdge[] {
+    const edges = collectLinkEdges(record.id, record.content, metas);
+    if (!record.board) return edges;
+    const seen = new Set(edges.map((edge) => edge.target ?? `?${edge.targetTitle.toLowerCase()}`));
+    for (const link of canvasLinks(record.board)) {
+      if (link.kind !== "file") continue;
+      const id = this.idForFile(link.path);
+      if (id === record.id) continue;
+      const target = id === null ? null : (this.pages.get(id) ?? null);
+      const name = link.path.split("/").pop() ?? link.path;
+      const targetTitle = target?.title ?? name.replace(/\.(md|canvas)$/i, "");
+      const key = target?.id ?? `?${targetTitle.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ source: record.id, target: target?.id ?? null, targetTitle });
+    }
+    return edges;
+  }
+
+  /** Page/board id for a vault file path on a board card (`Projects/Q1 plan.md`). */
+  private idForFile(path: string): PageId | null {
+    const clean = path.replace(/^\/+/, "");
+    const candidates = isBoardId(clean) ? [clean] : [clean.replace(/\.md$/i, ""), clean];
+    for (const candidate of candidates) {
+      if (this.pages.has(candidate)) return candidate;
+    }
+    const lower = candidates.map((candidate) => candidate.toLowerCase());
+    for (const id of this.pages.keys()) if (lower.includes(id.toLowerCase())) return id;
+    return null;
+  }
+
+  /** The vault path a board card uses for a page/board (JSON Canvas: vault-root). */
+  private fileForId(id: PageId): string {
+    const record = this.pages.get(id);
+    return record ? relative(this.root, record.filePath).split(sep).join("/") : `${id}.md`;
+  }
+
+  /**
+   * After pages/boards moved (rename, Move to…, a parent's rename), point
+   * board cards at their new files. Returns the boards that changed.
+   */
+  private async rewriteBoardCards(moves: ReadonlyArray<{ from: PageId; to: PageId }>): Promise<PageId[]> {
+    if (moves.length === 0) return [];
+    const byOldFile = new Map<string, string>();
+    for (const { from, to } of moves) {
+      const record = this.pages.get(to);
+      if (!record) continue;
+      const newFile = relative(this.root, record.filePath).split(sep).join("/");
+      const suffix = newFile.slice(to.length);
+      byOldFile.set(`${from}${suffix}`.toLowerCase(), newFile);
+    }
+    const changed: PageId[] = [];
+    for (const board of [...this.pages.values()]) {
+      if (!board.board) continue;
+      const result = rewriteCanvas(board.board, {
+        file: (path) => byOldFile.get(path.replace(/^\/+/, "").toLowerCase()) ?? null,
+      });
+      if (result.count === 0) continue;
+      await this.saveBoardRecord(board, result.board);
+      changed.push(board.id);
+    }
+    return changed;
   }
 
   private allEdges(): LinkEdge[] {
@@ -1218,6 +1604,7 @@ export class VaultStore {
   // --- files -------------------------------------------------------------
 
   private async readRecord(absolute: string, id: PageId): Promise<PageRecord> {
+    if (isBoardId(absolute)) return this.readBoardRecord(absolute, id);
     const raw = await readFile(absolute, "utf8");
     const { frontmatter, content } = parseFrontmatter(raw);
     const stats = await stat(absolute);
@@ -1248,8 +1635,52 @@ export class VaultStore {
       fileMtimeMs: stats.mtimeMs,
       fmTags: normalizeTags(frontmatter.tags),
       explicitTitle,
+      kind: "page",
     };
     if (icon) record.icon = icon;
+    return record;
+  }
+
+  /**
+   * A `.canvas` file (D25). Title = file name; icon/tags from the top-level
+   * `gumply` object; dates from the file. A file that isn't valid JSON Canvas
+   * still shows in the tree (as an empty board) and is never overwritten
+   * without a backup: saving it backs up the original first.
+   */
+  private async readBoardRecord(absolute: string, id: PageId): Promise<PageRecord> {
+    const raw = await readFile(absolute, "utf8");
+    const stats = await stat(absolute);
+    let board: CanvasBoard;
+    let repaired = false;
+    try {
+      board = parseCanvas(raw);
+      repaired = droppedCanvasEntries(raw, board) > 0;
+    } catch (error) {
+      if (!(error instanceof CanvasParseError)) throw error;
+      console.warn(`[gumply] ${id}: ${error.message}; shown as an empty board`);
+      board = emptyCanvas();
+      repaired = true;
+    }
+    if (repaired) console.warn(`[gumply] ${id}: has entries a whiteboard can't keep; the first save backs up the original`);
+    const meta = canvasMeta(board);
+    const name = id.split("/").pop() ?? id;
+    const record: PageRecord = {
+      id,
+      title: name.slice(0, -BOARD_EXTENSION.length) || "Untitled",
+      tags: [],
+      parentId: null,
+      created: stats.birthtime.toISOString(),
+      updated: stats.mtime.toISOString(),
+      content: canvasText(board),
+      filePath: absolute,
+      fileMtimeMs: stats.mtimeMs,
+      fmTags: normalizeTags(meta.tags),
+      explicitTitle: true,
+      kind: "whiteboard",
+      board,
+      boardRepaired: repaired,
+    };
+    if (meta.icon) record.icon = meta.icon;
     return record;
   }
 
@@ -1263,7 +1694,8 @@ export class VaultStore {
     const dir = join(this.root, ".gumply", "conflicts");
     await mkdir(dir, { recursive: true });
     const safeId = record.id.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 120);
-    const file = join(dir, `${safeId}-${Date.now()}.md`);
+    const extension = record.kind === "whiteboard" ? BOARD_EXTENSION : ".md";
+    const file = join(dir, `${safeId}-${Date.now()}${extension}`);
     await writeFile(file, raw, "utf8");
     const relativePath = relative(this.root, file).split(sep).join("/");
     console.warn(`[gumply] conflict backup for ${record.id}: ${file}`);
@@ -1328,15 +1760,15 @@ export class VaultStore {
 
       const absolute = join(dir, entry.name);
       if (entry.isDirectory()) files.push(...(await this.scan(absolute)));
-      else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) files.push(absolute);
+      else if (entry.isFile() && /\.(md|canvas)$/i.test(entry.name)) files.push(absolute);
     }
 
     return files;
   }
 
-  private async freeId(baseId: string): Promise<PageId> {
-    const taken = new Set([...this.pages.keys()].map((key) => key.toLowerCase()));
-    return this.freeTarget(baseId, false, taken);
+  private async freeId(baseId: string, kind: PageKind = "page"): Promise<PageId> {
+    const taken = new Set([...this.pages.keys()].map(collisionKey));
+    return this.freeTarget(baseId, false, taken, kind);
   }
 
   private async freeTrashId(): Promise<string> {
@@ -1368,11 +1800,18 @@ export class VaultStore {
 
   private filePathFor(id: PageId): string {
     if (!isValidPageId(id)) throw badRequest("Invalid page id");
-    const absolute = resolve(this.root, `${id}.md`);
+    // Boards keep their extension in the id (v1.7); pages add `.md`.
+    const absolute = resolve(this.root, isBoardId(id) ? id : `${id}.md`);
     if (!absolute.startsWith(`${this.root}${sep}`)) {
       throw badRequest("Page id escapes the vault");
     }
     return absolute;
+  }
+
+  private requireBoard(id: PageId): PageRecord {
+    const record = this.require(id);
+    if (record.kind !== "whiteboard" || !record.board) throw notFound(`Whiteboard not found: ${id}`);
+    return record;
   }
 
   private require(id: PageId): PageRecord {

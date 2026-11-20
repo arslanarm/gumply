@@ -1,12 +1,18 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { markdownItAlias } from "./apps/web/markdown-it-path";
 
 export default defineConfig({
   resolve: {
-    alias: {
+    alias: [
       // Tests run against core sources so `npm test` works without a build.
-      "@gumply/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
-    },
+      {
+        find: "@gumply/core",
+        replacement: fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
+      },
+      // The markdown-it the editor ships (see apps/web/markdown-it-path.ts).
+      markdownItAlias,
+    ],
   },
   test: {
     environment: "node",

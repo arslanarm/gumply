@@ -5,14 +5,14 @@
  *   npm run seed:big            # 200 pages
  *   npm run seed:big -- 500     # more
  *   npm run seed:big -- 1000 --icons   # every page gets an emoji icon (graph perf)
- *   GUMPLY_API_URL=http://localhost:8787/api npm run seed:big
+ *   GUMPLY_API_URL=http://127.0.0.1:8787/api npm run seed:big
  *
  * Creates one root page ("Big Vault") and N sub-pages, each linking to the
  * next page and a few others. Every 13th page also links to a missing title
  * so ghost nodes show up.
  */
 
-const base = (process.env.GUMPLY_API_URL ?? "http://localhost:8787/api").replace(/\/+$/, "");
+const base = (process.env.GUMPLY_API_URL ?? "http://127.0.0.1:8787/api").replace(/\/+$/, "");
 const args = process.argv.slice(2);
 const withIcons = args.includes("--icons");
 const count = Number.parseInt(args.find((arg) => !arg.startsWith("--")) ?? "200", 10);

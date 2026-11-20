@@ -25,6 +25,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { markupRule } from "./markup.js";
+import { inlineImageRule } from "../attachments/inline-image.js";
 
 export const RAW_BLOCK_ATTR = "data-raw-md";
 export const RAW_INLINE_ATTR = "data-raw-md-inline";
@@ -242,6 +243,73 @@ function entityRule(state: any): void {
 
 export const AUTOLINK_ATTR = "data-md-autolink";
 
+export const IMAGE_RAW_ATTR = "data-md-raw";
+
+/**
+ * End of a `[label](dest "title")` / `![…](…)` whose destination markdown-it
+ * refuses (`javascript:`, `vbscript:`, `file:`, non-image `data:`), or -1.
+ * Such links used to degrade to text and be saved escaped (`!\[c\](…)`),
+ * which changes the file and its meaning in other tools (#2ijnyid6).
+ */
+function blockedLinkEnd(state: any, isImage: boolean): number {
+  const src: string = state.src;
+  const max: number = state.posMax;
+  const open = isImage ? state.pos + 1 : state.pos;
+  if (src[open] !== "[") return -1;
+  const labelEnd = state.md.helpers.parseLinkLabel(state, open, !isImage);
+  if (labelEnd < 0 || src[labelEnd + 1] !== "(") return -1;
+  let pos = labelEnd + 2;
+  while (pos < max && /\s/.test(src[pos]!)) pos += 1;
+  const dest = state.md.helpers.parseLinkDestination(src, pos, max);
+  if (!dest.ok) return -1;
+  if (state.md.validateLink(state.md.normalizeLink(dest.str))) return -1;
+  pos = dest.pos;
+  const afterDest = pos;
+  while (pos < max && /\s/.test(src[pos]!)) pos += 1;
+  const title = state.md.helpers.parseLinkTitle(src, pos, max);
+  if (pos < max && pos !== afterDest && title.ok) {
+    pos = title.pos;
+    while (pos < max && /\s/.test(src[pos]!)) pos += 1;
+  }
+  return src[pos] === ")" ? pos + 1 : -1;
+}
+
+/**
+ * Wrap markdown-it's `image` / `link` rules:
+ * - a parsed image remembers its exact source (`![a](<my pic.png>)`), written
+ *   back while src/alt/title are unchanged;
+ * - a link/image with a refused scheme becomes an inert raw inline atom: shown
+ *   as text, never live, written back verbatim.
+ */
+function wrapLinkRules(md: any): void {
+  const rules = md.inline.ruler.__rules__ as Array<{ name: string; fn: any }>;
+  for (const name of ["image", "link"]) {
+    const original = rules.find((rule) => rule.name === name)?.fn;
+    if (!original) continue;
+    const isImage = name === "image";
+    md.inline.ruler.at(name, (state: any, silent: boolean) => {
+      const start = state.pos;
+      if (original(state, silent)) {
+        if (!silent && isImage) {
+          const token = state.tokens[state.tokens.length - 1];
+          if (token?.type === "image") token.attrSet(IMAGE_RAW_ATTR, state.src.slice(start, state.pos));
+        }
+        return true;
+      }
+      if (isImage ? state.src[start] !== "!" : state.src[start] !== "[") return false;
+      const end = blockedLinkEnd(state, isImage);
+      if (end < 0) return false;
+      if (!silent) {
+        const token = state.push("gumply_raw_inline", "span", 0);
+        token.content = state.src.slice(start, end);
+        token.info = "inert";
+      }
+      state.pos = end;
+      return true;
+    });
+  }
+}
+
 const INSTALLED = Symbol.for("gumply.rawMarkdown");
 
 export function rawMarkdownPlugin(md: any): void {
@@ -254,10 +322,12 @@ export function rawMarkdownPlugin(md: any): void {
   md.core.ruler.after("block", "gumply_raw_blocks", rawBlocksRule);
   md.core.ruler.after("gumply_raw_blocks", "gumply_markup", markupRule);
   md.core.ruler.after("inline", "gumply_break_style", breakStyleRule);
+  md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
   if (md.core.ruler.__find__("text_join") !== -1) {
     md.core.ruler.before("text_join", "gumply_entities", entityRule);
   }
   md.inline.ruler.before("link", "gumply_raw_inline", rawInlineRule);
+  wrapLinkRules(md);
 
   const block = (source: string, kind: string) =>
     `<div ${RAW_BLOCK_ATTR}="${escapeAttr(source)}" data-raw-kind="${escapeAttr(kind)}"></div>`;

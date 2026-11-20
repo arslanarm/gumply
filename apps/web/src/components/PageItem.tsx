@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { canMovePage, type PageTreeNode } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
@@ -26,8 +26,15 @@ export interface PageItemProps {
   onMove: (id: PageId, parentId: PageId | null) => void;
 }
 
-/** One row of the sidebar tree, rendered recursively for children. */
-export function PageItem(props: PageItemProps) {
+/**
+ * One row of the sidebar tree, rendered recursively for children. Memoized:
+ * with 1000 pages, re-rendering every row on each App update (autosave status,
+ * page load) cost more than the editor itself (#evh35bn7). Sidebar passes
+ * stable callbacks, so a row re-renders only when its own data changes.
+ */
+export const PageItem = memo(PageItemRow);
+
+function PageItemRow(props: PageItemProps) {
   const { node, depth, pages, selectedId, renamingId, draggingId, collapsed } = props;
   const page = node.page;
   const hasChildren = node.children.length > 0;
