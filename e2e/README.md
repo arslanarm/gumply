@@ -18,12 +18,15 @@ deliberately never reuses an existing server, because that server could be
 pointed at your real notes. Override ports with `GUMPLY_WEB_PORT` /
 `GUMPLY_PORT` if those are taken too.
 
-**Agents sharing one machine:** always run on your own port range, e.g.
-`GUMPLY_WEB_PORT=10410 GUMPLY_PORT=10411 npm run test:e2e`. The default vault is
-`$TMPDIR/gumply-e2e-vault-<API port>`, so separate ports also mean separate
-vaults. (A fixed shared vault path used to let one agent's run wipe another's
-pages mid-test, which caused random "No pages yet" / "Page not found" failures.)
-Set `GUMPLY_VAULT` only to a directory nobody else uses.
+**Agents sharing one machine:** run on your own port range, e.g.
+`GUMPLY_WEB_PORT=10410 GUMPLY_PORT=10411 npm run test:e2e`. Unless you set
+`GUMPLY_VAULT`, every run creates a fresh `$TMPDIR/gumply-e2e-XXXXXX` vault and
+deletes it in global teardown (`support/teardown.ts`). Two runs on different
+ports can therefore never touch each other's pages. (The old fixed default
+`/tmp/gumply-e2e-vault` let one run's reset wipe another run's pages mid-test,
+which caused random "No pages yet" / "Page not found" failures; see P9 in
+`platform-issues`.) A `GUMPLY_VAULT` you pass in is used as-is and never
+deleted, so point it only at a throwaway directory.
 
 Browsers: `npx playwright install chromium firefox`. Chromium runs the full
 suite; Firefox runs the two graph canvas specs (`graph-visual.spec.ts` and

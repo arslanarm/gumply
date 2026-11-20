@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { API_PORT, WEB_PORT } from './env';
 
 /**
  * A second, isolated Gumply app for the demo-vault first-run test.
@@ -14,11 +15,12 @@ import { fileURLToPath } from 'node:url';
  * Running it as a second app keeps both guarantees without touching the shared
  * instance.
  *
- * Ports are deliberately away from the suite defaults (5477/8977) and from the
- * 52xx/88xx ranges used by other agents.
+ * Ports default to the suite's own ports + 2 (5479/8979 with the defaults), so
+ * they stay inside each agent's port range. Fixed ports here let two suites
+ * running at the same time on different ports collide on the demo app.
  */
-export const DEMO_WEB_PORT = Number(process.env.GUMPLY_DEMO_WEB_PORT ?? 5491);
-export const DEMO_API_PORT = Number(process.env.GUMPLY_DEMO_PORT ?? 8991);
+export const DEMO_WEB_PORT = Number(process.env.GUMPLY_DEMO_WEB_PORT ?? WEB_PORT + 2);
+export const DEMO_API_PORT = Number(process.env.GUMPLY_DEMO_PORT ?? API_PORT + 2);
 export const DEMO_WEB_URL = `http://localhost:${DEMO_WEB_PORT}`;
 export const DEMO_API_URL = `http://localhost:${DEMO_API_PORT}`;
 
