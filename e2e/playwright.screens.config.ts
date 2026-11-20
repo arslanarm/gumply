@@ -1,8 +1,8 @@
-import os from 'node:os';
 import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import base from './playwright.config';
+import { E2E_VAULT } from './support/env';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
@@ -11,12 +11,13 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
  *
  * Runs only `screens.capture.ts` (excluded from the normal suite because its
  * name is not `*.spec.ts`) and writes PNGs under `test-results/screens/`.
- * Uses its own throwaway vault so it never touches the normal e2e vault.
+ * Uses a throwaway vault: by default the fresh per-run directory from
+ * `support/env.ts` (deleted in global teardown), so parallel runs by different
+ * agents never share one. `GUMPLY_SCREENS_VAULT` overrides it.
  *
  *   npm run test:e2e:screens
  */
-const SCREENS_VAULT =
-  process.env.GUMPLY_SCREENS_VAULT ?? path.join(os.tmpdir(), 'gumply-e2e-screens-vault');
+const SCREENS_VAULT = process.env.GUMPLY_SCREENS_VAULT ?? E2E_VAULT;
 
 const server = base.webServer as {
   command: string;

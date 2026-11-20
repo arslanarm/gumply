@@ -1,3 +1,4 @@
+import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -23,10 +24,24 @@ export const API_URL = `http://localhost:${API_PORT}`;
  * Dedicated throwaway vault for e2e. The `vault` fixture wipes it between
  * tests, so this must never point at a real vault (`./vault`).
  *
- * The default is keyed by the API port: several agents run the suite on one
- * machine at the same time (on their own ports), and a shared fixed path let
- * one run's `resetVault` delete another run's pages mid-test. That showed up as
- * random "No pages yet" / "Page not found" failures.
+ * Unless `GUMPLY_VAULT` is set, every run gets a **fresh** `mkdtemp` directory.
+ * Several agents run the suite on one machine at the same time, and the old
+ * fixed default (`/tmp/gumply-e2e-vault`) let one run's `resetVault` delete
+ * another run's pages mid-test (random "No pages yet" / "Page not found").
+ *
+ * The path is created once, in the Playwright main process when it loads the
+ * config, and published through `process.env`. The web server and the worker
+ * processes inherit that env, so they all see the same directory. When this
+ * module created it, `GUMPLY_E2E_VAULT_OWNED=1` lets the global teardown
+ * (`support/teardown.ts`) delete it after the run.
  */
-export const E2E_VAULT =
-  process.env.GUMPLY_VAULT ?? path.join(os.tmpdir(), `gumply-e2e-vault-${API_PORT}`);
+function resolveVault(): string {
+  const explicit = process.env.GUMPLY_VAULT;
+  if (explicit) return explicit;
+  const created = mkdtempSync(path.join(os.tmpdir(), 'gumply-e2e-'));
+  process.env.GUMPLY_VAULT = created;
+  process.env.GUMPLY_E2E_VAULT_OWNED = '1';
+  return created;
+}
+
+export const E2E_VAULT = resolveVault();

@@ -6,7 +6,7 @@ import { API_PORT, BASE_URL, E2E_VAULT, WEB_PORT } from './support/env';
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * Gumply e2e config (owned by @qa — see wiki pages `spec/e2e-tests` and `decisions` D7).
+ * Gumply e2e config (owned by @opus-hunter — see wiki pages `spec/e2e-tests` and `decisions` D7).
  *
  * The suite runs its own app instance on **dedicated ports** (web 5273, API 8973
  * by default — override with GUMPLY_WEB_PORT / GUMPLY_PORT) so it never collides
@@ -17,6 +17,8 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 export default defineConfig({
   testDir: '.',
   testMatch: /.*\.spec\.ts$/,
+  // Deletes the per-run vault created by support/env.ts (unless GUMPLY_VAULT was given).
+  globalTeardown: './support/teardown.ts',
   // All specs share one app instance + one vault, so run them serially.
   // Parallel workers would let one test's fixtures leak into another (e.g. the
   // empty-vault smoke failing because a seeding test created a page mid-load).
