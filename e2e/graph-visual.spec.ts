@@ -8,7 +8,7 @@ import { test, expect } from './fixtures';
  * These tests read the canvas pixels instead of only the aria label: they prove
  * that something was painted, that it is auto-fitted (not clipped, not stuck in
  * a corner), that it re-fits on resize and on "Fit", and that the canvas uses a
- * high-DPI backing store. Run in both browsers via the `firefox-graph` project.
+ * high-DPI backing store. Run in both browsers via the `firefox` project.
  */
 
 const CANVAS = 'graph-canvas';

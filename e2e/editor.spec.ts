@@ -39,6 +39,17 @@ test.describe('editor', () => {
     await expect(body.locator('[data-placeholder]')).toHaveCount(0);
   });
 
+  test('empty headings show their level as the placeholder', async ({ page, vault }) => {
+    const { body } = await openPage(page, vault, 'Heading placeholder');
+
+    await page.keyboard.type('# ');
+    const heading = body.locator('h1');
+    await expect(heading).toHaveAttribute('data-placeholder', 'Heading 1');
+
+    await page.keyboard.type('Title');
+    await expect(heading).not.toHaveAttribute('data-placeholder', 'Heading 1');
+  });
+
   test('# creates a heading', async ({ page, vault }) => {
     const { body } = await openPage(page, vault, 'Heading shortcut');
 
@@ -163,6 +174,39 @@ test.describe('editor', () => {
 
     await page.reload();
     await expect(page.getByTestId('editor-content')).toContainText('Appended.');
+  });
+
+  test('mixed bullet and to-do lists parse without an extra empty to-do (#gd2cpx2c)', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const markdown = '- a\n- b\n\n- [x] c\n- [ ] d';
+    const { seeded, body } = await openPage(page, vault, 'Mixed lists', markdown);
+
+    const bullets = body.locator('ul:not([data-type="taskList"]) > li');
+    const tasks = body.locator('ul[data-type="taskList"] > li');
+    await expect(bullets).toHaveCount(2);
+    await expect(tasks).toHaveCount(2);
+    await expect(bullets).toHaveText(['a', 'b']);
+    await expect(tasks).toHaveText(['c', 'd']);
+    await expect(body.getByRole('checkbox')).toHaveCount(2);
+    // No phantom empty to-do row from the old loose-list parse.
+    await expect(body.locator('li')).toHaveCount(4);
+
+    // No edit is made, so there is nothing to autosave; the seeded Markdown
+    // must still be intact on disk.
+    const saved = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(seeded.id)}`)
+    ).json();
+    expect(saved.content).toContain('- a\n- b');
+    expect(saved.content).toContain('- [x] c');
+    expect(saved.content).toContain('- [ ] d');
+
+    await page.reload();
+    await expect(body.locator('ul:not([data-type="taskList"]) > li')).toHaveCount(2);
+    await expect(body.locator('ul[data-type="taskList"] > li')).toHaveCount(2);
+    await expect(body.locator('li')).toHaveCount(4);
   });
 
   test('undo after a # shortcut restores literal text and redo round-trips (#ihi666yy)', async ({
