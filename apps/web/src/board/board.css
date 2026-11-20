@@ -404,8 +404,16 @@ img.board-card-image {
   min-height: 0;
   background: var(--panel);
   border: calc(1.5px / var(--board-zoom, 1)) solid var(--board-select);
+  /* Hidden dots are `visibility: hidden`, not just transparent: 4 per object
+     that are only see-through still cost paint and layer work on every
+     frame (about a third of each drag frame on a 1000-object board,
+     #bdzcggf5). Visibility flips after the fade-out. */
   opacity: 0;
-  transition: opacity 90ms ease, transform 90ms ease;
+  visibility: hidden;
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease,
+    visibility 0s linear 90ms;
 }
 
 .board-root .react-flow__handle.board-handle:hover {
@@ -444,6 +452,11 @@ img.board-card-image {
 .board-root .react-flow__handle.board-handle.connectingfrom,
 .board-root .react-flow__handle.board-handle.connectingto {
   opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease,
+    visibility 0s;
 }
 
 .board-root .react-flow__node.board-node-ink .board-handle,
@@ -1043,4 +1056,48 @@ img.board-card-image {
   font-weight: 500;
   pointer-events: none;
   box-shadow: var(--board-shadow-raised);
+}
+
+/* ---------- Level of detail (#bdzcggf5, lod.ts) ----------
+   Far zoomed out, text that would be at most ~4px high on screen is drawn as
+   soft placeholder bars, like Miro and FigJam: it is unreadable anyway, and
+   painting it dominated every frame on big boards. `data-lod` on the root is
+   how many size buckets are bars (bucket n = text up to 13/16/20/24/28px;
+   card subtitles and connector labels are bucket 1, card titles bucket 2).
+   Shapes, colours, card outlines, icons, frames and connectors stay.
+   The bars are the text box's own background (no extra elements and no
+   positioning, which cost more to lay out than they saved), one per line. */
+.board-root {
+  --lod-bars: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--text) 20%, transparent) 0 0.6em,
+    transparent 0.6em 1.35em
+  );
+}
+
+.board-root:is([data-lod="1"], [data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-text[data-text-size="1"] > *,
+.board-root:is([data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-text[data-text-size="2"] > *,
+.board-root:is([data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-text[data-text-size="3"] > *,
+.board-root:is([data-lod="4"], [data-lod="5"]) .board-text[data-text-size="4"] > *,
+.board-root:is([data-lod="5"]) .board-text[data-text-size="5"] > * {
+  visibility: hidden;
+}
+
+.board-root:is([data-lod="1"], [data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-text[data-text-size="1"],
+.board-root:is([data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-text[data-text-size="2"],
+.board-root:is([data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-text[data-text-size="3"],
+.board-root:is([data-lod="4"], [data-lod="5"]) .board-text[data-text-size="4"],
+.board-root:is([data-lod="5"]) .board-text[data-text-size="5"],
+.board-root:is([data-lod="1"], [data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) :is(.board-card-preview, .board-card-sub, .board-edge-label),
+.board-root:is([data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-card-title > span:not(.board-card-emoji) {
+  background-image: var(--lod-bars);
+  background-repeat: no-repeat;
+  background-position: 50% 0.3em;
+  background-size: 84% calc(100% - 0.3em);
+}
+
+/* Bare text (no element to hide): transparent, with the bars behind it. */
+.board-root:is([data-lod="1"], [data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) :is(.board-card-preview, .board-card-sub, .board-edge-label),
+.board-root:is([data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-card-title > span:not(.board-card-emoji) {
+  color: transparent;
 }

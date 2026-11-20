@@ -5,6 +5,8 @@
  *
  *   ?id=name     which stored board (default "lab")
  *   ?seed=N      start from a generated board with N objects (perf checks)
+ *   &mix=1       …with every 10th object a live page card, Markdown and
+ *                [[links]] in stickies, and a label on every 5th connector
  *   ?theme=dark  force a theme
  *   ?reset=1     start empty
  *   ?api=ID      mount BoardView for board ID against `/api/boards` instead
@@ -18,7 +20,7 @@ import type { SaveState } from "../editor/autosave.js";
 import "../styles.css";
 import { BoardView, type BoardViewControls } from "./BoardView.js";
 import { LazyBoardEditor, type BoardPageOption } from "./index.js";
-import { createEdge, createShape, createSticky, createText } from "./model.js";
+import { createEdge, createFileNode, createShape, createSticky, createText } from "./model.js";
 
 interface LabWindow extends Window {
   __board?: {
@@ -33,7 +35,9 @@ const params = new URLSearchParams(window.location.search);
 const boardId = params.get("id") ?? "lab";
 const storageKey = `gumply:board-lab:${boardId}`;
 
-function seeded(count: number): CanvasBoard {
+const MIX_CARDS = ["Welcome.md", "Projects/Q1 plan.md", "Ideas.md", "Boards/Project map.canvas"];
+
+function seeded(count: number, mix = false): CanvasBoard {
   const nodes: CanvasNode[] = [];
   const columns = Math.ceil(Math.sqrt(count));
   for (let i = 0; i < count; i += 1) {
@@ -41,7 +45,9 @@ function seeded(count: number): CanvasBoard {
     const y = Math.floor(i / columns) * 260;
     const rect = { x, y, width: 200, height: i % 3 === 2 ? 120 : 200 };
     const color = String((i % 6) + 1);
-    if (i % 3 === 0) nodes.push(createSticky(rect, color, `Sticky ${i}`));
+    if (mix && i % 10 === 5) nodes.push(createFileNode(rect, MIX_CARDS[(i / 10) % MIX_CARDS.length | 0]!));
+    else if (mix && i % 3 === 0) nodes.push(createSticky(rect, color, `**Sticky ${i}**\n\n- see [[Welcome]]\n- \`code\` and _more_`));
+    else if (i % 3 === 0) nodes.push(createSticky(rect, color, `Sticky ${i}`));
     else if (i % 3 === 1) nodes.push(createShape(rect, i % 2 ? "rounded" : "ellipse", color, `Shape ${i}`));
     else nodes.push(createText(rect, `Text ${i}`));
   }
@@ -49,14 +55,18 @@ function seeded(count: number): CanvasBoard {
   for (let i = 0; i + 1 < nodes.length && edges.length < Math.round(count * 0.6); i += 1) {
     const a = nodes[i];
     const b = nodes[i + 1];
-    if (a && b && (i + 1) % columns !== 0) edges.push(createEdge(a.id, "right", b.id, "left"));
+    if (a && b && (i + 1) % columns !== 0) {
+      const edge = createEdge(a.id, "right", b.id, "left");
+      if (mix && edges.length % 5 === 0) edge.label = `step ${edges.length}`;
+      edges.push(edge);
+    }
   }
   return { nodes, edges };
 }
 
 function initialBoard(): CanvasBoard {
   const seed = Number(params.get("seed") ?? "0");
-  if (seed > 0) return seeded(seed);
+  if (seed > 0) return seeded(seed, params.get("mix") === "1");
   if (params.get("reset") === "1") {
     window.localStorage.removeItem(storageKey);
     return emptyCanvas();
