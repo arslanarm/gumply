@@ -1,5 +1,7 @@
 # Gumply
 
+[![CI](https://github.com/arslanarm/gumply/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arslanarm/gumply/actions/workflows/ci.yml)
+
 A local-first note app with Notion's simplicity and Obsidian's visualizations: nested Markdown
 pages, wikilinks, backlinks and a graph view. Notes live as plain `.md` files in a vault folder.
 
@@ -94,6 +96,20 @@ so your notes are still plain Markdown files in a folder you choose.
 Before moving a task to review, run `npm run typecheck`: it type-checks every workspace
 (core, server, web) and exits non-zero on the first error. `npm test` runs the Vitest suite;
 `npm run test:e2e` runs the Playwright flows against a throwaway vault.
+
+Use the Node version in `.nvmrc` (24 LTS); Node 22 is also tested in CI. (Node 20/22's recursive
+`fs.watch` loses files that are replaced atomically, so the vault watcher uses one watcher per folder;
+see #3ugdxhzu.)
+
+**CI** (`.github/workflows/ci.yml`, GitHub Actions) runs on every push to `main` and `ci/**`, on
+every `v*` tag, and by hand. Pushing a branch as `ci/<task-id>` is how unmerged work gets a real
+run; only @lead pushes to GitHub.
+- **checks:** typecheck, unit tests and build on **Node 22 and 24**. Node 22 stays in so the
+  vault-watcher regression test keeps running there.
+- **e2e:** the full suite (Chromium, plus Firefox for the graph specs) on the Node in `.nvmrc`.
+
+A newer push cancels an older run. On failure the Playwright report and `test-results/` are
+uploaded as an artifact.
 
 ## API
 
