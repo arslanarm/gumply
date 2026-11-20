@@ -3,7 +3,7 @@
  * (debounced, like pages) and handles D22 conflicts. The app shell (W2a)
  * mounts this for a whiteboard and shows `onSaveState` in its save status.
  */
-import { serializeCanvas, type CanvasBoard, type PageMeta } from "@gumply/core";
+import { serializeCanvas, type BoardDocument, type CanvasBoard, type PageMeta } from "@gumply/core";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError, api } from "../api/client.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
@@ -31,6 +31,8 @@ export interface BoardViewProps {
    * the board (its own PUT), pass the new value so autosave doesn't 409.
    */
   updated?: string;
+  /** The board as the app already loaded it (skips a second request). */
+  initial?: BoardDocument;
   pages?: readonly BoardPageOption[];
   onSaveState: (state: SaveState) => void;
   /** After a save: the server's metadata and the id it was saved under. */
@@ -47,9 +49,18 @@ export interface BoardViewProps {
   renderers?: BoardRenderers;
 }
 
+/** Page body for live page cards (W2b); null when it can't be read. */
+async function loadPagePreview(path: string): Promise<string | null> {
+  try {
+    return (await api.getPage(path.replace(/\.md$/i, ""))).content;
+  } catch {
+    return null;
+  }
+}
+
 export function BoardView(props: BoardViewProps) {
   const { boardId, pages, onOpenFile, renderers } = props;
-  const [loaded, setLoaded] = useState<{ meta: PageMeta; board: CanvasBoard } | null>(null);
+  const [loaded, setLoaded] = useState<{ meta: PageMeta; board: CanvasBoard } | null>(props.initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
   const [repairNotice, setRepairNotice] = useState<string | null>(null);
   const latest = useRef(props);
@@ -108,6 +119,12 @@ export function BoardView(props: BoardViewProps) {
   // Load once per mount; the app keys this view by board session, and a
   // rename (new id, same board) keeps the open document.
   useEffect(() => {
+    const initial = latest.current.initial;
+    if (initial) {
+      versionRef.current = initial.meta.updated;
+      autosave.reset(serializeCanvas(initial.board));
+      return;
+    }
     let cancelled = false;
     void load().then((result) => {
       if (!cancelled && result) setLoaded(result);
@@ -179,6 +196,7 @@ export function BoardView(props: BoardViewProps) {
         onOpenFile={onOpenFile}
         uploadFile={async (file) => (await api.uploadAttachment(file)).path}
         renderers={renderers}
+        loadPage={loadPagePreview}
         onReady={onEditorReady}
       />
       </Suspense>

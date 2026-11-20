@@ -8,7 +8,7 @@ export const MAX_SEARCH_ROWS = 8;
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create";
+  kind: "page" | "text" | "create" | "create-board";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -26,6 +26,8 @@ export interface SearchSections {
   pages: SearchRow[];
   text: SearchRow[];
   create: SearchRow | null;
+  /** `Create whiteboard “X”`, offered next to `Create “X”` (spec/whiteboard §4). */
+  createBoard: SearchRow | null;
 }
 
 function normalise(value: string): string {
@@ -136,7 +138,7 @@ export function searchSections(
 ): SearchSections {
   const needle = normalise(query);
   const trimmed = query.trim();
-  if (needle.length === 0) return { pages: [], text: [], create: null };
+  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null };
 
   const counts = titleCounts(pages);
   const pagesRows: SearchRow[] = [];
@@ -156,7 +158,11 @@ export function searchSections(
       ? { kind: "create" as const, key: "create", label: `Create “${trimmed}”`, title: trimmed }
       : null;
 
-  return { pages: pagesRows, text: textRows, create };
+  const createBoard = create
+    ? { kind: "create-board" as const, key: "create-board", label: `Create whiteboard “${trimmed}”`, title: trimmed }
+    : null;
+
+  return { pages: pagesRows, text: textRows, create, createBoard };
 }
 
 export interface SnippetPart {

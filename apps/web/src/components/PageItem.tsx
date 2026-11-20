@@ -1,5 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
+import { BOARD_DRAG_MIME } from "../board/constants.js";
+import { isBoard, vaultPathOf } from "../lib/boards.js";
 import { canMovePage, type PageTreeNode } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 
@@ -14,6 +16,8 @@ export interface PageItemProps {
   collapsed: ReadonlySet<PageId>;
   onOpen: (id: PageId) => void;
   onCreateChild: (id: PageId) => void;
+  /** "Add whiteboard inside" (spec/whiteboard §4). */
+  onCreateBoardChild: (id: PageId) => void;
   onDelete: (id: PageId) => void;
   onToggle: (id: PageId) => void;
   onStartMove: (id: PageId) => void;
@@ -37,6 +41,7 @@ export const PageItem = memo(PageItemRow);
 function PageItemRow(props: PageItemProps) {
   const { node, depth, pages, selectedId, renamingId, draggingId, collapsed } = props;
   const page = node.page;
+  const board = isBoard(page);
   const hasChildren = node.children.length > 0;
   const isSelected = selectedId === page.id;
   const isRenaming = renamingId === page.id;
@@ -103,8 +108,10 @@ function PageItemRow(props: PageItemProps) {
         draggable={!isRenaming}
         onDragStart={(event) => {
           event.stopPropagation();
-          event.dataTransfer.effectAllowed = "move";
+          // Move within the tree, or copy onto an open board as a card.
+          event.dataTransfer.effectAllowed = "copyMove";
           event.dataTransfer.setData("text/plain", page.id);
+          event.dataTransfer.setData(BOARD_DRAG_MIME, vaultPathOf(page));
           props.onDragStartItem(page.id);
         }}
         onDragEnd={() => props.onDragEndItem()}
@@ -164,7 +171,13 @@ function PageItemRow(props: PageItemProps) {
           />
         ) : (
           <span className="page-item-label">
-            {page.icon ? <span className="page-icon">{page.icon}</span> : null}
+            {page.icon ? (
+              <span className="page-icon">{page.icon}</span>
+            ) : board ? (
+              <span className="page-icon page-icon-board" data-testid={`board-icon-${page.id}`} aria-hidden="true">
+                <Icon name="board" size={15} />
+              </span>
+            ) : null}
             <span className="page-item-title" title={page.title}>
               {page.title}
             </span>
@@ -172,6 +185,7 @@ function PageItemRow(props: PageItemProps) {
         )}
 
         <span className="page-actions">
+          {board ? null : (
           <button
             type="button"
             className="tree-action"
@@ -185,6 +199,7 @@ function PageItemRow(props: PageItemProps) {
           >
             <Icon name="plus" size={15} />
           </button>
+          )}
 
           <span className="page-menu" ref={menuRef}>
             <button
@@ -229,6 +244,20 @@ function PageItemRow(props: PageItemProps) {
                 >
                   Move to…
                 </button>
+                {board ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid={`add-board-${page.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      props.onCreateBoardChild(page.id);
+                    }}
+                  >
+                    Add whiteboard inside
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -240,7 +269,7 @@ function PageItemRow(props: PageItemProps) {
                     props.onDelete(page.id);
                   }}
                 >
-                  Delete page
+                  {board ? "Delete whiteboard" : "Delete page"}
                 </button>
               </div>
             ) : null}

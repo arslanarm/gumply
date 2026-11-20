@@ -48,7 +48,13 @@ import {
   type SearchResult,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
-import { buildDemoPages, WELCOME_TITLE } from "./demo.js";
+import {
+  buildDemoBoard,
+  buildDemoPages,
+  DEMO_BOARD_TITLE,
+  DEMO_FOLDER_TITLE,
+  WELCOME_TITLE,
+} from "./demo.js";
 
 export interface CreatePageInput {
   title: string;
@@ -410,6 +416,15 @@ export class VaultStore {
       const created = await this.create(demo);
       if (demo.title === WELCOME_TITLE) welcomeId = created.id;
     }
+    // D25: one example whiteboard linking the demo pages (#dvnb8n2n).
+    const board = await this.createBoard({
+      title: DEMO_BOARD_TITLE,
+      parentId: childPageId(null, DEMO_FOLDER_TITLE),
+      icon: "🗺️",
+    });
+    await this.updateBoard(board.meta.id, {
+      board: { ...buildDemoBoard(), gumply: board.board.gumply },
+    });
     await this.writeDemoMarker();
     this.newVaultPage = welcomeId;
     return welcomeId;

@@ -1,7 +1,16 @@
 import { flushSync } from "react-dom";
-import { resolveWikilink, type Backlink, type Page, type PageId, type PageMeta } from "@gumply/core";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api, consumeNewVaultPage } from "./api/client.js";
+import {
+  resolveWikilink,
+  type Backlink,
+  type BoardDocument,
+  type Page,
+  type PageId,
+  type PageMeta,
+} from "@gumply/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, consumeNewVaultPage, fileUrl } from "./api/client.js";
+// Only the board's shell: the editor (React Flow) is code-split inside it.
+import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
@@ -15,6 +24,7 @@ import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 // Graph and dialogs load on demand (#evh35bn7).
 import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, preloadWhenIdle } from "./lazy-parts.js";
+import { idFromVaultPath, isBoardId, NEW_BOARD_TITLE, vaultPathOf } from "./lib/boards.js";
 import { focusAfterDelete } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
@@ -39,6 +49,18 @@ interface ToastState {
   undo?: () => Promise<void>;
 }
 
+/** A board shown through the page UI (header, tree): metadata, no body. */
+function boardAsPage(meta: PageMeta): Page {
+  return { ...meta, content: "" };
+}
+
+/** What both document views (page editor, board) offer the shell. */
+interface DocumentControls {
+  flush: () => Promise<void>;
+  isDirty: () => boolean;
+  keepMine: () => Promise<void>;
+}
+
 interface PendingHeading {
   pageId: PageId;
   heading: string;
@@ -53,6 +75,8 @@ export function App() {
     pageIdFromHash(window.location.hash),
   );
   const [page, setPage] = useState<Page | null>(null);
+  // The open board's document as loaded (BoardView starts from it).
+  const [boardDoc, setBoardDoc] = useState<BoardDocument | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
@@ -111,6 +135,10 @@ export function App() {
   // The page id the load effect last loaded (or followed a rename to).
   const loadedSelection = useRef<PageId | null>(null);
   const editorControls = useRef<EditorControls | null>(null);
+  const boardControls = useRef<BoardViewControls | null>(null);
+  /** Save controls of whatever is open: the page editor or the board. */
+  const documentControls = (): DocumentControls | null =>
+    isBoardId(selectedRef.current) ? boardControls.current : editorControls.current;
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
   const reloadEditorAfterFetch = useRef(false);
@@ -338,7 +366,8 @@ export function App() {
   }, [requestPageReload]);
 
   const handleConflictKeepMine = useCallback(() => {
-    void editorControls.current?.keepMine();
+    void documentControls()?.keepMine();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Poll the lightweight page index so external file changes appear without a
@@ -365,14 +394,14 @@ export function App() {
       if (loaded) {
         // An external rename keeps the title in frontmatter; follow it.
         const moved = list.find((item) => item.title === loaded.title);
-        if (moved && !editorControls.current?.isDirty()) {
+        if (moved && !documentControls()?.isDirty()) {
           setDeletedOnDisk(null);
           navigate(moved.id, true);
           return;
         }
       }
-      if (editorControls.current?.isDirty()) {
-        setDeletedOnDisk(loaded);
+      if (documentControls()?.isDirty()) {
+        if (!isBoardId(currentId)) setDeletedOnDisk(loaded);
         return;
       }
       setPage(null);
@@ -384,7 +413,7 @@ export function App() {
       loaded &&
       loaded.id === currentId &&
       meta.updated !== loaded.updated &&
-      !editorControls.current?.isDirty()
+      !documentControls()?.isDirty()
     ) {
       const active = document.activeElement;
       restoreSelection.current =
@@ -486,6 +515,36 @@ export function App() {
     let cancelled = false;
     setPageStatus("loading");
 
+    if (isBoardId(selectedId)) {
+      api
+        .getBoard(selectedId)
+        .then((loaded) => {
+          if (cancelled) return;
+          if (loaded.meta.id !== selectedId) {
+            // D20: an old id resolves to the renamed board; follow it.
+            navigate(loaded.meta.id, true);
+            return;
+          }
+          setBoardDoc(loaded);
+          setPage(boardAsPage(loaded.meta));
+          setPageStatus("ready");
+          // Reload / external change: remount the board on the fresh document.
+          if (reloadEditorAfterFetch.current) {
+            reloadEditorAfterFetch.current = false;
+            setEditorRevision((value) => value + 1);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setPage(null);
+          setBoardDoc(null);
+          setPageStatus("error");
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const landing = landingPageRequest.current;
     landingPageRequest.current = null;
     const request = landing?.id === selectedId ? landing.request : api.getPage(selectedId);
@@ -571,6 +630,36 @@ export function App() {
     [loadPages, navigate],
   );
 
+  /** spec/whiteboard §4: + → New whiteboard, ⋯ → Add whiteboard inside, Cmd+K. */
+  const handleCreateBoard = useCallback(
+    async (parentId: PageId | null, title: string = NEW_BOARD_TITLE) => {
+      setActionError(null);
+      setAutoFocusTitle(true);
+      if (window.innerWidth <= 900) setSidebarOpen(false);
+      try {
+        const created = await api.createBoard({ title, parentId });
+        await loadPages();
+        navigate(created.meta.id);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    [loadPages, navigate],
+  );
+
+  /** `/whiteboard`: a board inside the open page; the editor links to it. */
+  const createBoardForLink = useCallback(async (): Promise<PageMeta | null> => {
+    const parentId = selectedRef.current;
+    try {
+      const created = await api.createBoard({ title: NEW_BOARD_TITLE, parentId });
+      await loadPages();
+      return created.meta;
+    } catch (error) {
+      setActionError(errorMessage(error));
+      return null;
+    }
+  }, [loadPages]);
+
   /** D13: open a result from the quick switcher. */
   const openSearchResult = useCallback(
     (id: PageId) => {
@@ -597,6 +686,15 @@ export function App() {
       })();
     },
     [dismissSearch, loadPages, navigate],
+  );
+
+  /** `Create whiteboard “X”` in the quick switcher. */
+  const createSearchBoard = useCallback(
+    (title: string) => {
+      dismissSearch();
+      void handleCreateBoard(null, title);
+    },
+    [dismissSearch, handleCreateBoard],
   );
 
   const handleGraphCreatePage = useCallback(
@@ -677,13 +775,19 @@ export function App() {
       try {
         // Flush body edits first: a pending autosave could otherwise overwrite
         // the server's link rewrite with stale `[[Old Title]]` text.
-        await editorControls.current?.flush();
+        if (id === selectedRef.current) await documentControls()?.flush();
 
         renamesInFlight.current.add(id);
         renameEpoch.current += 1;
-        let updated;
+        let updated: Page & { rewrittenPages?: PageId[] };
         try {
-          updated = await api.updatePage(id, { title });
+          if (isBoardId(id)) {
+            // A board's title is its file name: the server renames the file.
+            const result = await api.saveBoard(id, { title });
+            updated = { ...boardAsPage(result.meta), rewrittenPages: result.rewrittenPages };
+          } else {
+            updated = await api.updatePage(id, { title });
+          }
           applySavedPage(id, updated);
         } finally {
           renamesInFlight.current.delete(id);
@@ -715,9 +819,9 @@ export function App() {
     if (!id) return;
     setActionError(null);
     try {
-      const updated = await api.updatePage(id, { icon });
-      // Also takes the new `updated`, so the editor's next save isn't a 409.
-      applySavedPage(id, updated);
+      // Also takes the new `updated`, so the next autosave isn't a 409.
+      if (isBoardId(id)) applySavedPage(id, boardAsPage((await api.saveBoard(id, { icon })).meta));
+      else applySavedPage(id, await api.updatePage(id, { icon }));
     } catch (error) {
       setActionError(errorMessage(error));
     }
@@ -727,6 +831,7 @@ export function App() {
     async (id: PageId) => {
       setActionError(null);
 
+      const wasBoard = isBoardId(id);
       try {
         const result = await api.deletePage(id);
         const nextId = focusAfterDelete(pages, id);
@@ -743,7 +848,7 @@ export function App() {
         moveFocus(nextId);
         const trashId = result.trashId;
         setToast({
-          message: "Page deleted",
+          message: wasBoard ? "Whiteboard deleted" : "Page deleted",
           icon: "trash",
           undo: trashId
             ? async () => {
@@ -821,7 +926,7 @@ export function App() {
       // first so a late autosave cannot 404 after the page has moved.
       const open = selectedRef.current;
       if (open === id || (open !== null && open.startsWith(`${id}/`))) {
-        await editorControls.current?.flush();
+        await documentControls()?.flush();
       }
       const previousParent = pages.find((page) => page.id === id)?.parentId ?? null;
       try {
@@ -921,8 +1026,40 @@ export function App() {
   );
 
   const handleRetrySave = useCallback(() => {
-    void editorControls.current?.flush();
+    void documentControls()?.flush();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** A board card's target: a page or board opens here, other files in a tab. */
+  const openVaultPath = useCallback(
+    (path: string) => {
+      const id = idFromVaultPath(path);
+      if (id === null) {
+        window.open(fileUrl(path), "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (pages.some((item) => item.id === id)) handleOpen(id);
+      else setToast({ message: "That page no longer exists", icon: "info" });
+    },
+    [pages, handleOpen],
+  );
+
+  const handleBoardSaved = useCallback(
+    (meta: PageMeta, savedId: PageId) => applySavedPage(savedId, boardAsPage(meta)),
+    [applySavedPage],
+  );
+
+  const handleBoardReady = useCallback((controls: BoardViewControls) => {
+    boardControls.current = controls;
+  }, []);
+
+  const boardPageOptions = useMemo(
+    () =>
+      pages
+        .filter((item) => item.id !== selectedId)
+        .map((item) => ({ path: vaultPathOf(item), title: item.title, ...(item.icon ? { icon: item.icon } : {}) })),
+    [pages, selectedId],
+  );
 
   const restoreDeletedPage = useCallback(async () => {
     const loaded = deletedOnDisk ?? pageRef.current;
@@ -971,6 +1108,7 @@ export function App() {
   }, [pages, navigate]);
 
   const showingPage = selectedId !== null && page !== null && page.id === selectedId;
+  const showingBoard = showingPage && isBoardId(page.id) && boardDoc !== null;
   const movingPage = movingId ? (pages.find((item) => item.id === movingId) ?? null) : null;
 
   const serverError = listStatus === "error" && pages.length === 0;
@@ -1040,6 +1178,7 @@ export function App() {
         className={`layout${!graphOpen && showingPage && localGraphOpen ? " layout-with-panel" : ""}`}
       >
         <Sidebar
+          onCreateBoard={(parentId) => void handleCreateBoard(parentId)}
           pages={pages}
           selectedId={selectedId}
           status={listStatus}
@@ -1097,7 +1236,7 @@ export function App() {
               onNewPage={() => void handleCreate(null)}
             />
           ) : (
-            <div className="editor-pane" data-testid="editor">
+            <div className={`editor-pane${showingBoard ? " is-board" : ""}`} data-testid="editor">
               {serverError ? (
                 <div className="empty-state" data-testid="server-error">
                   <span className="empty-state-icon" aria-hidden="true">
@@ -1132,6 +1271,35 @@ export function App() {
                     New page
                   </button>
                 </div>
+              ) : showingBoard && boardDoc ? (
+                <div className="board-page" data-testid="board-page">
+                  <PageHeader
+                    page={page}
+                    autoFocusTitle={autoFocusTitle}
+                    localGraphOpen={localGraphOpen}
+                    onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
+                    onRename={(title) => handleRename(page.id, title)}
+                    onSetIcon={handleSetIcon}
+                    onDelete={() => requestDelete(page.id)}
+                    onStartBody={() => document.querySelector<HTMLElement>('[data-testid="board"]')?.focus()}
+                    focusTitleSignal={titleFocusSignal}
+                    sessionKey={sessionKeyOf(page.id)}
+                  />
+                  <div className="board-page-canvas">
+                    <BoardView
+                      key={`${sessionKeyOf(page.id)}:${editorRevision}`}
+                      boardId={page.id}
+                      updated={page.updated}
+                      initial={boardDoc}
+                      pages={boardPageOptions}
+                      onSaveState={setSaveState}
+                      onSaved={handleBoardSaved}
+                      onConflictBackup={handleConflictBackup}
+                      onOpenFile={openVaultPath}
+                      onReady={handleBoardReady}
+                    />
+                  </div>
+                </div>
               ) : showingPage ? (
                 <>
                   <PageHeader
@@ -1164,6 +1332,7 @@ export function App() {
                     onHeadingResult={handleHeadingResult}
                     onAttachmentError={setActionError}
                     onExitTop={handleExitTop}
+                    onCreateBoard={createBoardForLink}
                   />
                   <BacklinksPanel
                     items={backlinks}
@@ -1240,6 +1409,7 @@ export function App() {
           pages={pages}
           onOpen={openSearchResult}
           onCreate={createSearchPage}
+          onCreateBoard={createSearchBoard}
           onClose={closeSearch}
         />
       ) : null}

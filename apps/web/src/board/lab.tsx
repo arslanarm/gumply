@@ -80,6 +80,13 @@ const PAGES: BoardPageOption[] = [
   { path: "Boards/Project map.canvas", title: "Project map" },
 ];
 
+/** Page bodies for live page cards in the lab (no API). */
+const LAB_PAGE_TEXT: Record<string, string> = {
+  "Welcome.md": "# Welcome to Gumply\n\nGumply is a **quiet** place for notes.\n\n- Type `/` for blocks\n- Type `[[` to link a page",
+  "Projects/Q1 plan.md": "Goals for the quarter:\n\n1. Ship v0.4\n2. Fewer meetings",
+  "Ideas.md": "",
+};
+
 function Lab() {
   const board = useMemo(initialBoard, []);
   const lab = useMemo(() => {
@@ -117,6 +124,7 @@ function Lab() {
           pages={PAGES}
           onOpenFile={(path) => lab.opened.push(path)}
           uploadFile={async (file) => `attachments/${file.name}`}
+          loadPage={async (path) => LAB_PAGE_TEXT[path] ?? null}
         />
       </Suspense>
     </div>
