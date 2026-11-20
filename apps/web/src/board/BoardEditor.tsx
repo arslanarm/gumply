@@ -118,6 +118,12 @@ export interface BoardEditorControls {
   replaceBoard: (board: CanvasBoard) => void;
   /** Add a page/board/file card centred on a screen point (or the view centre). */
   addFileCard: (path: string, clientPoint?: Point) => void;
+  /**
+   * A gesture is in progress whose result isn't in the document yet (text
+   * being typed, a drag, a resize, a stroke…). The host must treat the board
+   * as dirty meanwhile: reloading it would silently drop that work (#x74uu7c3).
+   */
+  isBusy: () => boolean;
 }
 
 export interface BoardEditorProps {
@@ -366,6 +372,8 @@ function BoardCanvas(props: BoardEditorProps) {
   const [shapeMenu, setShapeMenu] = useState(false);
   const [pagePicker, setPagePicker] = useState(false);
   const [dragging, setDragging] = useState(false);
+  /** Kept current every render; read by the host through `isBusy`. */
+  const busyRef = useRef(false);
   const pointerRef = useRef<Point | null>(null);
   const pasteCount = useRef(0);
   /** A node created for typing: its first text joins the creation's undo step. */
@@ -583,6 +591,7 @@ function BoardCanvas(props: BoardEditorProps) {
         setHistory(reset(next));
       },
       addFileCard,
+      isBusy: () => busyRef.current || nodesRef.current.some((node) => node.dragging || node.resizing),
     });
   }, [addFileCard, onReady]);
 
@@ -1279,6 +1288,7 @@ function BoardCanvas(props: BoardEditorProps) {
   const selectedShape = shapesSelected ? (gumplyNodeData(selectedNodes[0] as CanvasNode) as { shape: GumplyShape }).shape : null;
   const showNodeToolbar = selectedNodeIds.length > 0 && !editing && !dragging && tool === "select";
 
+  busyRef.current = editing !== null || dragging || draft !== null || stroke !== null || link !== null;
   const hand = tool === "hand";
   const toolbarEdge = toolbarEdgeId && !dragging ? board.edges.find((edge) => edge.id === toolbarEdgeId) : undefined;
   const modifier = currentModifierLabel();

@@ -1,5 +1,8 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
+import { E2E_VAULT } from './support/env';
 
 /**
  * Whiteboards in the app (W2a, #7752gn9x; spec/whiteboard §2 and §4, D25):
@@ -395,6 +398,68 @@ test.describe('whiteboards in the app (W2a)', () => {
     if (!dot) throw new Error('no handle');
     expect(dot.width).toBeGreaterThanOrEqual(9);
     expect(dot.width).toBeLessThanOrEqual(12);
+  });
+
+  /** Another app (Obsidian, git) appends a node to the board's file on disk. */
+  function outsideEdit(file: string, nodeId: string) {
+    const target = path.join(E2E_VAULT, file);
+    const data = JSON.parse(readFileSync(target, 'utf8')) as BoardFile;
+    data.nodes.push(sticky(nodeId, 'Added outside', 900) as never);
+    writeFileSync(target, JSON.stringify(data, null, '\t'));
+  }
+
+  test('text being typed in a sticky survives an outside change: conflict, never silent loss (#x74uu7c3)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Spec', content: 'x' }]);
+    const board = await createBoard(request, 'Race');
+    await saveBoard(request, board.meta.id, { nodes: [sticky('a0a0a0a0a0a0a0a0', 'Start here')], edges: [] });
+    await openBoard(page, board.meta.id);
+
+    await page.getByTestId('board-sticky').first().dblclick();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' TYPED123', { delay: 60 });
+    outsideEdit('Race.canvas', 'c0c0c0c0c0c0c0c0');
+    // Past the app's 2 s disk poll: a "clean" board would be reloaded now.
+    await page.waitForTimeout(3_000);
+    await page.keyboard.type(' more words', { delay: 60 });
+    await expect(page.getByTestId('board-text-editor')).toHaveValue('Start here TYPED123 more words');
+
+    await page.keyboard.press('Escape');
+    // The save is refused (the file changed): the user decides, nothing is dropped.
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'conflict');
+    await expect(page.getByTestId('board-sticky').first()).toContainText('TYPED123 more words');
+    await page.getByTestId('conflict-keep-mine').click();
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+    const saved = await getBoard(request, board.meta.id);
+    expect(saved.board.nodes.find((node) => node.id === 'a0a0a0a0a0a0a0a0')?.text).toBe('Start here TYPED123 more words');
+  });
+
+  test('a drag in progress survives an outside change: conflict, never a silent snap-back (#x74uu7c3)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Spec', content: 'x' }]);
+    const board = await createBoard(request, 'Drag race');
+    await saveBoard(request, board.meta.id, { nodes: [sticky('d0d0d0d0d0d0d0d0', 'Move me')], edges: [] });
+    await openBoard(page, board.meta.id);
+    // Let React Flow measure the freshly opened board before grabbing a node.
+    await expect(page.locator('.react-flow__node.selectable')).toHaveCount(1);
+    await page.waitForTimeout(500);
+
+    const start = (await page.getByTestId('board-sticky').first().boundingBox())!;
+    await page.mouse.move(start.x + 100, start.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 160, start.y + 130, { steps: 6 });
+    // The drag is really under way before the outside change lands.
+    await expect(page.locator('.react-flow__node.dragging')).toHaveCount(1);
+    outsideEdit('Drag race.canvas', 'e0e0e0e0e0e0e0e0');
+    await page.waitForTimeout(3_000);
+    await page.mouse.move(start.x + 260, start.y + 160, { steps: 6 });
+    await page.mouse.up();
+
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'conflict');
+    const moved = (await page.getByTestId('board-sticky').first().boundingBox())!;
+    expect(moved.x - start.x).toBeGreaterThan(100);
+    await page.getByTestId('conflict-keep-mine').click();
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+    const saved = await getBoard(request, board.meta.id);
+    expect((saved.board.nodes.find((node) => node.id === 'd0d0d0d0d0d0d0d0') as unknown as { x: number }).x).toBeGreaterThan(100);
   });
 
   for (const theme of ['light', 'dark'] as const) {
