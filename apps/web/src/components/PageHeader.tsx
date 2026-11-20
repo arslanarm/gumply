@@ -84,7 +84,9 @@ export function PageHeader({
   // remounts on page switches and must not replay an old request (that put
   // the caret after "Untitled" on the next new page).
   const handledSignal = useRef(focusTitleSignal);
-  useEffect(() => {
+  // Layout effect + App's flushSync: the title is focused before the next
+  // key event, so fast typing after ArrowUp never lands in the body.
+  useLayoutEffect(() => {
     if (focusTitleSignal === handledSignal.current) return;
     handledSignal.current = focusTitleSignal;
     if (editing) {
@@ -129,11 +131,6 @@ export function PageHeader({
 
   // Focus the title for new/empty pages only; existing pages keep focus free.
   useEffect(() => {
-    // D20: a rename changes the id of the *same* page. If the user is already
-    // typing in the title again, keep their draft instead of resetting it
-    // (that dropped keys typed while the rename was in flight).
-    const input = titleInputRef.current;
-    if (input && document.activeElement === input) return;
     draftOriginRef.current = page.title;
     setDraft(page.title);
     setEditing(page.content.trim().length === 0);
