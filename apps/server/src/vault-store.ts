@@ -509,7 +509,10 @@ export class VaultStore {
     return this.get(id);
   }
 
-  private async updateNow(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
+  private async updateNow(
+    id: PageId,
+    patch: UpdatePageInput,
+  ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string }> {
     const record = this.require(id);
 
     let info;
@@ -523,10 +526,11 @@ export class VaultStore {
       patch.expectedUpdated !== undefined && patch.expectedUpdated !== record.updated;
     const changedOnDisk = mtimeChanged || versionChanged;
 
+    let conflictBackup: string | undefined;
     if (patch.force) {
       // Keep mine still preserves the version it is replacing, outside the page
       // index, so an accidental overwrite can be recovered.
-      if (changedOnDisk) await this.backupConflict(record);
+      if (changedOnDisk) conflictBackup = await this.backupConflict(record);
     } else if (changedOnDisk) {
       throw conflict("This page changed on disk.");
     }
@@ -615,7 +619,11 @@ export class VaultStore {
       this.recomputeSource(id);
     }
 
-    return { ...this.get(id), rewrittenPages };
+    return {
+      ...this.get(id),
+      rewrittenPages,
+      ...(conflictBackup ? { conflictBackup } : {}),
+    };
   }
 
   private async removeNow(id: PageId): Promise<DeletePageResult> {
@@ -906,19 +914,21 @@ export class VaultStore {
     return record;
   }
 
-  private async backupConflict(record: PageRecord): Promise<void> {
+  private async backupConflict(record: PageRecord): Promise<string | undefined> {
     let raw: string;
     try {
       raw = await readFile(record.filePath, "utf8");
     } catch {
-      return;
+      return undefined;
     }
     const dir = join(this.root, ".gumply", "conflicts");
     await mkdir(dir, { recursive: true });
     const safeId = record.id.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 120);
     const file = join(dir, `${safeId}-${Date.now()}.md`);
     await writeFile(file, raw, "utf8");
+    const relativePath = relative(this.root, file).split(sep).join("/");
     console.warn(`[gumply] conflict backup for ${record.id}: ${file}`);
+    return relativePath;
   }
 
   private async writePage(

@@ -33,7 +33,10 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
   return [
     {
       title: "Navigate",
-      items: [{ keys: `${modifier}K`, label: "Search pages" }],
+      items: [
+        { keys: `${modifier}K`, label: "Search pages" },
+        { keys: `${modifier}\\`, label: "Toggle sidebar" },
+      ],
     },
     {
       title: "Editor",

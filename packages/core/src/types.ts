@@ -29,7 +29,11 @@ export interface Page extends PageMeta {
 }
 
 /** Response of `PUT /api/pages/:id`; `rewrittenPages` is set on a rename. */
-export type PageUpdateResult = Page & { rewrittenPages?: PageId[] };
+export type PageUpdateResult = Page & {
+  rewrittenPages?: PageId[];
+  /** Vault-relative backup path when "Keep mine" replaced an external edit. */
+  conflictBackup?: string;
+};
 
 /** Response of `DELETE /api/pages/:id` (D11: files move to `.trash/`). */
 export interface DeletePageResult {
