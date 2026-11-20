@@ -108,7 +108,8 @@ test('unknown languages from other apps are kept as written and shown as plain t
   const [doc] = await vault.seed([{ title: 'Imported', content: original }]);
   await page.goto(`/#/${doc!.id}`);
   const block = page.getByTestId('code-block');
-  await expect(block.getByTestId('code-language-button')).toHaveText('dataviewjs');
+  // The label shows the fence as written.
+  await expect(block.getByTestId('code-language-button')).toHaveText('dataviewjs title="x"');
   await expect(block.locator('[class*="hljs-"]')).toHaveCount(0);
 
   // Edit elsewhere: the fence (with its extra words) is written back as is.
@@ -139,4 +140,51 @@ test('Copy puts the code on the clipboard; Escape closes the picker back into th
   await expect(page.getByTestId('code-language-picker')).toHaveCount(0);
   await expect(page.locator('.ProseMirror')).toBeFocused();
   await expect(block.getByTestId('code-language-button')).toHaveText('JSON');
+});
+
+test('Tab / Shift+Tab indent inside code, Enter keeps the indent, focus never leaves (#zyyce7rj)', async ({
+  page,
+  vault,
+}) => {
+  // @opus-hunter's cb2.mjs flow.
+  const [doc] = await vault.seed([{ title: 'Indent', content: 'Start' }]);
+  await page.goto(`/#/${doc!.id}`);
+  await page.getByTestId('editor-content').getByText('Start').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('```');
+  await page.keyboard.type('def f():');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+  await page.keyboard.type('if x:');
+  await page.keyboard.press('Enter'); // keeps 4 spaces
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('return 1');
+  await page.keyboard.press('Enter'); // keeps 8 spaces
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.type('print(f())');
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+  await expect(page.getByTestId('code-language-picker')).toHaveCount(0);
+  await waitSaved(page);
+  expect(await fileOf(doc!.id)).toMatch(
+    /Start\n\n```\ndef f\(\):\n {4}if x:\n {8}return 1\nprint\(f\(\)\)\n```\n$/,
+  );
+
+  // Enter ×3 still leaves the block; Esc reaches the language button on purpose.
+  await page.getByTestId('code-block').getByText('print(f())').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('code-language-button')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('code-language-search')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('After the code');
+  await waitSaved(page);
+  expect(await fileOf(doc!.id)).toMatch(/\n```\n\nAfter the code\n$/);
 });

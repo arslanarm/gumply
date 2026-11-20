@@ -978,6 +978,13 @@ input {
   font-style: italic;
 }
 
+.code-block-language-text {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Copy shows on hover or keyboard focus, like Notion. */
 .code-block-copy {
   opacity: 0;
