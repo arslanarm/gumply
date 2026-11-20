@@ -135,6 +135,10 @@ export const api = {
     return request("/attachments", { method: "POST", body });
   },
 
+  /** #w6i6e6u7: the server downloads a remote image into attachments/. */
+  importAttachment: (url: string): Promise<Attachment> =>
+    request("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }),
+
   createPage: (input: CreatePageInput): Promise<Page> =>
     mutate(() => request("/pages", { method: "POST", body: JSON.stringify(input) })),
 

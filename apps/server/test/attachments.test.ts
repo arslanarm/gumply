@@ -41,6 +41,38 @@ describe("attachments API", () => {
     expect(await list.json()).toEqual([attachment]);
   });
 
+  it("serves SVG and HTML files with a sandboxing CSP, but not PDFs or PNGs", async () => {
+    const { app, dir } = await createTestServer();
+    await mkdir(join(dir, "attachments"), { recursive: true });
+    await writeFile(join(dir, "attachments", "x.svg"), '<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>');
+    await writeFile(join(dir, "attachments", "x.html"), "<script>1</script>");
+    await writeFile(join(dir, "attachments", "x.pdf"), "%PDF-1.4");
+    for (const name of ["x.svg", "x.html"]) {
+      const response = await app.request(`/api/files/attachments/${name}`);
+      expect(response.headers.get("content-security-policy"), name).toContain("sandbox");
+      expect(response.headers.get("content-security-policy"), name).toContain("default-src 'none'");
+    }
+    const pdf = await app.request("/api/files/attachments/x.pdf");
+    expect(pdf.headers.get("content-security-policy")).toBeNull();
+  });
+
+  it("POST /attachments/import refuses missing and local URLs", async () => {
+    const { app } = await createTestServer();
+    const missing = await app.request("/api/attachments/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(missing.status).toBe(400);
+    const local = await app.request("/api/attachments/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "http://127.0.0.1:1/x.png" }),
+    });
+    expect(local.status).toBe(400);
+    expect(((await local.json()) as { error: string }).error).toContain("private or local network");
+  });
+
   it("deduplicates names instead of overwriting", async () => {
     const { app, dir } = await createTestServer();
     const first = (await (

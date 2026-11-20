@@ -2472,6 +2472,45 @@ input {
   border-radius: 8px;
 }
 
+/* "Save to vault" on a web image (#w6i6e6u7): over the image's corner on
+   hover or keyboard focus, and while saving. */
+.image-block {
+  position: relative;
+}
+
+.image-save-to-vault {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 1;
+  height: 26px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.image-block:hover .image-save-to-vault,
+.image-save-to-vault:focus-visible,
+.image-save-to-vault[aria-busy="true"] {
+  opacity: 1;
+}
+
+.image-save-to-vault:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.image-save-to-vault:disabled {
+  cursor: progress;
+}
+
 .image-block.is-selected img {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

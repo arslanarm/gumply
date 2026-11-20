@@ -19,6 +19,10 @@ import {
   saveAttachment,
 } from "./attachments.js";
 import { badRequest, notFound, payloadTooLarge } from "./errors.js";
+import { importAllowList, importRemoteImage } from "./remote-image.js";
+
+// Tests only: host:port pairs the image import may reach on localhost.
+const importAllow = importAllowList(process.env.GUMPLY_IMPORT_ALLOW);
 import type { GraphOptions, UpdatePageInput, VaultStore } from "./vault-store.js";
 
 type JsonObject = Record<string, unknown>;
@@ -194,6 +198,15 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<Attachment>(attachment, 201);
   });
 
+  // "Save to vault" for a remote image (#w6i6e6u7): see remote-image.ts.
+  api.post("/attachments/import", async (c) => {
+    const body = await readJson(c);
+    const url = body.url;
+    if (typeof url !== "string" || url.trim().length === 0) throw badRequest("url is required");
+    const attachment = await importRemoteImage(store.root, url.trim(), { allow: importAllow });
+    return c.json<Attachment>(attachment, 201);
+  });
+
   api.get("/attachments", async (c) => {
     return c.json<Attachment[]>(await listAttachments(store.root));
   });
@@ -213,6 +226,12 @@ export function createApiRoutes(store: VaultStore): Hono {
         ? "private, max-age=31536000, immutable"
         : "no-cache",
       "X-Content-Type-Options": "nosniff",
+      // An SVG or HTML file opened directly must not run script on our
+      // origin (it still renders in <img>). Not for PDFs: a sandbox CSP
+      // would block the browser's PDF viewer.
+      ...(/^(image\/svg\+xml|text\/html)/.test(file.mime)
+        ? { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox" }
+        : {}),
     });
   });
 

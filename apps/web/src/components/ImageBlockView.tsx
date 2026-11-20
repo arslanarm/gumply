@@ -1,6 +1,8 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { useEffect, useState } from "react";
-import { urlForLink } from "../lib/attachment-links.js";
+import { api } from "../api/client.js";
+import { hrefForAttachment, isExternalLink, urlForLink } from "../lib/attachment-links.js";
+import { errorMessage } from "../lib/errors.js";
 import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 
 /** Image block with a loading skeleton and an editable caption (= alt text). */
@@ -13,6 +15,24 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
   const uploading = Boolean(node.attrs.uploading) || src.length === 0;
   const [caption, setCaption] = useState(alt);
   const [failed, setFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Web images (not vault files, not data: URLs) can be saved into the vault.
+  const remote = isExternalLink(src) && url !== null && /^https?:/i.test(url);
+
+  const saveToVault = async () => {
+    if (saving || !url) return;
+    setSaving(true);
+    try {
+      const attachment = await api.importAttachment(url);
+      env.addAttachment?.(attachment);
+      // Only this image changes; the caption (alt) stays. One step to undo.
+      updateAttributes({ src: hrefForAttachment(attachment.path) });
+    } catch (error) {
+      env.reportError?.(`Couldn't save the image: ${errorMessage(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     setCaption(alt);
@@ -35,6 +55,21 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
       className={`image-block${selected ? " is-selected" : ""}${failed ? " is-missing" : ""}`}
       data-testid="image-block"
     >
+      {remote ? (
+        <button
+          type="button"
+          className="image-save-to-vault"
+          data-testid="image-save-to-vault"
+          disabled={saving}
+          aria-busy={saving}
+          title="Download this image into your vault's attachments folder"
+          contentEditable={false}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => void saveToVault()}
+        >
+          {saving ? "Saving…" : "Save to vault"}
+        </button>
+      ) : null}
       {failed || url === null ? (
         <div className="image-skeleton">Image unavailable · {node.attrs.alt || "attachment"}</div>
       ) : (

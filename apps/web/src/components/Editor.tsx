@@ -221,6 +221,11 @@ export function Editor({
       attachments,
       openLink: onOpenLink,
       createLink: onCreateLink,
+      reportError: (message) => onAttachmentErrorRef.current?.(message),
+      addAttachment: (attachment) =>
+        setAttachments((list) =>
+          list.some((item) => item.path === attachment.path) ? list : [...list, attachment],
+        ),
     });
   }, [page.id, pages, attachments, onOpenLink, onCreateLink]);
 
