@@ -17,6 +17,7 @@ import type { SaveState } from "./editor/autosave.js";
 import { GraphView } from "./graph/GraphView.js";
 import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
 import { focusAfterDelete } from "./lib/delete.js";
+import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
@@ -328,7 +329,13 @@ export function App() {
     if (initialLoadStarted.current) return;
     initialLoadStarted.current = true;
     void (async () => {
-      const list = await loadPages();
+      // On a cold dev start the API may still be booting behind the Vite proxy.
+      // Retry briefly instead of leaving the app on an empty shell.
+      let list = await loadPages();
+      for (let attempt = 0; !list && attempt < 4; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+        list = await loadPages();
+      }
       if (!list) return;
 
       // Consume even when a hash is present so it never leaks into a later load.
@@ -337,11 +344,9 @@ export function App() {
       if (list.length === 0) return;
       if (selectedRef.current !== null || isGraphHash(window.location.hash)) return;
 
-      const firstPage =
-        newVaultPage && list.some((page) => page.id === newVaultPage) ? newVaultPage : null;
-      const target = firstPage ?? buildPageTree(list)[0]?.page.id ?? null;
+      const target = chooseLandingPage(list, newVaultPage);
       if (!target) return;
-      focusBodyAfterOpen.current = target === firstPage;
+      focusBodyAfterOpen.current = target === newVaultPage;
       navigate(target, true);
     })();
   }, [loadPages, navigate]);
