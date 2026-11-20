@@ -30,10 +30,7 @@ test.describe('editor', () => {
 
     const placeholder = body.locator('[data-placeholder]');
     await expect(placeholder).toHaveCount(1);
-    await expect(placeholder).toHaveAttribute(
-      'data-placeholder',
-      "Type '/' for commands, '[[' to link a page",
-    );
+    await expect(placeholder).toHaveAttribute('data-placeholder', "Type '/' for commands…");
     // Body only, never in the title.
     await expect(page.getByTestId('page-title')).toHaveText('Placeholder page');
 
