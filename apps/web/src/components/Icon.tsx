@@ -14,6 +14,7 @@ export type IconName =
   | "heading"
   | "help"
   | "image"
+  | "info"
   | "keyboard"
   | "link"
   | "list"
@@ -21,6 +22,7 @@ export type IconName =
   | "minus"
   | "monitor"
   | "moon"
+  | "move"
   | "more"
   | "pencil"
   | "plus"
@@ -107,6 +109,19 @@ const ICONS: Record<IconName, ReactNode> = {
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <circle cx="9" cy="9" r="2" />
       <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </>
+  ),
+  move: (
+    <>
+      <path d="m15 10 5 5-5 5" />
+      <path d="M4 4v7a4 4 0 0 0 4 4h12" />
     </>
   ),
   keyboard: (

@@ -23,8 +23,7 @@ export function buildDemoPages(): DemoPage[] {
       icon: "👋",
       parentId: null,
       content: [
-        "# Welcome to Gumply",
-        "",
+        // No H1 here: the page title "Welcome" already heads the page.
         "Gumply is a quiet place for notes: simple blocks, no clutter.",
         "",
         "Your notes are plain Markdown files on your computer.",

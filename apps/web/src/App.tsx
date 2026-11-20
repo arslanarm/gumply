@@ -6,7 +6,7 @@ import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
 import { MoveDialog } from "./components/MoveDialog.js";
 import { PageHeader } from "./components/PageHeader.js";
-import { Icon } from "./components/Icon.js";
+import { Icon, type IconName } from "./components/Icon.js";
 import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
 import { ShortcutsDialog } from "./components/ShortcutsDialog.js";
@@ -35,6 +35,8 @@ interface PendingDelete {
 
 interface ToastState {
   message: string;
+  /** What happened: deleting shows a bin, moving an arrow, notices an "i". */
+  icon?: IconName;
   undo?: () => Promise<void>;
 }
 
@@ -183,8 +185,14 @@ export function App() {
       event.preventDefault();
       setSidebarOpen((open) => !open);
     };
+    // Close the sidebar only when the window becomes narrow, not on every
+    // resize while narrow (a mobile keyboard appearing must not close a
+    // sidebar the user just opened).
+    let wasNarrow = window.innerWidth <= 900;
     const onResize = () => {
-      if (window.innerWidth <= 900) setSidebarOpen(false);
+      const narrow = window.innerWidth <= 900;
+      if (narrow && !wasNarrow) setSidebarOpen(false);
+      wasNarrow = narrow;
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", onResize);
@@ -633,7 +641,7 @@ export function App() {
 
   const handleHeadingResult = useCallback((found: boolean) => {
     setPendingHeading(null);
-    if (!found) setToast({ message: "Couldn't find that heading" });
+    if (!found) setToast({ message: "Couldn't find that heading", icon: "info" });
   }, []);
 
   const handleRename = useCallback(
@@ -718,6 +726,7 @@ export function App() {
         const trashId = result.trashId;
         setToast({
           message: "Page deleted",
+          icon: "trash",
           undo: trashId
             ? async () => {
                 try {
@@ -806,6 +815,7 @@ export function App() {
         if (moved.id !== id) {
           setToast({
             message: moveToastMessage(pages, parentId),
+            icon: "move",
             undo: async () => {
               try {
                 const restored = await api.movePage(moved.id, previousParent);
@@ -902,10 +912,13 @@ export function App() {
         content,
         icon: loaded.icon,
       });
+      // Keep the caret where it was (the editor remounts on the new file).
+      const selection = editorControls.current?.getSelection() ?? null;
       setDeletedOnDisk(null);
       setActionError(null);
       await loadPages();
-      focusBodyAfterOpen.current = true;
+      if (selection) restoreSelection.current = selection;
+      else focusBodyAfterOpen.current = true;
       // Restoring usually recreates the same id; force a refetch so the editor
       // baseline matches the new file instead of the deleted one.
       navigate(created.id);
@@ -916,7 +929,7 @@ export function App() {
   }, [deletedOnDisk, loadPages, navigate, requestPageReload]);
 
   const handleConflictBackup = useCallback((path: string) => {
-    setToast({ message: `Other version kept in ${path}` });
+    setToast({ message: `Other version kept in ${path}`, icon: "info" });
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
@@ -1012,6 +1025,13 @@ export function App() {
           onRetry={handleRetry}
           onSearch={openSearch}
           onGraph={navigateGraph}
+        />
+        {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
+        <div
+          className="sidebar-scrim"
+          data-testid="sidebar-scrim"
+          aria-hidden="true"
+          onClick={() => setSidebarOpen(false)}
         />
 
         <main className="content">
@@ -1179,6 +1199,7 @@ export function App() {
       {toast ? (
         <UndoToast
           message={toast.message}
+          icon={toast.icon}
           onUndo={toast.undo ? () => void toast.undo?.() : undefined}
           onDismiss={dismissToast}
         />
