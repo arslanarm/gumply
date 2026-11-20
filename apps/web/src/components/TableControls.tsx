@@ -194,14 +194,14 @@ export function TableControls({ editor }: { editor: TipTapEditor }) {
             data-testid="table-row-handle"
             aria-label="Row actions"
             title="Row actions"
-            style={{ left: hover.tableRect.left - 11, top: hover.rowRect.top + hover.rowRect.height / 2 - 11 }}
+            style={{ left: hover.tableRect.left - 6, top: hover.rowRect.top + hover.rowRect.height / 2 - 11 }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
               openMenu("row", rect.left, rect.bottom + 4);
             }}
           >
-            ⋮⋮
+            ⋮
           </button>
           <button
             type="button"
@@ -209,7 +209,7 @@ export function TableControls({ editor }: { editor: TipTapEditor }) {
             data-testid="table-col-handle"
             aria-label="Column actions"
             title="Column actions"
-            style={{ left: hover.cellRect.left + hover.cellRect.width / 2 - 11, top: hover.tableRect.top - 11 }}
+            style={{ left: hover.cellRect.left + hover.cellRect.width / 2 - 11, top: hover.tableRect.top - 6 }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
