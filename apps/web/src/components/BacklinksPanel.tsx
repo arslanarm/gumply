@@ -1,6 +1,8 @@
 import type { Backlink, PageId } from "@gumply/core";
 import { useState } from "react";
 import { splitSnippet, visibleBacklinks } from "../lib/backlinks.js";
+import { isBoard } from "../lib/boards.js";
+import { Icon } from "./Icon.js";
 
 export interface BacklinksPanelProps {
   items: readonly Backlink[];
@@ -38,7 +40,13 @@ export function BacklinksPanel({ items, loading, onOpen }: BacklinksPanelProps) 
                   onClick={() => onOpen(page.id)}
                 >
                   <span className="backlink-title">
-                    {page.icon ? `${page.icon} ` : ""}
+                    {page.icon ? (
+                      `${page.icon} `
+                    ) : isBoard(page) ? (
+                      <span className="backlink-board-icon" data-testid={`backlink-board-icon-${page.id}`} aria-label="Whiteboard">
+                        <Icon name="board" size={14} />
+                      </span>
+                    ) : null}
                     {page.title}
                   </span>
                   <span className="backlink-snippet">

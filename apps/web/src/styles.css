@@ -1717,9 +1717,14 @@ input {
 }
 
 .sidebar-new-page,
+.sidebar-new-board,
 .sidebar-search {
   color: var(--text);
   font-weight: 500;
+}
+
+.sidebar-new-board .sidebar-row-icon {
+  color: var(--muted);
 }
 
 .sidebar-new-page {
@@ -3017,4 +3022,50 @@ input {
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
+}
+
+/* ---------- Whiteboard page: compact header over a full-bleed board ---------- */
+
+.editor-pane.is-board {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.content:has(> .editor-pane.is-board) {
+  overflow: hidden;
+}
+
+.board-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.board-page > .page-header {
+  flex: none;
+  margin: 0;
+  padding: 0.9rem 1.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.board-page-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.page-icon-board,
+.backlink-board-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.backlink-board-icon {
+  margin-right: 0.35rem;
+  vertical-align: -2px;
 }

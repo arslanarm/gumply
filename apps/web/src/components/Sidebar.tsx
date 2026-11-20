@@ -18,6 +18,8 @@ export interface SidebarProps {
   focusTarget: SidebarFocusTarget | null;
   onOpen: (id: PageId) => void;
   onCreate: (parentId: PageId | null) => void;
+  /** New whiteboard at the top level or inside a page (spec/whiteboard §4). */
+  onCreateBoard: (parentId: PageId | null) => void;
   onRename: (id: PageId, title: string) => Promise<void>;
   onDelete: (id: PageId) => void;
   onMove: (id: PageId, parentId: PageId | null) => void;
@@ -98,6 +100,7 @@ export function Sidebar(props: SidebarProps) {
     onDelete: props.onDelete,
     onStartMove: props.onStartMove,
     onMove: props.onMove,
+    onCreateBoard: props.onCreateBoard,
     createChild,
     toggle,
     startRename,
@@ -105,6 +108,7 @@ export function Sidebar(props: SidebarProps) {
     cancelRename,
   });
   latest.current = {
+    onCreateBoard: props.onCreateBoard,
     onOpen: props.onOpen,
     onDelete: props.onDelete,
     onStartMove: props.onStartMove,
@@ -119,6 +123,15 @@ export function Sidebar(props: SidebarProps) {
     () => ({
       onOpen: (id: PageId) => latest.current.onOpen(id),
       onCreateChild: (id: PageId) => latest.current.createChild(id),
+      onCreateBoardChild: (id: PageId) => {
+        setCollapsed((previous) => {
+          if (!previous.has(id)) return previous;
+          const next = new Set(previous);
+          next.delete(id);
+          return next;
+        });
+        latest.current.onCreateBoard(id);
+      },
       onDelete: (id: PageId) => latest.current.onDelete(id),
       onToggle: (id: PageId) => latest.current.toggle(id),
       onStartMove: (id: PageId) => latest.current.onStartMove(id),
@@ -148,6 +161,19 @@ export function Sidebar(props: SidebarProps) {
           <Icon name="plus" size={16} />
         </span>
         New page
+      </button>
+
+      <button
+        type="button"
+        className="sidebar-row sidebar-new-board"
+        data-testid="new-board-button"
+        aria-label="New whiteboard"
+        onClick={() => props.onCreateBoard(null)}
+      >
+        <span className="sidebar-row-icon" aria-hidden="true">
+          <Icon name="board" size={16} />
+        </span>
+        New whiteboard
       </button>
 
       <button

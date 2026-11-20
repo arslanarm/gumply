@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 /** One coherent line-icon set for UI chrome (Lucide-style, 24px grid). */
 export type IconName =
   | "arrowUp"
+  | "board"
   | "brand"
   | "checkSquare"
   | "chevronDown"
@@ -46,6 +47,14 @@ const ICONS: Record<IconName, ReactNode> = {
     <>
       <path d="m5 12 7-7 7 7" />
       <path d="M12 19V5" />
+    </>
+  ),
+  // A whiteboard: a canvas with a sticky note and a stroke (spec/whiteboard).
+  board: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2.5" />
+      <rect x="6.5" y="6.5" width="5.5" height="5.5" rx="0.8" />
+      <path d="M14.5 9.25h3M6.5 16.5c2-1.6 3.6-1.6 5.2 0s3.4 1.6 5.8-.6" />
     </>
   ),
   brand: (
