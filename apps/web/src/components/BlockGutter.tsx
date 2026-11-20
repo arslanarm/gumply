@@ -347,7 +347,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
               type="button"
               role="menuitem"
               className="block-menu-item"
-              data-testid={`block-turn-${item.kind}`}
+              data-testid={`block-turn-into-${item.kind}`}
               onClick={() => run((block) => turnInto(editor, block, item.kind))}
             >
               {item.label}
@@ -358,7 +358,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             role="menuitem"
             className="block-menu-item"
-            data-testid="block-duplicate"
+            data-testid="block-menu-item-duplicate"
             onClick={() => run((block) => {
               const tr = duplicateBlock(editor.state, block);
               if (tr) editor.view.dispatch(tr);
@@ -370,7 +370,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             role="menuitem"
             className="block-menu-item"
-            data-testid="block-move-up"
+            data-testid="block-menu-item-move-up"
             onClick={() => run((block) => move(block, "up"))}
           >
             Move up
@@ -379,7 +379,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             role="menuitem"
             className="block-menu-item"
-            data-testid="block-move-down"
+            data-testid="block-menu-item-move-down"
             onClick={() => run((block) => move(block, "down"))}
           >
             Move down
@@ -388,7 +388,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             role="menuitem"
             className="block-menu-item is-danger"
-            data-testid="block-delete"
+            data-testid="block-menu-item-delete"
             onClick={() => run((block) => {
               const tr = deleteBlock(editor.state, block);
               if (tr) editor.view.dispatch(tr);
