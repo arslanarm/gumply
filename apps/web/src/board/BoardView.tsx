@@ -47,6 +47,15 @@ export interface BoardViewProps {
   renderers?: BoardRenderers;
 }
 
+/** Page body for live page cards (W2b); null when it can't be read. */
+async function loadPagePreview(path: string): Promise<string | null> {
+  try {
+    return (await api.getPage(path.replace(/\.md$/i, ""))).content;
+  } catch {
+    return null;
+  }
+}
+
 export function BoardView(props: BoardViewProps) {
   const { boardId, pages, onOpenFile, renderers } = props;
   const [loaded, setLoaded] = useState<{ meta: PageMeta; board: CanvasBoard } | null>(null);
@@ -179,6 +188,7 @@ export function BoardView(props: BoardViewProps) {
         onOpenFile={onOpenFile}
         uploadFile={async (file) => (await api.uploadAttachment(file)).path}
         renderers={renderers}
+        loadPage={loadPagePreview}
         onReady={onEditorReady}
       />
       </Suspense>
