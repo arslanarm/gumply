@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanupVaults, createPage, createTestServer, getJson, jsonRequest } from "./helpers";
 
 afterEach(cleanupVaults);
@@ -118,12 +118,14 @@ describe("pages CRUD", () => {
     expect(stale.status).toBe(409);
     expect(await stale.json()).toEqual({ error: "This page changed on disk." });
 
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const forced = await jsonRequest(app, "PUT", "/api/pages/conflict", {
       content: "mine",
       force: true,
     });
     expect(forced.status).toBe(200);
     expect(((await forced.json()) as Record<string, unknown>).content).toBe("mine");
+    warnSpy.mockRestore();
   });
 
   it("rejects bad input with 400 and unknown pages with 404", async () => {

@@ -512,17 +512,23 @@ export class VaultStore {
   private async updateNow(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
     const record = this.require(id);
 
-    if (!patch.force) {
-      let info;
-      try {
-        info = await stat(record.filePath);
-      } catch {
-        throw conflict("This page changed on disk.");
-      }
-      const mtimeChanged = Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
-      const versionChanged =
-        patch.expectedUpdated !== undefined && patch.expectedUpdated !== record.updated;
-      if (mtimeChanged || versionChanged) throw conflict("This page changed on disk.");
+    let info;
+    try {
+      info = await stat(record.filePath);
+    } catch {
+      info = null;
+    }
+    const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
+    const versionChanged =
+      patch.expectedUpdated !== undefined && patch.expectedUpdated !== record.updated;
+    const changedOnDisk = mtimeChanged || versionChanged;
+
+    if (patch.force) {
+      // Keep mine still preserves the version it is replacing, outside the page
+      // index, so an accidental overwrite can be recovered.
+      if (changedOnDisk) await this.backupConflict(record);
+    } else if (changedOnDisk) {
+      throw conflict("This page changed on disk.");
     }
 
     const previousTitle = record.title;
@@ -898,6 +904,21 @@ export class VaultStore {
     };
     if (icon) record.icon = icon;
     return record;
+  }
+
+  private async backupConflict(record: PageRecord): Promise<void> {
+    let raw: string;
+    try {
+      raw = await readFile(record.filePath, "utf8");
+    } catch {
+      return;
+    }
+    const dir = join(this.root, ".gumply", "conflicts");
+    await mkdir(dir, { recursive: true });
+    const safeId = record.id.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 120);
+    const file = join(dir, `${safeId}-${Date.now()}.md`);
+    await writeFile(file, raw, "utf8");
+    console.warn(`[gumply] conflict backup for ${record.id}: ${file}`);
   }
 
   private async writePage(
