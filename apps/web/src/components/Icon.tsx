@@ -26,6 +26,7 @@ export type IconName =
   | "plus"
   | "quote"
   | "search"
+  | "shuffle"
   | "sidebar"
   | "sun"
   | "trash"
@@ -165,6 +166,15 @@ const ICONS: Record<IconName, ReactNode> = {
     <>
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.35-4.35" />
+    </>
+  ),
+  shuffle: (
+    <>
+      <path d="m18 14 4 4-4 4" />
+      <path d="m18 2 4 4-4 4" />
+      <path d="M2 18h1.97a4 4 0 0 0 3.3-1.7l5.46-8.6a4 4 0 0 1 3.3-1.7H22" />
+      <path d="M2 6h1.97a4 4 0 0 1 3.3 1.7l.62.98" />
+      <path d="M22 18h-5.97a4 4 0 0 1-3.3-1.7l-.62-.98" />
     </>
   ),
   sidebar: (

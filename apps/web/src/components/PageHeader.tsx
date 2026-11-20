@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Page } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
+import { loadEmojiData } from "../lib/emoji/data.js";
+import { EmojiPicker } from "./EmojiPicker.js";
 import { Icon } from "./Icon.js";
 
 export interface PageHeaderProps {
@@ -46,6 +48,7 @@ export function PageHeader({
   const [iconOpen, setIconOpen] = useState(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const iconControlRef = useRef<HTMLDivElement | null>(null);
+  const iconButtonRef = useRef<HTMLButtonElement | null>(null);
   // The title this edit session started from. Commit compares against this,
   // not the live prop, so a rename from the sidebar cannot be reverted by a
   // stale header draft blurring afterwards (#n8kk26sc).
@@ -139,6 +142,11 @@ export function PageHeader({
             data-tooltip={page.icon ? "Change icon" : "Add icon"}
             aria-label={page.icon ? "Change page icon" : "Add page icon"}
             aria-expanded={iconOpen}
+            aria-haspopup="dialog"
+            ref={iconButtonRef}
+            // Start fetching the emoji list before the click lands.
+            onPointerEnter={() => void loadEmojiData().catch(() => undefined)}
+            onFocus={() => void loadEmojiData().catch(() => undefined)}
             onClick={() => setIconOpen((open) => !open)}
           >
             {page.icon ? (
@@ -150,31 +158,17 @@ export function PageHeader({
             )}
           </button>
           {iconOpen ? (
-            <div className="page-icon-picker" role="dialog" aria-label="Page icon">
-              <div className="page-icon-grid">
-                {["📄", "📝", "📁", "💡", "✅", "🎯", "📌", "🚀", "🌱", "🔖", "🧠", "✨"].map(
-                  (emoji) => (
-                    <button
-                      type="button"
-                      key={emoji}
-                      className="page-icon-choice"
-                      aria-label={`Use ${emoji}`}
-                      onClick={() => chooseIcon(emoji)}
-                    >
-                      {emoji}
-                    </button>
-                  ),
-                )}
-              </div>
-              {page.icon ? (
-                <button
-                  type="button"
-                  className="page-icon-remove"
-                  onClick={() => chooseIcon(null)}
-                >
-                  Remove icon
-                </button>
-              ) : null}
+            <div className="page-icon-popover">
+              <EmojiPicker
+                label="Page icon"
+                testId="page-icon-picker"
+                onSelect={chooseIcon}
+                onRemove={page.icon ? () => chooseIcon(null) : undefined}
+                onClose={() => {
+                  setIconOpen(false);
+                  iconButtonRef.current?.focus();
+                }}
+              />
             </div>
           ) : null}
         </div>
