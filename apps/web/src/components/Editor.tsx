@@ -1,5 +1,4 @@
 import Placeholder from "@tiptap/extension-placeholder";
-import TaskList from "@tiptap/extension-task-list";
 import { EditorContent, useEditor, type Editor as TipTapEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
@@ -20,8 +19,18 @@ import {
 import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
 import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
+import { NotionCodeBlock } from "../editor/code-block.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { MarkdownLink } from "../editor/link.js";
+import {
+  MarkdownHeading,
+  MarkdownHorizontalRule,
+  MarkdownMarkup,
+  MarkdownOrderedList,
+} from "../editor/raw-markdown/markup.js";
+import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
+import { MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
+import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/raw-markdown/list-style.js";
 import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
@@ -38,8 +47,11 @@ import { errorMessage } from "../lib/errors.js";
 import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { normalizeEditorMarkdown } from "../lib/markdown.js";
 import { taskCheckboxLabel } from "../lib/task.js";
+import { createExitTopExtension, focusStartNow } from "../editor/title-navigation.js";
 
 export interface EditorControls {
+  /** Id of the page this editor shows (controls outlive a page switch). */
+  pageId: string;
   flush: () => Promise<void>;
   focusBody: () => void;
   /** Current Markdown buffer (for Restore page). */
@@ -66,6 +78,8 @@ export interface EditorProps {
   headingToReveal?: string | null;
   onHeadingResult?: (found: boolean) => void;
   onAttachmentError?: (message: string) => void;
+  /** ArrowUp / Backspace at the very start of the body: go to the title. */
+  onExitTop?: () => void;
 }
 
 interface SlashMenuState {
@@ -111,6 +125,7 @@ export function Editor({
   headingToReveal,
   onHeadingResult,
   onAttachmentError,
+  onExitTop,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -132,6 +147,9 @@ export function Editor({
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
+  const onExitTopRef = useRef(onExitTop);
+  onExitTopRef.current = onExitTop;
+  const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
   const versionRef = useRef(page.updated);
   const forceRef = useRef(false);
 
@@ -373,10 +391,29 @@ export function Editor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] }, paragraph: false }),
+      StarterKit.configure({
+        heading: false,
+        orderedList: false,
+        horizontalRule: false,
+        paragraph: false,
+        text: false,
+        hardBreak: false,
+        bulletList: false,
+        codeBlock: false,
+      }),
+      NotionCodeBlock,
+      MarkdownBulletList,
+      MarkdownHeading.configure({ levels: [1, 2, 3] }),
+      MarkdownOrderedList,
+      MarkdownHorizontalRule,
+      MarkdownMarkup,
       EmptyLineParagraph,
+      MarkdownText,
+      MarkdownHardBreak,
+      RawBlock,
+      RawInline,
       MarkdownLink,
-      TaskList,
+      MarkdownTaskList,
       AccessibleTaskItem.configure({
         nested: true,
         a11y: {
@@ -411,6 +448,7 @@ export function Editor({
       TaskListTight,
       TaskShortcut,
       ShortcutHistory,
+      exitTopExtension,
     ],
     content: page.content,
     editorProps: {
@@ -435,6 +473,10 @@ export function Editor({
         uploadRef.current(files, at?.pos ?? view.state.selection.from);
         return true;
       },
+    },
+    onCreate: ({ editor: instance }) => {
+      // Write lists back with the page's own bullet marker and indent.
+      setListStyle(instance, page.content);
     },
     onUpdate: ({ editor: instance }) => {
       autosave.schedule(readMarkdown(instance));
@@ -464,7 +506,10 @@ export function Editor({
     if (!editor) return;
     onReady?.({
       flush: () => autosave.flush(),
-      focusBody: () => editor.commands.focus("start"),
+      pageId: page.id,
+      // Synchronous on purpose: TipTap's focus() command waits a frame, and
+      // keys typed right after Enter in the title were lost meanwhile (#d636gdxx).
+      focusBody: () => focusStartNow(editor),
       getMarkdown: () => readMarkdown(editor),
       getSelection: () => ({
         from: editor.state.selection.from,
@@ -480,7 +525,7 @@ export function Editor({
         await autosave.retry();
       },
     });
-  }, [editor, autosave, onReady]);
+  }, [editor, autosave, onReady, page.id]);
 
   // `[[Page#Heading]]`: scroll to the heading, or report it missing.
   useEffect(() => {

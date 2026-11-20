@@ -27,6 +27,18 @@ test.describe('pages and sidebar', () => {
     expect(decodeURIComponent(page.url())).toContain(`#/${roadmap.id}`);
   });
 
+  test('opens Welcome on a cold start even when the one-shot signal was missed', async ({
+    page,
+    vault,
+  }) => {
+    // Alphabetically "Gumply demo" sorts before "Welcome"; the old fallback
+    // opened it when the new-vault header had already been consumed.
+    await vault.seed([{ title: 'Gumply demo' }, { title: 'Welcome' }]);
+
+    await page.goto('/');
+    await expectPageTitle(page, 'Welcome');
+  });
+
   test('creates a page from the sidebar and opens it', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByTestId('empty-state')).toBeVisible();

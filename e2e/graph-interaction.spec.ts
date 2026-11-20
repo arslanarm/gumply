@@ -299,3 +299,131 @@ test.describe('graph polish (#z5abndiz)', () => {
     await expect(filter).toHaveValue('');
   });
 });
+
+test.describe('page icons in the graph (#emmyabbj)', () => {
+  /** Colourful (non-grey) pixels in a square around a canvas point. */
+  async function colourfulPixels(page: Page, testId: string, x: number, y: number, half: number) {
+    return page.evaluate(
+      ({ id, x, y, half }) => {
+        const canvas = document.querySelector(`[data-testid="${id}"] canvas`) as HTMLCanvasElement;
+        const scale = canvas.width / canvas.getBoundingClientRect().width;
+        const size = Math.round(half * 2 * scale);
+        const data = canvas
+          .getContext('2d')!
+          .getImageData(Math.round((x - half) * scale), Math.round((y - half) * scale), size, size).data;
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const [r, g, b, a] = [data[i]!, data[i + 1]!, data[i + 2]!, data[i + 3]!];
+          if (a > 128 && Math.max(r, g, b) - Math.min(r, g, b) > 60) count += 1;
+        }
+        return count;
+      },
+      { id: testId, x, y, half },
+    );
+  }
+
+  test('pages with an icon draw their emoji (global and local) and stay easy to grab', async ({
+    page,
+    vault,
+  }) => {
+    const [rocket] = await vault.seed([
+      { title: 'Rocket', icon: '🚀', content: 'Goes to [[Plain]] and [[Heart]].' },
+      { title: 'Plain', content: 'No icon. Back to [[Rocket]].' },
+      { title: 'Heart', icon: '❤️', content: 'Back to [[Rocket]].' },
+    ]);
+    await openGraph(page);
+    const origin = await canvasOrigin(page);
+
+    const iconNode = await nodeByTitle(page, 'Rocket');
+    const plainNode = await nodeByTitle(page, 'Plain');
+    // Emoji nodes are a bit bigger than dots so the icon reads.
+    expect(iconNode.r).toBeGreaterThan(plainNode.r);
+    expect(await colourfulPixels(page, CANVAS, iconNode.x, iconNode.y, iconNode.r)).toBeGreaterThan(30);
+    // The untagged plain page is still the neutral grey dot.
+    expect(await colourfulPixels(page, CANVAS, plainNode.x, plainNode.y, plainNode.r)).toBe(0);
+
+    // Grab the emoji off-centre and drag it.
+    const before = await nodeByTitle(page, 'Heart');
+    const start = { x: origin.x + before.x + before.r + 4, y: origin.y + before.y };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 6; step += 1) await page.mouse.move(start.x + step * 10, start.y + step * 5);
+    const during = await nodeByTitle(page, 'Heart');
+    expect(Math.abs(during.x - (before.x + 60))).toBeLessThan(3);
+    expect(Math.abs(during.y - (before.y + 30))).toBeLessThan(3);
+    await page.mouse.up();
+
+    // Local graph of the icon page: its emoji sits in the middle.
+    await page.goto(`/#/${rocket!.id}`);
+    await page.getByTestId('local-graph-toggle').click();
+    const local = page.getByTestId('local-graph-canvas');
+    await expect(local).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+    await page.waitForTimeout(800);
+    const centre = (await probeNodes(page, 'local-graph-canvas')).find((n) => n.id === rocket!.id)!;
+    expect(await colourfulPixels(page, 'local-graph-canvas', centre.x, centre.y, centre.r)).toBeGreaterThan(30);
+  });
+});
+
+test.describe('filter keeps links (#pyx74enx)', () => {
+  /** Painted pixels away from every node and its label: i.e. link pixels. */
+  async function linkPixels(page: Page): Promise<number> {
+    const nodes = await probeNodes(page);
+    return page.evaluate(
+      ({ id, nodes }) => {
+        const canvas = document.querySelector(`[data-testid="${id}"] canvas`) as HTMLCanvasElement;
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / rect.width;
+        const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+        let count = 0;
+        for (let y = 0; y < canvas.height; y += 2) {
+          for (let x = 0; x < canvas.width; x += 2) {
+            if ((data[(y * canvas.width + x) * 4 + 3] ?? 0) <= 8) continue;
+            const cx = x / scale;
+            const cy = y / scale;
+            const nearNode = nodes.some(
+              (n) => Math.abs(cx - n.x) < 70 && cy > n.y - n.r - 6 && cy < n.y + n.r + 24,
+            );
+            if (!nearNode) count += 1;
+          }
+        }
+        return count;
+      },
+      { id: CANVAS, nodes },
+    );
+  }
+
+  test('links come back after clearing the filter with Backspace, Esc and ✕', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed(fixture());
+    await openGraph(page);
+    const subtitle = page.getByTestId('graph-subtitle');
+    const canvas = page.getByTestId(CANVAS);
+    const initialText = await subtitle.innerText();
+    expect(initialText).toMatch(/[1-9]\d* links/);
+    const initialPixels = await linkPixels(page);
+    expect(initialPixels).toBeGreaterThan(100);
+
+    const filter = page.getByTestId('graph-filter');
+    const clears: Array<[string, () => Promise<void>]> = [
+      ['Backspace', async () => {
+        for (let i = 0; i < 5; i += 1) await filter.press('Backspace');
+      }],
+      ['Escape', () => filter.press('Escape')],
+      ['clear button', () => page.getByTestId('graph-filter-clear').click()],
+    ];
+    for (const [how, clear] of clears) {
+      await filter.click();
+      await filter.pressSequentially('Loner');
+      await expect(subtitle, how).toContainText('0 links');
+      await clear();
+      await expect(filter, how).toHaveValue('');
+      await expect(subtitle, how).toHaveText(initialText);
+      await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+      await page.waitForTimeout(700);
+      // Relayouts change the exact count; without links it drops to ~0.
+      expect(await linkPixels(page), how).toBeGreaterThan(Math.max(100, initialPixels * 0.3));
+    }
+  });
+});
