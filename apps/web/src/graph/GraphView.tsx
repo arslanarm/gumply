@@ -1,7 +1,7 @@
 import type { GraphData, PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiRequestError } from "../api/client.js";
-import { GraphCanvas } from "./GraphCanvas.js";
+import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import {
   ariaSummary,
   buildGraphModel,
@@ -66,6 +66,14 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
     () => (model ? filterGraph(model, { query, tags: selectedTags }) : null),
     [model, query, selectedTags],
   );
+
+  // Stable arrays: a new identity on every render would restart the force
+  // simulation (and the auto-fit) on unrelated state changes such as hovering.
+  const canvasNodes = useMemo<CanvasNode[]>(
+    () => (filtered ? [...filtered.nodes, ...filtered.ghosts] : []),
+    [filtered],
+  );
+  const canvasLinks = useMemo(() => filtered?.links ?? [], [filtered]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((previous) =>
@@ -181,8 +189,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
         ) : filtered ? (
           <>
             <GraphCanvas
-              nodes={[...filtered.nodes, ...filtered.ghosts]}
-              links={filtered.links}
+              nodes={canvasNodes}
+              links={canvasLinks}
               highlightId={highlightId}
               testId="graph-canvas"
               ariaLabel={ariaSummary(filtered)}
