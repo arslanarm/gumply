@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
-import { hostName, isAllowedOrigin, parsePorts } from "../src/security";
+import { hostName, isAllowedOrigin, isSameOrigin, parsePorts } from "../src/security";
 import { VaultStore } from "../src/vault-store";
 import { cleanupVaults, createTestServer } from "./helpers";
 
@@ -90,6 +90,24 @@ describe("local-only API (#rv57cvhm)", () => {
     expect(store.get(page.id).content).toBe("from script");
   });
 
+  it("accepts the web app on any local port through its proxy (same Origin and Host, #kmff9wkt)", async () => {
+    const { app, store, page } = await server();
+    const put = (origin: string, host: string) =>
+      app.request(`http://localhost/api/pages/${page.id}`, {
+        method: "PUT",
+        headers: { Origin: origin, Host: host, "Content-Type": "application/json" },
+        body: json({ content: `via ${host}` }),
+      });
+    // Vite on 10400 and `vite preview` on 4173, no GUMPLY_WEB_PORT.
+    expect((await put("http://localhost:10400", "localhost:10400")).status).toBe(200);
+    expect((await put("http://127.0.0.1:4173", "127.0.0.1:4173")).status).toBe(200);
+    // Same-origin only helps a loopback Host; a foreign site never matches.
+    expect((await put("http://evil.example:80", "evil.example")).status).toBe(403);
+    expect((await put("https://evil.example", "localhost:10400")).status).toBe(403);
+    expect((await put("http://localhost:10400", "localhost:10401")).status).toBe(403);
+    expect(store.get(page.id).content).toBe("via 127.0.0.1:4173");
+  });
+
   it("uses the configured web ports and host", async () => {
     const dir = (await createTestServer()).dir;
     const store = new VaultStore(dir);
@@ -132,5 +150,8 @@ describe("config and helpers", () => {
     expect(isAllowedOrigin("file://", { webPorts: [5173] })).toBe(false);
     expect(isAllowedOrigin("not a url", { webPorts: [5173] })).toBe(false);
     expect(parsePorts("x,0,70000", [5173])).toEqual([5173]);
+    expect(isSameOrigin("http://localhost:10400", "localhost:10400")).toBe(true);
+    expect(isSameOrigin("http://localhost:10400", undefined)).toBe(false);
+    expect(isSameOrigin("null", "localhost:10400")).toBe(false);
   });
 });

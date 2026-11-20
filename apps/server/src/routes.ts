@@ -3,6 +3,8 @@ import type {
   ApiError,
   Attachment,
   Backlink,
+  BoardDocument,
+  BoardUpdateResult,
   DeletePageResult,
   GraphData,
   Page,
@@ -23,7 +25,7 @@ import { importAllowList, importRemoteImage } from "./remote-image.js";
 
 // Tests only: host:port pairs the image import may reach on localhost.
 const importAllow = importAllowList(process.env.GUMPLY_IMPORT_ALLOW);
-import type { GraphOptions, UpdatePageInput, VaultStore } from "./vault-store.js";
+import type { GraphOptions, UpdateBoardInput, UpdatePageInput, VaultStore } from "./vault-store.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -149,6 +151,37 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (parentId === undefined) throw badRequest("parentId is required (use null for the root)");
 
     return c.json<Page>(await store.move(c.req.param("id"), parentId));
+  });
+
+  // --- whiteboards (D25, spec/api v1.7) ---
+  api.post("/boards", async (c) => {
+    const body = await readJson(c);
+    const board = await store.createBoard({
+      title: typeof body.title === "string" ? body.title : "",
+      parentId: parentIdValue(body) ?? null,
+      icon: optionalString(body, "icon"),
+    });
+    return c.json<BoardDocument>(board, 201);
+  });
+
+  api.get("/boards/:id", (c) => c.json<BoardDocument>(store.getBoard(c.req.param("id"))));
+
+  api.put("/boards/:id", async (c) => {
+    const body = await readJson(c);
+    const patch: UpdateBoardInput = {};
+    if (body.board !== undefined) patch.board = body.board;
+    const title = optionalString(body, "title");
+    if (title !== undefined) patch.title = title;
+    const icon = iconValue(body);
+    if (icon !== undefined) patch.icon = icon;
+    const tags = tagsValue(body);
+    if (tags !== undefined) patch.tags = tags;
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) patch.expectedUpdated = expectedUpdated;
+    if (body.force === true) patch.force = true;
+
+    const { rewrittenPages, ...result } = await store.updateBoard(c.req.param("id"), patch);
+    return c.json<BoardUpdateResult>(rewrittenPages.length > 0 ? { ...result, rewrittenPages } : result);
   });
 
   api.get("/pages/:id/backlinks", (c) => c.json<Backlink[]>(store.backlinks(c.req.param("id"))));

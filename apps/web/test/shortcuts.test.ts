@@ -25,12 +25,20 @@ describe("shortcut platform label", () => {
 
   it("lists the documented groups and only working shortcuts", () => {
     const groups = shortcutGroups("Ctrl");
-    expect(groups.map((group) => group.title)).toEqual(["Navigate", "Editor", "Pages"]);
+    expect(groups.map((group) => group.title)).toEqual(["Navigate", "Editor", "Pages", "Whiteboard"]);
     const editorKeys = groups[1]?.items.map((item) => item.keys) ?? [];
     for (const key of ["/", "[[", "#", "-", "1.", "- [ ]", ">", "```", "CtrlZ", "CtrlS"]) {
       expect(editorKeys).toContain(key);
     }
     expect(groups[2]?.items.map((item) => item.keys)).toContain("Enter");
     expect(groups[2]?.items.map((item) => item.keys)).toContain("F2 / double-click");
+  });
+
+  it("lists the whiteboard shortcuts with the platform modifier", () => {
+    const board = shortcutGroups("⌘").find((group) => group.title === "Whiteboard");
+    const keys = board?.items.map((item) => item.keys) ?? [];
+    for (const key of ["V / H", "N / T / S", "C / F / P", "Shift+1", "⌘D", "⌘Z / ⌘+Shift+Z", "] / ["]) {
+      expect(keys).toContain(key);
+    }
   });
 });

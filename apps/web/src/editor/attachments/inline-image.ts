@@ -11,6 +11,7 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { urlForLink } from "../../lib/attachment-links.js";
+import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 import { getWikiLinkEnvironment, subscribeWikiLinkEnvironment } from "../wikilink/link-store.js";
 
 export const INLINE_IMAGE_ATTR = "data-inline-image";
@@ -71,6 +72,7 @@ export const InlineImage = Node.create({
         parseHTML: (element: HTMLElement) => element.getAttribute("data-obsidian"),
         renderHTML: () => ({}),
       },
+      ...imageRawAttributes,
     };
   },
 
@@ -120,6 +122,11 @@ export const InlineImage = Node.create({
         serialize(state: SerializerState, node: PMNode) {
           if (node.attrs.obsidian) {
             state.write(String(node.attrs.obsidian));
+            return;
+          }
+          const unchanged = unchangedImageMarkdown(node);
+          if (unchanged) {
+            state.write(unchanged);
             return;
           }
           const src = String(node.attrs.src ?? "");

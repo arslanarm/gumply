@@ -4,6 +4,9 @@
  */
 import type {
   ApiError,
+  BoardDocument,
+  BoardUpdateResult,
+  CanvasBoard,
   Attachment,
   Backlink,
   GraphData,
@@ -91,6 +94,25 @@ export interface DeletePageResult {
 }
 
 const pagePath = (id: PageId): string => `/pages/${encodeURIComponent(id)}`;
+const boardPath = (id: PageId): string => `/boards/${encodeURIComponent(id)}`;
+
+/** spec/api v1.7: a board and its tree metadata (`meta.kind === "whiteboard"`). */
+export type BoardResponse = BoardDocument;
+
+export interface SaveBoardInput {
+  board?: CanvasBoard;
+  /** Renames the file; the response can carry a new `meta.id` (D20). */
+  title?: string;
+  icon?: string | null;
+  tags?: string[];
+  /** The `meta.updated` the client last saw; the server answers 409 if the file changed (D22). */
+  expectedUpdated?: string;
+  /** Force-save after a conflict ("Keep mine"); the disk version is backed up. */
+  force?: boolean;
+}
+
+/** `PUT /api/boards/:id`: `rewrittenPages`, `conflictBackup`, `repairBackup` (once). */
+export type SaveBoardResult = BoardUpdateResult;
 
 /** Vault-relative path → the API URL that serves it (`/api/files/...`). */
 export function fileUrl(path: string): string {
@@ -168,6 +190,16 @@ export const api = {
         body: JSON.stringify({ parentId }),
       }),
     ),
+
+  /** spec/whiteboard §2: load a board. */
+  getBoard: (id: PageId): Promise<BoardResponse> => request(boardPath(id)),
+
+  /** spec/whiteboard §2: save a board (409 on conflict, like pages). */
+  saveBoard: (id: PageId, input: SaveBoardInput): Promise<SaveBoardResult> =>
+    mutate(() => request(boardPath(id), { method: "PUT", body: JSON.stringify(input) })),
+
+  createBoard: (input: { title: string; parentId?: PageId | null; icon?: string }): Promise<BoardResponse> =>
+    mutate(() => request("/boards", { method: "POST", body: JSON.stringify(input) })),
 
   /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */
   getGraph: (options: { center?: PageId; depth?: number } = {}): Promise<GraphData> => {

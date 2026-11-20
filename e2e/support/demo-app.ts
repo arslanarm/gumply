@@ -64,8 +64,8 @@ export class DemoApp {
   private async startServer(): Promise<void> {
     this.server = this.launch('server', 'node_modules/.bin/tsx', ['apps/server/src/index.ts'], {
       GUMPLY_PORT: String(DEMO_API_PORT),
-      // Writes are accepted only from the demo web app's origin (#rv57cvhm).
-      GUMPLY_WEB_PORT: String(DEMO_WEB_PORT),
+      // Same-origin through the demo's Vite proxy; don't inherit the suite's.
+      GUMPLY_WEB_PORT: '',
       GUMPLY_VAULT: this.vault,
       GUMPLY_SEED_DEMO: '1',
     });
