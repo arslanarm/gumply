@@ -18,6 +18,16 @@ between tests**; it deliberately never reuses an existing server, because that
 server could be pointed at your real notes. Override ports with
 `GUMPLY_WEB_PORT` / `GUMPLY_PORT` if those are taken too.
 
+Browsers: `npx playwright install chromium firefox`. Chromium runs the full
+suite; Firefox runs only `graph-pixels.spec.ts` (Q1b cross-browser check).
+
+Screenshots for review notes (not assertions, not pixel diffs):
+
+```bash
+npm run test:e2e:screens   # writes test-results/screens/<theme>-*.png
+```
+
+
 Root `package.json` needs (add once M0 lands):
 
 ```jsonc
