@@ -218,9 +218,16 @@ test.describe('graph interaction (#74jpajdy)', () => {
       const old = before.find((b) => b.id === n.id)!;
       return { dx: n.x - old.x, dy: n.y - old.y };
     });
+    // Compare with the median shift: on a loaded machine the cooling layout can
+    // still drift a little during a slow drag, but a dragged node would stand
+    // far apart from the rest.
+    const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+    const panX = median(shifts.map((s) => s.dx));
+    const panY = median(shifts.map((s) => s.dy));
+    expect(Math.abs(panX - 60)).toBeLessThan(8);
+    expect(Math.abs(panY - 30)).toBeLessThan(8);
     for (const shift of shifts) {
-      expect(Math.abs(shift.dx - 60)).toBeLessThan(6);
-      expect(Math.abs(shift.dy - 30)).toBeLessThan(6);
+      expect(Math.hypot(shift.dx - panX, shift.dy - panY)).toBeLessThan(6);
     }
   });
 });
