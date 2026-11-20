@@ -48,6 +48,7 @@ import { BoardActionsContext, BoardRenderersContext, type BoardActions, type Boa
 import { BoardContentContext, type BoardContent } from "./content/context.js";
 import { boardContentRenderers } from "./content/renderers.js";
 import { resolveBoardLink } from "./content/links.js";
+import { errorMessage } from "../lib/errors.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
 import {
   amend,
@@ -133,6 +134,11 @@ export interface BoardEditorProps {
   onOpenUrl?: (url: string) => void;
   /** Upload a dropped/pasted/picked file into the vault; resolves to its vault path. */
   uploadFile?: (file: File) => Promise<string>;
+  /**
+   * A dropped/pasted/picked file couldn't be added (too large, offline, server
+   * error). Without it the failure is only logged; it never throws.
+   */
+  onUploadError?: (message: string) => void;
   /** Card/text renderers; defaults to W2b's rich content (Markdown, live page cards). */
   renderers?: BoardRenderers;
   /** Markdown body of a page, for live page cards (W2b). */
@@ -141,6 +147,8 @@ export interface BoardEditorProps {
 }
 
 const NO_OPEN = () => {};
+/** Attachment size limit (D18), checked before uploading. */
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
 const CLICK_SLOP = 5;
@@ -335,7 +343,9 @@ interface CreateDraft {
 }
 
 function BoardCanvas(props: BoardEditorProps) {
-  const { boardId, onChange, pages = [], onOpenFile, onOpenUrl, uploadFile, renderers, loadPage, onReady } = props;
+  const { boardId, onChange, pages = [], onOpenFile, onOpenUrl, uploadFile, onUploadError, renderers, loadPage, onReady } = props;
+  const onUploadErrorRef = useRef(onUploadError);
+  onUploadErrorRef.current = onUploadError;
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const content = useMemo<BoardContent>(
@@ -561,6 +571,15 @@ function BoardCanvas(props: BoardEditorProps) {
   const addUploadedFile = useCallback(
     async (file: File, client?: Point) => {
       if (!uploadFile) return;
+      const report = (message: string) => {
+        if (onUploadErrorRef.current) onUploadErrorRef.current(message);
+        else console.warn(message);
+      };
+      // Same limit as the server (D18): refuse before sending 25 MB for nothing.
+      if (file.size > MAX_UPLOAD_BYTES) {
+        report(`${file.name} is too large (max 25 MB)`);
+        return;
+      }
       const at = client ? toFlow(client) : viewCentre();
       let size = { width: 320, height: 200 };
       if (file.type.startsWith("image/")) {
@@ -568,7 +587,15 @@ function BoardCanvas(props: BoardEditorProps) {
       } else {
         size = { width: 320, height: 96 };
       }
-      const path = await uploadFile(file);
+      let path: string;
+      try {
+        path = await uploadFile(file);
+      } catch (error) {
+        // #f6v8z4ti: a failed upload is a calm notice, never an uncaught error.
+        const reason = errorMessage(error);
+        report(/too large/i.test(reason) ? `${file.name} is too large (max 25 MB)` : `Couldn't add ${file.name}. ${reason}`);
+        return;
+      }
       addAndSelect(createFileNode({ x: at.x - size.width / 2, y: at.y - size.height / 2, ...size }, path));
     },
     [addAndSelect, toFlow, uploadFile, viewCentre],

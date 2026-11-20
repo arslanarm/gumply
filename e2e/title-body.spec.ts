@@ -136,5 +136,25 @@ test.describe('title ↔ body', () => {
     await expect(page.getByTestId('page-title')).toContainText('Slow rename!');
     await expect(page.getByTestId('editor-content')).toContainText('body');
   });
+
+  test('editing the title never shifts the page (input and heading are the same height)', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed([{ title: 'Home', content: 'Hello' }]);
+    await page.goto('/');
+    await expect(page.getByTestId('editor-content')).toContainText('Hello');
+    await page.getByTestId('new-page-button').click();
+    await expect(page.getByTestId('page-title-input')).toBeFocused();
+    const editing = (await page.getByTestId('page-title').boundingBox())!;
+    const bodyBefore = (await page.getByTestId('editor-content').boundingBox())!;
+    await page.keyboard.type('Steady');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('page-title-input')).toHaveCount(0);
+    const shown = (await page.getByTestId('page-title').boundingBox())!;
+    const bodyAfter = (await page.getByTestId('editor-content').boundingBox())!;
+    expect(Math.abs(shown.height - editing.height)).toBeLessThan(1);
+    expect(Math.abs(bodyAfter.y - bodyBefore.y)).toBeLessThan(1);
+  });
 });
 
