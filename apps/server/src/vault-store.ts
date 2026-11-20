@@ -146,9 +146,20 @@ export class VaultStore {
     if (await pathExists(marker)) return null;
 
     if (this.pages.size > 0) {
-      // Existing vault (created before server-side seeding): never inject demo
-      // pages, but remember that this vault has had its first run.
+      // Existing vault (created before server-side seeding, e.g. by the old
+      // client-side demo): never inject demo pages, but remember that this
+      // vault has had its first run. If it already has a Welcome page, announce
+      // it once so the first browser after the upgrade lands on Welcome instead
+      // of the alphabetically-first "Gumply demo" folder (#8w7r7nnc).
       await this.writeDemoMarker();
+      const welcome = [...this.pages.values()]
+        .filter(
+          (record) =>
+            record.parentId === null &&
+            record.title.trim().toLowerCase() === WELCOME_TITLE.toLowerCase(),
+        )
+        .sort((a, b) => a.id.localeCompare(b.id))[0];
+      if (welcome) this.newVaultPage = welcome.id;
       return null;
     }
 
