@@ -86,3 +86,23 @@ describe("relinkAttachments (D23 move)", () => {
     expect(relinkAttachments(nested, "A/B/Note", "A/B/Renamed")).toBe(nested);
   });
 });
+
+describe("relinkAttachments keepValidAtDestination", () => {
+  const files = new Set(["attachments/pic.png", "attachments/doc.pdf"]);
+  const exists = (path: string) => files.has(path);
+
+  it("keeps links that already resolve from the new folder", () => {
+    // Moved from the root into Projects/ by another tool, which fixed one link.
+    const md = "![a](../attachments/pic.png) [b](attachments/doc.pdf)";
+    expect(
+      relinkAttachments(md, "Note", "Projects/Note", exists, { keepValidAtDestination: true }),
+    ).toBe("![a](../attachments/pic.png) [b](../attachments/doc.pdf)");
+  });
+
+  it("without the option rewrites from the old location as before", () => {
+    const md = "![a](attachments/pic.png)";
+    expect(relinkAttachments(md, "Note", "Projects/Note", exists)).toBe(
+      "![a](../attachments/pic.png)",
+    );
+  });
+});

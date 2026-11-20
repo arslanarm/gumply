@@ -75,4 +75,5 @@ export {
   noteFolder,
   relinkAttachments,
   resolveAttachmentHref,
+  type RelinkOptions,
 } from "./attachment-paths.js";

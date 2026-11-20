@@ -19,6 +19,10 @@ import {
   rewriteWikilinkTargets,
   titleFromId,
   pageSegment,
+  ATTACHMENTS_DIR,
+  noteFolder,
+  relinkAttachments,
+  type RelinkOptions,
   type Backlink,
   type DeletePageResult,
   type Frontmatter,
@@ -240,17 +244,25 @@ export class VaultStore {
     if (!changed) return false;
 
     // External renames: remember where an open page went so stale URLs follow.
+    const externalMoves: Array<{ from: PageId; to: PageId }> = [];
     for (const [oldId, oldRecord] of this.pages) {
       if (next.has(oldId)) continue;
       const moved = [...next.values()].find(
         (record) => record.title === oldRecord.title && !this.pages.has(record.id),
       );
-      if (moved) this.addRedirect(oldId, moved.id);
+      if (!moved) continue;
+      this.addRedirect(oldId, moved.id);
+      // Same file, moved: identical content (a rename that also edits it is
+      // left alone, we can't tell what the other tool meant).
+      if (moved.content === oldRecord.content) externalMoves.push({ from: oldId, to: moved.id });
     }
     for (const id of next.keys()) this.redirects.delete(id);
 
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
+    // D23: a file moved to another folder outside Gumply keeps working
+    // attachment links. Links the other tool already fixed are kept.
+    await this.relinkMoved(externalMoves, { keepValidAtDestination: true });
     this.reindexAll();
     return true;
   }
@@ -730,8 +742,9 @@ export class VaultStore {
     if (nextIcon) record.icon = nextIcon;
     else delete record.icon;
 
+    let relinked: PageId[] = [];
     if (targetId !== id) {
-      await this.relocateNow(id, targetId);
+      relinked = await this.relocateNow(id, targetId);
       const moved = this.pages.get(targetId);
       if (moved) record = moved;
     }
@@ -774,6 +787,10 @@ export class VaultStore {
         rewrittenPages.push(other.id);
       }
 
+      // D23: sub-pages whose attachment links moved with their folder.
+      for (const relinkedId of relinked) {
+        if (!rewrittenPages.includes(relinkedId)) rewrittenPages.push(relinkedId);
+      }
       rewrittenPages.sort((a, b) => a.localeCompare(b));
       this.reindexAll();
     } else {
@@ -830,10 +847,10 @@ export class VaultStore {
   }
 
   /** Move a page file and its child folder, remapping ids without rewriting content. */
-  private async relocateNow(id: PageId, newId: PageId): Promise<void> {
+  private async relocateNow(id: PageId, newId: PageId): Promise<PageId[]> {
     const record = this.pages.get(id);
     if (!record) throw notFound("Page not found");
-    if (id === newId) return;
+    if (id === newId) return [];
 
     const oldDir = join(this.root, id);
     const newDir = join(this.root, newId);
@@ -872,6 +889,70 @@ export class VaultStore {
       const parent = parentOf(key);
       value.parentId = parent !== null && this.pages.has(parent) ? parent : null;
     }
+
+    // D23: sub-pages now live in another folder; fix their attachment links.
+    return this.relinkMoved(moved.map(({ oldId, record: value }) => ({ from: oldId, to: value.id })));
+  }
+
+  /**
+   * D23 "On move": rewrite the attachment links of pages whose folder changed
+   * so they stay note-relative. Returns the ids of pages whose file changed.
+   */
+  private async relinkMoved(
+    moves: ReadonlyArray<{ from: PageId; to: PageId }>,
+    options: RelinkOptions = {},
+  ): Promise<PageId[]> {
+    const relevant = moves.filter(({ from, to }) => noteFolder(from) !== noteFolder(to));
+    if (relevant.length === 0) return [];
+    const files = await this.attachmentFiles();
+    const exists = (path: string) => files.has(path);
+    const changed: PageId[] = [];
+    for (const { from, to } of relevant) {
+      const record = this.pages.get(to);
+      if (!record) continue;
+      const next = relinkAttachments(record.content, from, to, exists, options);
+      if (next === record.content) continue;
+      const at = new Date().toISOString();
+      const written = await this.writePage(
+        record.filePath,
+        {
+          title: record.title,
+          ...(record.icon ? { icon: record.icon } : {}),
+          tags: record.fmTags,
+          created: record.created,
+          updated: at,
+        },
+        next,
+        ["updated"],
+        titleFromId(record.id),
+      );
+      record.content = next;
+      record.updated = written.frontmatter ? at : new Date(written.mtimeMs).toISOString();
+      record.fileMtimeMs = written.mtimeMs;
+      changed.push(record.id);
+    }
+    return changed;
+  }
+
+  /** Vault paths of every file under `attachments/` (any depth). */
+  private async attachmentFiles(): Promise<Set<string>> {
+    const out = new Set<string>();
+    const walk = async (dir: string, prefix: string) => {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith(".")) continue;
+        const path = `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) await walk(join(dir, entry.name), path);
+        else out.add(path);
+      }
+    };
+    await walk(join(this.root, ATTACHMENTS_DIR), ATTACHMENTS_DIR);
+    return out;
   }
 
   private async removeNow(id: PageId): Promise<DeletePageResult> {
@@ -1040,6 +1121,11 @@ export class VaultStore {
       const parent = parentOf(key);
       value.parentId = parent !== null && this.pages.has(parent) ? parent : null;
     }
+
+    // D23: the moved page and its sub-pages are in another folder now.
+    await this.relinkMoved(
+      moved.map((value) => ({ from: `${id}${value.id.slice(newId.length)}`, to: value.id })),
+    );
 
     this.reindexAll();
     return this.get(newId);
