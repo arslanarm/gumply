@@ -3,7 +3,7 @@
  * The node view is plain DOM (no React portal) so it never flushes React
  * during editor lifecycle work.
  */
-import { hasAttachmentExtension, resolveWikilink } from "@gumply/core";
+import { hasAttachmentExtension, linkTargetFor, resolveWikilink } from "@gumply/core";
 import { InputRule, Node, mergeAttributes } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { parseWikiLinkText } from "../../lib/wikilinks.js";
@@ -93,12 +93,22 @@ export const WikiLink = Node.create({
           const before = $from.parent.textBetween(0, $from.parentOffset);
           if ((before.match(/`/g)?.length ?? 0) % 2 === 1) return null;
 
+          // A typed `[[Ideas: Q3?]]` for a page saved as `Ideas Q3.md` is
+          // written `[[Ideas Q3|Ideas: Q3?]]`, so Obsidian resolves it too
+          // (#mp8eadhk). Unknown titles and plain matches stay as typed.
+          const { pages } = getWikiLinkEnvironment();
+          const page = resolveWikilink(parsed.title, pages);
+          const link =
+            page && page.title.trim().toLowerCase() === parsed.title.trim().toLowerCase()
+              ? linkTargetFor(page, pages)
+              : { target: parsed.title, alias: "" };
+
           state.tr.replaceWith(
             range.from,
             range.to,
             type.create({
-              targetTitle: parsed.title,
-              alias: parsed.alias,
+              targetTitle: link.target,
+              alias: parsed.alias || link.alias,
               heading: parsed.heading,
             }),
           );

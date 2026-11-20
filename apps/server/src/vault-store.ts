@@ -16,6 +16,7 @@ import {
   serializeNoteLike,
   pathToPageId,
   resolveWikilink,
+  rewriteLinksToPage,
   rewriteWikilinkTargets,
   titleFromId,
   pageSegment,
@@ -741,14 +742,18 @@ export class VaultStore {
 
     if (titleChanged) {
       // D12: keep link text truthful by rewriting `[[Old…]]` in other pages.
+      // #mp8eadhk: when the title and file name differ, links become
+      // `[[file name|Title]]` so Obsidian (by file name) resolves them too.
+      const afterMetas = this.list();
+      const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
       for (const other of [...this.pages.values()]) {
         if (other.id === id || other.id === targetId) continue;
 
-        const result = rewriteWikilinkTargets(
-          other.content,
-          (link) => resolveWikilink(link.targetTitle, beforeMetas)?.id === id,
-          nextTitle,
-        );
+        const isTarget = (link: { targetTitle: string }) =>
+          resolveWikilink(link.targetTitle, beforeMetas)?.id === id;
+        const result = renamedMeta
+          ? rewriteLinksToPage(other.content, isTarget, renamedMeta, afterMetas, previousTitle)
+          : rewriteWikilinkTargets(other.content, isTarget, nextTitle);
         if (result.count === 0) continue;
 
         const rewrittenAt = new Date().toISOString();
