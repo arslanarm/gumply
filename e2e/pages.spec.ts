@@ -343,4 +343,110 @@ test.describe('pages and sidebar', () => {
     await expectPageTitle(page, 'Untitled');
     await expect(page.getByTestId('editor')).toBeVisible();
   });
+
+  test('Move to… puts a page under another one and Undo puts it back', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [destination] = await vault.seed([{ title: 'Destination' }]);
+    const [source] = await vault.seed([{ title: 'Source' }]);
+
+    await page.goto('/');
+    await expectPageTitle(page, 'Destination');
+
+    await page.getByTestId(`page-menu-button-${source.id}`).click();
+    await page.getByTestId(`move-page-${source.id}`).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Move “Source”' });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId('move-input')).toBeFocused();
+
+    await page.getByTestId('move-input').fill('Dest');
+    await expect(page.getByTestId(`move-target-${destination.id}`)).toBeVisible();
+    await page.keyboard.press('Enter');
+
+    await expect(dialog).toHaveCount(0);
+    const toast = page.getByTestId('undo-toast');
+    await expect(toast).toContainText('Moved to “Destination”');
+
+    // Path-based id changes with the move; the row stays in the tree.
+    const movedId = `${destination.id}/${source.id}`;
+    await expect(page.getByTestId(`page-item-${movedId}`)).toBeVisible();
+    const moved = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(movedId)}`)
+    ).json();
+    expect(moved.parentId).toBe(destination.id);
+
+    await page.getByTestId('undo-delete').click();
+    await expect(page.getByTestId(`page-item-${source.id}`)).toBeVisible();
+    const restored = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(source.id)}`)
+    ).json();
+    expect(restored.parentId).toBeNull();
+  });
+
+  test('Move to… offers Top level for a nested page and moves it back', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [parent] = await vault.seed([{ title: 'Parent' }]);
+    const [child] = await vault.seed([{ title: 'Child', parentId: parent.id }]);
+
+    await page.goto('/');
+    await expectPageTitle(page, 'Parent');
+
+    await page.getByTestId(`page-menu-button-${child.id}`).click();
+    await page.getByTestId(`move-page-${child.id}`).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Move “Child”' });
+    await expect(dialog).toBeVisible();
+    await page.getByTestId('move-target-top-level').click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId('undo-toast')).toContainText('Moved to top level');
+    await expect(page.getByTestId('page-item-child')).toBeVisible();
+
+    const moved = await (
+      await request.get(`${API_URL}/api/pages/child`)
+    ).json();
+    expect(moved.parentId).toBeNull();
+  });
+
+  test('Move to… excludes itself and its descendants, and shows a filter empty state', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [parent] = await vault.seed([{ title: 'Parent' }]);
+    const [child] = await vault.seed([{ title: 'Child', parentId: parent.id }]);
+
+    await page.goto('/');
+    await expectPageTitle(page, 'Parent');
+
+    await page.getByTestId(`page-menu-button-${parent.id}`).click();
+    await page.getByTestId(`move-page-${parent.id}`).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Move “Parent”' });
+    await expect(dialog).toBeVisible();
+    // A root page has no Top level row, and it can never move into itself or a child.
+    await expect(page.getByTestId('move-target-top-level')).toHaveCount(0);
+    await expect(page.getByTestId(`move-target-${parent.id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`move-target-${child.id}`)).toHaveCount(0);
+
+    await page.getByTestId('move-input').fill('zzz');
+    await expect(page.getByTestId('move-empty')).toHaveText('No pages match “zzz”');
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
+    const unchanged = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(parent.id)}`)
+    ).json();
+    expect(unchanged.parentId).toBeNull();
+    expect(
+      (await request.get(`${API_URL}/api/pages/${encodeURIComponent(child.id)}`)).status(),
+    ).toBe(200);
+  });
 });
