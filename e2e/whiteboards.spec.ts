@@ -273,6 +273,86 @@ test.describe('whiteboards in the app (W2a)', () => {
   });
   });
 
+  test('a page card on an open board shows the page\'s new text after it changes', async ({ page, request, vault }) => {
+    const [spec] = await vault.seed([{ title: 'Spec', content: 'First draft of the spec' }]);
+    const board = await createBoard(request, 'Live cards');
+    await saveBoard(request, board.meta.id, {
+      nodes: [{ id: 'eeeeeeeeeeeeeeee', type: 'file', file: 'Spec.md', x: 0, y: 0, width: 360, height: 220 } as never],
+      edges: [],
+    });
+    await openBoard(page, board.meta.id);
+    const card = page.getByTestId('board-card-page');
+    await expect(card).toContainText('First draft of the spec');
+
+    // Someone edits the page (another tab, Obsidian…): the card follows.
+    await api.updatePage(request, spec!.id, { content: 'Final spec, signed off' });
+    await expect(card).toContainText('Final spec, signed off', { timeout: 10_000 });
+    await expect(card).not.toContainText('First draft');
+  });
+
+  test('opening an existing board focuses the canvas: N picks the sticky tool, never renames (#ksx7szar)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Hub', content: 'Open [[Project map.canvas|Project map]] here' }]);
+    const board = await createBoard(request, 'Project map');
+    await saveBoard(request, board.meta.id, { nodes: [sticky('ffffffffffffffff', 'Keep me')], edges: [] });
+
+    const pressNKeepsName = async () => {
+      await expect(page.getByTestId('board-sticky')).toContainText('Keep me');
+      await expect(page.getByTestId('page-title-input')).toHaveCount(0);
+      await page.keyboard.press('n');
+      await expect(page.getByTestId('board-tool-sticky')).toHaveAttribute('aria-pressed', 'true');
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL(/#\/Project%20map\.canvas$/);
+      await expect(page.getByTestId('page-title')).toContainText('Project map');
+      const ids = (await api.listPages(request)).map((item) => item.id);
+      expect(ids).toContain('Project map.canvas');
+    };
+
+    // 1. From a link in a page.
+    await page.goto(`/${hashOf('Hub')}`);
+    await page.getByTestId('wiki-link-Project map.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+
+    // 2. From the sidebar (a click leaves focus on the row otherwise).
+    await page.getByTestId('page-item-Hub').click();
+    await expect(page.getByTestId('editor-content')).toBeVisible();
+    await page.getByTestId('page-item-Project map.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+
+    // 3. A direct load / reload.
+    await page.reload();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+
+    // @opus-hunter's path: a tool key, then a click on the canvas (no Enter).
+    await page.reload();
+    await expect(page.getByTestId('board-sticky')).toContainText('Keep me');
+    await page.keyboard.press('c');
+    await expect(page.getByTestId('board-tool-connector')).toHaveAttribute('aria-pressed', 'true');
+    const surface = await page.getByTestId('board').boundingBox();
+    if (!surface) throw new Error('no board');
+    await page.mouse.click(surface.x + surface.width * 0.8, surface.y + surface.height * 0.8);
+    await expect(page).toHaveURL(/#\/Project%20map\.canvas$/);
+    await expect(page.getByTestId('page-title')).toContainText('Project map');
+    expect((await api.listPages(request)).map((item) => item.id)).toContain('Project map.canvas');
+
+    // A board created just now still opens with its title selected.
+    await page.getByTestId('new-board-button').click();
+    await expect(page.getByTestId('page-title-input')).toBeFocused();
+    expect(await page.getByTestId('page-title-input').evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([0, 'Untitled whiteboard'.length]);
+    await page.keyboard.press('Escape');
+    // Right after creating one, open a different board: it is not "new".
+    await page.getByTestId('page-item-Project map.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+    // …and a new board is new only while it stays open: open it again later and the canvas has focus.
+    await page.getByTestId('page-item-Hub').click();
+    await page.getByTestId('page-item-Untitled whiteboard.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await expect(page.getByTestId('page-title-input')).toHaveCount(0);
+  });
+
   for (const theme of ['light', 'dark'] as const) {
     test(`a board page renders in the app shell (${theme})`, async ({ page, request, vault }) => {
       await vault.seed([{ title: 'Spec', content: 'x' }]);

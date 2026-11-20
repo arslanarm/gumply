@@ -1102,6 +1102,119 @@ function BoardCanvas(props: BoardEditorProps) {
     return { left: box.x - (rect?.left ?? 0), top: box.y - (rect?.top ?? 0), width: box.width, height: box.height };
   }, [draft]);
 
+  /* ---------------- connector tool (#r3d9ft49) ---------------- */
+
+  /**
+   * With the Connector tool, the overlay owns the pointer (objects never move):
+   * drag from anywhere on an object to another, or click one then the other.
+   * Both ends snap to the nearest sides; a drop on empty canvas cancels.
+   */
+  const [link, setLink] = useState<{
+    from: string;
+    fromRect: DOMRect;
+    current: Point;
+    target: { id: string; rect: DOMRect } | null;
+    startClient: Point;
+  } | null>(null);
+  const [linkFrom, setLinkFrom] = useState<{ id: string; rect: DOMRect } | null>(null);
+
+  /** The object under a screen point (the overlay sits above them). */
+  const objectAt = useCallback((client: Point): { id: string; rect: DOMRect } | null => {
+    const stack = document.elementsFromPoint(client.x, client.y);
+    let frame: { id: string; rect: DOMRect } | null = null;
+    for (const element of stack) {
+      const node = element.closest<HTMLElement>(".react-flow__node");
+      if (!node?.dataset.id || !rootRef.current?.contains(node)) continue;
+      const hit = { id: node.dataset.id, rect: node.getBoundingClientRect() };
+      // Prefer what's on top of a frame; connect the frame itself only if nothing else is there.
+      if (node.classList.contains("board-node-group")) {
+        frame ??= hit;
+        continue;
+      }
+      return hit;
+    }
+    return frame;
+  }, []);
+
+  useEffect(() => {
+    if (tool !== "connector") {
+      setLink(null);
+      setLinkFrom(null);
+      return;
+    }
+    // Like Miro: picking the tool clears the selection (no handles under the pick outline).
+    select([]);
+  }, [tool, select]);
+
+  const onConnectorDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    rootRef.current?.focus({ preventScroll: true });
+    const client = { x: event.clientX, y: event.clientY };
+    const hit = objectAt(client);
+    if (!hit) {
+      setLinkFrom(null);
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setLink({ from: hit.id, fromRect: hit.rect, current: client, target: null, startClient: client });
+  };
+
+  const onConnectorMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!link) return;
+    const client = { x: event.clientX, y: event.clientY };
+    const hit = objectAt(client);
+    setLink({ ...link, current: client, target: hit && hit.id !== link.from ? hit : null });
+  };
+
+  const onConnectorUp = (): void => {
+    if (!link) return;
+    const current = link;
+    setLink(null);
+    const moved =
+      Math.abs(current.current.x - current.startClient.x) > CLICK_SLOP ||
+      Math.abs(current.current.y - current.startClient.y) > CLICK_SLOP;
+    if (moved) {
+      // Dropped on empty canvas: nothing is made (spec/whiteboard §3).
+      if (current.target) connect(current.from, null, current.target.id, null);
+      setLinkFrom(null);
+      return;
+    }
+    // A click: the first picks the start, the second the end.
+    if (linkFrom && linkFrom.id !== current.from) {
+      connect(linkFrom.id, null, current.from, null);
+      setLinkFrom(null);
+    } else {
+      setLinkFrom(linkFrom?.id === current.from ? null : { id: current.from, rect: current.fromRect });
+    }
+  };
+
+  const connectorHintKey = "gumply:board-connector-hint";
+  const [connectorHint, setConnectorHint] = useState(false);
+  useEffect(() => {
+    if (tool !== "connector") {
+      setConnectorHint(false);
+      return;
+    }
+    let seen = false;
+    try {
+      seen = window.localStorage.getItem(connectorHintKey) === "seen";
+      window.localStorage.setItem(connectorHintKey, "seen");
+    } catch {
+      // Storage unavailable: show it every time, which is harmless.
+    }
+    if (seen) return;
+    setConnectorHint(true);
+    const timer = window.setTimeout(() => setConnectorHint(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, [tool]);
+
+  /** A screen rect relative to the board root, for overlay drawing. */
+  const local = (rect: DOMRect): { left: number; top: number; width: number; height: number } => {
+    const root = rootRef.current?.getBoundingClientRect();
+    return { left: rect.left - (root?.left ?? 0), top: rect.top - (root?.top ?? 0), width: rect.width, height: rect.height };
+  };
+
   /* ---------------- pane events ---------------- */
 
   const onDoubleClick = (event: ReactMouseEvent<HTMLDivElement>): void => {
@@ -1204,8 +1317,8 @@ function BoardCanvas(props: BoardEditorProps) {
             zoomOnPinch
             zoomOnDoubleClick={false}
             nodesDraggable={tool === "select"}
-            nodesConnectable={tool === "select" || tool === "connector"}
-            elementsSelectable={tool === "select" || tool === "connector"}
+            nodesConnectable={tool === "select"}
+            elementsSelectable={tool === "select"}
             elevateNodesOnSelect={false}
             elevateEdgesOnSelect={false}
             deleteKeyCode={null}
@@ -1372,6 +1485,38 @@ function BoardCanvas(props: BoardEditorProps) {
                 <svg className="board-live-ink" width="100%" height="100%">
                   <path d={inkPath(stroke.client, DEFAULT_INK_WIDTH * flow.getZoom(), false)} />
                 </svg>
+              ) : null}
+            </div>
+          ) : null}
+
+          {tool === "connector" ? (
+            <div
+              className="board-overlay board-overlay-connector"
+              data-testid="board-connector-overlay"
+              onPointerDown={onConnectorDown}
+              onPointerMove={onConnectorMove}
+              onPointerUp={onConnectorUp}
+              onPointerCancel={() => setLink(null)}
+            >
+              {linkFrom ? <div className="board-link-pick" style={local(linkFrom.rect)} data-testid="board-link-from" /> : null}
+              {link?.target ? <div className="board-link-pick" style={local(link.target.rect)} /> : null}
+              {link
+                ? (() => {
+                    const from = local(link.fromRect);
+                    const root = rootRef.current?.getBoundingClientRect();
+                    const x2 = link.current.x - (root?.left ?? 0);
+                    const y2 = link.current.y - (root?.top ?? 0);
+                    return (
+                      <svg className="board-link-preview" width="100%" height="100%" aria-hidden="true">
+                        <line x1={from.left + from.width / 2} y1={from.top + from.height / 2} x2={x2} y2={y2} />
+                      </svg>
+                    );
+                  })()
+                : null}
+              {connectorHint ? (
+                <div className="board-tool-hint" role="status" data-testid="board-connector-hint">
+                  Drag from one object to another
+                </div>
               ) : null}
             </div>
           ) : null}
