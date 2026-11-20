@@ -70,7 +70,7 @@ async function open(page: import('@playwright/test').Page, theme: 'light' | 'dar
   await expect(page.getByTestId('sidebar')).toBeVisible();
   // The app auto-opens the first root (alphabetically); pin Welcome for a
   // consistent editor screenshot with backlinks.
-  await page.getByTestId('page-item-welcome').click();
+  await page.getByTestId('page-item-Welcome').click();
   await expect(page.getByTestId('editor')).toBeVisible();
   await expect(page.getByTestId('page-title')).toHaveText('Welcome');
 }
@@ -108,7 +108,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Escape');
 
     // 04 — a page with backlinks + the local graph panel.
-    await page.getByTestId('page-item-welcome').click();
+    await page.getByTestId('page-item-Welcome').click();
     await page.getByTestId('local-graph-toggle').click();
     await expect(page.getByTestId('local-graph-canvas')).toBeVisible();
     await page.waitForTimeout(500);
@@ -159,7 +159,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press("Escape");
 
     // Toast with its icon, deleting a page that is not open.
-    await page.getByTestId("page-item-welcome").click();
+    await page.getByTestId("page-item-Welcome").click();
     await page.locator('[data-testid="page-menu-button-meeting-notes"]').click();
     await page.locator('[data-testid="delete-page-meeting-notes"]').click();
     await expect(page.getByTestId("undo-toast")).toBeVisible();

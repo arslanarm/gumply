@@ -24,6 +24,11 @@ export interface NoteTemplate {
   eol: "\n" | "\r\n";
   /** Whether the file ended with a newline. */
   finalNewline: boolean;
+  /**
+   * Blank lines between the closing `---` and the body, as in the file (most
+   * files have 1, some have 0). Kept so a save doesn't reflow the header.
+   */
+  blankLinesAfterFrontmatter?: number;
 }
 
 function detectEol(text: string): "\n" | "\r\n" {
@@ -52,11 +57,16 @@ export function parseNoteTemplate(raw: string): NoteTemplate {
 
   const yamlLines = lines.slice(1, end);
   const yaml = yamlLines.map((line) => `${line}\n`).join("");
+  let blank = 0;
+  while (end + 1 + blank < lines.length && (lines[end + 1 + blank] ?? "").trim() === "") blank += 1;
+  const hasBody = end + 1 + blank < lines.length;
   return {
     bom,
     yaml: yaml.trim().length > 0 ? yaml : null,
     eol,
     finalNewline: text.endsWith("\n"),
+    // Without a body there is nothing to keep apart; use the default later.
+    ...(hasBody ? { blankLinesAfterFrontmatter: blank } : {}),
   };
 }
 
@@ -252,5 +262,6 @@ export function serializeNoteLike(
     yaml.replace(/\r?\n/g, eol) +
     `---${eol}`;
   if (body.length === 0) return finalNewline ? block : block.slice(0, -eol.length);
-  return `${block}${eol}${body}${finalNewline ? eol : ""}`;
+  const gap = eol.repeat(template?.blankLinesAfterFrontmatter ?? 1);
+  return `${block}${gap}${body}${finalNewline ? eol : ""}`;
 }

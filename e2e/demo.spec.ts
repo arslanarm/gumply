@@ -46,8 +46,8 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   const editor = page.getByTestId('editor-content');
   await expect(editor).toContainText('Welcome to Gumply');
   await expect(editor.getByRole('checkbox')).toHaveCount(2);
-  await expect(page.getByTestId('page-item-welcome')).toBeVisible();
-  await expect(page.getByTestId('page-item-gumply-demo')).toBeVisible();
+  await expect(page.getByTestId('page-item-Welcome')).toBeVisible();
+  await expect(page.getByTestId('page-item-Gumply demo')).toBeVisible();
 
   // The once-only marker is on disk.
   expect(existsSync(app.marker)).toBe(true);
@@ -62,10 +62,10 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   expect(first.map((item) => item.title).sort()).toEqual(DEMO_TITLES);
 
   // Second load on the same server: no new-vault signal, no duplicate pages.
-  // The `#/welcome` deep link is kept, so Welcome stays open.
+  // The `#/Welcome` deep link is kept, so Welcome stays open.
   await page.reload();
   await expectPageTitle(page, 'Welcome');
-  await expect(page.getByTestId('page-item-welcome')).toHaveCount(1);
+  await expect(page.getByTestId('page-item-Welcome')).toHaveCount(1);
 
   // Restart the API against the same vault: the marker must stop re-seeding.
   await app.restartServer();
@@ -80,7 +80,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   expect(new Set(afterRestart.map((item) => item.id)).size).toBe(4);
   expect(afterRestart.map((item) => item.title).sort()).toEqual(DEMO_TITLES);
 
-  await page.getByTestId('page-item-welcome').click();
+  await page.getByTestId('page-item-Welcome').click();
   await expectPageTitle(page, 'Welcome');
   await expect(page.getByTestId('editor-content')).toContainText('Welcome to Gumply');
 
@@ -88,7 +88,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   // restart the API on the same vault. The marker must keep it empty: the old
   // client-side seeding re-created the demo for a user who had emptied it.
   await page.getByTestId('delete-page-button-page').click();
-  await expect(page.getByTestId('page-item-welcome')).toHaveCount(0);
+  await expect(page.getByTestId('page-item-Welcome')).toHaveCount(0);
   // Deleting the open page opens the next one (the demo folder).
   await expectPageTitle(page, 'Gumply demo');
 
@@ -111,7 +111,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   await app.restartServer();
   await page.reload();
   await expect(page.getByTestId('empty-state')).toBeVisible();
-  await expect(page.getByTestId('page-item-welcome')).toHaveCount(0);
+  await expect(page.getByTestId('page-item-Welcome')).toHaveCount(0);
   expect(await listPages()).toHaveLength(0);
 
   expect(consoleErrors).toEqual([]);

@@ -92,7 +92,7 @@ test.describe('keyboard shortcuts', () => {
     await page.keyboard.press('F2');
     await input.fill('Beta renamed');
     await page.keyboard.press('Enter');
-    await expect(row).toContainText('Beta renamed');
+    await expect(page.getByTestId('page-item-Beta renamed')).toContainText('Beta renamed');
 
     const saved = await (
       await request.get(`${API_URL}/api/pages/${encodeURIComponent(beta.id)}`)

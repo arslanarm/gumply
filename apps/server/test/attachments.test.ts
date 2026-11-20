@@ -93,8 +93,8 @@ describe("attachments API", () => {
 
   it("serves vault Markdown read-only but refuses traversal and hidden directories", async () => {
     const { app, dir } = await createTestServer();
-    await createPage(app, { title: "Doc", content: "hello" });
-    const markdown = await app.request("/api/files/doc.md");
+    const doc = await createPage(app, { title: "Doc", content: "hello" });
+    const markdown = await app.request(`/api/files/${encodeURIComponent(`${doc.id}.md`)}`);
     expect(markdown.status).toBe(200);
     expect(markdown.headers.get("content-type")).toContain("text/markdown");
     expect(markdown.headers.get("cache-control")).toBe("no-cache");
@@ -146,7 +146,7 @@ describe("attachments API", () => {
       links: Array<{ source: string; target: string }>;
       unresolved: Array<{ source: string; targetTitle: string }>;
     }>(app, "/api/graph");
-    expect(graph.links).toEqual([{ source: "source", target: "target" }]);
+    expect(graph.links).toEqual([{ source: "Source", target: "Target" }]);
     expect(graph.unresolved).toEqual([]);
 
     // Attachments must never appear as backlinks either (#jm34p5ai).

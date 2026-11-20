@@ -2,7 +2,7 @@
   "name": "gumply",
   "version": "0.1.0",
   "private": true,
-  "description": "Gumply — Notion-simple notes with Obsidian-style links and graph view.",
+  "description": "Gumply \u2014 Notion-simple notes with Obsidian-style links and graph view.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -24,7 +24,9 @@
     "test:e2e:screens": "playwright test --config e2e/playwright.screens.config.ts",
     "seed:big": "node scripts/seed-big.mjs",
     "emoji:data": "node scripts/build-emoji-data.mjs",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "prevault:sync-filenames": "npm run build -w @gumply/core && npm run build -w @gumply/server",
+    "vault:sync-filenames": "node scripts/sync-filenames.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",
