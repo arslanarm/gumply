@@ -787,12 +787,17 @@ input {
   min-width: 0;
   font-size: 2.5rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  /* Same box as the title heading, so starting/finishing a rename never
+     shifts the page (a first click on a new board missed its target, #f6v8z4ti).
+     The underline is drawn inside the box instead of adding a border. */
+  line-height: 1.15;
+  height: 1.15em;
+  letter-spacing: -0.02em;
   border: 0;
-  border-bottom: 1px solid var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
   background: transparent;
   outline: none;
-  padding: 0 0 0.1rem;
+  padding: 0;
 }
 
 .page-header-actions {
@@ -3048,8 +3053,24 @@ input {
 .board-page > .page-header {
   flex: none;
   margin: 0;
-  padding: 0.9rem 1.5rem 0.7rem;
+  /* Room above the title for the hover "Add icon" pill (#8ht6zhdv item 4). */
+  padding: 1.75rem 1.5rem 0.7rem;
   border-bottom: 1px solid var(--border);
+}
+
+/* A board's icon sits inline before its title: the compact header has no
+   room above it (the 🗺️ was clipped). */
+.board-page > .page-header:has(.page-icon-button.has-icon) {
+  padding-top: 0.9rem;
+}
+
+.board-page .page-icon-control:has(.page-icon-button.has-icon) {
+  position: static;
+  margin: 0 0.15rem 0 0;
+}
+
+.board-page .page-icon-control .page-icon-large {
+  font-size: 1.9rem;
 }
 
 .board-page-canvas {
