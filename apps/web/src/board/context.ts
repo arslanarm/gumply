@@ -15,6 +15,9 @@ export interface BoardActions {
   cancelEditing: () => void;
   startEditingEdge: (id: string) => void;
   commitEdgeLabel: (id: string, label: string) => void;
+  /** Change a connector (colour, ends); `undefined` removes a key. */
+  updateEdge: (id: string, patch: Record<string, unknown>) => void;
+  deleteEdge: (id: string) => void;
   /** Persist a finished resize. */
   commitResize: (id: string, rect: { x: number; y: number; width: number; height: number }) => void;
   /** Open what a card points at (a page, a board, a file or a URL). */

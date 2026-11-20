@@ -125,7 +125,13 @@ export function syncEdges(
     // Auto-sided edges depend on their nodes' positions, so they're rebuilt.
     const autoSided = !edge.fromSide || !edge.toSide;
     const isSelected = selected.has(edge.id);
-    if (old && old.data?.edge === edge && old.data.editing === editing && Boolean(old.selected) === isSelected && !autoSided) {
+    if (
+      old &&
+      old.data?.edge === edge &&
+      old.data.editing === editing &&
+      Boolean(old.selected) === isSelected &&
+      !autoSided
+    ) {
       return old;
     }
     const flowEdge: BoardFlowEdge = {

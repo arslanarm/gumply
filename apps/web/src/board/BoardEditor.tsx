@@ -42,8 +42,8 @@ import {
 } from "react";
 import { currentModifierLabel, isTypingTarget } from "../lib/shortcuts.js";
 import { EDGE_TYPES } from "./BoardEdge.js";
+import { ConnectorToolbar } from "./ConnectorToolbar.js";
 import { BOARD_DRAG_MIME } from "./constants.js";
-import { PALETTE, solidColor } from "./colors.js";
 import { BoardActionsContext, BoardRenderersContext, type BoardActions, type BoardRenderers } from "./context.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
 import {
@@ -92,6 +92,7 @@ import {
   type Rect,
 } from "./model.js";
 import { NODE_TYPES } from "./nodes.js";
+import { Palette } from "./Swatch.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -298,26 +299,6 @@ function ZoomPercent() {
 /* Selection toolbar                                                         */
 /* ------------------------------------------------------------------------ */
 
-function Swatch({ value, label, active, onPick }: {
-  value: string | undefined;
-  label: string;
-  active: boolean;
-  onPick: (value: string | undefined) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`board-swatch${active ? " is-active" : ""}${value ? "" : " is-default"}`}
-      style={{ "--swatch": solidColor(value) ?? "var(--board-ink)" } as CSSProperties}
-      aria-label={label}
-      aria-pressed={active}
-      data-tooltip={label}
-      data-testid={`board-color-${value ?? "default"}`}
-      onClick={() => onPick(value)}
-    />
-  );
-}
-
 /* ------------------------------------------------------------------------ */
 /* The canvas                                                                */
 /* ------------------------------------------------------------------------ */
@@ -388,6 +369,11 @@ function BoardCanvas(props: BoardEditorProps) {
 
   // Rebuild the React Flow view after every document, selection or
   // edit-state change. Ids of nodes that no longer exist are harmless.
+  // A lone selected connector gets its own toolbar, next to it.
+  const toolbarEdgeId =
+    selection.nodes.size === 0 && selection.edges.size === 1 && !editing && tool === "select"
+      ? ([...selection.edges][0] ?? null)
+      : null;
   useLayoutEffect(() => {
     setNodes((previous) => syncNodes(previous, board, editingNodeId, selection.nodes));
     setEdges((previous) => syncEdges(previous, board, editingEdgeId, selection.edges));
@@ -473,6 +459,8 @@ function BoardCanvas(props: BoardEditorProps) {
         apply((current) => updateEdge(current, id, { label: label.trim() ? label.trim() : undefined }));
         rootRef.current?.focus({ preventScroll: true });
       },
+      updateEdge: (id, patch) => apply((current) => updateEdge(current, id, patch)),
+      deleteEdge: (id) => apply((current) => deleteElements(current, new Set(), new Set([id]))),
       commitResize: (id, rect) => {
         apply((current) => updateNode(current, id, { x: rect.x, y: rect.y, width: rect.width, height: rect.height }));
       },
@@ -845,18 +833,6 @@ function BoardCanvas(props: BoardEditorProps) {
     [apply],
   );
 
-  const setEdgeEnd = useCallback(
-    (toEnd: "arrow" | "none") => {
-      apply((current) => {
-        let next = current;
-        // "arrow" is the default end, so it's written by leaving the key out.
-        for (const id of selectedRef.current.edges) next = updateEdge(next, id, { toEnd: toEnd === "arrow" ? undefined : "none" });
-        return next;
-      });
-    },
-    [apply],
-  );
-
   const doUndo = useCallback(() => {
     setEditing(null);
     setHistory((current) => undo(current));
@@ -1133,18 +1109,14 @@ function BoardCanvas(props: BoardEditorProps) {
     () => board.nodes.filter((node) => selectedNodeIds.includes(node.id)),
     [board, selectedNodeIds],
   );
-  const commonColor = selectedNodes.length > 0 && selectedNodes.every((node) => node.color === selectedNodes[0]?.color)
-    ? selectedNodes[0]?.color
-    : selectedNodeIds.length === 0 && selectedEdgeIds.length > 0
-      ? board.edges.find((edge) => edge.id === selectedEdgeIds[0])?.color
-      : null;
+  const commonColor =
+    selectedNodes.length > 0 && selectedNodes.every((node) => node.color === selectedNodes[0]?.color) ? selectedNodes[0]?.color : null;
   const shapesSelected = selectedNodes.length > 0 && selectedNodes.every((node) => gumplyNodeData(node)?.kind === "shape");
   const selectedShape = shapesSelected ? (gumplyNodeData(selectedNodes[0] as CanvasNode) as { shape: GumplyShape }).shape : null;
-  const onlyEdges = selectedNodeIds.length === 0 && selectedEdgeIds.length > 0;
-  const edgeEnd = onlyEdges ? (board.edges.find((edge) => edge.id === selectedEdgeIds[0])?.toEnd ?? "arrow") : null;
   const showNodeToolbar = selectedNodeIds.length > 0 && !editing && !dragging && tool === "select";
 
   const hand = tool === "hand";
+  const toolbarEdge = toolbarEdgeId && !dragging ? board.edges.find((edge) => edge.id === toolbarEdgeId) : undefined;
   const modifier = currentModifierLabel();
 
   return (
@@ -1217,11 +1189,7 @@ function BoardCanvas(props: BoardEditorProps) {
 
             <NodeToolbar nodeId={selectedNodeIds} isVisible={showNodeToolbar} position={Position.Top} offset={14}>
               <div className="board-context" data-testid="board-context-toolbar" onPointerDown={(event) => event.stopPropagation()}>
-                <div className="board-context-group">
-                  {PALETTE.map((entry) => (
-                    <Swatch key={entry.label} value={entry.value} label={entry.label} active={commonColor === entry.value} onPick={recolour} />
-                  ))}
-                </div>
+                <Palette current={commonColor} onPick={recolour} />
                 {shapesSelected ? (
                   <div className="board-context-group">
                     {SHAPES.map((item) => (
@@ -1252,29 +1220,6 @@ function BoardCanvas(props: BoardEditorProps) {
                 </div>
               </div>
             </NodeToolbar>
-
-            {onlyEdges && !editing ? (
-              <Panel position="top-center" className="board-edge-panel">
-                <div className="board-context" data-testid="board-edge-toolbar">
-                  <div className="board-context-group">
-                    {PALETTE.map((entry) => (
-                      <Swatch key={entry.label} value={entry.value} label={entry.label} active={commonColor === entry.value} onPick={recolour} />
-                    ))}
-                  </div>
-                  <div className="board-context-group">
-                    <button type="button" className={`board-context-button${edgeEnd === "arrow" ? " is-active" : ""}`} aria-label="Arrow" data-tooltip="Arrow" data-testid="board-edge-arrow" onClick={() => setEdgeEnd("arrow")}>
-                      <BoardIcon name="arrowEnd" size={16} />
-                    </button>
-                    <button type="button" className={`board-context-button${edgeEnd === "none" ? " is-active" : ""}`} aria-label="Line" data-tooltip="Line" data-testid="board-edge-line" onClick={() => setEdgeEnd("none")}>
-                      <BoardIcon name="arrowNone" size={16} />
-                    </button>
-                    <button type="button" className="board-context-button is-danger" aria-label="Delete" data-tooltip="Delete · Del" data-testid="board-delete" onClick={deleteSelection}>
-                      <BoardIcon name="trash" size={16} />
-                    </button>
-                  </div>
-                </div>
-              </Panel>
-            ) : null}
 
             <Panel position="bottom-right" className="board-zoom">
               <button type="button" className="board-zoom-button" aria-label="Zoom out" data-tooltip="Zoom out" data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
@@ -1398,6 +1343,8 @@ function BoardCanvas(props: BoardEditorProps) {
               ) : null}
             </div>
           ) : null}
+
+          {toolbarEdge ? <ConnectorToolbar edge={toolbarEdge} rootRef={rootRef} layoutKey={board} /> : null}
 
           {board.nodes.length === 0 ? (
             <div className="board-empty" data-testid="board-empty">
