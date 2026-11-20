@@ -23,7 +23,7 @@
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:screens": "playwright test --config e2e/playwright.screens.config.ts",
     "seed:big": "node scripts/seed-big.mjs",
-    "typecheck": "npm run typecheck -ws --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",

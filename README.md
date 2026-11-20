@@ -37,6 +37,12 @@ The vault defaults to `./vault` and is created on first start. Point it elsewher
 | `npm run test:e2e` | Playwright e2e suite (local, throwaway vault) |
 | `npm run seed:big` | Seed 200 linked pages via the API for graph/performance checks (`-- 500` for more) |
 
+## Development
+
+Before moving a task to review, run `npm run typecheck`: it type-checks every workspace
+(core, server, web) and exits non-zero on the first error. `npm test` runs the Vitest suite;
+`npm run test:e2e` runs the Playwright flows against a throwaway vault.
+
 ## API
 
 Base `/api`, JSON. Full contract in the team wiki (`spec/api`).
