@@ -59,6 +59,13 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [movingId, setMovingId] = useState<PageId | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      return localStorage.getItem("gumply:sidebar") !== "closed";
+    } catch {
+      return true;
+    }
+  });
   const [graphOpen, setGraphOpen] = useState(() => isGraphHash(window.location.hash));
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
@@ -143,6 +150,14 @@ export function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pendingDelete, searchOpen, shortcutsOpen, movingId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("gumply:sidebar", sidebarOpen ? "open" : "closed");
+    } catch {
+      // storage unavailable: keep the in-memory state
+    }
+  }, [sidebarOpen]);
 
   const loadPages = useCallback(async (): Promise<PageMeta[] | null> => {
     try {
@@ -739,8 +754,19 @@ export function App() {
   const breadcrumb = selectedId ? pageTrail(pages, selectedId) : [];
 
   return (
-    <div className="app">
+    <div className={`app${sidebarOpen ? "" : " sidebar-collapsed"}`}>
       <header className="topbar">
+        <button
+          type="button"
+          className="icon-button sidebar-toggle"
+          data-testid="sidebar-toggle"
+          data-tooltip={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          aria-pressed={sidebarOpen}
+          onClick={() => setSidebarOpen((open) => !open)}
+        >
+          <Icon name="sidebar" size={17} />
+        </button>
         <span className="logo" aria-hidden="true">
           <Icon name="brand" size={18} />
         </span>
@@ -768,6 +794,12 @@ export function App() {
           </nav>
         ) : null}
         <span className="topbar-spacer" />
+        <SaveStatus
+          state={saveState}
+          onRetry={handleRetrySave}
+          onReload={handleConflictReload}
+          onKeepMine={handleConflictKeepMine}
+        />
         <ThemeToggle />
         <button
           type="button"
@@ -779,12 +811,6 @@ export function App() {
         >
           <Icon name="keyboard" size={16} />
         </button>
-        <SaveStatus
-          state={saveState}
-          onRetry={handleRetrySave}
-          onReload={handleConflictReload}
-          onKeepMine={handleConflictKeepMine}
-        />
       </header>
 
       <div
