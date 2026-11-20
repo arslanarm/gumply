@@ -321,3 +321,30 @@ test.describe('inline images stay inline (#2rmk983y)', () => {
     expect((await api.getPage(request, created!.id)).content).toBe(content.replace('Tail.', 'Tail.!'));
   });
 });
+
+test('image destinations keep their form; blocked-scheme links stay inert and verbatim (#2ijnyid6)', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const content = "Angle ![a](<my pic.png>) here.\n\nPercent ![b](my%20pic.png) here.\n\nJs ![c](javascript:alert(1)) here.\n\nData html ![d](data:text/html,<script>alert(2)</script>) here.\n\nData png ![e](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==) here.\n\nTail.\n\nLink [x](javascript:alert(3)) and ![lone](<my pic.png>)";
+  let dialogs = 0;
+  page.on('dialog', async (dialog) => {
+    dialogs += 1;
+    await dialog.dismiss();
+  });
+  const [created] = await vault.seed([{ title: 'Inline edge', content }]);
+  await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+  const body = page.getByTestId('editor-content');
+  await expect(body.getByText('Tail.', { exact: true })).toBeVisible();
+  // Blocked schemes are inert: shown as text, never a live image or link.
+  await expect(body.locator('img[src^="javascript:"], a[href^="javascript:"], img[src^="data:text"]')).toHaveCount(0);
+  await expect(body.getByTestId('raw-inline').filter({ hasText: 'javascript:alert(1)' })).toHaveCount(1);
+
+  await body.getByText('Tail.', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Edited.');
+  await waitSaved(page);
+  expect((await api.getPage(request, created!.id)).content).toBe(content.replace('Tail.', 'Tail. Edited.'));
+  expect(dialogs).toBe(0);
+});

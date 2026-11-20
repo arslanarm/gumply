@@ -10,6 +10,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { FileAttachmentView } from "../../components/FileAttachmentView.js";
 import { ImageBlockView } from "../../components/ImageBlockView.js";
 import { hrefForAttachment } from "../../lib/attachment-links.js";
+import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 
 /** Original Obsidian syntax, kept so an untouched embed is written back as-is. */
 const OBSIDIAN_ATTR = {
@@ -46,6 +47,7 @@ export const ImageBlock = Node.create({
       uploading: { default: false, parseHTML: () => false, renderHTML: () => ({}) },
       uploadId: { default: "", parseHTML: () => "", renderHTML: () => ({}) },
       obsidian: OBSIDIAN_ATTR,
+      ...imageRawAttributes,
     };
   },
 
@@ -69,6 +71,12 @@ export const ImageBlock = Node.create({
         serialize(state: any, node: any) {
           const src = String(node.attrs.src ?? "");
           if (src.length === 0) return;
+          const unchanged = unchangedImageMarkdown(node);
+          if (unchanged) {
+            state.write(unchanged);
+            state.closeBlock(node);
+            return;
+          }
           const alt = String(node.attrs.alt ?? "");
           // Untouched Obsidian embed: write it back as it was (D23).
           if (node.attrs.obsidian && alt === "" && !node.attrs.title) {
