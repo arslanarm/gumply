@@ -66,6 +66,13 @@ so your notes are still plain Markdown files in a folder you choose.
 - **Hardened builds:** the shipped app can't be started as plain Node, ignores `NODE_OPTIONS` and
   debugging flags, and only loads its own integrity-checked app archive (Electron fuses). CI checks
   this in every installer with `npm run check:fuses -w @gumply/desktop`.
+- **Installer inspection:** after packaging, every CI build unpacks its own installers and checks
+  them (`apps/desktop/scripts/inspect-installers.mjs`): the file and app names, the version stamped
+  everywhere, the Windows description, the `.deb` fields and checksums, the fuses of the binary
+  inside, the app archive (no `node_modules`, source maps or secrets) and the macOS signature. The
+  results are in the job summary, and the release job checks the uploaded files against the
+  SHA-256 sums the build computed. Locally: `node apps/desktop/scripts/inspect-installers.mjs
+  --release apps/desktop/release --version <version>` (Node 24 or later).
 - **Vaults:** on first start Gumply asks you to open a folder (any Obsidian vault works) or create
   a new vault; a new or empty folder gets the demo notes. **File → Open Vault… / Create New Vault… /
   Open Recent / Reveal Vault in File Manager** switch and find vaults. The list of vaults and the

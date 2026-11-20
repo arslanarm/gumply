@@ -7,6 +7,12 @@
 # - Every build is checked: the Electron fuses must be hardened in the shipped
 #   binary, and on Linux the desktop smoke tests run against the real app on a
 #   virtual display.
+# - Every installer is then inspected inside the build (#sj44x5ph,
+#   scripts/inspect-installers.mjs): names, versions, Windows FileDescription,
+#   .deb fields, fuses, app.asar contents, macOS signature, SHA-256. The job
+#   summary shows the table, and the release job checks the uploaded files
+#   against those checksums. Release gates no longer download installers to
+#   check them; only the Linux hands-on test needs a download.
 # Unsigned for now: Windows SmartScreen and macOS Gatekeeper will warn
 # (signing/notarisation is a later task).
 name: Desktop builds
@@ -39,11 +45,13 @@ jobs:
             artifacts: |
               apps/desktop/release/*.AppImage
               apps/desktop/release/*.deb
+              apps/desktop/release/SHA256SUMS-*.txt
           - name: Windows (installer)
             os: windows-latest
             builder: --win nsis --x64
             artifacts: |
               apps/desktop/release/*.exe
+              apps/desktop/release/SHA256SUMS-*.txt
           - name: macOS (dmg, zip; Apple silicon and Intel)
             # One arm64 runner builds both architectures (no native modules).
             os: macos-latest
@@ -51,6 +59,7 @@ jobs:
             artifacts: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
+              apps/desktop/release/SHA256SUMS-*.txt
     steps:
       - uses: actions/checkout@v7
 
@@ -94,6 +103,24 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/check-fuses.mjs --release release
 
+      # What the release gate used to check by hand after downloading ~700 MB
+      # (#sj44x5ph): file and app names, the version stamped everywhere,
+      # Windows FileDescription, .deb control fields and md5sums, fuses of the
+      # binary inside each installer, app.asar (no node_modules, source maps or
+      # secrets), the macOS signature. Writes SHA256SUMS-<os>.txt and a table to
+      # the job summary; fails the job on any mismatch.
+      - name: Inspect the installers
+        working-directory: apps/desktop
+        shell: bash
+        run: node scripts/inspect-installers.mjs --release release --version "${{ steps.version.outputs.version }}"
+
+      # Proves the inspector can fail: a real installer under another
+      # version's name must be rejected by the version stamped inside it.
+      - name: Inspector self-test (a mislabelled installer is rejected)
+        working-directory: apps/desktop
+        shell: bash
+        run: node scripts/inspect-installers.mjs --release release --version "${{ steps.version.outputs.version }}" --self-test
+
       - uses: actions/upload-artifact@v7
         with:
           name: gumply-${{ runner.os }}
@@ -130,7 +157,20 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           ls -la dist
-          (cd dist && sha256sum * > SHA256SUMS.txt)
+          cd dist
+          # Each build job wrote SHA256SUMS-<os>.txt for the installers it
+          # inspected: the downloaded files must be exactly those, unchanged.
+          cat SHA256SUMS-*.txt | sort -k2 > ../inspected-sums.txt
+          rm SHA256SUMS-*.txt
+          sha256sum -c ../inspected-sums.txt
+          sha256sum * > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          if ! diff <(sort -k2 SHA256SUMS.txt) ../inspected-sums.txt; then
+            echo "::error::release assets differ from the inspected installers"
+            exit 1
+          fi
+          { echo "### Release assets"; echo; echo '```'; cat SHA256SUMS.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cd ..
           # A tag with a suffix (v0.5.0-rc.1, -beta…) is a pre-release.
           prerelease=()
           if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
