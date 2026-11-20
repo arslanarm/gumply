@@ -122,6 +122,11 @@ export function PageHeader({
 
   // Focus the title for new/empty pages only; existing pages keep focus free.
   useEffect(() => {
+    // D20: a rename changes the id of the *same* page. If the user is already
+    // typing in the title again, keep their draft instead of resetting it
+    // (that dropped keys typed while the rename was in flight).
+    const input = titleInputRef.current;
+    if (input && document.activeElement === input) return;
     draftOriginRef.current = page.title;
     setDraft(page.title);
     setEditing(page.content.trim().length === 0);
