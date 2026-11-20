@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { test as vaultTest } from './fixtures';
+import { E2E_VAULT } from './support/env';
 
 /**
  * Whiteboard engine (W1, #cq6wyr46, spec/whiteboard §3), driven through the
@@ -458,8 +462,14 @@ test.describe('board view: autosave and conflicts', () => {
       conflictNext = false;
       version += 1;
       disk = body.board as typeof diskBoard;
+      const repair = puts.length === 1 ? { repairBackup: '.gumply/conflicts/Map.2026.canvas' } : {};
       await route.fulfill({
-        json: { meta: { ...META, updated: `v${version}` }, board: body.board, ...(body.force ? { conflictBackup: '.trash/conflicts/Map.canvas' } : {}) },
+        json: {
+          meta: { ...META, updated: `v${version}` },
+          board: body.board,
+          ...(body.force ? { conflictBackup: '.trash/conflicts/Map.canvas' } : {}),
+          ...repair,
+        },
       });
     });
 
@@ -475,6 +485,10 @@ test.describe('board view: autosave and conflicts', () => {
     expect(puts).toHaveLength(1);
     expect(puts[0]).toMatchObject({ expectedUpdated: 'v1' });
     expect((puts[0]?.board as typeof diskBoard).nodes[0]?.text).toBe('From disk + mine');
+    // The first save of a repaired file says where the original went.
+    await expect(page.getByTestId('board-repair-notice')).toContainText('.gumply/conflicts/Map.2026.canvas');
+    await page.getByTestId('board-repair-notice').getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.getByTestId('board-repair-notice')).toHaveCount(0);
 
     // Someone else changed the file: the next save is refused → Keep mine.
     conflictNext = true;
@@ -514,4 +528,32 @@ test.describe('board view: autosave and conflicts', () => {
     await page.waitForLoadState('networkidle');
     expect(scripts.some((url) => /@xyflow|perfect-freehand|BoardEditor/.test(url))).toBe(false);
   });
+});
+
+/** BoardView against the real boards API (W0b, spec/api v1.7). */
+vaultTest('board view saves to a real .canvas file and keeps saving after each save', async ({ page, request, vault }) => {
+  void vault;
+  const created = await request.post('/api/boards', { data: { title: 'Engine check' } });
+  expect(created.status()).toBe(201);
+  const { meta } = (await created.json()) as { meta: { id: string; kind: string } };
+  expect(meta).toMatchObject({ id: 'Engine check.canvas', kind: 'whiteboard' });
+
+  await page.goto(`/board-lab.html?api=${encodeURIComponent(meta.id)}`);
+  await expect(page.getByTestId('board-empty')).toBeVisible();
+  await addSticky(page, 500, 400, 'Saved for real [[Welcome]]');
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+
+  // A second edit must be accepted too (the view sends the new meta.updated).
+  await page.getByTestId('board-color-5').click();
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+
+  const loaded = (await (await request.get(`/api/boards/${encodeURIComponent(meta.id)}`)).json()) as { board: BoardLike };
+  expect(loaded.board.nodes).toHaveLength(1);
+  expect(loaded.board.nodes[0]).toMatchObject({ text: 'Saved for real [[Welcome]]', color: '5', gumply: { kind: 'sticky' } });
+
+  // On disk: Obsidian's layout (tabs, no trailing newline).
+  const file = readFileSync(path.join(E2E_VAULT, 'Engine check.canvas'), 'utf8');
+  expect(file.startsWith('{\n\t"nodes":[\n')).toBe(true);
+  expect(file.endsWith('}')).toBe(true);
+  expect(file).toContain('"gumply":{"kind":"sticky"}');
 });
