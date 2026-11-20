@@ -62,7 +62,12 @@ test.describe('keyboard shortcuts', () => {
   });
 
   test('F2 renames the focused sidebar row; Esc cancels', async ({ page, vault, request }) => {
-    const [, beta] = await vault.seed([{ title: 'Alpha' }, { title: 'Beta' }]);
+    // Beta must be non-empty: spec/ux §5 deliberately focuses the title for a
+    // new/empty page, which would race the sidebar row this test needs focused.
+    const [, beta] = await vault.seed([
+      { title: 'Alpha' },
+      { title: 'Beta', content: 'Beta body' },
+    ]);
 
     await page.goto('/');
     await expectPageTitle(page, 'Alpha');
