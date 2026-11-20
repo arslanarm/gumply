@@ -7,6 +7,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, Position, type EdgeProps } 
 import { memo, useLayoutEffect, useRef } from "react";
 import { solidColor } from "./colors.js";
 import { useBoardActions } from "./context.js";
+import { useNodeOffset } from "./group-drag.js";
 import type { BoardFlowEdge } from "./flow.js";
 
 const ARROW_LENGTH = 11;
@@ -79,12 +80,26 @@ function LabelEditor({ id, initial }: { id: string; initial: string }) {
 
 export const BoardEdge = memo(function BoardEdge(props: EdgeProps<BoardFlowEdge>) {
   const { id, data, selected, sourcePosition, targetPosition } = props;
+  // During a group drag the moved objects are only translated on screen; move
+  // this connector's ends with them (group-drag.ts).
+  const sourceOffset = useNodeOffset(props.source);
+  const targetOffset = useNodeOffset(props.target);
   const edge = data?.edge;
   const fromArrow = edge?.fromEnd === "arrow";
   const toArrow = (edge?.toEnd ?? "arrow") === "arrow";
   // The connection dots sit outside the object; the line touches the object.
-  const [fromX, fromY] = pullBack(props.sourceX, props.sourceY, sourcePosition, -HANDLE_GAP);
-  const [toX, toY] = pullBack(props.targetX, props.targetY, targetPosition, -HANDLE_GAP);
+  const [fromX, fromY] = pullBack(
+    props.sourceX + sourceOffset.dx,
+    props.sourceY + sourceOffset.dy,
+    sourcePosition,
+    -HANDLE_GAP,
+  );
+  const [toX, toY] = pullBack(
+    props.targetX + targetOffset.dx,
+    props.targetY + targetOffset.dy,
+    targetPosition,
+    -HANDLE_GAP,
+  );
   const [sx, sy] = fromArrow ? pullBack(fromX, fromY, sourcePosition, ARROW_LENGTH - 1) : [fromX, fromY];
   const [tx, ty] = toArrow ? pullBack(toX, toY, targetPosition, ARROW_LENGTH - 1) : [toX, toY];
   const [path, labelX, labelY] = getBezierPath({

@@ -144,10 +144,20 @@ async function select(page, count) {
     await page.keyboard.up("Shift");
   }
   await page.waitForTimeout(300);
+  // Grab the selected object nearest the middle: starting near the edge of the
+  // view would make React Flow auto-pan for the whole drag.
   return page.evaluate(() => {
-    const el = document.querySelector(".react-flow__node.selected");
-    const r = el.getBoundingClientRect();
-    return { x: r.x + Math.min(6, r.width / 4), y: r.y + Math.min(6, r.height / 4), selected: document.querySelectorAll(".react-flow__node.selected").length };
+    let best = null;
+    for (const el of document.querySelectorAll(".react-flow__node.selected")) {
+      const r = el.getBoundingClientRect();
+      const x = r.x + Math.min(6, r.width / 4);
+      const y = r.y + Math.min(6, r.height / 4);
+      const hit = document.elementFromPoint(x, y);
+      if (!el.contains(hit) || hit.closest("a, .wiki-link, button")) continue;
+      const distance = Math.hypot(x - 720, y - 450);
+      if (!best || distance < best.distance) best = { x, y, distance };
+    }
+    return { ...best, selected: document.querySelectorAll(".react-flow__node.selected").length };
   });
 }
 

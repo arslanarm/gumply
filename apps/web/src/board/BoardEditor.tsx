@@ -16,6 +16,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
+  useInternalNode,
   useReactFlow,
   useViewport,
   type Connection,
@@ -49,6 +50,7 @@ import { BoardContentContext, type BoardContent } from "./content/context.js";
 import { boardContentRenderers } from "./content/renderers.js";
 import { resolveBoardLink } from "./content/links.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
+import { GROUP_DRAG_MIN, setGroupOffset } from "./group-drag.js";
 import {
   amend,
   canRedo,
@@ -324,6 +326,86 @@ interface DragState {
   start: Map<string, Point>;
   anchorId: string;
   followers: Map<string, Point>;
+  /** Big selection: moved with CSS translate, committed on drop (group-drag.ts). */
+  group: GroupDrag | null;
+}
+
+/** Key of the selection rectangle among a group drag's moved elements. */
+const SELECTION_KEY = "\u0000selection";
+/** Key of the React Flow viewport when a whole-board drag moves it. */
+const VIEWPORT_KEY = "\u0000viewport";
+
+/** React Flow's viewport `transform: translate(xpx, ypx) scale(k)`. */
+function parseViewport(transform: string): { x: number; y: number; zoom: number } | null {
+  const match = /translate\(\s*(-?[\d.e+-]+)px\s*,\s*(-?[\d.e+-]+)px\s*\)\s*scale\(\s*([\d.e+-]+)\s*\)/.exec(transform);
+  return match ? { x: Number(match[1]), y: Number(match[2]), zoom: Number(match[3]) } : null;
+}
+
+function viewportTransform(x: number, y: number, zoom: number): string {
+  return `translate(${x}px, ${y}px) scale(${zoom})`;
+}
+
+interface GroupDrag {
+  ids: Set<string>;
+  /** Moved node elements (and the selection rectangle) by id. */
+  elements: Map<string, HTMLElement>;
+  /** `.react-flow__nodes` child count when `elements` was collected. */
+  scannedChildren: number;
+  /**
+   * Everything moves (e.g. Ctrl+A): shift React Flow's viewport (it holds every
+   * object, connector, label and the selection box) instead of each object.
+   */
+  whole: boolean;
+  /** Whole-board drag: React Flow's viewport transform, and the one last written over it. */
+  base?: { x: number; y: number; zoom: number };
+  written?: string;
+  /** Set once the temporary moves have been undone. */
+  cleared?: boolean;
+  dx: number;
+  dy: number;
+}
+
+interface Settling {
+  group: GroupDrag;
+  anchorId: string;
+  /** The anchor object's committed position. */
+  x: number;
+  y: number;
+}
+
+/**
+ * Undo a group drag's temporary moves (translate, connector offsets, viewport
+ * shift). Returns false when it was already cleared.
+ */
+function clearGroupDrag(group: GroupDrag): boolean {
+  if (group.cleared) return false;
+  group.cleared = true;
+  for (const item of group.elements.values()) item.style.translate = "";
+  // Hand the viewport back to React Flow, unless it has re-rendered it.
+  const viewport = group.elements.get(VIEWPORT_KEY);
+  if (viewport && group.base && viewport.style.transform === group.written) {
+    viewport.style.transform = viewportTransform(group.base.x, group.base.y, group.base.zoom);
+  }
+  setGroupOffset(null);
+  return true;
+}
+
+/**
+ * Clears a finished group drag in the same commit in which React Flow renders
+ * the committed positions, so the objects never show both the new position
+ * and the temporary offset (a one-frame jump).
+ */
+function GroupDragSettler({ settling, onDone }: { settling: Settling; onDone: () => void }) {
+  const anchor = useInternalNode(settling.anchorId);
+  const x = anchor?.position.x;
+  const y = anchor?.position.y;
+  useLayoutEffect(() => {
+    const arrived = x === undefined || y === undefined || (Math.abs(x - settling.x) < 0.5 && Math.abs(y - settling.y) < 0.5);
+    if (!arrived) return;
+    clearGroupDrag(settling.group);
+    onDone();
+  }, [x, y, settling, onDone]);
+  return null;
 }
 
 interface CreateDraft {
@@ -589,9 +671,71 @@ function BoardCanvas(props: BoardEditorProps) {
 
   const dragState = useRef<DragState | null>(null);
 
+  /** Find the DOM elements of the objects a group drag moves (mounted ones only). */
+  const collectGroupElements = useCallback((group: GroupDrag): void => {
+    const container = rootRef.current?.querySelector<HTMLElement>(".react-flow__nodes");
+    if (!container) return;
+    if (group.whole) {
+      // One layer holds every node, connector, label and the selection box.
+      const viewport = rootRef.current?.querySelector<HTMLElement>(".react-flow__viewport");
+      if (viewport) group.elements.set(VIEWPORT_KEY, viewport);
+      group.scannedChildren = Number.POSITIVE_INFINITY;
+      return;
+    }
+    group.scannedChildren = container.childElementCount;
+    for (const element of container.querySelectorAll<HTMLElement>(".react-flow__node")) {
+      const id = element.dataset.id;
+      if (id && group.ids.has(id)) group.elements.set(id, element);
+    }
+    const rect = rootRef.current?.querySelector<HTMLElement>(".react-flow__nodesselection-rect");
+    if (rect) group.elements.set(SELECTION_KEY, rect);
+  }, []);
+
+  const paintGroupDrag = useCallback(
+    (group: GroupDrag): void => {
+      // Objects scrolled into view mid-drag (auto-pan) mount late: pick them up.
+      if (!group.whole) {
+        const container = rootRef.current?.querySelector<HTMLElement>(".react-flow__nodes");
+        if (container && container.childElementCount !== group.scannedChildren) collectGroupElements(group);
+      }
+      if (group.whole) {
+        // Shift React Flow's own pan/zoom transform on the viewport (what a pan
+        // does, and as cheap); a separate `translate` made Chrome re-layerize
+        // the whole board every frame. If React Flow rewrote the transform in
+        // between (auto-pan), that is the new base.
+        const viewport = group.elements.get(VIEWPORT_KEY);
+        const view = viewport ? parseViewport(viewport.style.transform) : null;
+        if (viewport && view) {
+          if (group.written === undefined || viewport.style.transform !== group.written) group.base = view;
+          const base = group.base ?? view;
+          viewport.style.transform = viewportTransform(base.x + group.dx * base.zoom, base.y + group.dy * base.zoom, base.zoom);
+          // Read back: the browser re-serialises (rounds) the numbers.
+          group.written = viewport.style.transform;
+        }
+      } else {
+        const translate = `${group.dx}px ${group.dy}px`;
+        for (const element of group.elements.values()) element.style.translate = translate;
+        // Connectors add the offset to their moved ends (BoardEdge).
+        setGroupOffset({ ids: group.ids, dx: group.dx, dy: group.dy });
+      }
+    },
+    [collectGroupElements],
+  );
+
   const onNodesChange = useCallback((changes: NodeChangeset<BoardFlowNode>) => {
     const drag = dragState.current;
-    if (drag) {
+    if (drag?.group) {
+      // Big selection: move the elements, not the React state (see group-drag.ts).
+      const group = drag.group;
+      const anchor = changes.getForNode(drag.anchorId).find((change) => change.type === "position");
+      const start = drag.start.get(drag.anchorId);
+      if (anchor?.type === "position" && anchor.dragging && anchor.position && start) {
+        group.dx = anchor.position.x - start.x;
+        group.dy = anchor.position.y - start.y;
+        paintGroupDrag(group);
+      }
+      for (const change of changes.getByType("position")) if (change.dragging) changes.remove(change);
+    } else if (drag) {
       // Frames carry what lies inside them.
       const anchorChange = changes.getForNode(drag.anchorId).find((change) => change.type === "position");
       const start = drag.start.get(drag.anchorId);
@@ -616,8 +760,8 @@ function BoardCanvas(props: BoardEditorProps) {
         return { nodes, edges: current.edges };
       });
     }
-    setNodes((current) => changes.applyTo(current));
-  }, []);
+    if (!changes.isEmpty()) setNodes((current) => changes.applyTo(current));
+  }, [paintGroupDrag]);
 
   const onEdgesChange = useCallback((changes: EdgeChangeset<BoardFlowEdge>) => {
     for (const change of changes.getByType("remove")) changes.remove(change);
@@ -640,19 +784,45 @@ function BoardCanvas(props: BoardEditorProps) {
     const followerIds = frameFollowers(boardRef.current, ids);
     const followers = new Map<string, Point>();
     for (const item of boardRef.current.nodes) if (followerIds.has(item.id)) followers.set(item.id, { x: item.x, y: item.y });
+    const moving = new Set([...ids, ...followers.keys()]);
+    const group: GroupDrag | null =
+      moving.size >= GROUP_DRAG_MIN
+        ? {
+            ids: moving,
+            elements: new Map(),
+            scannedChildren: -1,
+            whole: moving.size >= boardRef.current.nodes.length,
+            dx: 0,
+            dy: 0,
+          }
+        : null;
+    if (group) collectGroupElements(group);
     dragState.current = {
       anchorId: node.id,
       start: new Map(dragged.map((item) => [item.id, { ...item.position }])),
       followers,
+      group,
     };
     setDragging(true);
-  }, []);
+  }, [collectGroupElements]);
+
+  /** A finished group drag waiting for React Flow to show the committed positions. */
+  const [settling, setSettling] = useState<Settling | null>(null);
+  const settleDone = useCallback(() => setSettling(null), []);
 
   const onNodeDragStop = useCallback(
     (_event: unknown, node: BoardFlowNode, dragged: BoardFlowNode[]) => {
       const drag = dragState.current;
       dragState.current = null;
       setDragging(false);
+      if (drag?.group) {
+        const group = drag.group;
+        setSettling({ group, anchorId: node.id, x: node.position.x, y: node.position.y });
+        // Fallback: never leave the temporary offset behind.
+        window.setTimeout(() => {
+          if (clearGroupDrag(group)) setSettling((current) => (current?.group === group ? null : current));
+        }, 600);
+      }
       const positions = new Map<string, Point>(dragged.map((item) => [item.id, item.position]));
       const start = drag?.start.get(node.id);
       if (drag && start) {
@@ -1218,6 +1388,7 @@ function BoardCanvas(props: BoardEditorProps) {
             attributionPosition="bottom-left"
           >
             <Background variant={BackgroundVariant.Dots} gap={24} size={1.6} className="board-grid" />
+            {settling ? <GroupDragSettler settling={settling} onDone={settleDone} /> : null}
 
             {/* Mounted only while shown: NodeToolbar subscribes to every id it is
                 given, and on each node update it rebuilds and compares the whole
