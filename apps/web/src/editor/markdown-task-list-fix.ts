@@ -40,6 +40,10 @@ function splitList(list: Element): void {
       clone.classList.remove("contains-task-list");
     }
     for (const item of group.items) clone.appendChild(item);
+    // The blank line that made markdown-it see one loose list sits between
+    // the groups; a group whose items are single paragraphs is tight.
+    const single = group.items.every((item) => item.querySelectorAll(":scope > p").length <= 1);
+    if (single) clone.setAttribute("data-tight", "true");
     fragment.appendChild(clone);
   }
   list.replaceWith(fragment);
@@ -64,5 +68,34 @@ export const MarkdownTaskListFix = Extension.create({
         },
       },
     };
+  },
+});
+
+/**
+ * tiptap-markdown only gives bullet/ordered lists the `tight` attribute, so a
+ * to-do list was always written as a loose list (`- [ ] a\n\n- [ ] b`): every
+ * save added blank lines between to-dos. Give task lists the same attribute,
+ * with the same parse rule (tight unless the items hold `<p>`).
+ */
+export const TaskListTight = Extension.create({
+  name: "taskListTight",
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["taskList"],
+        attributes: {
+          tight: {
+            default: true,
+            parseHTML: (element: HTMLElement) =>
+              element.getAttribute("data-tight") === "true" || !element.querySelector("p"),
+            renderHTML: (attributes: { tight?: boolean }) => ({
+              class: attributes.tight ? "tight" : null,
+              "data-tight": attributes.tight ? "true" : null,
+            }),
+          },
+        },
+      },
+    ];
   },
 });

@@ -20,7 +20,9 @@ import {
 import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
 import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
-import { MarkdownTaskListFix } from "../editor/markdown-task-list-fix.js";
+import { EmptyLineParagraph } from "../editor/empty-lines.js";
+import { MarkdownLink } from "../editor/link.js";
+import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
 import type { SlashItem } from "../editor/slash-items.js";
@@ -331,7 +333,9 @@ export function Editor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+      StarterKit.configure({ heading: { levels: [1, 2, 3] }, paragraph: false }),
+      EmptyLineParagraph,
+      MarkdownLink,
       TaskList,
       AccessibleTaskItem.configure({
         nested: true,
@@ -364,6 +368,7 @@ export function Editor({
       wikiLinkExtension,
       BlockEditing,
       MarkdownTaskListFix,
+      TaskListTight,
       TaskShortcut,
       ShortcutHistory,
     ],

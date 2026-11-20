@@ -1684,6 +1684,21 @@ input {
   border: 0;
 }
 
+/* Ordinary web links: Notion-style, text colour with a soft underline, so
+   they stay distinct from accent-coloured [[wiki links]]. */
+.gumply-editor a[href]:not(.file-card-link) {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.gumply-editor a[href]:not(.file-card-link):hover {
+  text-decoration-color: currentColor;
+}
+
 /* ---------- M2: wiki links, link menu, backlinks ---------- */
 
 .wiki-link {
