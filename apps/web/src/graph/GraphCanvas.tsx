@@ -1009,8 +1009,15 @@ export function GraphCanvas({
     setReady(true);
   }, [clearSettleTimer, autoFit, reducedMotion]);
 
+  // force-graph/d3 rewrite `link.source/target` from ids into node objects.
+  // Hand it copies: the model's links must keep their string ids, or the next
+  // filter pass (`visibleIds.has(link.source)`) drops every link (#pyx74enx).
+  // Nodes are shared on purpose so positions survive filtering.
   const graphData = useMemo(
-    () => ({ nodes: [...nodes], links: [...links] }),
+    () => ({
+      nodes: [...nodes],
+      links: links.map((link) => ({ source: link.source, target: link.target })),
+    }),
     [nodes, links],
   );
 
