@@ -53,7 +53,8 @@ jobs:
   # The full browser suite on the Node in .nvmrc (24 LTS).
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # A normal run takes ~11 min; the ceiling leaves room for one slow apt mirror.
+    timeout-minutes: 35
     env:
       CI: "1"
     steps:
@@ -67,11 +68,21 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
-      # Cache the browsers by Playwright version; system deps are installed
-      # every run (they live outside the cache).
-      - name: Playwright version
+      # Browsers are cached by Playwright version. Their system packages (fonts,
+      # codecs: ~55 MB of .deb) are installed on every run, from cached .deb
+      # files: one run spent 15 min downloading them from a slow Ubuntu mirror
+      # (60 kB/s) and nearly hit the job timeout (#rzpnittv).
+      # The .deb cache is keyed by Ubuntu release (ImageOS, e.g. ubuntu26), not
+      # by the runner image build: GitHub rolls out new image builds every few
+      # days, and a key with ImageVersion missed on the next run. The ISO week
+      # refreshes the cache weekly; restore-keys fall back to last week's, so
+      # apt only fetches packages that changed since.
+      - name: Playwright version and runner image
         id: pw
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "week=$(date -u +%G-w%V)" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
         id: pw-cache
@@ -80,13 +91,33 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
+      - name: Cache Playwright system packages (.deb)
+        uses: actions/cache@v6
+        with:
+          path: ~/apt-archives
+          key: playwright-apt-${{ steps.pw.outputs.os }}-${{ steps.pw.outputs.version }}-${{ steps.pw.outputs.week }}
+          restore-keys: |
+            playwright-apt-${{ steps.pw.outputs.os }}-${{ steps.pw.outputs.version }}-
+            playwright-apt-${{ steps.pw.outputs.os }}-
+
+      # apt keeps its downloads in ~/apt-archives (restored above), so a cache
+      # hit installs without downloading.
+      - name: Install Playwright system deps
+        timeout-minutes: 20
+        run: |
+          mkdir -p ~/apt-archives/partial
+          echo "Dir::Cache::Archives \"$HOME/apt-archives\";" | sudo tee /etc/apt/apt.conf.d/99gumply-ci-archives
+          echo 'APT::Keep-Downloaded-Packages "true";' | sudo tee -a /etc/apt/apt.conf.d/99gumply-ci-archives
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          npx playwright install-deps chromium firefox
+          sudo apt-get autoclean -qq   # drop .debs that are no longer current, so the cache doesn't grow
+          sudo rm -f ~/apt-archives/lock
+          sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+          echo "cached .deb files: $(ls ~/apt-archives/*.deb 2>/dev/null | wc -l)"
+
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium firefox
-
-      - name: Install Playwright system deps
-        if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium firefox
+        run: npx playwright install chromium firefox
 
       # The suite builds core itself and starts its own app on its own ports
       # with a fresh temp vault per run (e2e/support/env.ts).
