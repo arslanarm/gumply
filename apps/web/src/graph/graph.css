@@ -181,7 +181,15 @@
   margin-top: clamp(3rem, 14vh, 7rem);
 }
 
-.graph-view .empty-state code,
+.graph-view .empty-state code {
+  /* The empty-graph sentence ends with a period immediately after `[[`
+     (spec/ux §3). Horizontal padding would read as a space before it, so the
+     chip hugs the brackets. */
+  padding: 0.05rem 0;
+  border-radius: 3px;
+  background: var(--hover);
+}
+
 .graph-panel-state code {
   padding: 0.05rem 0.3rem;
   border-radius: 4px;

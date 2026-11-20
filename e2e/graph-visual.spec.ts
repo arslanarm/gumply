@@ -135,7 +135,11 @@ function expectDrawnAndFitted(stats: PixelStats): void {
 test.describe('graph pixels', () => {
   test('empty graph uses the calm empty state, with no canvas or dead controls', async ({
     page,
+    vault,
   }) => {
+    // This test needs a genuinely empty vault: request the fixture so it wipes
+    // whatever a previous suite run left behind.
+    await vault.reset();
     await page.goto('/');
     await page.getByTestId('sidebar-graph').click();
 
