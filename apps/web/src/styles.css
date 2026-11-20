@@ -1242,6 +1242,84 @@ input {
   .app.sidebar-collapsed .sidebar {
     display: none;
   }
+
+  /* Overlay sidebar: dim the page behind it; a tap on the page closes it. */
+  .app:not(.sidebar-collapsed) .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 54px 0 0;
+    z-index: 49;
+    background: var(--overlay);
+    animation: sidebar-scrim-in 140ms ease-out;
+  }
+}
+
+.sidebar-scrim,
+.save-status-short {
+  display: none;
+}
+
+@keyframes sidebar-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-scrim {
+    animation: none !important;
+  }
+}
+
+/* Phones: keep every top-bar control on screen. The wordmark goes (the logo
+   stays), the breadcrumb shows only the current page, and the save status
+   no longer reserves its desktop width. */
+@media (max-width: 600px) {
+  /* The overlay sidebar can be wider than the 720px rail. */
+  .app .sidebar {
+    width: min(300px, 85vw);
+  }
+
+  .topbar {
+    gap: 0.35rem;
+    padding: 0.6rem 0.7rem;
+  }
+
+  .app-name {
+    display: none;
+  }
+
+  .breadcrumb {
+    flex: 1 1 auto;
+    margin-left: 0.15rem;
+  }
+
+  .breadcrumb-item:not(:last-child),
+  .breadcrumb-sep {
+    display: none;
+  }
+
+  .topbar-spacer {
+    flex: 0 1 0;
+  }
+
+  .topbar .save-status {
+    min-width: 0;
+    flex-shrink: 0;
+  }
+
+  /* Short labels so Retry / Reload / Keep mine always fit. */
+  .save-status-long {
+    display: none;
+  }
+
+  .save-status-short {
+    display: inline;
+  }
+
+  .topbar .icon-button {
+    flex: none;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1320,10 +1398,16 @@ input {
   transform: translateY(-50%);
 }
 
-/* The theme toggle sits in the topbar, so its tooltip opens downwards. */
-.theme-toggle[data-tooltip]::after {
+/* Top-bar tooltips open downwards (there is no room above), and the ones at
+   the left edge grow to the right so they're never clipped. */
+.topbar [data-tooltip]::after {
   top: calc(100% + 6px);
   bottom: auto;
+}
+
+.topbar .sidebar-toggle[data-tooltip]::after {
+  left: 0;
+  right: auto;
 }
 
 /* Save status: blank when idle but width reserved (D14 §7). */

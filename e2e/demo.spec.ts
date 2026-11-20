@@ -44,7 +44,9 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   await page.goto('/');
   await expectPageTitle(page, 'Welcome');
   const editor = page.getByTestId('editor-content');
-  await expect(editor).toContainText('Welcome to Gumply');
+  await expect(editor).toContainText('Gumply is a quiet place for notes');
+  // The title is the only heading at the top: no duplicate "Welcome to Gumply" H1.
+  await expect(editor.locator('h1')).toHaveCount(0);
   await expect(editor.getByRole('checkbox')).toHaveCount(2);
   await expect(page.getByTestId('page-item-Welcome')).toBeVisible();
   await expect(page.getByTestId('page-item-Gumply demo')).toBeVisible();
@@ -82,7 +84,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
 
   await page.getByTestId('page-item-Welcome').click();
   await expectPageTitle(page, 'Welcome');
-  await expect(page.getByTestId('editor-content')).toContainText('Welcome to Gumply');
+  await expect(page.getByTestId('editor-content')).toContainText('Gumply is a quiet place');
 
   // Delete every page through the UI, like a user emptying the demo, then
   // restart the API on the same vault. The marker must keep it empty: the old

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Icon } from "./Icon.js";
+import { Icon, type IconName } from "./Icon.js";
 
 export interface UndoToastProps {
   message: string;
+  /** Defaults to the bin of the delete toast (D11). */
+  icon?: IconName;
   duration?: number;
   onUndo?: () => void;
   onDismiss: () => void;
@@ -12,7 +14,13 @@ export interface UndoToastProps {
  * Delete toast with Undo (D11): 8s, paused while hovered or focused.
  * Remaining time is tracked so pausing never resets the window.
  */
-export function UndoToast({ message, duration = 8000, onUndo, onDismiss }: UndoToastProps) {
+export function UndoToast({
+  message,
+  icon = "trash",
+  duration = 8000,
+  onUndo,
+  onDismiss,
+}: UndoToastProps) {
   const [paused, setPaused] = useState(false);
   const remaining = useRef(duration);
   const startedAt = useRef<number | null>(null);
@@ -46,7 +54,7 @@ export function UndoToast({ message, duration = 8000, onUndo, onDismiss }: UndoT
       }}
     >
       <span className="toast-icon" aria-hidden="true">
-        <Icon name="trash" size={15} />
+        <Icon name={icon} size={15} />
       </span>
       <span>{message}</span>
       {onUndo ? (

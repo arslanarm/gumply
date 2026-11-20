@@ -34,7 +34,10 @@ export function SaveStatus({ state, onRetry, onReload, onKeepMine }: SaveStatusP
       {state === "saved" ? "Saved" : null}
       {state === "error" ? (
         <>
-          Couldn't save —{" "}
+          <span className="save-status-long">Couldn't save —</span>
+          <span className="save-status-short">
+            Not saved
+          </span>{" "}
           <button type="button" className="link-button" onClick={onRetry} data-testid="save-retry">
             Retry
           </button>
@@ -42,7 +45,10 @@ export function SaveStatus({ state, onRetry, onReload, onKeepMine }: SaveStatusP
       ) : null}
       {state === "conflict" ? (
         <>
-          This page changed on disk.{" "}
+          <span className="save-status-long">This page changed on disk.</span>
+          <span className="save-status-short">
+            Changed on disk
+          </span>{" "}
           <button
             type="button"
             className="link-button"
