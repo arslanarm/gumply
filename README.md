@@ -1,5 +1,7 @@
 # Gumply
 
+[![CI](https://github.com/arslanarm/gumply/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arslanarm/gumply/actions/workflows/ci.yml)
+
 A local-first note app with Notion's simplicity and Obsidian's visualizations: nested Markdown
 pages, wikilinks, backlinks and a graph view. Notes live as plain `.md` files in a vault folder.
 
@@ -59,6 +61,14 @@ renames the file (and its sub-page folder). Notes you wrote without frontmatter 
 Before moving a task to review, run `npm run typecheck`: it type-checks every workspace
 (core, server, web) and exits non-zero on the first error. `npm test` runs the Vitest suite;
 `npm run test:e2e` runs the Playwright flows against a throwaway vault.
+
+Use the Node version in `.nvmrc` (24 LTS). On Node 20/22 the vault watcher misses outside edits to
+files Gumply has saved (#3ugdxhzu).
+
+**CI** (`.github/workflows/ci.yml`, GitHub Actions): every push to `main`, every `v*` tag and
+manual runs execute typecheck, unit tests, build and the full e2e suite (Chromium, plus Firefox
+for the graph specs) on Node from `.nvmrc`. A newer push cancels an older run. On failure the
+Playwright report and `test-results/` are uploaded as an artifact.
 
 ## API
 
