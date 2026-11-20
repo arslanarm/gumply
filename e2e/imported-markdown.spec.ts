@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
+import { API_URL } from './support/env';
 
 /**
  * #82x82ek7 (P0 data loss): editing an imported Obsidian note must not
@@ -255,4 +256,95 @@ test('a pasted image after a table has no empty paragraph before it (#symxj285)'
   expect((await api.getPage(request, created!.id)).content).toBe(
     'Intro\n\n| A |\n|---|\n| 1 |\n\n![remote](https://example.com/remote.png)\n\nAfter',
   );
+});
+
+test.describe('inline images stay inline (#2rmk983y)', () => {
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  test('badges and inline images round-trip byte-for-byte and render inline', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    await page.route('https://img.shields.io/**', (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
+    );
+    const content = [
+      'Badge ![b](https://img.shields.io/badge/a-b-green) inline text.',
+      '',
+      '![ci](https://img.shields.io/badge/ci-ok-green) ![cov](https://img.shields.io/badge/cov-90-green)',
+      '',
+      'Same again: ![other](https://img.shields.io/badge/x-y-blue)',
+      '',
+      '![solo](https://img.shields.io/badge/solo-1-red)',
+      '',
+      'Tail.',
+    ].join('\n');
+    const [created] = await vault.seed([{ title: 'Inline images', content }]);
+    await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+    const body = page.getByTestId('editor-content');
+    await expect(body.getByTestId('inline-image')).toHaveCount(4);
+    await expect(body.getByTestId('image-block')).toHaveCount(1);
+    await expect(body.locator('p').first()).toContainText('Badge');
+    await expect(body.locator('p').first()).toContainText('inline text.');
+
+    await body.getByText('Tail.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Edited.');
+    await waitSaved(page);
+    expect((await api.getPage(request, created!.id)).content).toBe(content.replace('Tail.', 'Tail. Edited.'));
+  });
+
+  test('an Obsidian ![[icon.png|16]] renders inline at 16px and is written back as-is', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const upload = await request.post(`${API_URL}/api/attachments`, {
+      multipart: { file: { name: 'icon.png', mimeType: 'image/png', buffer: PNG } },
+    });
+    const { name } = (await upload.json()) as { name: string };
+    const content = `Status ![[${name}|16]] done.\n\nTail.`;
+    const [created] = await vault.seed([{ title: 'Obsidian icon', content }]);
+    await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+    const icon = page.getByTestId('editor-content').getByTestId('inline-image');
+    await expect(icon).toHaveAttribute('width', '16');
+    await expect.poll(() => icon.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+
+    await page.getByTestId('editor-content').getByText('Tail.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('!');
+    await waitSaved(page);
+    expect((await api.getPage(request, created!.id)).content).toBe(content.replace('Tail.', 'Tail.!'));
+  });
+});
+
+test('image destinations keep their form; blocked-scheme links stay inert and verbatim (#2ijnyid6)', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const content = "Angle ![a](<my pic.png>) here.\n\nPercent ![b](my%20pic.png) here.\n\nJs ![c](javascript:alert(1)) here.\n\nData html ![d](data:text/html,<script>alert(2)</script>) here.\n\nData png ![e](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==) here.\n\nTail.\n\nLink [x](javascript:alert(3)) and ![lone](<my pic.png>)";
+  let dialogs = 0;
+  page.on('dialog', async (dialog) => {
+    dialogs += 1;
+    await dialog.dismiss();
+  });
+  const [created] = await vault.seed([{ title: 'Inline edge', content }]);
+  await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+  const body = page.getByTestId('editor-content');
+  await expect(body.getByText('Tail.', { exact: true })).toBeVisible();
+  // Blocked schemes are inert: shown as text, never a live image or link.
+  await expect(body.locator('img[src^="javascript:"], a[href^="javascript:"], img[src^="data:text"]')).toHaveCount(0);
+  await expect(body.getByTestId('raw-inline').filter({ hasText: 'javascript:alert(1)' })).toHaveCount(1);
+
+  await body.getByText('Tail.', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Edited.');
+  await waitSaved(page);
+  expect((await api.getPage(request, created!.id)).content).toBe(content.replace('Tail.', 'Tail. Edited.'));
+  expect(dialogs).toBe(0);
 });

@@ -95,7 +95,8 @@ function readAttachmentRule(state: any, silent: boolean): boolean {
     const close = src.indexOf("]]", pos + 3);
     if (close === -1) return false;
     const inner = src.slice(pos + 3, close).trim();
-    if (!hasAttachmentExtension(inner)) return false;
+    // `![[pic.png|16]]`: Obsidian size/alias after `|` (#2rmk983y).
+    if (!hasAttachmentExtension(inner.split("|")[0]?.trim() ?? "")) return false;
     const path = attachmentPath(inner);
     const name = path.split("/").pop() ?? inner;
     end = close + 2;
@@ -105,7 +106,8 @@ function readAttachmentRule(state: any, silent: boolean): boolean {
     const close = src.indexOf("]]", pos + 2);
     if (close === -1) return false;
     const inner = src.slice(pos + 2, close).trim();
-    if (!hasAttachmentExtension(inner)) return false;
+    // `![[pic.png|16]]`: Obsidian size/alias after `|` (#2rmk983y).
+    if (!hasAttachmentExtension(inner.split("|")[0]?.trim() ?? "")) return false;
     const path = attachmentPath(inner);
     const name = path.split("/").pop() ?? inner;
     end = close + 2;
@@ -156,7 +158,9 @@ export function wikilinkMarkdownPlugin(md: any): void {
     const meta = tokens[index]?.meta as AttachmentMeta | undefined;
     if (!meta) return "";
     const obsidian = meta.obsidian ? ` data-obsidian="${escapeHtml(meta.obsidian)}"` : "";
-    return `<img src="${escapeHtml(meta.path)}" alt="${escapeHtml(meta.alt)}"${obsidian}>`;
+    // #2rmk983y: flagged by the inline-image rule when it shares its line.
+    const inline = tokens[index]?.attrGet?.("data-inline-image") ? ' data-inline-image="1"' : "";
+    return `<img src="${escapeHtml(meta.path)}" alt="${escapeHtml(meta.alt)}"${obsidian}${inline}>`;
   };
 
   md.renderer.rules.attachment_file = (tokens: any[], index: number): string => {

@@ -20,6 +20,7 @@ import {
   removeUpload,
 } from "../editor/attachments/insert.js";
 import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
+import { InlineImage } from "../editor/attachments/inline-image.js";
 import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
 import { NotionCodeBlock } from "../editor/code-block.js";
@@ -585,6 +586,7 @@ export function Editor({
         },
       }),
       ImageBlock,
+      InlineImage,
       FileAttachment,
       Markdown.configure({
         html: false,
