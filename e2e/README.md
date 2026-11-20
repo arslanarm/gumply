@@ -19,7 +19,8 @@ server could be pointed at your real notes. Override ports with
 `GUMPLY_WEB_PORT` / `GUMPLY_PORT` if those are taken too.
 
 Browsers: `npx playwright install chromium firefox`. Chromium runs the full
-suite; Firefox runs only `graph-pixels.spec.ts` (Q1b cross-browser check).
+suite; Firefox runs the two graph canvas specs (`graph-visual.spec.ts` and
+`graph-pixels.spec.ts`) for the Q1b cross-browser check.
 
 Screenshots for review notes (not assertions, not pixel diffs):
 
