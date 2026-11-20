@@ -678,3 +678,37 @@ describe("D23: attachment links follow the note's folder (#gma39xw2)", () => {
     }
   });
 });
+
+describe("watcher after the app's own atomic saves (#3ugdxhzu, Node 20/22)", () => {
+  it("still sees an outside edit to a page Gumply saved, in a folder created later, and to a board", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    store.startWatching();
+    try {
+      const page = await store.create({ title: "P" });
+      // An app save replaces the file atomically (temp file + rename).
+      await store.update(page.id, { content: "Base edited by app" });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await writeFile(join(dir, "P.md"), `${await readFile(join(dir, "P.md"), "utf8")}\nOutside line\n`);
+      await waitFor(() => store.get(page.id).content.includes("Outside line"));
+
+      // A folder that appears after the watcher started is watched too.
+      const parent = await store.create({ title: "Projects" });
+      const child = await store.create({ title: "Plan", parentId: parent.id });
+      await store.update(child.id, { content: "Saved by the app" });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await writeFile(join(dir, "Projects", "Plan.md"), "---\ntitle: Plan\n---\nChanged in Obsidian\n");
+      await waitFor(() => store.get(child.id).content.includes("Changed in Obsidian"));
+
+      // Boards are saved atomically as well.
+      const board = await store.createBoard({ title: "Map" });
+      await store.updateBoard(board.meta.id, { board: { nodes: [], edges: [] } });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await writeFile(join(dir, "Map.canvas"), JSON.stringify({ nodes: [{ id: "a", type: "text", text: "From outside", x: 0, y: 0, width: 100, height: 50 }], edges: [] }));
+      await waitFor(() => store.search("From outside").length === 1);
+    } finally {
+      store.stopWatching();
+    }
+  });
+});

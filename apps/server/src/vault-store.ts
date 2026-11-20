@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { watch, type FSWatcher } from "node:fs";
+import { readdirSync, watch, type FSWatcher } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
@@ -261,7 +261,14 @@ export class VaultStore {
   private writeQueue: Promise<unknown> = Promise.resolve();
   /** Old id -> new id after a rename, for stale URLs/tabs in this session. */
   private readonly redirects = new Map<PageId, PageId>();
-  private watcher: FSWatcher | null = null;
+  /**
+   * One non-recursive watcher per vault directory (#3ugdxhzu). Node 20/22's
+   * recursive watch on Linux follows file inodes and loses a file once it is
+   * replaced atomically (every app save); a directory watch sees the rename
+   * into the directory on every Node version and platform.
+   */
+  private readonly directoryWatchers = new Map<string, FSWatcher>();
+  private watching = false;
   private watchTimer: ReturnType<typeof setTimeout> | null = null;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
   private newVaultPage: PageId | null = null;
@@ -277,38 +284,74 @@ export class VaultStore {
 
   /** Start watching the vault for external create/change/delete events. */
   startWatching(): void {
-    if (this.watcher) return;
-    try {
-      this.watcher = watch(this.root, { recursive: true }, (_event, filename) => {
-        const relative = filename === null ? "" : String(filename).replace(/\\/g, "/");
-        if (relative.length === 0) return;
-        if (
-          relative.startsWith(".") ||
-          relative.includes("/.") ||
-          relative.includes("attachments/") ||
-          relative.includes("node_modules") ||
-          relative.endsWith(".tmp") ||
-          !/\.(md|canvas)$/i.test(relative)
-        ) {
-          return;
-        }
-        this.scheduleRescan();
-      });
-      this.watcher.on("error", () => undefined);
-    } catch {
-      // A platform without recursive watch still works; polling can be added later.
-      this.watcher = null;
-    }
+    if (this.watching) return;
+    this.watching = true;
+    // Synchronous, so edits made right after start are already seen.
+    this.syncDirectoryWatchers();
   }
 
   /** Stop the vault watcher (used by tests and shutdown). */
   stopWatching(): void {
+    this.watching = false;
     if (this.watchTimer !== null) {
       clearTimeout(this.watchTimer);
       this.watchTimer = null;
     }
-    this.watcher?.close();
-    this.watcher = null;
+    for (const watcher of this.directoryWatchers.values()) watcher.close();
+    this.directoryWatchers.clear();
+  }
+
+  /** Every directory the index reads pages from (no dot dirs, attachments, node_modules). */
+  private vaultDirectories(dir: string = this.root): string[] {
+    const found = [dir];
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return found;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      if (dir === this.root && entry.name === "attachments") continue;
+      found.push(...this.vaultDirectories(join(dir, entry.name)));
+    }
+    return found;
+  }
+
+  /** Watch new directories and stop watching removed ones. */
+  private syncDirectoryWatchers(): void {
+    if (!this.watching) return;
+    const wanted = new Set(this.vaultDirectories());
+    for (const [dir, watcher] of this.directoryWatchers) {
+      if (wanted.has(dir)) continue;
+      watcher.close();
+      this.directoryWatchers.delete(dir);
+    }
+    for (const dir of wanted) {
+      if (this.directoryWatchers.has(dir)) continue;
+      try {
+        const watcher = watch(dir, (_event, filename) => this.onWatchEvent(dir, filename));
+        watcher.on("error", () => {
+          watcher.close();
+          this.directoryWatchers.delete(dir);
+          this.scheduleRescan();
+        });
+        this.directoryWatchers.set(dir, watcher);
+      } catch {
+        // Gone already (or no permission): the next rescan settles it.
+      }
+    }
+  }
+
+  private onWatchEvent(dir: string, filename: string | Buffer | null): void {
+    const name = filename === null ? "" : String(filename);
+    // Unknown name (some platforms): rescan to be safe.
+    if (name.length === 0) return this.scheduleRescan();
+    if (name.startsWith(".") || name.endsWith(".tmp") || name === "node_modules") return;
+    // A page/board changed, or a folder appeared or went away.
+    if (/\.(md|canvas)$/i.test(name) || !name.includes(".")) this.scheduleRescan();
+    else if (this.directoryWatchers.has(join(dir, name))) this.scheduleRescan();
   }
 
   /** Re-read the vault and return whether the page index actually changed. */
@@ -320,7 +363,12 @@ export class VaultStore {
     if (this.watchTimer !== null) clearTimeout(this.watchTimer);
     this.watchTimer = setTimeout(() => {
       this.watchTimer = null;
-      void this.enqueue(() => this.refreshFromDisk());
+      void this.enqueue(async () => {
+        const changed = await this.refreshFromDisk();
+        // Folders may have appeared or gone: keep one watcher per directory.
+        this.syncDirectoryWatchers();
+        return changed;
+      });
     }, 120);
   }
 
