@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import { resolveWikilink, type Backlink, type Page, type PageId, type PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, consumeNewVaultPage } from "./api/client.js";
@@ -895,7 +896,12 @@ export function App() {
 
   // ArrowUp / Backspace at the top of the body moves to the title (#d636gdxx).
   const [titleFocusSignal, setTitleFocusSignal] = useState(0);
-  const handleExitTop = useCallback(() => setTitleFocusSignal((value) => value + 1), []);
+  // Synchronous on purpose (with PageHeader's layout effect): keys typed right
+  // after ArrowUp must reach the title, not the body (#d636gdxx follow-up).
+  const handleExitTop = useCallback(
+    () => flushSync(() => setTitleFocusSignal((value) => value + 1)),
+    [],
+  );
 
   const handleRetrySave = useCallback(() => {
     void editorControls.current?.flush();

@@ -2,6 +2,7 @@
  * `[[` autocomplete wiring (spec/ux §8). The React menu lives in LinkMenu;
  * this extension only computes suggestions and performs the insert.
  */
+import { linkTargetFor } from "@gumply/core";
 import { hrefForAttachment } from "../../lib/attachment-links.js";
 import { Extension } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
@@ -74,12 +75,13 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
               return;
             }
 
-            // Duplicate titles are inserted as a path link with the title as
-            // alias, so picking the second “Plan” resolves to that page.
-            const isDuplicate = props.kind === "page" && props.pageId !== undefined && props.label !== props.title;
-            const attrs = isDuplicate
-              ? { targetTitle: props.pageId, alias: props.title, heading: "" }
-              : { targetTitle: props.title, alias: "", heading: "" };
+            // Duplicate titles, or a title that differs from the file name
+            // (`Ideas: Q3?` → `Ideas Q3.md`), become `[[file name|Title]]` so
+            // the link resolves in Obsidian (by file name) too (#mp8eadhk).
+            const env = getWikiLinkEnvironment();
+            const page = props.kind === "page" ? env.pages.find((item) => item.id === props.pageId) : undefined;
+            const link = page ? linkTargetFor(page, env.pages) : { target: props.title, alias: "" };
+            const attrs = { targetTitle: link.target, alias: link.alias, heading: "" };
 
             editor.chain().focus().deleteRange(range).insertContent({ type: "wikiLink", attrs }).run();
 

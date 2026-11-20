@@ -9,6 +9,7 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
   const alt = String(node.attrs.alt ?? "");
   // D23: `src` is the link as written; resolve it against the open page.
   const env = useWikiLinkEnvironment();
+  const url = urlForLink(src, env, "image");
   const uploading = Boolean(node.attrs.uploading) || src.length === 0;
   const [caption, setCaption] = useState(alt);
   const [failed, setFailed] = useState(false);
@@ -34,12 +35,15 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
       className={`image-block${selected ? " is-selected" : ""}${failed ? " is-missing" : ""}`}
       data-testid="image-block"
     >
-      {failed ? (
+      {failed || url === null ? (
         <div className="image-skeleton">Image unavailable · {node.attrs.alt || "attachment"}</div>
       ) : (
         <img
-          src={urlForLink(src, env)}
+          src={url}
           alt={caption}
+          // Remote images (pasted web content, imported notes) load directly;
+          // many hosts refuse hot-linked images that carry a referrer.
+          referrerPolicy="no-referrer"
           draggable={false}
           onError={() => setFailed(true)}
           data-testid="image-block-img"

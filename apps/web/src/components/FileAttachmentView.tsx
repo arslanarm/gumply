@@ -44,7 +44,8 @@ export function FileAttachmentView({ node, selected }: NodeViewProps) {
     >
       <a
         className="file-card-link"
-        href={urlForLink(path, env)}
+        // External cards open the URL itself; unsafe links get no href.
+        href={urlForLink(path, env, "file") ?? undefined}
         target="_blank"
         rel="noopener noreferrer"
         title={name}
