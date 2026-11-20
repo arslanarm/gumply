@@ -25,7 +25,8 @@ export const IMAGE_STUB_PORT = Number(process.env.GUMPLY_IMAGE_STUB_PORT ?? API_
 export const BASE_URL = process.env.GUMPLY_WEB_URL ?? `http://localhost:${WEB_PORT}`;
 
 /** Tests talk to the local server directly on the port it booted with. */
-export const API_URL = `http://localhost:${API_PORT}`;
+// 127.0.0.1: the API listens on loopback IPv4 only (#rv57cvhm).
+export const API_URL = `http://127.0.0.1:${API_PORT}`;
 
 /**
  * Dedicated throwaway vault for e2e. The `vault` fixture wipes it between

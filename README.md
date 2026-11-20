@@ -26,6 +26,15 @@ npm run dev
 The vault defaults to `./vault` and is created on first start. Point it elsewhere with
 `GUMPLY_VAULT=/path/to/notes`. Set the API port with `GUMPLY_PORT` (default `8787`).
 
+**The API stays on your computer.** It can read and change every note, so it listens on
+`127.0.0.1` only, sends no CORS headers, refuses requests whose `Host` isn't this machine (DNS
+rebinding), and refuses writes whose `Origin` isn't the Gumply web app.
+- `GUMPLY_WEB_PORT` (default `5173`, comma-separated): the port(s) the web app runs on, whose
+  origin may write. Set it when you serve the web app on another port.
+- `GUMPLY_HOST`: listen on another interface, e.g. your LAN address `192.168.1.20`; that name is
+  then also accepted as `Host`. Anyone on that network can then read and change your notes, and
+  the server prints a warning.
+
 File names follow page titles, like Obsidian: "Q1 plan" is `Q1 plan.md`, and renaming the page
 renames the file (and its sub-page folder). Notes you wrote without frontmatter stay without it.
 
