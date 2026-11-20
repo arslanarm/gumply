@@ -141,17 +141,48 @@ function TextEditor({ node, className, placeholder, onHeight }: {
   );
 }
 
+/**
+ * Fitted sizes by `max|width×height|text`. Measuring forces several
+ * synchronous layouts, and nodes remount whenever they scroll back into view
+ * (`onlyRenderVisibleElements`), so zooming a big board out re-measured
+ * hundreds of nodes per frame (#r6biyzx6). The same text in the same box fits
+ * the same way, so remembered sizes skip the measuring.
+ */
+const fitCache = new Map<string, number>();
+const FIT_CACHE_LIMIT = 4000;
+
+function rememberFit(key: string, size: number): void {
+  if (fitCache.size >= FIT_CACHE_LIMIT) {
+    // Drop the oldest entry (Map keeps insertion order).
+    const oldest = fitCache.keys().next().value;
+    if (oldest !== undefined) fitCache.delete(oldest);
+  }
+  fitCache.set(key, size);
+}
+
 /** Shrink-to-fit font size (stickies, shapes), like Miro: big when short. */
-function useFitText(deps: unknown[], max: number, min = 10) {
+function useFitText(
+  deps: unknown[],
+  max: number,
+  min = 10,
+  cacheKey: string | null = null,
+) {
   const ref = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState(max);
+  const key = cacheKey === null ? null : `${max}|${cacheKey}`;
+  const [size, setSize] = useState(() => (key !== null ? fitCache.get(key) : undefined) ?? max);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
+    const known = key !== null ? fitCache.get(key) : undefined;
+    if (known !== undefined) {
+      setSize(known);
+      return;
+    }
     let low = min;
     let high = max;
     element.style.fontSize = `${high}px`;
     if (element.scrollHeight <= element.clientHeight + 1 && element.scrollWidth <= element.clientWidth + 1) {
+      if (key !== null) rememberFit(key, high);
       setSize(high);
       return;
     }
@@ -163,7 +194,9 @@ function useFitText(deps: unknown[], max: number, min = 10) {
       else high = mid;
     }
     element.style.fontSize = `${low}px`;
-    setSize(Math.floor(low * 2) / 2);
+    const fitted = Math.floor(low * 2) / 2;
+    if (key !== null) rememberFit(key, fitted);
+    setSize(fitted);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return { ref, size };
@@ -176,7 +209,10 @@ function nodeText(node: CanvasNode): string {
 export const StickyNode = memo(function StickyNode({ id, data, selected, width, height }: BoardNodeProps) {
   const { node, editing } = data;
   const text = nodeText(node);
-  const fit = useFitText([text, width ?? node.width, height ?? node.height, editing], 28);
+  const w = width ?? node.width;
+  const h = height ?? node.height;
+  // While editing the textarea is measured live, so no cached size.
+  const fit = useFitText([text, w, h, editing], 28, 10, editing ? null : `sticky|${w}x${h}|${text}`);
   return (
     <>
       <Resizer id={id} selected={data.resizable} minWidth={60} minHeight={60} />
@@ -252,7 +288,7 @@ export const ShapeNode = memo(function ShapeNode({ id, data, selected, width, he
   // Live size while resizing; the canvas node only changes on commit.
   const w = width ?? node.width;
   const h = height ?? node.height;
-  const fit = useFitText([text, w, h, editing, shape], 18);
+  const fit = useFitText([text, w, h, editing, shape], 18, 10, editing ? null : `${shape}|${w}x${h}|${text}`);
   return (
     <>
       <Resizer id={id} selected={data.resizable} />
