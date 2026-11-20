@@ -335,15 +335,64 @@ test.describe('board engine (W1)', () => {
     await drag(page, { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }, b);
     expect((await board(page)).edges).toHaveLength(1);
 
-    // Select A: its resize handle is >= 10 px and resizes.
+    // Select A: its resize handle is 10-14 px on screen (not compensated twice) and resizes.
     await a.click();
     const handle = page.locator('.react-flow__resize-control.handle.bottom.right');
     const box = await handle.boundingBox();
     if (!box) throw new Error('no resize handle');
     expect(box.width).toBeGreaterThanOrEqual(10);
+    expect(box.width).toBeLessThanOrEqual(14);
+    expect(dot.width).toBeLessThanOrEqual(14);
     const before = (await board(page)).nodes[0]?.width ?? 0;
     await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { x: box.x + box.width / 2 + 30, y: box.y + box.height / 2 + 30 });
     expect(((await board(page)).nodes[0]?.width ?? 0) - before).toBeGreaterThan(100);
+  });
+
+  test('handle sizes stay 10-14 px at 100% and 15%; a small selected card at 15% drags, never resizes (#ubqp5r4h)', async ({ page }) => {
+    const seed = {
+      nodes: [
+        { id: 'cccc000000000001', type: 'text', text: 'Card', x: 0, y: 0, width: 260, height: 120 },
+        { id: 'cccc000000000002', type: 'text', text: 'Other', x: 600, y: 0, width: 260, height: 120 },
+      ],
+      edges: [],
+    };
+    const open = async (zoom: number) => {
+      await page.addInitScript(
+        ({ value, z }) => {
+          window.localStorage.setItem('gumply:board-lab:small', value);
+          window.localStorage.setItem('gumply:board-view:lab:small', JSON.stringify({ x: 500, y: 300, zoom: z }));
+        },
+        { value: JSON.stringify(seed), z: zoom },
+      );
+      await page.goto('/board-lab.html?id=small&theme=light');
+      await expect(page.getByTestId('board-zoom-value')).toHaveText(`${Math.round(zoom * 100)}%`);
+    };
+    const handleSize = async () => {
+      await page.getByTestId('board-text').first().click();
+      const box = await page.locator('.react-flow__resize-control.handle.bottom.right').boundingBox();
+      if (!box) throw new Error('no resize handle');
+      return box;
+    };
+
+    await open(1);
+    const at100 = await handleSize();
+    expect(at100.width).toBeGreaterThanOrEqual(10);
+    expect(at100.width).toBeLessThanOrEqual(14);
+
+    await open(0.15);
+    const at15 = await handleSize();
+    expect(at15.width).toBeGreaterThanOrEqual(10);
+    expect(at15.width).toBeLessThanOrEqual(14);
+
+    // Drag the selected 39x18 px card by a point a quarter in from its top-left corner: it moves.
+    const card = await page.getByTestId('board-text').first().boundingBox();
+    if (!card) throw new Error('no card');
+    const before = (await board(page)).nodes[0];
+    const from = { x: card.x + card.width / 4, y: card.y + card.height / 4 };
+    await drag(page, from, { x: from.x + 60, y: from.y + 40 });
+    const after = (await board(page)).nodes[0];
+    expect([after?.width, after?.height]).toEqual([before?.width, before?.height]);
+    expect((after?.x ?? 0) - (before?.x ?? 0)).toBeGreaterThan(200);
   });
 
   test('frames carry what is inside them; arrow keys nudge', async ({ page }) => {
