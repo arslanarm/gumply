@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { VaultStore } from "../src/vault-store";
 
 const dirs: string[] = [];
@@ -14,6 +14,7 @@ async function tempVault(seed?: (dir: string) => Promise<void>): Promise<string>
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -111,5 +112,43 @@ describe("VaultStore index on start", () => {
     expect(restored.map((meta) => meta.id)).toEqual(["a", "a/child"]);
     expect(reopened.get("a").content).toBe("keep me");
     expect(reopened.get("a").childCount).toBe(1);
+  });
+
+  it("treats a page whose file is already gone as deleted instead of throwing", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const page = await store.create({ title: "Gone", content: "already removed" });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    // Simulate index/file drift: GET /pages still lists it, but the .md is gone.
+    await rm(join(dir, `${page.id}.md`), { force: true });
+    const result = await store.remove(page.id);
+
+    expect(result.deleted).toEqual([page.id]);
+    expect(result.trashId).toBe("");
+    expect(store.list().map((meta) => meta.id)).toEqual([]);
+    expect(store.search("already removed")).toEqual([]);
+    expect(store.graph().nodes).toEqual([]);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain("dropping stale index entry");
+  });
+
+  it("still surfaces a real filesystem error and keeps the page", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const page = await store.create({ title: "Keep" });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    // A file where `.trash/` should be makes the trash mkdir fail with ENOTDIR.
+    await writeFile(join(dir, ".trash"), "not a directory", "utf8");
+
+    await expect(store.remove(page.id)).rejects.toMatchObject({ code: "ENOTDIR" });
+    expect(store.list().map((meta) => meta.id)).toEqual([page.id]);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const log = String(errorSpy.mock.calls[0]?.[0]);
+    expect(log).toContain(`delete ${page.id} failed`);
+    expect(log).toContain("ENOTDIR");
+    expect(log).toContain(`${page.id}.md`);
   });
 });

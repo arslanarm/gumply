@@ -443,6 +443,21 @@ export class VaultStore {
     const pageInTrash = join(trashDir, `${id}.md`);
     const childDir = join(this.root, id);
     const childInTrash = join(trashDir, id);
+    const pageExists = await pathExists(record.filePath);
+    const childExists = await pathExists(childDir);
+
+    // The in-memory index can briefly outlive the files (e.g. a late autosave
+    // racing a delete, or a partially completed trash move). If the page and
+    // its child folder are both gone, the delete already happened: drop the
+    // stale index entries instead of failing with ENOENT (#fny35jmn).
+    if (!pageExists && !childExists) {
+      console.warn(
+        `[gumply] delete ${id}: file already missing (${record.filePath}); dropping stale index entry`,
+      );
+      for (const deletedId of deleted) this.pages.delete(deletedId);
+      this.reindexAll();
+      return { trashId: "", deleted };
+    }
 
     const manifest: TrashManifest = {
       id,
@@ -454,12 +469,17 @@ export class VaultStore {
     try {
       await mkdir(dirname(pageInTrash), { recursive: true });
       await writeFile(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2), "utf8");
-      await rename(record.filePath, pageInTrash);
-      if (await pathExists(childDir)) {
+      if (pageExists) await rename(record.filePath, pageInTrash);
+      if (childExists) {
         await mkdir(dirname(childInTrash), { recursive: true });
         await rename(childDir, childInTrash);
       }
     } catch (error) {
+      const code = (error as { code?: string }).code ?? "unknown";
+      console.error(
+        `[gumply] delete ${id} failed (path=${record.filePath}, code=${code}):`,
+        error,
+      );
       // Best-effort rollback so a failed delete never loses the page.
       await rename(pageInTrash, record.filePath).catch(() => undefined);
       await rename(childInTrash, childDir).catch(() => undefined);
