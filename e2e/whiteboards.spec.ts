@@ -330,6 +330,19 @@ test.describe('board uploads that fail (#f6v8z4ti)', () => {
     expect((await getBoard(request, created.meta.id)).board.nodes).toHaveLength(0);
   });
 
+  test('offline: the upload notice says the server can\'t be reached', async ({ page, request }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.route('**/api/attachments', (route) =>
+      route.request().method() === 'POST' ? route.abort('connectionrefused') : route.continue(),
+    );
+    const created = await createBoard(request, 'Drops offline');
+    await openBoard(page, created.meta.id);
+    await dropFile(page, 'note.txt', 12, 'text/plain');
+    await expect(page.getByTestId('board-upload-notice')).toHaveText(/Couldn't add note\.txt\. Can't reach Gumply's local server\./);
+    expect(errors).toEqual([]);
+  });
+
   test('a server failure on upload is a notice too, not an uncaught error', async ({ page, request }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -339,7 +352,7 @@ test.describe('board uploads that fail (#f6v8z4ti)', () => {
     const created = await createBoard(request, 'Drops 500');
     await openBoard(page, created.meta.id);
     await dropFile(page, 'note.txt', 12, 'text/plain');
-    await expect(page.getByTestId('board-upload-notice')).toHaveText(/Couldn't add note\.txt\. Can't reach Gumply's local server\./);
+    await expect(page.getByTestId('board-upload-notice')).toHaveText(/Couldn't add note\.txt \(server error\)/);
     expect(errors).toEqual([]);
   });
 });

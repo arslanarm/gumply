@@ -49,6 +49,7 @@ import { BoardContentContext, type BoardContent } from "./content/context.js";
 import { boardContentRenderers } from "./content/renderers.js";
 import { resolveBoardLink } from "./content/links.js";
 import { errorMessage } from "../lib/errors.js";
+import { ApiRequestError } from "../api/client.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
 import {
   amend,
@@ -593,7 +594,10 @@ function BoardCanvas(props: BoardEditorProps) {
       } catch (error) {
         // #f6v8z4ti: a failed upload is a calm notice, never an uncaught error.
         const reason = errorMessage(error);
-        report(/too large/i.test(reason) ? `${file.name} is too large (max 25 MB)` : `Couldn't add ${file.name}. ${reason}`);
+        if (/too large/i.test(reason)) report(`${file.name} is too large (max 25 MB)`);
+        // Our server answered with an error: it is reachable, so don't say it isn't.
+        else if (error instanceof ApiRequestError && error.status >= 500) report(`Couldn't add ${file.name} (server error)`);
+        else report(`Couldn't add ${file.name}. ${reason}`);
         return;
       }
       addAndSelect(createFileNode({ x: at.x - size.width / 2, y: at.y - size.height / 2, ...size }, path));
