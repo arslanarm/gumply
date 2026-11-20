@@ -342,7 +342,11 @@ test.describe('whiteboards in the app (W2a)', () => {
     await expect(page.getByTestId('page-title-input')).toBeFocused();
     expect(await page.getByTestId('page-title-input').evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([0, 'Untitled whiteboard'.length]);
     await page.keyboard.press('Escape');
-    // …but only while it's new: open it again later and the canvas has focus.
+    // Right after creating one, open a different board: it is not "new".
+    await page.getByTestId('page-item-Project map.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+    // …and a new board is new only while it stays open: open it again later and the canvas has focus.
     await page.getByTestId('page-item-Hub').click();
     await page.getByTestId('page-item-Untitled whiteboard.canvas').click();
     await expect(page.getByTestId('board-page')).toBeVisible();
