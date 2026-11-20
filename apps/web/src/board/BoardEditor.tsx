@@ -968,7 +968,9 @@ function BoardCanvas(props: BoardEditorProps) {
   const syncZoomVar = useCallback((zoom: number) => {
     const root = rootRef.current;
     if (!root) return;
-    root.style.setProperty("--board-zoom", String(Math.max(0.3, zoom)));
+    // Compensate down to the minimum zoom, so dots and resize handles keep a
+    // ~10 px screen target however far out you are (#zk6etvae).
+    root.style.setProperty("--board-zoom", String(Math.max(MIN_ZOOM, zoom)));
     // Level of detail: unreadably small text is drawn as bars (lod.ts).
     const level = lodLevel(zoom, lod.current);
     if (level !== lod.current || !root.dataset.lod) {
