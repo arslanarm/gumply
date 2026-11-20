@@ -31,6 +31,7 @@ export type IconName =
   | "shuffle"
   | "sidebar"
   | "sun"
+  | "table"
   | "trash"
   | "x";
 
@@ -150,6 +151,12 @@ const ICONS: Record<IconName, ReactNode> = {
     </>
   ),
   minus: <path d="M5 12h14" />,
+  table: (
+    <>
+      <rect width="18" height="16" x="3" y="4" rx="2" />
+      <path d="M3 10h18M3 15h18M10 4v16" />
+    </>
+  ),
   monitor: (
     <>
       <rect width="20" height="14" x="2" y="3" rx="2" />

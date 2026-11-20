@@ -26,9 +26,12 @@ function rawInlines(source: string): Array<[string, string]> {
 }
 
 describe("raw Markdown blocks (#82x82ek7)", () => {
-  it("keeps a GFM table as its exact source", () => {
+  it("leaves GFM tables to the editable table node, remembering their source (#7witbbun)", async () => {
+    const { lastParsedTableSources } = await import("../src/editor/raw-markdown/markdown-plugin.js");
     const table = "| Name | Score |\n|------|-------|\n| Ann  | 10    |";
-    expect(rawBlocks(`Intro\n\n${table}\n\nAfter`)).toEqual([["table", table]]);
+    expect(rawBlocks(`Intro\n\n${table}\n\nAfter`)).toEqual([]);
+    expect(render(table)).toContain("<table>");
+    expect(lastParsedTableSources()).toEqual([table]);
   });
 
   it("keeps callouts, footnote definitions and math blocks", () => {

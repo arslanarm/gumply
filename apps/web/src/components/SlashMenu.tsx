@@ -22,6 +22,7 @@ const SLASH_ICONS: Record<string, IconName> = {
   quote: "quote",
   code: "code",
   divider: "minus",
+  table: "table",
 };
 
 /** Floating `/` menu. Positioned from the suggestion's client rect. */

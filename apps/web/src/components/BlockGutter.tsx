@@ -473,6 +473,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           >
             Delete
           </button>
+          {menu.block.node.type.name === "table" ? null : (
+            <>
           <div className="block-menu-separator" />
           <p className="block-menu-heading">Turn into</p>
           {TURN_INTO.map((item) => (
@@ -487,6 +489,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
               {item.label}
             </button>
           ))}
+            </>
+          )}
         </div>
       ) : null}
     </>

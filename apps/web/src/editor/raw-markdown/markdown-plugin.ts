@@ -7,7 +7,7 @@
  * escaped. Now such constructs become opaque "raw" nodes holding their exact
  * source, which the serializer writes back unchanged:
  *
- * - blocks (top level): GFM tables, callouts (`> [!note] …`), footnote
+ * - blocks (top level): callouts (`> [!note] …`), footnote
  *   definitions (`[^1]: …`), math blocks (`$$ … $$`), and HTML blocks at
  *   any depth;
  * - inline: footnote references `[^1]`, `==highlight==`, inline math `$x$`,
@@ -60,7 +60,6 @@ function closingIndex(tokens: any[], start: number): number {
 /** Which top-level block starting at `index` must be kept as raw source. */
 function rawKind(tokens: any[], index: number, source: string): string | null {
   const token = tokens[index];
-  if (token.type === "table_open") return "table";
   if (token.type === "blockquote_open") {
     const inline = tokens.slice(index, closingIndex(tokens, index)).find((t) => t.type === "inline");
     if (inline && CALLOUT.test(inline.content)) return "callout";
@@ -75,10 +74,22 @@ function rawKind(tokens: any[], index: number, source: string): string | null {
   return null;
 }
 
+/**
+ * Sources of the top-level GFM tables of the last parse, in document order
+ * (#7witbbun). Tables are real editable nodes; the editor pairs these with
+ * them on load so an untouched table is written back byte-for-byte.
+ */
+let lastTableSources: string[] = [];
+
+export function lastParsedTableSources(): string[] {
+  return lastTableSources;
+}
+
 function rawBlocksRule(state: any): void {
   const lines: string[] = state.src.split("\n");
   const tokens: any[] = state.tokens;
   const out: any[] = [];
+  const tableSources: string[] = [];
 
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
@@ -90,6 +101,8 @@ function rawBlocksRule(state: any): void {
     let contentEnd = endLine;
     while (contentEnd > startLine && isBlank(lines[contentEnd - 1])) contentEnd -= 1;
     const source = lines.slice(startLine, contentEnd).join("\n");
+
+    if (token.type === "table_open") tableSources.push(source);
 
     const kind = rawKind(tokens, i, source);
     if (!kind) {
@@ -106,6 +119,7 @@ function rawBlocksRule(state: any): void {
     i = closingIndex(tokens, i);
   }
   state.tokens = out;
+  lastTableSources = tableSources;
 }
 
 /** `[^id]`, `==text==` and Obsidian-style `$math$` as raw inline atoms. */

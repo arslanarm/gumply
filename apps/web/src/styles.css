@@ -2541,3 +2541,117 @@ input {
   position: fixed;
   z-index: 45;
 }
+
+/* ---------- #7witbbun: editable tables ---------- */
+
+.gumply-editor .tableWrapper {
+  overflow-x: auto;
+  margin: 0.6em 0 1.5em;
+}
+
+.gumply-editor table {
+  border-collapse: collapse;
+  table-layout: auto;
+  min-width: 40%;
+  font-size: 0.95em;
+  line-height: 1.5;
+  /* Room below for the "add row" bar, so it never covers the next line. */
+  margin: 0.6em 0 1.5em;
+}
+
+.gumply-editor .tableWrapper table {
+  margin: 0;
+}
+
+.gumply-editor th,
+.gumply-editor td {
+  position: relative;
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.65rem;
+  min-width: 4.5rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.gumply-editor th {
+  background: var(--hover);
+  font-weight: 600;
+}
+
+.gumply-editor th > p,
+.gumply-editor td > p {
+  margin: 0;
+}
+
+/* prosemirror-tables marks selected cells with .selectedCell. */
+.gumply-editor .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent-soft);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.table-handle {
+  position: fixed;
+  z-index: 32;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: -2px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.table-col-handle {
+  letter-spacing: 0;
+  font-size: 0.9rem;
+}
+
+.table-handle:hover,
+.table-handle:focus-visible {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.table-add {
+  position: fixed;
+  z-index: 31;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.table-add-row {
+  height: 14px;
+}
+
+.table-add-col {
+  width: 16px;
+}
+
+.table-add:hover,
+.table-add:focus-visible {
+  opacity: 1;
+  background: var(--hover);
+}
+
+.table-menu {
+  width: 210px;
+}
