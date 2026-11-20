@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { api, expect, test } from './fixtures';
 
 /**
  * #evh35bn7: the graph and dialogs load on demand. They must work on the first
@@ -123,6 +123,7 @@ test('a dialog whose code fails to download shows a small error that Esc closes'
 test('after a rebuild (graph chunk 404) the graph offers Reload, which brings it back (#fzfrkpta)', async ({
   page,
   vault,
+  request,
 }) => {
   const [alpha] = await seedLinked(vault);
   // A tab left open across `npm run build`: the old hashed chunk is gone.
@@ -143,4 +144,6 @@ test('after a rebuild (graph chunk 404) the graph offers Reload, which brings it
   await page.unroute(GRAPH_VIEW_CODE, gone);
   await error.getByRole('button', { name: 'Reload' }).click();
   await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible();
+  // "Your saved pages are safe": what was typed before Reload is on disk.
+  expect((await api.getPage(request, alpha!.id)).content).toContain('Links to [[Beta]] typed first');
 });
