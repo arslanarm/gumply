@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
@@ -431,6 +431,12 @@ test.describe('whiteboards in the app (W2a)', () => {
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
     const saved = await getBoard(request, board.meta.id);
     expect(saved.board.nodes.find((node) => node.id === 'a0a0a0a0a0a0a0a0')?.text).toBe('Start here TYPED123 more words');
+    // D22: the outside version replaced by Keep mine is kept in .gumply/conflicts/.
+    const conflicts = path.join(E2E_VAULT, '.gumply', 'conflicts');
+    expect(existsSync(conflicts)).toBe(true);
+    const backups = readdirSync(conflicts).filter((name) => name.startsWith('Race') && name.endsWith('.canvas'));
+    expect(backups.length).toBeGreaterThan(0);
+    expect(backups.some((name) => readFileSync(path.join(conflicts, name), 'utf8').includes('Added outside'))).toBe(true);
   });
 
   test('a drag in progress survives an outside change: conflict, never a silent snap-back (#x74uu7c3)', async ({ page, request, vault }) => {
