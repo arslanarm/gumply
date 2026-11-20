@@ -4,8 +4,9 @@
  *
  * Key order matters for small diffs with Obsidian (wiki
  * `whiteboard/canvas-format-notes`): Obsidian writes every non-geometry key
- * first (id, type, text…, gumply), then x, y, width, height, then color. New
- * nodes are created in that order and updates keep existing keys in place.
+ * first (id, type, text…, gumply), then x, y, width, height, then color, and
+ * a group's label last. New nodes are created in that order and updates keep
+ * existing keys in place.
  * Geometry is always whole numbers, as Obsidian rounds it on load.
  */
 import {
@@ -39,14 +40,19 @@ const round = (value: number): number => Math.round(value);
 export const STICKY_SIZE = 200;
 export const DEFAULT_STICKY_COLOR = "3";
 
-/** Order a new node's keys the way Obsidian writes them. */
-function orderedNode(head: Record<string, unknown>, rect: Rect, color?: string): CanvasNode {
+/**
+ * Order a new node's keys the way Obsidian writes them (checked against real
+ * Obsidian): id, type, content keys and `gumply`, then geometry, then color,
+ * then `tail` (a group's label comes last).
+ */
+function orderedNode(head: Record<string, unknown>, rect: Rect, color?: string, tail: Record<string, unknown> = {}): CanvasNode {
   const node: Record<string, unknown> = { ...head };
   node.x = round(rect.x);
   node.y = round(rect.y);
   node.width = Math.max(1, round(rect.width));
   node.height = Math.max(1, round(rect.height));
   if (color) node.color = color;
+  Object.assign(node, tail);
   return node as CanvasNode;
 }
 
@@ -63,7 +69,7 @@ export function createShape(rect: Rect, shape: GumplyShape, color?: string, text
 }
 
 export function createFrame(rect: Rect, label = "Frame", color?: string): CanvasNode {
-  return orderedNode({ id: canvasId(), type: "group", label }, rect, color);
+  return orderedNode({ id: canvasId(), type: "group" }, rect, color, { label });
 }
 
 export function createFileNode(rect: Rect, file: string): CanvasNode {

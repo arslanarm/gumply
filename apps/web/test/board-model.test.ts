@@ -54,14 +54,14 @@ describe("factories", () => {
       kind: "shape",
       shape: "ellipse",
     });
-    expect(Object.keys(createFrame({ x: 0, y: 0, width: 1, height: 1 }))).toEqual([
-      "id",
-      "type",
-      "label",
+    // Real Obsidian writes a group's label after its geometry and colour.
+    expect(Object.keys(createFrame({ x: 0, y: 0, width: 1, height: 1 }, "F", "2")).slice(2)).toEqual([
       "x",
       "y",
       "width",
       "height",
+      "color",
+      "label",
     ]);
   });
 

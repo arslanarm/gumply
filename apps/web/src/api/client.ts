@@ -109,7 +109,13 @@ export interface SaveBoardInput {
   force?: boolean;
 }
 
-export type SaveBoardResult = BoardResponse & { conflictBackup?: string };
+/** `PUT /api/boards/:id` (spec/api v1.7, core `BoardUpdateResult`). */
+export type SaveBoardResult = BoardResponse & {
+  rewrittenPages?: PageId[];
+  conflictBackup?: string;
+  /** The file had entries Gumply can't keep; the original was copied here first. */
+  repairBackup?: string;
+};
 
 /** Vault-relative path → the API URL that serves it (`/api/files/...`). */
 export function fileUrl(path: string): string {

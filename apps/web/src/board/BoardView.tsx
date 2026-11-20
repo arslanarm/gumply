@@ -30,6 +30,8 @@ export interface BoardViewProps {
   /** After a save: the server's metadata and the id it was saved under. */
   onSaved?: (meta: PageMeta, savedId: string) => void;
   onConflictBackup?: (path: string) => void;
+  /** The file had invalid entries (dropped); the original was backed up here. */
+  onRepairBackup?: (path: string) => void;
   onOpenFile?: (path: string) => void;
   onLoadError?: (error: unknown) => void;
   onReady?: (controls: BoardViewControls) => void;
@@ -64,6 +66,7 @@ export function BoardView(props: BoardViewProps) {
             versionRef.current = result.meta.updated;
             latest.current.onSaved?.(result.meta, savedId);
             if (result.conflictBackup) latest.current.onConflictBackup?.(result.conflictBackup);
+            if (result.repairBackup) latest.current.onRepairBackup?.(result.repairBackup);
           } catch (error) {
             if (!force) forceRef.current = false;
             throw error;
