@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon.js";
 import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { useActiveOptionVisible } from "./use-active-option.js";
@@ -15,12 +15,18 @@ export interface LinkMenuProps {
 /** Floating `[[` menu (pages + Create row). */
 export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
   useActiveOptionVisible(menuRef, index, items.length);
+
+  useEffect(() => {
+    const menu = menuRef.current;
+    setOverflowing(menu ? menu.scrollHeight > menu.clientHeight + 1 : false);
+  }, [items.length]);
 
   return (
     <div
       ref={menuRef}
-      className="link-menu"
+      className={`link-menu${overflowing ? " is-scrollable" : ""}`}
       data-testid="link-menu"
       role="listbox"
       aria-label="Link a page"

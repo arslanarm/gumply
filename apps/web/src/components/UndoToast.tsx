@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "./Icon.js";
 
 export interface UndoToastProps {
   message: string;
@@ -44,6 +45,9 @@ export function UndoToast({ message, duration = 8000, onUndo, onDismiss }: UndoT
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
       }}
     >
+      <span className="toast-icon" aria-hidden="true">
+        <Icon name="trash" size={15} />
+      </span>
       <span>{message}</span>
       {onUndo ? (
         <button

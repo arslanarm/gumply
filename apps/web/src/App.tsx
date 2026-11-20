@@ -22,7 +22,7 @@ import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
 import { isTypingTarget } from "./lib/shortcuts.js";
-import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
+import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
@@ -449,6 +449,23 @@ export function App() {
     [loadPages, requestPageReload],
   );
 
+  const handleSetIcon = useCallback(async (icon: string | null) => {
+    const id = selectedRef.current;
+    if (!id) return;
+    setActionError(null);
+    try {
+      const updated = await api.updatePage(id, { icon });
+      setPages((previous) =>
+        previous.map((item) => (item.id === id ? { ...item, icon: updated.icon } : item)),
+      );
+      setPage((previous) =>
+        previous && previous.id === id ? { ...previous, icon: updated.icon } : previous,
+      );
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }, []);
+
   const performDelete = useCallback(
     async (id: PageId) => {
       setActionError(null);
@@ -641,6 +658,7 @@ export function App() {
   const movingPage = movingId ? (pages.find((item) => item.id === movingId) ?? null) : null;
 
   const serverError = listStatus === "error" && pages.length === 0;
+  const breadcrumb = selectedId ? pageTrail(pages, selectedId) : [];
 
   return (
     <div className="app">
@@ -649,6 +667,28 @@ export function App() {
           <Icon name="brand" size={18} />
         </span>
         <h1 className="app-name">Gumply</h1>
+        {breadcrumb.length > 0 ? (
+          <nav className="breadcrumb" aria-label="Page path">
+            {breadcrumb.map((item, index) => (
+              <span className="breadcrumb-item" key={item.id}>
+                {index > 0 ? (
+                  <span className="breadcrumb-sep" aria-hidden="true">
+                    ›
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className={`breadcrumb-crumb${index === breadcrumb.length - 1 ? " is-current" : ""}`}
+                  aria-current={index === breadcrumb.length - 1 ? "page" : undefined}
+                  onClick={() => handleOpen(item.id)}
+                >
+                  {item.icon ? <span className="breadcrumb-icon">{item.icon}</span> : null}
+                  <span className="breadcrumb-text">{item.title}</span>
+                </button>
+              </span>
+            ))}
+          </nav>
+        ) : null}
         <span className="topbar-spacer" />
         <ThemeToggle />
         <button
@@ -659,7 +699,7 @@ export function App() {
           aria-label="Keyboard shortcuts (?)"
           onClick={() => setShortcutsOpen(true)}
         >
-          <Icon name="help" size={16} />
+          <Icon name="keyboard" size={16} />
         </button>
         <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
@@ -746,6 +786,7 @@ export function App() {
                     localGraphOpen={localGraphOpen}
                     onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
                     onRename={(title) => handleRename(page.id, title)}
+                    onSetIcon={handleSetIcon}
                     onDelete={() => requestDelete(page.id)}
                     onStartBody={handleStartBody}
                   />

@@ -198,22 +198,27 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
         data-testid="quick-switcher"
         onKeyDown={onKeyDown}
       >
-        <input
-          ref={inputRef}
-          className="quick-switcher-input"
-          data-testid="quick-switcher-input"
-          type="text"
-          value={query}
-          placeholder="Search pages…"
-          aria-label="Search pages"
-          aria-controls="quick-switcher-results"
-          aria-activedescendant={
-            activeIndex >= 0 ? `quick-switcher-option-${activeIndex}` : undefined
-          }
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <div className="quick-switcher-input-row">
+          <span className="quick-switcher-input-icon" aria-hidden="true">
+            <Icon name="search" size={16} />
+          </span>
+          <input
+            ref={inputRef}
+            className="quick-switcher-input"
+            data-testid="quick-switcher-input"
+            type="text"
+            value={query}
+            placeholder="Search pages…"
+            aria-label="Search pages"
+            aria-controls="quick-switcher-results"
+            aria-activedescendant={
+              activeIndex >= 0 ? `quick-switcher-option-${activeIndex}` : undefined
+            }
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
 
         <div
           className="quick-switcher-results"
@@ -260,6 +265,19 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onClose }: QuickSwitche
                 : null}
             </>
           )}
+        </div>
+
+        <div className="quick-switcher-footer">
+          <span>
+            <kbd>↑</kbd>
+            <kbd>↓</kbd> navigate
+          </span>
+          <span>
+            <kbd>Enter</kbd> open
+          </span>
+          <span>
+            <kbd>Esc</kbd> close
+          </span>
         </div>
       </div>
     </div>

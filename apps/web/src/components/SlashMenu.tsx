@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon.js";
 import type { SlashItem } from "../editor/slash-items.js";
 import { useActiveOptionVisible } from "./use-active-option.js";
@@ -27,12 +27,18 @@ const SLASH_ICONS: Record<string, IconName> = {
 /** Floating `/` menu. Positioned from the suggestion's client rect. */
 export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
   useActiveOptionVisible(menuRef, index, items.length);
+
+  useEffect(() => {
+    const menu = menuRef.current;
+    setOverflowing(menu ? menu.scrollHeight > menu.clientHeight + 1 : false);
+  }, [items.length]);
 
   return (
     <div
       ref={menuRef}
-      className="slash-menu"
+      className={`slash-menu${overflowing ? " is-scrollable" : ""}`}
       data-testid="slash-menu"
       role="listbox"
       aria-label="Insert block"

@@ -6,6 +6,7 @@ import { Icon } from "./Icon.js";
 export interface PageHeaderProps {
   page: Page;
   onRename: (title: string) => Promise<void>;
+  onSetIcon?: (icon: string | null) => Promise<void>;
   onDelete: () => void;
   /** Enter in the title moves the caret into the first body block. */
   onStartBody: () => void;
@@ -32,6 +33,7 @@ function formatUpdated(value: string): string {
 export function PageHeader({
   page,
   onRename,
+  onSetIcon,
   onDelete,
   onStartBody,
   localGraphOpen = false,
@@ -41,7 +43,9 @@ export function PageHeader({
   const isEmpty = page.content.trim().length === 0;
   const [editing, setEditing] = useState(isEmpty);
   const [draft, setDraft] = useState(page.title);
+  const [iconOpen, setIconOpen] = useState(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const iconControlRef = useRef<HTMLDivElement | null>(null);
   // The title this edit session started from. Commit compares against this,
   // not the live prop, so a rename from the sidebar cannot be reverted by a
   // stale header draft blurring afterwards (#n8kk26sc).
@@ -79,6 +83,29 @@ export function PageHeader({
     titleInputRef.current?.select();
   }, [editing, autoFocusTitle]);
 
+  useEffect(() => {
+    if (!iconOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (iconControlRef.current && !iconControlRef.current.contains(event.target as Node)) {
+        setIconOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIconOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [iconOpen]);
+
+  const chooseIcon = (icon: string | null) => {
+    setIconOpen(false);
+    if (onSetIcon) void onSetIcon(icon);
+  };
+
   const startEditing = () => {
     draftOriginRef.current = page.title;
     setDraft(page.title);
@@ -104,7 +131,53 @@ export function PageHeader({
   return (
     <header className="page-header">
       <div className="page-heading">
-        {page.icon ? <span className="page-icon-large">{page.icon}</span> : null}
+        <div className="page-icon-control" ref={iconControlRef}>
+          <button
+            type="button"
+            className={`page-icon-button${page.icon ? " has-icon" : ""}`}
+            data-testid="page-icon-button"
+            data-tooltip={page.icon ? "Change icon" : "Add icon"}
+            aria-label={page.icon ? "Change page icon" : "Add page icon"}
+            aria-expanded={iconOpen}
+            onClick={() => setIconOpen((open) => !open)}
+          >
+            {page.icon ? (
+              <span className="page-icon-large">{page.icon}</span>
+            ) : (
+              <span className="page-icon-add">
+                <Icon name="plus" size={13} /> Add icon
+              </span>
+            )}
+          </button>
+          {iconOpen ? (
+            <div className="page-icon-picker" role="dialog" aria-label="Page icon">
+              <div className="page-icon-grid">
+                {["📄", "📝", "📁", "💡", "✅", "🎯", "📌", "🚀", "🌱", "🔖", "🧠", "✨"].map(
+                  (emoji) => (
+                    <button
+                      type="button"
+                      key={emoji}
+                      className="page-icon-choice"
+                      aria-label={`Use ${emoji}`}
+                      onClick={() => chooseIcon(emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ),
+                )}
+              </div>
+              {page.icon ? (
+                <button
+                  type="button"
+                  className="page-icon-remove"
+                  onClick={() => chooseIcon(null)}
+                >
+                  Remove icon
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
         {editing ? (
           <div className="page-title-block" data-testid="page-title">
@@ -187,10 +260,18 @@ export function PageHeader({
         </div>
       </div>
 
-      <p className="page-meta">
-        Updated {formatUpdated(page.updated)}
-        {page.tags.length > 0 ? ` · ${page.tags.map((tag) => `#${tag}`).join(" ")}` : ""}
-      </p>
+      <div className="page-meta">
+        <span className="page-meta-time">Updated {formatUpdated(page.updated)}</span>
+        {page.tags.length > 0 ? (
+          <span className="page-tags">
+            {page.tags.map((tag) => (
+              <span className="page-tag" key={tag}>
+                #{tag}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </div>
     </header>
   );
 }

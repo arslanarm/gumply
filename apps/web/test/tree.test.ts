@@ -1,6 +1,6 @@
 import type { PageMeta } from "@gumply/core";
 import { describe, expect, it } from "vitest";
-import { buildPageTree, canMovePage, isSelfOrDescendant } from "../src/lib/tree.js";
+import { buildPageTree, canMovePage, isSelfOrDescendant, pageTrail } from "../src/lib/tree.js";
 
 function meta(id: string, title: string, parentId: string | null = null): PageMeta {
   return {
@@ -94,5 +94,27 @@ describe("canMovePage", () => {
   it("uses parent links even when ids do not nest by path", () => {
     const irregular = [meta("a", "A"), meta("b", "B", "a")];
     expect(canMovePage(irregular, "a", "b")).toBe(false);
+  });
+});
+
+describe("pageTrail", () => {
+  it("returns the root-to-page chain for a nested page", () => {
+    const pages = [
+      meta("projects", "Projects"),
+      meta("projects/gumply", "Gumply", "projects"),
+      meta("projects/gumply/q1", "Q1", "projects/gumply"),
+    ];
+    expect(pageTrail(pages, "projects/gumply/q1").map((page) => page.title)).toEqual([
+      "Projects",
+      "Gumply",
+      "Q1",
+    ]);
+  });
+
+  it("returns a single crumb for a root page and nothing for unknown ids", () => {
+    expect(pageTrail([meta("welcome", "Welcome")], "welcome").map((page) => page.id)).toEqual([
+      "welcome",
+    ]);
+    expect(pageTrail([meta("welcome", "Welcome")], "missing")).toEqual([]);
   });
 });

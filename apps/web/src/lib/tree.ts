@@ -17,6 +17,23 @@ function comparePages(a: PageMeta, b: PageMeta): number {
 /** Sibling ordering used by both the tree and focus-after-delete. */
 export { comparePages };
 
+/** Ancestors from the root down to `id` (what the topbar breadcrumb shows). */
+export function pageTrail(pages: readonly PageMeta[], id: PageId): PageMeta[] {
+  const byId = new Map(pages.map((page) => [page.id, page]));
+  const trail: PageMeta[] = [];
+  const seen = new Set<PageId>();
+  let current: PageId | null = id;
+
+  while (current !== null && !seen.has(current)) {
+    seen.add(current);
+    const page = byId.get(current);
+    if (!page) break;
+    trail.unshift(page);
+    current = page.parentId;
+  }
+  return trail;
+}
+
 /** True when `candidate` is `id` or one of its descendants. */
 export function isSelfOrDescendant(id: PageId, candidate: PageId): boolean {
   return candidate === id || candidate.startsWith(`${id}/`);
