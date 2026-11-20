@@ -21,6 +21,7 @@ import {
   nudgeNodes,
   pasteClipboard,
   reorderNodes,
+  safeExternalUrl,
   updateEdge,
   updateNode,
 } from "../src/board/model.js";
@@ -279,5 +280,30 @@ describe("history", () => {
     expect(dropped.present).toBe(b0);
     expect(canUndo(dropped)).toBe(false);
     expect(dropLast(createHistory(b0)).present).toBe(b0);
+  });
+});
+
+describe("safeExternalUrl", () => {
+  it("opens only web and mail links", () => {
+    expect(safeExternalUrl("https://jsoncanvas.org/spec")).toBe("https://jsoncanvas.org/spec");
+    expect(safeExternalUrl("  http://example.com ")).toBe("http://example.com/");
+    expect(safeExternalUrl("mailto:team@example.com")).toBe("mailto:team@example.com");
+  });
+
+  it("refuses script, data, file and broken URLs", () => {
+    for (const url of [
+      "javascript:alert(1)",
+      " JavaScript:alert(1)",
+      "java\tscript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "file:///etc/passwd",
+      "vbscript:msgbox(1)",
+      "not a url",
+      "",
+      undefined,
+      42,
+    ]) {
+      expect(safeExternalUrl(url)).toBeNull();
+    }
   });
 });

@@ -428,3 +428,26 @@ export function closestSides(from: Rect, to: Rect): [CanvasSide, CanvasSide] {
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? ["right", "left"] : ["left", "right"];
   return dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
 }
+
+/* ------------------------------------------------------------------------ */
+/* Link safety                                                               */
+/* ------------------------------------------------------------------------ */
+
+const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+
+/**
+ * The URL a link card may open, or null. Boards can come from anywhere (a
+ * shared vault, Obsidian), so only web and mail links open; `javascript:`,
+ * `data:`, `file:` and anything unparsable never do.
+ */
+export function safeExternalUrl(url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (trimmed.length === 0) return null;
+  try {
+    const parsed = new URL(trimmed);
+    return SAFE_PROTOCOLS.has(parsed.protocol) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
