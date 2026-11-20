@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
-import { API_PORT, BASE_URL, E2E_VAULT, WEB_PORT } from './support/env';
+import { API_PORT, BASE_URL, E2E_VAULT, IMAGE_STUB_PORT, WEB_PORT } from './support/env';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
@@ -67,10 +67,14 @@ export default defineConfig({
     stderr: 'pipe',
     env: {
       GUMPLY_PORT: String(API_PORT),
+      // The API accepts writes only from the web app's origin (#rv57cvhm).
+      GUMPLY_WEB_PORT: String(WEB_PORT),
       GUMPLY_VAULT: E2E_VAULT,
       // The suite starts from an empty vault unless a test opts into first-run
       // seeding; server-side demo seeding is covered by its own unit tests.
       GUMPLY_SEED_DEMO: '0',
+      // Only the e2e image stub may be fetched on localhost (SSRF guard).
+      GUMPLY_IMPORT_ALLOW: `127.0.0.1:${IMAGE_STUB_PORT}`,
     },
   },
 });

@@ -50,7 +50,9 @@ export const ImageBlock = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: "img[src]" }];
+    // Inline images (text on the same line) are `inlineImage` nodes; this tag
+    // also keeps tiptap-markdown from lifting them out of their paragraph.
+    return [{ tag: "img[src]:not([data-inline-image])" }];
   },
 
   renderHTML({ HTMLAttributes }) {

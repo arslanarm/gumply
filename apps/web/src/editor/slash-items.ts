@@ -80,6 +80,19 @@ export const SLASH_ITEMS: SlashItem[] = [
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
   },
   {
+    key: "table",
+    title: "Table",
+    hint: "Rows and columns",
+    keywords: ["table", "grid", "rows", "columns", "spreadsheet"],
+    run: (editor, range) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        .run(),
+  },
+  {
     key: "emoji",
     title: "Emoji",
     hint: "Insert an emoji",

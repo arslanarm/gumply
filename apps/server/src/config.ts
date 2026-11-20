@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parsePorts } from "./security.js";
 
 /** Repo root, resolved from apps/server/{src,dist}/config.*. */
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -10,6 +11,10 @@ export interface ServerConfig {
   port: number;
   /** Seed the demo vault on an empty first run (default true). */
   seedDemo: boolean;
+  /** Interface to listen on: loopback unless GUMPLY_HOST says otherwise. */
+  host: string;
+  /** Ports the web app runs on (allowed Origin for writes), GUMPLY_WEB_PORT. */
+  webPorts: number[];
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -23,5 +28,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     vaultPath: resolve(REPO_ROOT, env.GUMPLY_VAULT ?? "vault"),
     port,
     seedDemo: demoFlag === undefined ? true : demoFlag !== "0" && demoFlag !== "false",
+    host: env.GUMPLY_HOST?.trim() || "127.0.0.1",
+    webPorts: parsePorts(env.GUMPLY_WEB_PORT, [5173]),
   };
 }

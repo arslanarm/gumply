@@ -138,6 +138,11 @@ export const MarkdownHardBreak = HardBreak.extend({
     return {
       markdown: {
         serialize(state: TextSerializerState, node: PMNode, parent: PMNode, index: number) {
+          // A GFM table cell can't hold a line break: write a space.
+          if (state.inTable) {
+            if (index < parent.childCount - 1) state.write(" ");
+            return;
+          }
           // Like prosemirror-markdown: trailing breaks are dropped.
           for (let i = index + 1; i < parent.childCount; i += 1) {
             if (parent.child(i).type !== node.type) {

@@ -22,7 +22,7 @@ import { API_PORT, WEB_PORT } from './env';
 export const DEMO_WEB_PORT = Number(process.env.GUMPLY_DEMO_WEB_PORT ?? WEB_PORT + 2);
 export const DEMO_API_PORT = Number(process.env.GUMPLY_DEMO_PORT ?? API_PORT + 2);
 export const DEMO_WEB_URL = `http://localhost:${DEMO_WEB_PORT}`;
-export const DEMO_API_URL = `http://localhost:${DEMO_API_PORT}`;
+export const DEMO_API_URL = `http://127.0.0.1:${DEMO_API_PORT}`;
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -64,6 +64,8 @@ export class DemoApp {
   private async startServer(): Promise<void> {
     this.server = this.launch('server', 'node_modules/.bin/tsx', ['apps/server/src/index.ts'], {
       GUMPLY_PORT: String(DEMO_API_PORT),
+      // Writes are accepted only from the demo web app's origin (#rv57cvhm).
+      GUMPLY_WEB_PORT: String(DEMO_WEB_PORT),
       GUMPLY_VAULT: this.vault,
       GUMPLY_SEED_DEMO: '1',
     });

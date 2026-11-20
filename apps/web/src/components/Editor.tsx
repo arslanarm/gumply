@@ -11,6 +11,7 @@ import { EmojiMenu } from "./EmojiMenu.js";
 import { EmojiPicker } from "./EmojiPicker.js";
 import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
+import { TableControls } from "./TableControls.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
 import {
   findUploadNode,
@@ -19,6 +20,7 @@ import {
   removeUpload,
 } from "../editor/attachments/insert.js";
 import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
+import { InlineImage } from "../editor/attachments/inline-image.js";
 import { setAttachmentPicker } from "../editor/attachments/store.js";
 import { BlockEditing } from "../editor/block-editing.js";
 import { NotionCodeBlock } from "../editor/code-block.js";
@@ -35,6 +37,14 @@ import {
   MarkdownOrderedList,
 } from "../editor/raw-markdown/markup.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
+import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
+import {
+  GumplyTable,
+  GumplyTableCell,
+  GumplyTableHeader,
+  GumplyTableRow,
+  registerTableSources,
+} from "../editor/table/table.js";
 import { MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
 import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/raw-markdown/list-style.js";
 import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
@@ -221,6 +231,11 @@ export function Editor({
       attachments,
       openLink: onOpenLink,
       createLink: onCreateLink,
+      reportError: (message) => onAttachmentErrorRef.current?.(message),
+      addAttachment: (attachment) =>
+        setAttachments((list) =>
+          list.some((item) => item.path === attachment.path) ? list : [...list, attachment],
+        ),
     });
   }, [page.id, pages, attachments, onOpenLink, onCreateLink]);
 
@@ -538,6 +553,10 @@ export function Editor({
       }),
       NotionCodeBlock,
       MarkdownBulletList,
+      GumplyTable,
+      GumplyTableRow,
+      GumplyTableHeader,
+      GumplyTableCell,
       MarkdownHeading.configure({ levels: [1, 2, 3] }),
       MarkdownOrderedList,
       MarkdownHorizontalRule,
@@ -567,6 +586,7 @@ export function Editor({
         },
       }),
       ImageBlock,
+      InlineImage,
       FileAttachment,
       Markdown.configure({
         html: false,
@@ -594,9 +614,26 @@ export function Editor({
         "data-testid": "editor-content",
       },
       // Pasted HTML tables become a GFM table block (#y5iqswjf).
-      transformPastedHTML: (html) => pastedTablesToMarkdown(html),
+      transformPastedHTML: (html) =>
+        pastedTablesToMarkdown(html, (markdown) => {
+          const storage = editorRef.current?.storage as unknown as {
+            markdown?: { parser?: { parse(content: string): string } };
+          };
+          return storage?.markdown?.parser?.parse(markdown) ?? markdown;
+        }),
       handlePaste: (view, event) => {
         const files = Array.from(event.clipboardData?.files ?? []);
+        // A GFM cell holds one line: multi-line text pasted into a table
+        // cell is joined with spaces instead of splitting the table (#7witbbun).
+        const instance = editorRef.current;
+        if (files.length === 0 && instance?.isActive("table")) {
+          const text = event.clipboardData?.getData("text/plain") ?? "";
+          if (/\n/.test(text.trim())) {
+            event.preventDefault();
+            instance.commands.insertContent({ type: "text", text: text.trim().replace(/\s*\n+\s*/g, " ") });
+            return true;
+          }
+        }
         if (files.length === 0) return false;
         event.preventDefault();
         uploadRef.current(files, view.state.selection.from);
@@ -615,6 +652,8 @@ export function Editor({
     onCreate: ({ editor: instance }) => {
       // Write lists back with the page's own bullet marker and indent.
       setListStyle(instance, page.content);
+      // Untouched tables are written back byte-for-byte (#7witbbun).
+      registerTableSources(instance.state.doc, lastParsedTableSources());
     },
     onUpdate: ({ editor: instance }) => {
       autosave.schedule(readMarkdown(instance));
@@ -716,6 +755,7 @@ export function Editor({
       />
       <EditorContent editor={editor} />
       {editor ? <BlockGutter editor={editor} /> : null}
+      {editor ? <TableControls editor={editor} /> : null}
       {menu ? (
         <SlashMenu
           items={menu.items}

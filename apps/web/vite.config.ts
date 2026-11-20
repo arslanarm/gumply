@@ -33,7 +33,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": `http://localhost:${process.env.GUMPLY_PORT ?? 8787}`,
+      // The API listens on loopback only (#rv57cvhm). Host and Origin are
+      // passed through (localhost:<web port>), which its guard accepts.
+      "/api": `http://127.0.0.1:${process.env.GUMPLY_PORT ?? 8787}`,
     },
   },
 });
