@@ -1219,7 +1219,12 @@ function BoardCanvas(props: BoardEditorProps) {
           >
             <Background variant={BackgroundVariant.Dots} gap={24} size={1.6} className="board-grid" />
 
-            <NodeToolbar nodeId={selectedNodeIds} isVisible={showNodeToolbar} position={Position.Top} offset={14}>
+            {/* Mounted only while shown: NodeToolbar subscribes to every id it is
+                given, and on each node update it rebuilds and compares the whole
+                list, which is O(n²) per frame when dragging a big selection
+                (#r6biyzx6). */}
+            {showNodeToolbar ? (
+            <NodeToolbar nodeId={selectedNodeIds} isVisible position={Position.Top} offset={14}>
               <div className="board-context" data-testid="board-context-toolbar" onPointerDown={(event) => event.stopPropagation()}>
                 <Palette current={commonColor} onPick={recolour} />
                 {shapesSelected ? (
@@ -1252,6 +1257,7 @@ function BoardCanvas(props: BoardEditorProps) {
                 </div>
               </div>
             </NodeToolbar>
+            ) : null}
 
             <Panel position="bottom-right" className="board-zoom">
               <button type="button" className="board-zoom-button" aria-label="Zoom out" data-tooltip="Zoom out" data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
