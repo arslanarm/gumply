@@ -704,7 +704,12 @@ function BoardCanvas(props: BoardEditorProps) {
         setHistory(reset(next));
       },
       addFileCard,
-      isBusy: () => busyRef.current || nodesRef.current.some((node) => node.dragging || node.resizing),
+      // A drag counts from its first move: `dragState` is set synchronously,
+      // and a big-selection drag (group-drag.ts) never sets `node.dragging`.
+      isBusy: () =>
+        busyRef.current ||
+        dragState.current !== null ||
+        nodesRef.current.some((node) => node.dragging || node.resizing),
     });
   }, [addFileCard, onReady]);
 

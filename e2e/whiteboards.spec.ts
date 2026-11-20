@@ -468,6 +468,50 @@ test.describe('whiteboards in the app (W2a)', () => {
     expect((saved.board.nodes.find((node) => node.id === 'd0d0d0d0d0d0d0d0') as unknown as { x: number }).x).toBeGreaterThan(100);
   });
 
+  test('a held drag of a big selection (group-drag fast path) also survives an outside change (#r6biyzx6)', async ({
+    page,
+    request,
+    vault,
+  }) => {
+    await vault.seed([{ title: 'Spec', content: 'x' }]);
+    const board = await createBoard(request, 'Group race');
+    // 36 objects: above the fast-path threshold (GROUP_DRAG_MIN = 30).
+    const ids = Array.from({ length: 36 }, (_, i) => `f${String(i).padStart(15, '0')}`);
+    await saveBoard(request, board.meta.id, {
+      nodes: ids.map((id, i) => ({ ...sticky(id, `S${i}`, (i % 6) * 260), y: Math.floor(i / 6) * 260 })),
+      edges: [],
+    });
+    await openBoard(page, board.meta.id);
+    await expect(page.locator('.react-flow__node.selectable')).toHaveCount(36);
+    await page.waitForTimeout(500);
+    await page.getByTestId('board').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('Control+a');
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(36);
+
+    const grab = (await page.getByTestId('board-sticky').nth(14).boundingBox())!;
+    const before = await page.getByTestId('board-sticky').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x));
+    await page.mouse.move(grab.x + 8, grab.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(grab.x + 40, grab.y + 30, { steps: 6 });
+    await expect(page.getByTestId('board')).toHaveClass(/is-dragging/);
+    outsideEdit('Group race.canvas', 'e1e1e1e1e1e1e1e1');
+    // Past the 2 s disk poll: a board that is not busy would be reloaded now.
+    await page.waitForTimeout(3_000);
+    await page.mouse.move(grab.x + 120, grab.y + 60, { steps: 6 });
+    await page.mouse.up();
+
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'conflict');
+    // Not snapped back: every object kept the drag.
+    const after = await page.getByTestId('board-sticky').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x));
+    expect(after).toHaveLength(36);
+    for (const [i, x] of after.entries()) expect(x - before[i]!).toBeGreaterThan(50);
+    await page.getByTestId('conflict-keep-mine').click();
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+    const saved = await getBoard(request, board.meta.id);
+    const first = saved.board.nodes.find((node) => node.id === ids[0]) as unknown as { x: number };
+    expect(first.x).toBeGreaterThan(50);
+  });
+
   for (const theme of ['light', 'dark'] as const) {
     test(`a board page renders in the app shell (${theme})`, async ({ page, request, vault }) => {
       await vault.seed([{ title: 'Spec', content: 'x' }]);
