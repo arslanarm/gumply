@@ -137,7 +137,8 @@ export function Editor({
         try {
           const updated = await api.updatePage(page.id, {
             content,
-            ...(force ? { force: true } : { expectedUpdated: versionRef.current }),
+            expectedUpdated: versionRef.current,
+            ...(force ? { force: true } : {}),
           });
           forceRef.current = false;
           versionRef.current = updated.updated;

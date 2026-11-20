@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -192,6 +192,7 @@ describe("external vault changes", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10));
     await writeFile(join(dir, "conflict.md"), "external body", "utf8");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     await expect(
       store.update("conflict", { content: "mine", expectedUpdated: page.updated }),
@@ -200,7 +201,51 @@ describe("external vault changes", () => {
     await store.rescan();
     expect(store.get("conflict").content).toContain("external body");
 
-    const forced = await store.update("conflict", { content: "mine", force: true });
+    const forced = await store.update("conflict", {
+      content: "mine",
+      expectedUpdated: page.updated,
+      force: true,
+    });
     expect(forced.content).toBe("mine");
+
+    const backups = await readdir(join(dir, ".gumply", "conflicts"));
+    expect(backups).toHaveLength(1);
+    expect(await readFile(join(dir, ".gumply", "conflicts", backups[0]!), "utf8")).toContain(
+      "external body",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("writes atomically without leaving temporary files", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const page = await store.create({ title: "Atomic", content: "one" });
+    await store.update(page.id, { content: "two" });
+    const files = await readdir(dir);
+    expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
+    expect(await readFile(join(dir, "atomic.md"), "utf8")).toContain("two");
+  });
+
+  it("picks up several external files in one rescan", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    store.startWatching();
+    try {
+      await Promise.all(
+        ["bulk-a", "bulk-b", "bulk-c"].map((id) =>
+          writeFile(join(dir, `${id}.md`), `# ${id}`, "utf8"),
+        ),
+      );
+      await waitFor(() =>
+        ["bulk-a", "bulk-b", "bulk-c"].every((id) =>
+          store.list().some((page) => page.id === id),
+        ),
+      );
+      expect(store.list().filter((page) => page.id.startsWith("bulk-"))).toHaveLength(3);
+    } finally {
+      store.stopWatching();
+    }
   });
 });
