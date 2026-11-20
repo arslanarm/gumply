@@ -165,3 +165,64 @@ test('toasts use an icon that fits: bin for delete, arrow for move', async ({ pa
 
   expect(moveIcon).not.toBe(deleteIcon);
 });
+
+async function newPageWithBody(page: Page, title: string) {
+  await page.getByTestId('new-page-button').click();
+  await expect(page.getByTestId('page-title-input')).toBeFocused();
+  await page.keyboard.type(title);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Base line.');
+  await waitSaved(page);
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe(`#/${title}`);
+}
+
+test('a clean external reload of a page made (and renamed) this session keeps focus and caret', async ({
+  page,
+  vault,
+}) => {
+  // @opus-hunter's h5.mjs case 1, a regression from the D20 session keys.
+  await vault.seed([{ title: 'Home', content: 'Hi' }]);
+  await page.goto('/');
+  await expect(page.getByTestId('editor-content')).toHaveText('Hi');
+  await newPageWithBody(page, 'Focus case');
+  await page.keyboard.press('Home');
+  for (let i = 0; i < 4; i += 1) await page.keyboard.press('ArrowRight');
+
+  const file = path.join(E2E_VAULT, 'Focus case.md');
+  await fs.writeFile(file, `${await fs.readFile(file, 'utf8')}\nExternal.\n`);
+  await expect(page.getByTestId('editor-content')).toContainText('External.', { timeout: 10_000 });
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+
+  await page.keyboard.type('X');
+  await waitSaved(page);
+  await expect.poll(() => fs.readFile(file, 'utf8')).toMatch(/\nBaseX line\.\n\nExternal\.\n$/);
+});
+
+test('Restore page, then rename the title, then type: everything reaches the renamed file', async ({
+  page,
+  vault,
+}) => {
+  await vault.seed([{ title: 'Home', content: 'Hi' }]);
+  await page.goto('/');
+  await expect(page.getByTestId('editor-content')).toHaveText('Hi');
+  await newPageWithBody(page, 'Restore two');
+  await page.keyboard.type(' unsaved', { delay: 5 });
+  await fs.rm(path.join(E2E_VAULT, 'Restore two.md'));
+  const banner = page.getByTestId('deleted-on-disk-banner');
+  await expect(banner).toBeVisible({ timeout: 10_000 });
+  await banner.getByRole('button', { name: 'Restore page' }).click();
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+
+  await page.getByTestId('page-title').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' renamed');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' after');
+  await waitSaved(page);
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe('#/Restore two renamed');
+  await expect
+    .poll(() => fs.readFile(path.join(E2E_VAULT, 'Restore two renamed.md'), 'utf8'))
+    .toMatch(/\nBase line\. unsaved after\n$/);
+  await expect(fs.access(path.join(E2E_VAULT, 'Restore two.md'))).rejects.toThrow();
+});

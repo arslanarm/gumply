@@ -110,6 +110,8 @@ export function App() {
   // list that may disagree with the ids the client now uses.
   const renameEpoch = useRef(0);
   const lastPageReload = useRef(0);
+  // The page id the load effect last loaded (or followed a rename to).
+  const loadedSelection = useRef<PageId | null>(null);
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
@@ -453,13 +455,18 @@ export function App() {
       const followed = followedRename.current;
       followedRename.current = null;
       if (followed === selectedId && pageRef.current?.id === selectedId && pageReload === lastPageReload.current) {
+        // Same page under its new id: it is still the loaded one.
+        loadedSelection.current = selectedId;
         return;
       }
     }
     lastPageReload.current = pageReload;
-    // A real (re)load starts a new page session; old rename keys must not make
-    // a different page that reuses a freed id look like the same editor.
-    sessionKeys.current.clear();
+    // Opening another page starts a new session: old rename keys must not make
+    // a different page that reuses a freed id look like the same editor. A
+    // reload of the same page keeps its key, or the "loading" render below
+    // would remount the editor early and use up the caret to restore.
+    if (selectedId !== loadedSelection.current) sessionKeys.current.clear();
+    loadedSelection.current = selectedId;
     setSaveState("idle");
 
     if (!selectedId) {
