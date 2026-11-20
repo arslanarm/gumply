@@ -1,4 +1,4 @@
-import type { PageMeta } from "@gumply/core";
+import type { Attachment, PageMeta } from "@gumply/core";
 import { describe, expect, it } from "vitest";
 import {
   buildLinkSuggestions,
@@ -15,6 +15,10 @@ function page(id: string, title: string, parentId: string | null = null): PageMe
     created: "2026-01-01T00:00:00.000Z",
     updated: "2026-01-01T00:00:00.000Z",
   };
+}
+
+function attachment(name: string, mime = "text/plain"): Attachment {
+  return { path: `attachments/${name}`, name, size: 100, mime };
 }
 
 const pages = [
@@ -59,6 +63,42 @@ describe("buildLinkSuggestions", () => {
       page(`page-${index}`, `Page ${String(index).padStart(2, "0")}`),
     );
     expect(buildLinkSuggestions(many, "").length).toBe(8);
+  });
+});
+
+describe("buildLinkSuggestions attachments", () => {
+  const attachments = [
+    attachment("brief.pdf", "application/pdf"),
+    attachment("q1-demo.svg", "image/svg+xml"),
+    attachment("notes.txt"),
+  ];
+
+  it("lists matching attachments after page matches, before Create", () => {
+    const items = buildLinkSuggestions(pages, "plan", attachments);
+    const brief = buildLinkSuggestions(pages, "brief", attachments);
+    expect(items.some((item) => item.kind === "attachment")).toBe(false);
+    expect(brief.map((item) => item.kind)).toEqual(["attachment", "create"]);
+    expect(brief[0]?.attachment?.name).toBe("brief.pdf");
+    expect(brief[0]?.label).toBe("brief.pdf");
+    expect(brief[brief.length - 1]?.kind).toBe("create");
+  });
+
+  it("filters attachments case-insensitively and by MIME-agnostic name", () => {
+    const items = buildLinkSuggestions(pages, "Q1-DEMO", attachments);
+    expect(
+      items.filter((item) => item.kind === "attachment").map((item) => item.attachment?.name),
+    ).toEqual(["q1-demo.svg"]);
+  });
+
+  it("shows all attachments for an empty query after pages", () => {
+    const items = buildLinkSuggestions(pages, "", attachments);
+    const attachmentRows = items.filter((item) => item.kind === "attachment");
+    expect(attachmentRows.map((item) => item.attachment?.name)).toEqual([
+      "brief.pdf",
+      "notes.txt",
+      "q1-demo.svg",
+    ]);
+    expect(items.some((item) => item.kind === "create")).toBe(false);
   });
 });
 

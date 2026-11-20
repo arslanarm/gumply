@@ -14,6 +14,8 @@ describe("filterSlashItems", () => {
       "todo",
       "quote",
       "code",
+      "image",
+      "file",
       "divider",
     ]);
   });
@@ -31,6 +33,8 @@ describe("filterSlashItems", () => {
     expect(keys(filterSlashItems(SLASH_ITEMS, "task"))).toEqual(["todo"]);
     expect(keys(filterSlashItems(SLASH_ITEMS, "checkbox"))).toEqual(["todo"]);
     expect(keys(filterSlashItems(SLASH_ITEMS, "hr"))).toEqual(["divider"]);
+    expect(keys(filterSlashItems(SLASH_ITEMS, "photo"))).toEqual(["image"]);
+    expect(keys(filterSlashItems(SLASH_ITEMS, "attachment"))).toEqual(["image", "file"]);
   });
 
   it("is case-insensitive and trims the query", () => {

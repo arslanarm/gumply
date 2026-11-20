@@ -763,6 +763,7 @@ export function App() {
                         : null
                     }
                     onHeadingResult={handleHeadingResult}
+                    onAttachmentError={setActionError}
                   />
                   <BacklinksPanel
                     items={backlinks}

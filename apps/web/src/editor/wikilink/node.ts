@@ -3,7 +3,7 @@
  * The node view is plain DOM (no React portal) so it never flushes React
  * during editor lifecycle work.
  */
-import { resolveWikilink } from "@gumply/core";
+import { hasAttachmentExtension, resolveWikilink } from "@gumply/core";
 import { InputRule, Node, mergeAttributes } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { parseWikiLinkText } from "../../lib/wikilinks.js";
@@ -63,6 +63,26 @@ export const WikiLink = Node.create({
         handler: ({ state, range, match }) => {
           const parsed = parseWikiLinkText(match[0] ?? "");
           if (!parsed) return null;
+
+          // `[[file.pdf]]` is an attachment (D19), not a page link.
+          if (hasAttachmentExtension(parsed.title)) {
+            const fileType = state.schema.nodes.fileAttachment;
+            if (!fileType) return null;
+            const path = parsed.title.includes("/")
+              ? parsed.title
+              : `attachments/${parsed.title}`;
+            state.tr.replaceWith(
+              range.from,
+              range.to,
+              fileType.create({
+                path,
+                name: parsed.title.split("/").pop() ?? parsed.title,
+                size: 0,
+              }),
+            );
+            return;
+          }
+
           const type = state.schema.nodes.wikiLink;
           if (!type) return null;
 

@@ -3,6 +3,7 @@
  * values (UI contract in wiki `spec/e2e-tests`).
  */
 import type { Editor, Range } from "@tiptap/core";
+import { requestAttachmentPicker } from "./attachments/store.js";
 
 export interface SlashItem {
   key: string;
@@ -76,6 +77,26 @@ export const SLASH_ITEMS: SlashItem[] = [
     keywords: ["code", "pre", "snippet"],
     run: (editor, range) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+  },
+  {
+    key: "image",
+    title: "Image",
+    hint: "Upload an image",
+    keywords: ["image", "photo", "picture", "upload", "attachment"],
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      requestAttachmentPicker("image");
+    },
+  },
+  {
+    key: "file",
+    title: "File",
+    hint: "Attach a file",
+    keywords: ["file", "attachment", "upload", "pdf"],
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      requestAttachmentPicker("file");
+    },
   },
   {
     key: "divider",
