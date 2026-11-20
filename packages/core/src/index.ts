@@ -25,6 +25,7 @@ export {
   childPageId,
   isValidPageId,
   pageFilePath,
+  pageSegment,
   parentOf,
   pathToPageId,
   slugify,

@@ -22,6 +22,12 @@ export interface PageHeaderProps {
   autoFocusTitle?: boolean;
   /** Bumped when the body asks for the title (ArrowUp/Backspace at its top). */
   focusTitleSignal?: number;
+  /**
+   * Identity of the open page for this session. Unlike `page.id` it survives a
+   * rename (D20: the id follows the title), so renaming never resets the
+   * header or re-focuses the title.
+   */
+  sessionKey?: string;
 }
 
 function formatUpdated(value: string): string {
@@ -44,6 +50,7 @@ export function PageHeader({
   onToggleLocalGraph,
   autoFocusTitle = true,
   focusTitleSignal = 0,
+  sessionKey,
 }: PageHeaderProps) {
   const isEmpty = page.content.trim().length === 0;
   const [editing, setEditing] = useState(isEmpty);
@@ -130,9 +137,9 @@ export function PageHeader({
     draftOriginRef.current = page.title;
     setDraft(page.title);
     setEditing(page.content.trim().length === 0);
-    // Reset only when the open page changes, not on every autosave.
+    // Reset only when another page opens, not on autosave or a rename.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page.id]);
+  }, [sessionKey ?? page.id]);
 
   // Follow an external rename while the draft is still untouched, so the
   // header shows the new title and the next commit starts from it.

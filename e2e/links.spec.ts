@@ -94,7 +94,7 @@ test.describe('wikilinks and backlinks', () => {
     // Back on the source the link is resolved — no broken state left behind.
     await page.getByTestId(`page-item-${source.id}`).click();
     await expectPageTitle(page, 'Source');
-    await expect(page.getByTestId('wiki-link-missing-page')).toHaveAttribute(
+    await expect(page.getByTestId('wiki-link-Missing Page')).toHaveAttribute(
       'data-resolved',
       'true',
     );
@@ -150,7 +150,7 @@ test.describe('wikilinks and backlinks', () => {
     await expect(page.getByTestId('link-menu')).toHaveCount(0);
     await expectPageTitle(page, 'Note');
     await expect(page.getByTestId(`page-item-${note.id}`)).toBeVisible();
-    await expect(body.getByTestId('wiki-link-brand-new')).toHaveAttribute(
+    await expect(body.getByTestId('wiki-link-Brand New')).toHaveAttribute(
       'data-resolved',
       'true',
     );

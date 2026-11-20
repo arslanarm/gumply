@@ -94,8 +94,8 @@ test.describe('pages and sidebar', () => {
     // the input, and an element-bound press would retry against a dead locator.
     await page.keyboard.press('Enter');
 
-    // Id stays fixed (deep links keep working), only the title changes.
-    await expect(page.getByTestId(`page-item-${target.id}`)).toContainText('Target Renamed');
+    // D20: the file name and id follow the title; the old id redirects.
+    await expect(page.getByTestId('page-item-Target Renamed')).toContainText('Target Renamed');
 
     const saved = await (
       await request.get(`${API_URL}/api/pages/${encodeURIComponent(source.id)}`)
@@ -109,6 +109,41 @@ test.describe('pages and sidebar', () => {
     await page.getByTestId(`page-item-${source.id}`).click();
     await page.reload();
     await expect(page.getByTestId('editor-content')).toContainText('Target Renamed');
+  });
+
+  test('renaming a page renames its file and the client follows the new id (D20)', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [page1] = await vault.seed([{ title: 'Plan', content: 'body' }]);
+
+    await page.goto('/');
+    await expectPageTitle(page, 'Plan');
+
+    await page.getByTestId(`page-item-${page1.id}`).dblclick();
+    await page.getByTestId(`page-rename-input-${page1.id}`).fill('Q1 plan');
+    await page.keyboard.press('Enter');
+
+    await expectPageTitle(page, 'Q1 plan');
+    await expect(page.getByTestId('page-item-Q1 plan')).toBeVisible();
+    await expect
+      .poll(() => decodeURIComponent(new URL(page.url()).hash))
+      .toBe('#/Q1 plan');
+
+    const renamed = (await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent('Q1 plan')}`)
+    ).json()) as { id: string; title: string };
+    expect(renamed).toMatchObject({ id: 'Q1 plan', title: 'Q1 plan' });
+
+    // The file name follows the title (spaces and case kept).
+    expect((await request.get(`${API_URL}/api/files/${encodeURIComponent('Q1 plan.md')}`)).status()).toBe(200);
+    expect((await request.get(`${API_URL}/api/files/plan.md`)).status()).toBe(404);
+
+    // Old ids keep working for this server session.
+    const viaOld = await request.get(`${API_URL}/api/pages/${encodeURIComponent(page1.id)}`);
+    expect(viaOld.status()).toBe(200);
+    expect(((await viaOld.json()) as { id: string }).id).toBe('Q1 plan');
   });
 
   test('renaming a page issues exactly one write and keeps the rewrite (D12 invariant)', async ({
@@ -142,7 +177,7 @@ test.describe('pages and sidebar', () => {
     const input = page.getByTestId(`page-rename-input-${target.id}`);
     await input.fill('Renamed Target');
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId(`page-item-${target.id}`)).toContainText('Renamed Target');
+    await expect(page.getByTestId('page-item-Renamed Target')).toContainText('Renamed Target');
 
     // Give a stray duplicate commit time to land, then assert exactly one write.
     await page.waitForTimeout(750);
@@ -418,10 +453,10 @@ test.describe('pages and sidebar', () => {
 
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId('undo-toast')).toContainText('Moved to top level');
-    await expect(page.getByTestId('page-item-child')).toBeVisible();
+    await expect(page.getByTestId('page-item-Child')).toBeVisible();
 
     const moved = await (
-      await request.get(`${API_URL}/api/pages/child`)
+      await request.get(`${API_URL}/api/pages/Child`)
     ).json();
     expect(moved.parentId).toBeNull();
   });

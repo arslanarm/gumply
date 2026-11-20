@@ -3,6 +3,7 @@ import {
   childPageId,
   isValidPageId,
   pageFilePath,
+  pageSegment,
   parentOf,
   pathToPageId,
   slugify,
@@ -38,6 +39,7 @@ describe("titleFromId", () => {
     expect(titleFromId("projects/gumply-notes")).toBe("Gumply notes");
     expect(titleFromId("my_page")).toBe("My page");
     expect(titleFromId("notes")).toBe("Notes");
+    expect(titleFromId("projects/Q1 plan")).toBe("Q1 plan");
   });
 
   it("falls back to Untitled", () => {
@@ -49,6 +51,7 @@ describe("page ids", () => {
   it("accepts safe vault-relative ids", () => {
     expect(isValidPageId("notes")).toBe(true);
     expect(isValidPageId("projects/gumply")).toBe(true);
+    expect(isValidPageId("projects/Q1 plan")).toBe(true);
   });
 
   it("rejects unsafe ids", () => {
@@ -61,17 +64,33 @@ describe("page ids", () => {
     expect(isValidPageId("a\\b")).toBe(false);
   });
 
+  it("rejects forbidden file-name characters", () => {
+    expect(isValidPageId("a:b")).toBe(false);
+    expect(isValidPageId("a/b:c")).toBe(false);
+    expect(isValidPageId("a?b")).toBe(false);
+    expect(isValidPageId("a\u0000b")).toBe(false);
+  });
+
   it("rejects hidden/dot segments such as .trash", () => {
     expect(isValidPageId(".trash")).toBe(false);
     expect(isValidPageId(".trash/abc")).toBe(false);
     expect(isValidPageId("notes/.hidden")).toBe(false);
   });
 
-  it("builds child ids and walks parents", () => {
-    expect(childPageId(null, "My Page")).toBe("my-page");
-    expect(childPageId("projects", "Gumply")).toBe("projects/gumply");
+  it("builds title-based child ids and walks parents", () => {
+    expect(childPageId(null, "My Page")).toBe("My Page");
+    expect(childPageId("Projects", "Q1 plan")).toBe("Projects/Q1 plan");
+    expect(childPageId(null, "Plan: Q1?")).toBe("Plan Q1");
     expect(parentOf("a/b/c")).toBe("a/b");
     expect(parentOf("a")).toBeNull();
+  });
+
+  it("keeps case and spaces in file-name segments", () => {
+    expect(pageSegment("Q1 plan")).toBe("Q1 plan");
+    expect(pageSegment("  Café  Notes  ")).toBe("Café Notes");
+    expect(pageSegment("a/b:c?d")).toBe("a b c d");
+    expect(pageSegment("...hidden...")).toBe("hidden");
+    expect(pageSegment("???")).toBe("Untitled");
   });
 
   it("picks the first free unique id", () => {

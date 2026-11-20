@@ -18,6 +18,7 @@ import {
   resolveWikilink,
   rewriteWikilinkTargets,
   titleFromId,
+  pageSegment,
   type Backlink,
   type DeletePageResult,
   type Frontmatter,
@@ -68,6 +69,11 @@ interface PageRecord extends Omit<Page, "childCount"> {
   fileMtimeMs: number;
   /** Frontmatter tags only; `tags` is this plus inline tags. */
   fmTags: string[];
+  /**
+   * The title comes from a `title:` key. Otherwise it is derived from the file
+   * name (typical Obsidian note), and the file is never renamed to "fix" it.
+   */
+  explicitTitle: boolean;
 }
 
 /** `.trash/<trashId>/meta.json` (D11). */
@@ -76,6 +82,15 @@ interface TrashManifest {
   trashId: string;
   deleted: PageId[];
   deletedAt: string;
+}
+
+/** `segment` is `title` or `title N` (a duplicate suffix), ignoring case. */
+function matchesTitleSegment(segment: string, title: string): boolean {
+  const a = segment.toLowerCase();
+  const b = title.toLowerCase();
+  if (a === b) return true;
+  if (!a.startsWith(`${b} `)) return false;
+  return /^[2-9]\d*$|^1\d+$/.test(a.slice(b.length + 1));
 }
 
 function toIso(value: unknown): string | undefined {
@@ -131,6 +146,8 @@ export class VaultStore {
   private readonly pages = new Map<PageId, PageRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
   private writeQueue: Promise<unknown> = Promise.resolve();
+  /** Old id -> new id after a rename, for stale URLs/tabs in this session. */
+  private readonly redirects = new Map<PageId, PageId>();
   private watcher: FSWatcher | null = null;
   private watchTimer: ReturnType<typeof setTimeout> | null = null;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
@@ -222,6 +239,16 @@ export class VaultStore {
     }
     if (!changed) return false;
 
+    // External renames: remember where an open page went so stale URLs follow.
+    for (const [oldId, oldRecord] of this.pages) {
+      if (next.has(oldId)) continue;
+      const moved = [...next.values()].find(
+        (record) => record.title === oldRecord.title && !this.pages.has(record.id),
+      );
+      if (moved) this.addRedirect(oldId, moved.id);
+    }
+    for (const id of next.keys()) this.redirects.delete(id);
+
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
     this.reindexAll();
@@ -293,6 +320,82 @@ export class VaultStore {
     );
   }
 
+  /**
+   * D20 migration: rename files (and their sub-page folders) so every file
+   * name follows its page title. Returns the plan; with `apply: false` nothing
+   * is written (dry run), and the dry run always shows exactly what `apply`
+   * does.
+   *
+   * - Only pages with an explicit `title:` are renamed. A note without one
+   *   takes its title from the file name already, and renaming it would break
+   *   Obsidian `[[file-name]]` links.
+   * - Stable: a file already named after its title, or its title plus a
+   *   duplicate suffix (`Dup 2`), is left alone, so a second run is a no-op.
+   */
+  syncFilenames(apply: boolean): Promise<Array<{ from: PageId; to: PageId }>> {
+    return this.enqueue(async () => {
+      const plans = await this.planFilenameSync();
+      if (!apply || plans.length === 0) return plans;
+
+      // Parents come first; later entries may live under an already-moved
+      // folder, so translate their ids through the moves done so far.
+      const moves: Array<{ from: PageId; to: PageId }> = [];
+      const current = (id: PageId): PageId => {
+        let result = id;
+        for (const move of moves) {
+          if (result === move.from) result = move.to;
+          else if (result.startsWith(`${move.from}/`)) {
+            result = `${move.to}${result.slice(move.from.length)}`;
+          }
+        }
+        return result;
+      };
+      for (const plan of plans) {
+        const from = current(plan.from);
+        await this.relocateNow(from, plan.to);
+        moves.push({ from, to: plan.to });
+      }
+      this.reindexAll();
+      return plans;
+    });
+  }
+
+  private async planFilenameSync(): Promise<Array<{ from: PageId; to: PageId }>> {
+    const plans: Array<{ from: PageId; to: PageId }> = [];
+    const planned = new Map<PageId, PageId>();
+    const taken = new Set([...this.pages.keys()].map((id) => id.toLowerCase()));
+    const records = [...this.pages.values()].sort(
+      (a, b) => a.id.split("/").length - b.id.split("/").length || a.id.localeCompare(b.id),
+    );
+
+    for (const record of records) {
+      // Folder path, following a planned move of the parent page (folders
+      // without a page of their own stay where they are).
+      const folder = parentOf(record.id);
+      const plannedFolder = folder === null ? null : (planned.get(folder) ?? folder);
+      const segment = record.id.slice(folder === null ? 0 : folder.length + 1);
+      const here = plannedFolder === null ? segment : `${plannedFolder}/${segment}`;
+
+      let target = here;
+      if (record.explicitTitle) {
+        const desired = pageSegment(record.title);
+        if (!matchesTitleSegment(segment, desired)) {
+          taken.delete(here.toLowerCase());
+          const hasChildren = this.hasChildren(record.id);
+          target = await this.freeTarget(
+            childPageId(plannedFolder, record.title),
+            hasChildren,
+            taken,
+          );
+          plans.push({ from: record.id, to: target });
+        }
+      }
+      taken.add(target.toLowerCase());
+      planned.set(record.id, target);
+    }
+    return plans;
+  }
+
   /** Flat list of every page, sorted by id. */
   list(): PageMeta[] {
     const counts = new Map<PageId, number>();
@@ -305,8 +408,12 @@ export class VaultStore {
   }
 
   get(id: PageId): Page {
-    const record = this.require(id);
-    return { ...metaOf(record, this.directChildCount(id)), content: record.content };
+    const resolved = this.resolveId(id);
+    const record = this.require(resolved);
+    return {
+      ...metaOf(record, this.directChildCount(resolved)),
+      content: record.content,
+    };
   }
 
   create(input: CreatePageInput): Promise<Page> {
@@ -314,11 +421,11 @@ export class VaultStore {
   }
 
   update(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
-    return this.enqueue(() => this.updateNow(id, patch));
+    return this.enqueue(() => this.updateNow(this.resolveId(id), patch));
   }
 
   remove(id: PageId): Promise<DeletePageResult> {
-    return this.enqueue(() => this.removeNow(id));
+    return this.enqueue(() => this.removeNow(this.resolveId(id)));
   }
 
   restore(trashId: string): Promise<PageMeta[]> {
@@ -326,10 +433,11 @@ export class VaultStore {
   }
 
   move(id: PageId, parentId: PageId | null): Promise<Page> {
-    return this.enqueue(() => this.moveNow(id, parentId));
+    return this.enqueue(() => this.moveNow(this.resolveId(id), parentId));
   }
 
   backlinks(id: PageId): Backlink[] {
+    id = this.resolveId(id);
     this.require(id);
 
     const out: Backlink[] = [];
@@ -454,6 +562,26 @@ export class VaultStore {
     );
   }
 
+  private resolveId(id: PageId): PageId {
+    let current = id;
+    const seen = new Set<PageId>();
+    // A real page always wins over a stale redirect for the same id.
+    while (!this.pages.has(current) && this.redirects.has(current) && !seen.has(current)) {
+      seen.add(current);
+      current = this.redirects.get(current) as PageId;
+    }
+    return current;
+  }
+
+  private addRedirect(from: PageId, to: PageId): void {
+    if (from === to) return;
+    this.redirects.set(from, to);
+    // Keep chains short: everything that pointed at `from` now points at `to`.
+    for (const [key, value] of [...this.redirects]) {
+      if (value === from) this.redirects.set(key, to);
+    }
+  }
+
   // --- mutations ---------------------------------------------------------
 
   private async createNow(input: CreatePageInput): Promise<Page> {
@@ -481,10 +609,11 @@ export class VaultStore {
 
     const baseId = childPageId(parentId, title);
     const id = await this.freeId(baseId);
+    this.redirects.delete(id);
     const now = new Date().toISOString();
     const filePath = this.filePathFor(id);
 
-    const fileMtimeMs = await this.writePage(
+    const { mtimeMs: fileMtimeMs } = await this.writePage(
       filePath,
       { title, ...(icon ? { icon } : {}), tags: [], created: now, updated: now },
       content,
@@ -501,6 +630,7 @@ export class VaultStore {
       filePath,
       fileMtimeMs,
       fmTags: [],
+      explicitTitle: true,
     };
     if (icon) record.icon = icon;
 
@@ -514,7 +644,7 @@ export class VaultStore {
     id: PageId,
     patch: UpdatePageInput,
   ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string }> {
-    const record = this.require(id);
+    let record = this.require(id);
 
     let info;
     try {
@@ -570,25 +700,41 @@ export class VaultStore {
     // Snapshot before the rename so link resolution still sees the old title.
     const beforeMetas = titleChanged ? this.list() : [];
 
+    // D20: only a title change renames the file; body/icon saves never move
+    // it (old slug-named files are renamed the next time their title changes).
+    const targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle) : id;
+
     const changes = ["updated"];
     if (nextTitle !== previousTitle) changes.push("title");
     if (nextIcon !== record.icon) changes.push("icon");
     if (JSON.stringify(fmTags) !== JSON.stringify(record.fmTags)) changes.push("tags");
 
-    const fileMtimeMs = await this.writePage(
+    const written = await this.writePage(
       record.filePath,
       frontmatter,
       nextContent,
       changes,
+      titleFromId(targetId),
     );
+    const fileMtimeMs = written.mtimeMs;
 
+    // Update the record before relocating so the moved copy carries the new
+    // title/content; relocate then swaps the map entries and the object.
     record.title = nextTitle;
     record.content = nextContent;
-    record.updated = updated;
+    // A plain note has no `updated:` key; its version is the file time.
+    record.updated = written.frontmatter ? updated : new Date(fileMtimeMs).toISOString();
     record.fileMtimeMs = fileMtimeMs;
+    record.explicitTitle = record.explicitTitle || written.titleKey;
     record.fmTags = fmTags;
     if (nextIcon) record.icon = nextIcon;
     else delete record.icon;
+
+    if (targetId !== id) {
+      await this.relocateNow(id, targetId);
+      const moved = this.pages.get(targetId);
+      if (moved) record = moved;
+    }
     this.refreshTags(record);
 
     const rewrittenPages: PageId[] = [];
@@ -596,7 +742,7 @@ export class VaultStore {
     if (titleChanged) {
       // D12: keep link text truthful by rewriting `[[Old…]]` in other pages.
       for (const other of [...this.pages.values()]) {
-        if (other.id === id) continue;
+        if (other.id === id || other.id === targetId) continue;
 
         const result = rewriteWikilinkTargets(
           other.content,
@@ -606,7 +752,7 @@ export class VaultStore {
         if (result.count === 0) continue;
 
         const rewrittenAt = new Date().toISOString();
-        const otherMtime = await this.writePage(
+        const otherWritten = await this.writePage(
           other.filePath,
           {
             title: other.title,
@@ -617,10 +763,13 @@ export class VaultStore {
           },
           result.content,
           ["updated"],
+          titleFromId(other.id),
         );
         other.content = result.content;
-        other.updated = rewrittenAt;
-        other.fileMtimeMs = otherMtime;
+        other.updated = otherWritten.frontmatter
+          ? rewrittenAt
+          : new Date(otherWritten.mtimeMs).toISOString();
+        other.fileMtimeMs = otherWritten.mtimeMs;
         this.refreshTags(other);
         rewrittenPages.push(other.id);
       }
@@ -628,14 +777,101 @@ export class VaultStore {
       rewrittenPages.sort((a, b) => a.localeCompare(b));
       this.reindexAll();
     } else {
-      this.recomputeSource(id);
+      this.recomputeSource(targetId);
     }
 
     return {
-      ...this.get(id),
+      ...this.get(targetId),
       rewrittenPages,
       ...(conflictBackup ? { conflictBackup } : {}),
     };
+  }
+
+  /** D20: the id (and therefore file path) follows the title. */
+  private async renameTarget(
+    id: PageId,
+    parentId: PageId | null,
+    title: string,
+  ): Promise<PageId> {
+    const folder = parentOf(id) ?? parentId;
+    const desired = childPageId(folder, title);
+    if (desired === id) return id;
+    // Case-only change: same file on case-insensitive file systems.
+    if (desired.toLowerCase() === id.toLowerCase()) return desired;
+    const taken = new Set(
+      [...this.pages.keys()].filter((key) => key !== id).map((key) => key.toLowerCase()),
+    );
+    return this.freeTarget(desired, this.hasChildren(id), taken);
+  }
+
+  private hasChildren(id: PageId): boolean {
+    const prefix = `${id}/`;
+    for (const key of this.pages.keys()) if (key.startsWith(prefix)) return true;
+    return false;
+  }
+
+  /**
+   * First of `base`, `base 2`, `base 3`, … that no other page uses (compared
+   * case-insensitively) and that is free on disk. A page with sub-pages also
+   * needs its folder name free.
+   */
+  private async freeTarget(
+    base: PageId,
+    withFolder: boolean,
+    taken: ReadonlySet<string>,
+  ): Promise<PageId> {
+    for (let suffix = 1; ; suffix += 1) {
+      const candidate = suffix === 1 ? base : `${base} ${suffix}`;
+      if (taken.has(candidate.toLowerCase())) continue;
+      if (await pathExists(this.filePathFor(candidate))) continue;
+      if (withFolder && (await pathExists(join(this.root, candidate)))) continue;
+      return candidate;
+    }
+  }
+
+  /** Move a page file and its child folder, remapping ids without rewriting content. */
+  private async relocateNow(id: PageId, newId: PageId): Promise<void> {
+    const record = this.pages.get(id);
+    if (!record) throw notFound("Page not found");
+    if (id === newId) return;
+
+    const oldDir = join(this.root, id);
+    const newDir = join(this.root, newId);
+    const hasChildren = [...this.pages.keys()].some((key) => key.startsWith(`${id}/`));
+
+    await mkdir(dirname(this.filePathFor(newId)), { recursive: true });
+    if (hasChildren) {
+      await mkdir(dirname(newDir), { recursive: true });
+      await rename(oldDir, newDir);
+    }
+
+    try {
+      await rename(record.filePath, this.filePathFor(newId));
+    } catch (error) {
+      if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
+      throw error;
+    }
+
+    const moved: Array<{ oldId: PageId; record: PageRecord }> = [];
+    for (const [key, value] of [...this.pages]) {
+      if (key !== id && !key.startsWith(`${id}/`)) continue;
+      this.pages.delete(key);
+      const movedId = `${newId}${key.slice(id.length)}`;
+      moved.push({
+        oldId: key,
+        record: { ...value, id: movedId, filePath: this.filePathFor(movedId) },
+      });
+    }
+    for (const { oldId, record: value } of moved) {
+      this.pages.set(value.id, value);
+      this.redirects.delete(value.id);
+      this.addRedirect(oldId, value.id);
+    }
+
+    for (const [key, value] of this.pages) {
+      const parent = parentOf(key);
+      value.parentId = parent !== null && this.pages.has(parent) ? parent : null;
+    }
   }
 
   private async removeNow(id: PageId): Promise<DeletePageResult> {
@@ -901,10 +1137,9 @@ export class VaultStore {
     // External editors don't rewrite frontmatter. The newer of frontmatter and
     // file mtime is the version clients use for conditional saves.
     const updated = fmUpdated !== undefined && fmUpdated > mtime ? fmUpdated : mtime;
-    const title =
-      typeof frontmatter.title === "string" && frontmatter.title.trim().length > 0
-        ? frontmatter.title.trim()
-        : titleFromId(id);
+    const explicitTitle =
+      typeof frontmatter.title === "string" && frontmatter.title.trim().length > 0;
+    const title = explicitTitle ? (frontmatter.title as string).trim() : titleFromId(id);
     const icon =
       typeof frontmatter.icon === "string" && frontmatter.icon.trim().length > 0
         ? frontmatter.icon.trim()
@@ -921,6 +1156,7 @@ export class VaultStore {
       filePath: absolute,
       fileMtimeMs: stats.mtimeMs,
       fmTags: normalizeTags(frontmatter.tags),
+      explicitTitle,
     };
     if (icon) record.icon = icon;
     return record;
@@ -948,7 +1184,9 @@ export class VaultStore {
     frontmatter: Frontmatter,
     content: string,
     changes?: readonly string[],
-  ): Promise<number> {
+    /** Title the file name gives (after any rename); enables plain-note mode. */
+    implicitTitle?: string,
+  ): Promise<{ mtimeMs: number; frontmatter: boolean; titleKey: boolean }> {
     await mkdir(dirname(filePath), { recursive: true });
     // Use the current file as the byte template so unknown frontmatter keys,
     // comments, key order, flow style, CRLF and the trailing newline survive
@@ -959,11 +1197,28 @@ export class VaultStore {
     } catch {
       // New file: write canonical frontmatter.
     }
+    // A note without frontmatter (the Obsidian default) stays without it
+    // unless it now needs a key: an icon, tags, or a title the file name
+    // can't express.
+    let plain = false;
+    if (template !== null && template.yaml === null && implicitTitle !== undefined) {
+      const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
+      plain = !frontmatter.icon && tags.length === 0 && frontmatter.title === implicitTitle;
+    }
+    const text = plain
+      ? serializeNoteLike(template, {}, content, [])
+      : serializeNoteLike(template, frontmatter, content, changes);
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      await writeFile(temporary, serializeNoteLike(template, frontmatter, content, changes), "utf8");
+      await writeFile(temporary, text, "utf8");
       await rename(temporary, filePath);
-      return (await stat(filePath)).mtimeMs;
+      return {
+        mtimeMs: (await stat(filePath)).mtimeMs,
+        frontmatter: !plain,
+        // A new block always has `title:`; an edited one only if it changed.
+        titleKey:
+          !plain && (template === null || template.yaml === null || (changes ?? []).includes("title")),
+      };
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
@@ -989,13 +1244,8 @@ export class VaultStore {
   }
 
   private async freeId(baseId: string): Promise<PageId> {
-    let candidate = baseId;
-    let suffix = 2;
-    while (this.pages.has(candidate) || (await pathExists(this.filePathFor(candidate)))) {
-      candidate = `${baseId}-${suffix}`;
-      suffix += 1;
-    }
-    return candidate;
+    const taken = new Set([...this.pages.keys()].map((key) => key.toLowerCase()));
+    return this.freeTarget(baseId, false, taken);
   }
 
   private async freeTrashId(): Promise<string> {

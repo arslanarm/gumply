@@ -4,64 +4,75 @@ import { cleanupVaults, createPage, createTestServer, getJson, jsonRequest } fro
 
 afterEach(cleanupVaults);
 
+const pagePath = (id: string): string => `/api/pages/${encodeURIComponent(id)}`;
+
 describe("backlinks", () => {
   it("lists source pages with a snippet around the link", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Target" });
-    await createPage(app, { title: "Source", content: "Some intro. See [[Target]] for details." });
+    const target = await createPage(app, { title: "Target" });
+    const source = await createPage(app, {
+      title: "Source",
+      content: "Some intro. See [[Target]] for details.",
+    });
     await createPage(app, { title: "Other", content: "No links here." });
 
-    const links = await getJson<Backlink[]>(app, "/api/pages/target/backlinks");
+    const links = await getJson<Backlink[]>(app, `${pagePath(target.id)}/backlinks`);
     expect(links).toHaveLength(1);
-    expect(links[0]?.page.id).toBe("source");
+    expect(links[0]?.page.id).toBe(source.id);
     expect(links[0]?.snippet).toContain("[[Target]]");
   });
 
   it("keeps backlinks stable across a target rename", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Old Name" });
-    await createPage(app, { title: "Source", content: "See [[Old Name]]." });
+    const target = await createPage(app, { title: "Old Name" });
+    const source = await createPage(app, { title: "Source", content: "See [[Old Name]]." });
 
-    expect(await getJson<Backlink[]>(app, "/api/pages/old-name/backlinks")).toHaveLength(1);
+    expect(await getJson<Backlink[]>(app, `${pagePath(target.id)}/backlinks`)).toHaveLength(1);
 
-    // The id stays `old-name`, so D4's id/file-name fallback keeps the old
-    // wikilink resolving; links to the new title resolve as well.
-    await jsonRequest(app, "PUT", "/api/pages/old-name", { title: "New Name" });
-    expect(await getJson<Backlink[]>(app, "/api/pages/old-name/backlinks")).toHaveLength(1);
+    // D20: the id and file follow the title; the old id redirects this session.
+    const updated = (await (
+      await jsonRequest(app, "PUT", pagePath(target.id), { title: "New Name" })
+    ).json()) as Record<string, unknown>;
+    expect(updated.id).toBe("New Name");
+    expect(await getJson<Backlink[]>(app, `${pagePath(target.id)}/backlinks`)).toHaveLength(1);
 
-    await jsonRequest(app, "PUT", "/api/pages/source", { content: "See [[New Name]]." });
-    const links = await getJson<Backlink[]>(app, "/api/pages/old-name/backlinks");
+    await jsonRequest(app, "PUT", pagePath(source.id), { content: "See [[New Name]]." });
+    const links = await getJson<Backlink[]>(app, `${pagePath("New Name")}/backlinks`);
     expect(links).toHaveLength(1);
-    expect(links[0]?.page.id).toBe("source");
+    expect(links[0]?.page.id).toBe(source.id);
   });
 
   it("drops backlinks when a link no longer resolves", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Target" });
-    await createPage(app, { title: "Source", content: "See [[Target]]." });
+    const target = await createPage(app, { title: "Target" });
+    const source = await createPage(app, { title: "Source", content: "See [[Target]]." });
 
-    await jsonRequest(app, "PUT", "/api/pages/source", { content: "See [[Something Else]]." });
-    expect(await getJson<Backlink[]>(app, "/api/pages/target/backlinks")).toEqual([]);
+    await jsonRequest(app, "PUT", pagePath(source.id), { content: "See [[Something Else]]." });
+    expect(await getJson<Backlink[]>(app, `${pagePath(target.id)}/backlinks`)).toEqual([]);
   });
 
   it("resolves links case-insensitively", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Gumply" });
-    await createPage(app, { title: "Source", content: "[[gumply]]" });
+    const target = await createPage(app, { title: "Gumply" });
+    const source = await createPage(app, { title: "Source", content: "[[gumply]]" });
 
-    const links = await getJson<Backlink[]>(app, "/api/pages/gumply/backlinks");
-    expect(links.map((link) => link.page.id)).toEqual(["source"]);
+    const links = await getJson<Backlink[]>(app, `${pagePath(target.id)}/backlinks`);
+    expect(links.map((link) => link.page.id)).toEqual([source.id]);
   });
 
   it("404s for unknown pages and ignores links inside code", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Target" });
-    await createPage(app, { title: "Code", content: "`[[Target]]` and [[Target]]" });
+    const target = await createPage(app, { title: "Target" });
+    const code = await createPage(app, {
+      title: "Code",
+      content: "`[[Target]]` and [[Target]]",
+    });
 
-    expect((await app.request("/api/pages/nope/backlinks")).status).toBe(404);
+    expect((await app.request(pagePath("nope"))).status).toBe(404);
 
-    const links = await getJson<Backlink[]>(app, "/api/pages/target/backlinks");
+    const links = await getJson<Backlink[]>(app, `${pagePath(target.id)}/backlinks`);
     expect(links).toHaveLength(1);
+    expect(links[0]?.page.id).toBe(code.id);
     expect(links[0]?.snippet).toContain("[[Target]]");
     expect(links[0]?.snippet).toContain("and");
   });
@@ -70,9 +81,9 @@ describe("backlinks", () => {
 describe("rename rewrites links", () => {
   it("rewrites plain, aliased and heading links in other pages", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Old Name" });
+    const target = await createPage(app, { title: "Old Name" });
     await createPage(app, { title: "Other" });
-    await createPage(app, {
+    const source = await createPage(app, {
       title: "Source",
       content: [
         "A [[Old Name]]",
@@ -84,15 +95,15 @@ describe("rename rewrites links", () => {
       ].join("\n"),
     });
 
-    const response = await jsonRequest(app, "PUT", "/api/pages/old-name", { title: "New Name" });
+    const response = await jsonRequest(app, "PUT", pagePath(target.id), { title: "New Name" });
     expect(response.status).toBe(200);
     const updated = (await response.json()) as Record<string, unknown>;
     expect(updated.title).toBe("New Name");
-    expect(updated.id).toBe("old-name");
-    expect(updated.rewrittenPages).toEqual(["source"]);
+    expect(updated.id).toBe("New Name");
+    expect(updated.rewrittenPages).toEqual([source.id]);
 
-    const source = await getJson<Record<string, unknown>>(app, "/api/pages/source");
-    expect(source.content).toBe(
+    const sourcePage = await getJson<Record<string, unknown>>(app, pagePath(source.id));
+    expect(sourcePage.content).toBe(
       [
         "A [[New Name]]",
         "B [[New Name|alias]]",
@@ -103,30 +114,33 @@ describe("rename rewrites links", () => {
       ].join("\n"),
     );
 
-    const backlinks = await getJson<Backlink[]>(app, "/api/pages/old-name/backlinks");
-    expect(backlinks.map((link) => link.page.id)).toEqual(["source"]);
+    const backlinks = await getJson<Backlink[]>(app, `${pagePath("New Name")}/backlinks`);
+    expect(backlinks.map((link) => link.page.id)).toEqual([source.id]);
   });
 
   it("matches link targets case-insensitively", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Old Name" });
-    await createPage(app, { title: "Source", content: "[[old name]] and [[OLD NAME|a]]" });
+    const target = await createPage(app, { title: "Old Name" });
+    const source = await createPage(app, {
+      title: "Source",
+      content: "[[old name]] and [[OLD NAME|a]]",
+    });
 
     const updated = (await (
-      await jsonRequest(app, "PUT", "/api/pages/old-name", { title: "New Name" })
+      await jsonRequest(app, "PUT", pagePath(target.id), { title: "New Name" })
     ).json()) as Record<string, unknown>;
-    expect(updated.rewrittenPages).toEqual(["source"]);
-    expect((await getJson<Record<string, unknown>>(app, "/api/pages/source")).content).toBe(
+    expect(updated.rewrittenPages).toEqual([source.id]);
+    expect((await getJson<Record<string, unknown>>(app, pagePath(source.id))).content).toBe(
       "[[New Name]] and [[New Name|a]]",
     );
   });
 
   it("omits rewrittenPages when the title does not change", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "Same" });
+    const page = await createPage(app, { title: "Same" });
 
     const updated = (await (
-      await jsonRequest(app, "PUT", "/api/pages/same", { content: "body" })
+      await jsonRequest(app, "PUT", pagePath(page.id), { content: "body" })
     ).json()) as Record<string, unknown>;
     expect(updated.rewrittenPages).toBeUndefined();
   });
@@ -144,40 +158,52 @@ describe("graph", () => {
     expect(graph.nodes).toHaveLength(4);
     expect(graph.links).toEqual(
       expect.arrayContaining([
-        { source: "a", target: "b" },
-        { source: "b", target: "c" },
+        { source: "A", target: "B" },
+        { source: "B", target: "C" },
       ]),
     );
     expect(graph.links).toHaveLength(2);
 
-    const counts = Object.fromEntries(graph.nodes.map((node: GraphData["nodes"][number]) => [node.id, node.linkCount]));
-    expect(counts).toEqual({ a: 1, b: 2, c: 1, d: 0 });
+    const counts = Object.fromEntries(
+      graph.nodes.map((node: GraphData["nodes"][number]) => [node.id, node.linkCount]),
+    );
+    expect(counts).toEqual({ A: 1, B: 2, C: 1, D: 0 });
     expect(graph.tags).toEqual(["alpha", "beta"]);
   });
 
   it("limits the graph to a BFS radius around a center", async () => {
     const { app } = await createTestServer();
     await createPage(app, { title: "A", content: "[[B]]" });
-    await createPage(app, { title: "B", content: "[[C]]" });
+    const b = await createPage(app, { title: "B", content: "[[C]]" });
     await createPage(app, { title: "C" });
-    await createPage(app, { title: "D" });
+    const d = await createPage(app, { title: "D" });
 
-    const local = await getJson<GraphData>(app, "/api/graph?center=b&depth=1");
-    expect(local.nodes.map((node: PageMeta) => node.id).sort()).toEqual(["a", "b", "c"]);
+    const local = await getJson<GraphData>(
+      app,
+      `/api/graph?center=${encodeURIComponent(b.id)}&depth=1`,
+    );
+    expect(local.nodes.map((node: PageMeta) => node.id).sort()).toEqual(["A", "B", "C"]);
     expect(local.links).toHaveLength(2);
 
-    const isolated = await getJson<GraphData>(app, "/api/graph?center=d&depth=1");
-    expect(isolated.nodes.map((node: PageMeta) => node.id)).toEqual(["d"]);
+    const isolated = await getJson<GraphData>(
+      app,
+      `/api/graph?center=${encodeURIComponent(d.id)}&depth=1`,
+    );
+    expect(isolated.nodes.map((node: PageMeta) => node.id)).toEqual(["D"]);
     expect(isolated.links).toEqual([]);
   });
 
   it("validates center and depth", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "A" });
+    const a = await createPage(app, { title: "A" });
 
     expect((await app.request("/api/graph?center=missing")).status).toBe(404);
-    expect((await app.request("/api/graph?center=a&depth=0")).status).toBe(400);
-    expect((await app.request("/api/graph?center=a&depth=nope")).status).toBe(400);
+    expect(
+      (await app.request(`/api/graph?center=${encodeURIComponent(a.id)}&depth=0`)).status,
+    ).toBe(400);
+    expect(
+      (await app.request(`/api/graph?center=${encodeURIComponent(a.id)}&depth=nope`)).status,
+    ).toBe(400);
     expect((await app.request("/api/graph?depth=2")).status).toBe(400);
     expect((await app.request("/api/graph?center=")).status).toBe(400);
   });
@@ -187,12 +213,12 @@ describe("graph", () => {
     await createPage(app, { title: "B", content: "[[Missing]] and [[missing]]" });
 
     const graph = await getJson<GraphData>(app, "/api/graph");
-    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["a", "b"]);
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["A", "B"]);
     expect(graph.links).toEqual([]);
     // One pair per source page + missing title (case-insensitive), self-links ignored.
     expect(graph.unresolved).toEqual([
-      { source: "a", targetTitle: "Missing" },
-      { source: "b", targetTitle: "Missing" },
+      { source: "A", targetTitle: "Missing" },
+      { source: "B", targetTitle: "Missing" },
     ]);
   });
 
@@ -205,27 +231,30 @@ describe("graph", () => {
     });
 
     const graph = await getJson<GraphData>(app, "/api/graph");
-    expect(graph.unresolved).toEqual([{ source: "source", targetTitle: "Ghost" }]);
+    expect(graph.unresolved).toEqual([{ source: "Source", targetTitle: "Ghost" }]);
   });
 
   it("filters unresolved links by the local graph view", async () => {
     const { app } = await createTestServer();
     await createPage(app, { title: "A", content: "[[B]] [[Ghost of A]]" });
-    await createPage(app, { title: "B" });
+    const b = await createPage(app, { title: "B" });
     await createPage(app, { title: "C", content: "[[Ghost of C]]" });
 
-    const local = await getJson<GraphData>(app, "/api/graph?center=b&depth=1");
-    expect(local.unresolved).toEqual([{ source: "a", targetTitle: "Ghost of A" }]);
+    const local = await getJson<GraphData>(
+      app,
+      `/api/graph?center=${encodeURIComponent(b.id)}&depth=1`,
+    );
+    expect(local.unresolved).toEqual([{ source: "A", targetTitle: "Ghost of A" }]);
   });
 
   it("leaves .trash out of the graph after a delete", async () => {
     const { app } = await createTestServer();
-    await createPage(app, { title: "A", content: "[[Missing]]" });
-    await createPage(app, { title: "B", content: "No links here" });
+    const a = await createPage(app, { title: "A", content: "[[Missing]]" });
+    const b = await createPage(app, { title: "B", content: "No links here" });
 
-    await jsonRequest(app, "DELETE", "/api/pages/a");
+    await jsonRequest(app, "DELETE", pagePath(a.id));
     const graph = await getJson<GraphData>(app, "/api/graph");
-    expect(graph.nodes.map((node) => node.id)).toEqual(["b"]);
+    expect(graph.nodes.map((node) => node.id)).toEqual([b.id]);
     expect(graph.unresolved).toEqual([]);
   });
 });
@@ -237,7 +266,7 @@ describe("search", () => {
     await createPage(app, { title: "Roadmap", content: "Plan for the gumply launch." });
 
     const results = await getJson<SearchResult[]>(app, "/api/search?q=gump");
-    expect(results.map((result) => result.page.id)).toEqual(["gumply", "roadmap"]);
+    expect(results.map((result) => result.page.id)).toEqual(["Gumply", "Roadmap"]);
     expect(results[0]!.score).toBeGreaterThan(results[1]!.score);
   });
 
