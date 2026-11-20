@@ -14,12 +14,25 @@ export class ApiRequestError extends Error {
   }
 }
 
+let newVaultPage: PageId | null = null;
+
+/** One-shot: the server just seeded the demo vault and suggests this page. */
+export function consumeNewVaultPage(): PageId | null {
+  const page = newVaultPage;
+  newVaultPage = null;
+  return page;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   if (init.body !== undefined) headers.set("Content-Type", "application/json");
 
   const response = await fetch(`/api${path}`, { ...init, headers });
+
+  // First-run signal from the server: open this page once, then forget it.
+  const firstPage = response.headers.get("x-gumply-new-vault");
+  if (firstPage) newVaultPage = firstPage;
 
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;

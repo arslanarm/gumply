@@ -53,6 +53,9 @@ export default defineConfig({
     env: {
       GUMPLY_PORT: String(API_PORT),
       GUMPLY_VAULT: E2E_VAULT,
+      // The suite starts from an empty vault unless a test opts into first-run
+      // seeding; server-side demo seeding is covered by its own unit tests.
+      GUMPLY_SEED_DEMO: '0',
     },
   },
 });

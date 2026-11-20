@@ -1,6 +1,6 @@
 import { resolveWikilink, type Backlink, type Page, type PageId, type PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api/client.js";
+import { api, consumeNewVaultPage } from "./api/client.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
@@ -12,13 +12,6 @@ import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 import { GraphView } from "./graph/GraphView.js";
 import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
-import {
-  buildDemoPages,
-  DEMO_DISABLED_KEY,
-  DEMO_FORCE_KEY,
-  DEMO_SEEDED_KEY,
-  WELCOME_TITLE,
-} from "./lib/demo.js";
 import { focusAfterDelete } from "./lib/delete.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { openPageNeedsReload } from "./lib/rename.js";
@@ -44,28 +37,6 @@ interface PendingHeading {
   heading: string;
 }
 
-function readFlag(key: string): boolean {
-  try {
-    return window.localStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeFlag(key: string): void {
-  try {
-    window.localStorage.setItem(key, "1");
-  } catch {
-    // Private mode / storage disabled: seeding still works for this session.
-  }
-}
-
-function demoSeedingEnabled(): boolean {
-  if (readFlag(DEMO_DISABLED_KEY)) return false;
-  if (readFlag(DEMO_FORCE_KEY)) return true;
-  // E2E/automation expects a predictable empty vault; QA forces seeding to test it.
-  return typeof navigator === "undefined" || !navigator.webdriver;
-}
 export function App() {
   const [pages, setPages] = useState<PageMeta[]>([]);
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
@@ -109,7 +80,7 @@ export function App() {
   const reloadEditorAfterFetch = useRef(false);
   const focusBodyAfterOpen = useRef(false);
   const backlinksRequest = useRef(0);
-  const demoSeedStarted = useRef(false);
+  const initialLoadStarted = useRef(false);
 
   const moveFocus = useCallback((id: PageId | null) => {
     focusNonce.current += 1;
@@ -144,20 +115,6 @@ export function App() {
     }
   }, []);
 
-  /** Create the demo vault once, on a truly empty first run (D10). */
-  const seedDemo = useCallback(async (): Promise<PageMeta[] | null> => {
-    for (const demo of buildDemoPages()) {
-      await api.createPage({
-        title: demo.title,
-        parentId: demo.parentId,
-        content: demo.content,
-        icon: demo.icon,
-      });
-    }
-    writeFlag(DEMO_SEEDED_KEY);
-    return loadPages();
-  }, [loadPages]);
-
   const navigate = useCallback((id: PageId | null, replace = false) => {
     const hash = id ? pageHash(id) : "#/";
     if (window.location.hash !== hash) {
@@ -181,39 +138,29 @@ export function App() {
     setPageReload((value) => value + 1);
   }, []);
 
-  // Initial load: seed the demo on a first empty run, else open the first root.
+  // Initial load: the server seeds a fresh vault; open its Welcome page once.
+  // Otherwise open the first root page.
   useEffect(() => {
+    if (initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
     void (async () => {
       const list = await loadPages();
       if (!list) return;
 
-      if (
-        list.length === 0 &&
-        !demoSeedStarted.current &&
-        !readFlag(DEMO_SEEDED_KEY) &&
-        demoSeedingEnabled()
-      ) {
-        demoSeedStarted.current = true;
-        try {
-          const seeded = await seedDemo();
-          const welcome = seeded?.find((item) => item.title === WELCOME_TITLE);
-          if (welcome) {
-            focusBodyAfterOpen.current = true;
-            navigate(welcome.id, true);
-          }
-          return;
-        } catch (error) {
-          setActionError(errorMessage(error));
-        }
-      }
+      // Consume even when a hash is present so it never leaks into a later load.
+      const newVaultPage = consumeNewVaultPage();
 
       if (list.length === 0) return;
-      if (selectedRef.current === null && !isGraphHash(window.location.hash)) {
-        const first = buildPageTree(list)[0]?.page.id ?? null;
-        if (first) navigate(first, true);
-      }
+      if (selectedRef.current !== null || isGraphHash(window.location.hash)) return;
+
+      const firstPage =
+        newVaultPage && list.some((page) => page.id === newVaultPage) ? newVaultPage : null;
+      const target = firstPage ?? buildPageTree(list)[0]?.page.id ?? null;
+      if (!target) return;
+      focusBodyAfterOpen.current = target === firstPage;
+      navigate(target, true);
     })();
-  }, [loadPages, navigate, seedDemo]);
+  }, [loadPages, navigate]);
 
   useEffect(() => {
     const onHashChange = () => {

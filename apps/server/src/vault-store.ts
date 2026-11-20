@@ -28,6 +28,7 @@ import {
   type SearchResult,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
+import { buildDemoPages, WELCOME_TITLE } from "./demo.js";
 
 export interface CreatePageInput {
   title: string;
@@ -122,6 +123,8 @@ export class VaultStore {
   private readonly pages = new Map<PageId, PageRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
   private writeQueue: Promise<unknown> = Promise.resolve();
+  /** Page to open once after first-run seeding (consumed by GET /pages). */
+  private newVaultPage: PageId | null = null;
 
   constructor(root: string) {
     this.root = resolve(root);
@@ -130,6 +133,50 @@ export class VaultStore {
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true });
     await this.rebuild();
+  }
+
+  /**
+   * Seed the demo vault on a truly empty first run only (D10, spec/ux §2).
+   * A marker in `.gumply/` makes this once-per-vault: deleting the demo (or
+   * every page) never brings it back. Returns the Welcome page id when this
+   * call did the seeding.
+   */
+  async seedDemoIfFirstRun(): Promise<PageId | null> {
+    const marker = join(this.root, ".gumply", "demo-seeded.json");
+    if (await pathExists(marker)) return null;
+
+    if (this.pages.size > 0) {
+      // Existing vault (created before server-side seeding): never inject demo
+      // pages, but remember that this vault has had its first run.
+      await this.writeDemoMarker();
+      return null;
+    }
+
+    let welcomeId: PageId | null = null;
+    for (const demo of buildDemoPages()) {
+      const created = await this.create(demo);
+      if (demo.title === WELCOME_TITLE) welcomeId = created.id;
+    }
+    await this.writeDemoMarker();
+    this.newVaultPage = welcomeId;
+    return welcomeId;
+  }
+
+  /** One-shot signal for the first browser: which page to open. */
+  consumeNewVaultPage(): PageId | null {
+    const page = this.newVaultPage;
+    this.newVaultPage = null;
+    return page;
+  }
+
+  private async writeDemoMarker(): Promise<void> {
+    const dir = join(this.root, ".gumply");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "demo-seeded.json"),
+      JSON.stringify({ demoSeededAt: new Date().toISOString() }, null, 2),
+      "utf8",
+    );
   }
 
   /** Flat list of every page, sorted by id. */
