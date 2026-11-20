@@ -1057,7 +1057,13 @@ export function App() {
     () =>
       pages
         .filter((item) => item.id !== selectedId)
-        .map((item) => ({ path: vaultPathOf(item), title: item.title, ...(item.icon ? { icon: item.icon } : {}) })),
+        .map((item) => ({
+          path: vaultPathOf(item),
+          title: item.title,
+          // Live page cards reload their preview when this moves (W2b).
+          updated: item.updated,
+          ...(item.icon ? { icon: item.icon } : {}),
+        })),
     [pages, selectedId],
   );
 

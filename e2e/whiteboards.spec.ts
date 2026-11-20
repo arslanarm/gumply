@@ -273,6 +273,23 @@ test.describe('whiteboards in the app (W2a)', () => {
   });
   });
 
+  test('a page card on an open board shows the page\'s new text after it changes', async ({ page, request, vault }) => {
+    const [spec] = await vault.seed([{ title: 'Spec', content: 'First draft of the spec' }]);
+    const board = await createBoard(request, 'Live cards');
+    await saveBoard(request, board.meta.id, {
+      nodes: [{ id: 'eeeeeeeeeeeeeeee', type: 'file', file: 'Spec.md', x: 0, y: 0, width: 360, height: 220 } as never],
+      edges: [],
+    });
+    await openBoard(page, board.meta.id);
+    const card = page.getByTestId('board-card-page');
+    await expect(card).toContainText('First draft of the spec');
+
+    // Someone edits the page (another tab, Obsidian…): the card follows.
+    await api.updatePage(request, spec!.id, { content: 'Final spec, signed off' });
+    await expect(card).toContainText('Final spec, signed off', { timeout: 10_000 });
+    await expect(card).not.toContainText('First draft');
+  });
+
   for (const theme of ['light', 'dark'] as const) {
     test(`a board page renders in the app shell (${theme})`, async ({ page, request, vault }) => {
       await vault.seed([{ title: 'Spec', content: 'x' }]);
