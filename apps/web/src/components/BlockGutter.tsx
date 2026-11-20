@@ -70,6 +70,20 @@ function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
   }
 }
 
+/** Width of the margin left of the text that still counts as hovering. */
+const GUTTER_ZONE = 72;
+const GUTTER_HEIGHT = 26;
+
+/** Offset that centres the gutter on the block's first line of text. */
+function firstLineOffset(dom: HTMLElement): number {
+  const style = window.getComputedStyle(dom);
+  const fontSize = Number.parseFloat(style.fontSize) || 16;
+  const lineHeight = Number.parseFloat(style.lineHeight) || fontSize * 1.2;
+  const paddingTop = Number.parseFloat(style.paddingTop) || 0;
+  const borderTop = Number.parseFloat(style.borderTopWidth) || 0;
+  return Math.max(0, borderTop + paddingTop + (lineHeight - GUTTER_HEIGHT) / 2);
+}
+
 function inRect(rect: DOMRect, x: number, y: number, pad = 6): boolean {
   return x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
 }
@@ -102,6 +116,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
 
     const onMove = (event: MouseEvent) => {
       if (hideOnType.current) hideOnType.current = false;
+      if (draggingRef.current) return;
 
       const current = hoverRef.current;
       if (gutterRef.current && current) {
@@ -111,8 +126,31 @@ export function BlockGutter({ editor }: BlockGutterProps) {
         if (inRect(menuElementRef.current.getBoundingClientRect(), event.clientX, event.clientY, 0)) return;
       }
 
+      const clear = () => {
+        if (!menuRef.current && hoverRef.current) setHover(null);
+      };
+
+      // Pointer over something else (sidebar, a menu, a dialog): no gutter.
+      // The editor itself or the empty page margin around it (an ancestor of
+      // the editor) both count, like Notion.
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target || !(host.contains(target) || target.contains(host))) {
+        clear();
+        return;
+      }
+
+      // Hover zone = the editor column plus the left margin where the gutter
+      // sits, so moving from the text to `+`/`⋮⋮` never drops the gutter.
       const hostRect = host.getBoundingClientRect();
-      if (event.clientY < hostRect.top || event.clientY > hostRect.bottom) return;
+      if (
+        event.clientY < hostRect.top ||
+        event.clientY > hostRect.bottom ||
+        event.clientX < hostRect.left - GUTTER_ZONE ||
+        event.clientX > hostRect.right + 24
+      ) {
+        clear();
+        return;
+      }
 
       const editorRect = editor.view.dom.getBoundingClientRect();
       const left = Math.min(Math.max(event.clientX, editorRect.left + 4), editorRect.right - 4);
@@ -120,17 +158,27 @@ export function BlockGutter({ editor }: BlockGutterProps) {
       if (!found) return;
 
       const block = blockAt(editor.state.doc, found.pos);
-      if (!block) {
-        setHover(null);
-        return;
-      }
-      const dom = domForBlock(editor.view, block);
-      if (!dom) {
-        setHover(null);
+      const dom = block ? domForBlock(editor.view, block) : null;
+      if (!block || !dom) {
+        clear();
         return;
       }
       const rect = dom.getBoundingClientRect();
-      setHover({ block, left: Math.max(6, rect.left - 48), top: rect.top + 1 });
+      const next: HoverState = {
+        block,
+        left: Math.max(6, rect.left - 54),
+        top: rect.top + firstLineOffset(dom),
+      };
+      if (
+        current &&
+        current.block.from === next.block.from &&
+        current.block.node === next.block.node &&
+        current.left === next.left &&
+        current.top === next.top
+      ) {
+        return;
+      }
+      setHover(next);
     };
 
     const onLeave = () => {
@@ -180,8 +228,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
       setDrop(null);
     };
 
-    host.addEventListener("mousemove", onMove);
-    host.addEventListener("mouseleave", onLeave);
+    document.addEventListener("mousemove", onMove);
+    document.documentElement.addEventListener("mouseleave", onLeave);
     host.addEventListener("dragover", onDragOver, true);
     host.addEventListener("drop", onDrop, true);
     host.addEventListener("dragend", onDragEnd);
@@ -189,8 +237,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     window.addEventListener("resize", onHide);
     editor.on("update", onUpdate);
     return () => {
-      host.removeEventListener("mousemove", onMove);
-      host.removeEventListener("mouseleave", onLeave);
+      document.removeEventListener("mousemove", onMove);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
       host.removeEventListener("dragover", onDragOver, true);
       host.removeEventListener("drop", onDrop, true);
       host.removeEventListener("dragend", onDragEnd);
@@ -226,7 +274,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
   const openMenu = (state: HoverState) => {
     setMenu({
       ...state,
-      menuLeft: Math.min(state.left + 44, window.innerWidth - 252),
+      menuLeft: Math.min(state.left + 50, window.innerWidth - 252),
       menuTop: Math.min(state.top - 4, window.innerHeight - 430),
     });
   };
