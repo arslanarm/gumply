@@ -363,3 +363,67 @@ test.describe('page icons in the graph (#emmyabbj)', () => {
     expect(await colourfulPixels(page, 'local-graph-canvas', centre.x, centre.y, centre.r)).toBeGreaterThan(30);
   });
 });
+
+test.describe('filter keeps links (#pyx74enx)', () => {
+  /** Painted pixels away from every node and its label: i.e. link pixels. */
+  async function linkPixels(page: Page): Promise<number> {
+    const nodes = await probeNodes(page);
+    return page.evaluate(
+      ({ id, nodes }) => {
+        const canvas = document.querySelector(`[data-testid="${id}"] canvas`) as HTMLCanvasElement;
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / rect.width;
+        const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+        let count = 0;
+        for (let y = 0; y < canvas.height; y += 2) {
+          for (let x = 0; x < canvas.width; x += 2) {
+            if ((data[(y * canvas.width + x) * 4 + 3] ?? 0) <= 8) continue;
+            const cx = x / scale;
+            const cy = y / scale;
+            const nearNode = nodes.some(
+              (n) => Math.abs(cx - n.x) < 70 && cy > n.y - n.r - 6 && cy < n.y + n.r + 24,
+            );
+            if (!nearNode) count += 1;
+          }
+        }
+        return count;
+      },
+      { id: CANVAS, nodes },
+    );
+  }
+
+  test('links come back after clearing the filter with Backspace, Esc and ✕', async ({
+    page,
+    vault,
+  }) => {
+    await vault.seed(fixture());
+    await openGraph(page);
+    const subtitle = page.getByTestId('graph-subtitle');
+    const canvas = page.getByTestId(CANVAS);
+    const initialText = await subtitle.innerText();
+    expect(initialText).toMatch(/[1-9]\d* links/);
+    const initialPixels = await linkPixels(page);
+    expect(initialPixels).toBeGreaterThan(100);
+
+    const filter = page.getByTestId('graph-filter');
+    const clears: Array<[string, () => Promise<void>]> = [
+      ['Backspace', async () => {
+        for (let i = 0; i < 5; i += 1) await filter.press('Backspace');
+      }],
+      ['Escape', () => filter.press('Escape')],
+      ['clear button', () => page.getByTestId('graph-filter-clear').click()],
+    ];
+    for (const [how, clear] of clears) {
+      await filter.click();
+      await filter.pressSequentially('Loner');
+      await expect(subtitle, how).toContainText('0 links');
+      await clear();
+      await expect(filter, how).toHaveValue('');
+      await expect(subtitle, how).toHaveText(initialText);
+      await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+      await page.waitForTimeout(700);
+      // Relayouts change the exact count; without links it drops to ~0.
+      expect(await linkPixels(page), how).toBeGreaterThan(Math.max(100, initialPixels * 0.3));
+    }
+  });
+});
