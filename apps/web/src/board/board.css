@@ -382,14 +382,16 @@ img.board-card-image {
 }
 
 /* Resize handles and lines. */
-/* Handles keep their screen size at any zoom (--board-zoom is set from the
-   viewport): 10.5-11 px targets at any zoom down to 10% (#8ht6zhdv, #zk6etvae). */
+/* Resize handles: plain px. React Flow's NodeResizer already counter-scales
+   its controls by 1/zoom (autoScale), so they keep ~10.5 px on screen at any
+   zoom by themselves. Dividing by --board-zoom here as well compensated twice:
+   64 px handles at 16% covered small cards, so dragging resized (#ubqp5r4h). */
 .board-root .react-flow__resize-control.handle.board-resize-handle {
-  width: calc(10.5px / var(--board-zoom, 1));
-  height: calc(10.5px / var(--board-zoom, 1));
-  border-radius: calc(2px / var(--board-zoom, 1));
+  width: 10.5px;
+  height: 10.5px;
+  border-radius: 2px;
   background: var(--panel);
-  border: calc(1.5px / var(--board-zoom, 1)) solid var(--board-select);
+  border: 1.5px solid var(--board-select);
 }
 
 .board-root .react-flow__resize-control.line.board-resize-line {
@@ -397,6 +399,8 @@ img.board-card-image {
 }
 
 /* Connection dots: visible on hover, always in connector mode. */
+/* Connection dots are not scaled by React Flow: --board-zoom keeps them
+   ~11 px on screen at any zoom down to 10% (#8ht6zhdv, #zk6etvae). */
 .board-root .react-flow__handle.board-handle {
   width: calc(11px / var(--board-zoom, 1));
   height: calc(11px / var(--board-zoom, 1));

@@ -131,10 +131,13 @@ jobs:
         run: |
           ls -la dist
           (cd dist && sha256sum * > SHA256SUMS.txt)
+          # A tag with a suffix (v0.5.0-rc.1, -beta…) is a pre-release.
+          prerelease=()
+          if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --draft --verify-tag \
+            gh release create "$TAG" dist/* --draft "${prerelease[@]}" --verify-tag \
               --title "Gumply $TAG" \
               --notes "Desktop installers for $TAG (unsigned: Windows SmartScreen and macOS Gatekeeper will warn). Checksums in SHA256SUMS.txt."
           fi
