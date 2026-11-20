@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { canMovePage, type PageTreeNode } from "../lib/tree.js";
+import { Icon } from "./Icon.js";
 
 export interface PageItemProps {
   node: PageTreeNode;
@@ -129,7 +130,7 @@ export function PageItem(props: PageItemProps) {
               props.onToggle(page.id);
             }}
           >
-            {expanded ? "▾" : "▸"}
+            <Icon name={expanded ? "chevronDown" : "chevronRight"} size={14} />
           </button>
         ) : (
           <span className="tree-toggle-spacer" />
@@ -175,7 +176,7 @@ export function PageItem(props: PageItemProps) {
               props.onCreateChild(page.id);
             }}
           >
-            +
+            <Icon name="plus" size={15} />
           </button>
 
           <span className="page-menu" ref={menuRef}>
@@ -192,7 +193,7 @@ export function PageItem(props: PageItemProps) {
                 setMenuOpen((open) => !open);
               }}
             >
-              ⋯
+              <Icon name="more" size={16} />
             </button>
 
             {menuOpen ? (

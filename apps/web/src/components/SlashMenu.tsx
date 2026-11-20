@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { Icon, type IconName } from "./Icon.js";
 import type { SlashItem } from "../editor/slash-items.js";
 import { useActiveOptionVisible } from "./use-active-option.js";
 
@@ -10,6 +11,18 @@ export interface SlashMenuProps {
   onSelect: (item: SlashItem) => void;
   onHover: (index: number) => void;
 }
+
+const SLASH_ICONS: Record<string, IconName> = {
+  "heading-1": "heading",
+  "heading-2": "heading",
+  "heading-3": "heading",
+  "bullet-list": "list",
+  "ordered-list": "listOrdered",
+  todo: "checkSquare",
+  quote: "quote",
+  code: "code",
+  divider: "minus",
+};
 
 /** Floating `/` menu. Positioned from the suggestion's client rect. */
 export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashMenuProps) {
@@ -40,8 +53,13 @@ export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashM
           }}
           onMouseEnter={() => onHover(itemIndex)}
         >
-          <span className="slash-menu-title">{item.title}</span>
-          <span className="slash-menu-hint">{item.hint}</span>
+          <span className="slash-menu-icon">
+            <Icon name={SLASH_ICONS[item.key] ?? "file"} size={17} />
+          </span>
+          <span className="slash-menu-copy">
+            <span className="slash-menu-title">{item.title}</span>
+            <span className="slash-menu-hint">{item.hint}</span>
+          </span>
         </button>
       ))}
     </div>

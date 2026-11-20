@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { Icon } from "./Icon.js";
 import { moveTargets, type MoveTarget } from "../lib/move.js";
 import { useActiveOptionVisible } from "./use-active-option.js";
 
@@ -133,7 +134,13 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
                   onMouseEnter={() => setIndex(rowIndex)}
                 >
                   <span className="quick-switcher-icon" aria-hidden="true">
-                    {row.kind === "top" ? "↥" : (row.page?.icon ?? "▤")}
+                    {row.kind === "top" ? (
+                      <Icon name="arrowUp" size={16} />
+                    ) : row.page?.icon ? (
+                      row.page.icon
+                    ) : (
+                      <Icon name="file" size={16} />
+                    )}
                   </span>
                   <span className="quick-switcher-text">
                     <span className="quick-switcher-title">{row.label}</span>

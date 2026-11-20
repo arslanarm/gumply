@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Page } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
+import { Icon } from "./Icon.js";
 
 export interface PageHeaderProps {
   page: Page;
@@ -171,7 +172,7 @@ export function PageHeader({
             aria-label="Rename page"
             onClick={startEditing}
           >
-            ✎
+            <Icon name="pencil" size={16} />
           </button>
           <button
             type="button"
@@ -181,7 +182,7 @@ export function PageHeader({
             aria-label="Delete page"
             onClick={onDelete}
           >
-            🗑
+            <Icon name="trash" size={16} />
           </button>
         </div>
       </div>
