@@ -15,6 +15,13 @@ import path from 'node:path';
 export const WEB_PORT = Number(process.env.GUMPLY_WEB_PORT ?? 5477);
 export const API_PORT = Number(process.env.GUMPLY_PORT ?? 8977);
 
+/**
+ * Stub "remote" image server for "Save to vault" (#w6i6e6u7). The server
+ * refuses local addresses (SSRF), so the e2e server gets exactly this
+ * host:port in GUMPLY_IMPORT_ALLOW.
+ */
+export const IMAGE_STUB_PORT = Number(process.env.GUMPLY_IMAGE_STUB_PORT ?? API_PORT + 13);
+
 export const BASE_URL = process.env.GUMPLY_WEB_URL ?? `http://localhost:${WEB_PORT}`;
 
 /** Tests talk to the local server directly on the port it booted with. */

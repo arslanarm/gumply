@@ -65,6 +65,28 @@ test('typing ``` then a language name and Enter sets the language', async ({ pag
   expect(await fileOf(doc!.id)).toMatch(/Start\n\n```python\ndef hi\(\):\n {4}return 1\n```\n$/);
 });
 
+test('Ctrl+Z right after a typed language brings the word back as code', async ({ page, vault }) => {
+  const [doc] = await vault.seed([{ title: 'Make', content: 'Start' }]);
+  await page.goto(`/#/${doc!.id}`);
+  await page.getByTestId('editor-content').getByText('Start').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('```');
+  await page.keyboard.type('make');
+  await page.keyboard.press('Enter');
+  // The swap is visible at once.
+  await expect(page.getByTestId('code-language-button')).toHaveText('Makefile');
+  await expect(page.getByTestId('code-block')).toHaveText(/^Makefile\s*Copy\s*$/);
+
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.getByTestId('code-language-button')).toHaveText('Plain text');
+  await expect(page.getByTestId('code-block').locator('code')).toHaveText('make');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' install');
+  await waitSaved(page);
+  expect(await fileOf(doc!.id)).toMatch(/Start\n\n```\nmake install\n```\n$/);
+});
+
 test('a "python" line in an existing code block stays code', async ({ page, vault }) => {
   const [doc] = await vault.seed([{ title: 'Not a fence', content: '```\nfirst\n```' }]);
   await page.goto(`/#/${doc!.id}`);

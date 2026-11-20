@@ -13,6 +13,10 @@ export interface WikiLinkEnvironment {
   attachments: readonly Attachment[];
   openLink: (link: { targetTitle: string; heading: string }) => void;
   createLink: (title: string) => void;
+  /** Show an error in the page's action banner (e.g. "Save to vault" failed). */
+  reportError?: (message: string) => void;
+  /** A new file landed in attachments/ (keeps link resolution current). */
+  addAttachment?: (attachment: Attachment) => void;
 }
 
 const noop = () => {};

@@ -14,6 +14,7 @@
 import CodeBlock from "@tiptap/extension-code-block";
 import { InputRule } from "@tiptap/core";
 import type { Node as PMNode, NodeType } from "@tiptap/pm/model";
+import { closeHistory } from "@tiptap/pm/history";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockView } from "../components/CodeBlockView.js";
@@ -157,6 +158,9 @@ export const NotionCodeBlock = CodeBlock.extend({
         return editor
           .chain()
           .command(({ tr }) => {
+            // Its own undo step: Ctrl+Z right after brings the word back as
+            // code text (e.g. a `make` that was meant as a command).
+            closeHistory(tr);
             tr.delete(blockPos + 1, blockPos + 1 + $from.parent.content.size);
             tr.setNodeMarkup(blockPos, undefined, { ...$from.parent.attrs, language });
             tr.setMeta(freshFenceKey, null);
