@@ -244,3 +244,32 @@ test.describe('pasting HTML tables (#y5iqswjf)', () => {
     );
   });
 });
+
+test('a pasted image after a table has no empty paragraph before it (#symxj285)', async ({
+  page,
+  vault,
+  request,
+}) => {
+  const [created] = await vault.seed([{ title: 'Paste image', content: 'Intro' }]);
+  await page.goto('/');
+  const body = page.getByTestId('editor-content');
+  await body.getByText('Intro', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await body.evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.setData(
+      'text/html',
+      '<table><tr><th>A</th></tr><tr><td>1</td></tr></table><p><img src="https://example.com/remote.png" alt="remote"></p><p>After</p>',
+    );
+    transfer.setData('text/plain', 'A\n1');
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+  });
+  await expect(page.getByTestId('image-block')).toHaveCount(1);
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', {
+    timeout: 10_000,
+  });
+  expect((await api.getPage(request, created!.id)).content).toBe(
+    'Intro\n\n| A |\n|---|\n| 1 |\n\n![remote](https://example.com/remote.png)\n\nAfter',
+  );
+});

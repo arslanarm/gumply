@@ -101,17 +101,41 @@ export function rowsToMarkdown(rows: readonly string[][]): string {
   ].join("\n");
 }
 
+/**
+ * `<p><img></p>` → `<img>` (#symxj285). The image is a block node here, so
+ * ProseMirror lifted it out of the paragraph and left an empty one behind
+ * (a visible gap, saved as an extra blank line).
+ */
+function unwrapImageParagraphs(doc: Document): void {
+  for (const paragraph of Array.from(doc.querySelectorAll("p"))) {
+    const elements = Array.from(paragraph.children);
+    const onlyImages =
+      elements.length > 0 &&
+      elements.every((child) => child.tagName === "IMG" || child.tagName === "BR") &&
+      elements.some((child) => child.tagName === "IMG") &&
+      (paragraph.textContent ?? "").trim() === "";
+    if (onlyImages) {
+      paragraph.replaceWith(...elements.filter((child) => child.tagName === "IMG"));
+    }
+  }
+}
+
 function escapeAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /**
  * `transformPastedHTML`: replace every top-level `<table>` with a raw table
- * block holding its GFM Markdown. HTML without tables is returned unchanged.
+ * block holding its GFM Markdown, and unwrap image-only paragraphs. Other
+ * HTML is returned unchanged.
  */
 export function pastedTablesToMarkdown(html: string): string {
-  if (!/<table[\s>]/i.test(html)) return html;
+  const hasTable = /<table[\s>]/i.test(html);
+  const hasImage = /<img[\s>]/i.test(html);
+  if (!hasTable && !hasImage) return html;
   const doc = new DOMParser().parseFromString(html, "text/html");
+  if (hasImage) unwrapImageParagraphs(doc);
+  if (!hasTable) return doc.body.innerHTML;
   const tables = Array.from(doc.querySelectorAll("table")).filter(
     (table) => !table.parentElement?.closest("table"),
   );
