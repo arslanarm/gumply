@@ -919,6 +919,74 @@ input {
   gap: 0.5rem;
 }
 
+/* `?` keyboard-shortcuts overlay. */
+.shortcuts-dialog {
+  width: min(520px, 100%);
+  max-height: min(80vh, 680px);
+  overflow-y: auto;
+}
+
+.shortcuts-intro {
+  margin-bottom: 1rem;
+}
+
+.shortcuts-intro kbd {
+  margin: 0 0.1rem;
+}
+
+.shortcut-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.shortcut-group h3 {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.22rem 0;
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.shortcut-row + .shortcut-row {
+  border-top: 1px solid var(--border);
+}
+
+.shortcut-keys {
+  flex: none;
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.shortcut-label {
+  color: var(--muted);
+  text-align: right;
+}
+
+.shortcuts-dialog kbd {
+  display: inline-block;
+  padding: 0.08rem 0.38rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 /* ---------- Quick switcher (D13) ---------- */
 
 .quick-switcher-backdrop {

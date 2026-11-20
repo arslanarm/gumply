@@ -7,6 +7,7 @@ import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
 import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
+import { ShortcutsDialog } from "./components/ShortcutsDialog.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { UndoToast } from "./components/UndoToast.js";
@@ -17,6 +18,7 @@ import { focusAfterDelete } from "./lib/delete.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
+import { isTypingTarget } from "./lib/shortcuts.js";
 import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
 
 type ListStatus = "loading" | "ready" | "error";
@@ -53,6 +55,7 @@ export function App() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(() => isGraphHash(window.location.hash));
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
@@ -114,14 +117,27 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
-      if (pendingDelete) return;
+      if (pendingDelete || shortcutsOpen) return;
       event.preventDefault();
       if (searchOpen) closeSearch();
       else openSearch();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [searchOpen, openSearch, closeSearch, pendingDelete]);
+  }, [searchOpen, openSearch, closeSearch, pendingDelete, shortcutsOpen]);
+
+  // `?` opens the shortcut help unless the user is typing (spec/ux §5/§9).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "?" || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (pendingDelete || searchOpen || shortcutsOpen) return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      setShortcutsOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pendingDelete, searchOpen, shortcutsOpen]);
 
   const loadPages = useCallback(async (): Promise<PageMeta[] | null> => {
     try {
@@ -569,6 +585,16 @@ export function App() {
         <h1 className="app-name">Gumply</h1>
         <span className="topbar-spacer" />
         <ThemeToggle />
+        <button
+          type="button"
+          className="icon-button"
+          data-testid="shortcuts-button"
+          data-tooltip="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts (?)"
+          onClick={() => setShortcutsOpen(true)}
+        >
+          ?
+        </button>
         <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
 
@@ -730,6 +756,8 @@ export function App() {
           onClose={closeSearch}
         />
       ) : null}
+
+      {shortcutsOpen ? <ShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}
     </div>
   );
 }

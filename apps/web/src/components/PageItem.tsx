@@ -86,6 +86,9 @@ export function PageItem(props: PageItemProps) {
           if (event.key === "Enter") {
             event.preventDefault();
             props.onOpen(page.id);
+          } else if (event.key === "F2") {
+            event.preventDefault();
+            props.onStartRename(page.id, page.title);
           }
         }}
         draggable={!isRenaming}
