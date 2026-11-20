@@ -108,15 +108,36 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
         <div className="graph-toolbar">
           {hasPages ? (
             <>
-              <input
-                className="graph-filter"
-                data-testid="graph-filter"
-                type="search"
-                placeholder="Filter pages…"
-                aria-label="Filter pages by title"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
+              <div className="graph-filter-wrap">
+                <Icon name="search" size={14} className="graph-filter-icon" />
+                <input
+                  className="graph-filter"
+                  data-testid="graph-filter"
+                  type="search"
+                  placeholder="Filter pages…"
+                  aria-label="Filter pages by title"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && query) {
+                      event.preventDefault();
+                      setQuery("");
+                    }
+                  }}
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    className="graph-filter-clear"
+                    data-testid="graph-filter-clear"
+                    aria-label="Clear filter"
+                    data-tooltip="Clear filter"
+                    onClick={() => setQuery("")}
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className={`button-secondary graph-legend-toggle${legendOpen ? " is-active" : ""}`}
@@ -231,6 +252,9 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             <p className="graph-legend-row">
               <span className="graph-legend-dashed" aria-hidden="true" /> dashed = not created yet
             </p>
+            {(data?.tags ?? []).length > 0 ? (
+              <p className="graph-legend-caption">Colour = first tag</p>
+            ) : null}
             {(data?.tags ?? []).slice(0, 8).map((tag) => (
               <p key={tag} className="graph-legend-row graph-legend-tag">
                 <span

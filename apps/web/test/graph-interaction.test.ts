@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   capAlpha,
+  fitZoom,
   hitRadiusPx,
   MIN_HIT_RADIUS_PX,
   pickNode,
@@ -112,5 +113,37 @@ describe("visibleBounds", () => {
     const bounds = visibleBounds({ a: 2, d: 2, e: 0, f: 0 }, 400, 400, 40);
     expect(bounds.minX).toBe(-20);
     expect(bounds.maxX).toBe(220);
+  });
+});
+
+describe("fitZoom", () => {
+  const dot = (x: number, y: number, r = 4) => ({ x, y, left: r, right: r, top: r, bottom: r });
+
+  it("fits the farthest node, keeping its screen-space extent inside", () => {
+    // 100 units right, 4 px radius, 104 px of room → (104 − 4) / 100 = 1.
+    expect(fitZoom([dot(0, 0), dot(100, 0)], 0, 0, 104, 500)).toBeCloseTo(1);
+  });
+
+  it("makes room for a wide label on either side (#z5abndiz)", () => {
+    const labelled = { x: 100, y: 0, left: 50, right: 50, top: 4, bottom: 22 };
+    // (150 − 50) / 100 = 1: the label's half-width is kept inside.
+    expect(fitZoom([labelled], 0, 0, 150, 500)).toBeCloseTo(1);
+    // The same node to the left is limited by its left extent.
+    expect(fitZoom([{ ...labelled, x: -100 }], 0, 0, 150, 500)).toBeCloseTo(1);
+  });
+
+  it("centres on a given point, so a far neighbour on one side decides the zoom", () => {
+    // Centre on the current page at 0: the node at −200 needs the smaller zoom.
+    const zoom = fitZoom([dot(0, 0), dot(50, 0), dot(-200, 0)], 0, 0, 104, 500);
+    expect(zoom).toBeCloseTo(0.5);
+  });
+
+  it("uses the bottom extent for nodes below the centre (labels hang below)", () => {
+    const item = { x: 0, y: 100, left: 4, right: 4, top: 4, bottom: 24 };
+    expect(fitZoom([item], 0, 0, 500, 124)).toBeCloseTo(1);
+  });
+
+  it("is unbounded when everything sits on the centre", () => {
+    expect(fitZoom([dot(0, 0)], 0, 0, 100, 100)).toBe(Number.POSITIVE_INFINITY);
   });
 });

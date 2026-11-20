@@ -105,3 +105,42 @@ export function visibleBounds(
     maxY: (canvasHeight + marginPx - transform.f) / sy,
   };
 }
+
+/** A node to keep in view: graph position plus screen-px extents around it. */
+export interface FitItem {
+  x: number;
+  y: number;
+  /** CSS px the node (and its label) reach left/right/up/down of its centre. */
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * Largest zoom that keeps every item inside a `halfWidth × halfHeight` box
+ * (CSS px, padding already removed) centred on `cx/cy` in graph space.
+ * Screen-space extents (node radius, label width) don't scale with zoom, so
+ * each item gives `distance · k + extent ≤ half` → `k ≤ (half − extent) / distance`.
+ * Returns Infinity when every item sits on the centre.
+ */
+export function fitZoom(
+  items: readonly FitItem[],
+  cx: number,
+  cy: number,
+  halfWidth: number,
+  halfHeight: number,
+): number {
+  // Never let an extent eat the whole box: keep at least a few px of travel.
+  const room = (half: number, extent: number): number => Math.max(4, half - extent);
+  let zoom = Number.POSITIVE_INFINITY;
+  for (const item of items) {
+    const dx = item.x - cx;
+    const dy = item.y - cy;
+    if (dx > 1e-6) zoom = Math.min(zoom, room(halfWidth, item.right) / dx);
+    else if (dx < -1e-6) zoom = Math.min(zoom, room(halfWidth, item.left) / -dx);
+    if (dy > 1e-6) zoom = Math.min(zoom, room(halfHeight, item.bottom) / dy);
+    else if (dy < -1e-6) zoom = Math.min(zoom, room(halfHeight, item.top) / -dy);
+  }
+  return zoom;
+}

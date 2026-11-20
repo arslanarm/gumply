@@ -27,9 +27,16 @@ export type IconName =
   | "quote"
   | "search"
   | "sun"
-  | "trash";
+  | "trash"
+  | "x";
 
 const ICONS: Record<IconName, ReactNode> = {
+  x: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  ),
   arrowUp: (
     <>
       <path d="m5 12 7-7 7 7" />
