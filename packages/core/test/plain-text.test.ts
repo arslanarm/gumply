@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainText } from "../src/plain-text";
+import { markdownLinks, plainText } from "../src/plain-text";
 
 describe("plainText (#6zifz7da)", () => {
   it("drops inline formatting so phrases read as on screen", () => {
@@ -39,5 +39,29 @@ describe("plainText (#6zifz7da)", () => {
     expect(plainText(md)).toBe(
       "Heading one quoted line Callout title item one numbered done task const answer = 42; A B one two Soft break",
     );
+  });
+});
+
+describe("markdownLinks (#6zifz7da review)", () => {
+  it("lists the targets plainText hides, with their visible text", () => {
+    const md = [
+      "Read [the docs](https://example.com/a_b \"Title\") and ![logo](<attachments/my logo.png>).",
+      "Mail <mailto:me@example.com> or see <https://figma.com/file/1>.",
+      "Ask [[Ideas Q3|the ideas page]], [[Plan#Goals|goals]] and [[Plain]].",
+      "Bare https://github.com/foo stays in the plain text.",
+      "`[not](a-link)` and",
+      "```",
+      "[also](not-a-link)",
+      "```",
+    ].join("\n");
+    expect(markdownLinks(md)).toEqual([
+      { target: "https://example.com/a_b", text: "the docs" },
+      { target: "attachments/my logo.png", text: "logo" },
+      { target: "Ideas Q3", text: "the ideas page" },
+      { target: "Plan#Goals", text: "goals" },
+    ]);
+    // Bare URLs and autolinks are visible text already.
+    expect(plainText(md)).toContain("https://github.com/foo");
+    expect(plainText(md)).toContain("Mail mailto:me@example.com or see https://figma.com/file/1.");
   });
 });

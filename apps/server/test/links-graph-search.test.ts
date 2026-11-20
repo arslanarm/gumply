@@ -297,8 +297,15 @@ describe("search", () => {
     const [hit] = await getJson<SearchResult[]>(app, "/api/search?q=bold%20text");
     expect(hit!.snippet).toContain("Plain bold text");
     expect(hit!.snippet).not.toMatch(/\*\*|\[\[|\]\(/);
-    // Markup itself is not content: "**" or a URL isn't a body match.
-    expect(await getJson<SearchResult[]>(app, "/api/search?q=example.com")).toEqual([]);
+    // Pasted URLs stay searchable; the snippet shows the link text, not markup.
+    const [byUrl] = await getJson<SearchResult[]>(app, "/api/search?q=example.com");
+    expect(byUrl?.page.id).toBe("Formatted");
+    expect(byUrl!.snippet).toContain("the docs");
+    expect(byUrl!.snippet).not.toMatch(/\]\(|https?:/);
+    // A link target behind an alias too.
+    const [byTarget] = await getJson<SearchResult[]>(app, "/api/search?q=Ideas%20Q3");
+    expect(byTarget?.page.id).toBe("Formatted");
+    expect(byTarget!.snippet).toContain("the ideas page");
   });
 
   it("is case-insensitive and empty for a blank query", async () => {

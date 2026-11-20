@@ -31,7 +31,9 @@ function links(text: string): string {
       alias !== undefined && alias.trim().length > 0 ? alias : `${target}${heading}`,
     )
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\((?:<[^>]*>|[^)]*)\)/g, "$1");
+    .replace(/\[([^\]]*)\]\((?:<[^>]*>|[^)]*)\)/g, "$1")
+    // Autolinks show their URL (before HTML tags are stripped).
+    .replace(/<((?:https?|mailto):[^>\s]+)>/gi, "$1");
 }
 
 function marks(text: string): string {
@@ -76,4 +78,28 @@ export function plainText(markdown: string): string {
     out.push(restoreEscapes(marks(line)));
   }
   return out.join("\n").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export interface MarkdownLink {
+  /** Where it points: a URL, file path or `[[page]]` target. */
+  target: string;
+  /** What the reader sees (may be empty for an image without alt text). */
+  text: string;
+}
+
+/**
+ * Link targets hidden by `plainText` (#6zifz7da review): pasted URLs stay
+ * searchable ("figma.com"): `[t](url)`, `![alt](url)` and `[[Target|Alias]]`.
+ * Bare URLs and `<url>` autolinks are already in the plain text. Code is skipped.
+ */
+export function markdownLinks(markdown: string): MarkdownLink[] {
+  const links: MarkdownLink[] = [];
+  const text = markdown.replace(/^\s*(`{3,}|~{3,})[^]*?^\s*\1[^\n]*$/gm, "").replace(/`+[^`\n]*`+/g, "");
+  for (const match of text.matchAll(/!?\[([^\]]*)\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+"[^"]*")?\s*\)/g)) {
+    links.push({ target: match[2]!.replace(/^<|>$/g, ""), text: plainText(match[1]!) });
+  }
+  for (const match of text.matchAll(/!?\[\[([^[\]|#]*)(#[^[\]|]*)?\|([^[\]]+)\]\]/g)) {
+    links.push({ target: `${match[1]}${match[2] ?? ""}`, text: match[3]!.trim() });
+  }
+  return links;
 }
