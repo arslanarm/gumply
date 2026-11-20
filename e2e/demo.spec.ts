@@ -34,7 +34,9 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
 
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
+    if (message.type() === 'error') {
+      consoleErrors.push(`${message.text()} @ ${message.location().url}`);
+    }
   });
   page.on('pageerror', (error) => consoleErrors.push(error.message));
 
@@ -81,6 +83,36 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   await page.getByTestId('page-item-welcome').click();
   await expectPageTitle(page, 'Welcome');
   await expect(page.getByTestId('editor-content')).toContainText('Welcome to Gumply');
+
+  // Delete every page through the UI, like a user emptying the demo, then
+  // restart the API on the same vault. The marker must keep it empty: the old
+  // client-side seeding re-created the demo for a user who had emptied it.
+  await page.getByTestId('delete-page-button-page').click();
+  await expect(page.getByTestId('page-item-welcome')).toHaveCount(0);
+  // Deleting the open page opens the next one (the demo folder).
+  await expectPageTitle(page, 'Gumply demo');
+
+  await page.getByTestId('delete-page-button-page').click();
+  const dialog = page.getByRole('dialog', { name: 'Delete “Gumply demo”?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Its 2 sub-pages will be deleted too.');
+  await page.getByTestId('delete-confirm').click();
+  await expect(page.getByTestId('empty-state')).toBeVisible();
+  await expect(page.getByTestId('sidebar-empty')).toBeVisible();
+
+  const listPages = async () =>
+    (await (await request.get(`${DEMO_API_URL}/api/pages`)).json()) as {
+      id: string;
+      title: string;
+    }[];
+  expect(await listPages()).toHaveLength(0);
+  expect(existsSync(app.marker)).toBe(true);
+
+  await app.restartServer();
+  await page.reload();
+  await expect(page.getByTestId('empty-state')).toBeVisible();
+  await expect(page.getByTestId('page-item-welcome')).toHaveCount(0);
+  expect(await listPages()).toHaveLength(0);
 
   expect(consoleErrors).toEqual([]);
 });
