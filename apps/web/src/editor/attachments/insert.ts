@@ -2,6 +2,7 @@
  * Insert images and file cards, including upload placeholders (Q1c).
  * Images are block nodes; file cards are inline atoms.
  */
+import { hrefForAttachment } from "../../lib/attachment-links.js";
 import type { Attachment } from "@gumply/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
@@ -121,7 +122,7 @@ export function insertFileAttachment(editor: Editor, attrs: FileAttrs, pos: numb
 export function insertImageAttachment(editor: Editor, attachment: Attachment, pos: number): boolean {
   return insertImageBlock(
     editor,
-    { src: attachment.path, alt: fileNameWithoutExtension(attachment.name) },
+    { src: hrefForAttachment(attachment.path), alt: fileNameWithoutExtension(attachment.name) },
     pos,
   );
 }
@@ -130,7 +131,7 @@ export function insertFileCard(editor: Editor, attachment: Attachment, pos: numb
   return insertFileAttachment(
     editor,
     {
-      path: attachment.path,
+      path: hrefForAttachment(attachment.path),
       name: attachment.name,
       size: attachment.size,
       mime: attachment.mime,
@@ -188,14 +189,14 @@ export function finishUpload(editor: Editor, uploadId: string, attachment: Attac
     found.node.type.name === "image"
       ? {
           ...found.node.attrs,
-          src: attachment.path,
+          src: hrefForAttachment(attachment.path),
           alt: fileNameWithoutExtension(attachment.name),
           uploading: false,
           uploadId: "",
         }
       : {
           ...found.node.attrs,
-          path: attachment.path,
+          path: hrefForAttachment(attachment.path),
           name: attachment.name,
           size: attachment.size,
           mime: attachment.mime,

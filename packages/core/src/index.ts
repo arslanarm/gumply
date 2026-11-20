@@ -64,3 +64,14 @@ export {
 } from "./links.js";
 
 export { parseEmbeds } from "./embeds.js";
+export {
+  ATTACHMENTS_DIR,
+  attachmentHref,
+  encodeHref,
+  isAttachmentPath,
+  looksLikeAttachmentHref,
+  normaliseVaultPath,
+  noteFolder,
+  relinkAttachments,
+  resolveAttachmentHref,
+} from "./attachment-paths.js";

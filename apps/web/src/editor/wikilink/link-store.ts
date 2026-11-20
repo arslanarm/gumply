@@ -7,6 +7,8 @@ import type { Attachment, PageMeta } from "@gumply/core";
 import { useSyncExternalStore } from "react";
 
 export interface WikiLinkEnvironment {
+  /** Id (vault path) of the open page: attachment links are relative to it (D23). */
+  pageId: string;
   pages: readonly PageMeta[];
   attachments: readonly Attachment[];
   openLink: (link: { targetTitle: string; heading: string }) => void;
@@ -16,6 +18,7 @@ export interface WikiLinkEnvironment {
 const noop = () => {};
 
 let environment: WikiLinkEnvironment = {
+  pageId: "",
   pages: [],
   attachments: [],
   openLink: noop,

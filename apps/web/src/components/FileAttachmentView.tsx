@@ -1,5 +1,5 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { fileUrl } from "../api/client.js";
+import { resolveLink, urlForLink } from "../lib/attachment-links.js";
 import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { fileExtension, formatFileSize } from "../lib/files.js";
 import { Icon } from "./Icon.js";
@@ -8,8 +8,10 @@ import { Icon } from "./Icon.js";
 export function FileAttachmentView({ node, selected }: NodeViewProps) {
   const path = String(node.attrs.path ?? "");
   const name = String(node.attrs.name ?? path.split("/").pop() ?? "file");
-  const attachments = useWikiLinkEnvironment().attachments;
-  const known = attachments.find((item) => item.path === path || item.name === name);
+  const env = useWikiLinkEnvironment();
+  // D23: `path` is the link as written; resolve it against the open page.
+  const vaultPath = resolveLink(path, env);
+  const known = env.attachments.find((item) => item.path === vaultPath || item.name === name);
   const bytes = Number(node.attrs.size ?? 0) || known?.size || 0;
   const extension = fileExtension(name);
   const uploading = Boolean(node.attrs.uploading) || path.length === 0;
@@ -42,7 +44,7 @@ export function FileAttachmentView({ node, selected }: NodeViewProps) {
     >
       <a
         className="file-card-link"
-        href={fileUrl(path)}
+        href={urlForLink(path, env)}
         target="_blank"
         rel="noopener noreferrer"
         title={name}

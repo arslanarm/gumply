@@ -1,11 +1,14 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { useEffect, useState } from "react";
-import { fileUrl } from "../api/client.js";
+import { urlForLink } from "../lib/attachment-links.js";
+import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 
 /** Image block with a loading skeleton and an editable caption (= alt text). */
 export function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const src = String(node.attrs.src ?? "");
   const alt = String(node.attrs.alt ?? "");
+  // D23: `src` is the link as written; resolve it against the open page.
+  const env = useWikiLinkEnvironment();
   const uploading = Boolean(node.attrs.uploading) || src.length === 0;
   const [caption, setCaption] = useState(alt);
   const [failed, setFailed] = useState(false);
@@ -35,7 +38,7 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
         <div className="image-skeleton">Image unavailable · {node.attrs.alt || "attachment"}</div>
       ) : (
         <img
-          src={fileUrl(src)}
+          src={urlForLink(src, env)}
           alt={caption}
           draggable={false}
           onError={() => setFailed(true)}

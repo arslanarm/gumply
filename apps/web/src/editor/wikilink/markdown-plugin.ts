@@ -21,6 +21,8 @@ interface AttachmentMeta {
   path: string;
   name: string;
   alt: string;
+  /** Original Obsidian `![[x.png]]` / `[[x.pdf]]`, written back unchanged (D23). */
+  obsidian?: string;
 }
 
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
@@ -96,9 +98,9 @@ function readAttachmentRule(state: any, silent: boolean): boolean {
     if (!hasAttachmentExtension(inner)) return false;
     const path = attachmentPath(inner);
     const name = path.split("/").pop() ?? inner;
-    meta = { path, name, alt: "" };
-    tokenType = isImageName(name) ? "attachment_image" : "attachment_file";
     end = close + 2;
+    meta = { path, name, alt: "", obsidian: src.slice(pos, end) };
+    tokenType = isImageName(name) ? "attachment_image" : "attachment_file";
   } else if (src[pos] === "[" && src[pos + 1] === "[") {
     const close = src.indexOf("]]", pos + 2);
     if (close === -1) return false;
@@ -106,11 +108,13 @@ function readAttachmentRule(state: any, silent: boolean): boolean {
     if (!hasAttachmentExtension(inner)) return false;
     const path = attachmentPath(inner);
     const name = path.split("/").pop() ?? inner;
-    meta = { path, name, alt: "" };
-    tokenType = "attachment_file";
     end = close + 2;
+    meta = { path, name, alt: "", obsidian: src.slice(pos, end) };
+    tokenType = "attachment_file";
   } else if (src[pos] === "[" && src[pos + 1] !== "[") {
-    const match = /^\[([^\]]*)\]\((attachments\/[^)\s]+)(?:\s+"[^"]*")?\)/.exec(src.slice(pos));
+    // D23: vault-root (`attachments/…`) and note-relative (`../attachments/…`).
+    const match =
+      /^\[([^\]]*)\]\(((?:\.\/|(?:\.\.\/)+)?attachments\/[^)\s]+)(?:\s+"[^"]*")?\)/.exec(src.slice(pos));
     if (!match) return false;
     const path = match[2] ?? "";
     if (path.length === 0) return false;
@@ -151,12 +155,14 @@ export function wikilinkMarkdownPlugin(md: any): void {
   md.renderer.rules.attachment_image = (tokens: any[], index: number): string => {
     const meta = tokens[index]?.meta as AttachmentMeta | undefined;
     if (!meta) return "";
-    return `<img src="${escapeHtml(meta.path)}" alt="${escapeHtml(meta.alt)}">`;
+    const obsidian = meta.obsidian ? ` data-obsidian="${escapeHtml(meta.obsidian)}"` : "";
+    return `<img src="${escapeHtml(meta.path)}" alt="${escapeHtml(meta.alt)}"${obsidian}>`;
   };
 
   md.renderer.rules.attachment_file = (tokens: any[], index: number): string => {
     const meta = tokens[index]?.meta as AttachmentMeta | undefined;
     if (!meta) return "";
-    return `<file-attachment data-path="${escapeHtml(meta.path)}" data-name="${escapeHtml(meta.name)}">${escapeHtml(meta.name)}</file-attachment>`;
+    const obsidian = meta.obsidian ? ` data-obsidian="${escapeHtml(meta.obsidian)}"` : "";
+    return `<file-attachment data-path="${escapeHtml(meta.path)}" data-name="${escapeHtml(meta.name)}"${obsidian}>${escapeHtml(meta.name)}</file-attachment>`;
   };
 }

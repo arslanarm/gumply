@@ -2,6 +2,7 @@
  * `[[` autocomplete wiring (spec/ux §8). The React menu lives in LinkMenu;
  * this extension only computes suggestions and performs the insert.
  */
+import { hrefForAttachment } from "../../lib/attachment-links.js";
 import { Extension } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
 import Suggestion, {
@@ -62,7 +63,7 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
                   .insertContent({
                     type: "fileAttachment",
                     attrs: {
-                      path: attachment.path,
+                      path: hrefForAttachment(attachment.path),
                       name: attachment.name,
                       size: attachment.size,
                       mime: attachment.mime,
