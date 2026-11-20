@@ -311,3 +311,53 @@ async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> 
   }
   throw new Error("Timed out waiting for the vault watcher");
 }
+
+describe("display titles the file name can't hold (#phvu6zt9)", () => {
+  it("keeps `Roadmap: Q3?` in gumply.title of `Roadmap Q3.canvas`, and links use it as the alias", async () => {
+    const { store, dir } = await vault({ "Notes.md": "See [[Plan]]\n", "Plan.canvas": canvasFile({ nodes: [], edges: [] }) });
+    const renamed = await store.updateBoard("Plan.canvas", { title: "Roadmap: Q3?" });
+    expect(renamed.meta).toMatchObject({ id: "Roadmap Q3.canvas", title: "Roadmap: Q3?" });
+    const raw = parseCanvas(await readFile(join(dir, "Roadmap Q3.canvas"), "utf8"));
+    expect(raw.gumply).toEqual({ title: "Roadmap: Q3?" });
+    expect(await readFile(join(dir, "Notes.md"), "utf8")).toBe("See [[Roadmap Q3.canvas|Roadmap: Q3?]]\n");
+
+    // Survives a restart, a save that drops the key (a client), and search.
+    const reopened = new VaultStore(dir);
+    await reopened.init();
+    expect(reopened.getBoard("Roadmap Q3.canvas").meta.title).toBe("Roadmap: Q3?");
+    const loaded = reopened.getBoard("Roadmap Q3.canvas");
+    await reopened.updateBoard("Roadmap Q3.canvas", { board: { nodes: [text("a", "x")], edges: [] }, expectedUpdated: loaded.meta.updated });
+    expect(parseCanvas(await readFile(join(dir, "Roadmap Q3.canvas"), "utf8")).gumply).toEqual({ title: "Roadmap: Q3?" });
+    expect(reopened.search("roadmap: q3")[0]?.page).toMatchObject({ id: "Roadmap Q3.canvas", title: "Roadmap: Q3?" });
+  });
+
+  it("created with such a title, or behind a collision suffix; dropped again when the name says it all", async () => {
+    const { store, dir } = await vault({ "Map.md": "Page\n" });
+    const created = await store.createBoard({ title: "Ideas / later" });
+    expect(created.meta).toMatchObject({ id: "Ideas later.canvas", title: "Ideas / later" });
+    expect(created.board.gumply).toEqual({ title: "Ideas / later" });
+
+    const suffixed = await store.createBoard({ title: "Map", icon: "🧭" });
+    expect(suffixed.meta).toMatchObject({ id: "Map 2.canvas", title: "Map" });
+    expect(suffixed.board.gumply).toEqual({ icon: "🧭", title: "Map" });
+
+    const plain = await store.updateBoard("Ideas later.canvas", { title: "Ideas" });
+    expect(plain.meta).toMatchObject({ id: "Ideas.canvas", title: "Ideas" });
+    expect(parseCanvas(await readFile(join(dir, "Ideas.canvas"), "utf8")).gumply).toBeUndefined();
+  });
+
+  it("a rename outside Gumply wins over a stale stored title", async () => {
+    const { dir } = await vault({
+      "Renamed in Obsidian.canvas": canvasFile({ nodes: [], edges: [], gumply: { title: "Roadmap: Q3?" } }),
+      "Roadmap Q3 2.canvas": canvasFile({ nodes: [], edges: [], gumply: { title: "Roadmap: Q3?" } }),
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+    expect(store.getBoard("Renamed in Obsidian.canvas").meta.title).toBe("Renamed in Obsidian");
+    // A duplicate suffix still belongs to the stored title.
+    expect(store.getBoard("Roadmap Q3 2.canvas").meta.title).toBe("Roadmap: Q3?");
+    // The stale key is cleaned up on the next save.
+    await store.updateBoard("Renamed in Obsidian.canvas", { board: { nodes: [], edges: [] } });
+    expect(parseCanvas(await readFile(join(dir, "Renamed in Obsidian.canvas"), "utf8")).gumply).toBeUndefined();
+  });
+});

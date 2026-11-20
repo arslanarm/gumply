@@ -152,6 +152,38 @@ function collisionKey(id: string): string {
   return lower.endsWith(BOARD_EXTENSION) ? lower.slice(0, -BOARD_EXTENSION.length) : lower;
 }
 
+/** A board's file name without folder and `.canvas`: `Projects/Map.canvas` → `Map`. */
+function boardStem(id: PageId): string {
+  return (id.split("/").pop() ?? id).slice(0, -BOARD_EXTENSION.length);
+}
+
+/**
+ * #phvu6zt9: a board's display title lives in `gumply.title` when the file
+ * name can't hold it ("Roadmap: Q3?" in `Roadmap Q3.canvas`, or "Map" in
+ * `Map 2.canvas`). The key is server-owned: set here on every write and
+ * removed when the file name says it all.
+ */
+function withBoardTitle(board: CanvasBoard, title: string, stem: string): CanvasBoard {
+  const data = board.gumply && typeof board.gumply === "object" ? { ...board.gumply } : {};
+  if (title === stem) delete data.title;
+  else data.title = title;
+  const next: CanvasBoard = { ...board };
+  if (Object.keys(data).length === 0) delete next.gumply;
+  else next.gumply = data;
+  return next;
+}
+
+/**
+ * The title to show: `gumply.title` while it still belongs to this file name
+ * (it sanitises to the stem, a D20 ` 2` suffix allowed), else the stem. After a
+ * rename in Obsidian the old key no longer matches and the new name wins.
+ */
+function boardDisplayTitle(board: CanvasBoard, stem: string): string {
+  const stored = board.gumply && typeof board.gumply.title === "string" ? board.gumply.title.trim() : "";
+  if (stored && matchesTitleSegment(stem, pageSegment(stored))) return stored;
+  return stem || "Untitled";
+}
+
 /** How many entries `parseCanvas` would drop from this file (0 when unsure). */
 function droppedCanvasEntries(source: string, board: CanvasBoard): number {
   try {
@@ -808,7 +840,7 @@ export class VaultStore {
     const id = await this.freeId(childPageId(parentId, title), "whiteboard");
     this.redirects.delete(id);
     const filePath = this.filePathFor(id);
-    const board = emptyCanvas(icon ? { icon } : undefined);
+    const board = withBoardTitle(emptyCanvas(icon ? { icon } : undefined), title, boardStem(id));
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, serializeCanvas(board), { encoding: "utf8", flag: "wx" });
     const record = await this.readBoardRecord(filePath, id);
@@ -877,18 +909,21 @@ export class VaultStore {
     const titleChanged = nextTitle !== previousTitle;
     const beforeMetas = titleChanged ? this.list() : [];
 
+    // D20: the file name follows the title; the id keeps `.canvas`. The full
+    // title is (re)applied to `gumply.title` on every save, so a client that
+    // drops the key can't lose it (#phvu6zt9).
+    const targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle, "whiteboard") : id;
+    board = withBoardTitle(board, nextTitle, boardStem(targetId));
+
     const repairBackup = await this.saveBoardRecord(record, board);
 
     const rewrittenPages: PageId[] = [];
-    let targetId = id;
     if (titleChanged) {
-      // D20: the file name is the title; the id keeps `.canvas`.
-      targetId = await this.renameTarget(id, record.parentId, nextTitle, "whiteboard");
       if (targetId !== id) {
         rewrittenPages.push(...(await this.relocateNow(id, targetId)));
         record = this.pages.get(targetId) ?? record;
       }
-      record.title = (targetId.split("/").pop() ?? targetId).slice(0, -BOARD_EXTENSION.length);
+      record.title = nextTitle;
       rewrittenPages.push(...(await this.rewriteLinksTo(id, record, previousTitle, beforeMetas)));
       this.reindexAll();
     } else {
@@ -1681,7 +1716,7 @@ export class VaultStore {
     const name = id.split("/").pop() ?? id;
     const record: PageRecord = {
       id,
-      title: name.slice(0, -BOARD_EXTENSION.length) || "Untitled",
+      title: boardDisplayTitle(board, name.slice(0, -BOARD_EXTENSION.length)),
       tags: [],
       parentId: null,
       created: stats.birthtime.toISOString(),
