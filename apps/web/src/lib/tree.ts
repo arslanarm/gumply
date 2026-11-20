@@ -9,12 +9,14 @@ export interface PageTreeNode {
   children: PageTreeNode[];
 }
 
+// One collator for every comparison: `localeCompare` with options builds a
+// new one per call, which made sorting 1000 pages take ~100 ms on a slow CPU.
+const titleCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+const idCollator = new Intl.Collator();
+
 function comparePages(a: PageMeta, b: PageMeta): number {
-  const byTitle = a.title.localeCompare(b.title, undefined, {
-    sensitivity: "base",
-    numeric: true,
-  });
-  return byTitle !== 0 ? byTitle : a.id.localeCompare(b.id);
+  const byTitle = titleCollator.compare(a.title, b.title);
+  return byTitle !== 0 ? byTitle : idCollator.compare(a.id, b.id);
 }
 
 /** Sibling ordering used by both the tree and focus-after-delete. */
