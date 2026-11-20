@@ -76,13 +76,12 @@ test.describe('editor', () => {
     await expect(body.locator('pre')).toContainText('const answer = 42;');
   });
 
-  // Known open bug #rsyu8ixx: `- [ ] ` does not create a to-do yet. Flip this
-  // to a real test when the fix lands.
-  test.fixme('- [ ] creates a to-do (blocked by #rsyu8ixx)', async ({ page, vault }) => {
+  test('- [ ] creates a to-do (#rsyu8ixx)', async ({ page, vault }) => {
     const { body } = await openPage(page, vault, 'Todo shortcut');
 
     await page.keyboard.type('- [ ] task');
     await expect(body.getByRole('checkbox')).toBeVisible();
+    await expect(body.locator('li')).toContainText('task');
   });
 
   test('slash menu filters by keyword, inserts with Enter and closes on Esc', async ({
