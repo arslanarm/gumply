@@ -70,6 +70,11 @@ export interface EditorControls {
   isDirty: () => boolean;
   /** Force-save the current buffer after a conflict ("Keep mine"). */
   keepMine: () => Promise<void>;
+  /**
+   * The file was recreated from this buffer (Restore page): adopt its version
+   * and save anything still pending against it, without a remount.
+   */
+  adoptRecreatedFile: (id: string, updated: string) => Promise<void>;
 }
 
 export interface EditorProps {
@@ -655,6 +660,12 @@ export function Editor({
       isDirty: () => autosave.isDirty(),
       keepMine: async () => {
         forceRef.current = true;
+        await autosave.retry();
+      },
+      adoptRecreatedFile: async (id: string, updated: string) => {
+        // Set both now: App's state update for them renders later.
+        pageIdRef.current = id;
+        versionRef.current = updated;
         await autosave.retry();
       },
     });
