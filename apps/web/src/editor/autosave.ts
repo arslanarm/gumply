@@ -11,7 +11,7 @@
  * keystroke. It only appears if a write is still running after 500ms.
  */
 
-export type SaveState = "idle" | "saving" | "saved" | "error";
+export type SaveState = "idle" | "saving" | "saved" | "error" | "conflict";
 
 export interface AutosaveOptions {
   /** Persist one snapshot. May reject; Autosave converts that to `error`. */
@@ -21,6 +21,8 @@ export interface AutosaveOptions {
   delay?: number;
   /** Show `saving` only after a write has been in flight this long (default 500). */
   indicatorDelay?: number;
+  /** Treat this error as "page changed on disk" and stop automatic retries. */
+  isConflict?: (error: unknown) => boolean;
 }
 
 export class Autosave {
@@ -28,6 +30,7 @@ export class Autosave {
   private readonly onState: ((state: SaveState) => void) | undefined;
   private readonly delay: number;
   private readonly indicatorDelay: number;
+  private readonly isConflict: ((error: unknown) => boolean) | undefined;
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private indicatorTimer: ReturnType<typeof setTimeout> | null = null;
@@ -42,6 +45,7 @@ export class Autosave {
     this.onState = options.onState;
     this.delay = options.delay ?? 600;
     this.indicatorDelay = options.indicatorDelay ?? 500;
+    this.isConflict = options.isConflict;
   }
 
   get state(): SaveState {
@@ -67,6 +71,8 @@ export class Autosave {
 
     this.pending = value;
     this.clearTimer();
+    // Stay in conflict until the user chooses Reload / Keep mine.
+    if (this.status === "conflict") return;
     // Typing hides a stale "Saved" label, but a write already in flight keeps
     // its "Saving…" state, and an unresolved error stays visible until retry.
     if (!this.writing && this.status !== "error") this.setStatus("idle");
@@ -81,6 +87,17 @@ export class Autosave {
     this.clearTimer();
     this.chain = this.chain.then(() => this.drain());
     return this.chain;
+  }
+
+  /** Retry after a conflict (used by "Keep mine"). */
+  retry(): Promise<void> {
+    if (this.status === "conflict") this.setStatus("idle");
+    return this.flush();
+  }
+
+  /** True while local edits are newer than the last successful save. */
+  isDirty(): boolean {
+    return this.pending !== null || this.writing;
   }
 
   /** Flush what is pending and stop the debounce timer. */
@@ -105,11 +122,15 @@ export class Autosave {
         await this.saveValue(value);
         this.lastSaved = value;
         wrote = true;
-      } catch {
+      } catch (error) {
         // Keep the newest unsaved snapshot for the next attempt.
         if (this.pending === null) this.pending = value;
         this.writing = false;
         this.clearIndicatorTimer();
+        if (this.isConflict?.(error)) {
+          this.setStatus("conflict");
+          return;
+        }
         this.setStatus("error");
         return;
       }

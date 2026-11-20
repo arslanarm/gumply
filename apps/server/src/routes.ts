@@ -118,6 +118,9 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (icon !== undefined) patch.icon = icon;
     const tags = tagsValue(body);
     if (tags !== undefined) patch.tags = tags;
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) patch.expectedUpdated = expectedUpdated;
+    if (body.force === true) patch.force = true;
 
     const result = await store.update(c.req.param("id"), patch);
     const { rewrittenPages, ...page } = result;

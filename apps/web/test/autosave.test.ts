@@ -156,3 +156,39 @@ describe("Autosave", () => {
     expect(save).toHaveBeenCalledWith("left the page");
   });
 });
+
+describe("Autosave conflict", () => {
+  it("stops auto-retrying on a conflict and resumes with retry()", async () => {
+    vi.useFakeTimers();
+    const conflict = new Error("changed on disk");
+    const save = vi
+      .fn<(_value: string) => Promise<void>>()
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValue(undefined);
+    const states: SaveState[] = [];
+    const autosave = new Autosave({
+      save,
+      delay: 100,
+      isConflict: (error) => error === conflict,
+      onState: (state) => states.push(state),
+    });
+
+    autosave.schedule("mine");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(autosave.state).toBe("conflict");
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(autosave.isDirty()).toBe(true);
+
+    // Further typing keeps the conflict state and does not overwrite.
+    autosave.schedule("mine plus more");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(autosave.state).toBe("conflict");
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await autosave.retry();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(autosave.state).toBe("saved");
+    expect(autosave.isDirty()).toBe(false);
+    expect(states).toContain("conflict");
+  });
+});

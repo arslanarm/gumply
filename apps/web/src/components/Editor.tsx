@@ -6,7 +6,7 @@ import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion
 import type { Attachment, Page, PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
-import { api } from "../api/client.js";
+import { api, ApiRequestError } from "../api/client.js";
 import { BlockGutter } from "./BlockGutter.js";
 import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
@@ -40,12 +40,17 @@ import { taskCheckboxLabel } from "../lib/task.js";
 export interface EditorControls {
   flush: () => Promise<void>;
   focusBody: () => void;
+  /** True while local edits are newer than the last save. */
+  isDirty: () => boolean;
+  /** Force-save the current buffer after a conflict ("Keep mine"). */
+  keepMine: () => Promise<void>;
 }
 
 export interface EditorProps {
   page: Page;
   pages: readonly PageMeta[];
   onSaveState: (state: SaveState) => void;
+  onSaved?: (page: Page) => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
   onCreateLink: (title: string) => void;
@@ -89,6 +94,7 @@ export function Editor({
   page,
   pages,
   onSaveState,
+  onSaved,
   onReady,
   onOpenLink,
   onCreateLink,
@@ -108,16 +114,38 @@ export function Editor({
 
   const onSaveStateRef = useRef(onSaveState);
   onSaveStateRef.current = onSaveState;
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
   const onHeadingResultRef = useRef(onHeadingResult);
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
+  const versionRef = useRef(page.updated);
+  const forceRef = useRef(false);
+
+  // A rename/reload from App updates the version this editor must send.
+  useEffect(() => {
+    versionRef.current = page.updated;
+  }, [page.updated]);
 
   const autosave = useMemo(() => {
     const instance = new Autosave({
       save: async (content) => {
-        await api.updatePage(page.id, { content });
+        const force = forceRef.current;
+        try {
+          const updated = await api.updatePage(page.id, {
+            content,
+            ...(force ? { force: true } : { expectedUpdated: versionRef.current }),
+          });
+          forceRef.current = false;
+          versionRef.current = updated.updated;
+          onSavedRef.current?.(updated);
+        } catch (error) {
+          if (!force) forceRef.current = false;
+          throw error;
+        }
       },
+      isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
       onState: (state) => onSaveStateRef.current(state),
     });
     instance.reset(page.content);
@@ -420,6 +448,11 @@ export function Editor({
     onReady?.({
       flush: () => autosave.flush(),
       focusBody: () => editor.commands.focus("start"),
+      isDirty: () => autosave.isDirty(),
+      keepMine: async () => {
+        forceRef.current = true;
+        await autosave.retry();
+      },
     });
   }, [editor, autosave, onReady]);
 

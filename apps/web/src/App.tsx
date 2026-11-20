@@ -81,6 +81,8 @@ export function App() {
 
   const selectedRef = useRef<PageId | null>(selectedId);
   selectedRef.current = selectedId;
+  const pageRef = useRef<Page | null>(page);
+  pageRef.current = page;
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
@@ -191,6 +193,82 @@ export function App() {
     reloadEditorAfterFetch.current = true;
     setPageReload((value) => value + 1);
   }, []);
+
+  const handlePageSaved = useCallback((updated: Page) => {
+    setPages((previous) =>
+      previous.map((item) =>
+        item.id === updated.id
+          ? {
+              ...item,
+              title: updated.title,
+              icon: updated.icon,
+              tags: updated.tags,
+              updated: updated.updated,
+            }
+          : item,
+      ),
+    );
+    setPage((previous) =>
+      previous && previous.id === updated.id
+        ? {
+            ...previous,
+            title: updated.title,
+            icon: updated.icon,
+            tags: updated.tags,
+            updated: updated.updated,
+          }
+        : previous,
+    );
+  }, []);
+
+  const handleConflictReload = useCallback(() => {
+    requestPageReload();
+  }, [requestPageReload]);
+
+  const handleConflictKeepMine = useCallback(() => {
+    void editorControls.current?.keepMine();
+  }, []);
+
+  // Poll the lightweight page index so external file changes appear without a
+  // restart. Only reload the open page when it has no local unsaved edits.
+  const refreshFromDisk = useCallback(async () => {
+    let list: PageMeta[] | null = null;
+    try {
+      list = await api.listPages();
+    } catch {
+      return;
+    }
+    setPages((previous) =>
+      JSON.stringify(previous) === JSON.stringify(list) ? previous : (list as PageMeta[]),
+    );
+
+    const currentId = selectedRef.current;
+    if (!currentId) return;
+    const meta = list.find((item) => item.id === currentId);
+    if (!meta) {
+      if (editorControls.current?.isDirty()) {
+        setActionError("This page was deleted on disk. Your unsaved text is still here.");
+        return;
+      }
+      setPage(null);
+      setPageStatus("error");
+      return;
+    }
+    const loaded = pageRef.current;
+    if (
+      loaded &&
+      loaded.id === currentId &&
+      meta.updated !== loaded.updated &&
+      !editorControls.current?.isDirty()
+    ) {
+      requestPageReload();
+    }
+  }, [requestPageReload]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void refreshFromDisk(), 2000);
+    return () => window.clearInterval(timer);
+  }, [refreshFromDisk]);
 
   // Initial load: the server seeds a fresh vault; open its Welcome page once.
   // Otherwise open the first root page.
@@ -701,7 +779,12 @@ export function App() {
         >
           <Icon name="keyboard" size={16} />
         </button>
-        <SaveStatus state={saveState} onRetry={handleRetrySave} />
+        <SaveStatus
+          state={saveState}
+          onRetry={handleRetrySave}
+          onReload={handleConflictReload}
+          onKeepMine={handleConflictKeepMine}
+        />
       </header>
 
       <div
@@ -795,6 +878,7 @@ export function App() {
                     page={page}
                     pages={pages}
                     onSaveState={setSaveState}
+                    onSaved={handlePageSaved}
                     onReady={handleEditorReady}
                     onOpenLink={handleOpenLink}
                     onCreateLink={createLinkedPage}

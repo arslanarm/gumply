@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanupVaults, createPage, createTestServer, getJson, jsonRequest } from "./helpers";
 
@@ -102,6 +103,27 @@ describe("pages CRUD", () => {
 
     const bad = await jsonRequest(app, "PUT", "/api/pages/notes", { title: "   " });
     expect(bad.status).toBe(400);
+  });
+
+  it("returns 409 for a stale conditional update and accepts force", async () => {
+    const { app, dir } = await createTestServer();
+    const created = await createPage(app, { title: "Conflict", content: "original" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await writeFile(`${dir}/conflict.md`, "external body", "utf8");
+
+    const stale = await jsonRequest(app, "PUT", "/api/pages/conflict", {
+      content: "mine",
+      expectedUpdated: created.updated,
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ error: "This page changed on disk." });
+
+    const forced = await jsonRequest(app, "PUT", "/api/pages/conflict", {
+      content: "mine",
+      force: true,
+    });
+    expect(forced.status).toBe(200);
+    expect(((await forced.json()) as Record<string, unknown>).content).toBe("mine");
   });
 
   it("rejects bad input with 400 and unknown pages with 404", async () => {
