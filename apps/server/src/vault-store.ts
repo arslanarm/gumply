@@ -494,6 +494,12 @@ export class VaultStore {
       return null;
     }
 
+    // #pc3wvc2u: no notes isn't the same as empty. A folder that already
+    // holds the user's files (PDFs, images, scripts…) is opened as it is:
+    // no demo, and nothing written into it, not even the marker. Only dot
+    // entries (.DS_Store, .obsidian, .gumply) don't count.
+    if (await this.hasVisibleEntries()) return null;
+
     let welcomeId: PageId | null = null;
     for (const demo of buildDemoPages()) {
       const created = await this.create(demo);
@@ -511,6 +517,14 @@ export class VaultStore {
     await this.writeDemoMarker();
     this.newVaultPage = welcomeId;
     return welcomeId;
+  }
+
+  private async hasVisibleEntries(): Promise<boolean> {
+    try {
+      return (await readdir(this.root)).some((name) => !name.startsWith("."));
+    } catch {
+      return false;
+    }
   }
 
   /** One-shot signal for the first browser: which page to open. */

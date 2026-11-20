@@ -189,3 +189,27 @@ describe("demo whiteboard (#dvnb8n2n)", () => {
     expect(files).toEqual(["Welcome.md", "Gumply demo/Getting started.md", "Gumply demo/Graph view.md"]);
   });
 });
+
+describe("demo seeding only in an empty folder (#pc3wvc2u)", () => {
+  it("never writes into a folder that already has the user's files", async () => {
+    const dir = await tempVault();
+    const { mkdir, readdir, writeFile } = await import("node:fs/promises");
+    await writeFile(join(dir, "report.pdf"), "%PDF-1.4");
+    await mkdir(join(dir, "photos"));
+    const store = new VaultStore(dir);
+    await store.init();
+    expect(await store.seedDemoIfFirstRun()).toBeNull();
+    expect(store.list()).toEqual([]);
+    expect((await readdir(dir)).sort()).toEqual(["photos", "report.pdf"]);
+  });
+
+  it("still seeds a folder that only holds dot entries (a fresh Obsidian vault)", async () => {
+    const dir = await tempVault();
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(join(dir, ".obsidian"));
+    await writeFile(join(dir, ".DS_Store"), "");
+    const store = new VaultStore(dir);
+    await store.init();
+    expect(await store.seedDemoIfFirstRun()).toBe("Welcome");
+  });
+});
