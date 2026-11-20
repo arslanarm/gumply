@@ -3,6 +3,9 @@ import { test, expect, type Vault } from './fixtures';
 import { API_URL } from './support/env';
 import { expectPageTitle } from './support/ui';
 
+/** Cmd on macOS, Ctrl elsewhere — the app accepts both. */
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
 /** Seed one page and open it, returning the editor body locator. */
 async function openPage(page: Page, vault: Vault, title: string, content = '') {
   const [seeded] = await vault.seed([{ title, content }]);
@@ -163,5 +166,49 @@ test.describe('editor', () => {
 
     await page.reload();
     await expect(page.getByTestId('editor-content')).toContainText('Appended.');
+  });
+
+  test('undo after a # shortcut restores literal text and redo round-trips (#ihi666yy)', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const { seeded, body } = await openPage(page, vault, 'Undo redo');
+
+    await page.keyboard.type('# Heading');
+    await expect(body.locator('h1')).toHaveText('Heading');
+
+    // LIFO undo: the typed text is undone but the literal "#" marker remains,
+    // instead of an empty block (or the whole heading being wiped).
+    await page.keyboard.press(`${MOD}+z`);
+    await expect(body.locator('h1')).toHaveCount(0);
+    await expect(body).toHaveText('#');
+
+    // Redo with Shift+Mod+z restores the heading.
+    await page.keyboard.press(`Shift+${MOD}+z`);
+    await expect(body.locator('h1')).toHaveText('Heading');
+    await expect(body).not.toContainText('# Heading');
+
+    // The same round-trip via Mod+y (Ctrl+Y on Linux/Windows).
+    await page.keyboard.press(`${MOD}+z`);
+    await expect(body.locator('h1')).toHaveCount(0);
+    await expect(body).toHaveText('#');
+    await page.keyboard.press(`${MOD}+y`);
+    await expect(body.locator('h1')).toHaveText('Heading');
+    await expect(body).toHaveText('Heading');
+
+    // No ProseMirror/DOM desync: the saved Markdown and a reload agree.
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', {
+      timeout: 10_000,
+    });
+    const saved = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(seeded.id)}`)
+    ).json();
+    expect(saved.content).toContain('# Heading');
+
+    await page.reload();
+    const reloaded = page.getByTestId('editor-content');
+    await expect(reloaded.locator('h1')).toHaveText('Heading');
+    await expect(reloaded).not.toContainText('# Heading');
   });
 });
