@@ -5,7 +5,8 @@
  * No trigger:
  * - after a letter, digit or other non-opening character (`12:30`, `http:`,
  *   `a:b`, `example.com/x:y`);
- * - inside code (code blocks, inline code); the caller checks that;
+ * - inside code (code blocks, inline code — the caller checks those — and a
+ *   code span still being typed after an unclosed backtick);
  * - with a space in the query (`: not this`).
  */
 
@@ -28,5 +29,8 @@ export function findEmojiQuery(textBefore: string): EmojiQuery | null {
   if (!QUERY.test(query)) return null;
   const before = colon > 0 ? textBefore[colon - 1]! : null;
   if (before !== null && !OPENERS.test(before)) return null;
+  // An unclosed backtick means a code span is being typed (its code mark only
+  // appears when it closes): no suggestions inside it.
+  if ((textBefore.slice(0, colon).match(/`/g)?.length ?? 0) % 2 === 1) return null;
   return { query, colon };
 }
