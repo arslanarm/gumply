@@ -28,9 +28,12 @@ The vault defaults to `./vault` and is created on first start. Point it elsewher
 
 **The API stays on your computer.** It can read and change every note, so it listens on
 `127.0.0.1` only, sends no CORS headers, refuses requests whose `Host` isn't this machine (DNS
-rebinding), and refuses writes whose `Origin` isn't the Gumply web app.
-- `GUMPLY_WEB_PORT` (default `5173`, comma-separated): the port(s) the web app runs on, whose
-  origin may write. Set it when you serve the web app on another port.
+rebinding), and refuses writes whose `Origin` isn't the Gumply web app. The web app is
+recognised through the Vite proxy on any port (`npm run dev`, `vite --port …`, `vite preview`),
+so nothing needs configuring.
+- `GUMPLY_WEB_PORT` (default `5173`, comma-separated): extra web-app port(s) allowed to write
+  when the app doesn't go through Gumply's Vite proxy (e.g. a custom reverse proxy). The server
+  logs a hint when it refuses a write.
 - `GUMPLY_HOST`: listen on another interface, e.g. your LAN address `192.168.1.20`; that name is
   then also accepted as `Host`. Anyone on that network can then read and change your notes, and
   the server prints a warning.
