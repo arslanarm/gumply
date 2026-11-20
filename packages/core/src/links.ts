@@ -90,17 +90,58 @@ function maskInlineCode(text: string): string {
   return chars.join("");
 }
 
-/** A file-extension-like suffix (`.pdf`, `.png`, `.7z`) but not a version (`.2`). */
-const FILE_EXTENSION = /\.(?!\d+$)[a-z0-9]{1,10}$/i;
+/** File kinds we treat as attachments (D18/D19); no code/domain extensions. */
+const ATTACHMENT_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "svg",
+  "avif",
+  "heic",
+  "bmp",
+  "ico",
+  "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "odt",
+  "ods",
+  "odp",
+  "rtf",
+  "txt",
+  "csv",
+  "epub",
+  "mp3",
+  "wav",
+  "ogg",
+  "m4a",
+  "flac",
+  "mp4",
+  "mov",
+  "webm",
+  "mkv",
+  "zip",
+  "7z",
+  "tar",
+  "gz",
+  "rar",
+]);
 
-export function hasFileExtension(name: string): boolean {
-  return FILE_EXTENSION.test(name.trim());
+const FILE_EXTENSION = /\.([a-z0-9]{1,10})$/i;
+
+/** True when a name ends in an allowlisted attachment extension. */
+export function hasAttachmentExtension(name: string): boolean {
+  const match = FILE_EXTENSION.exec(name.trim());
+  return match ? ATTACHMENT_EXTENSIONS.has((match[1] ?? "").toLowerCase()) : false;
 }
 
-function isNonMarkdownFileTarget(title: string): boolean {
-  const match = FILE_EXTENSION.exec(title.trim());
-  if (!match) return false;
-  return match[0].slice(1).toLowerCase() !== "md";
+function isAttachmentFileTarget(title: string): boolean {
+  return hasAttachmentExtension(title);
 }
 
 /** Extract all page wikilinks from a Markdown body, in document order. */
@@ -121,7 +162,7 @@ export function extractWikilinks(markdown: string): WikiLink[] {
     const hash = targetPart.indexOf("#");
     const title = (hash === -1 ? targetPart : targetPart.slice(0, hash)).trim().replace(/\s+/g, " ");
     if (title.length === 0) continue;
-    if (isNonMarkdownFileTarget(title)) continue;
+    if (isAttachmentFileTarget(title)) continue;
 
     const heading = hash === -1 ? "" : targetPart.slice(hash + 1).trim();
     const alias = aliasPart.trim();

@@ -26,7 +26,17 @@ describe("parseEmbeds", () => {
 
   it("does not treat ordinary links as file embeds", () => {
     expect(parseEmbeds("[Gumply](https://example.com) [other](docs/other.md)")).toEqual([]);
-    expect(parseEmbeds("[[v1.2]]")).toEqual([]);
+    expect(parseEmbeds("[[v1.2]] [[Node.js]] [[ASP.NET]] [[example.com]]")).toEqual([]);
+  });
+
+  it("recognises an allowlisted attachment extension case-insensitively", () => {
+    const [report] = parseEmbeds("[[report.PDF]]");
+    expect(report).toMatchObject({
+      kind: "file",
+      path: "attachments/report.PDF",
+      name: "report.PDF",
+      syntax: "obsidian",
+    });
   });
 
   it("parses Obsidian image embeds and file links with extensions", () => {

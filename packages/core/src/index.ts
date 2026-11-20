@@ -46,7 +46,7 @@ export {
   extractPageLinks,
   extractTags,
   extractWikilinks,
-  hasFileExtension,
+  hasAttachmentExtension,
   makeSnippet,
   maskCode,
   resolveWikilink,

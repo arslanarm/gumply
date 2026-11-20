@@ -72,11 +72,18 @@ describe("extractWikilinks", () => {
     expect(extractWikilinks("[[]] [[|alias]]")).toEqual([]);
   });
 
-  it("skips attachment embeds and non-md file targets", () => {
+  it("skips attachment embeds and attachment-extension targets", () => {
     const links = extractWikilinks(
-      "[[Gumply]] ![[photo.png]] [[manual.pdf]] [[manual.pdf|the PDF]] ![[Page]] [[v1.2]] [[notes.md]]",
+      "[[Gumply]] ![[photo.png]] [[manual.pdf]] [[manual.pdf|the PDF]] ![[Page]] [[v1.2]] [[notes.md]] [[Node.js]] [[ASP.NET]] [[example.com]] [[report.PDF]]",
     );
-    expect(links.map((link) => link.targetTitle)).toEqual(["Gumply", "v1.2", "notes.md"]);
+    expect(links.map((link) => link.targetTitle)).toEqual([
+      "Gumply",
+      "v1.2",
+      "notes.md",
+      "Node.js",
+      "ASP.NET",
+      "example.com",
+    ]);
   });
 
   it("does not create graph edges for attachments", () => {
