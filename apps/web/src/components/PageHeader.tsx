@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Page } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
 import { Icon } from "./Icon.js";
@@ -18,6 +18,8 @@ export interface PageHeaderProps {
    * was opened by deleting another page: focus must stay in the sidebar.
    */
   autoFocusTitle?: boolean;
+  /** Bumped when the body asks for the title (ArrowUp/Backspace at its top). */
+  focusTitleSignal?: number;
 }
 
 function formatUpdated(value: string): string {
@@ -39,6 +41,7 @@ export function PageHeader({
   localGraphOpen = false,
   onToggleLocalGraph,
   autoFocusTitle = true,
+  focusTitleSignal = 0,
 }: PageHeaderProps) {
   const isEmpty = page.content.trim().length === 0;
   const [editing, setEditing] = useState(isEmpty);
@@ -50,6 +53,39 @@ export function PageHeader({
   // not the live prop, so a rename from the sidebar cannot be reverted by a
   // stale header draft blurring afterwards (#n8kk26sc).
   const draftOriginRef = useRef(page.title);
+
+  // Coming up from the body: caret at the end of the title, no select-all.
+  const caretAtEnd = useRef(false);
+  const skipBlurCommit = useRef(false);
+  const pendingTitleFocus = useRef(false);
+  const focusTitleAtEnd = () => {
+    const input = titleInputRef.current;
+    if (!input) return;
+    caretAtEnd.current = true;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    caretAtEnd.current = false;
+  };
+
+  useEffect(() => {
+    if (focusTitleSignal === 0) return;
+    if (editing) {
+      focusTitleAtEnd();
+      return;
+    }
+    pendingTitleFocus.current = true;
+    draftOriginRef.current = page.title;
+    setDraft(page.title);
+    setEditing(true);
+    // Only a new signal should move focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTitleSignal]);
+
+  useLayoutEffect(() => {
+    if (!editing || !pendingTitleFocus.current) return;
+    pendingTitleFocus.current = false;
+    focusTitleAtEnd();
+  }, [editing]);
 
   // Focus the title for new/empty pages only; existing pages keep focus free.
   useEffect(() => {
@@ -77,6 +113,8 @@ export function PageHeader({
       active instanceof HTMLElement &&
       (active.tagName === "INPUT" ||
         active.tagName === "TEXTAREA" ||
+        // The body was focused on purpose (e.g. a page opened from a link).
+        active.closest(".ProseMirror") !== null ||
         active.closest('[data-testid^="page-rename-input-"]') !== null);
     if (busy) return;
     titleInputRef.current?.focus();
@@ -187,14 +225,24 @@ export function PageHeader({
               data-testid="page-title-input"
               value={draft}
               placeholder="Untitled"
-              onFocus={(event) => event.currentTarget.select()}
+              onFocus={(event) => {
+                if (!caretAtEnd.current) event.currentTarget.select();
+              }}
               onChange={(event) => setDraft(event.target.value)}
-              onBlur={commit}
+              onBlur={() => {
+                if (!skipBlurCommit.current) commit();
+              }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
+                if (event.key === "Enter" || event.key === "ArrowDown") {
+                  // Ignore Enter while an IME is composing (e.g. Japanese).
+                  if (event.nativeEvent.isComposing) return;
                   event.preventDefault();
                   commit();
+                  // Focus the body now so keys typed right after Enter land
+                  // there; the blur this causes must not commit a second time.
+                  skipBlurCommit.current = true;
                   onStartBody();
+                  skipBlurCommit.current = false;
                 } else if (event.key === "Escape") {
                   event.preventDefault();
                   cancel();

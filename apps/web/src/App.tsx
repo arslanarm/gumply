@@ -639,8 +639,18 @@ export function App() {
   }, []);
 
   const handleStartBody = useCallback(() => {
-    editorControls.current?.focusBody();
+    const controls = editorControls.current;
+    // The editor of a just-opened page may not be ready yet: focus on ready.
+    if (!controls || controls.pageId !== selectedRef.current) {
+      focusBodyAfterOpen.current = true;
+      return;
+    }
+    controls.focusBody();
   }, []);
+
+  // ArrowUp / Backspace at the top of the body moves to the title (#d636gdxx).
+  const [titleFocusSignal, setTitleFocusSignal] = useState(0);
+  const handleExitTop = useCallback(() => setTitleFocusSignal((value) => value + 1), []);
 
   const handleRetrySave = useCallback(() => {
     void editorControls.current?.flush();
@@ -789,6 +799,7 @@ export function App() {
                     onSetIcon={handleSetIcon}
                     onDelete={() => requestDelete(page.id)}
                     onStartBody={handleStartBody}
+                    focusTitleSignal={titleFocusSignal}
                   />
                   <Editor
                     key={`${page.id}:${editorRevision}`}
@@ -805,6 +816,7 @@ export function App() {
                     }
                     onHeadingResult={handleHeadingResult}
                     onAttachmentError={setActionError}
+                    onExitTop={handleExitTop}
                   />
                   <BacklinksPanel
                     items={backlinks}

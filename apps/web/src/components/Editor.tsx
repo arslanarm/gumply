@@ -40,8 +40,11 @@ import { errorMessage } from "../lib/errors.js";
 import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { normalizeEditorMarkdown } from "../lib/markdown.js";
 import { taskCheckboxLabel } from "../lib/task.js";
+import { createExitTopExtension, focusStartNow } from "../editor/title-navigation.js";
 
 export interface EditorControls {
+  /** Id of the page this editor shows (controls outlive a page switch). */
+  pageId: string;
   flush: () => Promise<void>;
   focusBody: () => void;
 }
@@ -56,6 +59,8 @@ export interface EditorProps {
   headingToReveal?: string | null;
   onHeadingResult?: (found: boolean) => void;
   onAttachmentError?: (message: string) => void;
+  /** ArrowUp / Backspace at the very start of the body: go to the title. */
+  onExitTop?: () => void;
 }
 
 interface SlashMenuState {
@@ -99,6 +104,7 @@ export function Editor({
   headingToReveal,
   onHeadingResult,
   onAttachmentError,
+  onExitTop,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -116,6 +122,9 @@ export function Editor({
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
+  const onExitTopRef = useRef(onExitTop);
+  onExitTopRef.current = onExitTop;
+  const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
 
   const autosave = useMemo(() => {
     const instance = new Autosave({
@@ -384,6 +393,7 @@ export function Editor({
       TaskListTight,
       TaskShortcut,
       ShortcutHistory,
+      exitTopExtension,
     ],
     content: page.content,
     editorProps: {
@@ -441,9 +451,12 @@ export function Editor({
     if (!editor) return;
     onReady?.({
       flush: () => autosave.flush(),
-      focusBody: () => editor.commands.focus("start"),
+      pageId: page.id,
+      // Synchronous on purpose: TipTap's focus() command waits a frame, and
+      // keys typed right after Enter in the title were lost meanwhile (#d636gdxx).
+      focusBody: () => focusStartNow(editor),
     });
-  }, [editor, autosave, onReady]);
+  }, [editor, autosave, onReady, page.id]);
 
   // `[[Page#Heading]]`: scroll to the heading, or report it missing.
   useEffect(() => {
