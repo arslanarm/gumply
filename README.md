@@ -43,6 +43,31 @@ so nothing needs configuring.
 File names follow page titles, like Obsidian: "Q1 plan" is `Q1 plan.md`, and renaming the page
 renames the file (and its sub-page folder). Notes you wrote without frontmatter stay without it.
 
+## Desktop app (Linux)
+
+Gumply also runs as a desktop app (Electron, D26). It contains the same local server and web app,
+so your notes are still plain Markdown files in a folder you choose.
+
+- **Try it from source:** `npm run desktop:dev` builds the web app and the desktop shell, then opens
+  the window. (Rebuilds on every start; for UI work, `npm run dev` in a browser is faster.)
+- **Build installers:** `npm run desktop:build:linux` writes `apps/desktop/release/Gumply-<version>-x86_64.AppImage`
+  and `Gumply-<version>-amd64.deb`. Run the AppImage directly (`chmod +x` it first), or install the
+  .deb with `sudo apt install ./Gumply-<version>-amd64.deb`. Windows and macOS builds come later.
+- **Vaults:** on first start Gumply asks you to open a folder (any Obsidian vault works) or create
+  a new vault; a new or empty folder gets the demo notes. **File → Open Vault… / Create New Vault… /
+  Open Recent / Reveal Vault in File Manager** switch and find vaults. The list of vaults and the
+  window size are stored in your user config folder (`~/.config/Gumply/gumply-desktop.json`), never
+  in a vault.
+- **Safety:** the server inside the app listens on `127.0.0.1` on a random port, the window can't
+  leave the app, and web or mail links open in your normal browser or mail app. Files you open from a
+  note (e.g. a PDF card) open in their default app.
+- **Tests:** `npm run desktop:test` runs smoke tests against the real app on a virtual display.
+  **Never let a test window reach a real desktop.** On Wayland, Electron ignores `xvfb-run` unless it
+  is forced to X11, so every test or script launch must: unset `WAYLAND_DISPLAY`, pass
+  `--ozone-platform=x11`, and run under `xvfb-run`. The test launcher (`apps/desktop/scripts/test.mjs`
+  and `launch()` in `apps/desktop/e2e/desktop.spec.ts`) does all three; copy it for any new launch.
+- If npm skipped Electron's download (npm can block install scripts), the desktop build fetches it.
+
 ## Scripts (from repo root)
 
 | Command | What it does |

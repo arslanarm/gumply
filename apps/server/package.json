@@ -5,6 +5,13 @@
   "description": "Local Gumply server: vault file API, link index, graph and search.",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./start": {
+      "types": "./dist/start.d.ts",
+      "default": "./dist/start.js"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",

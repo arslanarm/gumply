@@ -13,6 +13,7 @@ import { BoardIcon } from "./icons.js";
 import { inkExtent, inkPath } from "./ink.js";
 import { useBoardContent } from "./content/context.js";
 import { useLinkAutocomplete } from "./content/LinkAutocomplete.js";
+import { textBucket } from "./lod.js";
 import { safeExternalUrl } from "./model.js";
 
 type BoardNodeProps = NodeProps<BoardFlowNode>;
@@ -222,7 +223,9 @@ export const StickyNode = memo(function StickyNode({ id, data, selected, width, 
           {editing ? (
             <TextEditor node={node} className="board-textarea board-textarea-center" />
           ) : (
-            <div className="board-text">{text ? <TextView text={text} node={data} /> : null}</div>
+            <div className="board-text" data-text-size={textBucket(fit.size)}>
+              {text ? <TextView text={text} node={data} /> : null}
+            </div>
           )}
         </div>
       </div>
@@ -246,7 +249,9 @@ export const TextNode = memo(function TextNode({ id, data, selected }: BoardNode
             onHeight={(area) => (area.scrollHeight > node.height ? area.scrollHeight + 4 : undefined)}
           />
         ) : (
-          <div className="board-text">{text ? <TextView text={text} node={data} /> : "Type something"}</div>
+          <div className="board-text" data-text-size={textBucket(16)}>
+            {text ? <TextView text={text} node={data} /> : "Type something"}
+          </div>
         )}
       </div>
     </>
@@ -299,7 +304,9 @@ export const ShapeNode = memo(function ShapeNode({ id, data, selected, width, he
           {editing ? (
             <TextEditor node={node} className="board-textarea board-textarea-center" />
           ) : (
-            <div className="board-text">{text ? <TextView text={text} node={data} /> : null}</div>
+            <div className="board-text" data-text-size={textBucket(fit.size)}>
+              {text ? <TextView text={text} node={data} /> : null}
+            </div>
           )}
         </div>
       </div>

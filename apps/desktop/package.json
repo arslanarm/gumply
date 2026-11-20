@@ -1,0 +1,52 @@
+{
+  "name": "@gumply/desktop",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Gumply desktop app: Electron shell around the local server and the web app (D26).",
+  "author": {
+    "name": "Gumply",
+    "email": "noreply@gumply.invalid"
+  },
+  "homepage": "https://github.com/arslanarm/gumply",
+  "desktopName": "gumply.desktop",
+  "type": "module",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && electron .",
+    "dist:linux": "node scripts/build.mjs && electron-builder --linux AppImage deb",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "app.gumply.desktop",
+    "productName": "Gumply",
+    "executableName": "gumply",
+    "artifactName": "Gumply-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "package.json"
+    ],
+    "asar": true,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "synopsis": "Notes as plain Markdown, with links, a graph and whiteboards",
+      "description": "Gumply keeps your notes as plain Markdown files in a folder you choose (any Obsidian vault works), with a Notion-style editor, links, a graph and whiteboards.",
+      "maintainer": "Gumply <noreply@gumply.invalid>",
+      "syncDesktopName": true
+    }
+  }
+}

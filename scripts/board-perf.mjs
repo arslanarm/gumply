@@ -19,7 +19,11 @@
  * - `--throttle 4` slows the CPU 4× through CDP (a mid-range laptop).
  * - `--gpu` turns on GPU rasterisation in headless Chromium (closer to a real
  *   browser; software rendering is the default and the more pessimistic).
+ * - `--zoom 0.15` opens every board at that fixed zoom (a remembered view)
+ *   instead of fitting it, so two builds are compared at an identical zoom.
  * - `--check` exits non-zero when drag-all of 500 at 1× drops below 50 fps.
+ * - "ms" is the wall time of the whole gesture: the 60 paced (16 ms) mouse
+ *   or wheel steps take longer when the page can't keep up.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,6 +41,7 @@ const throttles = option("throttle", "1,4").split(",").map(Number);
 const gpu = args.includes("--gpu");
 const check = args.includes("--check");
 const port = Number(option("port", "5440"));
+const fixedZoom = option("zoom", "") ? Number(option("zoom", "")) : null;
 let base = option("url", "");
 
 const webRoot = fileURLToPath(new URL("../apps/web/", import.meta.url));
@@ -69,11 +74,18 @@ const browser = await chromium.launch({
 
 async function openBoard(seed, throttle) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.goto(`${base}/board-lab.html?seed=${seed}&mix=1&id=perf-${seed}-${Date.now()}`);
+  const id = `perf-${seed}-${Date.now()}`;
+  if (fixedZoom !== null) {
+    await page.addInitScript(
+      ([key, zoom]) => window.localStorage.setItem(key, JSON.stringify({ x: 80, y: 40, zoom })),
+      [`gumply:board-view:lab:${id}`, fixedZoom],
+    );
+  }
+  await page.goto(`${base}/board-lab.html?seed=${seed}&mix=1&id=${id}`);
   await page.waitForSelector(".react-flow__node");
-  // Fit (whole board visible), from an empty corner so nothing gets selected.
+  // Click an empty corner so nothing gets selected; fit unless the zoom is fixed.
   await page.mouse.click(5, 450);
-  await page.keyboard.press("Shift+Digit1");
+  if (fixedZoom === null) await page.keyboard.press("Shift+Digit1");
   await page.waitForTimeout(600);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: throttle });
@@ -93,7 +105,9 @@ async function frames(page, gesture) {
     };
     requestAnimationFrame(tick);
   });
+  const startedAt = Date.now();
   await gesture();
+  const wall = Date.now() - startedAt;
   await page.waitForTimeout(50);
   const times = await page.evaluate(() => {
     window.__perf.on = false;
@@ -105,6 +119,7 @@ async function frames(page, gesture) {
     .sort((a, b) => a - b);
   const span = times.at(-1) - times[0];
   return {
+    wall,
     fps: Math.round(((times.length - 1) / span) * 1000),
     p95: Math.round(gaps[Math.floor(gaps.length * 0.95)] ?? 0),
     worst: Math.round(gaps.at(-1) ?? 0),
@@ -210,7 +225,7 @@ try {
         const r = await run(page);
         await page.close();
         const moved = r.moved === undefined ? "" : `${r.moved}`;
-        rows.push(`| ${seed} | ${throttle}× | ${name} | ${r.fps} | ${r.p95} | ${r.worst} | ${moved} |`);
+        rows.push(`| ${seed} | ${throttle}× | ${name} | ${r.fps} | ${r.p95} | ${r.worst} | ${r.wall} | ${moved} |`);
         console.error(`${seed} ${throttle}× ${name}: ${JSON.stringify(r)}`);
         if (check && seed === 500 && throttle === 1 && name === "drag all" && r.fps < 50) failed = true;
       }
@@ -223,9 +238,11 @@ try {
   if (outDir) rmSync(outDir, { recursive: true, force: true });
 }
 
-console.log(`Board perf — ${gpu ? "GPU" : "software"} rendering, 1440×900, whole board visible\n`);
-console.log("| objects | CPU | gesture | fps | p95 frame ms | worst frame ms | moved |");
-console.log("|---|---|---|---|---|---|---|");
+console.log(
+  `Board perf — ${gpu ? "GPU" : "software"} rendering, 1440×900, ${fixedZoom === null ? "whole board visible" : `zoom ${Math.round(fixedZoom * 100)}%`}\n`,
+);
+console.log("| objects | CPU | gesture | fps | p95 frame ms | worst frame ms | gesture ms | moved |");
+console.log("|---|---|---|---|---|---|---|---|");
 for (const row of rows) console.log(row);
 if (failed) {
   console.error("drag all (500 objects, 1× CPU) is below 50 fps");

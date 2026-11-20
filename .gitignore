@@ -12,3 +12,4 @@ vault/
 test-results/
 playwright-report/
 playwright/.cache/
+apps/desktop/release/
