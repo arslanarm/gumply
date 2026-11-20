@@ -9,6 +9,9 @@ import {
   extractWikilinks,
   isValidPageId,
   makeSnippet,
+  markdownLinks,
+  plainText,
+  type MarkdownLink,
   normalizeTags,
   parentOf,
   parseFrontmatter,
@@ -775,13 +778,22 @@ export class VaultStore {
       else if (title.startsWith(needle)) titleScore = 80;
       else if (title.includes(needle)) titleScore = 60;
 
-      const occurrences = countOccurrences(record.content.toLowerCase(), needle);
+      // #6zifz7da: match what the page reads as, not its Markdown, so a
+      // phrase across formatting or a link is found; snippets are plain too.
+      const { text, links } = this.searchText(record);
+      const inText = countOccurrences(text.toLowerCase(), needle);
+      // Pasted URLs and link targets stay searchable ("figma.com").
+      const linkHits = links.filter((link) => link.target.toLowerCase().includes(needle));
+      const occurrences = inText + linkHits.length;
       if (titleScore === 0 && occurrences === 0) continue;
 
       const bodyBoost = Math.min(occurrences, 10);
+      // The snippet is always plain text: around the hit, or around the text
+      // of the link whose URL matched.
+      const around = inText > 0 ? trimmed : (linkHits[0]?.text ?? "");
       results.push({
         page: metaOf(record, this.directChildCount(record.id)),
-        snippet: makeSnippet(record.content, trimmed, 80),
+        snippet: makeSnippet(text, around, 80),
         score: titleScore > 0 ? titleScore + bodyBoost : bodyBoost + 1,
       });
     }
@@ -789,6 +801,21 @@ export class VaultStore {
     return results.sort(
       (a, b) => b.score - a.score || a.page.title.localeCompare(b.page.title),
     );
+  }
+
+  /** Plain text and link targets of a page for search, cached until its content changes. */
+  private readonly searchTexts = new Map<PageId, { content: string; text: string; links: MarkdownLink[] }>();
+  private searchText(record: PageRecord): { text: string; links: MarkdownLink[] } {
+    const cached = this.searchTexts.get(record.id);
+    if (cached && cached.content === record.content) return cached;
+    // Boards: `content` is already plain board text (canvasText) apart from
+    // the Markdown inside stickies, which plainText handles the same way.
+    const entry = { content: record.content, text: plainText(record.content), links: markdownLinks(record.content) };
+    this.searchTexts.set(record.id, entry);
+    if (this.searchTexts.size > this.pages.size * 2 + 100) {
+      for (const id of this.searchTexts.keys()) if (!this.pages.has(id)) this.searchTexts.delete(id);
+    }
+    return entry;
   }
 
   private resolveId(id: PageId): PageId {
