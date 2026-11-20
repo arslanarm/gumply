@@ -2936,3 +2936,17 @@ input {
 .table-menu {
   width: 210px;
 }
+
+/* #2rmk983y: images inside a line of text (badges, icons). */
+.gumply-editor img.inline-image {
+  display: inline;
+  max-width: 100%;
+  height: auto;
+  vertical-align: text-bottom;
+  border-radius: 2px;
+}
+
+.gumply-editor img.inline-image.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
