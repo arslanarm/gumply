@@ -21,6 +21,12 @@ export interface PageHeaderProps {
    * was opened by deleting another page: focus must stay in the sidebar.
    */
   autoFocusTitle?: boolean;
+  /**
+   * Open with the title in edit mode (selected, so typing names it). Defaults
+   * to "the page has no body yet". Boards have no body, so the app passes
+   * this explicitly: only a board created just now (#ksx7szar).
+   */
+  editTitleOnOpen?: boolean;
   /** Bumped when the body asks for the title (ArrowUp/Backspace at its top). */
   focusTitleSignal?: number;
   /**
@@ -49,11 +55,13 @@ export function PageHeader({
   localGraphOpen = false,
   onToggleLocalGraph,
   autoFocusTitle = true,
+  editTitleOnOpen,
   focusTitleSignal = 0,
   sessionKey,
 }: PageHeaderProps) {
   const isEmpty = page.content.trim().length === 0;
-  const [editing, setEditing] = useState(isEmpty);
+  const startsEditing = editTitleOnOpen ?? isEmpty;
+  const [editing, setEditing] = useState(startsEditing);
   const [draft, setDraft] = useState(page.title);
   const [iconOpen, setIconOpen] = useState(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -133,7 +141,7 @@ export function PageHeader({
   useEffect(() => {
     draftOriginRef.current = page.title;
     setDraft(page.title);
-    setEditing(page.content.trim().length === 0);
+    setEditing(startsEditing);
     // Reset only when another page opens, not on autosave or a rename.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey ?? page.id]);

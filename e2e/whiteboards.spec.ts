@@ -290,6 +290,53 @@ test.describe('whiteboards in the app (W2a)', () => {
     await expect(card).not.toContainText('First draft');
   });
 
+  test('opening an existing board focuses the canvas: N picks the sticky tool, never renames (#ksx7szar)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Hub', content: 'Open [[Project map.canvas|Project map]] here' }]);
+    const board = await createBoard(request, 'Project map');
+    await saveBoard(request, board.meta.id, { nodes: [sticky('ffffffffffffffff', 'Keep me')], edges: [] });
+
+    const pressNKeepsName = async () => {
+      await expect(page.getByTestId('board-sticky')).toContainText('Keep me');
+      await expect(page.getByTestId('page-title-input')).toHaveCount(0);
+      await page.keyboard.press('n');
+      await expect(page.getByTestId('board-tool-sticky')).toHaveAttribute('aria-pressed', 'true');
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL(/#\/Project%20map\.canvas$/);
+      await expect(page.getByTestId('page-title')).toContainText('Project map');
+      const ids = (await api.listPages(request)).map((item) => item.id);
+      expect(ids).toContain('Project map.canvas');
+    };
+
+    // 1. From a link in a page.
+    await page.goto(`/${hashOf('Hub')}`);
+    await page.getByTestId('wiki-link-Project map.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+
+    // 2. From the sidebar (a click leaves focus on the row otherwise).
+    await page.getByTestId('page-item-Hub').click();
+    await expect(page.getByTestId('editor-content')).toBeVisible();
+    await page.getByTestId('page-item-Project map.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+
+    // 3. A direct load / reload.
+    await page.reload();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await pressNKeepsName();
+
+    // A board created just now still opens with its title selected.
+    await page.getByTestId('new-board-button').click();
+    await expect(page.getByTestId('page-title-input')).toBeFocused();
+    expect(await page.getByTestId('page-title-input').evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([0, 'Untitled whiteboard'.length]);
+    await page.keyboard.press('Escape');
+    // …but only while it's new: open it again later and the canvas has focus.
+    await page.getByTestId('page-item-Hub').click();
+    await page.getByTestId('page-item-Untitled whiteboard.canvas').click();
+    await expect(page.getByTestId('board-page')).toBeVisible();
+    await expect(page.getByTestId('page-title-input')).toHaveCount(0);
+  });
+
   for (const theme of ['light', 'dark'] as const) {
     test(`a board page renders in the app shell (${theme})`, async ({ page, request, vault }) => {
       await vault.seed([{ title: 'Spec', content: 'x' }]);
