@@ -90,6 +90,83 @@ describe("VaultStore index on start", () => {
     );
   });
 
+  it("preserves unknown frontmatter byte-for-byte on a body edit", async () => {
+    const original = [
+      "---",
+      "# Obsidian-managed",
+      "title: Imported",
+      "aliases:",
+      "  - One",
+      "cssclasses: [wide, cards]   # keep flow",
+      "date: 2026-01-02",
+      "tags: [x, y]",
+      "updated: 2026-01-01T00:00:00.000Z",
+      "---",
+      "",
+      "Old body.",
+      "",
+    ].join("\n");
+    const dir = await tempVault(async (root) => {
+      await writeFile(join(root, "imported.md"), original, "utf8");
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+
+    const updated = await store.update("imported", { content: "New body." });
+    const written = await readFile(join(dir, "imported.md"), "utf8");
+    expect(written).toBe(
+      original
+        .replace("Old body.", "New body.")
+        .replace("2026-01-01T00:00:00.000Z", updated.updated),
+    );
+  });
+
+  it("keeps unknown keys, order, comments and flow tags when the title changes", async () => {
+    const original = [
+      "---",
+      "title: Imported",
+      "aliases: [One, Two]",
+      "cssclasses: [wide, cards]   # keep flow",
+      "date: 2026-01-02",
+      "tags: [x, y]",
+      "---",
+      "",
+      "Body.",
+      "",
+    ].join("\n");
+    const dir = await tempVault(async (root) => {
+      await writeFile(join(root, "imported.md"), original, "utf8");
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+
+    await store.update("imported", { title: "Renamed", content: "Body." });
+    const written = await readFile(join(dir, "imported.md"), "utf8");
+    expect(written).toContain("title: Renamed");
+    expect(written).toContain("aliases: [One, Two]");
+    expect(written).toContain("cssclasses: [wide, cards]   # keep flow");
+    expect(written).toContain("date: 2026-01-02");
+    expect(written).toContain("tags: [x, y]");
+    expect(written.indexOf("title:")).toBeLessThan(written.indexOf("aliases:"));
+    expect(written.indexOf("aliases:")).toBeLessThan(written.indexOf("date:"));
+  });
+
+  it("preserves CRLF and a missing final newline", async () => {
+    const original = "---\r\ntitle: Win\r\nupdated: old\r\n---\r\nBody";
+    const dir = await tempVault(async (root) => {
+      await writeFile(join(root, "win.md"), original, "utf8");
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+
+    const updated = await store.update("win", { content: "Body" });
+    const written = await readFile(join(dir, "win.md"), "utf8");
+    expect(written).toBe(
+      original.replace("old", updated.updated).replace("---\r\nBody", "---\r\n\r\nBody"),
+    );
+    expect(written.endsWith("\n")).toBe(false);
+  });
+
   it("ignores .trash on start and restores entries after a restart", async () => {
     const dir = await tempVault();
     const store = new VaultStore(dir);

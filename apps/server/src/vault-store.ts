@@ -12,10 +12,11 @@ import {
   normalizeTags,
   parentOf,
   parseFrontmatter,
+  parseNoteTemplate,
+  serializeNoteLike,
   pathToPageId,
   resolveWikilink,
   rewriteWikilinkTargets,
-  serializeNote,
   titleFromId,
   type Backlink,
   type DeletePageResult,
@@ -569,7 +570,17 @@ export class VaultStore {
     // Snapshot before the rename so link resolution still sees the old title.
     const beforeMetas = titleChanged ? this.list() : [];
 
-    const fileMtimeMs = await this.writePage(record.filePath, frontmatter, nextContent);
+    const changes = ["updated"];
+    if (nextTitle !== previousTitle) changes.push("title");
+    if (nextIcon !== record.icon) changes.push("icon");
+    if (JSON.stringify(fmTags) !== JSON.stringify(record.fmTags)) changes.push("tags");
+
+    const fileMtimeMs = await this.writePage(
+      record.filePath,
+      frontmatter,
+      nextContent,
+      changes,
+    );
 
     record.title = nextTitle;
     record.content = nextContent;
@@ -605,6 +616,7 @@ export class VaultStore {
             updated: rewrittenAt,
           },
           result.content,
+          ["updated"],
         );
         other.content = result.content;
         other.updated = rewrittenAt;
@@ -935,11 +947,21 @@ export class VaultStore {
     filePath: string,
     frontmatter: Frontmatter,
     content: string,
+    changes?: readonly string[],
   ): Promise<number> {
     await mkdir(dirname(filePath), { recursive: true });
+    // Use the current file as the byte template so unknown frontmatter keys,
+    // comments, key order, flow style, CRLF and the trailing newline survive
+    // (#tterskg4). Only the keys in `changes` are touched.
+    let template = null;
+    try {
+      template = parseNoteTemplate(await readFile(filePath, "utf8"));
+    } catch {
+      // New file: write canonical frontmatter.
+    }
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      await writeFile(temporary, serializeNote(frontmatter, content), "utf8");
+      await writeFile(temporary, serializeNoteLike(template, frontmatter, content, changes), "utf8");
       await rename(temporary, filePath);
       return (await stat(filePath)).mtimeMs;
     } catch (error) {
