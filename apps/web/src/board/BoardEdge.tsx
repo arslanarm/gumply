@@ -98,6 +98,18 @@ export const BoardEdge = memo(function BoardEdge(props: EdgeProps<BoardFlowEdge>
   const color = solidColor(edge?.color);
   const label = typeof edge?.label === "string" ? edge.label : "";
   const editing = data?.editing ?? false;
+  // A label that doesn't fit along a short connector sits beside it instead of
+  // covering the whole arrow: above a mostly horizontal line, right of a
+  // vertical one (#xq6zas7v). Width is estimated from the 13px label font.
+  const span = Math.hypot(toX - fromX, toY - fromY);
+  const labelWidth = label.length * 7 + 20;
+  const placement = editing || span >= labelWidth + 48 ? "center" : Math.abs(toX - fromX) >= Math.abs(toY - fromY) ? "above" : "beside";
+  const labelTransform =
+    placement === "above"
+      ? `translate(-50%, -100%) translate(${labelX}px, ${labelY - 6}px)`
+      : placement === "beside"
+        ? `translate(0, -50%) translate(${labelX + 8}px, ${labelY}px)`
+        : `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`;
 
   return (
     <g className={`board-edge${selected ? " is-selected" : ""}`} style={color ? { color } : undefined} data-testid="board-edge">
@@ -109,10 +121,11 @@ export const BoardEdge = memo(function BoardEdge(props: EdgeProps<BoardFlowEdge>
           <div
             className={`board-edge-label nodrag nopan${selected ? " is-selected" : ""}`}
             style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              transform: labelTransform,
               ...(color ? { color } : {}),
             }}
             data-testid="board-edge-label"
+            data-placement={placement}
           >
             {editing ? <LabelEditor id={id} initial={label} /> : label}
           </div>

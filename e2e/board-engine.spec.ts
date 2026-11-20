@@ -281,6 +281,32 @@ test.describe('board engine (W1)', () => {
     await expect(page.getByTestId('board-connector-hint')).toHaveCount(0);
   });
 
+  test('a label on a short connector sits beside it, not over the arrow (#xq6zas7v)', async ({ page }) => {
+    const seed = {
+      nodes: [
+        { id: 'aaaa000000000001', type: 'text', text: 'A', gumply: { kind: 'sticky' }, x: 0, y: 0, width: 200, height: 200, color: '3' },
+        { id: 'aaaa000000000002', type: 'text', text: 'B', gumply: { kind: 'sticky' }, x: 270, y: 0, width: 200, height: 200, color: '3' },
+        { id: 'aaaa000000000003', type: 'text', text: 'C', gumply: { kind: 'sticky' }, x: 1000, y: 0, width: 200, height: 200, color: '3' },
+      ],
+      edges: [
+        { id: 'eeee000000000001', fromNode: 'aaaa000000000001', fromSide: 'right', toNode: 'aaaa000000000002', toSide: 'left', label: 'read next' },
+        { id: 'eeee000000000002', fromNode: 'aaaa000000000002', fromSide: 'right', toNode: 'aaaa000000000003', toSide: 'left', label: 'then this' },
+      ],
+    };
+    await page.addInitScript((value) => window.localStorage.setItem('gumply:board-lab:labels', value), JSON.stringify(seed));
+    await page.goto('/board-lab.html?id=labels&theme=light');
+    const labels = page.getByTestId('board-edge-label');
+    await expect(labels).toHaveCount(2);
+    await expect(labels.filter({ hasText: 'read next' })).toHaveAttribute('data-placement', 'above');
+    await expect(labels.filter({ hasText: 'then this' })).toHaveAttribute('data-placement', 'center');
+
+    // Rendered: the short arrow's line is uncovered (the label ends above it).
+    const short = await labels.filter({ hasText: 'read next' }).boundingBox();
+    const line = await page.locator('.react-flow__edge').first().locator('.board-edge-path').boundingBox();
+    if (!short || !line) throw new Error('no layout');
+    expect(short.y + short.height).toBeLessThanOrEqual(line.y + 1);
+  });
+
   test('frames carry what is inside them; arrow keys nudge', async ({ page }) => {
     await openLab(page);
     await page.keyboard.press('f');
