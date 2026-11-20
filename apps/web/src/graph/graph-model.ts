@@ -280,9 +280,39 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
+export interface GraphCounts {
+  pages: number;
+  /** Every drawn edge: resolved links plus links to ghost pages. */
+  links: number;
+  missing: number;
+}
+
+/** One definition of the graph's counts for the subtitle and the aria label. */
+export function graphCounts(
+  graph: Pick<GraphModel, "nodes" | "ghosts" | "links">,
+): GraphCounts {
+  return {
+    pages: graph.nodes.length,
+    links: graph.links.length,
+    missing: graph.ghosts.length,
+  };
+}
+
+/**
+ * Visible header subtitle, e.g. "12 pages · 20 links · 2 missing". Counts the
+ * same edges as the canvas aria label (ghosts included) and pluralises them.
+ */
+export function graphSubtitle(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
+  const counts = graphCounts(graph);
+  return `${plural(counts.pages, "page")} · ${plural(counts.links, "link")}${
+    counts.missing > 0 ? ` · ${counts.missing} missing` : ""
+  }`;
+}
+
 /** Canvas aria-label, e.g. "12 pages, 20 links, 2 missing" (spec/ux §9). */
 export function ariaSummary(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
-  return `${plural(graph.nodes.length, "page")}, ${plural(graph.links.length, "link")}, ${graph.ghosts.length} missing`;
+  const counts = graphCounts(graph);
+  return `${plural(counts.pages, "page")}, ${plural(counts.links, "link")}, ${counts.missing} missing`;
 }
 
 /** Tooltip copy for a real page: `Title · N links · #tag` (spec/ux §9). */

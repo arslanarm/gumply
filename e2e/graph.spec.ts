@@ -31,11 +31,9 @@ test.describe('graph', () => {
     const canvas = page.getByTestId('graph-canvas');
     await expect(canvas).toBeVisible();
     // 2 real pages, 2 links (Source->Target + Source->ghost), 1 missing title.
-    await expect(canvas).toHaveAttribute('aria-label', /2 pages, 2 links, 1 missing/);
-    // Subtitle counts resolved links only, the canvas aria counts every edge
-    // (incl. ghost) — assert the parts both agree on (see #graph-subtitle bug).
-    await expect(page.getByText(/2 pages · 1 link/)).toBeVisible();
-    await expect(page.getByText(/1 missing/)).toBeVisible();
+    // The subtitle and aria summary describe the same picture, ghosts included.
+    await expect(canvas).toHaveAttribute('aria-label', '2 pages, 2 links, 1 missing');
+    await expect(page.getByTestId('graph-subtitle')).toHaveText('2 pages · 2 links · 1 missing');
     await expect(page.getByTestId('graph-legend')).toBeVisible();
   });
 

@@ -6,6 +6,7 @@ import {
   ariaSummary,
   buildGraphModel,
   filterGraph,
+  graphSubtitle,
   legendColor,
   type GhostNode,
 } from "./graph-model.js";
@@ -91,12 +92,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
       <header className="graph-header">
         <div>
           <h2>Graph</h2>
-          <p className="graph-subtitle">
-            {hasPages && data
-              ? `${data.nodes.length} pages · ${data.links.length} links${
-                  (model?.ghosts.length ?? 0) > 0 ? ` · ${model?.ghosts.length} missing` : ""
-                }`
-              : "How your pages connect"}
+          <p className="graph-subtitle" data-testid="graph-subtitle">
+            {hasPages && data && filtered ? graphSubtitle(filtered) : "How your pages connect"}
           </p>
         </div>
         <div className="graph-toolbar">

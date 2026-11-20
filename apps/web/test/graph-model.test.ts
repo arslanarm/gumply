@@ -6,6 +6,8 @@ import {
   filterGraph,
   ghostId,
   ghostTooltip,
+  graphCounts,
+  graphSubtitle,
   isGhostId,
   labelledNodeIds,
   maxReferenceCount,
@@ -205,6 +207,37 @@ describe("accessible copy", () => {
 
     const empty = buildGraphModel(graphData());
     expect(ariaSummary(empty)).toBe("0 pages, 0 links, 0 missing");
+  });
+
+  it("subtitle and aria agree and both pluralise 1 correctly", () => {
+    const one = buildGraphModel(
+      graphData({
+        nodes: [{ ...page("a", "A"), linkCount: 1 }],
+        links: [],
+        unresolved: [{ source: "a", targetTitle: "Ghost" }],
+      }),
+    );
+    const counted = graphCounts(one);
+    expect(counted).toEqual({ pages: 1, links: 1, missing: 1 });
+    expect(graphSubtitle(one)).toBe("1 page · 1 link · 1 missing");
+    expect(ariaSummary(one)).toBe("1 page, 1 link, 1 missing");
+
+    const two = buildGraphModel(
+      graphData({
+        nodes: [
+          { ...page("a", "A"), linkCount: 1 },
+          { ...page("b", "B"), linkCount: 1 },
+        ],
+        links: [{ source: "a", target: "b" }],
+        unresolved: [{ source: "a", targetTitle: "Ghost" }],
+      }),
+    );
+    expect(graphSubtitle(two)).toBe("2 pages · 2 links · 1 missing");
+    expect(ariaSummary(two)).toBe("2 pages, 2 links, 1 missing");
+
+    const single = buildGraphModel(graphData({ nodes: [{ ...page("a", "A"), linkCount: 0 }] }));
+    expect(graphSubtitle(single)).toBe("1 page · 0 links");
+    expect(ariaSummary(single)).toBe("1 page, 0 links, 0 missing");
   });
 
   it("describes real pages and ghosts with the exact tooltip copy", () => {
