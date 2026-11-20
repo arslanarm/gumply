@@ -3,6 +3,7 @@ import type { GraphData, GraphNode } from "@gumply/core";
 import {
   ariaSummary,
   buildGraphModel,
+  FALLBACK_GRAPH_PALETTE,
   filterGraph,
   ghostId,
   ghostTooltip,
@@ -29,6 +30,13 @@ function page(id: string, title: string, tags: string[] = []): GraphNode {
     updated: "2026-01-01T00:00:00.000Z",
     linkCount: 0,
   };
+}
+
+function rgbDistance(a: string, b: string): number {
+  const rgb = (hex: string) => [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+  const [ar, ag, ab] = rgb(a);
+  const [br, bg, bb] = rgb(b);
+  return Math.hypot((ar ?? 0) - (br ?? 0), (ag ?? 0) - (bg ?? 0), (ab ?? 0) - (bb ?? 0));
 }
 
 function graphData(overrides: Partial<GraphData> = {}): GraphData {
@@ -128,6 +136,14 @@ describe("filterGraph", () => {
     expect(filtered.nodes.map((node) => node.id)).toEqual(["a"]);
     // Ghost titles do not match the query and their sources are hidden.
     expect(filtered.ghosts).toEqual([]);
+    expect(filtered.links).toEqual([]);
+  });
+
+  it("matches ghost titles even when no source page title matches", () => {
+    const filtered = filterGraph(model(), { query: "missing home" });
+    expect(filtered.nodes).toEqual([]);
+    expect(filtered.ghosts.map((ghost) => ghost.title)).toEqual(["Missing Home"]);
+    // No visible source, so no edge is drawn to the isolated ghost.
     expect(filtered.links).toEqual([]);
   });
 
@@ -275,5 +291,13 @@ describe("colours", () => {
     expect(paletteIndex("work")).toBeGreaterThanOrEqual(0);
     expect(paletteIndex("work")).toBeLessThan(10);
     expect(nodeColor(page("a", "A", ["work"]), palette)).toBe(palette[paletteIndex("work")]);
+  });
+
+  it("keeps tag colours distinct, including the #idea/#project pair", () => {
+    expect(new Set(FALLBACK_GRAPH_PALETTE).size).toBe(FALLBACK_GRAPH_PALETTE.length);
+    const idea = nodeColor(page("a", "A", ["idea"]));
+    const project = nodeColor(page("b", "B", ["project"]));
+    expect(idea).not.toBe(project);
+    expect(rgbDistance(idea, project)).toBeGreaterThan(60);
   });
 });

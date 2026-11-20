@@ -14,16 +14,16 @@
   --on-accent: #ffffff;
   --on-danger: #ffffff;
   --overlay: rgb(0 0 0 / 38%);
-  --graph-0: #4f46e5;
-  --graph-1: #0e7490;
-  --graph-2: #b45309;
-  --graph-3: #15803d;
-  --graph-4: #be185d;
-  --graph-5: #7c3aed;
-  --graph-6: #0f766e;
-  --graph-7: #a16207;
-  --graph-8: #4338ca;
-  --graph-9: #9d174d;
+  --graph-0: #2f5f8f;
+  --graph-1: #b35c00;
+  --graph-2: #b23a3c;
+  --graph-3: #2f7a75;
+  --graph-4: #3f7a34;
+  --graph-5: #8a6d00;
+  --graph-6: #7a4f6d;
+  --graph-7: #a63b7a;
+  --graph-8: #6b4a37;
+  --graph-9: #6f6864;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --sidebar-width: 264px;
 }
@@ -44,16 +44,16 @@
   --on-accent: #15132b;
   --on-danger: #2a0b09;
   --overlay: rgb(0 0 0 / 55%);
-  --graph-0: #818cf8;
-  --graph-1: #22d3ee;
-  --graph-2: #fbbf24;
-  --graph-3: #4ade80;
-  --graph-4: #f472b6;
-  --graph-5: #a78bfa;
-  --graph-6: #2dd4bf;
-  --graph-7: #facc15;
-  --graph-8: #93c5fd;
-  --graph-9: #fb7185;
+  --graph-0: #7aa6d6;
+  --graph-1: #ffb15c;
+  --graph-2: #ff8c8e;
+  --graph-3: #8fd6d1;
+  --graph-4: #86c97d;
+  --graph-5: #f4d95c;
+  --graph-6: #c9a0bd;
+  --graph-7: #ff9dc2;
+  --graph-8: #c49a82;
+  --graph-9: #d8d0cc;
 }
 
 * {
