@@ -152,7 +152,9 @@ export function BoardView(props: BoardViewProps) {
       editorRef.current = controls;
       latest.current.onReady?.({
         flush: () => autosave.flush(),
-        isDirty: () => autosave.isDirty(),
+        // Unsaved also means "mid-gesture": text being typed in a sticky or a
+        // drag isn't in the save queue yet, and a reload would drop it (#x74uu7c3).
+        isDirty: () => autosave.isDirty() || (editorRef.current?.isBusy() ?? false),
         keepMine: async () => {
           forceRef.current = true;
           await autosave.retry();

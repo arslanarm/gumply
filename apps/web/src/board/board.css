@@ -382,12 +382,14 @@ img.board-card-image {
 }
 
 /* Resize handles and lines. */
+/* Handles keep their screen size at any zoom (--board-zoom is set from the
+   viewport): 9-10 px targets even zoomed out (#8ht6zhdv item 2). */
 .board-root .react-flow__resize-control.handle.board-resize-handle {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
+  width: calc(9px / var(--board-zoom, 1));
+  height: calc(9px / var(--board-zoom, 1));
+  border-radius: calc(2px / var(--board-zoom, 1));
   background: var(--panel);
-  border: 1.5px solid var(--board-select);
+  border: calc(1.5px / var(--board-zoom, 1)) solid var(--board-select);
 }
 
 .board-root .react-flow__resize-control.line.board-resize-line {
@@ -396,10 +398,12 @@ img.board-card-image {
 
 /* Connection dots: visible on hover, always in connector mode. */
 .board-root .react-flow__handle.board-handle {
-  width: 10px;
-  height: 10px;
+  width: calc(10px / var(--board-zoom, 1));
+  height: calc(10px / var(--board-zoom, 1));
+  min-width: 0;
+  min-height: 0;
   background: var(--panel);
-  border: 1.5px solid var(--board-select);
+  border: calc(1.5px / var(--board-zoom, 1)) solid var(--board-select);
   opacity: 0;
   transition: opacity 90ms ease, transform 90ms ease;
 }
@@ -994,4 +998,49 @@ img.board-card-image {
 .board-link-kind {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* ---------- Connector tool (#r3d9ft49) ---------- */
+
+.board-overlay-connector {
+  cursor: crosshair;
+}
+
+.board-link-pick {
+  position: absolute;
+  border: 2px solid var(--board-select);
+  border-radius: 8px;
+  background: var(--board-select-soft);
+  pointer-events: none;
+  margin: -4px 0 0 -4px;
+  padding: 4px;
+  box-sizing: content-box;
+}
+
+.board-link-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.board-link-preview line {
+  stroke: var(--board-select);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  stroke-linecap: round;
+}
+
+.board-tool-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--panel);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  box-shadow: var(--board-shadow-raised);
 }

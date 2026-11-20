@@ -232,6 +232,55 @@ test.describe('board engine (W1)', () => {
     expect((await board(page)).edges).toHaveLength(1);
   });
 
+  test('the Connector tool connects objects by dragging from anywhere on them, or click then click (#r3d9ft49)', async ({ page }) => {
+    await openLab(page);
+    await addSticky(page, 300, 300, 'A');
+    await addSticky(page, 700, 300, 'B');
+    await addSticky(page, 500, 600, 'C');
+    const before = await board(page);
+    const [a, b, c] = before.nodes;
+
+    await page.keyboard.press('c');
+    await expect(page.getByTestId('board-tool-connector')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('board-connector-hint')).toHaveText('Drag from one object to another');
+
+    // Centre of A to centre of B: one connector, sides snapped, A doesn't move.
+    const boxA = await centre(page, 'board-sticky', 0);
+    const boxB = await centre(page, 'board-sticky', 1);
+    const boxC = await centre(page, 'board-sticky', 2);
+    await drag(page, boxA, boxB);
+    let saved = await board(page);
+    expect(saved.edges).toHaveLength(1);
+    expect(saved.edges[0]).toMatchObject({ fromNode: a?.id, fromSide: 'right', toNode: b?.id, toSide: 'left' });
+    expect(saved.nodes.map((node) => [node.x, node.y])).toEqual(before.nodes.map((node) => [node.x, node.y]));
+
+    // Edge of B to edge of C works the same.
+    await drag(page, { x: boxB.box.x + 6, y: boxB.box.y + boxB.box.height - 6 }, { x: boxC.box.x + boxC.box.width - 6, y: boxC.box.y + 6 });
+    saved = await board(page);
+    expect(saved.edges).toHaveLength(2);
+    expect(saved.edges[1]).toMatchObject({ fromNode: b?.id, toNode: c?.id });
+
+    // Click then click: C → A.
+    await page.mouse.click(boxC.x, boxC.y);
+    await expect(page.getByTestId('board-link-from')).toBeVisible();
+    await page.mouse.click(boxA.x, boxA.y);
+    saved = await board(page);
+    expect(saved.edges).toHaveLength(3);
+    expect(saved.edges[2]).toMatchObject({ fromNode: c?.id, toNode: a?.id });
+
+    // A drop on empty canvas makes nothing.
+    await drag(page, boxA, { x: 1100, y: 700 });
+    expect((await board(page)).edges).toHaveLength(3);
+    // Still the connector tool; objects never moved.
+    await expect(page.getByTestId('board-tool-connector')).toHaveAttribute('aria-pressed', 'true');
+    expect((await board(page)).nodes.map((node) => [node.x, node.y])).toEqual(before.nodes.map((node) => [node.x, node.y]));
+
+    // The hint is shown once.
+    await page.keyboard.press('v');
+    await page.keyboard.press('c');
+    await expect(page.getByTestId('board-connector-hint')).toHaveCount(0);
+  });
+
   test('frames carry what is inside them; arrow keys nudge', async ({ page }) => {
     await openLab(page);
     await page.keyboard.press('f');

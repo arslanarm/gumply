@@ -77,6 +77,9 @@ export function App() {
   const [page, setPage] = useState<Page | null>(null);
   // The open board's document as loaded (BoardView starts from it).
   const [boardDoc, setBoardDoc] = useState<BoardDocument | null>(null);
+  // A board created just now opens with its title selected (type to name it);
+  // any other board opens with the canvas focused (#ksx7szar).
+  const [newBoardId, setNewBoardId] = useState<PageId | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
@@ -639,6 +642,7 @@ export function App() {
       try {
         const created = await api.createBoard({ title, parentId });
         await loadPages();
+        setNewBoardId(created.meta.id);
         navigate(created.meta.id);
       } catch (error) {
         setActionError(errorMessage(error));
@@ -1049,15 +1053,34 @@ export function App() {
     [applySavedPage],
   );
 
+  const newBoardRef = useRef(newBoardId);
+  newBoardRef.current = newBoardId;
   const handleBoardReady = useCallback((controls: BoardViewControls) => {
     boardControls.current = controls;
+    // An existing board: put focus on the canvas so its shortcuts (N, V,
+    // Delete…) work right away instead of landing in the title or the tree.
+    if (newBoardRef.current !== null && newBoardRef.current === selectedRef.current) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest('[data-testid^="page-rename-input-"]')) return;
+    document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true });
   }, []);
+
+  // "New" lasts only while that board stays open.
+  useEffect(() => {
+    if (newBoardId !== null && selectedId !== newBoardId) setNewBoardId(null);
+  }, [selectedId, newBoardId]);
 
   const boardPageOptions = useMemo(
     () =>
       pages
         .filter((item) => item.id !== selectedId)
-        .map((item) => ({ path: vaultPathOf(item), title: item.title, ...(item.icon ? { icon: item.icon } : {}) })),
+        .map((item) => ({
+          path: vaultPathOf(item),
+          title: item.title,
+          // Live page cards reload their preview when this moves (W2b).
+          updated: item.updated,
+          ...(item.icon ? { icon: item.icon } : {}),
+        })),
     [pages, selectedId],
   );
 
@@ -1282,6 +1305,7 @@ export function App() {
                     onSetIcon={handleSetIcon}
                     onDelete={() => requestDelete(page.id)}
                     onStartBody={() => document.querySelector<HTMLElement>('[data-testid="board"]')?.focus()}
+                    editTitleOnOpen={newBoardId === page.id}
                     focusTitleSignal={titleFocusSignal}
                     sessionKey={sessionKeyOf(page.id)}
                   />
