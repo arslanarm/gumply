@@ -13,6 +13,8 @@ export interface AppOptions {
   security?: SecurityOptions;
   /** Serve the built web app from this folder at `/` (desktop shell, D26). */
   webRoot?: string;
+  /** Reported by /api/health; the desktop app passes its own (e.g. `0.5.0-rc.3`). */
+  version?: string;
 }
 
 /**
@@ -29,7 +31,7 @@ export function createApp(options: AppOptions): Hono {
     const body: HealthResponse = {
       ok: true,
       name: APP_NAME,
-      version: CORE_VERSION,
+      version: options.version ?? CORE_VERSION,
       vaultPath: options.vaultPath,
     };
     return c.json(body);

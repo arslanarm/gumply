@@ -22,6 +22,8 @@ export interface StartOptions {
   webRoot?: string;
   /** Watch the vault for external changes (default true). */
   watch?: boolean;
+  /** The app version /api/health reports (defaults to the core version). */
+  version?: string;
   log?: (message: string) => void;
 }
 
@@ -67,6 +69,7 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
     store,
     security,
     ...(options.webRoot ? { webRoot: options.webRoot } : {}),
+    ...(options.version ? { version: options.version } : {}),
   });
 
   const server: ServerType = await new Promise((resolveServer, reject) => {

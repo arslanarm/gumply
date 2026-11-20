@@ -2,7 +2,8 @@
   "name": "@gumply/desktop",
   "version": "0.5.0",
   "private": true,
-  "description": "Gumply desktop app: Electron shell around the local server and the web app (D26).",
+  "description": "Gumply",
+  "license": "UNLICENSED",
   "author": {
     "name": "Gumply",
     "email": "noreply@gumply.invalid"
@@ -28,7 +29,6 @@
   "build": {
     "appId": "app.gumply.desktop",
     "productName": "Gumply",
-    "executableName": "gumply",
     "artifactName": "Gumply-${version}-${arch}.${ext}",
     "directories": {
       "output": "release",
@@ -45,6 +45,7 @@
         "AppImage",
         "deb"
       ],
+      "executableName": "gumply",
       "category": "Office",
       "icon": "build/icon.png",
       "synopsis": "Notes as plain Markdown, with links, a graph and whiteboards",

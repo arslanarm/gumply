@@ -126,6 +126,8 @@ async function openVault(path: string): Promise<void> {
     host: "127.0.0.1",
     seedDemo: true,
     webRoot: WEB_ROOT,
+    // The installer's version (set from the release tag), not the source default.
+    version: app.getVersion(),
     log: (message) => console.log(message),
   });
   vaultPath = target;

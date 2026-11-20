@@ -57,9 +57,12 @@ so your notes are still plain Markdown files in a folder you choose.
   all three platforms (Windows installer `.exe`; macOS `.dmg`/`.zip` for Apple silicon and Intel)
   and attaches them, with `SHA256SUMS.txt`, to a **draft** GitHub Release that is published after
   the release check. `ci/**` branches build the same installers as workflow artifacts. The builds
-  are **not signed yet**: Windows SmartScreen asks you to confirm ("More info → Run anyway"), and on
-  macOS open the app with right-click → Open the first time (or run
-  `xattr -dr com.apple.quarantine /Applications/Gumply.app`).
+  are **not signed yet**, so the first start needs one confirmation:
+  - **Windows:** SmartScreen says "Windows protected your PC" → **More info → Run anyway**.
+  - **macOS** (`-arm64` for Apple silicon, `-x64` for Intel): drag Gumply to Applications and open
+    it; macOS blocks it. Then open **System Settings → Privacy & Security**, scroll to "Gumply was
+    blocked…", click **Open Anyway** and confirm. (On macOS 15 and later, right-click → Open no
+    longer skips this.) Alternatively, run `xattr -dr com.apple.quarantine /Applications/Gumply.app`.
 - **Hardened builds:** the shipped app can't be started as plain Node, ignores `NODE_OPTIONS` and
   debugging flags, and only loads its own integrity-checked app archive (Electron fuses). CI checks
   this in every installer with `npm run check:fuses -w @gumply/desktop`.
