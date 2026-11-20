@@ -14,6 +14,7 @@ export type IconName =
   | "heading"
   | "help"
   | "image"
+  | "keyboard"
   | "link"
   | "list"
   | "listOrdered"
@@ -97,6 +98,12 @@ const ICONS: Record<IconName, ReactNode> = {
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <circle cx="9" cy="9" r="2" />
       <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+    </>
+  ),
+  keyboard: (
+    <>
+      <rect width="20" height="16" x="2" y="4" rx="2" />
+      <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10" />
     </>
   ),
   link: (

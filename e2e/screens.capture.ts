@@ -132,4 +132,38 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByTestId('page-not-found')).toBeVisible();
     await shot(page, `${theme}-06-404.png`);
   });
+  test(`P2 polish surfaces — ${theme}`, async ({ page, vault }) => {
+    test.setTimeout(60_000);
+    await seed(vault);
+    await open(page, theme);
+
+    // Slash menu with block icons and scroll affordance.
+    await page.getByTestId("new-page-button").click();
+    await page.getByTestId("page-title-input").waitFor();
+    await page.getByTestId("editor-content").waitFor();
+    await page.waitForTimeout(250);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(150);
+    await page.keyboard.type("/");
+    await expect(page.getByTestId("slash-menu")).toBeVisible();
+    await page.waitForTimeout(180);
+    await shot(page, `${theme}-07-slash-menu.png`);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Backspace");
+
+    // [[ menu with page/file icons.
+    await page.keyboard.type("[[");
+    await expect(page.getByTestId("link-menu")).toBeVisible();
+    await page.waitForTimeout(180);
+    await shot(page, `${theme}-08-link-menu.png`);
+    await page.keyboard.press("Escape");
+
+    // Toast with its icon, deleting a page that is not open.
+    await page.getByTestId("page-item-welcome").click();
+    await page.locator('[data-testid="page-menu-button-meeting-notes"]').click();
+    await page.locator('[data-testid="delete-page-meeting-notes"]').click();
+    await expect(page.getByTestId("undo-toast")).toBeVisible();
+    await page.waitForTimeout(180);
+    await shot(page, `${theme}-09-toast.png`);
+  });
 }

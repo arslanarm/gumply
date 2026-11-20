@@ -70,7 +70,7 @@ export interface CreatePageInput {
 export interface UpdatePageInput {
   title?: string;
   content?: string;
-  icon?: string;
+  icon?: string | null;
   tags?: string[];
 }
 

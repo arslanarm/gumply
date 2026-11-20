@@ -112,7 +112,7 @@ export function Sidebar(props: SidebarProps) {
 
       <button
         type="button"
-        className="sidebar-row"
+        className="sidebar-row sidebar-search"
         data-testid="sidebar-search"
         onClick={props.onSearch}
       >
