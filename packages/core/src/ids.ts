@@ -4,6 +4,10 @@
  */
 
 const MAX_SLUG_LENGTH = 80;
+const MAX_SEGMENT_LENGTH = 120;
+
+/** Characters that cannot appear in a vault file name (or would break links). */
+const UNSAFE_FILE_CHARS = /[\\/:*?"<>|#^[\]]/g;
 
 /**
  * Turn a title into a filesystem-safe id segment.
@@ -25,9 +29,31 @@ export function slugify(input: string): string {
   return slug.length > 0 ? slug : "untitled";
 }
 
+/**
+ * Turn a title into a vault file-name segment (D20). Case and spaces are kept
+ * so the file is readable in Finder/Obsidian; only unsafe characters are
+ * removed. Falls back to `Untitled`.
+ */
+export function pageSegment(title: string): string {
+  const cleaned = title
+    .normalize("NFC")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(UNSAFE_FILE_CHARS, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\.+/, "")
+    .replace(/[. ]+$/g, "")
+    .slice(0, MAX_SEGMENT_LENGTH)
+    .trim()
+    .replace(/[. ]+$/g, "");
+  return cleaned.length > 0 ? cleaned : "Untitled";
+}
+
 /** Readable title for a page id: last segment, dashes to spaces, capitalised. */
 export function titleFromId(id: string): string {
   const segment = id.split("/").filter(Boolean).pop() ?? "";
+  // D20 ids already are titles: keep them verbatim when they contain spaces.
+  if (/\s/.test(segment)) return segment;
   const words = segment.replace(/[-_]+/g, " ").trim();
   if (words.length === 0) return "Untitled";
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -41,14 +67,23 @@ export function isValidPageId(id: string): boolean {
   if (id.length > 500) return false;
   const segments = id.split("/");
   return segments.every(
-    (segment) => segment.length > 0 && !segment.startsWith("."),
+    (segment) =>
+      segment.length > 0 &&
+      !segment.startsWith(".") &&
+      segment !== "." &&
+      segment !== ".." &&
+      !/[\u0000-\u001f\u007f]/.test(segment) &&
+      !/[<>:"|?*]/.test(segment),
   );
 }
 
-/** Build a child id: `child("projects", "Gumply")` -> `projects/gumply`. */
+/**
+ * Build a child id (D20): `child("projects", "Q1 plan")` -> `projects/Q1 plan`.
+ * The id is the vault path, so the file name follows the title.
+ */
 export function childPageId(parentId: string | null, title: string): string {
-  const slug = slugify(title);
-  return parentId ? `${parentId}/${slug}` : slug;
+  const segment = pageSegment(title);
+  return parentId ? `${parentId}/${segment}` : segment;
 }
 
 /** Parent id, or `null` for a root page. */

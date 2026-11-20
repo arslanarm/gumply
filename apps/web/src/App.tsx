@@ -231,32 +231,49 @@ export function App() {
     setPageReload((value) => value + 1);
   }, []);
 
-  const handlePageSaved = useCallback((updated: Page) => {
-    setPages((previous) =>
-      previous.map((item) =>
-        item.id === updated.id
+  /** D20: a rename changes the id; keep the list, open page and URL in sync. */
+  const applySavedPage = useCallback(
+    (previousId: PageId, updated: Page) => {
+      setPages((previous) =>
+        previous.map((item) =>
+          item.id === previousId
+            ? {
+                ...item,
+                id: updated.id,
+                title: updated.title,
+                icon: updated.icon,
+                tags: updated.tags,
+                parentId: updated.parentId,
+                updated: updated.updated,
+              }
+            : item,
+        ),
+      );
+      setPage((previous) =>
+        previous && previous.id === previousId
           ? {
-              ...item,
+              ...previous,
+              id: updated.id,
               title: updated.title,
               icon: updated.icon,
               tags: updated.tags,
               updated: updated.updated,
             }
-          : item,
-      ),
-    );
-    setPage((previous) =>
-      previous && previous.id === updated.id
-        ? {
-            ...previous,
-            title: updated.title,
-            icon: updated.icon,
-            tags: updated.tags,
-            updated: updated.updated,
-          }
-        : previous,
-    );
-  }, []);
+          : previous,
+      );
+      if (updated.id !== previousId && selectedRef.current === previousId) {
+        navigate(updated.id, true);
+      }
+    },
+    [navigate],
+  );
+
+  const handlePageSaved = useCallback(
+    (updated: Page) => {
+      applySavedPage(pageRef.current?.id ?? updated.id, updated);
+    },
+    [applySavedPage],
+  );
 
   const handleConflictReload = useCallback(() => {
     requestPageReload();
@@ -390,6 +407,11 @@ export function App() {
       .getPage(selectedId)
       .then((loaded) => {
         if (cancelled) return;
+        if (loaded.id !== selectedId) {
+          // D20: an old id resolves to the renamed page; follow it.
+          navigate(loaded.id, true);
+          return;
+        }
         setPage(loaded);
         setPageStatus("ready");
         // Remount the editor once fresh content has arrived (D12 link rewrite,
@@ -408,7 +430,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId, pageReload]);
+  }, [selectedId, pageReload, navigate]);
 
   // beforeunload guard while edits are pending or a save has failed (D14 §7).
   useEffect(() => {
@@ -564,16 +586,7 @@ export function App() {
         await editorControls.current?.flush();
 
         const updated = await api.updatePage(id, { title });
-        setPages((previous) =>
-          previous.map((item) =>
-            item.id === id ? { ...item, title: updated.title, updated: updated.updated } : item,
-          ),
-        );
-        setPage((previous) =>
-          previous && previous.id === id
-            ? { ...previous, title: updated.title, updated: updated.updated }
-            : previous,
-        );
+        applySavedPage(id, updated);
 
         // D12: refetch the open page when the server rewrote its links.
         if (openPageNeedsReload(updated.rewrittenPages, selectedRef.current, id)) {
@@ -584,7 +597,7 @@ export function App() {
         void loadPages();
       }
     },
-    [loadPages, requestPageReload],
+    [applySavedPage, loadPages, requestPageReload],
   );
 
   const handleSetIcon = useCallback(async (icon: string | null) => {

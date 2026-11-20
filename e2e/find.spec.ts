@@ -63,7 +63,7 @@ test.describe('search and quick switcher', () => {
     await expect(page.getByTestId('quick-switcher')).toBeVisible();
     await expect(page.getByTestId('quick-switcher-input')).toBeFocused();
     await expect(page.getByTestId('quick-switcher')).toContainText('Recent');
-    await expect(page.getByTestId('search-result-recent-page')).toBeVisible();
+    await expect(page.getByTestId('search-result-Recent page')).toBeVisible();
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('quick-switcher')).toHaveCount(0);
@@ -137,7 +137,7 @@ test.describe('search and quick switcher', () => {
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('quick-switcher')).toHaveCount(0);
     await expectPageTitle(page, 'zzz brand new');
-    await expect(page.getByTestId('page-item-zzz-brand-new')).toBeVisible();
+    await expect(page.getByTestId('page-item-zzz brand new')).toBeVisible();
 
     const listed = (await (await request.get(`${API_URL}/api/pages`)).json()) as {
       title: string;

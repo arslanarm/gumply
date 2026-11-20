@@ -18,6 +18,7 @@ import {
   resolveWikilink,
   rewriteWikilinkTargets,
   titleFromId,
+  uniqueId,
   type Backlink,
   type DeletePageResult,
   type Frontmatter,
@@ -131,6 +132,8 @@ export class VaultStore {
   private readonly pages = new Map<PageId, PageRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
   private writeQueue: Promise<unknown> = Promise.resolve();
+  /** Old id -> new id after a rename, for stale URLs/tabs in this session. */
+  private readonly redirects = new Map<PageId, PageId>();
   private watcher: FSWatcher | null = null;
   private watchTimer: ReturnType<typeof setTimeout> | null = null;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
@@ -222,6 +225,16 @@ export class VaultStore {
     }
     if (!changed) return false;
 
+    // External renames: remember where an open page went so stale URLs follow.
+    for (const [oldId, oldRecord] of this.pages) {
+      if (next.has(oldId)) continue;
+      const moved = [...next.values()].find(
+        (record) => record.title === oldRecord.title && !this.pages.has(record.id),
+      );
+      if (moved) this.addRedirect(oldId, moved.id);
+    }
+    for (const id of next.keys()) this.redirects.delete(id);
+
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
     this.reindexAll();
@@ -293,6 +306,43 @@ export class VaultStore {
     );
   }
 
+  /**
+   * D20 migration: rename files/folders so every file name follows its title.
+   * Returns the plan; with `apply: false` nothing is written (dry run).
+   */
+  syncFilenames(apply: boolean): Promise<Array<{ from: PageId; to: PageId }>> {
+    return this.enqueue(async () => {
+      const plans: Array<{ from: PageId; to: PageId }> = [];
+      const taken = new Set<PageId>(this.pages.keys());
+
+      const visit = async (parentId: PageId | null, plannedParentId: PageId | null) => {
+        const children = [...this.pages.values()].filter(
+          (record) => record.parentId === parentId,
+        );
+        for (const child of children) {
+          const desired = childPageId(plannedParentId, child.title);
+          let target = desired;
+          if (desired !== child.id) {
+            target = apply ? await this.freeId(desired) : uniqueId(desired, taken);
+            plans.push({ from: child.id, to: target });
+          }
+          if (apply && target !== child.id) {
+            await this.relocateNow(child.id, target);
+            taken.add(target);
+            await visit(target, target);
+          } else {
+            taken.add(target);
+            await visit(child.id, target);
+          }
+        }
+      };
+
+      await visit(null, null);
+      if (apply) this.reindexAll();
+      return plans;
+    });
+  }
+
   /** Flat list of every page, sorted by id. */
   list(): PageMeta[] {
     const counts = new Map<PageId, number>();
@@ -305,8 +355,12 @@ export class VaultStore {
   }
 
   get(id: PageId): Page {
-    const record = this.require(id);
-    return { ...metaOf(record, this.directChildCount(id)), content: record.content };
+    const resolved = this.resolveId(id);
+    const record = this.require(resolved);
+    return {
+      ...metaOf(record, this.directChildCount(resolved)),
+      content: record.content,
+    };
   }
 
   create(input: CreatePageInput): Promise<Page> {
@@ -314,11 +368,11 @@ export class VaultStore {
   }
 
   update(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
-    return this.enqueue(() => this.updateNow(id, patch));
+    return this.enqueue(() => this.updateNow(this.resolveId(id), patch));
   }
 
   remove(id: PageId): Promise<DeletePageResult> {
-    return this.enqueue(() => this.removeNow(id));
+    return this.enqueue(() => this.removeNow(this.resolveId(id)));
   }
 
   restore(trashId: string): Promise<PageMeta[]> {
@@ -326,10 +380,11 @@ export class VaultStore {
   }
 
   move(id: PageId, parentId: PageId | null): Promise<Page> {
-    return this.enqueue(() => this.moveNow(id, parentId));
+    return this.enqueue(() => this.moveNow(this.resolveId(id), parentId));
   }
 
   backlinks(id: PageId): Backlink[] {
+    id = this.resolveId(id);
     this.require(id);
 
     const out: Backlink[] = [];
@@ -454,6 +509,25 @@ export class VaultStore {
     );
   }
 
+  private resolveId(id: PageId): PageId {
+    let current = id;
+    const seen = new Set<PageId>();
+    while (this.redirects.has(current) && !seen.has(current)) {
+      seen.add(current);
+      current = this.redirects.get(current) as PageId;
+    }
+    return current;
+  }
+
+  private addRedirect(from: PageId, to: PageId): void {
+    if (from === to) return;
+    this.redirects.set(from, to);
+    // Keep chains short: everything that pointed at `from` now points at `to`.
+    for (const [key, value] of [...this.redirects]) {
+      if (value === from) this.redirects.set(key, to);
+    }
+  }
+
   // --- mutations ---------------------------------------------------------
 
   private async createNow(input: CreatePageInput): Promise<Page> {
@@ -481,6 +555,7 @@ export class VaultStore {
 
     const baseId = childPageId(parentId, title);
     const id = await this.freeId(baseId);
+    this.redirects.delete(id);
     const now = new Date().toISOString();
     const filePath = this.filePathFor(id);
 
@@ -514,7 +589,7 @@ export class VaultStore {
     id: PageId,
     patch: UpdatePageInput,
   ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string }> {
-    const record = this.require(id);
+    let record = this.require(id);
 
     let info;
     try {
@@ -570,6 +645,8 @@ export class VaultStore {
     // Snapshot before the rename so link resolution still sees the old title.
     const beforeMetas = titleChanged ? this.list() : [];
 
+    const targetId = await this.renameTarget(id, record.parentId, nextTitle);
+
     const changes = ["updated"];
     if (nextTitle !== previousTitle) changes.push("title");
     if (nextIcon !== record.icon) changes.push("icon");
@@ -582,6 +659,8 @@ export class VaultStore {
       changes,
     );
 
+    // Update the record before relocating so the moved copy carries the new
+    // title/content; relocate then swaps the map entries and the object.
     record.title = nextTitle;
     record.content = nextContent;
     record.updated = updated;
@@ -589,6 +668,12 @@ export class VaultStore {
     record.fmTags = fmTags;
     if (nextIcon) record.icon = nextIcon;
     else delete record.icon;
+
+    if (targetId !== id) {
+      await this.relocateNow(id, targetId);
+      const moved = this.pages.get(targetId);
+      if (moved) record = moved;
+    }
     this.refreshTags(record);
 
     const rewrittenPages: PageId[] = [];
@@ -596,7 +681,7 @@ export class VaultStore {
     if (titleChanged) {
       // D12: keep link text truthful by rewriting `[[Old…]]` in other pages.
       for (const other of [...this.pages.values()]) {
-        if (other.id === id) continue;
+        if (other.id === id || other.id === targetId) continue;
 
         const result = rewriteWikilinkTargets(
           other.content,
@@ -628,14 +713,74 @@ export class VaultStore {
       rewrittenPages.sort((a, b) => a.localeCompare(b));
       this.reindexAll();
     } else {
-      this.recomputeSource(id);
+      this.recomputeSource(targetId);
     }
 
     return {
-      ...this.get(id),
+      ...this.get(targetId),
       rewrittenPages,
       ...(conflictBackup ? { conflictBackup } : {}),
     };
+  }
+
+  /** D20: the id (and therefore file path) follows the title. */
+  private async renameTarget(
+    id: PageId,
+    parentId: PageId | null,
+    title: string,
+  ): Promise<PageId> {
+    const desired = childPageId(parentId, title);
+    if (desired === id) return id;
+    // A case-only change on a case-insensitive filesystem is the same path.
+    if (desired.toLowerCase() === id.toLowerCase()) return desired;
+    if (this.pages.has(desired) || (await pathExists(this.filePathFor(desired)))) {
+      return this.freeId(desired);
+    }
+    return desired;
+  }
+
+  /** Move a page file and its child folder, remapping ids without rewriting content. */
+  private async relocateNow(id: PageId, newId: PageId): Promise<void> {
+    const record = this.pages.get(id);
+    if (!record) throw notFound("Page not found");
+    if (id === newId) return;
+
+    const oldDir = join(this.root, id);
+    const newDir = join(this.root, newId);
+    const hasChildren = [...this.pages.keys()].some((key) => key.startsWith(`${id}/`));
+
+    await mkdir(dirname(this.filePathFor(newId)), { recursive: true });
+    if (hasChildren) {
+      await mkdir(dirname(newDir), { recursive: true });
+      await rename(oldDir, newDir);
+    }
+
+    try {
+      await rename(record.filePath, this.filePathFor(newId));
+    } catch (error) {
+      if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
+      throw error;
+    }
+
+    const moved: Array<{ oldId: PageId; record: PageRecord }> = [];
+    for (const [key, value] of [...this.pages]) {
+      if (key !== id && !key.startsWith(`${id}/`)) continue;
+      this.pages.delete(key);
+      const movedId = `${newId}${key.slice(id.length)}`;
+      moved.push({
+        oldId: key,
+        record: { ...value, id: movedId, filePath: this.filePathFor(movedId) },
+      });
+    }
+    for (const { oldId, record: value } of moved) {
+      this.pages.set(value.id, value);
+      this.addRedirect(oldId, value.id);
+    }
+
+    for (const [key, value] of this.pages) {
+      const parent = parentOf(key);
+      value.parentId = parent !== null && this.pages.has(parent) ? parent : null;
+    }
   }
 
   private async removeNow(id: PageId): Promise<DeletePageResult> {
@@ -992,7 +1137,7 @@ export class VaultStore {
     let candidate = baseId;
     let suffix = 2;
     while (this.pages.has(candidate) || (await pathExists(this.filePathFor(candidate)))) {
-      candidate = `${baseId}-${suffix}`;
+      candidate = `${baseId} ${suffix}`;
       suffix += 1;
     }
     return candidate;

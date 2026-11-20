@@ -32,8 +32,8 @@ describe("buildDemoPages", () => {
   it("lists parents before children", () => {
     expect(demo[0]?.parentId).toBeNull();
     expect(demo[1]?.parentId).toBeNull();
-    expect(demo[2]?.parentId).toBe("gumply-demo");
-    expect(demo[3]?.parentId).toBe("gumply-demo");
+    expect(demo[2]?.parentId).toBe("Gumply demo");
+    expect(demo[3]?.parentId).toBe("Gumply demo");
   });
 
   it("introduces the three core interactions and links the demo pages", () => {
@@ -58,14 +58,14 @@ describe("server-side demo seeding", () => {
     const store = new VaultStore(dir);
     await store.init();
 
-    expect(await store.seedDemoIfFirstRun()).toBe("welcome");
+    expect(await store.seedDemoIfFirstRun()).toBe("Welcome");
     expect(store.list().map((page) => page.title).sort()).toEqual([
       "Getting started",
       "Graph view",
       "Gumply demo",
       "Welcome",
     ]);
-    expect(store.consumeNewVaultPage()).toBe("welcome");
+    expect(store.consumeNewVaultPage()).toBe("Welcome");
     expect(store.consumeNewVaultPage()).toBeNull();
 
     const marker = JSON.parse(
@@ -122,7 +122,7 @@ describe("server-side demo seeding", () => {
 
     expect(await store.seedDemoIfFirstRun()).toBeNull();
     expect(store.list().map((page) => page.title).sort()).toEqual(["Gumply demo", "Welcome"]);
-    expect(store.consumeNewVaultPage()).toBe("welcome");
+    expect(store.consumeNewVaultPage()).toBe("Welcome");
     expect(store.consumeNewVaultPage()).toBeNull();
 
     // The marker is written, so a restart must not announce (or seed) again.

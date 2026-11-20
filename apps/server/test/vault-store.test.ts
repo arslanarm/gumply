@@ -113,7 +113,7 @@ describe("VaultStore index on start", () => {
     await store.init();
 
     const updated = await store.update("imported", { content: "New body." });
-    const written = await readFile(join(dir, "imported.md"), "utf8");
+    const written = await readFile(join(dir, `${updated.id}.md`), "utf8");
     expect(written).toBe(
       original
         .replace("Old body.", "New body.")
@@ -140,8 +140,8 @@ describe("VaultStore index on start", () => {
     const store = new VaultStore(dir);
     await store.init();
 
-    await store.update("imported", { title: "Renamed", content: "Body." });
-    const written = await readFile(join(dir, "imported.md"), "utf8");
+    const updated = await store.update("imported", { title: "Renamed", content: "Body." });
+    const written = await readFile(join(dir, `${updated.id}.md`), "utf8");
     expect(written).toContain("title: Renamed");
     expect(written).toContain("aliases: [One, Two]");
     expect(written).toContain("cssclasses: [wide, cards]   # keep flow");
@@ -160,7 +160,7 @@ describe("VaultStore index on start", () => {
     await store.init();
 
     const updated = await store.update("win", { content: "Body" });
-    const written = await readFile(join(dir, "win.md"), "utf8");
+    const written = await readFile(join(dir, `${updated.id}.md`), "utf8");
     expect(written).toBe(
       original.replace("old", updated.updated).replace("---\r\nBody", "---\r\n\r\nBody"),
     );
@@ -171,10 +171,10 @@ describe("VaultStore index on start", () => {
     const dir = await tempVault();
     const store = new VaultStore(dir);
     await store.init();
-    await store.create({ title: "A", content: "keep me" });
-    await store.create({ title: "Child", parentId: "a" });
+    const parent = await store.create({ title: "A", content: "keep me" });
+    await store.create({ title: "Child", parentId: parent.id });
 
-    const result = await store.remove("a");
+    const result = await store.remove(parent.id);
     expect(store.list()).toEqual([]);
 
     // A new process only sees the vault: .trash must stay invisible…
@@ -186,9 +186,78 @@ describe("VaultStore index on start", () => {
 
     // …but its entries remain restorable from disk.
     const restored = await reopened.restore(result.trashId);
-    expect(restored.map((meta) => meta.id)).toEqual(["a", "a/child"]);
-    expect(reopened.get("a").content).toBe("keep me");
-    expect(reopened.get("a").childCount).toBe(1);
+    expect(restored.map((meta) => meta.id)).toEqual(["A", "A/Child"]);
+    expect(reopened.get("A").content).toBe("keep me");
+    expect(reopened.get("A").childCount).toBe(1);
+  });
+
+  it("renames the file with the title and moves the child folder", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const parent = await store.create({ title: "Old title" });
+    const child = await store.create({ title: "Child", parentId: parent.id });
+
+    const renamed = await store.update(parent.id, { title: "Q1 plan" });
+    expect(renamed.id).toBe("Q1 plan");
+    expect(store.get("Q1 plan").title).toBe("Q1 plan");
+    expect(store.get("Q1 plan/Child").parentId).toBe("Q1 plan");
+    expect(store.get("Q1 plan/Child").id).toBe("Q1 plan/Child");
+    expect(store.get(child.id).id).toBe("Q1 plan/Child");
+    expect(store.get(parent.id).id).toBe("Q1 plan");
+
+    await expect(readFile(join(dir, "Q1 plan.md"), "utf8")).resolves.toContain("title: Q1 plan");
+    await expect(readFile(join(dir, "Q1 plan", "Child.md"), "utf8")).resolves.toContain(
+      "title: Child",
+    );
+  });
+
+  it("keeps unsafe characters out of the file name", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const page = await store.create({ title: "Plan: Q1? <draft>" });
+    expect(page.id).toBe("Plan Q1 draft");
+    await expect(readFile(join(dir, "Plan Q1 draft.md"), "utf8")).resolves.toContain(
+      'title: "Plan: Q1? <draft>"',
+    );
+  });
+
+  it("migrates legacy slug file names with syncFilenames", async () => {
+    const dir = await tempVault(async (root) => {
+      await writeFile(join(root, "old-plan.md"), "---\ntitle: Old Plan\n---\nBody\n", "utf8");
+      await import("node:fs/promises").then((fs) =>
+        fs.mkdir(join(root, "old-plan"), { recursive: true }),
+      );
+      await writeFile(
+        join(root, "old-plan", "child-page.md"),
+        "---\ntitle: Child Page\n---\nBody\n",
+        "utf8",
+      );
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+
+    const dry = await store.syncFilenames(false);
+    expect(dry).toEqual([
+      { from: "old-plan", to: "Old Plan" },
+      { from: "old-plan/child-page", to: "Old Plan/Child Page" },
+    ]);
+    // Dry run writes nothing.
+    await expect(readFile(join(dir, "old-plan.md"), "utf8")).resolves.toBeTruthy();
+    await expect(readFile(join(dir, "Old Plan.md"), "utf8")).rejects.toThrow();
+
+    const applied = await store.syncFilenames(true);
+    expect(applied.map((plan) => plan.to)).toEqual(dry.map((plan) => plan.to));
+    expect(applied[0]).toEqual({ from: "old-plan", to: "Old Plan" });
+    const files = await readdir(dir);
+    expect(files).toContain("Old Plan.md");
+    expect(files).not.toContain("old-plan.md");
+    expect(store.list().map((page) => page.id).sort()).toEqual([
+      "Old Plan",
+      "Old Plan/Child Page",
+    ]);
+    expect(store.get("old-plan").id).toBe("Old Plan");
   });
 
   it("treats a page whose file is already gone as deleted instead of throwing", async () => {
@@ -268,17 +337,17 @@ describe("external vault changes", () => {
     const page = await store.create({ title: "Conflict", content: "original" });
 
     await new Promise((resolve) => setTimeout(resolve, 10));
-    await writeFile(join(dir, "conflict.md"), "external body", "utf8");
+    await writeFile(join(dir, `${page.id}.md`), "external body", "utf8");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     await expect(
-      store.update("conflict", { content: "mine", expectedUpdated: page.updated }),
+      store.update(page.id, { content: "mine", expectedUpdated: page.updated }),
     ).rejects.toMatchObject({ status: 409 });
 
     await store.rescan();
-    expect(store.get("conflict").content).toContain("external body");
+    expect(store.get(page.id).content).toContain("external body");
 
-    const forced = await store.update("conflict", {
+    const forced = await store.update(page.id, {
       content: "mine",
       expectedUpdated: page.updated,
       force: true,
@@ -302,7 +371,7 @@ describe("external vault changes", () => {
     await store.update(page.id, { content: "two" });
     const files = await readdir(dir);
     expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
-    expect(await readFile(join(dir, "atomic.md"), "utf8")).toContain("two");
+    expect(await readFile(join(dir, `${page.id}.md`), "utf8")).toContain("two");
   });
 
   it("picks up several external files in one rescan", async () => {
