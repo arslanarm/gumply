@@ -22,15 +22,22 @@ function normalise(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function folderLabel(page: PageMeta): string {
-  const folders = page.id
+/** Folder segments of a page id, capitalised for display (e.g. `Projects/Plan` → `Projects`). */
+export function folderPath(page: PageMeta): string {
+  return page.id
     .split("/")
     .slice(0, -1)
     .map((segment) => {
       const words = segment.replace(/[-_]+/g, " ").trim();
       return words.length === 0 ? segment : words.charAt(0).toUpperCase() + words.slice(1);
-    });
-  return folders.length === 0 ? page.title : `${folders.join("/")}/${page.title}`;
+    })
+    .join("/");
+}
+
+/** Title prefixed with its folder path, used when titles collide. */
+export function folderLabel(page: PageMeta): string {
+  const folders = folderPath(page);
+  return folders.length === 0 ? page.title : `${folders}/${page.title}`;
 }
 
 /**

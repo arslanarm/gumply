@@ -2,7 +2,15 @@
  * Typed client for the local API (wiki `spec/api`). Vite proxies `/api` to the
  * server, so paths are relative and work in dev and in e2e.
  */
-import type { ApiError, Backlink, GraphData, Page, PageId, PageMeta } from "@gumply/core";
+import type {
+  ApiError,
+  Backlink,
+  GraphData,
+  Page,
+  PageId,
+  PageMeta,
+  SearchResult,
+} from "@gumply/core";
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -96,6 +104,10 @@ export const api = {
   getPage: (id: PageId): Promise<Page> => request(pagePath(id)),
 
   backlinks: (id: PageId): Promise<Backlink[]> => request(`${pagePath(id)}/backlinks`),
+
+  /** Full-text search (D13): title and body matches, ranked by the server. */
+  search: (query: string): Promise<SearchResult[]> =>
+    request(`/search?q=${encodeURIComponent(query)}`),
 
   createPage: (input: CreatePageInput): Promise<Page> =>
     mutate(() => request("/pages", { method: "POST", body: JSON.stringify(input) })),

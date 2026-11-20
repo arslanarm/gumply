@@ -5,6 +5,7 @@ import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
+import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
@@ -20,7 +21,6 @@ import { buildPageTree, isSelfOrDescendant } from "./lib/tree.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
-type AuxView = "search" | null;
 
 interface PendingDelete {
   page: PageMeta;
@@ -52,7 +52,7 @@ export function App() {
   const [editorRevision, setEditorRevision] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [auxView, setAuxView] = useState<AuxView>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(() => isGraphHash(window.location.hash));
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
@@ -77,6 +77,7 @@ export function App() {
   selectedRef.current = selectedId;
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
+  const searchTrigger = useRef<HTMLElement | null>(null);
   const reloadEditorAfterFetch = useRef(false);
   const focusBodyAfterOpen = useRef(false);
   const backlinksRequest = useRef(0);
@@ -86,6 +87,41 @@ export function App() {
     focusNonce.current += 1;
     setFocusTarget({ id, nonce: focusNonce.current });
   }, []);
+
+  // D13: one overlay, opened by Cmd/Ctrl+K and by the sidebar Search row.
+  const openSearch = useCallback(() => {
+    const active = document.activeElement;
+    searchTrigger.current = active instanceof HTMLElement ? active : null;
+    setSearchOpen(true);
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    const trigger = searchTrigger.current;
+    searchTrigger.current = null;
+    // Restore focus after the overlay unmounts (spec/ux §5).
+    window.requestAnimationFrame(() => {
+      if (trigger?.isConnected) trigger.focus();
+    });
+  }, []);
+
+  /** Pick/create: close without pulling focus back to the trigger. */
+  const dismissSearch = useCallback(() => {
+    searchTrigger.current = null;
+    setSearchOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      if (pendingDelete) return;
+      event.preventDefault();
+      if (searchOpen) closeSearch();
+      else openSearch();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen, openSearch, closeSearch, pendingDelete]);
 
   const loadPages = useCallback(async (): Promise<PageMeta[] | null> => {
     try {
@@ -129,7 +165,6 @@ export function App() {
     if (window.location.hash !== GRAPH_HASH) window.location.hash = GRAPH_HASH;
     setSelectedId(null);
     setGraphOpen(true);
-    setAuxView(null);
   }, []);
 
   /** Refetch the open page and remount the editor with the new content. */
@@ -248,7 +283,6 @@ export function App() {
 
   const handleOpen = useCallback(
     (id: PageId) => {
-      setAuxView(null);
       setAutoFocusTitle(true);
       setPendingHeading(null);
       if (id === selectedRef.current) {
@@ -264,7 +298,6 @@ export function App() {
   const handleCreate = useCallback(
     async (parentId: PageId | null) => {
       setActionError(null);
-      setAuxView(null);
       setAutoFocusTitle(true);
       try {
         const created = await api.createPage({ title: "Untitled", parentId });
@@ -275,6 +308,34 @@ export function App() {
       }
     },
     [loadPages, navigate],
+  );
+
+  /** D13: open a result from the quick switcher. */
+  const openSearchResult = useCallback(
+    (id: PageId) => {
+      dismissSearch();
+      handleOpen(id);
+    },
+    [dismissSearch, handleOpen],
+  );
+
+  /** D13: `Create “X”` in the quick switcher — top level, like New page. */
+  const createSearchPage = useCallback(
+    (title: string) => {
+      dismissSearch();
+      setActionError(null);
+      setAutoFocusTitle(true);
+      void (async () => {
+        try {
+          const created = await api.createPage({ title });
+          await loadPages();
+          navigate(created.id);
+        } catch (error) {
+          setActionError(errorMessage(error));
+        }
+      })();
+    },
+    [dismissSearch, loadPages, navigate],
   );
 
   const handleGraphCreatePage = useCallback(
@@ -294,7 +355,6 @@ export function App() {
   const openWikiLink = useCallback(
     async (link: { targetTitle: string; heading: string }) => {
       const resolved = resolveWikilink(link.targetTitle, pages);
-      setAuxView(null);
 
       if (!resolved) {
         try {
@@ -492,7 +552,6 @@ export function App() {
 
   const goToWelcome = useCallback(() => {
     const welcome = pages.find((item) => item.title.trim().toLowerCase() === "welcome");
-    setAuxView(null);
     if (welcome) navigate(welcome.id);
     else navigate(null);
   }, [pages, navigate]);
@@ -529,7 +588,7 @@ export function App() {
           onDelete={requestDelete}
           onMove={(id, parentId) => void handleMove(id, parentId)}
           onRetry={handleRetry}
-          onSearch={() => setAuxView("search")}
+          onSearch={openSearch}
           onGraph={navigateGraph}
         />
 
@@ -552,12 +611,7 @@ export function App() {
             />
           ) : (
             <div className="editor-pane" data-testid="editor">
-              {auxView === "search" ? (
-                <div className="empty-state" data-testid="search-coming-soon">
-                  <h2>Search is coming soon.</h2>
-                  <p>You'll be able to find any page by title or text from here.</p>
-                </div>
-              ) : serverError ? (
+              {serverError ? (
                 <div className="empty-state" data-testid="server-error">
                   <h2>{SERVER_DOWN_MESSAGE}</h2>
                   <p>Your pages are safe on disk. Start the app again to reconnect.</p>
@@ -665,6 +719,15 @@ export function App() {
           message={toast.message}
           onUndo={toast.undo ? () => void toast.undo?.() : undefined}
           onDismiss={dismissToast}
+        />
+      ) : null}
+
+      {searchOpen ? (
+        <QuickSwitcher
+          pages={pages}
+          onOpen={openSearchResult}
+          onCreate={createSearchPage}
+          onClose={closeSearch}
         />
       ) : null}
     </div>
