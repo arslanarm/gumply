@@ -22,6 +22,12 @@ import { BlockEditing } from "../editor/block-editing.js";
 import { NotionCodeBlock } from "../editor/code-block.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { MarkdownLink } from "../editor/link.js";
+import {
+  MarkdownHeading,
+  MarkdownHorizontalRule,
+  MarkdownMarkup,
+  MarkdownOrderedList,
+} from "../editor/raw-markdown/markup.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
 import { MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
 import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/raw-markdown/list-style.js";
@@ -386,7 +392,9 @@ export function Editor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
+        heading: false,
+        orderedList: false,
+        horizontalRule: false,
         paragraph: false,
         text: false,
         hardBreak: false,
@@ -395,6 +403,10 @@ export function Editor({
       }),
       NotionCodeBlock,
       MarkdownBulletList,
+      MarkdownHeading.configure({ levels: [1, 2, 3] }),
+      MarkdownOrderedList,
+      MarkdownHorizontalRule,
+      MarkdownMarkup,
       EmptyLineParagraph,
       MarkdownText,
       MarkdownHardBreak,

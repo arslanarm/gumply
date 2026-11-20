@@ -38,6 +38,16 @@ const OBSIDIAN_NOTE = [
   '[^1]: The footnote.',
 ].join('\n');
 
+
+/** @opus-hunter's pass-2 fixtures (`/tmp/hunter/fx/*.md`, bodies only: frontmatter is #tterskg4). */
+const HUNTER_FIXTURES: Record<string, string> = {
+  code: "Intro paragraph.\n\n~~~python\nprint(\"tilde\")\n~~~\n\n````md\n```js\ninner\n```\n````\n\n    indented code block\n    second line\n\nAfter code.",
+  tables: "Intro paragraph.\n\n| Left | Center | Right |\n|:--|:-:|--:|\n| a \\| b | `code|x` | [[Welcome|alias]] |\n| [link](https://x.y/a_b) |  | **bold** |\n\nNo | leading | pipes\n--- | --- | ---\n1 | 2 | 3\n\nTail paragraph.",
+  escapes: "Intro paragraph.\n\nsnake_case_word and 2*3*4 and C# and `#not-a-tag` here.\n\nURL https://example.com/a_b*c_d and <https://autolink.example>.\n\nPress <kbd>Ctrl</kbd> and use &nbsp; and &copy; as typed.\n\nPrice $5 and $10 stays.",
+  obsidian: "Intro paragraph.\n\nInline %%hidden comment%% here.\n\n%%\nblock comment\n%%\n\n![[Welcome]]\n\n![[Welcome#Try it]]\n\nA line with a block id ^abc123\n\nSee [[Welcome#^abc123]].\n\n> [!tip]- Foldable\n> - item one\n> - item two\n>\n> > [!note] Nested\n> > inner\n\n$$\n\\int_0^1 x\\,dx\n$$",
+  ws: "Intro paragraph.\n\n* star bullet\n* another\n    * four-space nested\n\n+ plus bullet\n\n1) paren list\n2) second\n\n***\n\n___\n\nSetext Heading\n==============\n\nSub Setext\n----------\n\nHard break with backslash\\\nnext line.",
+};
+
 async function waitSaved(page: Page) {
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', {
     timeout: 10_000,
@@ -134,4 +144,23 @@ test.describe('imported Markdown survives editing', () => {
     await waitSaved(page);
     expect((await api.getPage(request, created!.id)).content).toContain(table);
   });
+
+  for (const [name, content] of Object.entries(HUNTER_FIXTURES)) {
+    test(`fixture "${name}": one edit changes only the edited line`, async ({
+      page,
+      vault,
+      request,
+    }) => {
+      const [created] = await vault.seed([{ title: `Fixture ${name}`, content }]);
+      await page.goto('/');
+      const body = page.getByTestId('editor-content');
+      await body.getByText('Intro paragraph.', { exact: true }).click();
+      await page.keyboard.press('End');
+      await page.keyboard.type(' Edited.');
+      await waitSaved(page);
+      expect((await api.getPage(request, created!.id)).content).toBe(
+        content.replace('Intro paragraph.', 'Intro paragraph. Edited.'),
+      );
+    });
+  }
 });

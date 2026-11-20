@@ -104,7 +104,8 @@ export function renderRawBlockPreview(
   }
 
   const wrap = el("div", "raw-block-source");
-  wrap.append(el("span", "raw-block-badge", kind === "html" ? "HTML" : "Markdown"));
+  const badge = kind === "html" ? "HTML" : kind === "comment" ? "Comment" : "Markdown";
+  wrap.append(el("span", "raw-block-badge", badge));
   wrap.append(el("pre", undefined, source));
   return wrap;
 }
@@ -250,6 +251,12 @@ export function renderRawInlinePreview(source: string, kind: string): HTMLElemen
   if (kind === "highlight") return el("mark", "raw-inline-highlight", source.slice(2, -2));
   if (kind === "footnote-ref") return el("sup", "raw-inline-footnote", source.slice(2, -1));
   if (kind === "math") return el("code", "raw-inline-math", source.slice(1, -1));
+  if (kind === "entity") {
+    // Only `&name;` / `&#n;` reach here (see entityRule), so this is safe.
+    const decoder = document.createElement("textarea");
+    decoder.innerHTML = source;
+    return el("span", "raw-inline-entity", decoder.value);
+  }
   return el("code", "raw-inline-source", source);
 }
 

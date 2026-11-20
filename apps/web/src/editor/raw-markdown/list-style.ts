@@ -56,6 +56,8 @@ export function detectListStyle(markdown: string): ListStyle {
 }
 
 interface ListSerializerState {
+  flushClose(size?: number): void;
+  closed?: unknown;
   renderList(node: PMNode, delim: string, firstDelim: (index: number) => string): void;
 }
 
@@ -64,9 +66,42 @@ function styleOf(editor: Editor): ListStyle {
   return storage.markdownListStyle?.style ?? DEFAULT_LIST_STYLE;
 }
 
-function serializeBullets(this: { editor: Editor }, state: ListSerializerState, node: PMNode) {
-  const { marker, indent } = styleOf(this.editor);
-  state.renderList(node, indent, () => `${marker} `);
+/**
+ * prosemirror-markdown puts two blank lines between adjacent lists of the
+ * same type (an old CommonMark idiom). Adjacent lists here always differ in
+ * marker, so the usual single blank line keeps them apart.
+ */
+export function separateFromPreviousList(state: ListSerializerState, node: PMNode): void {
+  const closed = state.closed as PMNode | null | undefined;
+  if (closed && closed.type === node.type) state.flushClose(2);
+}
+
+const MARKERS = new Set(["-", "*", "+"]);
+
+/** The list's own marker (as read), else the page's; never the same as an
+ * adjacent list of the same kind, which would merge the two on reload. */
+function bulletMarker(editor: Editor, node: PMNode, parent?: PMNode, index = 0): string {
+  const own = node.attrs.markdownMarkup as string | null;
+  if (own && MARKERS.has(own)) return own;
+  const pageMarker = styleOf(editor).marker;
+  const previous = parent && index > 0 ? parent.child(index - 1) : null;
+  if (previous?.type === node.type) {
+    const before = bulletMarker(editor, previous, parent, index - 1);
+    if (before === pageMarker) return pageMarker === "-" ? "*" : "-";
+  }
+  return pageMarker;
+}
+
+function serializeBullets(
+  this: { editor: Editor },
+  state: ListSerializerState,
+  node: PMNode,
+  parent?: PMNode,
+  index?: number,
+) {
+  const marker = bulletMarker(this.editor, node, parent, index);
+  separateFromPreviousList(state, node);
+  state.renderList(node, styleOf(this.editor).indent, () => `${marker} `);
 }
 
 // No `parse` key below: tiptap-markdown merges this spec over its default

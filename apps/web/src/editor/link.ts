@@ -11,11 +11,14 @@
 import Link from "@tiptap/extension-link";
 import type { Mark, Node as PMNode } from "@tiptap/pm/model";
 import { defaultMarkdownSerializer } from "prosemirror-markdown";
+import { AUTOLINK_ATTR } from "./raw-markdown/markdown-plugin.js";
 
 interface LinkSerializerState {
   inAutolink?: boolean;
   /** Set while a bare URL is being written (no brackets around it). */
   gumplyBareUrl?: boolean;
+  /** The source wrote this URL as `<https://…>`. */
+  gumplyAngle?: boolean;
 }
 
 const base = defaultMarkdownSerializer.marks.link!;
@@ -47,7 +50,8 @@ export const markdownLink = {
       // prosemirror-markdown doesn't escape text while inAutolink is set.
       state.inAutolink = true;
       state.gumplyBareUrl = true;
-      return "";
+      state.gumplyAngle = Boolean(mark.attrs.autolink);
+      return state.gumplyAngle ? "<" : "";
     }
     return (base.open as (...args: unknown[]) => string)(state, mark, parent, index);
   },
@@ -56,7 +60,9 @@ export const markdownLink = {
     if (state.gumplyBareUrl) {
       state.gumplyBareUrl = false;
       state.inAutolink = undefined;
-      return "";
+      const angle = state.gumplyAngle;
+      state.gumplyAngle = false;
+      return angle ? ">" : "";
     }
     return (base.close as (...args: unknown[]) => string)(state, mark, parent, index);
   },
@@ -70,6 +76,11 @@ export const MarkdownLink = Link.extend({
       title: {
         default: null,
         parseHTML: (element: HTMLElement) => element.getAttribute("title"),
+      },
+      autolink: {
+        default: null,
+        parseHTML: (element: HTMLElement) => (element.getAttribute(AUTOLINK_ATTR) ? "angle" : null),
+        renderHTML: () => ({}),
       },
     };
   },

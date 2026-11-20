@@ -24,6 +24,8 @@
 /* markdown-it is an untyped optional peer dep here (see wikilink plugin). */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { markupRule } from "./markup.js";
+
 export const RAW_BLOCK_ATTR = "data-raw-md";
 export const RAW_INLINE_ATTR = "data-raw-md-inline";
 export const BREAK_STYLE_ATTR = "data-md-break";
@@ -67,6 +69,8 @@ function rawKind(tokens: any[], index: number, source: string): string | null {
     if (FOOTNOTE_DEF.test(source)) return "footnote";
     const trimmed = source.trim();
     if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length >= 4) return "math";
+    // Obsidian block comment `%%\n…\n%%`.
+    if (trimmed.startsWith("%%") && trimmed.endsWith("%%") && trimmed.length >= 4) return "comment";
   }
   return null;
 }
@@ -151,6 +155,26 @@ function breakStyleRule(state: any): void {
   }
 }
 
+/**
+ * Keep HTML entities as typed (`&nbsp;`, `&copy;`): markdown-it decodes them
+ * into the text, so an edit used to write a literal NBSP / ©. Runs before
+ * markdown-it joins `text_special` tokens back into plain text.
+ */
+function entityRule(state: any): void {
+  for (const block of state.tokens as any[]) {
+    if (block.type !== "inline" || !block.children) continue;
+    for (const token of block.children as any[]) {
+      if (token.type === "text_special" && token.info === "entity" && /^&[#\w]+;$/.test(token.markup)) {
+        token.type = "gumply_raw_inline";
+        token.content = token.markup;
+        token.info = "entity";
+      }
+    }
+  }
+}
+
+export const AUTOLINK_ATTR = "data-md-autolink";
+
 const INSTALLED = Symbol.for("gumply.rawMarkdown");
 
 export function rawMarkdownPlugin(md: any): void {
@@ -161,7 +185,11 @@ export function rawMarkdownPlugin(md: any): void {
   md.set({ html: true });
 
   md.core.ruler.after("block", "gumply_raw_blocks", rawBlocksRule);
+  md.core.ruler.after("gumply_raw_blocks", "gumply_markup", markupRule);
   md.core.ruler.after("inline", "gumply_break_style", breakStyleRule);
+  if (md.core.ruler.__find__("text_join") !== -1) {
+    md.core.ruler.before("text_join", "gumply_entities", entityRule);
+  }
   md.inline.ruler.before("link", "gumply_raw_inline", rawInlineRule);
 
   const block = (source: string, kind: string) =>
@@ -182,6 +210,16 @@ export function rawMarkdownPlugin(md: any): void {
     if (/^<input class="task-list-item-checkbox"[^<>]*>$/.test(content)) return content;
     return inline(content, "html");
   };
+  // `<https://x>` keeps its angle brackets on save (see editor/link.ts).
+  const linkOpen =
+    md.renderer.rules.link_open ??
+    ((tokens: any[], index: number, options: any, _env: any, self: any) =>
+      self.renderToken(tokens, index, options));
+  md.renderer.rules.link_open = (tokens: any[], index: number, ...rest: any[]) => {
+    if (tokens[index].markup === "autolink") tokens[index].attrSet(AUTOLINK_ATTR, "1");
+    return linkOpen(tokens, index, ...rest);
+  };
+
   md.renderer.rules.hardbreak = (tokens: any[], index: number) => {
     const style = tokens[index].attrGet(BREAK_STYLE_ATTR);
     return style ? `<br ${BREAK_STYLE_ATTR}="${style}">` : "<br>";
