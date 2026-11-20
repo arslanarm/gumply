@@ -67,3 +67,11 @@ describe("rewriteLinksToPage (D12/D20 rename)", () => {
     expect(out.content).toBe("[[Roadmap]] and [[Roadmap|my ideas]]");
   });
 });
+
+describe("no redundant alias (@opus-hunter nit)", () => {
+  it("duplicate titles: [[Plan]] for Plan.md, [[Plan 2|Plan]] for the second", () => {
+    const pages = [meta("Plan", "Plan"), meta("Plan 2", "Plan")];
+    expect(formatWikilink(pages[0]!, pages)).toBe("[[Plan]]");
+    expect(formatWikilink(pages[1]!, pages)).toBe("[[Plan 2|Plan]]");
+  });
+});

@@ -39,7 +39,8 @@ export function linkTargetFor(page: PageMeta, pages: readonly PageMeta[]): LinkT
   // may use it as its file name (Obsidian) or its title (Gumply, title first).
   const baseShared = others.some((other) => same(pageBasename(other), base) || same(other.title, base));
   const target = baseShared ? page.id : base;
-  return { target, alias: page.title };
+  // `[[Plan|Plan]]` is just noise: an alias equal to the target is dropped.
+  return { target, alias: target === page.title ? "" : page.title };
 }
 
 /** The Markdown for a link to `page` (keeping an explicit alias and heading). */
@@ -71,7 +72,7 @@ export function rewriteLinksToPage(
   let content = markdown;
   for (const link of [...links].reverse()) {
     const userAlias = link.alias && !same(link.alias, oldTitle) && !same(link.alias, page.title) ? link.alias : "";
-    const shown = userAlias || autoAlias;
+    const shown = userAlias && userAlias !== target ? userAlias : autoAlias;
     const heading = link.heading ? `#${link.heading}` : "";
     const replacement = `[[${target}${heading}${shown ? `|${shown}` : ""}]]`;
     content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
