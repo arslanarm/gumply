@@ -152,3 +152,55 @@ describe("VaultStore index on start", () => {
     expect(log).toContain(`${page.id}.md`);
   });
 });
+
+async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Timed out waiting for the vault watcher");
+}
+
+describe("external vault changes", () => {
+  it("watches created, changed and deleted Markdown files", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    store.startWatching();
+    try {
+      const external = join(dir, "external.md");
+      await writeFile(external, "External body", "utf8");
+      await waitFor(() => store.list().some((page) => page.id === "external"));
+      expect(store.get("external").content).toContain("External body");
+
+      await writeFile(external, "External changed", "utf8");
+      await waitFor(() => store.get("external").content.includes("External changed"));
+
+      await rm(external);
+      await waitFor(() => !store.list().some((page) => page.id === "external"));
+    } finally {
+      store.stopWatching();
+    }
+  });
+
+  it("rejects a stale conditional save and allows Keep mine", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const page = await store.create({ title: "Conflict", content: "original" });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await writeFile(join(dir, "conflict.md"), "external body", "utf8");
+
+    await expect(
+      store.update("conflict", { content: "mine", expectedUpdated: page.updated }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    await store.rescan();
+    expect(store.get("conflict").content).toContain("external body");
+
+    const forced = await store.update("conflict", { content: "mine", force: true });
+    expect(forced.content).toBe("mine");
+  });
+});

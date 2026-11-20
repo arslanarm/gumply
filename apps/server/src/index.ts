@@ -20,6 +20,7 @@ if (config.seedDemo) {
   }
 }
 
+store.startWatching();
 const app = createApp({ vaultPath: config.vaultPath, store });
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
