@@ -1,5 +1,8 @@
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
+import { E2E_VAULT } from './support/env';
 
 /**
  * Whiteboards in the app (W2a, #7752gn9x; spec/whiteboard §2 and §4, D25):
@@ -351,6 +354,118 @@ test.describe('whiteboards in the app (W2a)', () => {
     await page.getByTestId('page-item-Untitled whiteboard.canvas').click();
     await expect(page.getByTestId('board-page')).toBeVisible();
     await expect(page.getByTestId('page-title-input')).toHaveCount(0);
+  });
+
+  test('fit clears the toolbar and header, handles keep their size zoomed out, the icon is not clipped (#8ht6zhdv)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Spec', content: 'x' }]);
+    const board = await createBoard(request, 'Layout check');
+    await saveBoard(request, board.meta.id, {
+      nodes: [sticky('a1a1a1a1a1a1a1a1', 'Left', 0), sticky('b2b2b2b2b2b2b2b2', 'Right', 2400)],
+      edges: [],
+    });
+    await request.put(`/api/boards/${encodeURIComponent(board.meta.id)}`, { data: { icon: '🗺️' } });
+    await openBoard(page, board.meta.id);
+
+    // The icon sits fully inside the header.
+    const header = await page.locator('.board-page > .page-header').boundingBox();
+    const icon = await page.getByTestId('page-icon-button').boundingBox();
+    if (!header || !icon) throw new Error('no header');
+    expect(icon.y).toBeGreaterThanOrEqual(header.y);
+    expect(icon.y + icon.height).toBeLessThanOrEqual(header.y + header.height);
+
+    // Fit (Shift+1): nothing under the floating toolbar or above the canvas.
+    await page.getByTestId('board').focus();
+    await page.keyboard.press('Shift+Digit1');
+    await page.waitForTimeout(400);
+    const toolbar = await page.getByTestId('board-toolbar').boundingBox();
+    const canvas = await page.getByTestId('board').boundingBox();
+    if (!toolbar || !canvas) throw new Error('no layout');
+    const stickies = await page.getByTestId('board-sticky').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect));
+    for (const rect of stickies) {
+      expect(rect.left).toBeGreaterThan(toolbar.x + toolbar.width);
+      expect(rect.top).toBeGreaterThan(canvas.y);
+    }
+
+    // Zoomed out, connection dots stay ~10 px on screen.
+    const zoom = page.getByTestId('board-zoom-value');
+    for (let i = 0; i < 4 && Number.parseInt((await zoom.textContent()) ?? '100', 10) > 50; i += 1) {
+      await page.getByTestId('board-zoom-out').click();
+    }
+    await expect.poll(async () => Number.parseInt((await zoom.textContent()) ?? '100', 10)).toBeLessThan(60);
+    const first = page.getByTestId('board-sticky').first();
+    await first.hover();
+    const dot = await first.locator('xpath=..').getByTestId('board-handle-right').boundingBox();
+    if (!dot) throw new Error('no handle');
+    expect(dot.width).toBeGreaterThanOrEqual(9);
+    expect(dot.width).toBeLessThanOrEqual(12);
+  });
+
+  /** Another app (Obsidian, git) appends a node to the board's file on disk. */
+  function outsideEdit(file: string, nodeId: string) {
+    const target = path.join(E2E_VAULT, file);
+    const data = JSON.parse(readFileSync(target, 'utf8')) as BoardFile;
+    data.nodes.push(sticky(nodeId, 'Added outside', 900) as never);
+    writeFileSync(target, JSON.stringify(data, null, '\t'));
+  }
+
+  test('text being typed in a sticky survives an outside change: conflict, never silent loss (#x74uu7c3)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Spec', content: 'x' }]);
+    const board = await createBoard(request, 'Race');
+    await saveBoard(request, board.meta.id, { nodes: [sticky('a0a0a0a0a0a0a0a0', 'Start here')], edges: [] });
+    await openBoard(page, board.meta.id);
+
+    await page.getByTestId('board-sticky').first().dblclick();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' TYPED123', { delay: 60 });
+    outsideEdit('Race.canvas', 'c0c0c0c0c0c0c0c0');
+    // Past the app's 2 s disk poll: a "clean" board would be reloaded now.
+    await page.waitForTimeout(3_000);
+    await page.keyboard.type(' more words', { delay: 60 });
+    await expect(page.getByTestId('board-text-editor')).toHaveValue('Start here TYPED123 more words');
+
+    await page.keyboard.press('Escape');
+    // The save is refused (the file changed): the user decides, nothing is dropped.
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'conflict');
+    await expect(page.getByTestId('board-sticky').first()).toContainText('TYPED123 more words');
+    await page.getByTestId('conflict-keep-mine').click();
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+    const saved = await getBoard(request, board.meta.id);
+    expect(saved.board.nodes.find((node) => node.id === 'a0a0a0a0a0a0a0a0')?.text).toBe('Start here TYPED123 more words');
+    // D22: the outside version replaced by Keep mine is kept in .gumply/conflicts/.
+    const conflicts = path.join(E2E_VAULT, '.gumply', 'conflicts');
+    expect(existsSync(conflicts)).toBe(true);
+    const backups = readdirSync(conflicts).filter((name) => name.startsWith('Race') && name.endsWith('.canvas'));
+    expect(backups.length).toBeGreaterThan(0);
+    expect(backups.some((name) => readFileSync(path.join(conflicts, name), 'utf8').includes('Added outside'))).toBe(true);
+  });
+
+  test('a drag in progress survives an outside change: conflict, never a silent snap-back (#x74uu7c3)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Spec', content: 'x' }]);
+    const board = await createBoard(request, 'Drag race');
+    await saveBoard(request, board.meta.id, { nodes: [sticky('d0d0d0d0d0d0d0d0', 'Move me')], edges: [] });
+    await openBoard(page, board.meta.id);
+    // Let React Flow measure the freshly opened board before grabbing a node.
+    await expect(page.locator('.react-flow__node.selectable')).toHaveCount(1);
+    await page.waitForTimeout(500);
+
+    const start = (await page.getByTestId('board-sticky').first().boundingBox())!;
+    await page.mouse.move(start.x + 100, start.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 160, start.y + 130, { steps: 6 });
+    // The drag is really under way before the outside change lands.
+    await expect(page.locator('.react-flow__node.dragging')).toHaveCount(1);
+    outsideEdit('Drag race.canvas', 'e0e0e0e0e0e0e0e0');
+    await page.waitForTimeout(3_000);
+    await page.mouse.move(start.x + 260, start.y + 160, { steps: 6 });
+    await page.mouse.up();
+
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'conflict');
+    const moved = (await page.getByTestId('board-sticky').first().boundingBox())!;
+    expect(moved.x - start.x).toBeGreaterThan(100);
+    await page.getByTestId('conflict-keep-mine').click();
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+    const saved = await getBoard(request, board.meta.id);
+    expect((saved.board.nodes.find((node) => node.id === 'd0d0d0d0d0d0d0d0') as unknown as { x: number }).x).toBeGreaterThan(100);
   });
 
   for (const theme of ['light', 'dark'] as const) {

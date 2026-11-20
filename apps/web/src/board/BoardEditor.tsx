@@ -16,6 +16,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
+  useOnViewportChange,
   useReactFlow,
   useViewport,
   type Connection,
@@ -118,6 +119,12 @@ export interface BoardEditorControls {
   replaceBoard: (board: CanvasBoard) => void;
   /** Add a page/board/file card centred on a screen point (or the view centre). */
   addFileCard: (path: string, clientPoint?: Point) => void;
+  /**
+   * A gesture is in progress whose result isn't in the document yet (text
+   * being typed, a drag, a resize, a stroke…). The host must treat the board
+   * as dirty meanwhile: reloading it would silently drop that work (#x74uu7c3).
+   */
+  isBusy: () => boolean;
 }
 
 export interface BoardEditorProps {
@@ -375,6 +382,8 @@ function BoardCanvas(props: BoardEditorProps) {
   const [shapeMenu, setShapeMenu] = useState(false);
   const [pagePicker, setPagePicker] = useState(false);
   const [dragging, setDragging] = useState(false);
+  /** Kept current every render; read by the host through `isBusy`. */
+  const busyRef = useRef(false);
   const pointerRef = useRef<Point | null>(null);
   const pasteCount = useRef(0);
   /** A node created for typing: its first text joins the creation's undo step. */
@@ -609,6 +618,7 @@ function BoardCanvas(props: BoardEditorProps) {
         setHistory(reset(next));
       },
       addFileCard,
+      isBusy: () => busyRef.current || nodesRef.current.some((node) => node.dragging || node.resizing),
     });
   }, [addFileCard, onReady]);
 
@@ -762,24 +772,43 @@ function BoardCanvas(props: BoardEditorProps) {
 
   const initialViewport = useMemo(() => loadViewport(boardId), [boardId]);
 
+  /**
+   * Fit inside what's actually visible: clear of the floating toolbar (left)
+   * and the zoom controls (bottom), with air at the top (#8ht6zhdv item 1).
+   */
+  const fitPadding = useCallback(() => {
+    const root = rootRef.current?.getBoundingClientRect();
+    const toolbar = rootRef.current?.querySelector(".board-toolbar")?.getBoundingClientRect();
+    const left = root && toolbar ? Math.max(32, Math.round(toolbar.right - root.left + 28)) : 96;
+    return { top: "40px", right: "40px", bottom: "72px", left: `${left}px` } as const;
+  }, []);
+
+  /** Keep handles a constant screen size at any zoom (#8ht6zhdv item 2). */
+  const syncZoomVar = useCallback((zoom: number) => {
+    rootRef.current?.style.setProperty("--board-zoom", String(Math.max(0.3, zoom)));
+  }, []);
+  const onViewportChange = useCallback((viewport: Viewport) => syncZoomVar(viewport.zoom), [syncZoomVar]);
+  useOnViewportChange({ onChange: onViewportChange });
+
   const onInit = useCallback(() => {
+    syncZoomVar(flow.getZoom());
     if (initialViewport) return;
     if (boardRef.current.nodes.length > 0) {
-      void flow.fitView({ padding: 0.15, maxZoom: 1 });
+      void flow.fitView({ padding: fitPadding(), maxZoom: 1 });
     } else {
       const rect = rootRef.current?.getBoundingClientRect();
       void flow.setViewport({ x: (rect?.width ?? 0) / 2, y: (rect?.height ?? 0) / 2, zoom: 1 });
     }
-  }, [flow, initialViewport]);
+  }, [flow, initialViewport, fitPadding, syncZoomVar]);
 
   const fit = useCallback(() => {
     if (boardRef.current.nodes.length === 0) {
       const rect = rootRef.current?.getBoundingClientRect();
       void flow.setViewport({ x: (rect?.width ?? 0) / 2, y: (rect?.height ?? 0) / 2, zoom: 1 }, { duration: 200 });
     } else {
-      void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 200 });
+      void flow.fitView({ padding: fitPadding(), maxZoom: 1, duration: 200 });
     }
-  }, [flow]);
+  }, [flow, fitPadding]);
 
   /*
    * React Flow marks nodes `nopan`, which also blocks trackpad scrolling and
@@ -1286,6 +1315,7 @@ function BoardCanvas(props: BoardEditorProps) {
   const selectedShape = shapesSelected ? (gumplyNodeData(selectedNodes[0] as CanvasNode) as { shape: GumplyShape }).shape : null;
   const showNodeToolbar = selectedNodeIds.length > 0 && !editing && !dragging && tool === "select";
 
+  busyRef.current = editing !== null || dragging || draft !== null || stroke !== null || link !== null;
   const hand = tool === "hand";
   const toolbarEdge = toolbarEdgeId && !dragging ? board.edges.find((edge) => edge.id === toolbarEdgeId) : undefined;
   const modifier = currentModifierLabel();
