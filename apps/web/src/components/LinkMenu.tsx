@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { Icon } from "./Icon.js";
 import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { useActiveOptionVisible } from "./use-active-option.js";
 
@@ -45,7 +46,13 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
             onMouseEnter={() => onHover(itemIndex)}
           >
             <span className="link-menu-icon" aria-hidden="true">
-              {item.kind === "create" ? "+" : (item.icon ?? "▤")}
+              {item.kind === "create" ? (
+                <Icon name="plus" size={16} />
+              ) : item.icon ? (
+                item.icon
+              ) : (
+                <Icon name="file" size={16} />
+              )}
             </span>
             <span className="link-menu-label">{item.label}</span>
           </button>

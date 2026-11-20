@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { buildPageTree } from "../lib/tree.js";
+import { Icon } from "./Icon.js";
 import { PageItem } from "./PageItem.js";
 
 export interface SidebarFocusTarget {
@@ -93,17 +94,21 @@ export function Sidebar(props: SidebarProps) {
     <aside className="sidebar" data-testid="sidebar">
       <div className="sidebar-header">
         <span className="sidebar-title">Pages</span>
-        <button
-          type="button"
-          className="icon-button"
-          data-testid="new-page-button"
-          data-tooltip="New page"
-          aria-label="New page"
-          onClick={() => props.onCreate(null)}
-        >
-          +
-        </button>
       </div>
+
+      <button
+        type="button"
+        className="sidebar-row sidebar-new-page"
+        data-testid="new-page-button"
+        data-tooltip="New page"
+        aria-label="New page"
+        onClick={() => props.onCreate(null)}
+      >
+        <span className="sidebar-row-icon" aria-hidden="true">
+          <Icon name="plus" size={16} />
+        </span>
+        New page
+      </button>
 
       <button
         type="button"
@@ -112,7 +117,7 @@ export function Sidebar(props: SidebarProps) {
         onClick={props.onSearch}
       >
         <span className="sidebar-row-icon" aria-hidden="true">
-          ⌕
+          <Icon name="search" size={16} />
         </span>
         Search
       </button>
@@ -149,14 +154,6 @@ export function Sidebar(props: SidebarProps) {
             <p>
               <strong>No pages yet.</strong> Create a page to get started.
             </p>
-            <button
-              type="button"
-              className="button-primary"
-              data-testid="sidebar-new-page"
-              onClick={() => props.onCreate(null)}
-            >
-              New page
-            </button>
           </div>
         ) : (
           tree.map((node) => (
@@ -195,7 +192,7 @@ export function Sidebar(props: SidebarProps) {
         onClick={props.onGraph}
       >
         <span className="sidebar-row-icon" aria-hidden="true">
-          ◇
+          <Icon name="graph" size={16} />
         </span>
         Graph
       </button>

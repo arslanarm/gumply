@@ -6,6 +6,7 @@ import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
 import { MoveDialog } from "./components/MoveDialog.js";
 import { PageHeader } from "./components/PageHeader.js";
+import { Icon } from "./components/Icon.js";
 import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
 import { ShortcutsDialog } from "./components/ShortcutsDialog.js";
@@ -51,7 +52,6 @@ export function App() {
   );
   const [page, setPage] = useState<Page | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
-  const [pageError, setPageError] = useState<string | null>(null);
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -245,13 +245,11 @@ export function App() {
     if (!selectedId) {
       setPage(null);
       setPageStatus("idle");
-      setPageError(null);
       return;
     }
 
     let cancelled = false;
     setPageStatus("loading");
-    setPageError(null);
 
     api
       .getPage(selectedId)
@@ -266,11 +264,10 @@ export function App() {
           setEditorRevision((value) => value + 1);
         }
       })
-      .catch((error) => {
+      .catch(() => {
         if (cancelled) return;
         setPage(null);
         setPageStatus("error");
-        setPageError(errorMessage(error));
       });
 
     return () => {
@@ -649,7 +646,7 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <span className="logo" aria-hidden="true">
-          ◈
+          <Icon name="brand" size={18} />
         </span>
         <h1 className="app-name">Gumply</h1>
         <span className="topbar-spacer" />
@@ -662,7 +659,7 @@ export function App() {
           aria-label="Keyboard shortcuts (?)"
           onClick={() => setShortcutsOpen(true)}
         >
-          ?
+          <Icon name="help" size={16} />
         </button>
         <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
@@ -709,6 +706,9 @@ export function App() {
             <div className="editor-pane" data-testid="editor">
               {serverError ? (
                 <div className="empty-state" data-testid="server-error">
+                  <span className="empty-state-icon" aria-hidden="true">
+                    <Icon name="monitor" size={26} />
+                  </span>
                   <h2>{SERVER_DOWN_MESSAGE}</h2>
                   <p>Your pages are safe on disk. Start the app again to reconnect.</p>
                   <button type="button" className="button-primary" onClick={handleRetry}>
@@ -720,6 +720,9 @@ export function App() {
                 </div>
               ) : selectedId === null ? (
                 <div className="empty-state" data-testid="empty-state">
+                  <span className="empty-state-icon" aria-hidden="true">
+                    <Icon name={pages.length === 0 ? "file" : "search"} size={26} />
+                  </span>
                   <h2>{pages.length === 0 ? "No pages yet." : "No page selected"}</h2>
                   <p>
                     {pages.length === 0
@@ -769,8 +772,11 @@ export function App() {
                 </>
               ) : pageStatus === "error" ? (
                 <div className="empty-state" data-testid="page-not-found">
+                  <span className="empty-state-icon" aria-hidden="true">
+                    <Icon name="file" size={26} />
+                  </span>
                   <h2>This page doesn't exist.</h2>
-                  <p>{pageError ?? "It may have been deleted or renamed."}</p>
+                  <p>It may have been deleted or renamed.</p>
                   <div className="empty-actions">
                     <button type="button" className="button-secondary" onClick={goToWelcome}>
                       Go to Welcome

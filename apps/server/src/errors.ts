@@ -1,5 +1,5 @@
 /** Errors that map directly onto API responses. */
-export type VaultErrorStatus = 400 | 404 | 409;
+export type VaultErrorStatus = 400 | 404 | 409 | 413;
 
 export class VaultError extends Error {
   constructor(
@@ -21,4 +21,8 @@ export function notFound(message: string): VaultError {
 
 export function conflict(message: string): VaultError {
   return new VaultError(409, message);
+}
+
+export function payloadTooLarge(message: string): VaultError {
+  return new VaultError(413, message);
 }

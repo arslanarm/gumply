@@ -114,4 +114,22 @@ for (const theme of ['light', 'dark'] as const) {
     await page.waitForTimeout(500);
     await shot(page, `${theme}-04-local-graph.png`);
   });
+
+  test(`empty states and 404 — ${theme}`, async ({ page, vault }) => {
+    test.setTimeout(30_000);
+    await vault.reset();
+    await page.addInitScript(
+      ({ key, value }) => window.localStorage.setItem(key, value),
+      { key: THEME_KEY, value: theme },
+    );
+
+    await page.goto('/');
+    await expect(page.getByTestId('empty-state')).toBeVisible();
+    await expect(page.getByTestId('new-page-button')).toContainText('New page');
+    await shot(page, `${theme}-05-empty.png`);
+
+    await page.goto('/#/missing-page');
+    await expect(page.getByTestId('page-not-found')).toBeVisible();
+    await shot(page, `${theme}-06-404.png`);
+  });
 }
