@@ -155,4 +155,95 @@ test.describe('wikilinks and backlinks', () => {
       'true',
     );
   });
+
+  test('typing a complete [[link]] converts it immediately and persists as Markdown', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const [target] = await vault.seed([
+      { title: 'Target', content: '## Section\n\nTarget body.' },
+    ]);
+    const [note] = await vault.seed([{ title: 'Note', content: '' }]);
+
+    await page.goto('/');
+    await expectPageTitle(page, 'Note');
+
+    const body = page.getByTestId('editor-content');
+    await body.click();
+
+    // No reload: the rule converts `]]` in place and the suggestion closes.
+    await page.keyboard.type('See [[Target]] here');
+    await expect(page.getByTestId('link-menu')).toHaveCount(0);
+    const links = body.getByTestId(`wiki-link-${target.id}`);
+    await expect(links).toHaveCount(1);
+    await expect(links).toHaveAttribute('data-resolved', 'true');
+    await expect(body).toContainText('See Target here');
+
+    // Alias and heading forms convert too (same target, different labels).
+    await page.keyboard.press('End');
+    await page.keyboard.type(' plus [[Target|home]]');
+    await expect(links).toHaveCount(2);
+    await expect(links.filter({ hasText: 'home' })).toHaveCount(1);
+
+    await page.keyboard.type(' and [[Target#Section]]');
+    await expect(links).toHaveCount(3);
+    await expect(links.filter({ hasText: '#Section' })).toHaveCount(1);
+
+    // An unresolved title still becomes a link node immediately.
+    await page.keyboard.type(' and [[Missing Page]]');
+    const missing = body.getByTestId('wiki-link-Missing Page');
+    await expect(missing).toHaveAttribute('data-resolved', 'false');
+    await expect(page.getByTestId('link-menu')).toHaveCount(0);
+
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', {
+      timeout: 10_000,
+    });
+    const saved = await (
+      await request.get(`${API_URL}/api/pages/${encodeURIComponent(note.id)}`)
+    ).json();
+    expect(saved.content).toContain('[[Target]]');
+    expect(saved.content).toContain('[[Target|home]]');
+    expect(saved.content).toContain('[[Target#Section]]');
+    expect(saved.content).toContain('[[Missing Page]]');
+
+    // The nodes survive a reload (no suggestion text left behind).
+    await page.reload();
+    const reloaded = page.getByTestId('editor-content');
+    await expect(reloaded.getByTestId(`wiki-link-${target.id}`)).toHaveCount(3);
+    await expect(reloaded.getByTestId('wiki-link-Missing Page')).toHaveAttribute(
+      'data-resolved',
+      'false',
+    );
+  });
+
+  test('typed [[links]] stay literal inside a code span and a code block', async ({
+    page,
+    vault,
+  }) => {
+    const [target] = await vault.seed([{ title: 'Target' }]);
+    await vault.seed([{ title: 'Note', content: '' }]);
+
+    await page.goto('/');
+    await expectPageTitle(page, 'Note');
+
+    const body = page.getByTestId('editor-content');
+    await body.click();
+
+    // A code span still being typed: unmatched backtick means this is code.
+    await page.keyboard.type('`[[Target]]');
+    await expect(body.getByTestId(`wiki-link-${target.id}`)).toHaveCount(0);
+    await page.keyboard.type('`');
+    await expect(body.getByTestId(`wiki-link-${target.id}`)).toHaveCount(0);
+    await expect(body.locator('code')).toContainText('[[Target]]');
+
+    // A fenced code block keeps the raw text too.
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('```');
+    await page.keyboard.type(' ');
+    await page.keyboard.type('[[Target]] in code');
+    const pre = body.locator('pre');
+    await expect(pre).toContainText('[[Target]] in code');
+    await expect(pre.locator('[data-testid^="wiki-link-"]')).toHaveCount(0);
+  });
 });
