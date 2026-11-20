@@ -1,30 +1,59 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #fbfbfa;
   --panel: #ffffff;
   --text: #26251f;
-  --muted: #7c7a72;
+  --muted: #6f6d65;
   --border: #e6e4dd;
   --accent: #4f46e5;
   --accent-soft: #eef2ff;
   --danger: #c0392b;
   --hover: #f1f0ec;
+  --success: #22a06b;
+  --warning: #a16207;
+  --on-accent: #ffffff;
+  --on-danger: #ffffff;
+  --overlay: rgb(0 0 0 / 38%);
+  --graph-0: #4f46e5;
+  --graph-1: #0e7490;
+  --graph-2: #b45309;
+  --graph-3: #15803d;
+  --graph-4: #be185d;
+  --graph-5: #7c3aed;
+  --graph-6: #0f766e;
+  --graph-7: #a16207;
+  --graph-8: #4338ca;
+  --graph-9: #9d174d;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --sidebar-width: 264px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #191919;
-    --panel: #202020;
-    --text: #ececec;
-    --muted: #9a9a94;
-    --border: #2e2e2c;
-    --accent: #8b8bf0;
-    --accent-soft: #26264a;
-    --danger: #ff7b72;
-    --hover: #262625;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #191919;
+  --panel: #202020;
+  --text: #ececec;
+  --muted: #a3a39b;
+  --border: #343432;
+  --accent: #8b8bf0;
+  --accent-soft: #26264a;
+  --danger: #ff7b72;
+  --hover: #262625;
+  --success: #3ddc97;
+  --warning: #e5c07b;
+  --on-accent: #15132b;
+  --on-danger: #2a0b09;
+  --overlay: rgb(0 0 0 / 55%);
+  --graph-0: #818cf8;
+  --graph-1: #22d3ee;
+  --graph-2: #fbbf24;
+  --graph-3: #4ade80;
+  --graph-4: #f472b6;
+  --graph-5: #a78bfa;
+  --graph-6: #2dd4bf;
+  --graph-7: #facc15;
+  --graph-8: #93c5fd;
+  --graph-9: #fb7185;
 }
 
 * {
@@ -100,11 +129,11 @@ input {
 }
 
 .save-status-saved::before {
-  color: #22a06b;
+  color: var(--success);
 }
 
 .save-status-saving::before {
-  color: #d0a020;
+  color: var(--warning);
 }
 
 .save-status-error {
@@ -575,7 +604,7 @@ input {
 
 .button-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .button-primary:hover {
@@ -679,6 +708,12 @@ input {
 .tree-action[data-tooltip]:hover::after,
 .tree-action[data-tooltip]:focus-visible::after {
   transform: translateY(-50%);
+}
+
+/* The theme toggle sits in the topbar, so its tooltip opens downwards. */
+.theme-toggle[data-tooltip]::after {
+  top: calc(100% + 6px);
+  bottom: auto;
 }
 
 /* Save status: blank when idle but width reserved (D14 §7). */
@@ -838,7 +873,7 @@ input {
   cursor: pointer;
   border: 1px solid var(--danger);
   background: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
 }
 
 .button-danger:hover {
@@ -849,7 +884,7 @@ input {
   position: fixed;
   inset: 0;
   z-index: 80;
-  background: rgb(0 0 0 / 38%);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;

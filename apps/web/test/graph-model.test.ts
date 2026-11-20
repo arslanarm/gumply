@@ -15,6 +15,7 @@ import {
   nodeColor,
   nodeRadius,
   nodeTooltip,
+  paletteIndex,
 } from "../src/graph/graph-model";
 
 function page(id: string, title: string, tags: string[] = []): GraphNode {
@@ -266,5 +267,13 @@ describe("colours", () => {
     expect(ghostId("  Missing Page ")).toBe("ghost:missing page");
     expect(isGhostId(ghostId("x"))).toBe(true);
     expect(isGhostId("a")).toBe(false);
+  });
+
+  it("maps a tag to a stable --graph-N slot and uses the current theme palette", () => {
+    const palette = Array.from({ length: 10 }, (_, index) => `#theme-${index}`);
+    expect(paletteIndex("WORK")).toBe(paletteIndex("work"));
+    expect(paletteIndex("work")).toBeGreaterThanOrEqual(0);
+    expect(paletteIndex("work")).toBeLessThan(10);
+    expect(nodeColor(page("a", "A", ["work"]), palette)).toBe(palette[paletteIndex("work")]);
   });
 });

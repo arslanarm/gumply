@@ -7,6 +7,7 @@ import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
 import { SaveStatus } from "./components/SaveStatus.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
+import { ThemeToggle } from "./components/ThemeToggle.js";
 import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 import { GraphView } from "./graph/GraphView.js";
@@ -561,6 +562,7 @@ export function App() {
         </span>
         <h1 className="app-name">Gumply</h1>
         <span className="topbar-spacer" />
+        <ThemeToggle />
         <SaveStatus state={saveState} onRetry={handleRetrySave} />
       </header>
 

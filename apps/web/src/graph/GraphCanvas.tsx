@@ -6,7 +6,9 @@ import ForceGraph2D, {
   type NodeObject,
 } from "react-force-graph-2d";
 import {
+  FALLBACK_GRAPH_PALETTE,
   ghostTooltip,
+  graphPaletteFromStyles,
   isGhostId,
   labelledIds,
   neighbourIds,
@@ -38,20 +40,24 @@ interface ThemeColors {
   panel: string;
   accent: string;
   border: string;
+  palette: readonly string[];
 }
+
+type ThemeColorToken = Exclude<keyof ThemeColors, "palette">;
 
 const FALLBACK_COLORS: ThemeColors = {
   text: "#26251f",
-  muted: "#7c7a72",
+  muted: "#6f6d65",
   panel: "#ffffff",
   accent: "#4f46e5",
   border: "#e6e4dd",
+  palette: FALLBACK_GRAPH_PALETTE,
 };
 
 function readThemeColors(): ThemeColors {
   if (typeof window === "undefined") return FALLBACK_COLORS;
   const styles = getComputedStyle(document.documentElement);
-  const read = (name: keyof ThemeColors): string =>
+  const read = (name: ThemeColorToken): string =>
     styles.getPropertyValue(`--${name}`).trim() || FALLBACK_COLORS[name];
   return {
     text: read("text"),
@@ -59,6 +65,7 @@ function readThemeColors(): ThemeColors {
     panel: read("panel"),
     accent: read("accent"),
     border: read("border"),
+    palette: graphPaletteFromStyles(styles),
   };
 }
 
@@ -66,11 +73,26 @@ function useThemeColors(): ThemeColors {
   const [colors, setColors] = useState<ThemeColors>(readThemeColors);
 
   useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => setColors(readThemeColors());
-    query.addEventListener?.("change", update);
-    return () => query.removeEventListener?.("change", update);
+    const query =
+      typeof window !== "undefined" && typeof window.matchMedia === "function"
+        ? window.matchMedia("(prefers-color-scheme: dark)")
+        : null;
+    query?.addEventListener?.("change", update);
+
+    const observer =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(update);
+    observer?.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
+    return () => {
+      query?.removeEventListener?.("change", update);
+      observer?.disconnect();
+    };
   }, []);
 
   return colors;
@@ -189,7 +211,7 @@ export function GraphCanvas({
         ctx.stroke();
         ctx.setLineDash([]);
       } else {
-        ctx.fillStyle = nodeColor(node as GraphNode);
+        ctx.fillStyle = nodeColor(node as GraphNode, colors.palette);
         ctx.fill();
         ctx.lineWidth = 1 / Math.max(scale, 0.2);
         ctx.strokeStyle = colors.panel;
