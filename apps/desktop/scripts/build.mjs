@@ -39,7 +39,9 @@ await build({
   format: "esm",
   target: "node22",
   external: ["electron"],
-  sourcemap: true,
+  // A map file for local debugging, but no `sourceMappingURL` in the shipped
+  // bundle: the map itself is never packaged.
+  sourcemap: "external",
   // Core and server from source: no separate build step, one file to ship.
   alias: { "@gumply/core": join(repo, "packages/core/src/index.ts") },
   // Bundled CommonJS dependencies may still call require().

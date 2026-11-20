@@ -319,3 +319,15 @@ test('the app under test is isolated from the real session (P11)', async () => {
     await app.close();
   }
 });
+
+test('reports the installed app version, not the source default (#2d683n79)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    const appVersion = await app.evaluate(({ app: electronApp }) => electronApp.getVersion());
+    const health = await window.evaluate(async () => (await fetch('/api/health')).json());
+    expect(health.version).toBe(appVersion);
+  } finally {
+    await app.close();
+  }
+});
