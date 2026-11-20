@@ -28,6 +28,8 @@ import { pastedTablesToMarkdown } from "../editor/paste-table.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
+import { setWhiteboardCreator } from "../editor/whiteboard-link.js";
+import { boardLinkParts } from "../lib/boards.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
 import {
@@ -102,6 +104,8 @@ export interface EditorProps {
   onAttachmentError?: (message: string) => void;
   /** ArrowUp / Backspace at the very start of the body: go to the title. */
   onExitTop?: () => void;
+  /** `/whiteboard`: create a board inside this page; resolves to it (or null). */
+  onCreateBoard?: () => Promise<PageMeta | null>;
 }
 
 interface SlashMenuState {
@@ -156,6 +160,7 @@ export function Editor({
   onHeadingResult,
   onAttachmentError,
   onExitTop,
+  onCreateBoard,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -177,6 +182,8 @@ export function Editor({
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
+  const onCreateBoardRef = useRef(onCreateBoard);
+  onCreateBoardRef.current = onCreateBoard;
   const onExitTopRef = useRef(onExitTop);
   onExitTopRef.current = onExitTop;
   const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
@@ -510,6 +517,30 @@ export function Editor({
     null,
   );
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
+
+  // `/whiteboard`: create the board, then link it where the command was typed.
+  useEffect(() => {
+    setWhiteboardCreator(() => {
+      const instance = editorRef.current;
+      const create = onCreateBoardRef.current;
+      if (!instance || !create) return;
+      const pos = instance.state.selection.from;
+      void create().then((board) => {
+        const current = editorRef.current;
+        if (!board || !current || current.isDestroyed) return;
+        const { target, alias } = boardLinkParts(board);
+        const at = Math.min(pos, current.state.doc.content.size);
+        current
+          .chain()
+          .focus()
+          .insertContentAt(at, [
+            { type: "wikiLink", attrs: { targetTitle: target, alias, heading: "" } },
+            { type: "text", text: " " },
+          ])
+          .run();
+      });
+    });
+  }, []);
 
   useEffect(() => {
     setEmojiPickerOpener(() => {

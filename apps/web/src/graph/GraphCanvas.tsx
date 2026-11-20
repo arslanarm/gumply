@@ -246,6 +246,8 @@ interface NodeStyle {
   /** Drawn radius in CSS px (half the emoji size for icon nodes). */
   radius: number;
   ghost: boolean;
+  /** A whiteboard (spec/whiteboard §2): drawn as a rounded square. */
+  board: boolean;
   /** Pre-rendered page icon (#emmyabbj); drawn instead of the dot. */
   emoji: HTMLCanvasElement | null;
   /** Fill colour (pages only). */
@@ -367,6 +369,7 @@ export function GraphCanvas({
         // still grows with links; picking, rings, labels and fit use it.
         radius: emoji ? emojiNodeSize(dotRadius) / 2 : dotRadius,
         ghost,
+        board: !ghost && (node as GraphNode).kind === "whiteboard",
         emoji,
         fill: ghost ? "" : nodeColor(node as GraphNode, colors.palette, colors.page),
         label,
@@ -679,6 +682,7 @@ export function GraphCanvas({
             x: point.x,
             y: point.y,
             r: nodeStylesRef.current.get(node.id)?.radius ?? 0,
+            board: nodeStylesRef.current.get(node.id)?.board ?? false,
           };
         });
       },
@@ -743,13 +747,13 @@ export function GraphCanvas({
         const outlines = new Path2D();
         const ghosts = new Path2D();
         let ghostCount = 0;
-        const emojis: Array<[number, number, number, HTMLCanvasElement]> = [];
+        const emojis: Array<[number, number, number, HTMLCanvasElement, boolean]> = [];
         for (const [node, style] of items) {
           const x = node.x as number;
           const y = node.y as number;
           const r = style.radius / k;
           if (style.emoji) {
-            emojis.push([x, y, r, style.emoji]);
+            emojis.push([x, y, r, style.emoji, style.board]);
             continue;
           }
           if (style.ghost) {
@@ -762,6 +766,12 @@ export function GraphCanvas({
           if (!path) {
             path = new Path2D();
             fills.set(style.fill, path);
+          }
+          if (style.board) {
+            // A rounded square around the dot's circle: boards read apart at a glance.
+            path.roundRect(x - r, y - r, r * 2, r * 2, r * 0.3);
+            outlines.roundRect(x - r, y - r, r * 2, r * 2, r * 0.3);
+            continue;
           }
           path.moveTo(x + r, y);
           path.arc(x, y, r, 0, Math.PI * 2);
@@ -789,16 +799,32 @@ export function GraphCanvas({
           // A disc in the canvas colour first, so link ends don't show
           // through thin or transparent glyphs (🕸, ✈️ …).
           const backs = new Path2D();
-          for (const [x, y, r] of emojis) {
+          const boardFrames = new Path2D();
+          let boardIcons = 0;
+          for (const [x, y, r, , board] of emojis) {
+            if (board) {
+              // An icon board keeps its square shape: a framed tile behind it.
+              backs.roundRect(x - r, y - r, r * 2, r * 2, r * 0.4);
+              boardFrames.roundRect(x - r, y - r, r * 2, r * 2, r * 0.4);
+              boardIcons += 1;
+              continue;
+            }
             backs.moveTo(x + r * 0.85, y);
             backs.arc(x, y, r * 0.85, 0, Math.PI * 2);
           }
           ctx.fillStyle = colors.bg;
           ctx.fill(backs);
+          if (boardIcons > 0) {
+            ctx.lineWidth = 1.2 / k;
+            ctx.strokeStyle = colors.muted;
+            ctx.stroke(boardFrames);
+          }
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = "high";
-          for (const [x, y, r, sprite] of emojis) {
-            ctx.drawImage(sprite, x - r, y - r, r * 2, r * 2);
+          for (const [x, y, r, sprite, board] of emojis) {
+            // Inset a little inside a board's tile so the frame shows.
+            const size = board ? r * 1.6 : r * 2;
+            ctx.drawImage(sprite, x - size / 2, y - size / 2, size, size);
           }
         }
       };

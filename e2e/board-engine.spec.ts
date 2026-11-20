@@ -86,14 +86,16 @@ test.describe('board engine (W1)', () => {
 
     await addSticky(page, 600, 400, 'Hello [[Roadmap]]');
     await expect(page.getByTestId('board-empty')).toHaveCount(0);
-    await expect(page.getByTestId('board-sticky')).toContainText('Hello [[Roadmap]]');
+    // W2b renders sticky text as Markdown: `[[Roadmap]]` shows as a link.
+    await expect(page.getByTestId('board-sticky')).toContainText('Hello Roadmap');
+    await expect(page.getByTestId('board-sticky').locator('wiki-link')).toHaveText('Roadmap');
 
     const saved = await board(page);
     expect(saved.nodes).toHaveLength(1);
     expect(saved.nodes[0]).toMatchObject({ type: 'text', text: 'Hello [[Roadmap]]', color: '3', gumply: { kind: 'sticky' } });
 
     await openLab(page, { reset: false });
-    await expect(page.getByTestId('board-sticky')).toContainText('Hello [[Roadmap]]');
+    await expect(page.getByTestId('board-sticky').locator('wiki-link')).toHaveText('Roadmap');
   });
 
   test('tools create stickies, text, shapes and frames in Obsidian-compatible JSON', async ({ page }) => {
@@ -589,10 +591,13 @@ vaultTest('board view saves to a real .canvas file and keeps saving after each s
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
 
   // A second edit must be accepted too (the view sends the new meta.updated).
+  // "Saved" is already showing from the first save, so wait for the file itself.
   await page.getByTestId('board-color-5').click();
+  const read = async () => ((await (await request.get(`/api/boards/${encodeURIComponent(meta.id)}`)).json()) as { board: BoardLike }).board;
+  await expect.poll(async () => (await read()).nodes[0]?.color, { timeout: 10_000 }).toBe('5');
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
 
-  const loaded = (await (await request.get(`/api/boards/${encodeURIComponent(meta.id)}`)).json()) as { board: BoardLike };
+  const loaded = { board: await read() };
   expect(loaded.board.nodes).toHaveLength(1);
   expect(loaded.board.nodes[0]).toMatchObject({ text: 'Saved for real [[Welcome]]', color: '5', gumply: { kind: 'sticky' } });
 

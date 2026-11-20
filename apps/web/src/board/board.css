@@ -852,3 +852,146 @@ img.board-card-image {
 .board-root .react-flow__selection {
   border-radius: 2px;
 }
+
+/* ---------- W2b: rich text, live cards, [[ menu (#5hme2fwj) ---------- */
+
+.board-rich {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.board-rich > :first-child {
+  margin-top: 0;
+}
+
+.board-rich > :last-child {
+  margin-bottom: 0;
+}
+
+.board-rich p,
+.board-rich ul,
+.board-rich ol {
+  margin: 0 0 0.35em;
+}
+
+.board-rich ul,
+.board-rich ol {
+  padding-left: 1.2em;
+  text-align: left;
+}
+
+.board-rich h1,
+.board-rich h2,
+.board-rich h3 {
+  margin: 0 0 0.3em;
+  font-size: 1.15em;
+  line-height: 1.25;
+}
+
+.board-rich code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.board-rich a[href] {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.board-rich wiki-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.board-rich wiki-link.is-unresolved {
+  color: var(--muted);
+  text-decoration-style: dotted;
+}
+
+.board-card-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.board-card-preview {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+
+.board-card-body.is-missing .board-card-title,
+.board-card-body.is-unsafe .board-card-title {
+  color: var(--muted);
+}
+
+.board-card-body.is-unsafe .board-card-sub {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.board-link-menu {
+  position: fixed;
+  z-index: 60;
+  width: 260px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 16%);
+}
+
+.board-link-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-link-item.is-active,
+.board-link-item:hover {
+  background: var(--hover);
+}
+
+.board-link-icon {
+  width: 18px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.board-link-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-link-kind {
+  color: var(--muted);
+  font-size: 12px;
+}

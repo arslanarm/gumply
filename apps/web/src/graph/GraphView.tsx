@@ -103,6 +103,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
     }
     return null;
   }, [data]);
+  const hasBoards = useMemo(() => (data?.nodes ?? []).some((node) => node.kind === "whiteboard"), [data]);
   const hasVisible = (filtered?.nodes.length ?? 0) + (filtered?.ghosts.length ?? 0) > 0;
   const filtersActive = query.trim().length > 0 || selectedTags.length > 0;
 
@@ -259,6 +260,11 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             <p className="graph-legend-row">
               <span className="graph-legend-solid" aria-hidden="true" /> solid = page
             </p>
+            {hasBoards ? (
+              <p className="graph-legend-row" data-testid="graph-legend-board">
+                <span className="graph-legend-board" aria-hidden="true" /> square = whiteboard
+              </p>
+            ) : null}
             <p className="graph-legend-row">
               <span className="graph-legend-dashed" aria-hidden="true" /> dashed = not created yet
             </p>

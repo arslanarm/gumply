@@ -308,6 +308,14 @@
   background: var(--graph-page);
 }
 
+.graph-legend-board {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  background: var(--graph-page);
+}
+
 .graph-legend-emoji {
   width: 10px;
   display: inline-flex;

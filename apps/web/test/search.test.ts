@@ -91,6 +91,7 @@ describe("searchSections", () => {
       pages: [],
       text: [],
       create: null,
+      createBoard: null,
     });
   });
 
@@ -150,5 +151,13 @@ describe("duplicate titles in the same folder (#smwaixfp)", () => {
     const rows = recentRows([meta("a", 0), meta("b", 5)]);
     expect(rows.map((row) => row.path)).toEqual(["Edited just now", "Edited 5 min ago"]);
     expect(relativeTime(new Date(now - 3 * 3_600_000).toISOString(), now)).toBe("3 h ago");
+  });
+
+  it("offers Create whiteboard “X” next to Create “X” (spec/whiteboard §4)", () => {
+    const pages = [{ id: "Roadmap", title: "Roadmap", tags: [], parentId: null, childCount: 0, created: "", updated: "" }] as PageMeta[];
+    const sections = searchSections([], pages, " Roadmap 2027 ");
+    expect(sections.create?.label).toBe("Create “Roadmap 2027”");
+    expect(sections.createBoard).toMatchObject({ kind: "create-board", label: "Create whiteboard “Roadmap 2027”", title: "Roadmap 2027" });
+    expect(searchSections([], pages, pages[0]!.title).createBoard).toBeNull();
   });
 });
