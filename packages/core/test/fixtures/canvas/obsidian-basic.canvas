@@ -1,0 +1,16 @@
+{
+	"nodes":[
+		{"id":"5d2c0b6a1f3e4c7a","type":"group","label":"Q1 planning","x":-420,"y":-300,"width":980,"height":640,"color":"5"},
+		{"id":"a1b2c3d4e5f60718","type":"text","text":"# Goals\n\nShip **whiteboards** and link [[Roadmap]] to [[Graph View|the graph]].\n\n`[[not a link]]` 🚀","x":-380,"y":-240,"width":360,"height":220,"color":"1"},
+		{"id":"0f1e2d3c4b5a6978","type":"file","file":"Projects/Q1 plan.md","x":60,"y":-240,"width":400,"height":300},
+		{"id":"9a8b7c6d5e4f3a2b","type":"file","file":"Projects/Q1 plan.md","subpath":"#Risks","x":60,"y":100,"width":400,"height":200,"color":"#ff8800"},
+		{"id":"1122334455667788","type":"file","file":"attachments/diagram.png","x":-380,"y":20,"width":300,"height":200},
+		{"id":"8877665544332211","type":"link","url":"https://jsoncanvas.org","x":640,"y":-240,"width":400,"height":400},
+		{"id":"abcdefabcdef0001","type":"file","file":"Boards/Project map.canvas","x":640,"y":200,"width":400,"height":300}
+	],
+	"edges":[
+		{"id":"e000000000000001","fromNode":"a1b2c3d4e5f60718","fromSide":"right","toNode":"0f1e2d3c4b5a6978","toSide":"left"},
+		{"id":"e000000000000002","fromNode":"0f1e2d3c4b5a6978","fromSide":"bottom","toNode":"9a8b7c6d5e4f3a2b","toSide":"top","fromEnd":"arrow","toEnd":"none","color":"4","label":"details"},
+		{"id":"e000000000000003","fromNode":"1122334455667788","fromSide":"right","toNode":"8877665544332211","toSide":"left","color":"#7a5af8","label":"see also"}
+	]
+}
