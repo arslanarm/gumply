@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
+import { API_URL } from './support/env';
 
 /**
  * #82x82ek7 (P0 data loss): editing an imported Obsidian note must not
@@ -255,4 +256,68 @@ test('a pasted image after a table has no empty paragraph before it (#symxj285)'
   expect((await api.getPage(request, created!.id)).content).toBe(
     'Intro\n\n| A |\n|---|\n| 1 |\n\n![remote](https://example.com/remote.png)\n\nAfter',
   );
+});
+
+test.describe('inline images stay inline (#2rmk983y)', () => {
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  test('badges and inline images round-trip byte-for-byte and render inline', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    await page.route('https://img.shields.io/**', (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
+    );
+    const content = [
+      'Badge ![b](https://img.shields.io/badge/a-b-green) inline text.',
+      '',
+      '![ci](https://img.shields.io/badge/ci-ok-green) ![cov](https://img.shields.io/badge/cov-90-green)',
+      '',
+      'Same again: ![other](https://img.shields.io/badge/x-y-blue)',
+      '',
+      '![solo](https://img.shields.io/badge/solo-1-red)',
+      '',
+      'Tail.',
+    ].join('\n');
+    const [created] = await vault.seed([{ title: 'Inline images', content }]);
+    await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+    const body = page.getByTestId('editor-content');
+    await expect(body.getByTestId('inline-image')).toHaveCount(4);
+    await expect(body.getByTestId('image-block')).toHaveCount(1);
+    await expect(body.locator('p').first()).toContainText('Badge');
+    await expect(body.locator('p').first()).toContainText('inline text.');
+
+    await body.getByText('Tail.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Edited.');
+    await waitSaved(page);
+    expect((await api.getPage(request, created!.id)).content).toBe(content.replace('Tail.', 'Tail. Edited.'));
+  });
+
+  test('an Obsidian ![[icon.png|16]] renders inline at 16px and is written back as-is', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    const upload = await request.post(`${API_URL}/api/attachments`, {
+      multipart: { file: { name: 'icon.png', mimeType: 'image/png', buffer: PNG } },
+    });
+    const { name } = (await upload.json()) as { name: string };
+    const content = `Status ![[${name}|16]] done.\n\nTail.`;
+    const [created] = await vault.seed([{ title: 'Obsidian icon', content }]);
+    await page.goto(`/#/${encodeURIComponent(created!.id)}`);
+    const icon = page.getByTestId('editor-content').getByTestId('inline-image');
+    await expect(icon).toHaveAttribute('width', '16');
+    await expect.poll(() => icon.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+
+    await page.getByTestId('editor-content').getByText('Tail.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('!');
+    await waitSaved(page);
+    expect((await api.getPage(request, created!.id)).content).toBe(content.replace('Tail.', 'Tail.!'));
+  });
 });

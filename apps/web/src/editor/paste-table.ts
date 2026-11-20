@@ -114,8 +114,14 @@ function unwrapImageParagraphs(doc: Document): void {
       elements.every((child) => child.tagName === "IMG" || child.tagName === "BR") &&
       elements.some((child) => child.tagName === "IMG") &&
       (paragraph.textContent ?? "").trim() === "";
-    if (onlyImages) {
+    if (onlyImages && elements.filter((child) => child.tagName === "IMG").length === 1) {
       paragraph.replaceWith(...elements.filter((child) => child.tagName === "IMG"));
+    } else {
+      // Images that share a paragraph with text (or other images) stay
+      // inline, where they were (#2rmk983y).
+      for (const image of Array.from(paragraph.querySelectorAll("img"))) {
+        image.setAttribute("data-inline-image", "1");
+      }
     }
   }
 }

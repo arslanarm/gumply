@@ -25,6 +25,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { markupRule } from "./markup.js";
+import { inlineImageRule } from "../attachments/inline-image.js";
 
 export const RAW_BLOCK_ATTR = "data-raw-md";
 export const RAW_INLINE_ATTR = "data-raw-md-inline";
@@ -254,6 +255,7 @@ export function rawMarkdownPlugin(md: any): void {
   md.core.ruler.after("block", "gumply_raw_blocks", rawBlocksRule);
   md.core.ruler.after("gumply_raw_blocks", "gumply_markup", markupRule);
   md.core.ruler.after("inline", "gumply_break_style", breakStyleRule);
+  md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
   if (md.core.ruler.__find__("text_join") !== -1) {
     md.core.ruler.before("text_join", "gumply_entities", entityRule);
   }
