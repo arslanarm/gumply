@@ -30,7 +30,9 @@ export default defineConfig({
     ['list'],
     ['html', { open: 'never', outputFolder: '../playwright-report' }],
   ],
-  outputDir: '../test-results',
+  // Keep run artifacts in a subdirectory: `test-results/screens/` holds review
+  // screenshots and must survive a normal suite run (Playwright clears outputDir).
+  outputDir: '../test-results/run',
   use: {
     baseURL: BASE_URL,
     trace: 'on-first-retry',
