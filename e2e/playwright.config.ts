@@ -67,6 +67,8 @@ export default defineConfig({
     stderr: 'pipe',
     env: {
       GUMPLY_PORT: String(API_PORT),
+      // The API accepts writes only from the web app's origin (#rv57cvhm).
+      GUMPLY_WEB_PORT: String(WEB_PORT),
       GUMPLY_VAULT: E2E_VAULT,
       // The suite starts from an empty vault unless a test opts into first-run
       // seeding; server-side demo seeding is covered by its own unit tests.

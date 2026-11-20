@@ -1,13 +1,15 @@
 import { APP_NAME, CORE_VERSION, type ApiError, type HealthResponse } from "@gumply/core";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { VaultError } from "./errors.js";
 import { createApiRoutes } from "./routes.js";
+import { localOnly, type SecurityOptions } from "./security.js";
 import type { VaultStore } from "./vault-store.js";
 
 export interface AppOptions {
   vaultPath: string;
   store: VaultStore;
+  /** Local-only guard (#rv57cvhm); defaults to loopback + web port 5173. */
+  security?: SecurityOptions;
 }
 
 /**
@@ -16,12 +18,9 @@ export interface AppOptions {
 export function createApp(options: AppOptions): Hono {
   const app = new Hono();
 
-  app.use(
-    "/api/*",
-    cors({
-      exposeHeaders: ["X-Gumply-New-Vault"],
-    }),
-  );
+  // No CORS: the web app is same-origin (Vite proxy), so other sites can't
+  // read responses; Host and Origin checks stop rebinding and CSRF.
+  app.use("/api/*", localOnly(options.security ?? { webPorts: [5173] }));
 
   app.get("/api/health", (c) => {
     const body: HealthResponse = {
