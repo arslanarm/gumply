@@ -70,7 +70,8 @@ export interface EditorProps {
   page: Page;
   pages: readonly PageMeta[];
   onSaveState: (state: SaveState) => void;
-  onSaved?: (page: Page) => void;
+  /** After a save: the server's page and the id it was saved under. */
+  onSaved?: (page: Page, savedId: string) => void;
   onConflictBackup?: (path: string) => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
@@ -167,14 +168,16 @@ export function Editor({
       save: async (content) => {
         const force = forceRef.current;
         try {
-          const updated = await api.updatePage(pageIdRef.current, {
+          const savedId = pageIdRef.current;
+          const updated = await api.updatePage(savedId, {
             content,
             expectedUpdated: versionRef.current,
             ...(force ? { force: true } : {}),
           });
           forceRef.current = false;
           versionRef.current = updated.updated;
-          onSavedRef.current?.(updated);
+          // Report which page this was: by now another page may be open.
+          onSavedRef.current?.(updated, savedId);
           if (updated.conflictBackup) onConflictBackupRef.current?.(updated.conflictBackup);
         } catch (error) {
           if (!force) forceRef.current = false;

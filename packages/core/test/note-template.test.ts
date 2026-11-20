@@ -37,6 +37,7 @@ describe("parseNoteTemplate", () => {
       yaml: "title: Win\n",
       eol: "\r\n",
       finalNewline: false,
+      blankLinesAfterFrontmatter: 0,
     });
   });
 
@@ -96,7 +97,8 @@ describe("serializeNoteLike", () => {
       "Body",
       ["updated"],
     );
-    expect(next).toBe("\uFEFF---\r\ntitle: Win\r\nupdated: new\r\n---\r\n\r\nBody");
+    // No blank line is added after `---` when the file had none (#73xpk354).
+    expect(next).toBe("\uFEFF---\r\ntitle: Win\r\nupdated: new\r\n---\r\nBody");
     expect(next.endsWith("\n")).toBe(false);
   });
 
@@ -108,7 +110,25 @@ describe("serializeNoteLike", () => {
       "Body",
       ["icon"],
     );
-    expect(next).toBe("---\ntitle: T\n\ncreated: 2026-01-01\n---\n\nBody\n");
+    expect(next).toBe("---\ntitle: T\n\ncreated: 2026-01-01\n---\nBody\n");
+  });
+
+  it("keeps the number of blank lines between `---` and the body", () => {
+    for (const gap of ["", "\n", "\n\n"]) {
+      const raw = `---\ntitle: T\nupdated: old\n---\n${gap}Body\n`;
+      const next = serializeNoteLike(
+        parseNoteTemplate(raw),
+        { title: "T", updated: "new" },
+        "Body",
+        ["updated"],
+      );
+      expect(next).toBe(`---\ntitle: T\nupdated: new\n---\n${gap}Body\n`);
+    }
+    // A new file, or one without a body yet, gets the usual single blank line.
+    expect(serializeNoteLike(null, { title: "T" }, "Body")).toBe("---\ntitle: T\n---\n\nBody\n");
+    expect(
+      serializeNoteLike(parseNoteTemplate("---\ntitle: T\n---\n"), { title: "T" }, "Body", []),
+    ).toBe("---\ntitle: T\n---\n\nBody\n");
   });
 
   it("replaces tags in the existing style", () => {

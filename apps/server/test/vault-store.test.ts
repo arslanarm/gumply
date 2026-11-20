@@ -161,9 +161,7 @@ describe("VaultStore index on start", () => {
 
     const updated = await store.update("win", { content: "Body" });
     const written = await readFile(join(dir, `${updated.id}.md`), "utf8");
-    expect(written).toBe(
-      original.replace("old", updated.updated).replace("---\r\nBody", "---\r\n\r\nBody"),
-    );
+    expect(written).toBe(original.replace("old", updated.updated));
     expect(written.endsWith("\n")).toBe(false);
   });
 
@@ -394,5 +392,184 @@ describe("external vault changes", () => {
     } finally {
       store.stopWatching();
     }
+  });
+});
+
+describe("D20 follow-ups (#73xpk354)", () => {
+  async function storeWith(files: Record<string, string>): Promise<{ dir: string; store: VaultStore }> {
+    const fs = await import("node:fs/promises");
+    const dir = await tempVault(async (root) => {
+      for (const [path, text] of Object.entries(files)) {
+        await fs.mkdir(join(root, path, ".."), { recursive: true });
+        await writeFile(join(root, path), text, "utf8");
+      }
+    });
+    const store = new VaultStore(dir);
+    await store.init();
+    return { dir, store };
+  }
+
+  it("a note without frontmatter stays without it and keeps its file name", async () => {
+    const { dir, store } = await storeWith({ "plain-note.md": "Just text.\n" });
+    const page = await store.update("plain-note", { content: "Just text, edited." });
+    expect(page.id).toBe("plain-note");
+    await expect(readFile(join(dir, "plain-note.md"), "utf8")).resolves.toBe(
+      "Just text, edited.\n",
+    );
+    // Its version is the file time, so the next conditional save works.
+    const again = await store.update("plain-note", {
+      content: "Third.",
+      expectedUpdated: page.updated,
+    });
+    await expect(readFile(join(dir, "plain-note.md"), "utf8")).resolves.toBe("Third.\n");
+    expect(again.updated >= page.updated).toBe(true);
+  });
+
+  it("a plain note gains frontmatter only for an icon, tags or a title the name can't hold", async () => {
+    const { dir, store } = await storeWith({ "Shopping.md": "Milk\n" });
+
+    // A title the file name can express: renamed, still plain.
+    const renamed = await store.update("Shopping", { title: "Shopping list" });
+    expect(renamed.id).toBe("Shopping list");
+    await expect(readFile(join(dir, "Shopping list.md"), "utf8")).resolves.toBe("Milk\n");
+
+    // An icon needs a block.
+    await store.update("Shopping list", { icon: "🛒" });
+    const withIcon = await readFile(join(dir, "Shopping list.md"), "utf8");
+    expect(withIcon).toMatch(/^---\ntitle: Shopping list\nicon: 🛒\n/);
+    expect(withIcon).toContain("Milk");
+
+    // A title with characters the file name drops needs a `title:` key.
+    const { dir: dir2, store: store2 } = await storeWith({ "Plan.md": "Body\n" });
+    const odd = await store2.update("Plan", { title: "Plan: Q1?" });
+    expect(odd.id).toBe("Plan Q1");
+    await expect(readFile(join(dir2, "Plan Q1.md"), "utf8")).resolves.toContain(
+      'title: "Plan: Q1?"',
+    );
+  });
+
+  it("link rewrites keep plain notes plain", async () => {
+    const { dir, store } = await storeWith({
+      "Target.md": "---\ntitle: Target\n---\nT\n",
+      "links-here.md": "See [[Target]].\n",
+    });
+    await store.update("Target", { title: "Goal" });
+    await expect(readFile(join(dir, "links-here.md"), "utf8")).resolves.toBe("See [[Goal]].\n");
+  });
+
+  it("keeps the layout after `---` (no blank line added to a tight file)", async () => {
+    const tight = "---\ntitle: Tight\nupdated: 2026-01-01T00:00:00.000Z\n---\nBody\n";
+    const { dir, store } = await storeWith({ "Tight.md": tight });
+    await store.update("Tight", { content: "Body 2" });
+    await expect(readFile(join(dir, "Tight.md"), "utf8")).resolves.toMatch(
+      /^---\ntitle: Tight\nupdated: .*\n---\nBody 2\n$/,
+    );
+  });
+
+  it("a body save never renames a slug-named file; a title change does", async () => {
+    const { dir, store } = await storeWith({ "untitled-7.md": "---\ntitle: Notes\n---\n\nA\n" });
+    const saved = await store.update("untitled-7", { content: "B" });
+    expect(saved.id).toBe("untitled-7");
+    const renamed = await store.update("untitled-7", { title: "Notes 2026" });
+    expect(renamed.id).toBe("Notes 2026");
+    await expect(readFile(join(dir, "Notes 2026.md"), "utf8")).resolves.toContain("B");
+  });
+
+  it("duplicate titles are compared case-insensitively and use ' 2' suffixes", async () => {
+    const { store } = await storeWith({ "Alpha.md": "---\ntitle: Alpha\n---\nA\n" });
+    expect((await store.create({ title: "alpha" })).id).toBe("alpha 2");
+    expect((await store.create({ title: "Alpha" })).id).toBe("Alpha 3");
+    // Case-only rename keeps the file (no suffix).
+    const page = await store.create({ title: "Beta" });
+    expect((await store.update(page.id, { title: "BETA" })).id).toBe("BETA");
+  });
+
+  it("renaming a page with sub-pages never merges into an existing folder", async () => {
+    const { dir, store } = await storeWith({
+      "Projects.md": "---\ntitle: Projects\n---\nP\n",
+      "Projects/Roadmap.md": "---\ntitle: Roadmap\n---\nR\n",
+      // A folder without its own page (no Work.md).
+      "Work/Loose.md": "---\ntitle: Loose\n---\nL\n",
+    });
+    const renamed = await store.update("Projects", { title: "Work" });
+    expect(renamed.id).toBe("Work 2");
+    expect(store.get("Work 2/Roadmap").content).toContain("R");
+    await expect(readFile(join(dir, "Work", "Loose.md"), "utf8")).resolves.toContain("L");
+  });
+
+  describe("syncFilenames", () => {
+    it("dry run matches apply, and a second run is a no-op", async () => {
+      const { dir, store } = await storeWith({
+        "dup-a.md": "---\ntitle: Dup\n---\nA\n",
+        "dup-b.md": "---\ntitle: Dup\n---\nB\n",
+        "Alpha.md": "---\ntitle: Alpha\n---\nA\n",
+        "Alpha 2.md": "---\ntitle: Alpha\n---\nA2\n",
+      });
+      const dry = await store.syncFilenames(false);
+      expect(dry).toEqual([
+        { from: "dup-a", to: "Dup" },
+        { from: "dup-b", to: "Dup 2" },
+      ]);
+      expect(await store.syncFilenames(true)).toEqual(dry);
+      expect((await readdir(dir)).sort()).toEqual(["Alpha 2.md", "Alpha.md", "Dup 2.md", "Dup.md"]);
+
+      expect(await store.syncFilenames(false)).toEqual([]);
+      expect(await store.syncFilenames(true)).toEqual([]);
+
+      // Also stable for a fresh process reading the result.
+      const reopened = new VaultStore(dir);
+      await reopened.init();
+      expect(await reopened.syncFilenames(false)).toEqual([]);
+      reopened.stopWatching();
+    });
+
+    it("never renames notes without an explicit title", async () => {
+      const { dir, store } = await storeWith({
+        "plain-note.md": "Linked from Obsidian as [[plain-note]].\n",
+        "meeting-notes.md": "---\ntags: [work]\n---\nNo title key.\n",
+      });
+      expect(await store.syncFilenames(true)).toEqual([]);
+      expect((await readdir(dir)).sort()).toEqual(["meeting-notes.md", "plain-note.md"]);
+    });
+
+    it("moves sub-pages with their parent and handles folders without a page", async () => {
+      const { dir, store } = await storeWith({
+        "old-plan.md": "---\ntitle: Old Plan\n---\nP\n",
+        "old-plan/child-page.md": "---\ntitle: Child Page\n---\nC\n",
+        "Archive/old-note.md": "---\ntitle: Old note\n---\nN\n",
+      });
+      const dry = await store.syncFilenames(false);
+      expect(dry).toEqual([
+        { from: "old-plan", to: "Old Plan" },
+        { from: "Archive/old-note", to: "Archive/Old note" },
+        { from: "old-plan/child-page", to: "Old Plan/Child Page" },
+      ]);
+      expect(await store.syncFilenames(true)).toEqual(dry);
+      expect(store.list().map((page) => page.id).sort()).toEqual([
+        "Archive/Old note",
+        "Old Plan",
+        "Old Plan/Child Page",
+      ]);
+      await expect(readFile(join(dir, "Old Plan", "Child Page.md"), "utf8")).resolves.toContain("C");
+      expect(await store.syncFilenames(false)).toEqual([]);
+    });
+  });
+});
+
+describe("D20 redirects", () => {
+  it("a page that takes a previously redirected id is served, not the redirect", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    const a = await store.create({ title: "Gamma" });
+    await store.update(a.id, { title: "Gamma two" });
+    expect(store.get("Gamma").id).toBe("Gamma two");
+
+    // A new page renamed onto "Gamma" owns that id again.
+    const b = await store.create({ title: "Draft" });
+    await store.update(b.id, { title: "Gamma" });
+    expect(store.get("Gamma").id).toBe("Gamma");
+    expect(store.get("Draft").id).toBe("Gamma");
+    expect(store.get("Gamma two").id).toBe("Gamma two");
   });
 });

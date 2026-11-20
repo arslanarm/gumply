@@ -100,6 +100,12 @@ export function App() {
   // Set when App itself moved the URL to a renamed page's new id, so the load
   // effect keeps the open page instead of refetching and remounting it.
   const followedRename = useRef<PageId | null>(null);
+  // Pages whose rename request is in flight. The disk poll may already see the
+  // new file name; it must not treat the open page as deleted meanwhile.
+  const renamesInFlight = useRef(new Set<PageId>());
+  // Bumped when a rename starts and ends: a poll that began before then has a
+  // list that may disagree with the ids the client now uses.
+  const renameEpoch = useRef(0);
   const lastPageReload = useRef(0);
   const editorControls = useRef<EditorControls | null>(null);
   const focusNonce = useRef(0);
@@ -309,8 +315,8 @@ export function App() {
   );
 
   const handlePageSaved = useCallback(
-    (updated: Page) => {
-      applySavedPage(pageRef.current?.id ?? updated.id, updated);
+    (updated: Page, savedId: PageId) => {
+      applySavedPage(savedId, updated);
     },
     [applySavedPage],
   );
@@ -326,12 +332,14 @@ export function App() {
   // Poll the lightweight page index so external file changes appear without a
   // restart. Only reload the open page when it has no local unsaved edits.
   const refreshFromDisk = useCallback(async () => {
+    const epoch = renameEpoch.current;
     let list: PageMeta[] | null = null;
     try {
       list = await api.listPages();
     } catch {
       return;
     }
+    if (epoch !== renameEpoch.current || renamesInFlight.current.size > 0) return;
     setPages((previous) =>
       JSON.stringify(previous) === JSON.stringify(list) ? previous : (list as PageMeta[]),
     );
@@ -631,24 +639,42 @@ export function App() {
   const handleRename = useCallback(
     async (id: PageId, title: string) => {
       setActionError(null);
+      // Optimistic: show the new title right away. With D20 the rename also
+      // moves the file, and a stale title in the header meanwhile would be
+      // the base of the next edit (ArrowUp straight back into the title).
+      const previousTitle = pages.find((item) => item.id === id)?.title ?? null;
+      const showTitle = (value: string) => {
+        setPages((list) => list.map((item) => (item.id === id ? { ...item, title: value } : item)));
+        setPage((open) => (open && open.id === id ? { ...open, title: value } : open));
+      };
+      showTitle(title);
       try {
         // Flush body edits first: a pending autosave could otherwise overwrite
         // the server's link rewrite with stale `[[Old Title]]` text.
         await editorControls.current?.flush();
 
-        const updated = await api.updatePage(id, { title });
-        applySavedPage(id, updated);
+        renamesInFlight.current.add(id);
+        renameEpoch.current += 1;
+        let updated;
+        try {
+          updated = await api.updatePage(id, { title });
+          applySavedPage(id, updated);
+        } finally {
+          renamesInFlight.current.delete(id);
+          renameEpoch.current += 1;
+        }
 
         // D12: refetch the open page when the server rewrote its links.
         if (openPageNeedsReload(updated.rewrittenPages, selectedRef.current, id)) {
           requestPageReload();
         }
       } catch (error) {
+        if (previousTitle !== null) showTitle(previousTitle);
         setActionError(errorMessage(error));
         void loadPages();
       }
     },
-    [applySavedPage, loadPages, requestPageReload],
+    [applySavedPage, loadPages, pages, requestPageReload],
   );
 
   const handleSetIcon = useCallback(async (icon: string | null) => {

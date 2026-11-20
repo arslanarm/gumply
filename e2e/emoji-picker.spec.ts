@@ -80,6 +80,10 @@ test.describe('page icon emoji picker', () => {
     await page.getByTestId('page-icon-button').click();
     const picker = page.getByTestId('page-icon-picker');
 
+    // Wait until the list (and the enabled category bar) is in, so the click
+    // doesn't race the lazy data load.
+    await expect(picker.locator('[data-section="smileys"] .emoji-picker-cell').first()).toBeVisible();
+    await expect(picker.getByRole('button', { name: 'Flags' })).toBeEnabled();
     await picker.getByRole('button', { name: 'Flags' }).click();
     await expect(picker.getByRole('heading', { name: 'Flags' })).toBeInViewport();
     await expect(picker.getByRole('button', { name: 'Flags' })).toHaveClass(/is-active/);

@@ -26,6 +26,9 @@ npm run dev
 The vault defaults to `./vault` and is created on first start. Point it elsewhere with
 `GUMPLY_VAULT=/path/to/notes`. Set the API port with `GUMPLY_PORT` (default `8787`).
 
+File names follow page titles, like Obsidian: "Q1 plan" is `Q1 plan.md`, and renaming the page
+renames the file (and its sub-page folder). Notes you wrote without frontmatter stay without it.
+
 ## Scripts (from repo root)
 
 | Command | What it does |
@@ -35,6 +38,8 @@ The vault defaults to `./vault` and is created on first start. Point it elsewher
 | `npm run build` | Type-checks and builds core, server and web |
 | `npm run typecheck` | Type-checks every workspace |
 | `npm run test:e2e` | Playwright e2e suite (local, throwaway vault) |
+| `npm run vault:sync-filenames` | Dry run: list files whose names don't follow their `title:` yet. Add `-- --apply` to rename them |
+| `npm run emoji:data` | Regenerate the emoji list from `emojibase-data` |
 | `npm run seed:big` | Seed 200 linked pages via the API for graph/performance checks (`-- 500` for more) |
 
 ## Development
