@@ -202,12 +202,13 @@ export function Editor({
   // Node views read page resolution and attachment metadata from this store.
   useEffect(() => {
     setWikiLinkEnvironment({
+      pageId: page.id,
       pages,
       attachments,
       openLink: onOpenLink,
       createLink: onCreateLink,
     });
-  }, [pages, attachments, onOpenLink, onCreateLink]);
+  }, [page.id, pages, attachments, onOpenLink, onCreateLink]);
 
   useEffect(() => {
     let cancelled = false;

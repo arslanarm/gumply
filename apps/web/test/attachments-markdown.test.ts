@@ -23,15 +23,26 @@ describe("attachment Markdown parsing (D19)", () => {
   });
 
   it("accepts Obsidian embeds on read", () => {
-    expect(render("![[pic.png]]")).toBe('<p><img src="attachments/pic.png" alt=""></p>');
+    expect(render("![[pic.png]]")).toBe(
+      '<p><img src="attachments/pic.png" alt="" data-obsidian="![[pic.png]]"></p>',
+    );
     expect(render("[[brief.pdf]]")).toBe(
-      '<p><file-attachment data-path="attachments/brief.pdf" data-name="brief.pdf">brief.pdf</file-attachment></p>',
+      '<p><file-attachment data-path="attachments/brief.pdf" data-name="brief.pdf" data-obsidian="[[brief.pdf]]">brief.pdf</file-attachment></p>',
     );
   });
 
   it("treats an unembedded image name as a file link", () => {
     expect(render("[[pic.png]]")).toBe(
-      '<p><file-attachment data-path="attachments/pic.png" data-name="pic.png">pic.png</file-attachment></p>',
+      '<p><file-attachment data-path="attachments/pic.png" data-name="pic.png" data-obsidian="[[pic.png]]">pic.png</file-attachment></p>',
+    );
+  });
+
+  it("accepts note-relative file links (D23)", () => {
+    expect(render("[brief.pdf](../attachments/brief.pdf)")).toBe(
+      '<p><file-attachment data-path="../attachments/brief.pdf" data-name="brief.pdf">brief.pdf</file-attachment></p>',
+    );
+    expect(render("![pic](../../attachments/pic.png)")).toBe(
+      '<p><img src="../../attachments/pic.png" alt="pic"></p>',
     );
   });
 

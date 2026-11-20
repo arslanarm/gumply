@@ -2,8 +2,10 @@
  * Image and file embeds in Markdown (D19).
  *
  * Standard Markdown: `![alt](attachments/x.png)` and
- * `[name](attachments/x.pdf)`. Obsidian compatibility: `![[x.png]]` and
- * `[[x.pdf]]` when the target name has a file extension.
+ * `[name](attachments/x.pdf)`, note-relative since D23 (`../attachments/…`);
+ * `path` is the link as written; resolve it with `resolveAttachmentHref`.
+ * Obsidian compatibility: `![[x.png]]` and `[[x.pdf]]` when the target name
+ * has a file extension.
  */
 import { hasAttachmentExtension, maskCode } from "./links.js";
 import type { Embed, EmbedKind } from "./types.js";
@@ -63,7 +65,8 @@ export function parseEmbeds(markdown: string): Embed[] {
 
   // [name](attachments/x.pdf) — ordinary links only count as file embeds when
   // they point at the attachments folder.
-  const filePattern = /(?<!!)\[([^\]]+)\]\((attachments\/[^)\s]+)(?:\s+"[^"]*")?\)/g;
+  // D23: note-relative forms (`../attachments/x.pdf`, `./attachments/…`) too.
+  const filePattern = /(?<!!)\[([^\]]+)\]\(((?:\.\/|(?:\.\.\/)+)?attachments\/[^)\s]+)(?:\s+"[^"]*")?\)/g;
   while ((match = filePattern.exec(text)) !== null) {
     const path = match[2] ?? "";
     if (path.length === 0) continue;
