@@ -353,6 +353,50 @@ test.describe('whiteboards in the app (W2a)', () => {
     await expect(page.getByTestId('page-title-input')).toHaveCount(0);
   });
 
+  test('fit clears the toolbar and header, handles keep their size zoomed out, the icon is not clipped (#8ht6zhdv)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Spec', content: 'x' }]);
+    const board = await createBoard(request, 'Layout check');
+    await saveBoard(request, board.meta.id, {
+      nodes: [sticky('a1a1a1a1a1a1a1a1', 'Left', 0), sticky('b2b2b2b2b2b2b2b2', 'Right', 2400)],
+      edges: [],
+    });
+    await request.put(`/api/boards/${encodeURIComponent(board.meta.id)}`, { data: { icon: '🗺️' } });
+    await openBoard(page, board.meta.id);
+
+    // The icon sits fully inside the header.
+    const header = await page.locator('.board-page > .page-header').boundingBox();
+    const icon = await page.getByTestId('page-icon-button').boundingBox();
+    if (!header || !icon) throw new Error('no header');
+    expect(icon.y).toBeGreaterThanOrEqual(header.y);
+    expect(icon.y + icon.height).toBeLessThanOrEqual(header.y + header.height);
+
+    // Fit (Shift+1): nothing under the floating toolbar or above the canvas.
+    await page.getByTestId('board').focus();
+    await page.keyboard.press('Shift+Digit1');
+    await page.waitForTimeout(400);
+    const toolbar = await page.getByTestId('board-toolbar').boundingBox();
+    const canvas = await page.getByTestId('board').boundingBox();
+    if (!toolbar || !canvas) throw new Error('no layout');
+    const stickies = await page.getByTestId('board-sticky').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect));
+    for (const rect of stickies) {
+      expect(rect.left).toBeGreaterThan(toolbar.x + toolbar.width);
+      expect(rect.top).toBeGreaterThan(canvas.y);
+    }
+
+    // Zoomed out, connection dots stay ~10 px on screen.
+    const zoom = page.getByTestId('board-zoom-value');
+    for (let i = 0; i < 4 && Number.parseInt((await zoom.textContent()) ?? '100', 10) > 50; i += 1) {
+      await page.getByTestId('board-zoom-out').click();
+    }
+    await expect.poll(async () => Number.parseInt((await zoom.textContent()) ?? '100', 10)).toBeLessThan(60);
+    const first = page.getByTestId('board-sticky').first();
+    await first.hover();
+    const dot = await first.locator('xpath=..').getByTestId('board-handle-right').boundingBox();
+    if (!dot) throw new Error('no handle');
+    expect(dot.width).toBeGreaterThanOrEqual(9);
+    expect(dot.width).toBeLessThanOrEqual(12);
+  });
+
   for (const theme of ['light', 'dark'] as const) {
     test(`a board page renders in the app shell (${theme})`, async ({ page, request, vault }) => {
       await vault.seed([{ title: 'Spec', content: 'x' }]);
