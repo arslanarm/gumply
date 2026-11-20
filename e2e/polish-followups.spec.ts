@@ -47,6 +47,39 @@ test('Restore page keeps the caret where it was', async ({ page, vault, request 
     .toBe('Base line. unsaved after');
 });
 
+test('Restore page after a failed save (page made this session): typing keeps going to the file', async ({
+  page,
+  vault,
+}) => {
+  // @opus-hunter's flow (q9a.mjs): the autosave of " unsaved" hits the
+  // deleted file (404), then Restore. Focus used to drop to <body> and the
+  // next keystrokes were lost.
+  await vault.seed([{ title: 'Home', content: 'Hi' }]);
+  await page.goto('/');
+  await expect(page.getByTestId('editor-content')).toHaveText('Hi');
+  await page.getByTestId('new-page-button').click();
+  await expect(page.getByTestId('page-title-input')).toBeFocused();
+  await page.keyboard.type('Restore two');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Base line.');
+  await waitSaved(page);
+
+  await page.keyboard.type(' unsaved', { delay: 5 });
+  await fs.rm(path.join(E2E_VAULT, 'Restore two.md'));
+  const banner = page.getByTestId('deleted-on-disk-banner');
+  await expect(banner).toBeVisible({ timeout: 10_000 });
+
+  await banner.getByRole('button', { name: 'Restore page' }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+  await page.keyboard.type(' after');
+  await waitSaved(page);
+  await expect(page.getByTestId('editor-content')).toHaveText('Base line. unsaved after');
+  await expect
+    .poll(() => fs.readFile(path.join(E2E_VAULT, 'Restore two.md'), 'utf8'))
+    .toMatch(/\nBase line\. unsaved after\n$/);
+});
+
 test.describe('narrow window (400px)', () => {
   test.use({ viewport: { width: 400, height: 720 } });
 

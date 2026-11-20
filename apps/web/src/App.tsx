@@ -910,7 +910,10 @@ export function App() {
   const restoreDeletedPage = useCallback(async () => {
     const loaded = deletedOnDisk ?? pageRef.current;
     if (!loaded) return;
-    const content = editorControls.current?.getMarkdown() ?? loaded.content;
+    const controls = editorControls.current;
+    const content = controls?.getMarkdown() ?? loaded.content;
+    // Where the caret was before the click moved focus to the banner button.
+    const selection = controls?.getSelection() ?? null;
     try {
       const created = await api.createPage({
         title: loaded.title,
@@ -918,21 +921,25 @@ export function App() {
         content,
         icon: loaded.icon,
       });
-      // Keep the caret where it was (the editor remounts on the new file).
-      const selection = editorControls.current?.getSelection() ?? null;
+      // The editor already shows this text: keep it mounted. Point it at the
+      // new file (version, and id if the old one was taken meanwhile) instead
+      // of reloading, so nothing typed is lost and the next save isn't a 409.
+      applySavedPage(loaded.id, created);
+      if (controls && controls.pageId === loaded.id) {
+        await controls.adoptRecreatedFile(created.id, created.updated);
+      }
       setDeletedOnDisk(null);
       setActionError(null);
-      await loadPages();
-      if (selection) restoreSelection.current = selection;
-      else focusBodyAfterOpen.current = true;
-      // Restoring usually recreates the same id; force a refetch so the editor
-      // baseline matches the new file instead of the deleted one.
-      navigate(created.id);
-      requestPageReload();
+      void loadPages();
+      // The Restore button is gone with the banner; put focus back where the
+      // user was typing.
+      const now = editorControls.current;
+      if (now && selection) now.focusAt(selection.to);
+      else now?.focusBody();
     } catch (error) {
       setActionError(errorMessage(error));
     }
-  }, [deletedOnDisk, loadPages, navigate, requestPageReload]);
+  }, [deletedOnDisk, loadPages, applySavedPage]);
 
   const handleConflictBackup = useCallback((path: string) => {
     setToast({ message: `Other version kept in ${path}`, icon: "info" });
