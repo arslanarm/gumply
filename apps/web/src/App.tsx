@@ -5,18 +5,16 @@ import { api, consumeNewVaultPage } from "./api/client.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
-import { MoveDialog } from "./components/MoveDialog.js";
 import { PageHeader } from "./components/PageHeader.js";
 import { Icon, type IconName } from "./components/Icon.js";
 import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
-import { ShortcutsDialog } from "./components/ShortcutsDialog.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
-import { GraphView } from "./graph/GraphView.js";
-import { LocalGraphPanel } from "./graph/LocalGraphPanel.js";
+// Graph and dialogs load on demand (#evh35bn7).
+import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, preloadWhenIdle } from "./lazy-parts.js";
 import { focusAfterDelete } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
@@ -120,6 +118,9 @@ export function App() {
   const restoreSelection = useRef<{ from: number; to: number } | null>(null);
   const backlinksRequest = useRef(0);
   const initialLoadStarted = useRef(false);
+  // The landing page's request, started as soon as the list arrives instead of
+  // after the sidebar has rendered (1000 rows take a while; #evh35bn7).
+  const landingPageRequest = useRef<{ id: PageId; request: Promise<Page> } | null>(null);
 
   const moveFocus = useCallback((id: PageId | null) => {
     focusNonce.current += 1;
@@ -422,6 +423,10 @@ export function App() {
 
       const target = chooseLandingPage(list, newVaultPage);
       if (!target) return;
+      const request = api.getPage(target);
+      // A failure is handled where the request is used (the load effect).
+      request.catch(() => undefined);
+      landingPageRequest.current = { id: target, request };
       focusBodyAfterOpen.current = target === newVaultPage;
       navigate(target, true);
     })();
@@ -435,6 +440,9 @@ export function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Fetch the graph and dialog code in the background once startup is done.
+  useEffect(() => preloadWhenIdle(), []);
 
   // Remember the local graph panel for the session (spec/ux §9).
   useEffect(() => {
@@ -478,8 +486,10 @@ export function App() {
     let cancelled = false;
     setPageStatus("loading");
 
-    api
-      .getPage(selectedId)
+    const landing = landingPageRequest.current;
+    landingPageRequest.current = null;
+    const request = landing?.id === selectedId ? landing.request : api.getPage(selectedId);
+    request
       .then((loaded) => {
         if (cancelled) return;
         if (loaded.id !== selectedId) {

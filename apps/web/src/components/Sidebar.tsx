@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
+import { preloadGraph } from "../lazy-parts.js";
 import { buildPageTree } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { PageItem } from "./PageItem.js";
@@ -90,6 +91,46 @@ export function Sidebar(props: SidebarProps) {
     props.onCreate(parentId);
   };
 
+  // Stable callbacks for the (memoized) rows: each forwards to the latest
+  // handler, so App and Sidebar re-renders don't re-render every row.
+  const latest = useRef({
+    onOpen: props.onOpen,
+    onDelete: props.onDelete,
+    onStartMove: props.onStartMove,
+    onMove: props.onMove,
+    createChild,
+    toggle,
+    startRename,
+    commitRename,
+    cancelRename,
+  });
+  latest.current = {
+    onOpen: props.onOpen,
+    onDelete: props.onDelete,
+    onStartMove: props.onStartMove,
+    onMove: props.onMove,
+    createChild,
+    toggle,
+    startRename,
+    commitRename,
+    cancelRename,
+  };
+  const rowHandlers = useMemo(
+    () => ({
+      onOpen: (id: PageId) => latest.current.onOpen(id),
+      onCreateChild: (id: PageId) => latest.current.createChild(id),
+      onDelete: (id: PageId) => latest.current.onDelete(id),
+      onToggle: (id: PageId) => latest.current.toggle(id),
+      onStartMove: (id: PageId) => latest.current.onStartMove(id),
+      onStartRename: (id: PageId, title: string) => latest.current.startRename(id, title),
+      onCommitRename: () => latest.current.commitRename(),
+      onCancelRename: () => latest.current.cancelRename(),
+      onDragEndItem: () => setDraggingId(null),
+      onMove: (id: PageId, parentId: PageId | null) => latest.current.onMove(id, parentId),
+    }),
+    [],
+  );
+
   return (
     <aside className="sidebar" data-testid="sidebar">
       <div className="sidebar-header">
@@ -166,18 +207,9 @@ export function Sidebar(props: SidebarProps) {
               renameDraft={renameDraft}
               draggingId={draggingId}
               collapsed={collapsed}
-              onOpen={props.onOpen}
-              onCreateChild={createChild}
-              onDelete={props.onDelete}
-              onToggle={toggle}
-              onStartMove={props.onStartMove}
+              {...rowHandlers}
               onRenameDraft={setRenameDraft}
-              onStartRename={startRename}
-              onCommitRename={commitRename}
-              onCancelRename={cancelRename}
               onDragStartItem={setDraggingId}
-              onDragEndItem={() => setDraggingId(null)}
-              onMove={props.onMove}
             />
           ))
         )}
@@ -188,6 +220,8 @@ export function Sidebar(props: SidebarProps) {
         className={`sidebar-row sidebar-row-bottom${props.graphActive ? " sidebar-row-active" : ""}`}
         data-testid="sidebar-graph"
         aria-current={props.graphActive ? "page" : undefined}
+        onPointerEnter={preloadGraph}
+        onFocus={preloadGraph}
         onClick={props.onGraph}
       >
         <span className="sidebar-row-icon" aria-hidden="true">
