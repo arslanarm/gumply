@@ -14,6 +14,7 @@ describe("filterSlashItems", () => {
       "todo",
       "quote",
       "code",
+      "table",
       "emoji",
       "image",
       "file",

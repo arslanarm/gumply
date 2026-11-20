@@ -125,11 +125,13 @@ function escapeAttr(value: string): string {
 }
 
 /**
- * `transformPastedHTML`: replace every top-level `<table>` with a raw table
- * block holding its GFM Markdown, and unwrap image-only paragraphs. Other
- * HTML is returned unchanged.
+ * `transformPastedHTML`: replace every top-level `<table>` with an editable
+ * table built from its GFM Markdown (#7witbbun), and unwrap image-only
+ * paragraphs. `renderMarkdown` is the editor's own Markdown → HTML parser, so
+ * a pasted table becomes exactly what the same table loads as. Without it the
+ * table is kept as a raw GFM block. Other HTML is returned unchanged.
  */
-export function pastedTablesToMarkdown(html: string): string {
+export function pastedTablesToMarkdown(html: string, renderMarkdown?: (markdown: string) => string): string {
   const hasTable = /<table[\s>]/i.test(html);
   const hasImage = /<img[\s>]/i.test(html);
   if (!hasTable && !hasImage) return html;
@@ -139,16 +141,18 @@ export function pastedTablesToMarkdown(html: string): string {
   const tables = Array.from(doc.querySelectorAll("table")).filter(
     (table) => !table.parentElement?.closest("table"),
   );
-  if (tables.length === 0) return html;
   for (const table of tables) {
     const rows = tableRows(table);
     if (rows.length === 0) {
       table.remove();
       continue;
     }
+    const markdown = rowsToMarkdown(rows);
     const holder = doc.createElement("div");
-    holder.innerHTML = `<div ${RAW_BLOCK_ATTR}="${escapeAttr(rowsToMarkdown(rows))}" data-raw-kind="table"></div>`;
-    table.replaceWith(holder.firstChild!);
+    holder.innerHTML = renderMarkdown
+      ? renderMarkdown(markdown)
+      : `<div ${RAW_BLOCK_ATTR}="${escapeAttr(markdown)}" data-raw-kind="table"></div>`;
+    table.replaceWith(...Array.from(holder.childNodes));
   }
   return doc.body.innerHTML;
 }

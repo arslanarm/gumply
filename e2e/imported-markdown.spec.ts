@@ -98,26 +98,6 @@ test.describe('imported Markdown survives editing', () => {
     );
   });
 
-  test('clicking a table edits its Markdown source', async ({ page, vault, request }) => {
-    const table = '| Name | Score |\n|------|-------|\n| Bob  | 7     |';
-    const [created] = await vault.seed([{ title: 'Table edit', content: `Intro\n\n${table}` }]);
-
-    await page.goto('/');
-    const body = page.getByTestId('editor-content');
-    await body.locator('table').click();
-    const source = page.getByTestId('raw-block-editor');
-    await expect(source).toBeFocused();
-    await expect(source).toHaveValue(table);
-
-    await source.fill(table.replace('Bob ', 'Bea '));
-    await body.getByText('Intro', { exact: true }).click();
-    await expect(body.locator('table td').first()).toHaveText('Bea');
-    await waitSaved(page);
-    expect((await api.getPage(request, created!.id)).content).toBe(
-      `Intro\n\n${table.replace('Bob ', 'Bea ')}`,
-    );
-  });
-
   test('a pasted Markdown table becomes a table, not flattened text', async ({
     page,
     vault,
@@ -142,7 +122,10 @@ test.describe('imported Markdown survives editing', () => {
 
     await expect(body.locator('table td').first()).toHaveText('1');
     await waitSaved(page);
-    expect((await api.getPage(request, created!.id)).content).toContain(table);
+    // A pasted table is new content: written in normal GFM form (#7witbbun).
+    expect((await api.getPage(request, created!.id)).content).toContain(
+      '| a | b |\n|---|---|\n| 1 | 2 |',
+    );
   });
 
   for (const [name, content] of Object.entries(HUNTER_FIXTURES)) {
