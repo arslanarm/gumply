@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import type { LinkSuggestion } from "../lib/wikilinks.js";
+import { useActiveOptionVisible } from "./use-active-option.js";
 
 export interface LinkMenuProps {
   items: readonly LinkSuggestion[];
@@ -11,8 +13,12 @@ export interface LinkMenuProps {
 
 /** Floating `[[` menu (pages + Create row). */
 export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMenuProps) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useActiveOptionVisible(menuRef, index, items.length);
+
   return (
     <div
+      ref={menuRef}
       className="link-menu"
       data-testid="link-menu"
       role="listbox"

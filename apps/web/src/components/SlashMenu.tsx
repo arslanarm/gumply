@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import type { SlashItem } from "../editor/slash-items.js";
+import { useActiveOptionVisible } from "./use-active-option.js";
 
 export interface SlashMenuProps {
   items: readonly SlashItem[];
@@ -11,8 +13,12 @@ export interface SlashMenuProps {
 
 /** Floating `/` menu. Positioned from the suggestion's client rect. */
 export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashMenuProps) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useActiveOptionVisible(menuRef, index, items.length);
+
   return (
     <div
+      ref={menuRef}
       className="slash-menu"
       data-testid="slash-menu"
       role="listbox"
