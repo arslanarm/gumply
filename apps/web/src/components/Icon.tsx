@@ -26,6 +26,7 @@ export type IconName =
   | "plus"
   | "quote"
   | "search"
+  | "sidebar"
   | "sun"
   | "trash";
 
@@ -157,6 +158,12 @@ const ICONS: Record<IconName, ReactNode> = {
     <>
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.35-4.35" />
+    </>
+  ),
+  sidebar: (
+    <>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
     </>
   ),
   sun: (

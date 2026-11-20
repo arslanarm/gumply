@@ -223,6 +223,17 @@ input {
   min-height: 0;
 }
 
+.app.sidebar-collapsed .layout {
+  grid-template-columns: 0 1fr;
+}
+
+.app.sidebar-collapsed .sidebar {
+  visibility: hidden;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 0;
+}
+
 /* ---------- Sidebar ---------- */
 
 .sidebar {
@@ -547,7 +558,7 @@ input {
   letter-spacing: -0.02em;
   margin: 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   cursor: text;
 }
 
@@ -1019,6 +1030,25 @@ input {
   line-height: 1;
 }
 
+@media (max-width: 900px) {
+  .layout,
+  .app.sidebar-collapsed .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 54px auto 0 0;
+    width: var(--sidebar-width);
+    z-index: 50;
+    box-shadow: 8px 0 24px rgb(0 0 0 / 14%);
+  }
+
+  .app.sidebar-collapsed .sidebar {
+    display: none;
+  }
+}
+
 @media (max-width: 720px) {
   :root {
     --sidebar-width: 210px;
@@ -1027,6 +1057,20 @@ input {
   .editor-pane {
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+
+  .page-title,
+  .page-title-input {
+    font-size: 2rem;
+  }
+
+  .page-header-actions {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    padding-left: 0.5rem;
+    background: var(--surface-page);
   }
 }
 
