@@ -199,11 +199,11 @@ describe("labels and sizing", () => {
     expect(labelled.has("n24")).toBe(false);
   });
 
-  it("sizes from 6 to 24 px on a sqrt scale, isolated pages at 6", () => {
-    expect(nodeRadius(0, 10)).toBe(6);
-    expect(nodeRadius(10, 10)).toBe(24);
-    expect(nodeRadius(1, 10)).toBeGreaterThan(6);
-    expect(nodeRadius(1, 10)).toBeLessThan(24);
+  it("sizes from 4 to 9 px on a sqrt scale, isolated pages at 4 (Q1b)", () => {
+    expect(nodeRadius(0, 10)).toBe(4);
+    expect(nodeRadius(10, 10)).toBe(9);
+    expect(nodeRadius(1, 10)).toBeGreaterThan(4);
+    expect(nodeRadius(1, 10)).toBeLessThan(9);
     expect(nodeRadius(2, 10)).toBeGreaterThan(nodeRadius(1, 10));
   });
 });

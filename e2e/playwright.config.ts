@@ -37,7 +37,16 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Q1b: the graph must draw in Firefox too. Keep Firefox scoped to the
+    // pixel spec so the rest of the suite stays fast; Chromium still runs it.
+    {
+      name: 'firefox-graph',
+      testMatch: /graph-visual\.spec\.ts$/,
+      use: { ...devices['Desktop Firefox'] },
+    },
+  ],
   // One app instance for the whole suite. Tests isolate themselves through
   // the API (resetVault fixture) instead of restarting the server.
   // reuseExistingServer is deliberately false: attaching to an already running
