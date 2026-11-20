@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gumply · Board lab</title>
+    <script>
+      // Dev/e2e harness for the board engine: ?theme=dark|light, ?seed=N, ?id=name.
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var theme = params.get("theme");
+        var dark = theme === "dark" || (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/board/lab.tsx"></script>
+  </body>
+</html>

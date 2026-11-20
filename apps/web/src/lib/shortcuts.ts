@@ -62,6 +62,25 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: "F2 / double-click", label: "Rename page" },
       ],
     },
+    {
+      title: "Whiteboard",
+      items: [
+        { keys: "V / H", label: "Select / Hand" },
+        { keys: "N / T / S", label: "Sticky note / Text / Shape" },
+        { keys: "C / F / P", label: "Connector / Frame / Pen" },
+        { keys: "Double-click", label: "Add a sticky note" },
+        { keys: "Enter", label: "Edit the selection" },
+        { keys: "Space + drag", label: "Pan" },
+        { keys: `${modifier}+scroll / pinch`, label: "Zoom" },
+        { keys: "Shift+1", label: "Fit to screen" },
+        { keys: "Arrows / Shift+Arrows", label: "Nudge by 1 / 10" },
+        { keys: `${modifier}D`, label: "Duplicate" },
+        { keys: `${modifier}C / ${modifier}V`, label: "Copy / paste" },
+        { keys: "] / [", label: "Bring to front / send to back" },
+        { keys: "Delete", label: "Delete" },
+        { keys: `${modifier}Z / ${modifier}+Shift+Z`, label: "Undo / redo" },
+      ],
+    },
   ];
 }
 
