@@ -4,6 +4,7 @@
  *
  *   npm run seed:big            # 200 pages
  *   npm run seed:big -- 500     # more
+ *   npm run seed:big -- 1000 --icons   # every page gets an emoji icon (graph perf)
  *   GUMPLY_API_URL=http://localhost:8787/api npm run seed:big
  *
  * Creates one root page ("Big Vault") and N sub-pages, each linking to the
@@ -12,10 +13,13 @@
  */
 
 const base = (process.env.GUMPLY_API_URL ?? "http://localhost:8787/api").replace(/\/+$/, "");
-const count = Number.parseInt(process.argv[2] ?? "200", 10);
+const args = process.argv.slice(2);
+const withIcons = args.includes("--icons");
+const count = Number.parseInt(args.find((arg) => !arg.startsWith("--")) ?? "200", 10);
+const ICONS = ["📝", "🚀", "💡", "📚", "🧪", "🎯", "🌱", "🔧", "📅", "🎨", "🧭", "🗂️", "❤️", "⭐", "🔥", "🐛", "🏠", "✈️", "🍕", "🎵", "👩‍💻", "🇳🇱", "📈", "🧠"];
 
 if (!Number.isInteger(count) || count < 1 || count > 2000) {
-  console.error("Usage: node scripts/seed-big.mjs [1..2000]");
+  console.error("Usage: node scripts/seed-big.mjs [1..2000] [--icons]");
   process.exit(1);
 }
 
@@ -64,6 +68,7 @@ while (created < count) {
           title: `Page ${index}`,
           parentId: root.id,
           content: contentFor(index),
+          ...(withIcons ? { icon: ICONS[index % ICONS.length] } : {}),
         }),
       }),
     );

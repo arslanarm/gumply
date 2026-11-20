@@ -299,3 +299,67 @@ test.describe('graph polish (#z5abndiz)', () => {
     await expect(filter).toHaveValue('');
   });
 });
+
+test.describe('page icons in the graph (#emmyabbj)', () => {
+  /** Colourful (non-grey) pixels in a square around a canvas point. */
+  async function colourfulPixels(page: Page, testId: string, x: number, y: number, half: number) {
+    return page.evaluate(
+      ({ id, x, y, half }) => {
+        const canvas = document.querySelector(`[data-testid="${id}"] canvas`) as HTMLCanvasElement;
+        const scale = canvas.width / canvas.getBoundingClientRect().width;
+        const size = Math.round(half * 2 * scale);
+        const data = canvas
+          .getContext('2d')!
+          .getImageData(Math.round((x - half) * scale), Math.round((y - half) * scale), size, size).data;
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const [r, g, b, a] = [data[i]!, data[i + 1]!, data[i + 2]!, data[i + 3]!];
+          if (a > 128 && Math.max(r, g, b) - Math.min(r, g, b) > 60) count += 1;
+        }
+        return count;
+      },
+      { id: testId, x, y, half },
+    );
+  }
+
+  test('pages with an icon draw their emoji (global and local) and stay easy to grab', async ({
+    page,
+    vault,
+  }) => {
+    const [rocket] = await vault.seed([
+      { title: 'Rocket', icon: '🚀', content: 'Goes to [[Plain]] and [[Heart]].' },
+      { title: 'Plain', content: 'No icon. Back to [[Rocket]].' },
+      { title: 'Heart', icon: '❤️', content: 'Back to [[Rocket]].' },
+    ]);
+    await openGraph(page);
+    const origin = await canvasOrigin(page);
+
+    const iconNode = await nodeByTitle(page, 'Rocket');
+    const plainNode = await nodeByTitle(page, 'Plain');
+    // Emoji nodes are a bit bigger than dots so the icon reads.
+    expect(iconNode.r).toBeGreaterThan(plainNode.r);
+    expect(await colourfulPixels(page, CANVAS, iconNode.x, iconNode.y, iconNode.r)).toBeGreaterThan(30);
+    // The untagged plain page is still the neutral grey dot.
+    expect(await colourfulPixels(page, CANVAS, plainNode.x, plainNode.y, plainNode.r)).toBe(0);
+
+    // Grab the emoji off-centre and drag it.
+    const before = await nodeByTitle(page, 'Heart');
+    const start = { x: origin.x + before.x + before.r + 4, y: origin.y + before.y };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 6; step += 1) await page.mouse.move(start.x + step * 10, start.y + step * 5);
+    const during = await nodeByTitle(page, 'Heart');
+    expect(Math.abs(during.x - (before.x + 60))).toBeLessThan(3);
+    expect(Math.abs(during.y - (before.y + 30))).toBeLessThan(3);
+    await page.mouse.up();
+
+    // Local graph of the icon page: its emoji sits in the middle.
+    await page.goto(`/#/${rocket!.id}`);
+    await page.getByTestId('local-graph-toggle').click();
+    const local = page.getByTestId('local-graph-canvas');
+    await expect(local).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+    await page.waitForTimeout(800);
+    const centre = (await probeNodes(page, 'local-graph-canvas')).find((n) => n.id === rocket!.id)!;
+    expect(await colourfulPixels(page, 'local-graph-canvas', centre.x, centre.y, centre.r)).toBeGreaterThan(30);
+  });
+});

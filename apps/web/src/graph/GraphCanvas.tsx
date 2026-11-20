@@ -29,6 +29,7 @@ import {
   type AlphaForce,
   type FitItem,
 } from "./graph-interaction.js";
+import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 
 export type CanvasNode = GraphNode | GhostNode;
 
@@ -54,6 +55,8 @@ interface ThemeColors {
   text: string;
   muted: string;
   panel: string;
+  /** Canvas background (`--bg`). */
+  bg: string;
   accent: string;
   border: string;
   /** Untagged pages (`--graph-page`). */
@@ -67,6 +70,7 @@ const FALLBACK_COLORS: ThemeColors = {
   text: "#26251f",
   muted: "#6f6d65",
   panel: "#ffffff",
+  bg: "#f7f6f3",
   accent: "#4f46e5",
   border: "#e6e4dd",
   page: PAGE_NODE_COLOR,
@@ -102,6 +106,7 @@ function readThemeColors(): ThemeColors {
     text: read("text"),
     muted: read("muted"),
     panel: read("panel"),
+    bg: read("bg"),
     accent: read("accent"),
     border: read("border"),
     page: styles.getPropertyValue("--graph-page").trim() || PAGE_NODE_COLOR,
@@ -238,9 +243,11 @@ interface FitTarget {
 
 /** Per-node drawing data, computed once per data/theme change, not per frame. */
 interface NodeStyle {
-  /** Drawn radius in CSS px. */
+  /** Drawn radius in CSS px (half the emoji size for icon nodes). */
   radius: number;
   ghost: boolean;
+  /** Pre-rendered page icon (#emmyabbj); drawn instead of the dot. */
+  emoji: HTMLCanvasElement | null;
   /** Fill colour (pages only). */
   fill: string;
   /** Truncated label text. */
@@ -348,9 +355,15 @@ export function GraphCanvas({
       const truncated = title.length > MAX_LABEL_CHARS;
       const label = truncated ? `${title.slice(0, MAX_LABEL_CHARS - 1)}…` : title;
       const detail = ghost ? ghostDetail(node as GhostNode) : nodeDetail(node as GraphNode);
+      const dotRadius = nodeRadius(countOf(node), maxCount);
+      const icon = ghost ? null : normaliseIcon((node as GraphNode).icon);
+      const emoji = icon ? emojiSprite(icon) : null;
       styles.set(node.id, {
-        radius: nodeRadius(countOf(node), maxCount),
+        // An emoji node is a bit bigger than its dot so the icon reads, and
+        // still grows with links; picking, rings, labels and fit use it.
+        radius: emoji ? emojiNodeSize(dotRadius) / 2 : dotRadius,
         ghost,
+        emoji,
         fill: ghost ? "" : nodeColor(node as GraphNode, colors.palette, colors.page),
         label,
         labelWidth: measureLabel(label),
@@ -678,10 +691,15 @@ export function GraphCanvas({
         const outlines = new Path2D();
         const ghosts = new Path2D();
         let ghostCount = 0;
+        const emojis: Array<[number, number, number, HTMLCanvasElement]> = [];
         for (const [node, style] of items) {
           const x = node.x as number;
           const y = node.y as number;
           const r = style.radius / k;
+          if (style.emoji) {
+            emojis.push([x, y, r, style.emoji]);
+            continue;
+          }
           if (style.ghost) {
             ghosts.moveTo(x + r, y);
             ghosts.arc(x, y, r, 0, Math.PI * 2);
@@ -713,6 +731,23 @@ export function GraphCanvas({
           ctx.strokeStyle = colors.muted;
           ctx.stroke(ghosts);
           ctx.setLineDash([]);
+        }
+        // Page icons: one drawImage of a cached sprite each, no text shaping.
+        if (emojis.length > 0) {
+          // A disc in the canvas colour first, so link ends don't show
+          // through thin or transparent glyphs (🕸, ✈️ …).
+          const backs = new Path2D();
+          for (const [x, y, r] of emojis) {
+            backs.moveTo(x + r * 0.85, y);
+            backs.arc(x, y, r * 0.85, 0, Math.PI * 2);
+          }
+          ctx.fillStyle = colors.bg;
+          ctx.fill(backs);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          for (const [x, y, r, sprite] of emojis) {
+            ctx.drawImage(sprite, x - r, y - r, r * 2, r * 2);
+          }
         }
       };
       paintCircles(dimmedPass, 0.18);
