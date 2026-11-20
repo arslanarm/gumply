@@ -14,9 +14,14 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      // The API listens on loopback only (#rv57cvhm). Host and Origin are
-      // passed through (localhost:<web port>), which its guard accepts.
-      "/api": `http://127.0.0.1:${process.env.GUMPLY_PORT ?? 8787}`,
+      // The API listens on loopback only (#rv57cvhm). Keep the browser's Host
+      // (changeOrigin: false; the string shorthand would rewrite it): the
+      // API accepts writes whose Origin matches that Host (#kmff9wkt), so the
+      // app works on any Vite port and in `vite preview` without settings.
+      "/api": {
+        target: `http://127.0.0.1:${process.env.GUMPLY_PORT ?? 8787}`,
+        changeOrigin: false,
+      },
     },
   },
 });

@@ -67,8 +67,10 @@ export default defineConfig({
     stderr: 'pipe',
     env: {
       GUMPLY_PORT: String(API_PORT),
-      // The API accepts writes only from the web app's origin (#rv57cvhm).
-      GUMPLY_WEB_PORT: String(WEB_PORT),
+      // No GUMPLY_WEB_PORT (cleared: the harness itself reads it for the Vite
+      // port): the app is recognised same-origin through the Vite proxy on any
+      // port (#kmff9wkt), which the whole suite exercises.
+      GUMPLY_WEB_PORT: '',
       GUMPLY_VAULT: E2E_VAULT,
       // The suite starts from an empty vault unless a test opts into first-run
       // seeding; server-side demo seeding is covered by its own unit tests.
