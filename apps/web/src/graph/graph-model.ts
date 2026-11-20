@@ -147,9 +147,13 @@ export function filterGraph(model: GraphModel, filter: GraphFilter = {}): Filter
   );
   const visiblePages = new Set(nodes.map((node) => node.id));
 
-  const ghosts = model.ghosts.filter(
-    (ghost) => matchesText(ghost.title) && ghost.sources.some((source) => visiblePages.has(source)),
-  );
+  const ghosts = model.ghosts.filter((ghost) => {
+    if (!matchesText(ghost.title)) return false;
+    // A text query matches ghost titles independently of their sources (spec/ux
+    // §9: only a tag filter hides a ghost when all sources are filtered out).
+    if (selected.size === 0) return true;
+    return ghost.sources.some((source) => visiblePages.has(source));
+  });
   const visibleIds = new Set<string>([...visiblePages, ...ghosts.map((ghost) => ghost.id)]);
 
   return {

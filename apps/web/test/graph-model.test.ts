@@ -131,6 +131,14 @@ describe("filterGraph", () => {
     expect(filtered.links).toEqual([]);
   });
 
+  it("matches ghost titles even when no source page title matches", () => {
+    const filtered = filterGraph(model(), { query: "missing home" });
+    expect(filtered.nodes).toEqual([]);
+    expect(filtered.ghosts.map((ghost) => ghost.title)).toEqual(["Missing Home"]);
+    // No visible source, so no edge is drawn to the isolated ghost.
+    expect(filtered.links).toEqual([]);
+  });
+
   it("hides ghosts whose source pages are excluded by a tag filter", () => {
     const filtered = filterGraph(model(), { tags: ["work"] });
     expect(filtered.nodes.map((node) => node.id)).toEqual(["a"]);
