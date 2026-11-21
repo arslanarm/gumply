@@ -48,7 +48,8 @@ describe("daily notes", () => {
     const made = (await (await daily(app, "2026-03-06")).json()) as { page: PageMeta };
     expect(made.page).toMatchObject({ id: "Journal/2026/03/06 Fri", tags: ["journal"] });
     expect(await readFile(join(dir, "Journal/2026/03/06 Fri.md"), "utf8")).toBe(
-      "---\ntags: [journal]\nmood: # how was it\n---\n# 06 Fri\n\nWritten on 06.03.2026, a Friday.\n",
+      // A bare {{date}} uses the daily-note format, as Obsidian's Daily notes plugin does.
+      "---\ntags: [journal]\nmood: # how was it\n---\n# 06 Fri\n\nWritten on 2026/03/06 Fri, a Friday.\n",
     );
     expect(await readdir(join(dir, ".obsidian"))).toEqual(before);
     // An Obsidian settings file without a folder means the vault root.
@@ -121,4 +122,22 @@ describe("page templates", () => {
     const busy = await jsonRequest(app, "POST", `/api/pages/${encodeId("Notes")}/template`, { template: "Templates/Meeting" });
     expect(busy.status).toBe(409);
   });
+
 });
+
+describe("{{date}} in daily notes vs other templates (@opus-hunter's real-Obsidian check)", () => {
+  it("a daily note's bare {{date}} uses the daily format; a page from the same template uses the templates dateFormat", async () => {
+    const { app, dir, store } = await createTestServer();
+    await write(dir, {
+      ".obsidian/templates.json": JSON.stringify({ folder: "Tpl", dateFormat: "DD.MM.YYYY", timeFormat: "HH:mm" }),
+      ".obsidian/daily-notes.json": JSON.stringify({ folder: "Journal", format: "YYYY-MM-DD", template: "Tpl/Daily" }),
+      "Tpl/Daily.md": "Logged {{date}}. Weekday: {{date:dddd}}.\n",
+    });
+    await store.rescan();
+    await daily(app, "2026-11-21");
+    expect(await readFile(join(dir, "Journal/2026-11-21.md"), "utf8")).toBe("Logged 2026-11-21. Weekday: Saturday.\n");
+    const page = (await createPage(app, { title: "Elsewhere", template: "Tpl/Daily" } as never)) as { content: string };
+    expect(page.content).toMatch(/^Logged \d{2}\.\d{2}\.\d{4}\. Weekday: [A-Z][a-z]+day\.$/);
+  });
+});
+

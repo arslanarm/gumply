@@ -44,8 +44,15 @@ test.describe('page templates (v0.7 C)', () => {
     await page.goto('/#/Inbox');
     await openSearch(page);
     await page.getByTestId('quick-switcher-input').fill('template');
-    // Both commands are offered: the page and the board template.
+    // Both commands are offered (the page and the board template), ranked
+    // above "Create “template”" because the query names them.
     await expect(page.getByTestId('search-from-template')).toBeVisible();
+    const order = await page
+      .getByTestId('quick-switcher')
+      .getByRole('option')
+      .evaluateAll((options) => options.map((option) => option.getAttribute('data-testid')));
+    expect(order.indexOf('search-page-template')).toBeLessThan(order.indexOf('search-create'));
+    expect(order.indexOf('search-from-template')).toBeLessThan(order.indexOf('search-create'));
     await page.getByTestId('search-page-template').click();
     const picker = page.getByTestId('template-picker');
     await expect(picker.getByRole('option')).toHaveText(['Meeting']);

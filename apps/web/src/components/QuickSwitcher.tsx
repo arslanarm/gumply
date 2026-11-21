@@ -116,16 +116,13 @@ export function QuickSwitcher({
     onOpenToday ? sections.today : null,
     onOpenLanguage ? sections.language : null,
   ].filter((row): row is SearchRow => row !== null);
-  const rows: SearchRow[] =
-    needle.length > 0
-      ? [
-          ...sections.pages,
-          ...sections.text,
-          ...(sections.create ? [sections.create] : []),
-          ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
-          ...commandRows,
-        ]
-      : recents;
+  // Typing an action's name ranks it above "Create “…”" (#5hrsrqsj review).
+  const createRows = [
+    ...(sections.create ? [sections.create] : []),
+    ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
+  ];
+  const tailRows = [...commandRows, ...createRows];
+  const rows: SearchRow[] = needle.length > 0 ? [...sections.pages, ...sections.text, ...tailRows] : recents;
 
   useActiveOptionVisible(listRef, index, rows.length);
 
@@ -340,16 +337,7 @@ export function QuickSwitcher({
                 </p>
               ) : null}
               {searching ? <p className="quick-switcher-empty">{t("search.searching")}</p> : null}
-              {sections.create
-                ? renderRow(sections.create, sections.pages.length + sections.text.length)
-                : null}
-              {sections.createBoard && onCreateBoard
-                ? renderRow(
-                    sections.createBoard,
-                    sections.pages.length + sections.text.length + (sections.create ? 1 : 0),
-                  )
-                : null}
-              {commandRows.map((row, commandIndex) => renderRow(row, rows.length - commandRows.length + commandIndex))}
+              {tailRows.map((row, tailIndex) => renderRow(row, sections.pages.length + sections.text.length + tailIndex))}
             </>
           )}
         </div>

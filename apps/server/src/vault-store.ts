@@ -2202,13 +2202,17 @@ export class VaultStore {
     return this.enqueue(() => this.dailyNoteNow(day));
   }
 
-  /** A template page's file with its variables filled (whole file, frontmatter included). */
-  private async renderTemplateFile(templateId: string, title: string, now: Date): Promise<string> {
+  /**
+   * A template page's file with its variables filled (whole file, frontmatter
+   * included). `dateFormat` overrides the Templates setting: Obsidian's Daily
+   * notes plugin fills a bare `{{date}}` with the daily-note format.
+   */
+  private async renderTemplateFile(templateId: string, title: string, now: Date, dateFormat?: string): Promise<string> {
     const record = this.pages.get(this.resolveId(templateId));
     if (!record || record.kind !== "page") throw notFound(`Template not found: ${templateId}`);
     const settings = await readTemplateSettings(this.root);
     const raw = (await readFile(record.filePath, "utf8")).replace(/^\uFEFF/, "");
-    return renderTemplate(raw, { title, now, dateFormat: settings.dateFormat, timeFormat: settings.timeFormat });
+    return renderTemplate(raw, { title, now, dateFormat: dateFormat ?? settings.dateFormat, timeFormat: settings.timeFormat });
   }
 
   /**
@@ -2265,7 +2269,8 @@ export class VaultStore {
     let text = "";
     if (settings.template) {
       try {
-        text = await this.renderTemplateFile(settings.template, name, at);
+        // As Obsidian's Daily notes plugin: a bare {{date}} uses the daily-note format.
+        text = await this.renderTemplateFile(settings.template, name, at, settings.format);
       } catch {
         // A missing daily template makes an empty note, as in Obsidian.
       }
