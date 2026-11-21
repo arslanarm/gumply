@@ -126,6 +126,11 @@ test('a Russian first run seeds the demo in Russian (#93yv3ban)', async ({ page,
   // The interface language is Russian before the first list of pages.
   await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
   await page.goto('/');
+  // Right after a server restart the first load also seeds and fetches the
+  // Russian chunk; under a full suite's load that can take more than 5 s.
+  await expect(page.getByTestId('page-title').or(page.getByTestId('page-title-input')).first()).toBeVisible({
+    timeout: 20_000,
+  });
   await expectPageTitle(page, 'Добро пожаловать');
   await expect(page.getByTestId('editor-content')).toContainText('Gumply — спокойное место для заметок');
   await expect(page.getByTestId('page-item-Демо Gumply')).toBeVisible();
