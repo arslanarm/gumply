@@ -71,10 +71,15 @@ export function imageOf(row: BaseRow, view: BaseView): { url?: string; color?: s
   if (/^#[0-9a-f]{3,8}$/i.test(text)) return { color: text };
   if (/^https?:\/\//i.test(text)) return { url: text };
   const wiki = /^!?\[\[([^\]|#]+)/.exec(text);
-  const path = (wiki ? wiki[1]! : text).trim();
-  if (!/\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(path)) return null;
-  // A bare name is looked up in attachments/ (where Gumply keeps images, D18).
-  return { url: fileUrl(path.includes("/") ? path : `attachments/${path}`) };
+  const link = (wiki ? wiki[1]! : text).trim();
+  if (!/\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(link)) return null;
+  // #8k4ssrkb: the server resolved it across the vault, from this row's page.
+  if (row.files && Object.hasOwn(row.files, link)) {
+    const path = row.files[link];
+    return path ? { url: fileUrl(path) } : null;
+  }
+  // A plain vault path (not a wikilink) is used as written.
+  return wiki ? null : { url: fileUrl(link) };
 }
 
 /**

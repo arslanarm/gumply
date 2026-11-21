@@ -11,6 +11,8 @@ export interface WikiLinkEnvironment {
   pageId: string;
   pages: readonly PageMeta[];
   attachments: readonly Attachment[];
+  /** #8k4ssrkb: the open page's Obsidian file links, resolved by the server. */
+  fileLinks?: Readonly<Record<string, string | null>>;
   openLink: (link: { targetTitle: string; heading: string }) => void;
   createLink: (title: string) => void;
   /** Show an error in the page's action banner (e.g. "Save to vault" failed). */

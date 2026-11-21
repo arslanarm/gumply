@@ -390,6 +390,17 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<Attachment[]>(await listAttachments(store.root));
   });
 
+  // #8k4ssrkb (spec/api-attachments-resolve): an Obsidian-style file link
+  // typed after the page loaded. `from` is the note holding the link; an
+  // unknown one resolves as from the vault root. Only linkable files come back
+  // (allowlisted extensions, never dot folders); they're served by /files.
+  api.get("/files/resolve", (c) => {
+    const link = c.req.query("link") ?? "";
+    if (!link.trim() || link.length > 1024) throw badRequest("link is required");
+    const from = c.req.query("from");
+    return c.json<{ path: string | null }>({ path: store.resolveFileLink(link, from && from.length <= 1024 ? from : null) });
+  });
+
   api.get("/files/*", async (c) => {
     const prefix = "/api/files/";
     const raw = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";

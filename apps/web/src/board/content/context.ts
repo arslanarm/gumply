@@ -8,6 +8,9 @@ export interface BoardContent {
   openFile: (path: string) => void;
   /** The Markdown body of a page (for live page cards); null when unavailable. */
   loadPage?: (path: string) => Promise<string | null>;
+  /** #8k4ssrkb: the board's id and its resolved Obsidian file links (`![[x.png]]` in text). */
+  boardId?: string;
+  fileLinks?: Readonly<Record<string, string | null>>;
 }
 
 export const BoardContentContext = createContext<BoardContent>({ pages: [], openFile: () => {} });

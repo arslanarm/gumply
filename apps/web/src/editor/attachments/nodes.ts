@@ -9,7 +9,7 @@ import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { FileAttachmentView } from "../../components/FileAttachmentView.js";
 import { ImageBlockView } from "../../components/ImageBlockView.js";
-import { hrefForAttachment } from "../../lib/attachment-links.js";
+import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 
 /** Original Obsidian syntax, kept so an untouched embed is written back as-is. */
@@ -87,7 +87,8 @@ export const ImageBlock = Node.create({
           const title = String(node.attrs.title ?? "");
           // An Obsidian embed that gained a caption becomes standard Markdown,
           // with a note-relative link (its `src` is the vault path).
-          const href = node.attrs.obsidian ? hrefForAttachment(src) : src;
+          // #8k4ssrkb: the file it resolves to, wherever it lives (else the old guess).
+          const href = node.attrs.obsidian ? hrefForAttachment(obsidianVaultPath(node.attrs.obsidian as string) ?? src) : src;
           const escaped = href.replace(/[()]/g, "\\$&");
           state.write(
             `![${state.esc(alt)}](${escaped}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`,
