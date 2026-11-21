@@ -714,6 +714,8 @@ export class VaultStore {
     return JSON.stringify([
       record.kind,
       record.board ? serializeCanvas(record.board) : null,
+      // A base's file text: an edit made outside Gumply is a change (#armmzdrx).
+      record.baseSource ?? null,
       record.title,
       record.icon ?? null,
       record.content,
