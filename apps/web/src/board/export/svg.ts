@@ -16,6 +16,8 @@
  * Coordinates are CSS pixels relative to `origin` (the stage's top-left).
  */
 
+import { isVisible, paint } from "./color.js";
+
 export interface SvgOptions {
   /** Top-left of the exported area, in client coordinates. */
   origin: { x: number; y: number };
@@ -57,18 +59,7 @@ const num = (value: number): string => {
   return Object.is(rounded, -0) ? "0" : String(rounded);
 };
 
-/** `rgb(…)`/`rgba(…)` → alpha (1 when opaque or unknown). */
-function alphaOf(color: string): number {
-  if (color === "transparent") return 0;
-  const match = /rgba?\(([^)]+)\)/.exec(color);
-  if (!match) return 1;
-  const parts = match[1]!.split(/[\s,/]+/).filter(Boolean);
-  if (parts.length < 4) return 1;
-  const alpha = parts[3]!;
-  return alpha.endsWith("%") ? Number.parseFloat(alpha) / 100 : Number.parseFloat(alpha);
-}
-
-const visibleColor = (color: string): boolean => color !== "" && color !== "none" && alphaOf(color) > 0;
+const visibleColor = isVisible;
 
 function skipElement(element: Element): boolean {
   const classes = element.classList;
@@ -100,7 +91,8 @@ export function parseBoxShadow(value: string): Shadow[] {
   // Split on commas outside parentheses.
   for (const part of value.split(/,(?![^(]*\))/)) {
     if (/\binset\b/.test(part)) continue;
-    const color = /(rgba?\([^)]*\)|#[0-9a-f]+|[a-z]+(?=\s|$))/i.exec(part)?.[1] ?? "rgba(0, 0, 0, 0.2)";
+    const color =
+      /((?:rgba?|color|oklch|oklab|lab|lch|hsla?|hwb)\([^)]*\)|#[0-9a-f]+|[a-z]+(?=\s|$))/i.exec(part)?.[1] ?? "rgba(0, 0, 0, 0.2)";
     const lengths = part.replace(color, "").match(/-?[\d.]+px|\b0\b/g)?.map((item) => Number.parseFloat(item)) ?? [];
     if (lengths.length < 2 || !visibleColor(color)) continue;
     shadows.push({ color, x: lengths[0]!, y: lengths[1]!, blur: lengths[2] ?? 0 });
@@ -121,7 +113,7 @@ function emitShadows(out: Output, value: string, x: number, y: number, width: nu
       const grow = shadow.blur <= 0 ? 0 : (shadow.blur / 2) * ((layer + 1) / LAYERS) - shadow.blur / 4;
       const corner = rx > 0 || grow > 0 ? ` rx="${num(Math.max(0, rx + grow))}" ry="${num(Math.max(0, ry + grow))}"` : "";
       out.body.push(
-        `<rect x="${num(x + shadow.x - grow)}" y="${num(y + shadow.y - grow)}" width="${num(width + grow * 2)}" height="${num(height + grow * 2)}"${corner} fill="${shadow.color}" fill-opacity="${num(shadow.blur <= 0 ? 1 : 1 / LAYERS + 0.15)}"/>`,
+        `<rect x="${num(x + shadow.x - grow)}" y="${num(y + shadow.y - grow)}" width="${num(width + grow * 2)}" height="${num(height + grow * 2)}"${corner}${paint("fill", shadow.color, shadow.blur <= 0 ? 1 : 1 / LAYERS + 0.15)}/>`,
       );
       if (shadow.blur <= 0) break;
     }
@@ -138,7 +130,7 @@ function emitBox(out: Output, style: CSSStyleDeclaration, box: DOMRect, origin: 
   const background = style.backgroundColor;
   if (visibleColor(background)) {
     if (style.boxShadow && style.boxShadow !== "none") emitShadows(out, style.boxShadow, x, y, box.width, box.height, rx, ry);
-    out.body.push(`<rect x="${num(x)}" y="${num(y)}" width="${num(box.width)}" height="${num(box.height)}"${corners} fill="${background}"/>`);
+    out.body.push(`<rect x="${num(x)}" y="${num(y)}" width="${num(box.width)}" height="${num(box.height)}"${corners}${paint("fill", background)}/>`);
   }
   const sides = [
     [style.borderTopWidth, style.borderTopColor, style.borderTopStyle],
@@ -156,7 +148,7 @@ function emitBox(out: Output, style: CSSStyleDeclaration, box: DOMRect, origin: 
     const half = first.width / 2;
     const inner = rx > 0 ? ` rx="${num(Math.max(0, rx - half))}" ry="${num(Math.max(0, ry - half))}"` : "";
     out.body.push(
-      `<rect x="${num(x + half)}" y="${num(y + half)}" width="${num(box.width - first.width)}" height="${num(box.height - first.width)}"${inner} fill="none" stroke="${first.color}" stroke-width="${num(first.width)}"${dash(first.kind, first.width)}/>`,
+      `<rect x="${num(x + half)}" y="${num(y + half)}" width="${num(box.width - first.width)}" height="${num(box.height - first.width)}"${inner} fill="none"${paint("stroke", first.color)} stroke-width="${num(first.width)}"${dash(first.kind, first.width)}/>`,
     );
     return;
   }
@@ -170,7 +162,7 @@ function emitBox(out: Output, style: CSSStyleDeclaration, box: DOMRect, origin: 
     if (!drawn[index]) return;
     const [x1, y1, x2, y2] = lines[index]!;
     out.body.push(
-      `<line x1="${num(x1!)}" y1="${num(y1!)}" x2="${num(x2!)}" y2="${num(y2!)}" stroke="${side.color}" stroke-width="${num(side.width)}"${dash(side.kind, side.width)}/>`,
+      `<line x1="${num(x1!)}" y1="${num(y1!)}" x2="${num(x2!)}" y2="${num(y2!)}"${paint("stroke", side.color)} stroke-width="${num(side.width)}"${dash(side.kind, side.width)}/>`,
     );
   });
 }
@@ -287,7 +279,7 @@ function emitText(out: Output, node: Text, style: CSSStyleDeclaration, origin: S
   const spacing = style.letterSpacing && style.letterSpacing !== "normal" ? ` letter-spacing="${style.letterSpacing}"` : "";
   const italic = style.fontStyle !== "normal";
   if (italic) out.italic = true;
-  const attributes = `font-family="${family}" font-size="${style.fontSize}" font-weight="${style.fontWeight}"${italic ? ` font-style="${style.fontStyle}"` : ""} fill="${style.color}"${decoration}${spacing}`;
+  const attributes = `font-family="${family}" font-size="${style.fontSize}" font-weight="${style.fontWeight}"${italic ? ` font-style="${style.fontStyle}"` : ""}${paint("fill", style.color)}${decoration}${spacing}`;
   for (const line of lines) {
     const text = xmlSafe(line.text);
     if (!text.trim()) continue;
@@ -362,16 +354,14 @@ function emitSvgShape(
   const f = matrix.f - origin.y;
   const transform = `matrix(${num(matrix.a)} ${num(matrix.b)} ${num(matrix.c)} ${num(matrix.d)} ${num(e)} ${num(f)})`;
   attributes.push(`transform="${transform}"`);
-  attributes.push(`fill="${hasFill ? fill : "none"}"`);
-  if (hasFill && fillOpacity < 1) attributes.push(`fill-opacity="${num(fillOpacity)}"`);
+  attributes.push(hasFill ? paint("fill", fill, fillOpacity).trim() : 'fill="none"');
   if (hasFill && style.fillRule === "evenodd") attributes.push('fill-rule="evenodd"');
   if (hasStroke) {
     // Non-scaling strokes are as wide on screen as their stroke-width: keep
     // that width once the transform scales the shape.
     const scale = Math.sqrt(Math.abs(matrix.a * matrix.d - matrix.b * matrix.c)) || 1;
     const width = style.vectorEffect === "non-scaling-stroke" ? strokeWidth / scale : strokeWidth;
-    attributes.push(`stroke="${stroke}"`, `stroke-width="${num(width)}"`);
-    if (strokeOpacity < 1) attributes.push(`stroke-opacity="${num(strokeOpacity)}"`);
+    attributes.push(paint("stroke", stroke, strokeOpacity).trim(), `stroke-width="${num(width)}"`);
     if (style.strokeLinecap !== "butt") attributes.push(`stroke-linecap="${style.strokeLinecap}"`);
     if (style.strokeLinejoin !== "miter") attributes.push(`stroke-linejoin="${style.strokeLinejoin}"`);
     if (style.strokeDasharray && style.strokeDasharray !== "none") {
@@ -484,7 +474,7 @@ export async function elementToSvg(
   ];
   const defs = [...(fontCss ? [`<style>${fontCss}</style>`] : []), ...out.defs];
   if (defs.length > 0) parts.push(`<defs>${defs.join("")}</defs>`);
-  if (options.background) parts.push(`<rect width="100%" height="100%" fill="${options.background}"/>`);
+  if (options.background && isVisible(options.background)) parts.push(`<rect width="100%" height="100%"${paint("fill", options.background)}/>`);
   parts.push(...out.body.filter((line) => line !== ""), "</svg>");
   return { svg: parts.join("\n"), text, italic: out.italic };
 }

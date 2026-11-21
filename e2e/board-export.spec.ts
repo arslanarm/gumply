@@ -282,6 +282,58 @@ test.describe('board export (#yewapn9k)', () => {
     await expect(page.getByTestId('board-export-selection')).toBeDisabled();
   });
 
+  test('SVG colours work outside browsers: default frames are not black in librsvg', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Notes', content: 'Hello' }]);
+    // Default (uncoloured) frames use color-mix(), which computes to color(srgb …).
+    const nodes: Item[] = [
+      { id: 'frame000000000001', type: 'group', x: 0, y: 0, width: 300, height: 300, label: 'Monday' },
+      { id: 'frame000000000002', type: 'group', x: 340, y: 0, width: 300, height: 300, label: 'Tuesday' },
+      { id: 'sticky0000000001', type: 'text', text: 'Task', gumply: { kind: 'sticky' }, x: 20, y: 20, width: 120, height: 80 },
+    ];
+    const id = await makeBoard(request, 'Plain frames', nodes);
+    for (const theme of ['light', 'dark'] as const) {
+      // Same URL twice doesn't reload: leave the page so the theme applies.
+      await page.goto('about:blank');
+      await openAligned(page, id, 0, 0, theme);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      for (const transparent of [false, true]) {
+        const svg = (await downloaded(await exportBoard(page, 'svg', { transparent }))).toString('utf8');
+        validSvg(svg);
+        // Only SVG 1.1 colour syntax: no CSS Color 4 functions, no rgba().
+        const body = svg.replace(/<style>[\s\S]*?<\/style>/, '');
+        expect(body).not.toMatch(/color\(|color-mix\(|oklch\(|oklab\(|\blab\(|\blch\(|rgba\(/);
+        expect(body).toMatch(/fill="rgb\(\d+, \d+, \d+\)" fill-opacity="0\.\d+"/);
+
+        let rendered: Buffer | null = null;
+        try {
+          rendered = execFileSync('rsvg-convert', ['-z', '1'], { input: svg, maxBuffer: 64 * 1024 * 1024 });
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'ENOENT') throw error;
+        }
+        if (!rendered) continue;
+        // Inside the Tuesday frame (empty): what librsvg drew vs. the board surface.
+        const pixel = await page.evaluate(async (data) => {
+          const image = new Image();
+          image.src = `data:image/png;base64,${data}`;
+          await image.decode();
+          const canvas = document.createElement('canvas');
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context = canvas.getContext('2d')!;
+          context.drawImage(image, 0, 0);
+          return Array.from(context.getImageData(32 + 490, 32 + 200, 1, 1).data);
+        }, rendered.toString('base64'));
+        if (transparent) {
+          // A ~4% tint over nothing: almost fully see-through, never a black slab.
+          expect(pixel[3]).toBeLessThan(40);
+        } else {
+          const surface = theme === 'light' ? [251, 251, 250] : [22, 22, 22];
+          for (let index = 0; index < 3; index += 1) expect(Math.abs(pixel[index]! - surface[index]!)).toBeLessThan(16);
+        }
+      }
+    }
+  });
+
   // The spec's 3 s is measured on a production build: scripts/export-perf.mjs
   // (--check). This dev-server run guards against regressions (before batched
   // text fitting it took ~7 s) without flaking when the machine is busy.
