@@ -11,6 +11,7 @@
  * built-in taskList/taskItem `updateDOM` (lower extension priority).
  */
 import { Extension } from "@tiptap/core";
+import { GAP_ATTR, LOOSE_JOIN_ATTR } from "./raw-markdown/list-source.js";
 
 function isTaskItem(item: Element): boolean {
   return item.getAttribute("data-type") === "taskItem";
@@ -40,10 +41,15 @@ function splitList(list: Element): void {
       clone.classList.remove("contains-task-list");
     }
     for (const item of group.items) clone.appendChild(item);
-    // The blank line that made markdown-it see one loose list sits between
-    // the groups; a group whose items are single paragraphs is tight.
+    // A group is tight when its items are single paragraphs with no blank
+    // line between them in the source (#fmmght8w); a blank line before the
+    // group's first item is kept as a loose join to the previous group.
     const single = group.items.every((item) => item.querySelectorAll(":scope > p").length <= 1);
-    if (single) clone.setAttribute("data-tight", "true");
+    const gapless = group.items.slice(1).every((item) => !item.hasAttribute(GAP_ATTR));
+    if (single && gapless) clone.setAttribute("data-tight", "true");
+    else clone.removeAttribute("data-tight");
+    if (group !== groups[0] && group.items[0]!.hasAttribute(GAP_ATTR)) clone.setAttribute(LOOSE_JOIN_ATTR, "loose");
+    else clone.removeAttribute(LOOSE_JOIN_ATTR);
     fragment.appendChild(clone);
   }
   list.replaceWith(fragment);

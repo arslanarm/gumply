@@ -27,6 +27,7 @@
 
 import { calloutRule, installCalloutRenderer } from "../callout/markdown.js";
 import { markupRule } from "./markup.js";
+import { listSourceRule } from "./list-source.js";
 import { inlineImageRule } from "../attachments/inline-image.js";
 
 export const RAW_BLOCK_ATTR = "data-raw-md";
@@ -394,6 +395,7 @@ export function rawMarkdownPlugin(md: any): void {
   md.core.ruler.after("block", "gumply_callouts", calloutRule);
   md.core.ruler.after("gumply_callouts", "gumply_raw_blocks", rawBlocksRule);
   md.core.ruler.after("gumply_raw_blocks", "gumply_markup", markupRule);
+  md.core.ruler.after("gumply_markup", "gumply_list_source", listSourceRule);
   md.core.ruler.after("inline", "gumply_break_style", breakStyleRule);
   md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
   if (md.core.ruler.__find__("text_join") !== -1) {

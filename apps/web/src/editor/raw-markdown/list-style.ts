@@ -66,14 +66,30 @@ function styleOf(editor: Editor): ListStyle {
   return storage.markdownListStyle?.style ?? DEFAULT_LIST_STYLE;
 }
 
+const HALVES = new Set(["bulletList", "taskList"]);
+
 /**
  * prosemirror-markdown puts two blank lines between adjacent lists of the
  * same type (an old CommonMark idiom). Adjacent lists here always differ in
  * marker, so the usual single blank line keeps them apart.
+ *
+ * A bullet list next to a task list is one Markdown list split in two (plain
+ * and to-do items): when both are tight and no blank line separated them in
+ * the source, they are written as one tight list (#fmmght8w).
  */
 export function separateFromPreviousList(state: ListSerializerState, node: PMNode): void {
   const closed = state.closed as PMNode | null | undefined;
-  if (closed && closed.type === node.type) state.flushClose(2);
+  if (!closed) return;
+  if (closed.type === node.type) state.flushClose(2);
+  else if (
+    HALVES.has(closed.type.name) &&
+    HALVES.has(node.type.name) &&
+    closed.attrs.tight !== false &&
+    node.attrs.tight !== false &&
+    !node.attrs.markdownLooseJoin
+  ) {
+    state.flushClose(1);
+  }
 }
 
 const MARKERS = new Set(["-", "*", "+"]);
