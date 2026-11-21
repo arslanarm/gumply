@@ -93,14 +93,18 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseId, active?.name, doc.meta.updated, doc.error]);
 
-  // …and again, debounced, when pages in the vault changed.
+  // …and again, debounced, when pages in the vault changed. Through a ref:
+  // the timer must run the view open when it fires, not the one open when
+  // the pages changed (a tab switch in between would show the old view).
+  const loadRef = useRef(load);
+  loadRef.current = load;
   const firstRefresh = useRef(true);
   useEffect(() => {
     if (firstRefresh.current) {
       firstRefresh.current = false;
       return;
     }
-    const timer = window.setTimeout(() => void load(), 250);
+    const timer = window.setTimeout(() => void loadRef.current(), 250);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.refreshKey]);
