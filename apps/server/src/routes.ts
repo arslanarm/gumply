@@ -104,11 +104,13 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   api.post("/pages", async (c) => {
     const body = await readJson(c);
+    const template = optionalString(body, "template");
     const page = await store.create({
       title: typeof body.title === "string" ? body.title : "",
       parentId: parentIdValue(body) ?? null,
       content: optionalString(body, "content") ?? "",
       icon: optionalString(body, "icon"),
+      ...(template !== undefined ? { template } : {}),
     });
     return c.json<Page>(page, 201);
   });
@@ -163,6 +165,26 @@ export function createApiRoutes(store: VaultStore): Hono {
   });
 
   api.delete("/trash", async (c) => c.json({ deleted: await store.emptyTrash() }));
+
+  // --- templates and daily notes (v0.7 C, spec/api-templates) ---
+  api.get("/templates", async (c) => c.json(await store.listTemplates()));
+
+  api.post("/pages/:id/template", async (c) => {
+    const body = await readJson(c);
+    const template = optionalString(body, "template");
+    if (!template) throw badRequest("template is required");
+    return c.json<Page>(await store.applyTemplate(c.req.param("id"), template));
+  });
+
+  api.get("/daily/settings", async (c) => c.json(await store.dailySettings()));
+
+  api.post("/daily", async (c) => {
+    const body = await readJson(c);
+    const date = optionalString(body, "date");
+    if (!date) throw badRequest("date is required (YYYY-MM-DD)");
+    const result = await store.dailyNote(date);
+    return c.json(result, result.created ? 201 : 200);
+  });
 
   api.post("/pages/:id/move", async (c) => {
     const body = await readJson(c);
