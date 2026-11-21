@@ -8,6 +8,7 @@
  * written back exactly where they were. Only an image alone in its paragraph
  * is an image block.
  */
+import { subscribeFileLinks } from "../../lib/file-links.js";
 import { Node, mergeAttributes } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { urlForLink } from "../../lib/attachment-links.js";
@@ -94,7 +95,8 @@ export const InlineImage = Node.create({
       dom.draggable = false;
       dom.referrerPolicy = "no-referrer";
       const render = () => {
-        dom.src = urlForLink(String(current.attrs.src), getWikiLinkEnvironment(), "image") ?? "";
+        dom.src =
+          urlForLink(String(current.attrs.src), getWikiLinkEnvironment(), "image", current.attrs.obsidian as string | null) ?? "";
         dom.alt = String(current.attrs.alt ?? "");
         if (current.attrs.title) dom.title = String(current.attrs.title);
         const width = obsidianWidth(current.attrs.obsidian as string | null);
@@ -102,7 +104,13 @@ export const InlineImage = Node.create({
         else dom.removeAttribute("width");
       };
       render();
-      const unsubscribe = subscribeWikiLinkEnvironment(render);
+      const unsubscribeEnv = subscribeWikiLinkEnvironment(render);
+      // A link typed after load resolves a moment later (#8k4ssrkb).
+      const unsubscribeLinks = subscribeFileLinks(render);
+      const unsubscribe = () => {
+        unsubscribeEnv();
+        unsubscribeLinks();
+      };
       return {
         dom,
         update(next: PMNode) {

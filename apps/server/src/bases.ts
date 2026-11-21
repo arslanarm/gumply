@@ -89,6 +89,18 @@ export class BaseQueries {
         return titles.get(clean.toLowerCase()) ?? null;
       },
     });
+    // #8k4ssrkb: a cover written as a wikilink resolves from its row's page.
+    const view = document.config.views.find((item) => item.name === result.view);
+    const imageId = typeof view?.image === "string" ? (view.image.includes(".") ? view.image : `note.${view.image}`) : null;
+    if (imageId) {
+      const pathOf = new Map(rows.map((row) => [row.id, row.file.path]));
+      for (const row of result.rows) {
+        let value = row.values[imageId];
+        if (Array.isArray(value)) value = value[0] ?? null;
+        const link = typeof value === "string" ? /^!?\[\[([^\]|#]+)/.exec(value.trim())?.[1]?.trim() : undefined;
+        if (link) row.files = { [link]: this.store.fileIndex.resolve(link, pathOf.get(row.id) ?? null) };
+      }
+    }
     result.properties = infos
       .map((info) => ({ id: `note.${info.key}`, type: info.type, count: info.count }))
       .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));

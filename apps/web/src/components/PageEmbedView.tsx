@@ -17,6 +17,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent,
 import { createPortal } from "react-dom";
 import { api, fileUrl } from "../api/client.js";
 import { safeWebUrl } from "../board/content/links.js";
+import { obsidianFileUrl, useFileLinkVersion } from "../lib/file-links.js";
 import { highlightToHtml } from "../editor/code/highlight-plugin.js";
 import { CHEVRON_ICON, calloutIcon, svgIcon } from "../editor/callout/types.js";
 import { renderEmbeddedMarkdown } from "../editor/page-embed/render.js";
@@ -29,14 +30,20 @@ import { Icon } from "./Icon.js";
 /** Previews inside previews go this deep, then show as links. */
 export const MAX_DEPTH = 3;
 
-const contentCache = new Map<string, Promise<string>>();
+interface Loaded {
+  content: string;
+  /** #8k4ssrkb: its Obsidian file links, resolved from the previewed page. */
+  fileLinks?: Record<string, string | null>;
+}
+
+const contentCache = new Map<string, Promise<Loaded>>();
 
 /** The page's Markdown body, fetched once per version (`id` + `updated`). */
-function loadContent(page: PageMeta): Promise<string> {
+function loadContent(page: PageMeta): Promise<Loaded> {
   const key = `${page.id}\u0000${page.updated}`;
   let pending = contentCache.get(key);
   if (!pending) {
-    pending = api.getPage(page.id).then((loaded) => loaded.content);
+    pending = api.getPage(page.id).then((loaded) => ({ content: loaded.content, ...(loaded.fileLinks ? { fileLinks: loaded.fileLinks } : {}) }));
     pending.catch(() => contentCache.delete(key));
     contentCache.set(key, pending);
     // Old versions of the same page aren't needed any more.
@@ -47,15 +54,22 @@ function loadContent(page: PageMeta): Promise<string> {
   return pending;
 }
 
-function usePageContent(page: PageMeta | null, enabled: boolean): { content: string | null; error: string | null } {
-  const [state, setState] = useState<{ key: string; content: string | null; error: string | null }>({ key: "", content: null, error: null });
+function usePageContent(
+  page: PageMeta | null,
+  enabled: boolean,
+): { content: string | null; fileLinks?: Record<string, string | null>; error: string | null } {
+  const [state, setState] = useState<{ key: string; content: string | null; fileLinks?: Record<string, string | null>; error: string | null }>({
+    key: "",
+    content: null,
+    error: null,
+  });
   const key = page ? `${page.id}\u0000${page.updated}` : "";
   useEffect(() => {
     if (!enabled || !page) return;
     let cancelled = false;
     loadContent(page)
-      .then((content) => {
-        if (!cancelled) setState({ key, content, error: null });
+      .then((loaded) => {
+        if (!cancelled) setState({ key, content: loaded.content, ...(loaded.fileLinks ? { fileLinks: loaded.fileLinks } : {}), error: null });
       })
       .catch((error: unknown) => {
         if (!cancelled) setState((previous) => ({ ...previous, key, error: errorMessage(error) }));
@@ -67,7 +81,7 @@ function usePageContent(page: PageMeta | null, enabled: boolean): { content: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, key]);
   // A new version keeps showing the previous content until it loads (no flicker).
-  return { content: state.content, error: state.key === key ? state.error : null };
+  return { content: state.content, fileLinks: state.fileLinks, error: state.key === key ? state.error : null };
 }
 
 /** `true` once the element comes within `margin` of the viewport (mounts lazily). */
@@ -114,7 +128,8 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
   const resolved = resolveWikilink(target, env.pages);
   const page = resolved && !isBoard(resolved) ? resolved : null;
   const loop = page ? chain.includes(page.id) : false;
-  const { content, error } = usePageContent(page, near && !loop);
+  const { content, fileLinks, error } = usePageContent(page, near && !loop);
+  const fileLinkVersion = useFileLinkVersion();
   const embedPart = useMemo(() => parseEmbedPart(part), [part]);
   const markdown = content === null ? null : embeddedMarkdown(content, embedPart);
   const html = useMemo(() => (markdown === null ? "" : renderEmbeddedMarkdown(markdown)), [markdown]);
@@ -129,6 +144,15 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
       return;
     }
     for (const image of Array.from(root.querySelectorAll("img"))) {
+      // #8k4ssrkb: an Obsidian embed resolves from the previewed page, not the open one.
+      const obsidianUrl = obsidianFileUrl(image.getAttribute("data-obsidian"), page.id, fileLinks);
+      if (obsidianUrl !== null) {
+        if (obsidianUrl) image.src = obsidianUrl;
+        else image.removeAttribute("src");
+        image.loading = "lazy";
+        image.referrerPolicy = "no-referrer";
+        continue;
+      }
       const src = image.getAttribute("src") ?? "";
       const vaultPath = /^https?:/i.test(src) ? null : resolveAttachmentHref(page.id, src) ?? null;
       const byName = vaultPath ? null : env.attachments.find((file) => file.name === src.split("/").pop());
@@ -171,7 +195,7 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
         part: element.dataset.part ?? "",
       })),
     );
-  }, [html, page, env.pages, env.attachments]);
+  }, [html, page, env.pages, env.attachments, fileLinks, fileLinkVersion]);
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     const element = event.target as HTMLElement;

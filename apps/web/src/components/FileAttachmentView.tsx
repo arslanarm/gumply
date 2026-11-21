@@ -1,5 +1,6 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { resolveLink, urlForLink } from "../lib/attachment-links.js";
+import { obsidianVaultPath, resolveLink, urlForLink } from "../lib/attachment-links.js";
+import { useFileLinkVersion } from "../lib/file-links.js";
 import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { fileExtension, formatFileSize } from "../lib/files.js";
 import { Icon } from "./Icon.js";
@@ -11,8 +12,11 @@ export function FileAttachmentView({ node, selected }: NodeViewProps) {
   const path = String(node.attrs.path ?? "");
   const name = String(node.attrs.name ?? path.split("/").pop() ?? "file");
   const env = useWikiLinkEnvironment();
+  useFileLinkVersion();
+  const obsidian = node.attrs.obsidian as string | null;
   // D23: `path` is the link as written; resolve it against the open page.
-  const vaultPath = resolveLink(path, env);
+  // #8k4ssrkb: an Obsidian link resolves across the vault instead.
+  const vaultPath = obsidianVaultPath(obsidian, env) ?? (obsidian ? null : resolveLink(path, env));
   const known = env.attachments.find((item) => item.path === vaultPath || item.name === name);
   const bytes = Number(node.attrs.size ?? 0) || known?.size || 0;
   const extension = fileExtension(name);
@@ -47,7 +51,7 @@ export function FileAttachmentView({ node, selected }: NodeViewProps) {
       <a
         className="file-card-link"
         // External cards open the URL itself; unsafe links get no href.
-        href={urlForLink(path, env, "file") ?? undefined}
+        href={urlForLink(path, env, "file", obsidian) ?? undefined}
         target="_blank"
         rel="noopener noreferrer"
         title={name}

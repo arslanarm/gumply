@@ -137,6 +137,8 @@ export interface BoardEditorControls {
 export interface BoardEditorProps {
   /** Used to remember the view (pan/zoom) per board. */
   boardId: string;
+  /** #8k4ssrkb: Obsidian file links in the board's text, resolved from the board. */
+  fileLinks?: Readonly<Record<string, string | null>>;
   /** The document as loaded. Later changes to this prop are ignored; use `replaceBoard`. */
   board: CanvasBoard;
   /** Called after every change with the new document. */
@@ -446,8 +448,9 @@ function BoardCanvas(props: BoardEditorProps) {
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const content = useMemo<BoardContent>(
-    () => ({ pages, openFile: onOpenFile ?? NO_OPEN, loadPage }),
-    [pages, onOpenFile, loadPage],
+    () => ({ pages, openFile: onOpenFile ?? NO_OPEN, loadPage, boardId: props.boardId, fileLinks: props.fileLinks }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pages, onOpenFile, loadPage, props.boardId, props.fileLinks],
   );
   const flow = useReactFlow<BoardFlowNode, BoardFlowEdge>();
   const rootRef = useRef<HTMLDivElement>(null);

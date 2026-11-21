@@ -54,6 +54,45 @@ export const WikiLink = Node.create({
 
   addInputRules() {
     return [
+      // #95x2fjh6: a typed `![[photo.png]]`, `![[pic.png|200]]` or `[[report.pdf]]`
+      // becomes what the Markdown parser makes of the same text (an image or a
+      // file card that keeps `obsidian` = the text as typed), so the file gets
+      // exactly those bytes and the link resolves across the vault (#8k4ssrkb).
+      new InputRule({
+        find: /!?\[\[([^[\]]+)\]\]$/,
+        handler: ({ state, range, match }) => {
+          const typed = match[0] ?? "";
+          const inner = match[1] ?? "";
+          const target = inner.split("|")[0]!.split("#")[0]!.trim();
+          if (!hasAttachmentExtension(target)) return null;
+          // Being typed inside a code span: leave it literal.
+          const $from = state.doc.resolve(range.from);
+          const before = $from.parent.textBetween(0, $from.parentOffset);
+          if ((before.match(/`/g)?.length ?? 0) % 2 === 1) return null;
+          const { schema, tr } = state;
+          // As the Markdown parser reads it (wikilink markdown-plugin): `src`/`path`
+          // is the old guess, `obsidian` the text as typed (what is written back and
+          // what resolves across the vault).
+          const path = target.includes("/") ? target : `attachments/${target}`;
+          const name = target.split("/").pop() ?? target;
+          const image = typed.startsWith("!") && /\.(avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i.test(target);
+          if (image) {
+            const parent = $from.parent;
+            const alone = parent.type.name === "paragraph" && parent.textContent === typed && $from.depth > 0;
+            if (alone && schema.nodes.image) {
+              // Alone on its line: an image block in place of the paragraph.
+              tr.replaceWith($from.before(), $from.after(), schema.nodes.image.create({ src: path, obsidian: typed }));
+              return;
+            }
+            if (!schema.nodes.inlineImage) return null;
+            tr.replaceWith(range.from, range.to, schema.nodes.inlineImage.create({ src: path, obsidian: typed }));
+            return;
+          }
+          const fileType = schema.nodes.fileAttachment;
+          if (!fileType) return null;
+          tr.replaceWith(range.from, range.to, fileType.create({ path, name, size: 0, obsidian: typed }));
+        },
+      }),
       new InputRule({
         // Completing a typed link with `]]` renders it immediately instead of
         // leaving raw text (and the `[[` suggestion decoration) until reload

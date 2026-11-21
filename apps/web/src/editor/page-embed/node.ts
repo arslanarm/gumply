@@ -50,17 +50,39 @@ export const PageEmbed = Node.create({
   },
 
   addInputRules() {
-    return [
-      nodeInputRule({
-        // Typed alone in its block: `![[Plan#Goals]]` becomes the preview.
-        find: /^(!\[\[[^[\]]+\]\])$/,
-        type: this.type,
-        getAttributes: (match) => {
-          const meta = parsePageEmbed(match[1] ?? "");
-          return meta ? { target: meta.target, part: meta.part, alias: meta.alias, raw: "" } : false;
-        },
-      }),
-    ];
+    const rule = nodeInputRule({
+      // Typed alone in its block: `![[Plan#Goals]]` becomes the preview.
+      find: /^(!\[\[[^[\]]+\]\])$/,
+      type: this.type,
+      getAttributes: (match) => {
+        const meta = parsePageEmbed(match[1] ?? "");
+        return meta ? { target: meta.target, part: meta.part, alias: meta.alias, raw: "" } : {};
+      },
+    });
+    // #95x2fjh6: TipTap turns a `false` from getAttributes into `{}` and still
+    // makes the node, so a typed `![[photo.png]]` became an empty embed saved
+    // as `![[]]`. Decline instead (`null`), so the next rule handles it.
+    const create = rule.handler;
+    const type = this.type;
+    rule.handler = (props) => {
+      const meta = parsePageEmbed(props.match[1] ?? "");
+      if (!meta) return null;
+      // The rule only matches a whole line: the preview takes the paragraph's
+      // place (nodeInputRule left an empty paragraph above it, saved as a stray
+      // blank line).
+      const { state } = props;
+      const $from = state.doc.resolve(props.range.from);
+      if ($from.parent.type.name === "paragraph" && $from.depth > 0) {
+        state.tr.replaceWith(
+          $from.before(),
+          $from.after(),
+          type.create({ target: meta.target, part: meta.part, alias: meta.alias, raw: "" }),
+        );
+        return;
+      }
+      return create(props);
+    };
+    return [rule];
   },
 
   addStorage() {
