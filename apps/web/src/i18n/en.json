@@ -100,7 +100,9 @@
     "collapseFolder": "Collapse folder",
     "expandFolder": "Expand folder",
     "newPageInside": "New page inside",
-    "deleteFolder": "Delete folder"
+    "deleteFolder": "Delete folder",
+    "today": "Today",
+    "newFromTemplate": "New page from template…"
   },
   "delete": {
     "boardDeleted": "Whiteboard deleted",
@@ -177,7 +179,9 @@
       "copyPaste": "Copy / paste",
       "bringToFrontSendToBack": "Bring to front / send to back",
       "delete": "Delete",
-      "undoRedo": "Undo / redo"
+      "undoRedo": "Undo / redo",
+      "openToday": "Open today's note",
+      "toggle": "Toggle"
     },
     "introBefore": "Press ",
     "introAfter": " anywhere outside a text field or the editor to open this again."
@@ -242,7 +246,13 @@
       "description": "An empty board"
     },
     "galleryTitle": "New whiteboard",
-    "galleryLabel": "Templates"
+    "galleryLabel": "Templates",
+    "newTitle": "New page from template",
+    "insertTitle": "Insert page template",
+    "search": "Search templates…",
+    "empty": "No templates yet. Pages in the “{{folder}}” folder are your templates.",
+    "noMatch": "No templates match “{{query}}”",
+    "loadFailed": "Couldn't load the templates."
   },
   "slash": {
     "heading1": {
@@ -355,7 +365,12 @@
       "hint": "Horizontal rule",
       "keywords": ""
     },
-    "menuLabel": "Insert block"
+    "menuLabel": "Insert block",
+    "pageTemplate": {
+      "title": "Insert page template…",
+      "hint": "Fill this page from a template",
+      "keywords": ""
+    }
   },
   "keys": {
     "doubleClick": "double-click",
@@ -631,7 +646,11 @@
     "edited": "Edited {{time}}",
     "templateWords": "",
     "templateFiller": "",
-    "languageWords": ""
+    "languageWords": "",
+    "today": "Open today's note",
+    "todayWords": "",
+    "pageTemplate": "New page from template…",
+    "pageTemplateWords": ""
   },
   "callout": {
     "types": {
@@ -931,6 +950,11 @@
     "deleteBlock": "Delete block",
     "copyHeadingLink": "Copy link to heading",
     "pasteBlocked": "The browser blocked reading the clipboard. Use {{keys}} instead."
+  },
+  "daily": {
+    "previous": "Previous daily note",
+    "next": "Next daily note",
+    "label": "Daily note"
   },
   "properties": {
     "label": "Properties",

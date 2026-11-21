@@ -8,6 +8,7 @@ import type {
   BoardDocument,
   BoardUpdateResult,
   CanvasBoard,
+  DailyNoteSettings,
   Attachment,
   Backlink,
   GraphData,
@@ -75,6 +76,8 @@ export interface CreatePageInput {
   parentId?: PageId | null;
   content?: string;
   icon?: string;
+  /** v0.7 C: start from this template page. */
+  template?: PageId;
 }
 
 export interface UpdatePageInput {
@@ -192,6 +195,24 @@ export const api = {
   /** #w6i6e6u7: the server downloads a remote image into attachments/. */
   importAttachment: (url: string): Promise<Attachment> =>
     request("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }),
+
+  /** v0.7 C: the templates folder and its pages. */
+  listTemplates: (): Promise<{ folder: string; templates: PageMeta[] }> => request("/templates"),
+
+  /** v0.7 C: a template's body with its variables filled (inserted at the caret). */
+  renderTemplate: (template: PageId, title: string): Promise<{ content: string }> =>
+    request(`/templates/render?template=${encodeURIComponent(template)}&title=${encodeURIComponent(title)}`),
+
+  /** v0.7 C: fill an empty page from a template (body + missing properties). */
+  applyTemplate: (id: PageId, template: PageId): Promise<Page> =>
+    mutate(() => request(`${pagePath(id)}/template`, { method: "POST", body: JSON.stringify({ template }) })),
+
+  /** v0.7 C: Obsidian's daily-note settings (or Gumply's). */
+  dailySettings: (): Promise<DailyNoteSettings> => request("/daily/settings"),
+
+  /** v0.7 C: open or make the note for `date` (YYYY-MM-DD, local). */
+  dailyNote: (date: string): Promise<{ page: PageMeta; created: boolean }> =>
+    mutate(() => request("/daily", { method: "POST", body: JSON.stringify({ date }) })),
 
   createPage: (input: CreatePageInput): Promise<Page> =>
     mutate(() => request("/pages", { method: "POST", body: JSON.stringify(input) })),

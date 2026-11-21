@@ -38,6 +38,7 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
       items: [
         { keys: `${modifier}K`, label: t("shortcuts.labels.searchPages") },
         { keys: `${modifier}\\`, label: t("shortcuts.labels.toggleSidebar") },
+        { keys: `${modifier}+Shift+D`, label: t("shortcuts.labels.openToday") },
       ],
     },
     {
@@ -49,7 +50,9 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: "-", label: t("shortcuts.labels.bulletList") },
         { keys: "1.", label: t("shortcuts.labels.numberedList") },
         { keys: "- [ ]", label: t("shortcuts.labels.toDo") },
-        { keys: ">", label: t("shortcuts.labels.quote") },
+        // D29: `>` makes a toggle, `"` a quote (as in Notion).
+        { keys: ">", label: t("shortcuts.labels.toggle") },
+        { keys: "\"", label: t("shortcuts.labels.quote") },
         { keys: "```", label: t("shortcuts.labels.codeBlock") },
         { keys: `${modifier}Z`, label: t("shortcuts.labels.undo") },
         { keys: `${modifier}S`, label: t("shortcuts.labels.saveNow") },

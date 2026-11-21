@@ -28,13 +28,28 @@ export interface QuickSwitcherProps {
   onNewFromTemplate?: () => void;
   /** `Language…`: opens Settings (#7h5utv23). */
   onOpenLanguage?: () => void;
+  /** v0.7 C: `Open today's note`. */
+  onOpenToday?: () => void;
+  /** v0.7 C: `New page from template…`. */
+  onNewPageFromTemplate?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
 }
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
-export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onOpenLanguage, onClose, initialQuery = "" }: QuickSwitcherProps) {
+export function QuickSwitcher({
+  pages,
+  onOpen,
+  onCreate,
+  onCreateBoard,
+  onNewFromTemplate,
+  onOpenLanguage,
+  onOpenToday,
+  onNewPageFromTemplate,
+  onClose,
+  initialQuery = "",
+}: QuickSwitcherProps) {
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState(initialQuery);
@@ -90,23 +105,24 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
     () =>
       needle.length > 0
         ? searchSections(visibleResults, pages, query)
-        : { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null },
+        : { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null, today: null, pageTemplate: null },
     [visibleResults, pages, query, needle],
   );
 
-  const fromTemplate = onNewFromTemplate ? sections.fromTemplate : null;
-  const languageRow = onOpenLanguage ? sections.language : null;
-  const rows: SearchRow[] =
-    needle.length > 0
-      ? [
-          ...sections.pages,
-          ...sections.text,
-          ...(sections.create ? [sections.create] : []),
-          ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
-          ...(fromTemplate ? [fromTemplate] : []),
-          ...(languageRow ? [languageRow] : []),
-        ]
-      : recents;
+  // Commands the query asks for, after the results (each only when wired).
+  const commandRows = [
+    onNewPageFromTemplate ? sections.pageTemplate : null,
+    onNewFromTemplate ? sections.fromTemplate : null,
+    onOpenToday ? sections.today : null,
+    onOpenLanguage ? sections.language : null,
+  ].filter((row): row is SearchRow => row !== null);
+  // Typing an action's name ranks it above "Create “…”" (#5hrsrqsj review).
+  const createRows = [
+    ...(sections.create ? [sections.create] : []),
+    ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
+  ];
+  const tailRows = [...commandRows, ...createRows];
+  const rows: SearchRow[] = needle.length > 0 ? [...sections.pages, ...sections.text, ...tailRows] : recents;
 
   useActiveOptionVisible(listRef, index, rows.length);
 
@@ -132,6 +148,14 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
     }
     if (row.kind === "from-template") {
       onNewFromTemplate?.();
+      return;
+    }
+    if (row.kind === "today") {
+      onOpenToday?.();
+      return;
+    }
+    if (row.kind === "page-template") {
+      onNewPageFromTemplate?.();
       return;
     }
     if (row.kind === "create-board") {
@@ -185,7 +209,11 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
                 ? "search-from-template"
                 : row.kind === "language"
                   ? "search-language"
-                  : "search-create"
+                  : row.kind === "today"
+                    ? "search-today"
+                    : row.kind === "page-template"
+                      ? "search-page-template"
+                      : "search-create"
         }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
@@ -201,6 +229,10 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
             <Icon name="plus" size={16} />
           ) : row.kind === "language" ? (
             <Icon name="languages" size={16} />
+          ) : row.kind === "today" ? (
+            <Icon name="calendar" size={16} />
+          ) : row.kind === "page-template" ? (
+            <Icon name="pageTemplate" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
           ) : row.page?.icon ? (
@@ -299,23 +331,13 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
                   )}
                 </>
               ) : null}
-              {!searching && sections.pages.length === 0 && sections.text.length === 0 && !fromTemplate && !languageRow ? (
+              {!searching && sections.pages.length === 0 && sections.text.length === 0 && commandRows.length === 0 ? (
                 <p className="quick-switcher-empty" data-testid="search-empty">
                   {pages.length === 0 ? t("empty.noPages") : t("search.noMatch", { query: needle })}
                 </p>
               ) : null}
               {searching ? <p className="quick-switcher-empty">{t("search.searching")}</p> : null}
-              {sections.create
-                ? renderRow(sections.create, sections.pages.length + sections.text.length)
-                : null}
-              {sections.createBoard && onCreateBoard
-                ? renderRow(
-                    sections.createBoard,
-                    sections.pages.length + sections.text.length + (sections.create ? 1 : 0),
-                  )
-                : null}
-              {fromTemplate ? renderRow(fromTemplate, rows.length - (languageRow ? 2 : 1)) : null}
-              {languageRow ? renderRow(languageRow, rows.length - 1) : null}
+              {tailRows.map((row, tailIndex) => renderRow(row, sections.pages.length + sections.text.length + tailIndex))}
             </>
           )}
         </div>

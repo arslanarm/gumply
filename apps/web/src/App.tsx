@@ -11,6 +11,7 @@ import {
   type PropertiesPatch,
   type PropertyType,
   type TrashItem,
+  type DailyNoteSettings,
 } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, consumeNewVaultPage, fileUrl } from "./api/client.js";
@@ -21,6 +22,9 @@ import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { PropertiesBlock } from "./components/PropertiesBlock.js";
 import { FolderView } from "./components/FolderView.js";
+import { TemplatePicker } from "./components/TemplatePicker.js";
+import type { PageTemplateRequest } from "./editor/page-template.js";
+import { dailyNeighbours, todayDay } from "./lib/daily.js";
 import { TrashedPageView } from "./components/TrashedPageView.js";
 import { TrashView } from "./components/TrashView.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
@@ -162,6 +166,14 @@ export function App() {
     parentId: PageId | null;
     resolve?: (template: BoardTemplateId | null | undefined) => void;
   } | null>(null);
+  /** v0.7 C: the page-template picker (new page inside a parent, or `/template` in the open page). */
+  const [templatePicker, setTemplatePicker] = useState<
+    | { mode: "new"; parentId: PageId | null }
+    | { mode: "insert"; pageId: PageId; title: string; request: PageTemplateRequest }
+    | null
+  >(null);
+  /** v0.7 C: daily-note settings (folder and format) for ‹ › and Today. */
+  const [dailySettings, setDailySettings] = useState<DailyNoteSettings | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
@@ -886,6 +898,85 @@ export function App() {
       }
     },
     [pages, loadPages, navigate],
+  );
+
+  // --- templates and daily notes (v0.7 C, #5hrsrqsj) ---
+
+  useEffect(() => {
+    api
+      .dailySettings()
+      .then(setDailySettings)
+      .catch(() => undefined);
+  }, []);
+
+  /** Today in the sidebar, Cmd+K and Ctrl/Cmd+Shift+D: open (or make) today's note. */
+  const openToday = useCallback(async () => {
+    setActionError(null);
+    if (window.innerWidth <= 900) setSidebarOpen(false);
+    try {
+      const result = await api.dailyNote(todayDay());
+      if (result.created) await loadPages();
+      navigate(result.page.id);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }, [loadPages, navigate]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== "d") return;
+      if (pendingDelete || movingId || shortcutsOpen || searchOpen || templatePicker) return;
+      // Browsers use it for "bookmark all tabs": ours wins inside the app.
+      event.preventDefault();
+      void openToday();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openToday, pendingDelete, movingId, shortcutsOpen, searchOpen, templatePicker]);
+
+  /** `/template` in the open page: pick, then fill (empty page) or insert at the caret. */
+  const insertTemplate = useCallback((request: PageTemplateRequest) => {
+    const open = pageRef.current;
+    if (!open) return;
+    setTemplatePicker({ mode: "insert", pageId: open.id, title: open.title, request });
+  }, []);
+
+  const pickTemplate = useCallback(
+    async (template: PageMeta) => {
+      const picker = templatePicker;
+      setTemplatePicker(null);
+      if (!picker) return;
+      setActionError(null);
+      try {
+        if (picker.mode === "new") {
+          // Named after the template; opens with the title selected to rename.
+          const created = await api.createPage({ title: template.title, parentId: picker.parentId, template: template.id });
+          await loadPages();
+          setAutoFocusTitle(true);
+          setEditTitleId(created.id);
+          navigate(created.id);
+          return;
+        }
+        if (picker.request.empty) {
+          // Body and missing properties on the server, then show the result.
+          await documentControls()?.flush();
+          await api.applyTemplate(picker.pageId, template.id);
+          requestPageReload();
+          return;
+        }
+        const { content } = await api.renderTemplate(template.id, picker.title);
+        picker.request.insert(content);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [templatePicker, loadPages, navigate, requestPageReload],
+  );
+
+  const dailyNav = useMemo(
+    () => (dailySettings && page ? dailyNeighbours(documentPages, dailySettings, page.id) : null),
+    [dailySettings, documentPages, page],
   );
 
   /** ⋯ → Copy link (#ux5cukze): `[[Title]]`, or `[[Map.canvas|Map]]` for a board. */
@@ -1625,6 +1716,8 @@ export function App() {
           onRetry={handleRetry}
           onSearch={openSearch}
           onGraph={navigateGraph}
+          onToday={() => void openToday()}
+          onNewFromTemplate={(parentId) => setTemplatePicker({ mode: "new", parentId })}
         />
         {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
         <div
@@ -1780,6 +1873,11 @@ export function App() {
                     editTitleOnOpen={editTitleId === page.id ? true : undefined}
                     focusTitleSignal={titleFocusSignal}
                     sessionKey={sessionKeyOf(page.id)}
+                    daily={
+                      dailyNav
+                        ? { previous: dailyNav.previous, next: dailyNav.next, onOpen: handleOpen }
+                        : undefined
+                    }
                   />
                   <PropertiesBlock
                     properties={page.properties ?? []}
@@ -1806,6 +1904,7 @@ export function App() {
                     onExitTop={handleExitTop}
                     onCreateBoard={createBoardForLink}
                     onOpenTag={openTagSearch}
+                    onInsertTemplate={insertTemplate}
                   />
                   <BacklinksPanel
                     items={backlinks}
@@ -1873,6 +1972,14 @@ export function App() {
         />
       ) : null}
 
+      {templatePicker ? (
+        <TemplatePicker
+          mode={templatePicker.mode}
+          onCancel={() => setTemplatePicker(null)}
+          onPick={(template) => void pickTemplate(template)}
+        />
+      ) : null}
+
       {galleryParent ? (
         <TemplateGallery
           onCancel={() => {
@@ -1922,6 +2029,14 @@ export function App() {
           onOpenLanguage={() => {
             dismissSearch();
             setSettingsOpen(true);
+          }}
+          onOpenToday={() => {
+            dismissSearch();
+            void openToday();
+          }}
+          onNewPageFromTemplate={() => {
+            dismissSearch();
+            setTemplatePicker({ mode: "new", parentId: null });
           }}
           onClose={closeSearch}
         />

@@ -164,3 +164,17 @@ export {
   type PropertyType,
   type PropertyValue,
 } from "./properties.js";
+
+export {
+  DEFAULT_DAILY_SETTINGS,
+  DEFAULT_TEMPLATE_SETTINGS,
+  dailyNoteDay,
+  dailyNoteId,
+  dateFromDay,
+  formatMomentDate,
+  parseMomentDate,
+  renderTemplate,
+  type DailyNoteSettings,
+  type TemplateContext,
+  type TemplateSettings,
+} from "./templates.js";

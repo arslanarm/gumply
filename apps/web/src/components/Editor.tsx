@@ -30,6 +30,7 @@ import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
+import { setPageTemplateHandler, type PageTemplateRequest } from "../editor/page-template.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
 import { PageEmbed } from "../editor/page-embed/node.js";
 import { BlockIdChips } from "../editor/page-embed/block-ids.js";
@@ -123,6 +124,8 @@ export interface EditorProps {
   onCreateBoard?: (request: WhiteboardRequest) => Promise<PageMeta | null>;
   /** A click on an inline `#tag` chip (#ux5cukze). */
   onOpenTag?: (tag: string) => void;
+  /** `/template` → Insert page template… (v0.7 C, #5hrsrqsj). */
+  onInsertTemplate?: (request: PageTemplateRequest) => void;
   /** Show only (a page in the trash, #ppag3ugh): not editable, never saved. */
   readOnly?: boolean;
 }
@@ -180,6 +183,7 @@ export function Editor({
   onAttachmentError,
   onExitTop,
   onCreateBoard,
+  onInsertTemplate,
   onOpenTag,
   readOnly = false,
 }: EditorProps) {
@@ -205,6 +209,11 @@ export function Editor({
   onAttachmentErrorRef.current = onAttachmentError;
   const onCreateBoardRef = useRef(onCreateBoard);
   onCreateBoardRef.current = onCreateBoard;
+  const onInsertTemplateRef = useRef(onInsertTemplate);
+  onInsertTemplateRef.current = onInsertTemplate;
+  useEffect(() => {
+    setPageTemplateHandler((request) => onInsertTemplateRef.current?.(request));
+  }, []);
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const onOpenTagRef = useRef(onOpenTag);
