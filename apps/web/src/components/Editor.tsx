@@ -32,6 +32,10 @@ import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
+import { Highlight } from "../editor/highlight.js";
+import { LinkShortcut } from "../editor/formatting.js";
+import { SelectionToolbar } from "./SelectionToolbar.js";
+import { EditorContextMenu } from "./EditorContextMenu.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
 import {
@@ -665,6 +669,8 @@ export function Editor({
       ImageBlock,
       BoardEmbed,
       TagChips,
+      Highlight,
+      LinkShortcut,
       InlineImage,
       FileAttachment,
       Markdown.configure({
@@ -843,6 +849,8 @@ export function Editor({
       <EditorContent editor={editor} />
       {editor ? <BlockGutter editor={editor} /> : null}
       {editor ? <TableControls editor={editor} /> : null}
+      {editor ? <SelectionToolbar editor={editor} /> : null}
+      {editor ? <EditorContextMenu editor={editor} /> : null}
       {menu ? (
         <SlashMenu
           items={menu.items}

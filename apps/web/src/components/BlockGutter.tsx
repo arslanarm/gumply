@@ -9,7 +9,7 @@ import {
   moveBlockTo,
   type BlockRef,
 } from "../lib/blocks.js";
-import { insertBlockBelow, turnInto, type TurnIntoKind } from "../editor/block-editing.js";
+import { insertBlockBelow, TURN_INTO, turnInto } from "../editor/block-editing.js";
 import { setCalloutFold } from "../editor/callout/callout.js";
 
 interface HoverState {
@@ -42,19 +42,6 @@ export interface BlockGutterProps {
   editor: TipTapEditor;
 }
 
-const TURN_INTO: Array<{ kind: TurnIntoKind; label: string }> = [
-  { kind: "text", label: "Text" },
-  { kind: "h1", label: "Heading 1" },
-  { kind: "h2", label: "Heading 2" },
-  { kind: "h3", label: "Heading 3" },
-  { kind: "bullet", label: "Bullet list" },
-  { kind: "ordered", label: "Numbered list" },
-  { kind: "todo", label: "To-do" },
-  { kind: "quote", label: "Quote" },
-  { kind: "callout", label: "Callout" },
-  { kind: "toggle", label: "Toggle" },
-  { kind: "code", label: "Code" },
-];
 
 function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
   try {

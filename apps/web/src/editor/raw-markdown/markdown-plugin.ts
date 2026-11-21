@@ -10,8 +10,9 @@
  * - blocks (top level): footnote definitions (`[^1]: …`), math blocks
  *   (`$$ … $$`), and HTML blocks at any depth (callouts are editable nodes
  *   now, see editor/callout);
- * - inline: footnote references `[^1]`, `==highlight==`, inline math `$x$`,
- *   inline HTML (`<kbd>`, `<br>`, `<!-- -->`).
+ * - inline: footnote references `[^1]`, inline math `$x$`, inline HTML
+ *   (`<kbd>`, `<br>`, `<!-- -->`). `==highlight==` is an editable mark now
+ *   (editor/highlight.ts, #bg3cb83t).
  *
  * HTML is recognised (markdown-it `html: true`) only so it can be captured:
  * every HTML token is rendered as an escaped `data-` attribute and never
@@ -172,7 +173,7 @@ function rawBlocksRule(state: any): void {
   lastTableSources = tableSources;
 }
 
-/** `[^id]`, `==text==` and Obsidian-style `$math$` as raw inline atoms. */
+/** `[^id]` and Obsidian-style `$math$` as raw inline atoms. */
 function rawInlineRule(state: any, silent: boolean): boolean {
   const src: string = state.src;
   const pos: number = state.pos;
@@ -183,9 +184,6 @@ function rawInlineRule(state: any, silent: boolean): boolean {
   if (src[pos] === "[" && src[pos + 1] === "^") {
     match = /^\[\^[^\]\s]+\]/.exec(rest);
     kind = "footnote-ref";
-  } else if (src[pos] === "=" && src[pos + 1] === "=") {
-    match = /^==(?=\S)([^=\n]|=(?!=))*?\S==/.exec(rest) ?? /^==\S==/.exec(rest);
-    kind = "highlight";
   } else if (src[pos] === "$" && src[pos + 1] !== "$" && src[pos - 1] !== "\\") {
     // Obsidian rule: no space inside the delimiters, no digit right after.
     match = /^\$(?=\S)[^$\n]*?\S\$(?!\d)/.exec(rest) ?? /^\$[^\s$]\$(?!\d)/.exec(rest);

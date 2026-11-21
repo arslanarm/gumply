@@ -248,7 +248,6 @@ export const RawBlock = Node.create({
 
 /** Read-only preview of a raw inline atom. */
 export function renderRawInlinePreview(source: string, kind: string): HTMLElement {
-  if (kind === "highlight") return el("mark", "raw-inline-highlight", source.slice(2, -2));
   if (kind === "footnote-ref") return el("sup", "raw-inline-footnote", source.slice(2, -1));
   if (kind === "math") return el("code", "raw-inline-math", source.slice(1, -1));
   if (kind === "entity") {
