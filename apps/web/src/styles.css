@@ -337,6 +337,24 @@ input {
   background: var(--hover);
 }
 
+/*
+ * #dvy946h5: chunks of 50 rows (long lists only, PageItem `TreeChunks`)
+ * that are outside the sidebar's view skip layout and paint, so a big
+ * expanded folder (2,000 rows) doesn't weigh on every scroll of the page.
+ * `auto` remembers a chunk's real height once it has been shown. The
+ * containment this implies would clip a row's menu and tooltips, so a chunk
+ * someone is using renders normally.
+ */
+.tree-chunk {
+  content-visibility: auto;
+}
+
+.tree-chunk:hover,
+.tree-chunk:focus-within,
+.tree-chunk:has(.has-menu, .is-drop-target) {
+  content-visibility: visible;
+}
+
 .page-item.is-selected {
   background: var(--accent-soft);
   color: var(--accent);
