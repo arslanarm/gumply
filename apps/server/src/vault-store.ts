@@ -10,6 +10,7 @@ import {
   isValidPageId,
   makeSnippet,
   markdownLinks,
+  linkSnippet,
   plainText,
   type MarkdownLink,
   normalizeTags,
@@ -1732,12 +1733,9 @@ export class VaultStore {
     const link = extractWikilinks(record.content).find(
       (candidate) => candidate.targetTitle.toLowerCase() === targetTitle.toLowerCase(),
     );
-    if (!link) return makeSnippet(record.content, targetTitle, 60);
-
-    const start = Math.max(0, link.index - 60);
-    const end = Math.min(record.content.length, link.index + link.raw.length + 60);
-    const text = record.content.slice(start, end).replace(/\s+/g, " ").trim();
-    return `${start > 0 ? "…" : ""}${text}${end < record.content.length ? "…" : ""}`;
+    // Plain text around the raw link, as Cmd+K shows it (#zrxjbn6e).
+    if (!link) return makeSnippet(plainText(record.content), targetTitle, 60);
+    return linkSnippet(record.content, link.index, link.raw.length, 60);
   }
 
   // --- files -------------------------------------------------------------
