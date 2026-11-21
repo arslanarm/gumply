@@ -6,7 +6,7 @@
  */
 import type { CanvasBoard, CanvasNode } from "@gumply/core";
 import { canvasBounds, gumplyNodeData, isPresetColor } from "@gumply/core";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BOARD_TEMPLATES, type BoardTemplateId } from "../board/templates.js";
 // The board palette (--board-c1…) lives with the board styles.
 import "../board/board.css";
@@ -94,20 +94,26 @@ export function TemplateGallery({ onCancel, onSelect }: TemplateGalleryProps) {
     listRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.focus();
   }, [index]);
 
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: COLUMNS, ArrowUp: -COLUMNS }[event.key];
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onCancel();
-    } else if (step !== undefined) {
-      event.preventDefault();
-      setIndex((current) => Math.min(choices.length - 1, Math.max(0, current + step)));
-    } else if (event.key === "Tab") {
+  // The gallery owns the keyboard while open, wherever focus is (the page
+  // editor can take focus back while the gallery's code loads).
+  const latest = useRef({ onCancel, onSelect, index, choices });
+  latest.current = { onCancel, onSelect, index, choices };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const { onCancel: cancel, onSelect: select, index: current, choices: all } = latest.current;
+      const step = ({ ArrowRight: 1, ArrowLeft: -1, ArrowDown: COLUMNS, ArrowUp: -COLUMNS } as Record<string, number>)[event.key];
+      if (event.key === "Escape") cancel();
+      else if (event.key === "Enter" || event.key === " ") select(all[current]?.id ?? null);
+      else if (step !== undefined) setIndex(Math.min(all.length - 1, Math.max(0, current + step)));
       // Focus stays in the dialog.
+      else if (event.key === "Tab") setIndex((current + (event.shiftKey ? -1 : 1) + all.length) % all.length);
+      else return;
       event.preventDefault();
-      setIndex((current) => (current + (event.shiftKey ? -1 : 1) + choices.length) % choices.length);
-    }
-  };
+      event.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   return (
     <div
@@ -122,7 +128,6 @@ export function TemplateGallery({ onCancel, onSelect }: TemplateGalleryProps) {
         aria-modal="true"
         aria-labelledby="template-gallery-title"
         data-testid="template-gallery"
-        onKeyDown={onKeyDown}
       >
         <h2 id="template-gallery-title">New whiteboard</h2>
         <div className="template-grid" ref={listRef} role="listbox" aria-label="Templates">
