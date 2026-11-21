@@ -33,6 +33,11 @@ function normalise(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/** For matching only: `-`, `_` and spaces count as one ("meeting notes" finds `meeting-notes`, #bayuasqq). */
+function fold(value: string): string {
+  return normalise(value.replace(/[-_]+/g, " "));
+}
+
 /** Folder segments of a page id, capitalised for display (e.g. `Projects/Plan` → `Projects`). */
 export function folderPath(page: PageMeta): string {
   return page.id
@@ -68,7 +73,7 @@ export function buildLinkSuggestions(
   }
 
   const matches = [...pages]
-    .filter((page) => needle.length === 0 || normalise(page.title).includes(needle))
+    .filter((page) => needle.length === 0 || fold(page.title).includes(fold(query)))
     .sort((a, b) => {
       const byTitle = a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
       return byTitle !== 0 ? byTitle : a.id.localeCompare(b.id);

@@ -49,7 +49,8 @@ describe("VaultStore index on start", () => {
 
     const store = new VaultStore(dir);
     await store.init();
-    expect(store.get("my-note").title).toBe("My note");
+    // Verbatim, as in Obsidian (#bayuasqq).
+    expect(store.get("my-note").title).toBe("my-note");
   });
 
   it("flattens parents that have no page of their own", async () => {

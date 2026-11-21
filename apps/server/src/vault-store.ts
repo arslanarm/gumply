@@ -1165,14 +1165,18 @@ export class VaultStore {
     const trimmed = query.trim();
     if (trimmed.length === 0) return [];
     const needle = trimmed.toLowerCase();
+    // Titles match with `-`, `_` and spaces as one, so "meeting notes" finds
+    // a plain note `meeting-notes` (#bayuasqq), as Obsidian's search does.
+    const fold = (value: string) => value.toLowerCase().replace(/[-_\s]+/g, " ").trim();
+    const titleNeedle = fold(trimmed);
 
     const results: SearchResult[] = [];
     for (const record of this.pages.values()) {
-      const title = record.title.toLowerCase();
+      const title = fold(record.title);
       let titleScore = 0;
-      if (title === needle) titleScore = 100;
-      else if (title.startsWith(needle)) titleScore = 80;
-      else if (title.includes(needle)) titleScore = 60;
+      if (title === titleNeedle) titleScore = 100;
+      else if (title.startsWith(titleNeedle)) titleScore = 80;
+      else if (title.includes(titleNeedle)) titleScore = 60;
 
       // #6zifz7da: match what the page reads as, not its Markdown, so a
       // phrase across formatting or a link is found; snippets are plain too.
