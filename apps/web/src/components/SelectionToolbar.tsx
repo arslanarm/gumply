@@ -39,12 +39,14 @@ type Mode = "buttons" | "link" | "turn" | "color";
 
 interface Place {
   left: number;
-  top: number;
-  below: boolean;
+  /** The selection's top and bottom edges (viewport px). */
+  above: number;
+  below: number;
 }
 
 const GAP = 8;
-const HEIGHT = 38;
+/** The app's top bar: the toolbar never goes under it. */
+const TOP_LIMIT = 56;
 
 export function SelectionToolbar({ editor }: SelectionToolbarProps) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -88,8 +90,7 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
     // Centre over the selection's first line (or the span when on one line).
     const sameLine = Math.abs(start.top - end.top) < 4;
     const centre = sameLine ? (start.left + end.right) / 2 : start.left + 120;
-    const below = top - HEIGHT - GAP < 56;
-    setPlace({ left: centre, top: below ? bottom + GAP : top - HEIGHT - GAP, below });
+    setPlace({ left: centre, above: top, below: bottom });
     setVersion((value) => value + 1);
     // `selectionKey` reads the live editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,13 +169,21 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
     return () => dom.removeEventListener("keydown", onKeyDown);
   }, [editor, place]);
 
-  // Keep the bar on screen horizontally once it has a width.
+  // Place the bar once it has a size, with whatever is open in it (the
+  // palette, Turn into, page results): above the selection, or below it
+  // when there's no room above. It never covers the selected text.
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || !place) return;
     const width = element.offsetWidth;
+    const height = element.offsetHeight;
     const left = Math.max(8, Math.min(place.left - width / 2, window.innerWidth - width - 8));
+    const fitsAbove = place.above - height - GAP >= TOP_LIMIT;
     element.style.left = `${left}px`;
+    element.style.top = `${fitsAbove ? place.above - height - GAP : place.below + GAP}px`;
+    element.classList.toggle("is-below", !fitsAbove);
+    // Above: what opens (palette, Turn into) goes on top, so the buttons stay next to the text.
+    element.classList.toggle("is-above", fitsAbove);
   });
 
   const close = () => {
@@ -215,11 +224,11 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
   return (
     <div
       ref={ref}
-      className={`selection-toolbar${place.below ? " is-below" : ""}`}
+      className="selection-toolbar"
       role="toolbar"
       aria-label={t("format.toolbarLabel")}
       data-testid="selection-toolbar"
-      style={{ top: place.top, left: place.left }}
+      style={{ left: place.left, top: place.above }}
       onMouseDown={(event) => {
         if (!(event.target as HTMLElement).closest("input")) keep(event);
       }}

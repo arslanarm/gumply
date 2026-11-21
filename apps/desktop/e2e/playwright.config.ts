@@ -7,7 +7,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: /\.spec\.ts$/,
-  timeout: 60_000,
+  // A cold first launch may take up to 45 s on a loaded machine (#tcw8r7vc), plus the test itself.
+  timeout: 90_000,
   workers: 1,
   retries: 0,
   reporter: [['list']],
