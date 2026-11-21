@@ -87,7 +87,46 @@
     "noSelectionHint": "Choose a page in the sidebar, or create a new one."
   },
   "shortcuts": {
-    "button": "Keyboard shortcuts (?)"
+    "button": "Keyboard shortcuts (?)",
+    "title": "Keyboard shortcuts",
+    "groups": {
+      "navigate": "Navigate",
+      "editor": "Editor",
+      "pages": "Pages",
+      "whiteboard": "Whiteboard"
+    },
+    "labels": {
+      "searchPages": "Search pages",
+      "toggleSidebar": "Toggle sidebar",
+      "insertABlock": "Insert a block",
+      "linkAPage": "Link a page",
+      "heading": "Heading",
+      "bulletList": "Bullet list",
+      "numberedList": "Numbered list",
+      "toDo": "To-do",
+      "quote": "Quote",
+      "codeBlock": "Code block",
+      "undo": "Undo",
+      "saveNow": "Save now",
+      "moveBlockUpDown": "Move block up / down",
+      "duplicateBlock": "Duplicate block",
+      "titleBody": "Title → body",
+      "renamePage": "Rename page",
+      "selectHand": "Select / Hand",
+      "stickyNoteTextShape": "Sticky note / Text / Shape",
+      "connectorFramePen": "Connector / Frame / Pen",
+      "addAStickyNote": "Add a sticky note",
+      "editTheSelection": "Edit the selection",
+      "pan": "Pan",
+      "zoom": "Zoom",
+      "fitToScreen": "Fit to screen",
+      "nudgeBy110": "Nudge by 1 / 10",
+      "duplicate": "Duplicate",
+      "copyPaste": "Copy / paste",
+      "bringToFrontSendToBack": "Bring to front / send to back",
+      "delete": "Delete",
+      "undoRedo": "Undo / redo"
+    }
   },
   "templates": {
     "kanban": {
@@ -150,5 +189,222 @@
     },
     "galleryTitle": "New whiteboard",
     "galleryLabel": "Templates"
+  },
+  "slash": {
+    "heading1": {
+      "title": "Heading 1",
+      "hint": "Big section heading",
+      "keywords": ""
+    },
+    "heading2": {
+      "title": "Heading 2",
+      "hint": "Medium section heading",
+      "keywords": ""
+    },
+    "heading3": {
+      "title": "Heading 3",
+      "hint": "Small section heading",
+      "keywords": ""
+    },
+    "bulletList": {
+      "title": "Bullet list",
+      "hint": "Unordered list",
+      "keywords": ""
+    },
+    "orderedList": {
+      "title": "Numbered list",
+      "hint": "Ordered list",
+      "keywords": ""
+    },
+    "todo": {
+      "title": "To-do",
+      "hint": "Task with a checkbox",
+      "keywords": ""
+    },
+    "quote": {
+      "title": "Quote",
+      "hint": "Capture a quotation",
+      "keywords": ""
+    },
+    "callout": {
+      "title": "Callout",
+      "hint": "Make writing stand out",
+      "keywords": ""
+    },
+    "toggle": {
+      "title": "Toggle",
+      "hint": "Hide content inside",
+      "keywords": ""
+    },
+    "note": {
+      "title": "Note",
+      "hint": "Note callout",
+      "keywords": ""
+    },
+    "tip": {
+      "title": "Tip",
+      "hint": "Tip callout",
+      "keywords": ""
+    },
+    "warning": {
+      "title": "Warning",
+      "hint": "Warning callout",
+      "keywords": ""
+    },
+    "code": {
+      "title": "Code block",
+      "hint": "Monospaced code",
+      "keywords": ""
+    },
+    "table": {
+      "title": "Table",
+      "hint": "Rows and columns",
+      "keywords": ""
+    },
+    "emoji": {
+      "title": "Emoji",
+      "hint": "Insert an emoji",
+      "keywords": ""
+    },
+    "image": {
+      "title": "Image",
+      "hint": "Upload an image",
+      "keywords": ""
+    },
+    "file": {
+      "title": "File",
+      "hint": "Attach a file",
+      "keywords": ""
+    },
+    "whiteboard": {
+      "title": "New board here",
+      "hint": "Whiteboard, shown in this page",
+      "keywords": ""
+    },
+    "boardTemplate": {
+      "title": "Board from template",
+      "hint": "Kanban, mind map, retro, flowchart, weekly plan",
+      "keywords": ""
+    },
+    "embedWhiteboard": {
+      "title": "Embed existing board…",
+      "hint": "Show a whiteboard in this page",
+      "keywords": ""
+    },
+    "divider": {
+      "title": "Divider",
+      "hint": "Horizontal rule",
+      "keywords": ""
+    },
+    "menuLabel": "Insert block"
+  },
+  "keys": {
+    "doubleClick": "double-click",
+    "doubleClickCap": "Double-click",
+    "drag": "drag",
+    "scroll": "scroll",
+    "pinch": "pinch",
+    "arrows": "Arrows"
+  },
+  "board": {
+    "tools": {
+      "select": "Select",
+      "hand": "Hand",
+      "sticky": "Sticky note",
+      "text": "Text",
+      "shape": "Shape",
+      "connector": "Connector",
+      "frame": "Frame",
+      "pen": "Pen"
+    },
+    "shapes": {
+      "rect": "Rectangle",
+      "rounded": "Rounded rectangle",
+      "ellipse": "Ellipse",
+      "diamond": "Diamond"
+    },
+    "addPage": "Add page",
+    "addPageEllipsis": "Add page…",
+    "findPage": "Find a page…",
+    "noPagesFound": "No pages found",
+    "frame": "Frame",
+    "upload": {
+      "tooLarge": "{{name}} is too large (max 25 MB)",
+      "serverError": "Couldn't add {{name}} (server error)",
+      "failed": "Couldn't add {{name}}. {{reason}}",
+      "notImage": "Not an image"
+    },
+    "bringToFront": "Bring to front",
+    "sendToBack": "Send to back",
+    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in",
+    "resetZoom": "Reset zoom to 100%",
+    "zoomTo100": "Zoom to 100%",
+    "fitToScreen": "Fit to screen",
+    "fit": "Fit",
+    "toolsLabel": "Board tools",
+    "imageOrFile": "Image or file",
+    "imageOrFileUnavailable": "Image or file (unavailable)",
+    "redo": "Redo",
+    "connectorHint": "Drag from one object to another",
+    "empty": "This board is empty",
+    "emptyHint": "Double-click to add a sticky note · drag pages from the sidebar",
+    "cards": {
+      "pageMissing": "This page doesn't exist anymore.",
+      "emptyPage": "Empty page",
+      "openPage": "Open page",
+      "whiteboard": "Whiteboard",
+      "boardMissing": "This board doesn't exist anymore.",
+      "openBoard": "Open board",
+      "imageMissing": "Image not found",
+      "extFile": "{{ext}} file",
+      "file": "File",
+      "openFile": "Open file",
+      "blockedLink": "Blocked link",
+      "openLink": "Open link",
+      "link": "Link",
+      "unsupported": "Unsupported item ({{type}})"
+    },
+    "typeSomething": "Type something",
+    "frameName": "Frame name",
+    "loadFailed": "This board couldn't be opened.",
+    "repairedBefore": "Some entries this board couldn't keep were removed. The original is kept in ",
+    "repairedAfter": ".",
+    "colors": {
+      "default": "Default",
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "cyan": "Cyan",
+      "purple": "Purple"
+    },
+    "connector": {
+      "arrow": "Arrow",
+      "line": "Line",
+      "label": "Connector label",
+      "labelPlaceholder": "Label"
+    },
+    "linkPage": "Link a page",
+    "menu": {
+      "label": "Board menu",
+      "menuLabel": "Board",
+      "exporting": "Exporting…",
+      "more": "More",
+      "exportPng": "Export as PNG",
+      "exportSvg": "Export as SVG",
+      "selectionOnly": "Selection only",
+      "transparent": "Transparent background"
+    },
+    "export": {
+      "failed": "The board couldn't be exported. {{detail}}",
+      "empty": "There's nothing on this board to export yet.",
+      "noCanvas": "Couldn't draw the image (no canvas)",
+      "encodeFailed": "Couldn't encode the PNG",
+      "fontFailed": "Couldn't load the export font ({{status}})",
+      "fileName": "Whiteboard",
+      "selectionSuffix": " (selection)"
+    },
+    "kindBoard": "Board"
   }
 }

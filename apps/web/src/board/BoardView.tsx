@@ -11,6 +11,7 @@ import { newWriterId, registerSaver } from "../lib/pending-saves.js";
 import type { BoardEditorControls, BoardPageOption } from "./BoardEditor.js";
 import type { BoardRenderers } from "./context.js";
 import { LazyBoardEditor } from "./index.js";
+import { t, useT } from "../i18n/index.js";
 
 export interface BoardViewControls {
   /** Write pending changes now (navigation, Cmd+S). */
@@ -60,6 +61,7 @@ async function loadPagePreview(path: string): Promise<string | null> {
 }
 
 export function BoardView(props: BoardViewProps) {
+  useT();
   const { boardId, pages, onOpenFile, renderers } = props;
   const [loaded, setLoaded] = useState<{ meta: PageMeta; board: CanvasBoard } | null>(props.initial ?? null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -205,7 +207,7 @@ export function BoardView(props: BoardViewProps) {
   if (failed && !loaded) {
     return (
       <div className="empty-state" data-testid="board-load-error">
-        <h2>This board couldn't be opened.</h2>
+        <h2>{t("board.loadFailed")}</h2>
         <p>{failed}</p>
       </div>
     );
@@ -217,7 +219,7 @@ export function BoardView(props: BoardViewProps) {
       {uploadNotice ? (
         <div className="board-notice" role="status" data-testid="board-upload-notice">
           <span>{uploadNotice}</span>
-          <button type="button" className="board-notice-close" aria-label="Dismiss" onClick={() => setUploadNotice(null)}>
+          <button type="button" className="board-notice-close" aria-label={t("common.dismiss")} onClick={() => setUploadNotice(null)}>
             ×
           </button>
         </div>
@@ -225,9 +227,9 @@ export function BoardView(props: BoardViewProps) {
       {repairNotice ? (
         <div className="board-notice" role="status" data-testid="board-repair-notice">
           <span>
-            Some entries this board couldn't keep were removed. The original is kept in <code>{repairNotice}</code>.
+            {t("board.repairedBefore")}<code>{repairNotice}</code>{t("board.repairedAfter")}
           </span>
-          <button type="button" className="board-notice-close" aria-label="Dismiss" onClick={() => setRepairNotice(null)}>
+          <button type="button" className="board-notice-close" aria-label={t("common.dismiss")} onClick={() => setRepairNotice(null)}>
             ×
           </button>
         </div>

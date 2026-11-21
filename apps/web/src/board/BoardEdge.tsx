@@ -9,6 +9,7 @@ import { solidColor } from "./colors.js";
 import { useBoardActions } from "./context.js";
 import { useNodeOffset } from "./group-drag.js";
 import type { BoardFlowEdge } from "./flow.js";
+import { t, useT } from "../i18n/index.js";
 
 const ARROW_LENGTH = 11;
 const ARROW_HALF_WIDTH = 5.5;
@@ -62,8 +63,8 @@ function LabelEditor({ id, initial }: { id: string; initial: string }) {
       ref={ref}
       className="board-edge-input nodrag nopan"
       defaultValue={initial}
-      aria-label="Connector label"
-      placeholder="Label"
+      aria-label={t("board.connector.label")}
+      placeholder={t("board.connector.labelPlaceholder")}
       data-testid="board-edge-input"
       onInput={() => {
         if (ref.current) actions.draftEdgeLabel(id, ref.current.value);
@@ -82,6 +83,7 @@ function LabelEditor({ id, initial }: { id: string; initial: string }) {
 }
 
 export const BoardEdge = memo(function BoardEdge(props: EdgeProps<BoardFlowEdge>) {
+  useT();
   const { id, data, selected, sourcePosition, targetPosition } = props;
   // During a group drag the moved objects are only translated on screen; move
   // this connector's ends with them (group-drag.ts).

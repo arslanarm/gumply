@@ -18,6 +18,7 @@ import {
   type GumplyShape,
   type InkPoint,
 } from "@gumply/core";
+import { t } from "../i18n/index.js";
 
 export interface Point {
   x: number;
@@ -68,7 +69,8 @@ export function createShape(rect: Rect, shape: GumplyShape, color?: string, text
   return orderedNode({ id: canvasId(), type: "text", text, gumply: { kind: "shape", shape } }, rect, color);
 }
 
-export function createFrame(rect: Rect, label = "Frame", color?: string): CanvasNode {
+/** A new frame; its default name is in the interface language (#7h5utv23). */
+export function createFrame(rect: Rect, label = t("board.frame"), color?: string): CanvasNode {
   return orderedNode({ id: canvasId(), type: "group" }, rect, color, { label });
 }
 
