@@ -208,9 +208,18 @@
   color: var(--text);
 }
 
-.board-shape-ellipse,
-.board-shape-diamond {
-  padding: 18% 20%;
+/* The text box inside a round shape. Insets (unlike padding, whose % always
+   follow the width) take their top/bottom % from the height, so a wide, short
+   ellipse still has room for text (#ux5cukze). An ellipse's largest inner
+   rectangle sits ~15% in on each side; a diamond's 25%. */
+.board-shape-ellipse > .board-shape-text,
+.board-shape-diamond > .board-shape-text {
+  position: absolute;
+  inset: 15%;
+}
+
+.board-shape-diamond > .board-shape-text {
+  inset: 22%;
 }
 
 .board-shape-svg {

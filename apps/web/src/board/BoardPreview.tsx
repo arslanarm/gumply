@@ -32,6 +32,8 @@ const READ_ONLY: BoardActions = {
   startEditing: noop,
   commitText: noop,
   cancelEditing: noop,
+  draftText: noop,
+  draftEdgeLabel: noop,
   startEditingEdge: noop,
   commitEdgeLabel: noop,
   updateEdge: noop,

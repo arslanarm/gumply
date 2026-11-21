@@ -7,6 +7,7 @@ import { serializeCanvas, type BoardDocument, type CanvasBoard, type PageMeta } 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError, api } from "../api/client.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
+import { registerSaver } from "../lib/pending-saves.js";
 import type { BoardEditorControls, BoardPageOption } from "./BoardEditor.js";
 import type { BoardRenderers } from "./context.js";
 import { LazyBoardEditor } from "./index.js";
@@ -98,6 +99,20 @@ export function BoardView(props: BoardViewProps) {
             throw error;
           }
         },
+        // Leaving the page (#3t6v62cb): a keepalive PUT (null over 64 KB).
+        exitSave: (value, afterInFlight) => {
+          const savedId = idRef.current;
+          const request = api.saveBoardOnExit(savedId, {
+            board: JSON.parse(value) as CanvasBoard,
+            ...(!afterInFlight && versionRef.current ? { expectedUpdated: versionRef.current } : {}),
+          });
+          return (
+            request?.then((result) => {
+              versionRef.current = result.meta.updated;
+              latest.current.onSaved?.(result.meta, savedId);
+            }) ?? null
+          );
+        },
         isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
         onState: (state) => latest.current.onSaveState(state),
       }),
@@ -142,8 +157,21 @@ export function BoardView(props: BoardViewProps) {
     if (props.updated) versionRef.current = props.updated;
   }, [props.updated]);
 
-  // Never lose the last edits when the view goes away.
-  useEffect(() => () => autosave.dispose(), [autosave]);
+  // Never lose the last edits when the view goes away, or the page does
+  // (reload, close, quit: #3t6v62cb). Text being typed is already in the
+  // queue as a draft (BoardEditor `onChange` while typing).
+  useEffect(() => {
+    const unregister = registerSaver({
+      isDirty: () => autosave.isDirty(),
+      hasFailed: () => autosave.hasFailed(),
+      flush: () => autosave.flush(),
+      flushOnExit: () => autosave.flushOnExit(),
+    });
+    return () => {
+      unregister();
+      autosave.dispose();
+    };
+  }, [autosave]);
 
   const onChange = useCallback((board: CanvasBoard) => autosave.schedule(serializeCanvas(board)), [autosave]);
 
