@@ -2,6 +2,7 @@ import { flushSync } from "react-dom";
 import {
   convertPropertyValue,
   formatWikilink,
+  pageLook,
   resolveWikilink,
   type Backlink,
   type BoardDocument,
@@ -21,6 +22,7 @@ import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 import { PropertiesBlock } from "./components/PropertiesBlock.js";
+import { backgroundStyle, PageCover } from "./components/PageCover.js";
 import { FolderView } from "./components/FolderView.js";
 import { TemplatePicker } from "./components/TemplatePicker.js";
 import type { PageTemplateRequest } from "./editor/page-template.js";
@@ -218,6 +220,8 @@ export function App() {
   // The desktop app offers "Show in file manager" (GET /api/health, v1.9).
   const [desktop, setDesktop] = useState(false);
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
+  // v0.7 F (#385sexd6): bumped by "Add cover" to open the cover picker.
+  const [coverPickerSignal, setCoverPickerSignal] = useState(0);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
     try {
       return sessionStorage.getItem("gumply:local-graph") === "open";
@@ -1751,6 +1755,9 @@ export function App() {
   const showingBoard = showingPage && isBoardId(page.id) && boardDoc !== null;
   const showingBase = showingPage && isBaseId(page.id) && baseDoc !== null && baseDoc.meta.id === page.id;
   const movingPage = movingId ? (pages.find((item) => item.id === movingId) ?? null) : null;
+  // v0.7 F (#385sexd6): cover and background, Markdown pages only.
+  const showingNote = showingPage && !isBoardId(page.id) && !isBaseId(page.id);
+  const look = useMemo(() => pageLook(showingNote ? page?.properties : undefined), [showingNote, page?.properties]);
 
   const serverError = listStatus === "error" && pages.length === 0;
   const breadcrumb = selectedId ? pageTrail(pages, selectedId) : [];
@@ -1855,7 +1862,7 @@ export function App() {
           onClick={() => setSidebarOpen(false)}
         />
 
-        <main className="content">
+        <main className={`content${look.background ? " has-page-tint" : ""}`} style={backgroundStyle(look)}>
           {deletedOnDisk ? (
             <div className="banner banner-error" role="alert" data-testid="deleted-on-disk-banner">
               <span>{t("page.deletedOnDisk")}</span>
@@ -1913,7 +1920,10 @@ export function App() {
               onNewPage={() => void handleCreate(null)}
             />
           ) : (
-            <div className={`editor-pane${showingBoard ? " is-board" : showingBase ? " is-base" : ""}`} data-testid="editor">
+            <div
+              className={`editor-pane${showingBoard ? " is-board" : showingBase ? " is-base" : ""}${showingNote && look.cover ? " has-cover" : ""}`}
+              data-testid="editor"
+            >
               {serverError ? (
                 <div className="empty-state" data-testid="server-error">
                   <span className="empty-state-icon" aria-hidden="true">
@@ -2011,8 +2021,19 @@ export function App() {
                 </div>
               ) : showingPage ? (
                 <>
+                  <PageCover
+                    key={sessionKeyOf(page.id)}
+                    look={look}
+                    pickerSignal={coverPickerSignal}
+                    onChange={handlePropertiesChange}
+                  />
                   <PageHeader
                     page={page}
+                    onAddCover={look.cover ? undefined : () => setCoverPickerSignal((value) => value + 1)}
+                    background={look.background}
+                    onSetBackground={(color) =>
+                      void handlePropertiesChange(color ? { set: { background: color } } : { remove: ["background"] })
+                    }
                     autoFocusTitle={autoFocusTitle}
                     localGraphOpen={localGraphOpen}
                     onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
