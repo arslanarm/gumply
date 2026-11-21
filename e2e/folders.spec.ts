@@ -205,13 +205,21 @@ test.describe('plain folders in the sidebar (D33)', () => {
     await expect(page.getByTestId('link-menu').getByRole('option').filter({ hasText: /^\s*Work\s*$/ })).toHaveCount(0);
   });
 
-  test('a vault whose first item is a folder of files opens on the first page, not a folder (#z9b6zg47)', async ({ page, request, vault }) => {
+  test('a vault opens on its root page, even when folders come first in the tree (#z9b6zg47)', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault({ 'files/a.pdf': '%PDF', 'Work/Plan.md': 'The plan', 'Index.md': 'Start here' });
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Index');
+    await page.goto('/');
+    await expect(page).toHaveURL(/#\/Index$/);
+    await expect(page.getByTestId('editor-content')).toContainText('Start here');
+  });
+
+  test('without a root page, a vault opens on the first page inside its folders, not a folder (#z9b6zg47)', async ({ page, request, vault }) => {
     void vault;
     await writeVault({
       'files/a.pdf': '%PDF',
       'files/b.pdf': '%PDF',
       'Work/Plan.md': 'The plan',
-      'Zeta.md': 'Last',
     });
     await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Work/Plan');
     await page.goto('/');

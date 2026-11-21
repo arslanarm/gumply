@@ -8,7 +8,7 @@ import { buildPageTree, type PageTreeNode } from "./tree.js";
  * second tab, a poll or a page reload consumes it first — the old fallback then
  * opened the alphabetically-first root ("Gumply demo" instead of "Welcome").
  * Always prefer a root Welcome page when there is one, then the first page
- * or board in tree order.
+ * or board at the top level, then the first one inside the folders.
  */
 export function chooseLandingPage(
   pages: readonly PageMeta[],
@@ -21,7 +21,11 @@ export function chooseLandingPage(
   );
   if (welcome) return welcome.id;
 
-  return firstDocument(buildPageTree(pages));
+  // A page or board at the top (Index, Home, README…) is the natural entry;
+  // only without one, go into the folders (#z9b6zg47).
+  const tree = buildPageTree(pages);
+  const root = tree.find((node) => node.page.kind !== "folder");
+  return root ? root.page.id : firstDocument(tree);
 }
 
 /**
