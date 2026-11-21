@@ -10,7 +10,9 @@
 
 import type { Frontmatter } from "./frontmatter.js";
 
-const KEY_LINE = /^([A-Za-z0-9_-]+):(.*)$/;
+// Top-level keys: letters of any script, digits, `_`, `-` and inner spaces
+// (Obsidian property names like "due date" or "статус"), up to the first `:`.
+const KEY_LINE = /^([\p{L}\p{N}_][\p{L}\p{N}_ -]*?):(.*)$/u;
 const INDENTED = /^[ \t]/;
 
 const KEY_ORDER = ["title", "icon", "tags", "created", "updated"] as const;
@@ -139,12 +141,17 @@ function findBlocks(lines: string[]): Block[] {
   return blocks;
 }
 
+/** A value written as a bare `key:` (YAML null): an empty property. */
+export const YAML_EMPTY: unique symbol = Symbol("yaml-empty");
+
 function renderKey(
   key: string,
   value: unknown,
   previousRest: string | null,
 ): string[] {
   const comment = previousRest === null ? "" : splitTrailingComment(previousRest).comment;
+  // An empty property (any key, tags too) is a bare `key:`.
+  if (value === YAML_EMPTY) return [`${key}:${comment}`];
 
   if (key === "tags") {
     const tags = Array.isArray(value) ? value.map((item) => String(item)) : [];
@@ -158,9 +165,15 @@ function renderKey(
 
   if (Array.isArray(value)) {
     const items = value.map((item) => String(item));
+    // A list that was written in flow style stays in flow style.
+    const flow = previousRest !== null && splitTrailingComment(previousRest).value.trimStart().startsWith("[");
+    if (flow) return [`${key}: [${items.map(formatScalar).join(", ")}]${comment}`];
     if (items.length === 0) return [`${key}: []${comment}`];
     return [`${key}:${comment}`, ...items.map((item) => `  - ${formatScalar(item)}`)];
   }
+
+  // Typed properties (v0.7 A): numbers and booleans stay unquoted YAML scalars.
+  if (typeof value === "number" || typeof value === "boolean") return [`${key}: ${String(value)}${comment}`];
 
   return [`${key}: ${formatScalar(String(value))}${comment}`];
 }
@@ -172,11 +185,19 @@ function renderKey(
 export function editFrontmatterYaml(
   yaml: string,
   changes: Readonly<Record<string, unknown>>,
+  /** Keys to rename in place first (value bytes and position kept). */
+  renames: ReadonlyArray<{ from: string; to: string }> = [],
 ): string {
   const finalNewline = yaml.endsWith("\n");
   const lines = yaml.replace(/\r\n/g, "\n").split("\n");
   // A trailing newline leaves an empty last element; keep it out of the edit.
   if (finalNewline) lines.pop();
+
+  for (const { from, to } of renames) {
+    const block = findBlocks(lines).find((candidate) => candidate.key === from);
+    if (!block) continue;
+    lines[block.start] = `${to}:${block.rest}`;
+  }
 
   const blocks = findBlocks(lines);
   const existing = new Map(blocks.map((block) => [block.key, block]));
@@ -208,6 +229,12 @@ export function editFrontmatterYaml(
   return finalNewline ? `${body}\n` : body;
 }
 
+/** The top-level keys of a frontmatter block, in order. */
+export function frontmatterKeys(yaml: string | null): string[] {
+  if (!yaml) return [];
+  return findBlocks(yaml.replace(/\r\n/g, "\n").split("\n")).map((block) => block.key);
+}
+
 /** Canonical inner YAML for a brand-new frontmatter block. */
 export function canonicalYaml(frontmatter: Frontmatter): string {
   const keys = [
@@ -236,6 +263,8 @@ export function serializeNoteLike(
   frontmatter: Frontmatter,
   content: string,
   changes?: readonly string[],
+  /** Keys to rename in place (v0.7 properties). */
+  renames: ReadonlyArray<{ from: string; to: string }> = [],
 ): string {
   const eol = template?.eol ?? "\n";
   const finalNewline = template?.finalNewline ?? true;
@@ -251,7 +280,7 @@ export function serializeNoteLike(
   const yaml =
     template?.yaml === null || template === null
       ? canonicalYaml(frontmatter)
-      : editFrontmatterYaml(template.yaml, managed);
+      : editFrontmatterYaml(template.yaml, managed, renames);
 
   if (yaml.trim().length === 0 && body.length === 0) return "";
   if (yaml.trim().length === 0) {

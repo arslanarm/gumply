@@ -47,9 +47,10 @@ export default defineConfig({
     // not the whole suite (keeps runtime and unrelated browser quirks out).
     // `graph-visual` (dev-graph: fit geometry, resize, filter, DPR) supersedes
     // the earlier `graph-pixels` smoke check, which is kept as a cheap guard.
+    // `today-shortcut` (#5hrsrqsj): Ctrl+Shift+D must beat Firefox's own binding.
     {
       name: 'firefox',
-      testMatch: /graph-(visual|pixels|interaction)\.spec\.ts$/,
+      testMatch: /(graph-(visual|pixels|interaction)|today-shortcut)\.spec\.ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
   ],

@@ -1,5 +1,6 @@
 import { flushSync } from "react-dom";
 import {
+  convertPropertyValue,
   formatWikilink,
   resolveWikilink,
   type Backlink,
@@ -7,7 +8,10 @@ import {
   type Page,
   type PageId,
   type PageMeta,
+  type PropertiesPatch,
+  type PropertyType,
   type TrashItem,
+  type DailyNoteSettings,
 } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, consumeNewVaultPage, fileUrl } from "./api/client.js";
@@ -16,7 +20,11 @@ import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
+import { PropertiesBlock } from "./components/PropertiesBlock.js";
 import { FolderView } from "./components/FolderView.js";
+import { TemplatePicker } from "./components/TemplatePicker.js";
+import type { PageTemplateRequest } from "./editor/page-template.js";
+import { dailyNeighbours, todayDay } from "./lib/daily.js";
 import { TrashedPageView } from "./components/TrashedPageView.js";
 import { TrashView } from "./components/TrashView.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
@@ -160,6 +168,14 @@ export function App() {
     parentId: PageId | null;
     resolve?: (template: BoardTemplateId | null | undefined) => void;
   } | null>(null);
+  /** v0.7 C: the page-template picker (new page inside a parent, or `/template` in the open page). */
+  const [templatePicker, setTemplatePicker] = useState<
+    | { mode: "new"; parentId: PageId | null }
+    | { mode: "insert"; pageId: PageId; title: string; request: PageTemplateRequest }
+    | null
+  >(null);
+  /** v0.7 C: daily-note settings (folder and format) for ‹ › and Today. */
+  const [dailySettings, setDailySettings] = useState<DailyNoteSettings | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
@@ -474,6 +490,8 @@ export function App() {
             tags: updated.tags,
             parentId: updated.parentId,
             updated: updated.updated,
+            // v1.12: every page save answers with the page's properties.
+            ...(updated.properties ? { properties: updated.properties } : {}),
           };
         }
         const id = remap(previous.id);
@@ -886,6 +904,85 @@ export function App() {
     [pages, loadPages, navigate],
   );
 
+  // --- templates and daily notes (v0.7 C, #5hrsrqsj) ---
+
+  useEffect(() => {
+    api
+      .dailySettings()
+      .then(setDailySettings)
+      .catch(() => undefined);
+  }, []);
+
+  /** Today in the sidebar, Cmd+K and Ctrl/Cmd+Shift+D: open (or make) today's note. */
+  const openToday = useCallback(async () => {
+    setActionError(null);
+    if (window.innerWidth <= 900) setSidebarOpen(false);
+    try {
+      const result = await api.dailyNote(todayDay());
+      if (result.created) await loadPages();
+      navigate(result.page.id);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }, [loadPages, navigate]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== "d") return;
+      if (pendingDelete || movingId || shortcutsOpen || searchOpen || templatePicker) return;
+      // Browsers use it for "bookmark all tabs": ours wins inside the app.
+      event.preventDefault();
+      void openToday();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openToday, pendingDelete, movingId, shortcutsOpen, searchOpen, templatePicker]);
+
+  /** `/template` in the open page: pick, then fill (empty page) or insert at the caret. */
+  const insertTemplate = useCallback((request: PageTemplateRequest) => {
+    const open = pageRef.current;
+    if (!open) return;
+    setTemplatePicker({ mode: "insert", pageId: open.id, title: open.title, request });
+  }, []);
+
+  const pickTemplate = useCallback(
+    async (template: PageMeta) => {
+      const picker = templatePicker;
+      setTemplatePicker(null);
+      if (!picker) return;
+      setActionError(null);
+      try {
+        if (picker.mode === "new") {
+          // Named after the template; opens with the title selected to rename.
+          const created = await api.createPage({ title: template.title, parentId: picker.parentId, template: template.id });
+          await loadPages();
+          setAutoFocusTitle(true);
+          setEditTitleId(created.id);
+          navigate(created.id);
+          return;
+        }
+        if (picker.request.empty) {
+          // Body and missing properties on the server, then show the result.
+          await documentControls()?.flush();
+          await api.applyTemplate(picker.pageId, template.id);
+          requestPageReload();
+          return;
+        }
+        const { content } = await api.renderTemplate(template.id, picker.title);
+        picker.request.insert(content);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [templatePicker, loadPages, navigate, requestPageReload],
+  );
+
+  const dailyNav = useMemo(
+    () => (dailySettings && page ? dailyNeighbours(documentPages, dailySettings, page.id) : null),
+    [dailySettings, documentPages, page],
+  );
+
   /** ⋯ → Copy link (#ux5cukze): `[[Title]]`, or `[[Map.canvas|Map]]` for a board. */
   const handleCopyLink = useCallback(
     async (id: PageId) => {
@@ -1084,6 +1181,81 @@ export function App() {
     },
     [applySavedPage, loadPages, pages, requestPageReload],
   );
+
+  // v0.7 A (D34): properties are saved like any page edit: the editor's
+  // pending text first, then a conditional PUT of just the property change.
+  // One property save at a time: each sends the version the previous one made.
+  const propertySaves = useRef<Promise<unknown>>(Promise.resolve());
+  // A patch, or a function computing it when its turn comes (from the page as
+  // it is then; null = nothing to save).
+  type QueuedPatch = PropertiesPatch | (() => PropertiesPatch | null);
+  const savePropertiesRef = useRef<(patch: QueuedPatch) => Promise<boolean>>(async () => false);
+  const handlePropertiesChange = useCallback((patch: QueuedPatch): Promise<boolean> => {
+    const run = () => savePropertiesRef.current(patch);
+    const next = propertySaves.current.then(run, run);
+    propertySaves.current = next;
+    return next;
+  }, []);
+  savePropertiesRef.current = async (queued: QueuedPatch): Promise<boolean> => {
+    {
+      const id = selectedRef.current;
+      if (!id || isBoardId(id)) return false;
+      const patch = typeof queued === "function" ? queued() : queued;
+      if (!patch) return true;
+      setActionError(null);
+      try {
+        await editorControls.current?.flush();
+        const current = pageRef.current;
+        const updated = await api.updatePage(id, {
+          properties: patch,
+          ...(current?.id === id ? { expectedUpdated: current.updated } : {}),
+        });
+        applySavedPage(id, updated);
+        // The next queued save reads the new version from here before React re-renders.
+        pageRef.current =
+          pageRef.current && pageRef.current.id === id
+            ? { ...pageRef.current, updated: updated.updated, properties: updated.properties ?? pageRef.current.properties }
+            : pageRef.current;
+        return true;
+      } catch (error) {
+        setActionError(errorMessage(error));
+        return false;
+      }
+    }
+  };
+
+  const handleSetPropertyType = useCallback(async (key: string, type: PropertyType) => {
+    const id = selectedRef.current;
+    setActionError(null);
+    // The row switches to the new type's editor at once; the server confirms.
+    setPage((previous) =>
+      previous && previous.id === id && previous.properties
+        ? { ...previous, properties: previous.properties.map((item) => (item.key === key ? { ...item, type } : item)) }
+        : previous,
+    );
+    try {
+      const before = pageRef.current?.properties?.find((item) => item.key === key);
+      await api.setPropertyType(key, type);
+      if (!id) return;
+      // Types are vault-wide: refresh just this page's properties.
+      const fresh = await api.getPage(id);
+      setPage((previous) => (previous && previous.id === fresh.id ? { ...previous, properties: fresh.properties ?? [] } : previous));
+      // This page's value follows when it converts cleanly ("2" → 2, a
+      // single value → a list): only that line is written. Other pages keep
+      // theirs, as in Obsidian; a value that doesn't convert shows a hint.
+      // Decided when its turn in the save queue comes, from the value then:
+      // a value typed meanwhile (already in the new shape) is never
+      // overwritten by the old one converted.
+      await handlePropertiesChange(() => {
+        const now = (pageRef.current?.id === id ? pageRef.current?.properties : undefined)?.find((item) => item.key === key) ?? before;
+        if (!now?.editable) return null;
+        const converted = convertPropertyValue(type, now.value);
+        return converted === undefined ? null : { set: { [key]: converted } };
+      });
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }, [handlePropertiesChange]);
 
   const handleSetIcon = useCallback(async (icon: string | null) => {
     const id = selectedRef.current;
@@ -1579,6 +1751,8 @@ export function App() {
           onGraph={navigateGraph}
           onOpenTag={openTagSearch}
           onRenameTag={setTagRename}
+          onToday={() => void openToday()}
+          onNewFromTemplate={(parentId) => setTemplatePicker({ mode: "new", parentId })}
         />
         {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
         <div
@@ -1734,6 +1908,16 @@ export function App() {
                     editTitleOnOpen={editTitleId === page.id ? true : undefined}
                     focusTitleSignal={titleFocusSignal}
                     sessionKey={sessionKeyOf(page.id)}
+                    daily={
+                      dailyNav
+                        ? { previous: dailyNav.previous, next: dailyNav.next, onOpen: handleOpen }
+                        : undefined
+                    }
+                  />
+                  <PropertiesBlock
+                    properties={page.properties ?? []}
+                    onChange={handlePropertiesChange}
+                    onSetType={handleSetPropertyType}
                   />
                   <Editor
                     key={`${sessionKeyOf(page.id)}:${editorRevision}`}
@@ -1755,6 +1939,7 @@ export function App() {
                     onExitTop={handleExitTop}
                     onCreateBoard={createBoardForLink}
                     onOpenTag={openTagSearch}
+                    onInsertTemplate={insertTemplate}
                   />
                   <BacklinksPanel
                     items={backlinks}
@@ -1829,6 +2014,14 @@ export function App() {
         />
       ) : null}
 
+      {templatePicker ? (
+        <TemplatePicker
+          mode={templatePicker.mode}
+          onCancel={() => setTemplatePicker(null)}
+          onPick={(template) => void pickTemplate(template)}
+        />
+      ) : null}
+
       {galleryParent ? (
         <TemplateGallery
           onCancel={() => {
@@ -1878,6 +2071,14 @@ export function App() {
           onOpenLanguage={() => {
             dismissSearch();
             setSettingsOpen(true);
+          }}
+          onOpenToday={() => {
+            dismissSearch();
+            void openToday();
+          }}
+          onNewPageFromTemplate={() => {
+            dismissSearch();
+            setTemplatePicker({ mode: "new", parentId: null });
           }}
           onClose={closeSearch}
         />

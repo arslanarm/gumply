@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "from-template" | "language";
+  kind: "page" | "text" | "create" | "create-board" | "from-template" | "language" | "today" | "page-template";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -40,6 +40,39 @@ export interface SearchSections {
   fromTemplate: SearchRow | null;
   /** `Language…` (opens Settings) when the query asks for it (#7h5utv23). */
   language: SearchRow | null;
+  /** v0.7 C: `Open today's note` ("today", "daily"…). */
+  today: SearchRow | null;
+  /** v0.7 C: `New page from template…` ("template", "new page from…"). */
+  pageTemplate: SearchRow | null;
+}
+
+/** Words for this language's command (English always counts), from a message. */
+function localWords(key: "search.todayWords" | "search.pageTemplateWords"): string[] {
+  return t(key).toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Whether `query` asks for today's daily note: "today", "daily", "journal"… (v0.7 C). */
+export function wantsToday(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = ["today", "daily", "daily note", "journal", ...localWords("search.todayWords")];
+  return words.some((word) => word.startsWith(needle));
+}
+
+/**
+ * Whether `query` asks for a page template: every word starts a word of
+ * "new page from template", and one of them is about templates (v0.7 C).
+ */
+export function wantsPageTemplate(query: string): boolean {
+  const words = normalise(query).split(" ").filter((word) => word.length > 0);
+  if (words.length === 0) return false;
+  const local = localWords("search.pageTemplateWords");
+  const known = ["new", "page", "from", "template", "templates", ...local];
+  const templateWord = ["template", "templates", ...local.filter((word) => word.startsWith("шаблон"))];
+  return (
+    words.every((word) => known.some((candidate) => candidate.startsWith(word))) &&
+    words.some((word) => word.length >= 3 && templateWord.some((candidate) => candidate.startsWith(word)))
+  );
 }
 
 /**
@@ -178,7 +211,9 @@ export function searchSections(
 ): SearchSections {
   const needle = normalise(query);
   const trimmed = query.trim();
-  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null };
+  if (needle.length === 0) {
+    return { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null, today: null, pageTemplate: null };
+  }
 
   const counts = titleCounts(pages);
   const pagesRows: SearchRow[] = [];
@@ -197,7 +232,7 @@ export function searchSections(
       if (ids.has(result.page.id) || textRows.length >= MAX_SEARCH_ROWS) continue;
       textRows.push(toRow(result.page, counts, "text", plainTextSnippet(result.snippet)));
     }
-    return { pages: pagesRows, text: textRows, create: null, createBoard: null, fromTemplate: null, language: null };
+    return { pages: pagesRows, text: textRows, create: null, createBoard: null, fromTemplate: null, language: null, today: null, pageTemplate: null };
   }
 
   for (const result of results) {
@@ -222,7 +257,11 @@ export function searchSections(
 
   const language = wantsLanguage(query) ? { kind: "language" as const, key: "language", label: t("settings.languageCommand") } : null;
 
-  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate, language };
+  const today = wantsToday(query) ? { kind: "today" as const, key: "today", label: t("search.today") } : null;
+  const pageTemplate = wantsPageTemplate(query)
+    ? { kind: "page-template" as const, key: "page-template", label: t("search.pageTemplate") }
+    : null;
+  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate, language, today, pageTemplate };
 }
 
 export interface SnippetPart {

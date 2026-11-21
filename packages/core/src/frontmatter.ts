@@ -24,7 +24,7 @@ export interface ParsedNote {
 }
 
 const FRONTMATTER_FENCE = /^---\s*$/;
-const KEY_LINE = /^([A-Za-z0-9_-]+):\s*(.*)$/;
+const KEY_LINE = /^([\p{L}\p{N}_][\p{L}\p{N}_ -]*?):\s*(.*)$/u;
 const LIST_ITEM = /^[ \t]+-\s*(.*)$/;
 
 const KEY_ORDER = ["title", "icon", "tags", "created", "updated"] as const;

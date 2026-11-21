@@ -54,6 +54,9 @@ export function titleFromId(id: string): string {
   const segment = id.split("/").filter(Boolean).pop() ?? "";
   // D20 ids already are titles: keep them verbatim when they contain spaces.
   if (/\s/.test(segment)) return segment;
+  // Dates and numbers (daily notes, `2026-03-06`, `v1-2`): as written, like
+  // Obsidian, never "2026 03 06" (#5hrsrqsj).
+  if (/\d[-_.]\d/.test(segment)) return segment;
   const words = segment.replace(/[-_]+/g, " ").trim();
   if (words.length === 0) return "Untitled";
   return words.charAt(0).toUpperCase() + words.slice(1);

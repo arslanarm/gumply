@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Page } from "@gumply/core";
+import type { Page, PageId } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
 import { loadEmojiData } from "../lib/emoji/data.js";
 import { preloadGraph } from "../lazy-parts.js";
@@ -36,6 +36,11 @@ export interface PageHeaderProps {
    * header or re-focuses the title.
    */
   sessionKey?: string;
+  /**
+   * v0.7 C: the page is a daily note. ‹ › open the previous/next daily note
+   * that exists (browsing never creates files), disabled at the ends.
+   */
+  daily?: { previous: PageId | null; next: PageId | null; onOpen: (id: PageId) => void };
 }
 
 function formatUpdated(value: string): string {
@@ -58,6 +63,7 @@ export function PageHeader({
   editTitleOnOpen,
   focusTitleSignal = 0,
   sessionKey,
+  daily,
 }: PageHeaderProps) {
   useT();
   const isEmpty = page.content.trim().length === 0;
@@ -217,6 +223,12 @@ export function PageHeader({
     setDraft(page.title);
   };
 
+  // Frontmatter tags are shown in the Tags property (v0.7 A); the header
+  // keeps the inline #tags from the body.
+  const propertyTags = page.properties?.find((property) => property.key === "tags")?.value;
+  const shownAsProperty = new Set(Array.isArray(propertyTags) ? propertyTags.map((tag) => tag.toLowerCase()) : []);
+  const headerTags = page.tags.filter((tag) => !shownAsProperty.has(tag.toLowerCase()));
+
   return (
     <header className="page-header">
       <div className="page-heading">
@@ -352,10 +364,36 @@ export function PageHeader({
       </div>
 
       <div className="page-meta">
+        {daily ? (
+          <span className="daily-nav" data-testid="daily-nav" aria-label={t("daily.label")} role="group">
+            <button
+              type="button"
+              className="daily-nav-button"
+              data-testid="daily-previous"
+              aria-label={t("daily.previous")}
+              data-tooltip={t("daily.previous")}
+              disabled={!daily.previous}
+              onClick={() => daily.previous && daily.onOpen(daily.previous)}
+            >
+              <Icon name="chevronLeft" size={14} />
+            </button>
+            <button
+              type="button"
+              className="daily-nav-button"
+              data-testid="daily-next"
+              aria-label={t("daily.next")}
+              data-tooltip={t("daily.next")}
+              disabled={!daily.next}
+              onClick={() => daily.next && daily.onOpen(daily.next)}
+            >
+              <Icon name="chevronRight" size={14} />
+            </button>
+          </span>
+        ) : null}
         <span className="page-meta-time">{t("page.updated", { time: formatUpdated(page.updated) })}</span>
-        {page.tags.length > 0 ? (
+        {headerTags.length > 0 ? (
           <span className="page-tags">
-            {page.tags.map((tag) => (
+            {headerTags.map((tag) => (
               <span className="page-tag" key={tag}>
                 #{tag}
               </span>

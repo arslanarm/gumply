@@ -1724,7 +1724,8 @@ input {
 
 .sidebar-new-page,
 .sidebar-new-board,
-.sidebar-search {
+.sidebar-search,
+.sidebar-today {
   color: var(--text);
   font-weight: 500;
 }
@@ -1742,7 +1743,8 @@ input {
   bottom: auto;
 }
 
-.sidebar-search .sidebar-row-icon {
+.sidebar-search .sidebar-row-icon,
+.sidebar-today .sidebar-row-icon {
   color: var(--muted);
 }
 
@@ -4680,4 +4682,365 @@ input {
   color: var(--muted);
   font-size: 0.82rem;
   white-space: nowrap;
+}
+
+/* ---------- #5hrsrqsj: daily notes and page templates (v0.7 C) ---------- */
+
+.daily-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 0.5rem;
+}
+
+.daily-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.daily-nav-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.daily-nav-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.template-picker-title {
+  margin: 0;
+  padding: 0.7rem 1rem 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* ---------- Properties (v0.7 A, D34) ---------- */
+
+.properties {
+  margin: 0.2rem 0 1.1rem;
+  font-size: 0.875rem;
+}
+
+.properties-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 0.15rem;
+}
+
+.property-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  align-items: start;
+  gap: 0.35rem;
+  min-height: 32px;
+}
+
+.property-key-cell {
+  position: relative;
+}
+
+.property-key,
+.properties-add {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 32px;
+  padding: 0.3rem 0.45rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.property-key:hover,
+.property-key[aria-expanded="true"],
+.properties-add:hover {
+  background: var(--hover);
+}
+
+.property-key .icon {
+  flex: none;
+  opacity: 0.85;
+}
+
+.property-key-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.properties-add {
+  width: auto;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.properties-add:hover,
+.properties-add:focus-visible {
+  opacity: 1;
+  color: var(--text);
+}
+
+.property-value {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  min-width: 0;
+}
+
+.property-input,
+.property-key-input,
+.property-chip-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.property-input:hover {
+  background: var(--hover);
+}
+
+.property-input:focus,
+.property-key-input,
+.property-chip-input:focus {
+  background: var(--surface-page);
+  border-color: var(--border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.property-input::placeholder,
+.property-chip-input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.property-date {
+  width: auto;
+  color-scheme: inherit;
+}
+
+.property-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0 0.45rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.property-readonly {
+  padding: 0.3rem 0.45rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  cursor: help;
+}
+
+.property-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  border-radius: 5px;
+}
+
+.property-chips:hover,
+.property-chips:focus-within {
+  background: var(--hover);
+}
+
+.property-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  height: 22px;
+  padding: 0 0.2rem 0 0.5rem;
+  border-radius: 4px;
+  background: var(--surface-nav);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.property-chip.is-tag {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.property-chip-remove {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.property-chip-remove:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.property-chip-input {
+  flex: 1;
+  width: auto;
+  min-width: 80px;
+  min-height: 24px;
+  padding: 0.1rem 0.2rem;
+}
+
+.property-chip-input:focus {
+  border-color: transparent;
+  box-shadow: none;
+  background: transparent;
+}
+
+.property-menu,
+.properties-suggestions {
+  position: absolute;
+  z-index: 40;
+  min-width: 200px;
+  margin: 2px 0 0;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 14%);
+  list-style: none;
+}
+
+.property-menu {
+  top: 100%;
+  left: 0;
+}
+
+.property-menu button,
+.properties-suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.property-menu button:hover,
+.properties-suggestions button:hover,
+.properties-suggestions button.is-active {
+  background: var(--hover);
+}
+
+.property-menu button.is-current {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.property-menu button.is-danger {
+  color: var(--danger);
+}
+
+.property-menu-label {
+  padding: 0.4rem 0.5rem 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.property-menu-separator {
+  height: 1px;
+  margin: 0.3rem 0.2rem;
+  background: var(--border);
+}
+
+.properties-add-box {
+  position: relative;
+  max-width: 280px;
+}
+
+.properties-add-input {
+  border-color: var(--border);
+}
+
+.properties-suggestions {
+  left: 0;
+  right: 0;
+}
+
+.properties-error {
+  margin: 0.3rem 0.45rem 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+.property-editor {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* In a database cell (#sg36ng2d): no hover chrome, fits a 32 px row. */
+.property-editor.is-compact .property-input,
+.property-editor.is-compact .property-chips {
+  min-height: 28px;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0;
+}
+
+.property-editor.is-compact .property-input:hover,
+.property-editor.is-compact .property-chips:hover {
+  background: transparent;
+}
+
+.property-mismatch {
+  display: inline-flex;
+  flex: none;
+  margin-left: 0.3rem;
+  color: var(--warning);
+  cursor: help;
+}
+
+.property-mismatch {
+  display: inline-flex;
+  flex: none;
+  margin-left: 0.3rem;
+  color: var(--warning);
+  cursor: help;
 }

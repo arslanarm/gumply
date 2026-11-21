@@ -207,3 +207,42 @@ for (const theme of ['light', 'dark'] as const) {
     await shot(page, `${theme}-32-empty-trash-confirm.png`);
   });
 }
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`Properties (#qw4pcm2h) — ${theme}`, async ({ page, vault }) => {
+    test.setTimeout(60_000);
+    await vault.seed([{ title: 'Anchor' }]);
+    const { writeFileSync } = await import('node:fs');
+    const { E2E_VAULT } = await import('./support/env');
+    writeFileSync(
+      path.join(E2E_VAULT, 'Launch plan.md'),
+      [
+        '---',
+        'status: In progress',
+        'owner: Ann',
+        'priority: 2',
+        'done: false',
+        'due: 2026-12-24',
+        'reviewers:',
+        '  - Bo',
+        '  - Chen',
+        'tags:',
+        '  - launch',
+        '  - q4',
+        '---',
+        '',
+        'Ship the **v0.7** release: properties, database views and templates.',
+        '',
+      ].join('\n'),
+    );
+    await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), { key: THEME_KEY, value: theme });
+    await page.goto('/#/Launch plan');
+    await expect(page.getByTestId('property-row-status')).toBeVisible();
+    await page.waitForTimeout(300);
+    await shot(page, `${theme}-40-properties.png`);
+
+    await page.getByTestId('property-key-priority').click();
+    await expect(page.getByTestId('property-menu')).toBeVisible();
+    await shot(page, `${theme}-41-property-menu.png`);
+  });
+}

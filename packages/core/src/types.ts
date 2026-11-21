@@ -39,6 +39,8 @@ export interface PageMeta {
 /** Full page: metadata plus the Markdown body (without frontmatter). */
 export interface Page extends PageMeta {
   content: string;
+  /** v1.12 (D34): the frontmatter's properties (without title, icon, created, updated). */
+  properties?: import("./properties.js").Property[];
 }
 
 /** Response of `PUT /api/pages/:id`; `rewrittenPages` is set on a rename. */
