@@ -69,6 +69,7 @@ import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { normalizeEditorMarkdown } from "../lib/markdown.js";
 import { taskCheckboxLabel } from "../lib/task.js";
 import { createExitTopExtension, focusStartNow } from "../editor/title-navigation.js";
+import { t } from "../i18n/index.js";
 
 export interface EditorControls {
   /** Id of the page this editor shows (controls outlive a page switch). */
@@ -888,7 +889,7 @@ export function Editor({
           style={{ left: emojiPicker.left, top: emojiPicker.top }}
         >
           <EmojiPicker
-            label="Insert emoji"
+            label={t("emoji.insert")}
             testId="editor-emoji-picker"
             onSelect={(emoji) => {
               const pos = Math.min(emojiPicker.pos, editor.state.doc.content.size);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon.js";
 import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
+import { useT } from "../i18n/index.js";
 
 export interface LinkMenuProps {
   items: readonly LinkSuggestion[];
@@ -14,6 +15,7 @@ export interface LinkMenuProps {
 
 /** Floating `[[` menu (pages + Create row). */
 export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMenuProps) {
+  const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [overflowing, setOverflowing] = useState(false);
@@ -30,11 +32,11 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
       className={`link-menu${overflowing ? " is-scrollable" : ""}`}
       data-testid="link-menu"
       role="listbox"
-      aria-label="Link a page"
+      aria-label={t("board.linkPage")}
       style={{ left, top }}
     >
       {items.length === 0 ? (
-        <p className="link-menu-empty">No pages match</p>
+        <p className="link-menu-empty">{t("links.noMatch")}</p>
       ) : (
         items.map((item, itemIndex) => (
           <button

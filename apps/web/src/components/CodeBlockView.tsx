@@ -8,12 +8,14 @@ import {
 } from "../editor/code/languages.js";
 import { loadGrammar } from "../editor/code/highlight-plugin.js";
 import { Icon } from "./Icon.js";
+import { t, useT } from "../i18n/index.js";
 
 /**
  * Notion-style code block (#zvhhn84v): a language button (searchable picker)
  * and a Copy button over the code. The language is written on the fence.
  */
 export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps) {
+  const t = useT();
   const language = String(node.attrs.language ?? "");
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -66,7 +68,7 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
           data-testid="code-language-button"
           aria-haspopup="listbox"
           aria-expanded={open}
-          title={language && !known ? `“${language}” is kept as written, shown as plain text` : "Change language"}
+          title={language && !known ? t("code.unknownLanguage", { language }) : t("code.changeLanguage")}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setOpen((value) => !value)}
         >
@@ -80,7 +82,7 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => void copy()}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("code.copied") : t("code.copy")}
         </button>
         {open ? (
           <LanguagePicker
@@ -109,6 +111,7 @@ function LanguagePicker({
   onChoose: (language: CodeLanguage) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -143,8 +146,8 @@ function LanguagePicker({
         ref={inputRef}
         type="text"
         value={query}
-        placeholder="Search for a language…"
-        aria-label="Search for a language"
+        placeholder={t("code.searchPlaceholder")}
+        aria-label={t("code.searchLabel")}
         data-testid="code-language-search"
         autoComplete="off"
         spellCheck={false}
@@ -167,7 +170,7 @@ function LanguagePicker({
           }
         }}
       />
-      <div className="code-language-list" role="listbox" aria-label="Languages">
+      <div className="code-language-list" role="listbox" aria-label={t("code.languages")}>
         {results.map((language, index) => (
           <button
             key={language.label}
@@ -185,7 +188,7 @@ function LanguagePicker({
             {language.id === currentId ? <span className="code-language-check">✓</span> : null}
           </button>
         ))}
-        {results.length === 0 ? <p className="code-language-empty">No languages found.</p> : null}
+        {results.length === 0 ? <p className="code-language-empty">{t("code.noLanguages")}</p> : null}
       </div>
     </div>
   );

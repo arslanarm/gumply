@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { deleteDialogBody } from "../lib/delete.js";
+import { useT } from "../i18n/index.js";
 
 export interface DeleteDialogProps {
   title: string;
@@ -10,6 +11,7 @@ export interface DeleteDialogProps {
 
 /** In-app delete confirmation (D15). Cancel is focused by default. */
 export function DeleteDialog({ title, subPages, onCancel, onConfirm }: DeleteDialogProps) {
+  const t = useT();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
 
@@ -61,7 +63,7 @@ export function DeleteDialog({ title, subPages, onCancel, onConfirm }: DeleteDia
         data-testid="delete-confirm-dialog"
         ref={dialogRef}
       >
-        <h2 id="delete-dialog-title">Delete “{title}”?</h2>
+        <h2 id="delete-dialog-title">{t("delete.title", { title })}</h2>
         <p id="delete-dialog-body">{deleteDialogBody(subPages)}</p>
         <div className="modal-actions">
           <button
@@ -71,7 +73,7 @@ export function DeleteDialog({ title, subPages, onCancel, onConfirm }: DeleteDia
             onClick={onCancel}
             ref={cancelRef}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -79,7 +81,7 @@ export function DeleteDialog({ title, subPages, onCancel, onConfirm }: DeleteDia
             data-testid="delete-confirm"
             onClick={onConfirm}
           >
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       </div>

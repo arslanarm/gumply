@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.js";
 /**
  * Shared emoji data for the page-icon picker and the editor's emoji features.
  *
@@ -23,21 +24,22 @@ export type EmojiCategoryId = (typeof CATEGORY_IDS)[number];
 
 export interface EmojiCategory {
   id: EmojiCategoryId;
-  label: string;
+  /** In the interface language (read at render time). */
+  readonly label: string;
   /** Emoji shown on the category tab. */
   icon: string;
 }
 
 export const EMOJI_CATEGORIES: readonly EmojiCategory[] = [
-  { id: "smileys", label: "Smileys & emotion", icon: "😀" },
-  { id: "people", label: "People & body", icon: "👋" },
-  { id: "nature", label: "Animals & nature", icon: "🌿" },
-  { id: "food", label: "Food & drink", icon: "🍔" },
-  { id: "travel", label: "Travel & places", icon: "✈️" },
-  { id: "activities", label: "Activities", icon: "⚽" },
-  { id: "objects", label: "Objects", icon: "💡" },
-  { id: "symbols", label: "Symbols", icon: "❤️" },
-  { id: "flags", label: "Flags", icon: "🏳️" },
+  { id: "smileys", get label() { return t("emoji.categories.smileys"); }, icon: "😀" },
+  { id: "people", get label() { return t("emoji.categories.people"); }, icon: "👋" },
+  { id: "nature", get label() { return t("emoji.categories.nature"); }, icon: "🌿" },
+  { id: "food", get label() { return t("emoji.categories.food"); }, icon: "🍔" },
+  { id: "travel", get label() { return t("emoji.categories.travel"); }, icon: "✈️" },
+  { id: "activities", get label() { return t("emoji.categories.activities"); }, icon: "⚽" },
+  { id: "objects", get label() { return t("emoji.categories.objects"); }, icon: "💡" },
+  { id: "symbols", get label() { return t("emoji.categories.symbols"); }, icon: "❤️" },
+  { id: "flags", get label() { return t("emoji.categories.flags"); }, icon: "🏳️" },
 ];
 
 export interface EmojiEntry {

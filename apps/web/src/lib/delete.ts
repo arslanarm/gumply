@@ -4,6 +4,7 @@
  */
 import type { PageId, PageMeta } from "@gumply/core";
 import { comparePages } from "./tree.js";
+import { t } from "../i18n/index.js";
 
 /** Direct sub-pages of `id` (what the delete dialog counts). */
 export function directSubPages(pages: readonly PageMeta[], id: PageId): PageMeta[] {
@@ -36,9 +37,7 @@ export function subtreePages(pages: readonly PageMeta[], id: PageId): PageMeta[]
 
 /** D15 copy. */
 export function deleteDialogBody(subPages: number): string {
-  return subPages === 1
-    ? "Its 1 sub-page will be deleted too."
-    : `Its ${subPages} sub-pages will be deleted too.`;
+  return t("delete.subPages", { count: subPages });
 }
 
 /**

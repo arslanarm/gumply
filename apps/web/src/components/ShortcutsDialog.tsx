@@ -71,7 +71,7 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
       >
         <h2 id="shortcuts-dialog-title">{t("shortcuts.title")}</h2>
         <p className="shortcuts-intro">
-          Press <kbd>?</kbd> anywhere outside a text field or the editor to open this again.
+          {t("shortcuts.introBefore")}<kbd>?</kbd>{t("shortcuts.introAfter")}
         </p>
 
         <div className="shortcut-groups">

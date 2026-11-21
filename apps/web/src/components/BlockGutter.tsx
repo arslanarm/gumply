@@ -11,6 +11,7 @@ import {
 } from "../lib/blocks.js";
 import { insertBlockBelow, turnInto, type TurnIntoKind } from "../editor/block-editing.js";
 import { setCalloutFold } from "../editor/callout/callout.js";
+import { t, useT } from "../i18n/index.js";
 
 interface HoverState {
   block: BlockRef;
@@ -42,18 +43,19 @@ export interface BlockGutterProps {
   editor: TipTapEditor;
 }
 
-const TURN_INTO: Array<{ kind: TurnIntoKind; label: string }> = [
-  { kind: "text", label: "Text" },
-  { kind: "h1", label: "Heading 1" },
-  { kind: "h2", label: "Heading 2" },
-  { kind: "h3", label: "Heading 3" },
-  { kind: "bullet", label: "Bullet list" },
-  { kind: "ordered", label: "Numbered list" },
-  { kind: "todo", label: "To-do" },
-  { kind: "quote", label: "Quote" },
-  { kind: "callout", label: "Callout" },
-  { kind: "toggle", label: "Toggle" },
-  { kind: "code", label: "Code" },
+// Labels are getters, read at render time (interface language).
+const TURN_INTO: Array<{ kind: TurnIntoKind; readonly label: string }> = [
+  { kind: "text", get label() { return t("blocks.turnInto.text"); } },
+  { kind: "h1", get label() { return t("blocks.turnInto.h1"); } },
+  { kind: "h2", get label() { return t("blocks.turnInto.h2"); } },
+  { kind: "h3", get label() { return t("blocks.turnInto.h3"); } },
+  { kind: "bullet", get label() { return t("blocks.turnInto.bullet"); } },
+  { kind: "ordered", get label() { return t("blocks.turnInto.ordered"); } },
+  { kind: "todo", get label() { return t("blocks.turnInto.todo"); } },
+  { kind: "quote", get label() { return t("blocks.turnInto.quote"); } },
+  { kind: "callout", get label() { return t("blocks.turnInto.callout"); } },
+  { kind: "toggle", get label() { return t("blocks.turnInto.toggle"); } },
+  { kind: "code", get label() { return t("blocks.turnInto.code"); } },
 ];
 
 function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
@@ -101,6 +103,7 @@ function inRect(rect: DOMRect, x: number, y: number, pad = 6): boolean {
 
 /** Hover gutter + block menu for the top-level block or list item under the pointer. */
 export function BlockGutter({ editor }: BlockGutterProps) {
+  useT();
   const [hover, setHover] = useState<HoverState | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [drop, setDrop] = useState<DropState | null>(null);
@@ -380,8 +383,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             className="block-gutter-button"
             data-testid="block-insert"
-            aria-label="Insert block below"
-            title="Insert block below"
+            aria-label={t("blocks.insertBelow")}
+            title={t("blocks.insertBelow")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => insertBlockBelow(editor, hover.block)}
           >
@@ -391,9 +394,9 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             className="block-gutter-button block-gutter-handle"
             data-testid="block-handle"
-            aria-label="Block actions"
+            aria-label={t("blocks.actions")}
             aria-haspopup="menu"
-            title="Drag to move · click for actions"
+            title={t("blocks.handleHint")}
             draggable
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move";
@@ -425,7 +428,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           ref={menuElementRef}
           className="block-menu"
           role="menu"
-          aria-label="Block actions"
+          aria-label={t("blocks.actions")}
           data-testid="block-menu"
           style={{
             left: menu.menuLeft,
@@ -444,7 +447,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
               if (tr) editor.view.dispatch(tr);
             })}
           >
-            Duplicate
+            {t("blocks.duplicate")}
           </button>
           <button
             type="button"
@@ -453,7 +456,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             data-testid="block-menu-item-move-up"
             onClick={() => run((block) => move(block, "up"))}
           >
-            Move up
+            {t("blocks.moveUp")}
           </button>
           <button
             type="button"
@@ -462,7 +465,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             data-testid="block-menu-item-move-down"
             onClick={() => run((block) => move(block, "down"))}
           >
-            Move down
+            {t("blocks.moveDown")}
           </button>
           <button
             type="button"
@@ -474,12 +477,12 @@ export function BlockGutter({ editor }: BlockGutterProps) {
               if (tr) editor.view.dispatch(tr);
             })}
           >
-            Delete
+            {t("common.delete")}
           </button>
           {menu.block.node.type.name === "callout" ? (
             <>
               <div className="block-menu-separator" />
-              <p className="block-menu-heading">Toggle</p>
+              <p className="block-menu-heading">{t("blocks.toggleHeading")}</p>
               {menu.block.node.attrs.fold ? (
                 <>
                   <button
@@ -492,7 +495,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
                       setCalloutFold(editor.view, block.from, block.node.attrs.fold === "-" ? "+" : "-"),
                     )}
                   >
-                    {menu.block.node.attrs.fold === "-" ? "Start open" : "Start closed"}
+                    {menu.block.node.attrs.fold === "-" ? t("blocks.startOpen") : t("blocks.startClosed")}
                   </button>
                   <button
                     type="button"
@@ -501,7 +504,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
                     data-testid="block-menu-item-not-toggle"
                     onClick={() => run((block) => setCalloutFold(editor.view, block.from, ""))}
                   >
-                    Always show contents
+                    {t("blocks.alwaysShow")}
                   </button>
                 </>
               ) : (
@@ -512,7 +515,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
                   data-testid="block-menu-item-make-toggle"
                   onClick={() => run((block) => setCalloutFold(editor.view, block.from, "+"))}
                 >
-                  Make foldable
+                  {t("blocks.makeFoldable")}
                 </button>
               )}
             </>
@@ -520,7 +523,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           {menu.block.node.type.name === "table" || menu.block.node.type.name === "callout" ? null : (
             <>
           <div className="block-menu-separator" />
-          <p className="block-menu-heading">Turn into</p>
+          <p className="block-menu-heading">{t("blocks.turnIntoHeading")}</p>
           {TURN_INTO.map((item) => (
             <button
               key={item.kind}
