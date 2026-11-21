@@ -273,6 +273,33 @@ export function rewriteWikilinkTargets(
   return { content, count: links.length };
 }
 
+/**
+ * D33: a folder moved from `from` to `to` (vault paths, no trailing slash).
+ * Rewrite path-qualified wikilinks into it (`[[Work/Ideas]]`, `|alias`,
+ * `#heading`, `![[Work/Map.canvas|480]]`) to the new path. Title-only links
+ * still resolve and are left alone.
+ */
+export function rewriteWikilinkFolder(markdown: string, from: string, to: string): RewriteResult {
+  const prefix = `${from.toLowerCase()}/`;
+  const moved: WikiLink[] = [];
+  for (const link of extractWikilinks(markdown)) {
+    if (link.targetTitle.toLowerCase().startsWith(prefix)) moved.push(link);
+  }
+  if (moved.length === 0) return { content: markdown, count: 0 };
+  let content = markdown;
+  let count = 0;
+  for (const link of [...moved].reverse()) {
+    const open = link.raw.indexOf("[[") + 2;
+    const lead = /^\s*/.exec(link.raw.slice(open))?.[0].length ?? 0;
+    const at = link.index + open + lead;
+    // The title is whitespace-collapsed; only rewrite when the source matches.
+    if (content.slice(at, at + prefix.length).toLowerCase() !== prefix) continue;
+    content = `${content.slice(0, at)}${to}/${content.slice(at + prefix.length)}`;
+    count += 1;
+  }
+  return { content, count };
+}
+
 function normalise(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }

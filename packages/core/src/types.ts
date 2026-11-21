@@ -9,8 +9,8 @@
  */
 export type PageId = string;
 
-/** D25: a tree item is a Markdown page or a JSON Canvas whiteboard. */
-export type PageKind = "page" | "whiteboard";
+/** D25: a tree item is a Markdown page or a JSON Canvas whiteboard; D33: or a plain folder. */
+export type PageKind = "page" | "whiteboard" | "folder";
 
 /** Metadata stored in a note's YAML frontmatter (plus derived fields). */
 export interface PageMeta {
@@ -26,9 +26,14 @@ export interface PageMeta {
   parentId: PageId | null;
   /** Direct sub-pages (used for delete confirm and tree chevrons). */
   childCount: number;
-  /** ISO 8601 timestamps. */
+  /** ISO 8601 timestamps (D33 folders: the Unix epoch; they have no file). */
   created: string;
   updated: string;
+  /**
+   * D33 folders only: files inside (any depth) that aren't pages or boards,
+   * such as PDFs and images. They go to the trash with the folder.
+   */
+  otherFiles?: number;
 }
 
 /** Full page: metadata plus the Markdown body (without frontmatter). */

@@ -127,3 +127,33 @@ describe("pageTrail", () => {
     expect(pageTrail([meta("welcome", "Welcome")], "missing")).toEqual([]);
   });
 });
+
+describe("plain folders (D33)", () => {
+  const folder = (id: string, title: string, parentId: string | null = null): PageMeta => ({
+    ...meta(id, title, parentId),
+    kind: "folder",
+  });
+
+  it("lists folders before pages at every level, like Obsidian", () => {
+    const pages = [
+      meta("Alpha", "Alpha"),
+      folder("Work", "Work"),
+      meta("Work/Ideas", "Ideas", "Work"),
+      folder("Work/Archive", "Archive", "Work"),
+      folder("Home", "Home"),
+    ];
+    expect(shape(buildPageTree(pages))).toEqual([
+      { id: "Home", children: [] },
+      { id: "Work", children: [{ id: "Work/Archive", children: [] }, { id: "Work/Ideas", children: [] }] },
+      { id: "Alpha", children: [] },
+    ]);
+  });
+
+  it("folders take pages and other folders, never themselves or their own children", () => {
+    const pages = [folder("Work", "Work"), folder("Work/Old", "Old", "Work"), meta("Note", "Note")];
+    expect(canMovePage(pages, "Note", "Work")).toBe(true);
+    expect(canMovePage(pages, "Work", "Note")).toBe(true);
+    expect(canMovePage(pages, "Work", "Work/Old")).toBe(false);
+    expect(canMovePage(pages, "Work/Old", null)).toBe(true);
+  });
+});

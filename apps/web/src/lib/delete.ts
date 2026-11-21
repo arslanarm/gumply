@@ -34,6 +34,33 @@ export function subtreePages(pages: readonly PageMeta[], id: PageId): PageMeta[]
   return out;
 }
 
+/** D33: what a folder holds at any depth (pages, boards, other files such as PDFs). */
+export interface FolderContents {
+  pages: number;
+  boards: number;
+  otherFiles: number;
+}
+
+export function folderContents(pages: readonly PageMeta[], id: PageId): FolderContents {
+  const inside = subtreePages(pages, id).filter((page) => page.id !== id && page.kind !== "folder");
+  const boards = inside.filter((page) => page.kind === "whiteboard").length;
+  const otherFiles = pages.find((page) => page.id === id)?.otherFiles ?? 0;
+  return { pages: inside.length - boards, boards, otherFiles };
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** D33 confirm copy: "Its 3 pages, 1 board and 5 other files will be moved to the trash." */
+export function folderDeleteBody({ pages, boards, otherFiles }: FolderContents): string {
+  const parts = [
+    pages > 0 ? count(pages, "page", "pages") : null,
+    boards > 0 ? count(boards, "board", "boards") : null,
+    otherFiles > 0 ? count(otherFiles, "other file", "other files") : null,
+  ].filter((part): part is string => part !== null);
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : (parts[0] ?? "");
+  return `Its ${list} will be moved to the trash.`;
+}
+
 /** D15 copy. */
 export function deleteDialogBody(subPages: number): string {
   return subPages === 1

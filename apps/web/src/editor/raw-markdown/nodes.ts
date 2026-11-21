@@ -248,7 +248,6 @@ export const RawBlock = Node.create({
 
 /** Read-only preview of a raw inline atom. */
 export function renderRawInlinePreview(source: string, kind: string): HTMLElement {
-  if (kind === "highlight") return el("mark", "raw-inline-highlight", source.slice(2, -2));
   if (kind === "footnote-ref") return el("sup", "raw-inline-footnote", source.slice(2, -1));
   if (kind === "math") return el("code", "raw-inline-math", source.slice(1, -1));
   if (kind === "entity") {
@@ -257,6 +256,8 @@ export function renderRawInlinePreview(source: string, kind: string): HTMLElemen
     decoder.innerHTML = source;
     return el("span", "raw-inline-entity", decoder.value);
   }
+  // `\=`: shows as the `=` it stands for (#bg3cb83t).
+  if (kind === "escape") return el("span", "raw-inline-escape", source.slice(1));
   return el("code", "raw-inline-source", source);
 }
 
