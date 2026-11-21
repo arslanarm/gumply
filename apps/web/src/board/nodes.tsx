@@ -4,7 +4,7 @@
  */
 import { gumplyNodeData, type CanvasNode, type GumplyShape, type InkPoint } from "@gumply/core";
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
-import { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, memo, useContext, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { fileUrl } from "../api/client.js";
 import { colorStyle, solidColor } from "./colors.js";
 import { useBoardActions, useBoardRenderers, type BoardCardRenderProps } from "./context.js";
@@ -150,6 +150,12 @@ function TextEditor({ node, className, placeholder, onHeight }: {
  * the same way, so remembered sizes skip the measuring.
  */
 const fitCache = new Map<string, number>();
+
+/**
+ * Fitted sizes depend on the font: the export stage sets text in its own font
+ * (spec/v0-6 §D) and scopes its sizes so the two never mix.
+ */
+export const FitScopeContext = createContext("");
 const FIT_CACHE_LIMIT = 4000;
 
 function rememberFit(key: string, size: number): void {
@@ -169,7 +175,8 @@ function useFitText(
   cacheKey: string | null = null,
 ) {
   const ref = useRef<HTMLDivElement>(null);
-  const key = cacheKey === null ? null : `${max}|${cacheKey}`;
+  const scope = useContext(FitScopeContext);
+  const key = cacheKey === null ? null : `${scope}|${max}|${cacheKey}`;
   const [size, setSize] = useState(() => (key !== null ? fitCache.get(key) : undefined) ?? max);
   useLayoutEffect(() => {
     const element = ref.current;
