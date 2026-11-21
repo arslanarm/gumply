@@ -7,6 +7,7 @@
 import type { LinkEdge, PageMeta } from "./types.js";
 import { legacySlugTitle, slugify } from "./ids.js";
 import { findInlineTags } from "./tags.js";
+import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
 export interface WikiLink {
   /** Page title the link points at (without alias/heading). */
@@ -188,7 +189,7 @@ export function extractWikilinks(markdown: string): WikiLink[] {
   // it, which keeps graph/backlinks free of attachment ghosts (D19). Board
   // embeds (`![[Map.canvas]]`, D30) and page previews (`![[Page#Heading]]`,
   // #5dpxwac4) are links.
-  const pattern = /(!?)\[\[([^[\]\r\n]*)\]\]/g;
+  const pattern = new RegExp(String.raw`(!?)\[\[(${WIKILINK_INNER}*)\]\]`, "g");
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {

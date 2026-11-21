@@ -194,3 +194,4 @@ export {
   type TemplateContext,
   type TemplateSettings,
 } from "./templates.js";
+export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET } from "./wikilink-syntax.js";

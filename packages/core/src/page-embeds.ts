@@ -9,6 +9,10 @@
  * Headings and block ids inside fenced code never count. Everything here is
  * pure and works on the page body (Markdown without frontmatter).
  */
+import { WIKILINK_INNER, WIKILINK_PART } from "./wikilink-syntax.js";
+
+const ALIASED_LINK = new RegExp(String.raw`\[\[(${WIKILINK_PART}*)\|(${WIKILINK_INNER}*)\]\]`, "g");
+const PLAIN_LINK = new RegExp(String.raw`\[\[(${WIKILINK_INNER}*)\]\]`, "g");
 
 export type EmbedPart =
   | { kind: "page" }
@@ -64,8 +68,8 @@ function scanLines(markdown: string): Array<{ text: string; code: boolean }> {
 /** Heading text as Obsidian compares it: inline Markdown and links reduced to their words. */
 export function headingKey(text: string): string {
   return text
-    .replace(/\[\[([^\]|\r\n]*)\|([^\]\r\n]*)\]\]/g, "$2")
-    .replace(/\[\[([^\]\r\n]*)\]\]/g, "$1")
+    .replace(ALIASED_LINK, "$2")
+    .replace(PLAIN_LINK, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/[*_`~=]/g, "")
     .replace(/\s+/g, " ")

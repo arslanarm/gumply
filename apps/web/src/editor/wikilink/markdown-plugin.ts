@@ -9,7 +9,7 @@
  * markdown-it and its token types are optional peer deps of tiptap-markdown,
  * hence the local `any` aliases at the boundary.
  */
-import { hasAttachmentExtension } from "@gumply/core";
+import { hasAttachmentExtension, isWikilinkInner } from "@gumply/core";
 
 interface WikiLinkMeta {
   title: string;
@@ -56,7 +56,7 @@ function readInlineRule(state: any, silent: boolean): boolean {
 
   const inner = src.slice(pos + 2, end);
   // Obsidian: a link never spans a line break, so `[[A|b⏎c]]` stays text (#pvrx7t6r).
-  if (inner.includes("[") || inner.includes("]") || /[\r\n]/.test(inner)) return false;
+  if (!isWikilinkInner(inner)) return false;
   // Attachment names are handled by the attachment rule below.
   if (hasAttachmentExtension(inner.split("|")[0]?.trim() ?? "")) return false;
 
@@ -94,7 +94,7 @@ function readAttachmentRule(state: any, silent: boolean): boolean {
 
   if (src[pos] === "!" && src[pos + 1] === "[" && src[pos + 2] === "[") {
     const close = src.indexOf("]]", pos + 3);
-    if (close === -1 || /[\r\n]/.test(src.slice(pos + 3, close))) return false;
+    if (close === -1 || !isWikilinkInner(src.slice(pos + 3, close))) return false;
     const inner = src.slice(pos + 3, close).trim();
     // `![[pic.png|16]]`: Obsidian size/alias after `|` (#2rmk983y).
     if (!hasAttachmentExtension(inner.split("|")[0]?.trim() ?? "")) return false;
@@ -105,7 +105,7 @@ function readAttachmentRule(state: any, silent: boolean): boolean {
     tokenType = isImageName(name) ? "attachment_image" : "attachment_file";
   } else if (src[pos] === "[" && src[pos + 1] === "[") {
     const close = src.indexOf("]]", pos + 2);
-    if (close === -1 || /[\r\n]/.test(src.slice(pos + 2, close))) return false;
+    if (close === -1 || !isWikilinkInner(src.slice(pos + 2, close))) return false;
     const inner = src.slice(pos + 2, close).trim();
     // `![[pic.png|16]]`: Obsidian size/alias after `|` (#2rmk983y).
     if (!hasAttachmentExtension(inner.split("|")[0]?.trim() ?? "")) return false;

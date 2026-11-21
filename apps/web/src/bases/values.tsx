@@ -10,6 +10,7 @@ import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
 import { isTitleColumn } from "./labels.js";
 import { display } from "./TableView.js";
+import { WIKILINK_TARGET } from "@gumply/core";
 
 /** One value, compact: chips for lists, a tick for checkboxes, dates in the interface language. */
 export function ValueText({ value, column }: { value: BaseValue; column: BaseColumn }) {
@@ -69,7 +70,7 @@ export function imageOf(row: BaseRow, view: BaseView): { url?: string; color?: s
   const text = value.trim();
   if (/^#[0-9a-f]{3,8}$/i.test(text)) return { color: text };
   if (/^https?:\/\//i.test(text)) return { url: text };
-  const wiki = /^!?\[\[([^\]|#]+)/.exec(text);
+  const wiki = new RegExp(String.raw`^!?\[\[(${WIKILINK_TARGET}+)`).exec(text);
   const path = (wiki ? wiki[1]! : text).trim();
   if (!/\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(path)) return null;
   // A bare name is looked up in attachments/ (where Gumply keeps images, D18).

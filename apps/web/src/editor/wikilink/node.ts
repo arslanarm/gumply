@@ -3,7 +3,7 @@
  * The node view is plain DOM (no React portal) so it never flushes React
  * during editor lifecycle work.
  */
-import { hasAttachmentExtension, linkTargetFor, resolveWikilink } from "@gumply/core";
+import { hasAttachmentExtension, linkTargetFor, resolveWikilink, WIKILINK_INNER } from "@gumply/core";
 import { InputRule, Node, mergeAttributes } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { parseWikiLinkText } from "../../lib/wikilinks.js";
@@ -59,7 +59,7 @@ export const WikiLink = Node.create({
         // leaving raw text (and the `[[` suggestion decoration) until reload
         // (walkthrough #2, #c62p7zfp). Input rules already skip code blocks
         // and code marks, so `[[X]]` in code stays literal.
-        find: /\[\[([^[\]]+)\]\]$/,
+        find: new RegExp(String.raw`\[\[(${WIKILINK_INNER}+)\]\]$`),
         handler: ({ state, range, match }) => {
           const parsed = parseWikiLinkText(match[0] ?? "");
           if (!parsed) return null;
