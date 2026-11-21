@@ -55,7 +55,11 @@ export type IconName =
   | "clipboard"
   | "externalLink"
   | "unlink"
-  | "text";
+  | "text"
+  // Property types (v0.7 A); "calendar" is shared with daily notes.
+  | "hash"
+  | "clock"
+  | "tag";
 
 const ICONS: Record<IconName, ReactNode> = {
   bold: <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />,
@@ -279,6 +283,19 @@ const ICONS: Record<IconName, ReactNode> = {
     <>
       <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
       <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+    </>
+  ),
+  hash: <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />,
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  tag: (
+    <>
+      <path d="M12.6 2.6a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z" />
+      <circle cx="7.5" cy="7.5" r="1.2" />
     </>
   ),
   list: (

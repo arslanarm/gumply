@@ -43,7 +43,9 @@ export {
 export {
   canonicalYaml,
   editFrontmatterYaml,
+  frontmatterKeys,
   parseNoteTemplate,
+  YAML_EMPTY,
   serializeNoteLike,
   type NoteTemplate,
 } from "./note-template.js";
@@ -146,6 +148,23 @@ export {
   type OutlineBlock,
   type OutlineHeading,
 } from "./page-embeds.js";
+
+export {
+  coercePropertyValue,
+  convertPropertyValue,
+  HEADER_KEYS,
+  inferPropertyType,
+  isPropertyType,
+  isValidPropertyKey,
+  PROPERTY_TYPES,
+  propertyValueMatches,
+  type PropertiesPatch,
+  type Property,
+  type PropertyInfo,
+  type PropertyType,
+  type PropertyValue,
+} from "./properties.js";
+
 export {
   DEFAULT_DAILY_SETTINGS,
   DEFAULT_TEMPLATE_SETTINGS,
