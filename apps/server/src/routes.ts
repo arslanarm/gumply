@@ -41,6 +41,7 @@ import type {
   VaultStore,
 } from "./vault-store.js";
 import { BaseQueries } from "./bases.js";
+import { demoLanguageFor } from "./demo.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -110,8 +111,11 @@ export function createApiRoutes(store: VaultStore): Hono {
   const api = new Hono();
 
   api.get("/pages", async (c) => {
+    // #93yv3ban: a first run seeds the demo in the app's language first.
+    await store.seedDemoOnFirstList(demoLanguageFor(c.req.header("accept-language")));
     const firstPage = store.consumeNewVaultPage();
-    if (firstPage) c.header("X-Gumply-New-Vault", firstPage);
+    // Percent-encoded: a header carries bytes, an id may be "Добро пожаловать".
+    if (firstPage) c.header("X-Gumply-New-Vault", encodeURIComponent(firstPage));
     // v1.12: opt-in properties per page (database views); the default stays light.
     if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());

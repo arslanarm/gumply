@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import type { ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -167,6 +167,21 @@ test('opens a new vault with the demo, saves typing to disk, opens a board', asy
         await window.screenshot({ path: join(shots, `desktop-board-${theme}.png`) });
       }
     }
+  } finally {
+    await app.close();
+  }
+});
+
+test('a new vault gets the demo in the saved interface language (#93yv3ban)', async () => {
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(
+    join(userData, 'gumply-desktop.json'),
+    JSON.stringify({ lastVault: null, recentVaults: [], window: null, uiState: { 'gumply:language': 'ru' } }),
+  );
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Добро пожаловать');
+    expect(existsSync(join(vault, 'Демо Gumply', 'Карта проекта.canvas'))).toBe(true);
   } finally {
     await app.close();
   }

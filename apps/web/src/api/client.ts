@@ -26,6 +26,7 @@ import type {
   BaseConfig,
   BaseViewResult,
 } from "@gumply/core";
+import { currentLanguage } from "../i18n/index.js";
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -49,6 +50,8 @@ export function consumeNewVaultPage(): PageId | null {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
+  // The interface language: a first run seeds the demo in it (#93yv3ban).
+  headers.set("Accept-Language", currentLanguage());
   if (init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
@@ -57,7 +60,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   // First-run signal from the server: open this page once, then forget it.
   const firstPage = response.headers.get("x-gumply-new-vault");
-  if (firstPage) newVaultPage = firstPage;
+  if (firstPage) {
+    try {
+      newVaultPage = decodeURIComponent(firstPage);
+    } catch {
+      newVaultPage = firstPage;
+    }
+  }
 
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
