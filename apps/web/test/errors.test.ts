@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ApiRequestError } from "../src/api/client.js";
-import { errorMessage, SERVER_DOWN_MESSAGE } from "../src/lib/errors.js";
+import { errorMessage, serverDownMessage } from "../src/lib/errors.js";
 
 describe("errorMessage", () => {
   it("hides raw 5xx status text behind the server-down copy", () => {
     expect(errorMessage(new ApiRequestError(500, "Internal Server Error"))).toBe(
-      SERVER_DOWN_MESSAGE,
+      serverDownMessage(),
     );
-    expect(errorMessage(new ApiRequestError(502, "Bad Gateway"))).toBe(SERVER_DOWN_MESSAGE);
+    expect(errorMessage(new ApiRequestError(502, "Bad Gateway"))).toBe(serverDownMessage());
   });
 
   it("keeps client error messages that are meant for the user", () => {
@@ -18,8 +18,8 @@ describe("errorMessage", () => {
   });
 
   it("treats network failures as the server being down", () => {
-    expect(errorMessage(new TypeError("Failed to fetch"))).toBe(SERVER_DOWN_MESSAGE);
-    expect(errorMessage(new Error("network error"))).toBe(SERVER_DOWN_MESSAGE);
+    expect(errorMessage(new TypeError("Failed to fetch"))).toBe(serverDownMessage());
+    expect(errorMessage(new Error("network error"))).toBe(serverDownMessage());
   });
 
   it("has a generic fallback for non-errors", () => {

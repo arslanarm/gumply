@@ -4,6 +4,7 @@ import { preloadGraph } from "../lazy-parts.js";
 import { buildPageTree } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { PageItem } from "./PageItem.js";
+import { useT } from "../i18n/index.js";
 
 export interface SidebarFocusTarget {
   id: PageId | null;
@@ -35,6 +36,7 @@ export interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
+  const t = useT();
   const { pages, selectedId, status, error, focusTarget } = props;
   const tree = useMemo(() => buildPageTree(pages), [pages]);
 
@@ -156,33 +158,33 @@ export function Sidebar(props: SidebarProps) {
   return (
     <aside className="sidebar" data-testid="sidebar">
       <div className="sidebar-header">
-        <span className="sidebar-title">Pages</span>
+        <span className="sidebar-title">{t("sidebar.pages")}</span>
       </div>
 
       <button
         type="button"
         className="sidebar-row sidebar-new-page"
         data-testid="new-page-button"
-        aria-label="New page"
+        aria-label={t("sidebar.newPage")}
         onClick={() => props.onCreate(null)}
       >
         <span className="sidebar-row-icon" aria-hidden="true">
           <Icon name="plus" size={16} />
         </span>
-        New page
+        {t("sidebar.newPage")}
       </button>
 
       <button
         type="button"
         className="sidebar-row sidebar-new-board"
         data-testid="new-board-button"
-        aria-label="New whiteboard"
+        aria-label={t("sidebar.newBoard")}
         onClick={() => props.onCreateBoard(null)}
       >
         <span className="sidebar-row-icon" aria-hidden="true">
           <Icon name="board" size={16} />
         </span>
-        New whiteboard
+        {t("sidebar.newBoard")}
       </button>
 
       <button
@@ -194,14 +196,14 @@ export function Sidebar(props: SidebarProps) {
         <span className="sidebar-row-icon" aria-hidden="true">
           <Icon name="search" size={16} />
         </span>
-        Search
+        {t("sidebar.search")}
       </button>
 
       <div
         className="page-tree"
         data-testid="page-tree"
         role="tree"
-        aria-label="Pages"
+        aria-label={t("sidebar.pages")}
         onDragOver={(event) => {
           if (!draggingId) return;
           event.preventDefault();
@@ -216,18 +218,18 @@ export function Sidebar(props: SidebarProps) {
         }}
       >
         {status === "loading" ? (
-          <p className="tree-note">Loading pages…</p>
+          <p className="tree-note">{t("sidebar.loading")}</p>
         ) : status === "error" ? (
           <div className="tree-error">
-            <p>{error ?? "Could not load pages."}</p>
+            <p>{error ?? t("sidebar.loadFailed")}</p>
             <button type="button" className="button-secondary" onClick={props.onRetry}>
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         ) : tree.length === 0 ? (
           <div className="sidebar-empty" data-testid="sidebar-empty">
             <p>
-              <strong>No pages yet.</strong> Create a page to get started.
+              <strong>{t("empty.noPages")}</strong> {t("empty.noPagesHint")}
             </p>
           </div>
         ) : (
@@ -262,7 +264,7 @@ export function Sidebar(props: SidebarProps) {
         <span className="sidebar-row-icon" aria-hidden="true">
           <Icon name="graph" size={16} />
         </span>
-        Graph
+        {t("graph.title")}
       </button>
     </aside>
   );

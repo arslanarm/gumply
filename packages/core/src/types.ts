@@ -117,6 +117,12 @@ export interface HealthResponse {
   name: string;
   version: string;
   vaultPath: string;
+  /**
+   * v1.8, desktop app only: the saved interface language (`"en"`, `"ru"`…),
+   * or `null` to follow the system. Absent in the browser, where the web app
+   * keeps the choice itself (#7h5utv23).
+   */
+  uiLanguage?: string | null;
 }
 
 /** A file stored under `vault/attachments/` (D18). */

@@ -1,0 +1,9 @@
+{
+  "app": {
+    "name": "Gumply"
+  },
+  "time": {
+    "justNow": "только что",
+    "recently": "недавно"
+  }
+}

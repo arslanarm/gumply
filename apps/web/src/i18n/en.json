@@ -1,0 +1,154 @@
+{
+  "app": {
+    "name": "Gumply"
+  },
+  "time": {
+    "justNow": "just now",
+    "recently": "recently"
+  },
+  "errors": {
+    "serverDown": "Can't reach Gumply's local server.",
+    "generic": "Something went wrong.",
+    "serverDownHint": "Your pages are safe on disk. Start the app again to reconnect.",
+    "runDevBefore": "Run ",
+    "runDevAfter": " in the Gumply folder."
+  },
+  "common": {
+    "dismiss": "Dismiss",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "open": "Open",
+    "undo": "Undo"
+  },
+  "defaults": {
+    "untitledPage": "Untitled",
+    "untitledBoard": "Untitled whiteboard"
+  },
+  "graph": {
+    "title": "Graph"
+  },
+  "sidebar": {
+    "hide": "Hide sidebar",
+    "show": "Show sidebar",
+    "newPage": "New page",
+    "copyTitle": "{{title}} copy",
+    "linkCopied": "Link copied",
+    "copyLinkBlocked": "Couldn't copy the link. Your browser blocked the clipboard.",
+    "pages": "Pages",
+    "newBoard": "New whiteboard",
+    "search": "Search",
+    "loading": "Loading pages…",
+    "loadFailed": "Could not load pages.",
+    "collapse": "Collapse sub-pages",
+    "expand": "Expand sub-pages",
+    "newSubPage": "New sub-page",
+    "moreActions": "More actions",
+    "actionsFor": "Actions for {{title}}",
+    "rename": "Rename",
+    "subPagesNotCopied": "Sub-pages aren't copied",
+    "duplicate": "Duplicate",
+    "copyLink": "Copy link",
+    "moveTo": "Move to…",
+    "addBoardInside": "Add whiteboard inside",
+    "deleteBoard": "Delete whiteboard",
+    "deletePage": "Delete page"
+  },
+  "delete": {
+    "boardDeleted": "Whiteboard deleted",
+    "pageDeleted": "Page deleted"
+  },
+  "page": {
+    "path": "Page path",
+    "headingNotFound": "Couldn't find that heading",
+    "noLongerExists": "That page no longer exists",
+    "conflictKept": "Other version kept in {{path}}",
+    "deletedOnDisk": "This page was deleted on disk. Your unsaved text is still here.",
+    "restore": "Restore page",
+    "notFound": "This page doesn't exist.",
+    "notFoundHint": "It may have been deleted or renamed.",
+    "goToWelcome": "Go to Welcome",
+    "create": "Create page",
+    "loading": "Loading page…",
+    "changeIcon": "Change icon",
+    "addIcon": "Add icon",
+    "changeIconLabel": "Change page icon",
+    "addIconLabel": "Add page icon",
+    "iconLabel": "Page icon",
+    "localGraph": "Local graph",
+    "rename": "Rename page",
+    "updated": "Updated {{time}}"
+  },
+  "empty": {
+    "noPages": "No pages yet.",
+    "noSelection": "No page selected",
+    "noPagesHint": "Create a page to get started.",
+    "noSelectionHint": "Choose a page in the sidebar, or create a new one."
+  },
+  "shortcuts": {
+    "button": "Keyboard shortcuts (?)"
+  },
+  "templates": {
+    "kanban": {
+      "name": "Kanban",
+      "description": "To do, Doing and Done columns",
+      "todo": "To do",
+      "doing": "Doing",
+      "done": "Done",
+      "hintDrag": "Drag cards between columns",
+      "hintEdit": "Double-click a card to edit it",
+      "hintAdd": "Add a card with the sticky tool (S)",
+      "inProgress": "Work in progress",
+      "finished": "Finished work"
+    },
+    "mindMap": {
+      "name": "Mind map",
+      "description": "A central idea with branches",
+      "center": "Main idea",
+      "idea": "Idea",
+      "detail": "Detail"
+    },
+    "retro": {
+      "name": "Retrospective",
+      "description": "Went well, To improve, Action items",
+      "wentWell": "Went well",
+      "wentWellPrompt": "What should we keep doing?",
+      "toImprove": "To improve",
+      "toImprovePrompt": "What slowed us down?",
+      "actions": "Action items",
+      "actionsPrompt": "Who does what, by when?"
+    },
+    "flowchart": {
+      "name": "Flowchart",
+      "description": "Start, steps, a decision and an end",
+      "start": "Start",
+      "step": "Do something",
+      "decision": "Is it done?",
+      "fix": "Fix it",
+      "end": "End",
+      "no": "No",
+      "yes": "Yes"
+    },
+    "weekly": {
+      "name": "Weekly plan",
+      "description": "Goals and a column per day",
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "weekend": "Weekend",
+      "goals": "Goals this week",
+      "goalHint": "One thing that would make this week great",
+      "anotherGoal": "Another goal",
+      "taskHint": "A task for Monday"
+    },
+    "blank": {
+      "name": "Blank",
+      "description": "An empty board"
+    },
+    "galleryTitle": "New whiteboard",
+    "galleryLabel": "Templates"
+  }
+}

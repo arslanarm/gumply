@@ -4,6 +4,7 @@ import { BOARD_DRAG_MIME } from "../board/constants.js";
 import { isBoard, vaultPathOf } from "../lib/boards.js";
 import { canMovePage, type PageTreeNode } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
+import { useT } from "../i18n/index.js";
 
 export interface PageItemProps {
   node: PageTreeNode;
@@ -41,6 +42,7 @@ export interface PageItemProps {
 export const PageItem = memo(PageItemRow);
 
 function PageItemRow(props: PageItemProps) {
+  const t = useT();
   const { node, depth, pages, selectedId, renamingId, draggingId, collapsed } = props;
   const page = node.page;
   const board = isBoard(page);
@@ -186,7 +188,7 @@ function PageItemRow(props: PageItemProps) {
             type="button"
             className="tree-toggle"
             data-testid={`tree-toggle-${page.id}`}
-            aria-label={expanded ? "Collapse sub-pages" : "Expand sub-pages"}
+            aria-label={expanded ? t("sidebar.collapse") : t("sidebar.expand")}
             onClick={(event) => {
               event.stopPropagation();
               props.onToggle(page.id);
@@ -237,9 +239,9 @@ function PageItemRow(props: PageItemProps) {
           <button
             type="button"
             className="tree-action"
-            data-tooltip="New sub-page"
+            data-tooltip={t("sidebar.newSubPage")}
             data-testid={`new-child-button-${page.id}`}
-            aria-label="New sub-page"
+            aria-label={t("sidebar.newSubPage")}
             onClick={(event) => {
               event.stopPropagation();
               props.onCreateChild(page.id);
@@ -253,9 +255,9 @@ function PageItemRow(props: PageItemProps) {
             <button
               type="button"
               className="tree-action"
-              data-tooltip="More actions"
+              data-tooltip={t("sidebar.moreActions")}
               data-testid={`page-menu-button-${page.id}`}
-              aria-label="More actions"
+              aria-label={t("sidebar.moreActions")}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={(event) => {
@@ -271,7 +273,7 @@ function PageItemRow(props: PageItemProps) {
                 ref={menuListRef}
                 className={`page-menu-list${menu?.at ? " is-at-pointer" : ""}`}
                 role="menu"
-                aria-label={`Actions for ${page.title}`}
+                aria-label={t("sidebar.actionsFor", { title: page.title })}
                 data-testid={`page-menu-${page.id}`}
                 style={menu?.at ? { left: menu.at.x, top: menu.at.y } : undefined}
                 onContextMenu={(event) => event.preventDefault()}
@@ -286,20 +288,20 @@ function PageItemRow(props: PageItemProps) {
                     props.onStartRename(page.id, page.title);
                   }}
                 >
-                  Rename
+                  {t("sidebar.rename")}
                 </button>
                 <button
                   type="button"
                   role="menuitem"
                   data-testid={`duplicate-page-${page.id}`}
-                  title={!board && hasChildren ? "Sub-pages aren't copied" : undefined}
+                  title={!board && hasChildren ? t("sidebar.subPagesNotCopied") : undefined}
                   onClick={(event) => {
                     event.stopPropagation();
                     setMenuOpen(false);
                     props.onDuplicate(page.id);
                   }}
                 >
-                  Duplicate
+                  {t("sidebar.duplicate")}
                 </button>
                 <button
                   type="button"
@@ -311,7 +313,7 @@ function PageItemRow(props: PageItemProps) {
                     props.onCopyLink(page.id);
                   }}
                 >
-                  Copy link
+                  {t("sidebar.copyLink")}
                 </button>
                 <button
                   type="button"
@@ -323,7 +325,7 @@ function PageItemRow(props: PageItemProps) {
                     props.onStartMove(page.id);
                   }}
                 >
-                  Move to…
+                  {t("sidebar.moveTo")}
                 </button>
                 {board ? null : (
                   <button
@@ -336,7 +338,7 @@ function PageItemRow(props: PageItemProps) {
                       props.onCreateBoardChild(page.id);
                     }}
                   >
-                    Add whiteboard inside
+                    {t("sidebar.addBoardInside")}
                   </button>
                 )}
                 <button
@@ -350,7 +352,7 @@ function PageItemRow(props: PageItemProps) {
                     props.onDelete(page.id);
                   }}
                 >
-                  {board ? "Delete whiteboard" : "Delete page"}
+                  {board ? t("sidebar.deleteBoard") : t("sidebar.deletePage")}
                 </button>
               </div>
             ) : null}
