@@ -3,7 +3,7 @@
  * applies where you clicked.
  *
  * - **Text:** Cut, Copy, Paste, Paste as plain text; with a selection,
- *   formatting and Link; Turn into, Duplicate block and Delete block; on a
+ *   formatting, Colour (#h368c8ni) and Link; Turn into, Duplicate block and Delete block; on a
  *   heading, Copy link to heading (`[[Page#Heading]]`).
  * - **Code blocks and tables:** only the clipboard and what applies there.
  * - **Links:** Open, Copy link, Edit link, Remove link. **Wiki links:** Open,
@@ -26,6 +26,7 @@ import { canFormat, markActions, openLinkField, removeLink, toggleMark } from ".
 import { getWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { currentModifierLabel } from "../lib/shortcuts.js";
 import { Icon, type IconName } from "./Icon.js";
+import { ColorPalette } from "./ColorPalette.js";
 
 export interface EditorContextMenuProps {
   editor: Editor;
@@ -71,7 +72,9 @@ function safeHref(href: string): string | null {
 
 export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [submenu, setSubmenu] = useState(false);
+  const [submenu, setSubmenu] = useState<null | "turn-into" | "color">(null);
+  /** The submenu was opened from the keyboard: focus its first item. */
+  const [submenuFocus, setSubmenuFocus] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
   // Open on right-click / the context-menu key inside the text.
@@ -145,7 +148,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
           // Not selectable; the menu still acts on the image position.
         }
       }
-      setSubmenu(false);
+      setSubmenu(null);
       setMenu({ x: event.clientX, y: event.clientY, focusFirst: false, ...contextAt(target, at.pos) });
     };
 
@@ -156,7 +159,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
       const coords = view.coordsAtPos(view.state.selection.head);
       const domAt = view.domAtPos(view.state.selection.head);
       const element = domAt.node instanceof Element ? domAt.node : domAt.node.parentElement;
-      setSubmenu(false);
+      setSubmenu(null);
       setMenu({ x: coords.left, y: coords.bottom + 4, focusFirst: true, ...contextAt(element, view.state.selection.head) });
     };
 
@@ -201,11 +204,19 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
 
   const done = () => {
     setMenu(null);
-    setSubmenu(false);
+    setSubmenu(null);
   };
   const back = () => {
     done();
     editor.commands.focus();
+  };
+
+  const toggleSubmenu = (which: "turn-into" | "color", fromKeyboard = false) => {
+    setSubmenuFocus(fromKeyboard);
+    setSubmenu((open) => (open === which ? null : which));
+    if (fromKeyboard && which === "turn-into") {
+      requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('.context-submenu [role="menuitem"]')?.focus());
+    }
   };
 
   /** Run a document command with the text focused (and its DOM selection back). */
@@ -341,6 +352,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
         keys: action.keys,
         run: inText(() => toggleMark(editor, action.mark)),
       })),
+      { id: "color", label: t("format.color"), icon: "palette", run: () => toggleSubmenu("color") },
       ...(context.kind !== "link"
         ? [{ id: "format-link", label: t("editorMenu.link"), icon: "link" as const, keys: `${currentModifierLabel()}+K`, run: inText(() => { openLinkField(); }) }]
         : []),
@@ -350,7 +362,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
   if (context.kind === "text" || context.kind === "code") {
     const blockItems: Section = [];
     if (context.kind === "text") {
-      blockItems.push({ id: "turn-into", label: t("blocks.turnIntoHeading"), icon: "text", run: () => setSubmenu((open) => !open) });
+      blockItems.push({ id: "turn-into", label: t("blocks.turnIntoHeading"), icon: "text", run: () => toggleSubmenu("turn-into") });
     }
     blockItems.push(
       {
@@ -426,14 +438,17 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
     if (event.key === "Escape") {
       event.preventDefault();
       if (submenu) {
-        setSubmenu(false);
-        ref.current?.querySelector<HTMLElement>('[data-testid="context-turn-into"]')?.focus();
+        const opener = submenu;
+        setSubmenu(null);
+        ref.current?.querySelector<HTMLElement>(`[data-testid="context-${opener}"]`)?.focus();
       } else back();
       return;
     }
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Home" && event.key !== "End") return;
+    // The palette moves through its own grid.
+    if (submenu === "color" && ref.current?.querySelector(".context-color")?.contains(document.activeElement)) return;
     event.preventDefault();
-    const scope = submenu ? ref.current?.querySelector(".context-submenu") : ref.current?.querySelector(".context-main");
+    const scope = submenu === "turn-into" ? ref.current?.querySelector(".context-submenu") : ref.current?.querySelector(".context-main");
     const items = [...(scope?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
     if (items.length === 0) return;
     const index = items.indexOf(document.activeElement as HTMLElement);
@@ -466,16 +481,20 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
                 type="button"
                 role="menuitem"
                 tabIndex={-1}
-                className={`context-item${item.danger ? " is-danger" : ""}${item.id === "turn-into" && submenu ? " is-open" : ""}`}
+                className={`context-item${item.danger ? " is-danger" : ""}${submenu === item.id ? " is-open" : ""}`}
                 data-testid={`context-${item.id}`}
-                aria-haspopup={item.id === "turn-into" ? "menu" : undefined}
-                aria-expanded={item.id === "turn-into" ? submenu : undefined}
-                onClick={() => void item.run()}
+                aria-haspopup={hasSubmenu(item.id) ? "menu" : undefined}
+                aria-expanded={hasSubmenu(item.id) ? submenu === item.id : undefined}
+                onClick={(event) => {
+                  // Enter or Space on a submenu item opens it focused.
+                  if (hasSubmenu(item.id) && event.detail === 0) toggleSubmenu(item.id, true);
+                  else void item.run();
+                }}
                 onKeyDown={(event) => {
-                  if (item.id === "turn-into" && event.key === "ArrowRight") {
+                  if (hasSubmenu(item.id) && event.key === "ArrowRight") {
                     event.preventDefault();
-                    setSubmenu(true);
-                    requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('.context-submenu [role="menuitem"]')?.focus());
+                    setSubmenu(null);
+                    toggleSubmenu(item.id, true);
                   }
                 }}
               >
@@ -483,7 +502,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
                   {item.icon ? <Icon name={item.icon} size={15} /> : null}
                 </span>
                 <span className="context-item-label">{item.label}</span>
-                {item.id === "turn-into" ? (
+                {hasSubmenu(item.id) ? (
                   <Icon name="chevronRight" size={13} />
                 ) : item.keys ? (
                   <span className="context-item-keys">{item.keys}</span>
@@ -493,7 +512,20 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
           </Group>
         ))}
       </div>
-      {submenu ? (
+      {submenu === "color" ? (
+        <div className="context-submenu context-color" data-testid="context-color-menu">
+          <ColorPalette
+            editor={editor}
+            autoFocus={submenuFocus}
+            testId="context-color-palette"
+            onPick={() => {
+              done();
+              editor.commands.focus();
+            }}
+          />
+        </div>
+      ) : null}
+      {submenu === "turn-into" ? (
         <div className="context-submenu" role="menu" aria-label={t("blocks.turnIntoHeading")} data-testid="context-turn-menu">
           {TURN_INTO.map((item) => (
             <button
@@ -506,7 +538,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft") {
                   event.preventDefault();
-                  setSubmenu(false);
+                  setSubmenu(null);
                   ref.current?.querySelector<HTMLElement>('[data-testid="context-turn-into"]')?.focus();
                 }
               }}
@@ -522,6 +554,10 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
       ) : null}
     </div>
   );
+}
+
+function hasSubmenu(id: string): id is "turn-into" | "color" {
+  return id === "turn-into" || id === "color";
 }
 
 function Group({ first, children }: { first: boolean; children: ReactNode }) {

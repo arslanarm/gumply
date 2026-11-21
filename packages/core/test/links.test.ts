@@ -62,6 +62,8 @@ describe("extractWikilinks", () => {
       "Two",
     ]);
     expect(extractTags("`😀 x`#tag")).toEqual(["tag"]);
+    // A hex colour inside an HTML tag isn't a tag (#h368c8ni); the text it wraps can have one.
+    expect(extractTags('<mark style="background: #FF5582A6;">pink #real</mark> <span style="color: #e03e3e">x</span> <font color="#f00">y</font>')).toEqual(["real"]);
     // Guard: the same shape without astral chars already worked before the fix.
     expect(extractWikilinks("`abcd`[[Visible]]").map((link) => link.targetTitle)).toEqual([
       "Visible",
