@@ -14,6 +14,13 @@ import { propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
 
 export const ROW_HEIGHT = 34;
+
+/** Obsidian's `rowHeight`: 1×, 2×, 4× or 8× a row (default `short`, spec/api-bases). */
+const HEIGHTS: Record<string, number> = { short: 1, medium: 2, tall: 4, extra: 8 };
+
+export function rowHeightOf(view: BaseView): number {
+  return ROW_HEIGHT * (HEIGHTS[typeof view.rowHeight === "string" ? view.rowHeight : "short"] ?? 1);
+}
 const TITLE_WIDTH = 280;
 const COLUMN_WIDTH = 170;
 
@@ -49,7 +56,7 @@ function columnWidth(view: BaseView, column: BaseColumn): number {
 
 
 /** A value as the cell shows it. */
-function display(value: BaseValue, type: string): string {
+export function display(value: BaseValue, type: string): string {
   if (value === null || value === "") return "";
   if (typeof value === "boolean") return "";
   if (Array.isArray(value)) return value.join(", ");
@@ -88,12 +95,16 @@ export function TableView(props: TableViewProps) {
     return list;
   }, [result]);
 
+  const rowHeight = rowHeightOf(view);
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 12,
   });
+
+  // A new row height re-measures every row.
+  useEffect(() => virtualizer.measure(), [rowHeight, virtualizer]);
 
   const [headerMenu, setHeaderMenu] = useState<{ column: BaseColumn; anchor: HTMLElement } | null>(null);
   const sorts = Array.isArray(view.sort) ? view.sort : [];
@@ -112,6 +123,7 @@ export function TableView(props: TableViewProps) {
   const style = {
     "--base-columns": template,
     "--base-width": `${totalWidth}px`,
+    "--base-row": `${rowHeight}px`,
     ...(props.maxHeight ? { maxHeight: props.maxHeight } : {}),
   } as CSSProperties;
 

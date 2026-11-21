@@ -3,11 +3,12 @@
  * Every change is a new config, saved by BaseView; what the builder can't
  * show as a rule is listed as an expression and kept as written.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BaseConfig, BaseView, BaseViewResult, PageMeta } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
 import { Popover } from "./Popover.js";
+import { numberSetting, withSetting } from "./values.js";
 import { propertyId } from "@gumply/core";
 import { pickerProperties, propertyLabel, propertyType, writtenId } from "./labels.js";
 import {
@@ -23,7 +24,7 @@ import {
   type RuleOp,
 } from "./rules.js";
 
-type Panel = "source" | "filter" | "sort" | "properties";
+export type Panel = "source" | "filter" | "sort" | "group" | "properties" | "settings";
 
 export interface ViewToolbarProps {
   config: BaseConfig;
@@ -33,12 +34,24 @@ export interface ViewToolbarProps {
   readOnly?: boolean;
   onChangeConfig: (config: BaseConfig) => void;
   onChangeView: (view: BaseView) => void;
+  /** Open a panel from outside (Kanban's "Group by"); bump `n` to reopen. */
+  openRequest?: { panel: Panel; n: number } | null;
 }
 
 export function ViewToolbar(props: ViewToolbarProps) {
   const t = useT();
   const [open, setOpen] = useState<Panel | null>(null);
-  const anchors = useRef<Record<Panel, HTMLButtonElement | null>>({ source: null, filter: null, sort: null, properties: null });
+  const anchors = useRef<Record<Panel, HTMLButtonElement | null>>({
+    source: null,
+    filter: null,
+    sort: null,
+    group: null,
+    properties: null,
+    settings: null,
+  });
+  useEffect(() => {
+    if (props.openRequest) setOpen(props.openRequest.panel);
+  }, [props.openRequest]);
   const { config, view, result } = props;
   const clauses = useMemo(() => viewClauses(view), [view]);
   const sorts = Array.isArray(view.sort) ? view.sort : [];
@@ -112,6 +125,14 @@ export function ViewToolbar(props: ViewToolbarProps) {
           />
         ) : null}
       </span>
+      {view.type === "calendar" ? null : (
+        <span className="base-tool-anchor">
+          {button("group", "kanban", t("bases.group"), view.groupBy?.property ? 1 : 0)}
+          {open === "group" ? (
+            <GroupPanel anchor={anchors.current.group} config={config} result={result} view={view} onClose={close} onChange={props.onChangeView} />
+          ) : null}
+        </span>
+      )}
       <span className="base-tool-anchor">
         {button("properties", "list", t("bases.properties"))}
         {open === "properties" ? (
@@ -125,7 +146,234 @@ export function ViewToolbar(props: ViewToolbarProps) {
           />
         ) : null}
       </span>
+      <span className="base-tool-anchor">
+        {button("settings", "more", t("bases.layout"))}
+        {open === "settings" ? (
+          <SettingsPanel anchor={anchors.current.settings} config={config} result={result} view={view} onClose={close} onChange={props.onChangeView} />
+        ) : null}
+      </span>
     </div>
+  );
+}
+
+function GroupPanel(props: {
+  anchor: HTMLElement | null;
+  config: BaseConfig;
+  result: BaseViewResult | null;
+  view: BaseView;
+  onClose: () => void;
+  onChange: (view: BaseView) => void;
+}) {
+  const t = useT();
+  const { view } = props;
+  const options = pickerProperties(props.config, props.result);
+  const current = view.groupBy?.property ? propertyId(String(view.groupBy.property)) : "";
+  const direction = view.groupBy?.direction === "DESC" ? "DESC" : "ASC";
+  const set = (property: string, nextDirection: "ASC" | "DESC") => {
+    const next: BaseView = { ...view };
+    if (!property) {
+      delete next.groupBy;
+      delete next.groupOrder;
+    } else {
+      next.groupBy = { property: writtenId(property), direction: nextDirection };
+      // Another property's column order means nothing for this one.
+      if (property !== current) delete next.groupOrder;
+    }
+    props.onChange(next);
+  };
+  return (
+    <Popover anchor={props.anchor} onClose={props.onClose} label={t("bases.group")} testId="base-group-panel" className="is-wide">
+      <div className="base-rule">
+        <span className="base-rule-lead">{t("bases.groupBy")}</span>
+        <select
+          className="base-select"
+          aria-label={t("bases.groupBy")}
+          data-testid="base-group-property"
+          value={current}
+          onChange={(event) => set(event.target.value, direction)}
+        >
+          <option value="">{t("bases.noGroup")}</option>
+          {(current && !options.includes(current) ? [current, ...options] : options).map((id) => (
+            <option key={id} value={id}>
+              {propertyLabel(id, props.config, t)}
+            </option>
+          ))}
+        </select>
+        {current ? (
+          <select
+            className="base-select"
+            aria-label={t("bases.sort")}
+            data-testid="base-group-direction"
+            value={direction}
+            onChange={(event) => set(current, event.target.value as "ASC" | "DESC")}
+          >
+            <option value="ASC">{t("bases.ascending")}</option>
+            <option value="DESC">{t("bases.descending")}</option>
+          </select>
+        ) : null}
+      </div>
+    </Popover>
+  );
+}
+
+/** Obsidian 1.14.4's per-layout settings and defaults (spec/api-bases). */
+function SettingsPanel(props: {
+  anchor: HTMLElement | null;
+  config: BaseConfig;
+  result: BaseViewResult | null;
+  view: BaseView;
+  onClose: () => void;
+  onChange: (view: BaseView) => void;
+}) {
+  const t = useT();
+  const { view } = props;
+  const set = (key: string, value: unknown, fallback: unknown) => props.onChange(withSetting(view, key, value, fallback));
+  const options = pickerProperties(props.config, props.result).filter((id) => !id.startsWith("file.") || id === "file.file");
+  const number = (key: string, label: string, fallback: number, min: number, max: number, step: number) => (
+    <label className="base-setting">
+      <span>{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        data-testid={`base-setting-${key}`}
+        value={numberSetting(view, key, fallback, min, max)}
+        onChange={(event) => set(key, Number(event.target.value), fallback)}
+      />
+      <output>{numberSetting(view, key, fallback, min, max)}</output>
+    </label>
+  );
+  const image = (ratioDefault: number) => (
+    <>
+      <label className="base-setting">
+        <span>{t("bases.setting.image")}</span>
+        <select
+          className="base-select"
+          data-testid="base-setting-image"
+          value={typeof view.image === "string" ? propertyId(view.image) : ""}
+          onChange={(event) => set("image", event.target.value || undefined, undefined)}
+        >
+          <option value="">{t("bases.noGroup")}</option>
+          {options.map((id) => (
+            <option key={id} value={id}>
+              {propertyLabel(id, props.config, t)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="base-setting">
+        <span>{t("bases.setting.imageFit")}</span>
+        <select
+          className="base-select"
+          data-testid="base-setting-imageFit"
+          value={view.imageFit === "contain" ? "contain" : ""}
+          onChange={(event) => set("imageFit", event.target.value, "")}
+        >
+          <option value="">{t("bases.setting.cover")}</option>
+          <option value="contain">{t("bases.setting.contain")}</option>
+        </select>
+      </label>
+      {number("imageAspectRatio", t("bases.setting.imageAspectRatio"), ratioDefault, 0.25, 2.5, 0.05)}
+    </>
+  );
+
+  return (
+    <Popover anchor={props.anchor} onClose={props.onClose} label={t("bases.layout")} testId="base-settings-panel">
+      <div className="base-panel-title">{t(`bases.viewType.${["table", "kanban", "list", "cards", "calendar"].includes(view.type) ? view.type : "table"}` as MessageKey)}</div>
+      {view.type === "table" ? (
+        <label className="base-setting">
+          <span>{t("bases.setting.rowHeight")}</span>
+          <select
+            className="base-select"
+            data-testid="base-setting-rowHeight"
+            value={typeof view.rowHeight === "string" ? view.rowHeight : "short"}
+            onChange={(event) => set("rowHeight", event.target.value, "short")}
+          >
+            {(["short", "medium", "tall", "extra"] as const).map((value) => (
+              <option key={value} value={value}>
+                {t(`bases.setting.height.${value}` as MessageKey)}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {view.type === "cards" ? (
+        <>
+          {number("cardSize", t("bases.setting.cardSize"), 200, 50, 800, 10)}
+          {image(1)}
+        </>
+      ) : null}
+      {view.type === "kanban" ? (
+        <>
+          {number("columnWidth", t("bases.setting.columnWidth"), 280, 200, 500, 10)}
+          {image(0.5)}
+        </>
+      ) : null}
+      {view.type === "list" ? (
+        <>
+          <label className="base-setting">
+            <span>{t("bases.setting.markers")}</span>
+            <select
+              className="base-select"
+              data-testid="base-setting-markers"
+              value={view.markers === "number" || view.markers === "none" ? view.markers : "bullet"}
+              onChange={(event) => set("markers", event.target.value, "bullet")}
+            >
+              {(["bullet", "number", "none"] as const).map((value) => (
+                <option key={value} value={value}>
+                  {t(`bases.setting.marker.${value}` as MessageKey)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="base-check">
+            <input
+              type="checkbox"
+              data-testid="base-setting-indentProperties"
+              checked={view.indentProperties === true}
+              onChange={(event) => set("indentProperties", event.target.checked, false)}
+            />
+            <span>{t("bases.setting.indentProperties")}</span>
+          </label>
+          {view.indentProperties === true ? null : (
+            <label className="base-setting">
+              <span>{t("bases.setting.separator")}</span>
+              <input
+                className="base-input"
+                data-testid="base-setting-separator"
+                defaultValue={typeof view.separator === "string" ? view.separator : ", "}
+                onBlur={(event) => set("separator", event.target.value, ", ")}
+              />
+            </label>
+          )}
+        </>
+      ) : null}
+      {view.type === "calendar" ? (
+        <>
+          {(["dateProperty", "endDateProperty"] as const).map((key) => (
+            <label className="base-setting" key={key}>
+              <span>{t(`bases.setting.${key}` as MessageKey)}</span>
+              <select
+                className="base-select"
+                data-testid={`base-setting-${key}`}
+                value={typeof view[key] === "string" ? propertyId(view[key] as string) : key === "dateProperty" ? "file.ctime" : ""}
+                onChange={(event) => set(key, event.target.value || undefined, undefined)}
+              >
+                {key === "endDateProperty" ? <option value="">{t("bases.noGroup")}</option> : null}
+                {pickerProperties(props.config, props.result)
+                  .filter((id) => ["date", "datetime"].includes(propertyType(id, props.result)))
+                  .map((id) => (
+                    <option key={id} value={id}>
+                      {propertyLabel(id, props.config, t)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ))}
+        </>
+      ) : null}
+    </Popover>
   );
 }
 

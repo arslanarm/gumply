@@ -13,14 +13,16 @@ import { Icon, type IconName } from "../components/Icon.js";
 import { t as translate, useT, type MessageKey } from "../i18n/index.js";
 import { Popover } from "./Popover.js";
 import { TableView, ROW_HEIGHT } from "./TableView.js";
-import { ViewToolbar } from "./ViewToolbar.js";
+import { ViewToolbar, type Panel } from "./ViewToolbar.js";
+import { CardsView, KanbanView, ListView } from "./layouts.js";
+import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
 import "./bases.css";
 
 const LAYOUTS = ["table", "kanban", "list", "cards", "calendar"] as const;
 type Layout = (typeof LAYOUTS)[number];
 /** Layouts this version draws; the others are kept in the file and listed. */
-const DRAWN: readonly string[] = ["table"];
+const DRAWN: readonly string[] = ["table", "kanban", "list", "cards", "calendar"];
 
 const LAYOUT_ICONS: Record<Layout, IconName> = {
   table: "table",
@@ -66,6 +68,7 @@ export function BaseView(props: BaseViewProps) {
   const [result, setResult] = useState<BaseViewResult | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
+  const [openRequest, setOpenRequest] = useState<{ panel: Panel; n: number } | null>(null);
   const writer = useMemo(() => `base-${Math.random().toString(36).slice(2, 10)}`, []);
   const requestSeq = useRef(0);
 
@@ -93,14 +96,18 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseId, active?.name, doc.meta.updated, doc.error]);
 
-  // …and again, debounced, when pages in the vault changed.
+  // …and again, debounced, when pages in the vault changed. Through a ref:
+  // the timer must run the view open when it fires, not the one open when
+  // the pages changed (a tab switch in between would show the old view).
+  const loadRef = useRef(load);
+  loadRef.current = load;
   const firstRefresh = useRef(true);
   useEffect(() => {
     if (firstRefresh.current) {
       firstRefresh.current = false;
       return;
     }
-    const timer = window.setTimeout(() => void load(), 250);
+    const timer = window.setTimeout(() => void loadRef.current(), 250);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.refreshKey]);
@@ -165,6 +172,26 @@ export function BaseView(props: BaseViewProps) {
     [load],
   );
 
+  /** Kanban drop, calendar move: one note property of one page. */
+  const setValue = useCallback(
+    async (row: BaseRow, key: string, value: BaseValue) => {
+      const id = `note.${key}`;
+      setResult((current) =>
+        current
+          ? { ...current, rows: current.rows.map((item) => (item.id === row.id ? { ...item, values: { ...item.values, [id]: value } } : item)) }
+          : current,
+      );
+      try {
+        await api.setPageProperties(row.id, { [key]: value }, row.updated);
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [load],
+  );
+
   const rename = useCallback(
     async (row: BaseRow, title: string) => {
       try {
@@ -179,7 +206,7 @@ export function BaseView(props: BaseViewProps) {
   );
 
   /** "+ New": a page in the source folder, with what the view's `is` filters need. */
-  const newRow = useCallback(async () => {
+  const newRow = useCallback(async (implied?: Record<string, BaseValue>) => {
     if (!active) return;
     const source = baseSource(docRef.current.config);
     const parentId =
@@ -195,9 +222,16 @@ export function BaseView(props: BaseViewProps) {
         }
       }
       if (source.kind === "tag") values.tags = [source.tag];
+      // The kanban column or calendar day it was added to.
+      Object.assign(values, implied ?? {});
       if (Object.keys(values).length) await api.setPageProperties(page.id, values, page.updated);
-      setRenameRowId(page.id);
-      await load();
+      if (active.type === "table") {
+        setRenameRowId(page.id);
+        await load();
+      } else {
+        // Other layouts have no title cell: open the page to name it.
+        props.onOpen(page.id);
+      }
     } catch (error) {
       props.onError?.(errorText(error));
     }
@@ -225,6 +259,7 @@ export function BaseView(props: BaseViewProps) {
             views={views}
             active={active?.name ?? null}
             onSelect={setActiveName}
+            dateProperty={result?.properties?.find((property) => property.type === "date" || property.type === "datetime")?.id}
             onChange={(nextViews, select) => {
               void saveConfig({ ...docRef.current.config, views: nextViews });
               if (select !== undefined) setActiveName(select);
@@ -239,6 +274,7 @@ export function BaseView(props: BaseViewProps) {
             pages={props.pages}
             onChangeConfig={(next) => void saveConfig(next)}
             onChangeView={changeView}
+            openRequest={openRequest}
           />
         ) : null}
       </div>
@@ -272,12 +308,29 @@ export function BaseView(props: BaseViewProps) {
       ) : !drawn ? (
         <div className="base-notice" data-testid="base-unsupported">
           <Icon name={layoutIcon(active.type)} size={18} />
-          <p>
-            {(LAYOUTS as readonly string[]).includes(active.type)
-              ? t("bases.notYet")
-              : t("bases.unsupportedView", { type: active.type })}
-          </p>
+          <p>{t("bases.unsupportedView", { type: active.type })}</p>
         </div>
+      ) : result && result.view === active.name && active.type !== "table" ? (
+        (() => {
+          const layout = {
+            config,
+            view: active,
+            result,
+            onOpen: props.onOpen,
+            onSetValue: setValue,
+            onNewRow: (values?: Record<string, BaseValue>) => void newRow(values),
+          };
+          switch (active.type) {
+            case "kanban":
+              return <KanbanView {...layout} onPickGroup={() => setOpenRequest((current) => ({ panel: "group", n: (current?.n ?? 0) + 1 }))} />;
+            case "list":
+              return <ListView {...layout} />;
+            case "cards":
+              return <CardsView {...layout} />;
+            default:
+              return <CalendarView {...layout} />;
+          }
+        })()
       ) : result && result.view === active.name ? (
         <TableView
           config={config}
@@ -310,6 +363,8 @@ function ViewTabs(props: {
   active: string | null;
   onSelect: (name: string) => void;
   onChange: (views: BaseViewConfig[], select?: string) => void;
+  /** A date property to start a new Calendar view on. */
+  dateProperty?: string;
 }) {
   const t = useT();
   const [adding, setAdding] = useState<HTMLElement | null>(null);
@@ -393,7 +448,8 @@ function ViewTabs(props: {
                 setAdding(null);
                 const name = uniqueName(t(`bases.newViewName.${type}` as MessageKey), views);
                 const view: BaseViewConfig = { type, name, order: ["file.name"] };
-                if (type === "calendar") view.dateProperty = "file.ctime";
+                // Calendar: the vault's first date property, else the creation date.
+                if (type === "calendar") view.dateProperty = props.dateProperty ?? "file.ctime";
                 props.onChange([...views, view], name);
               }}
             >
