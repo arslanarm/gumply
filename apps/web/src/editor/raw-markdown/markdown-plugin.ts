@@ -219,7 +219,8 @@ function breakStyleRule(state: any): void {
 
 /**
  * Keep HTML entities as typed (`&nbsp;`, `&copy;`): markdown-it decodes them
- * into the text, so an edit used to write a literal NBSP / ©. Runs before
+ * into the text, so an edit used to write a literal NBSP / ©. An escaped
+ * `\=` is kept the same way. Runs before
  * markdown-it joins `text_special` tokens back into plain text.
  */
 function entityRule(state: any): void {
@@ -230,6 +231,13 @@ function entityRule(state: any): void {
         token.type = "gumply_raw_inline";
         token.content = token.markup;
         token.info = "entity";
+      } else if (token.type === "text_special" && token.info === "escape" && token.markup === "\\=") {
+        // An escaped `\=` (#bg3cb83t): highlight pairing around it can't be
+        // rebuilt from the text alone (`c==d and \==x== here` pairs `c==`
+        // with the last `==`), so it's kept exactly as written.
+        token.type = "gumply_raw_inline";
+        token.content = token.markup;
+        token.info = "escape";
       }
     }
   }

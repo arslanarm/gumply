@@ -9,6 +9,19 @@
  * left-flanking to open and right-flanking to close, so `a == b` stays text.
  */
 import { Mark, markInputRule, markPasteRule, mergeAttributes } from "@tiptap/core";
+import Code from "@tiptap/extension-code";
+
+/**
+ * Inline code that can sit inside other marks, as the innermost one (#bg3cb83t).
+ *
+ * TipTap's code mark excludes every other mark, so `==a `x` b==` (or
+ * `**a `x` b**`) lost the outer mark on the code when read, and the next save
+ * split it around the code (`==a ==`x`== b==`). Markdown allows code inside
+ * emphasis or a highlight, just not marks inside code, so: code coexists with
+ * outer marks, and comes last in the schema (lower priority) so it's always
+ * opened innermost.
+ */
+export const InnermostCode = Code.extend({ priority: 90, excludes: "" });
 
 /* markdown-it is untyped here (see the wikilink plugin). */
 /* eslint-disable @typescript-eslint/no-explicit-any */

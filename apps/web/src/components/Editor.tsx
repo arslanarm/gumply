@@ -32,7 +32,7 @@ import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
-import { Highlight } from "../editor/highlight.js";
+import { Highlight, InnermostCode } from "../editor/highlight.js";
 import { LinkShortcut } from "../editor/formatting.js";
 import { SelectionToolbar } from "./SelectionToolbar.js";
 import { EditorContextMenu } from "./EditorContextMenu.js";
@@ -629,7 +629,10 @@ export function Editor({
         hardBreak: false,
         bulletList: false,
         codeBlock: false,
+        // Registered below as the innermost mark (editor/highlight.ts).
+        code: false,
       }),
+      InnermostCode,
       NotionCodeBlock,
       MarkdownBulletList,
       GumplyTable,

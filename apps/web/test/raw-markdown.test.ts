@@ -64,6 +64,13 @@ describe("raw Markdown inline atoms", () => {
     ]);
   });
 
+  it("keeps an escaped \\= as written, whatever highlight pairing surrounds it (#bg3cb83t)", () => {
+    expect(rawInlines("c==d and \\==literal== here")).toEqual([["escape", "\\="]]);
+    expect(rawInlines("\\==literal==")).toEqual([["escape", "\\="]]);
+    // Other escapes are still plain text.
+    expect(rawInlines("\\*not em\\*")).toEqual([]);
+  });
+
   it("doesn't take prices or spaced operators for math or highlights", () => {
     expect(rawInlines("costs $5 and $10, a == b")).toEqual([]);
   });

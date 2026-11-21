@@ -256,6 +256,8 @@ export function renderRawInlinePreview(source: string, kind: string): HTMLElemen
     decoder.innerHTML = source;
     return el("span", "raw-inline-entity", decoder.value);
   }
+  // `\=`: shows as the `=` it stands for (#bg3cb83t).
+  if (kind === "escape") return el("span", "raw-inline-escape", source.slice(1));
   return el("code", "raw-inline-source", source);
 }
 
