@@ -14,6 +14,9 @@ import type {
   Page,
   PageId,
   PageMeta,
+  PropertiesPatch,
+  PropertyInfo,
+  PropertyType,
   RestoreResult,
   SearchResult,
   TrashedDocument,
@@ -85,6 +88,8 @@ export interface UpdatePageInput {
   force?: boolean;
   /** This editor's id (#d5e4mawv): see `newWriterId`. */
   writer?: string;
+  /** v1.12 (D34): change frontmatter properties. */
+  properties?: PropertiesPatch;
 }
 
 /** v1.1: a rename reports which other pages had their links rewritten (D12). */
@@ -199,6 +204,13 @@ export const api = {
   /** Save on the way out (reload, close): keepalive; null when too big. */
   updatePageOnExit: (id: PageId, patch: UpdatePageInput): Promise<UpdatePageResult> | null =>
     exitPut(pagePath(id), patch),
+
+  /** v1.12 (D34): every property key in the vault, with its type and use count. */
+  listProperties: (): Promise<PropertyInfo[]> => request("/properties"),
+
+  /** v1.12: change a key's type vault-wide (types.json; files keep their values). */
+  setPropertyType: (key: string, type: PropertyType): Promise<PropertyInfo[]> =>
+    mutate(() => request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type }) })),
 
   deletePage: (id: PageId): Promise<DeletePageResult> =>
     mutate(async () => {

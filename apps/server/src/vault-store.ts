@@ -3,6 +3,17 @@ import { readdirSync, watch, type FSWatcher } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
+  coercePropertyValue,
+  frontmatterKeys,
+  HEADER_KEYS,
+  inferPropertyType,
+  isPropertyType,
+  isValidPropertyKey,
+  YAML_EMPTY,
+  type PropertiesPatch,
+  type Property,
+  type PropertyInfo,
+  type PropertyType,
   childPageId,
   collectLinkEdges,
   extractTags,
@@ -57,6 +68,7 @@ import {
   type TrashItem,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
+import { PropertyTypesStore, readRawProperties, typedProperties, type RawProperty } from "./properties.js";
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -83,6 +95,8 @@ export interface UpdatePageInput {
   force?: boolean;
   /** Opaque id of the editor sending this (see `ownWrite`). */
   writer?: string;
+  /** v1.12 (D34): change frontmatter properties; only those key lines are written. */
+  properties?: PropertiesPatch;
 }
 
 export interface CreateBoardInput {
@@ -348,8 +362,14 @@ export class VaultStore {
   /** Page to open once after first-run seeding (consumed by GET /pages). */
   private newVaultPage: PageId | null = null;
 
+  /** v1.12 (D34): property types, shared with Obsidian when the vault has `.obsidian/`. */
+  private readonly propertyTypes: PropertyTypesStore;
+  /** Parsed properties per file, valid while the file's mtime is unchanged. */
+  private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
+
   constructor(root: string) {
     this.root = resolve(root);
+    this.propertyTypes = new PropertyTypesStore(this.root);
   }
 
   async init(): Promise<void> {
@@ -773,6 +793,170 @@ export class VaultStore {
   /** Pages and boards only: what links, the graph and search resolve against (D33). */
   private pageMetas(): PageMeta[] {
     return this.list().filter((meta) => meta.kind !== "folder");
+  }
+
+  // --- properties (v0.7 A, D34, spec/api v1.12) ----------------------------
+
+  /** A page's properties, typed (stored type, else inferred across the vault); null for anything but a page. */
+  pageProperties(id: PageId): Promise<Property[] | null> {
+    return this.enqueue(async () => {
+      const record = this.pages.get(this.resolveId(id));
+      if (!record || record.kind !== "page") return null;
+      const index = await this.propertyIndex();
+      return typedProperties(await this.rawPropertiesOf(record), (key) => index.typeOf(key));
+    });
+  }
+
+  /** Every page with its properties (`GET /pages?include=properties`). */
+  listWithProperties(): Promise<Array<PageMeta & { properties?: Property[] }>> {
+    return this.enqueue(async () => {
+      const index = await this.propertyIndex();
+      const out: Array<PageMeta & { properties?: Property[] }> = [];
+      for (const meta of this.list()) {
+        const record = this.pages.get(meta.id);
+        if (!record || record.kind !== "page") out.push(meta);
+        else out.push({ ...meta, properties: typedProperties(await this.rawPropertiesOf(record), (key) => index.typeOf(key)) });
+      }
+      return out;
+    });
+  }
+
+  /**
+   * Every key's type: types.json merged with the inferred types (the same
+   * resolution as a page's properties). For database views (#sg36ng2d).
+   */
+  propertyTypeMap(): Promise<Map<string, PropertyType>> {
+    return this.enqueue(async () => {
+      const index = await this.propertyIndex();
+      return new Map(index.infos().map((info) => [info.key, info.type]));
+    });
+  }
+
+  /** Every property key used in the vault: type and how many pages use it. */
+  listProperties(): Promise<PropertyInfo[]> {
+    return this.enqueue(async () => (await this.propertyIndex()).infos());
+  }
+
+  /** Change a key's type vault-wide (types.json only; files keep their values, as in Obsidian). */
+  setPropertyType(key: string, type: PropertyType): Promise<PropertyInfo[]> {
+    return this.enqueue(async () => {
+      if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest("Not a property key");
+      if (!isPropertyType(type)) throw badRequest("Unknown property type");
+      await this.propertyTypes.set(key, type);
+      return (await this.propertyIndex()).infos();
+    });
+  }
+
+  private async rawPropertiesOf(record: PageRecord): Promise<RawProperty[]> {
+    const cached = this.rawPropertyCache.get(record.filePath);
+    if (cached && cached.mtimeMs === record.fileMtimeMs) return cached.raw;
+    let raw: RawProperty[] = [];
+    try {
+      raw = readRawProperties(parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml);
+    } catch {
+      raw = [];
+    }
+    this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw });
+    return raw;
+  }
+
+  /** Types and counts across the vault's pages. */
+  private async propertyIndex(): Promise<{ typeOf: (key: string, extra?: unknown) => PropertyType; infos: () => PropertyInfo[] }> {
+    const stored = await this.propertyTypes.read();
+    const values = new Map<string, unknown[]>();
+    const counts = new Map<string, number>();
+    for (const record of this.pages.values()) {
+      if (record.kind !== "page") continue;
+      for (const property of await this.rawPropertiesOf(record)) {
+        counts.set(property.key, (counts.get(property.key) ?? 0) + 1);
+        const list = values.get(property.key) ?? [];
+        list.push(property.value);
+        values.set(property.key, list);
+      }
+    }
+    const typeOf = (key: string, extra?: unknown): PropertyType =>
+      stored[key] ?? inferPropertyType(key, extra === undefined ? (values.get(key) ?? []) : [...(values.get(key) ?? []), extra]);
+    return {
+      typeOf,
+      infos: () =>
+        [...counts.entries()]
+          .map(([key, count]) => ({ key, type: typeOf(key), count }))
+          .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)),
+    };
+  }
+
+  /**
+   * Validate a properties patch against the page's frontmatter and turn it
+   * into frontmatter values, the changed keys and the renames.
+   */
+  private async preparePropertiesPatch(
+    record: PageRecord,
+    patch: PropertiesPatch,
+  ): Promise<{ values: Record<string, unknown>; changed: string[]; renames: Array<{ from: string; to: string }> }> {
+    if (!patch || typeof patch !== "object") throw badRequest("properties must be an object");
+    const raw = await this.rawPropertiesOf(record);
+    const byKey = new Map(raw.map((property) => [property.key, property]));
+    let template: string | null = null;
+    try {
+      template = parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml;
+    } catch {
+      template = null;
+    }
+    const present = new Set(frontmatterKeys(template));
+    const index = await this.propertyIndex();
+    const values: Record<string, unknown> = {};
+    const changed = new Set<string>();
+    const renames: Array<{ from: string; to: string }> = [];
+    const editableKey = (key: unknown, what: string): string => {
+      if (!isValidPropertyKey(key)) throw badRequest(`${what}: not a property name`);
+      if (HEADER_KEYS.includes(key)) throw badRequest(`${what}: "${key}" is part of the page header`);
+      return key;
+    };
+
+    if (patch.rename !== undefined && !Array.isArray(patch.rename)) throw badRequest("rename must be a list");
+    for (const rename of patch.rename ?? []) {
+      const from = editableKey(rename?.from, "rename");
+      const to = editableKey(rename?.to, "rename");
+      if (from === "tags" || to === "tags") throw badRequest("rename: tags can't be renamed");
+      if (!present.has(from)) throw badRequest(`rename: no property "${from}"`);
+      if (from === to) continue;
+      if (present.has(to)) throw badRequest(`rename: "${to}" already exists`);
+      present.delete(from);
+      present.add(to);
+      renames.push({ from, to });
+      const property = byKey.get(from);
+      if (property) byKey.set(to, { ...property, key: to });
+    }
+
+    if (patch.remove !== undefined && !Array.isArray(patch.remove)) throw badRequest("remove must be a list");
+    for (const key of patch.remove ?? []) {
+      editableKey(key, "remove");
+      if (!present.has(key)) continue;
+      values[key] = null;
+      changed.add(key);
+    }
+
+    if (patch.set !== undefined && (typeof patch.set !== "object" || patch.set === null || Array.isArray(patch.set))) {
+      throw badRequest("set must be an object");
+    }
+    for (const [key, value] of Object.entries(patch.set ?? {})) {
+      editableKey(key, "set");
+      const existing = byKey.get(key);
+      if (existing && !existing.editable) throw badRequest(`"${key}" holds YAML Gumply can't edit; change it in another editor`);
+      // No stored type and nothing to infer from yet (new, or still empty): the value decides.
+      const blank = existing === undefined || existing.value === null || existing.value === "" || (Array.isArray(existing.value) && existing.value.length === 0);
+      const type = index.typeOf(key, present.has(key) && !blank ? undefined : value);
+      const coerced = coercePropertyValue(type, value);
+      if (coerced === undefined) throw badRequest(`"${key}" is a ${type} property`);
+      // An empty value is written as `key:` (YAML null), like Obsidian does.
+      values[key] = coerced === null || (Array.isArray(coerced) && coerced.length === 0 && !present.has(key))
+        ? YAML_EMPTY
+        : key === "tags"
+          ? normalizeTags(coerced)
+          : coerced;
+      changed.add(key);
+    }
+    return { values, changed: [...changed], renames };
   }
 
   get(id: PageId): Page {
@@ -1295,8 +1479,15 @@ export class VaultStore {
       nextIcon = patch.icon.trim().length > 0 ? patch.icon.trim() : undefined;
     }
 
-    const fmTags =
+    // v1.12: a properties patch (validated against the file) may set tags too.
+    const propertyPatch =
+      patch.properties === undefined ? null : await this.preparePropertiesPatch(record, patch.properties);
+    let fmTags =
       patch.tags === undefined ? record.fmTags : normalizeTags(patch.tags).slice(0, MAX_TAGS);
+    if (propertyPatch && "tags" in propertyPatch.values) {
+      const tags = propertyPatch.values.tags;
+      fmTags = Array.isArray(tags) ? normalizeTags(tags).slice(0, MAX_TAGS) : [];
+    }
     const updated = new Date().toISOString();
     const frontmatter: Frontmatter = {
       title: nextTitle,
@@ -1304,6 +1495,9 @@ export class VaultStore {
       tags: fmTags,
       created: record.created,
       updated,
+      // Last: a property edit of `tags` is written as given (an empty one as
+      // a bare `tags:`). Property values never hold the header keys.
+      ...(propertyPatch?.values ?? {}),
     };
 
     const titleChanged = nextTitle !== previousTitle;
@@ -1325,6 +1519,7 @@ export class VaultStore {
       nextContent,
       changes,
       titleFromId(targetId),
+      propertyPatch ?? undefined,
     );
     const fileMtimeMs = written.mtimeMs;
 
@@ -2549,6 +2744,8 @@ export class VaultStore {
     changes?: readonly string[],
     /** Title the file name gives (after any rename); enables plain-note mode. */
     implicitTitle?: string,
+    /** v1.12: a properties patch (values, changed keys, renames). */
+    properties?: { values: Record<string, unknown>; changed: string[]; renames: Array<{ from: string; to: string }> },
   ): Promise<{ mtimeMs: number; frontmatter: boolean; titleKey: boolean }> {
     await mkdir(dirname(filePath), { recursive: true });
     // Use the current file as the byte template so unknown frontmatter keys,
@@ -2568,9 +2765,32 @@ export class VaultStore {
       const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
       plain = !frontmatter.icon && tags.length === 0 && frontmatter.title === implicitTitle;
     }
-    const text = plain
-      ? serializeNoteLike(template, {}, content, [])
-      : serializeNoteLike(template, frontmatter, content, changes);
+    // v1.12: a property edit on a note whose frontmatter has none of Gumply's
+    // header keys (an Obsidian note, or a plain one getting its first
+    // property) writes only the property lines: no title/created/updated are
+    // added, and removing the last property removes the block again.
+    const headerKeys = new Set(["title", "icon", "created", "updated"]);
+    const bare =
+      properties !== undefined &&
+      template !== null &&
+      implicitTitle !== undefined &&
+      !frontmatterKeys(template.yaml).some((key) => headerKeys.has(key)) &&
+      !frontmatter.icon &&
+      frontmatter.title === implicitTitle;
+    let text: string;
+    if (bare) {
+      const keys = new Set(properties.changed);
+      if ((changes ?? []).includes("tags")) keys.add("tags");
+      // Only the keys this edit touches (a new block holds just them).
+      const values: Frontmatter = {};
+      for (const key of keys) if (frontmatter[key] !== undefined && frontmatter[key] !== null) values[key] = frontmatter[key];
+      text = serializeNoteLike(template, values, content, [...keys], properties.renames);
+      plain = true; // no `updated:` key: the version is the file time
+    } else if (plain) {
+      text = serializeNoteLike(template, {}, content, []);
+    } else {
+      text = serializeNoteLike(template, frontmatter, content, [...(changes ?? []), ...(properties?.changed ?? [])], properties?.renames ?? []);
+    }
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       await writeFile(temporary, text, "utf8");

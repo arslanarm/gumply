@@ -7,6 +7,8 @@ import {
   type Page,
   type PageId,
   type PageMeta,
+  type PropertiesPatch,
+  type PropertyType,
   type TrashItem,
 } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +18,7 @@ import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
+import { PropertiesBlock } from "./components/PropertiesBlock.js";
 import { FolderView } from "./components/FolderView.js";
 import { TrashedPageView } from "./components/TrashedPageView.js";
 import { TrashView } from "./components/TrashView.js";
@@ -470,6 +473,8 @@ export function App() {
             tags: updated.tags,
             parentId: updated.parentId,
             updated: updated.updated,
+            // v1.12: every page save answers with the page's properties.
+            ...(updated.properties ? { properties: updated.properties } : {}),
           };
         }
         const id = remap(previous.id);
@@ -1080,6 +1085,60 @@ export function App() {
     },
     [applySavedPage, loadPages, pages, requestPageReload],
   );
+
+  // v0.7 A (D34): properties are saved like any page edit: the editor's
+  // pending text first, then a conditional PUT of just the property change.
+  // One property save at a time: each sends the version the previous one made.
+  const propertySaves = useRef<Promise<unknown>>(Promise.resolve());
+  const savePropertiesRef = useRef<(patch: PropertiesPatch) => Promise<boolean>>(async () => false);
+  const handlePropertiesChange = useCallback((patch: PropertiesPatch): Promise<boolean> => {
+    const run = () => savePropertiesRef.current(patch);
+    const next = propertySaves.current.then(run, run);
+    propertySaves.current = next;
+    return next;
+  }, []);
+  savePropertiesRef.current = async (patch: PropertiesPatch): Promise<boolean> => {
+    {
+      const id = selectedRef.current;
+      if (!id || isBoardId(id)) return false;
+      setActionError(null);
+      try {
+        await editorControls.current?.flush();
+        const current = pageRef.current;
+        const updated = await api.updatePage(id, {
+          properties: patch,
+          ...(current?.id === id ? { expectedUpdated: current.updated } : {}),
+        });
+        applySavedPage(id, updated);
+        // The next queued save reads the new version from here before React re-renders.
+        pageRef.current = pageRef.current && pageRef.current.id === id ? { ...pageRef.current, updated: updated.updated } : pageRef.current;
+        return true;
+      } catch (error) {
+        setActionError(errorMessage(error));
+        return false;
+      }
+    }
+  };
+
+  const handleSetPropertyType = useCallback(async (key: string, type: PropertyType) => {
+    const id = selectedRef.current;
+    setActionError(null);
+    // The row switches to the new type's editor at once; the server confirms.
+    setPage((previous) =>
+      previous && previous.id === id && previous.properties
+        ? { ...previous, properties: previous.properties.map((item) => (item.key === key ? { ...item, type } : item)) }
+        : previous,
+    );
+    try {
+      await api.setPropertyType(key, type);
+      if (!id) return;
+      // Types are vault-wide: refresh just this page's properties.
+      const fresh = await api.getPage(id);
+      setPage((previous) => (previous && previous.id === fresh.id ? { ...previous, properties: fresh.properties ?? [] } : previous));
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  }, []);
 
   const handleSetIcon = useCallback(async (icon: string | null) => {
     const id = selectedRef.current;
@@ -1699,6 +1758,11 @@ export function App() {
                     editTitleOnOpen={editTitleId === page.id ? true : undefined}
                     focusTitleSignal={titleFocusSignal}
                     sessionKey={sessionKeyOf(page.id)}
+                  />
+                  <PropertiesBlock
+                    properties={page.properties ?? []}
+                    onChange={handlePropertiesChange}
+                    onSetType={handleSetPropertyType}
                   />
                   <Editor
                     key={`${sessionKeyOf(page.id)}:${editorRevision}`}

@@ -217,6 +217,12 @@ export function PageHeader({
     setDraft(page.title);
   };
 
+  // Frontmatter tags are shown in the Tags property (v0.7 A); the header
+  // keeps the inline #tags from the body.
+  const propertyTags = page.properties?.find((property) => property.key === "tags")?.value;
+  const shownAsProperty = new Set(Array.isArray(propertyTags) ? propertyTags.map((tag) => tag.toLowerCase()) : []);
+  const headerTags = page.tags.filter((tag) => !shownAsProperty.has(tag.toLowerCase()));
+
   return (
     <header className="page-header">
       <div className="page-heading">
@@ -353,9 +359,9 @@ export function PageHeader({
 
       <div className="page-meta">
         <span className="page-meta-time">{t("page.updated", { time: formatUpdated(page.updated) })}</span>
-        {page.tags.length > 0 ? (
+        {headerTags.length > 0 ? (
           <span className="page-tags">
-            {page.tags.map((tag) => (
+            {headerTags.map((tag) => (
               <span className="page-tag" key={tag}>
                 #{tag}
               </span>

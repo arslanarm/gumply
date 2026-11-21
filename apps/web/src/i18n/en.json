@@ -931,5 +931,32 @@
     "deleteBlock": "Delete block",
     "copyHeadingLink": "Copy link to heading",
     "pasteBlocked": "The browser blocked reading the clipboard. Use {{keys}} instead."
+  },
+  "properties": {
+    "label": "Properties",
+    "add": "Add property",
+    "namePlaceholder": "Property name",
+    "create": "Add “{{name}}”",
+    "keyMenu": "Property “{{name}}”",
+    "rename": "Rename",
+    "type": "Type",
+    "remove": "Remove",
+    "empty": "Empty",
+    "addValue": "Add…",
+    "removeValue": "Remove “{{value}}”",
+    "readOnly": "This value is nested YAML. Edit it in another editor.",
+    "invalid": "That isn't a valid value for a {{type}} property.",
+    "invalidName": "Property names use letters, digits, spaces, “-” and “_”.",
+    "taken": "There's already a property called “{{name}}”.",
+    "types": {
+      "text": "Text",
+      "multitext": "List",
+      "number": "Number",
+      "checkbox": "Checkbox",
+      "date": "Date",
+      "datetime": "Date & time",
+      "tags": "Tags",
+      "aliases": "Aliases"
+    }
   }
 }

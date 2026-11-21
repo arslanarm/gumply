@@ -11,6 +11,9 @@ import type {
   PageId,
   PageMeta,
   PageUpdateResult,
+  PropertiesPatch,
+  PropertyInfo,
+  PropertyType,
   RestoreResult,
   SearchResult,
   TrashedDocument,
@@ -96,9 +99,11 @@ function isUploadedFile(value: unknown): value is UploadedFile {
 export function createApiRoutes(store: VaultStore): Hono {
   const api = new Hono();
 
-  api.get("/pages", (c) => {
+  api.get("/pages", async (c) => {
     const firstPage = store.consumeNewVaultPage();
     if (firstPage) c.header("X-Gumply-New-Vault", firstPage);
+    // v1.12: opt-in properties per page (database views); the default stays light.
+    if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());
   });
 
@@ -113,7 +118,10 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<Page>(page, 201);
   });
 
-  api.get("/pages/:id", (c) => c.json<Page>(store.get(c.req.param("id"))));
+  api.get("/pages/:id", async (c) => {
+    const page = store.get(c.req.param("id"));
+    return c.json<Page>({ ...page, properties: (await store.pageProperties(page.id)) ?? [] });
+  });
 
   api.put("/pages/:id", async (c) => {
     const body = await readJson(c);
@@ -132,12 +140,25 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (body.force === true) patch.force = true;
     const writer = optionalString(body, "writer");
     if (writer !== undefined) patch.writer = writer.slice(0, 64);
+    // v1.12 (D34): validated by the store against the page's frontmatter.
+    if (body.properties !== undefined) patch.properties = body.properties as PropertiesPatch;
 
     const result = await store.update(c.req.param("id"), patch);
-    const { rewrittenPages, ...page } = result;
+    const { rewrittenPages, ...rest } = result;
+    // Pages carry their properties; a renamed folder (D33) has none.
+    const properties = await store.pageProperties(rest.id);
+    const page = properties === null ? rest : { ...rest, properties };
     return c.json<PageUpdateResult>(
       rewrittenPages.length > 0 ? { ...page, rewrittenPages } : page,
     );
+  });
+
+  // --- properties (v0.7 A, D34, spec/api v1.12) ---
+  api.get("/properties", async (c) => c.json<PropertyInfo[]>(await store.listProperties()));
+
+  api.put("/properties/:key", async (c) => {
+    const body = await readJson(c);
+    return c.json<PropertyInfo[]>(await store.setPropertyType(c.req.param("key"), body.type as PropertyType));
   });
 
   api.delete("/pages/:id", async (c) => {
