@@ -145,8 +145,8 @@ export function BaseView(props: BaseViewProps) {
   );
 
   const editValue = useCallback(
-    async (row: BaseRow, column: BaseColumn, value: BaseValue) => {
-      if (!column.id.startsWith("note.")) return;
+    async (row: BaseRow, column: BaseColumn, value: BaseValue): Promise<boolean> => {
+      if (!column.id.startsWith("note.")) return false;
       // Show it at once; the server's answer replaces it.
       setResult((current) =>
         current
@@ -158,12 +158,15 @@ export function BaseView(props: BaseViewProps) {
             }
           : current,
       );
+      let saved = true;
       try {
         await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, row.updated);
       } catch (error) {
+        saved = false;
         props.onError?.(errorText(error));
       }
       await load();
+      return saved;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [load],

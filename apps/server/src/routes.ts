@@ -106,7 +106,7 @@ function isUploadedFile(value: unknown): value is UploadedFile {
 
 /** All `/api` routes; mounted by `createApp`. */
 export function createApiRoutes(store: VaultStore): Hono {
-  const bases = new BaseQueries(store, store.root);
+  const bases = new BaseQueries(store);
   const api = new Hono();
 
   api.get("/pages", async (c) => {

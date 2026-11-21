@@ -308,27 +308,21 @@ export const api = {
     mutate(() => request("/boards", { method: "POST", body: JSON.stringify(input) })),
 
   /**
-   * spec/api v1.12 (#qw4pcm2h): set or remove (null) frontmatter properties of
-   * one page, conditionally. Used by database views to edit a cell.
+   * spec/api v1.12 (#qw4pcm2h): set frontmatter properties of one page,
+   * conditionally. Used by database views (cells, kanban, calendar). A null
+   * value is written as a bare `key:`, as Obsidian does; the key stays.
    */
   setPageProperties: (
     id: PageId,
     values: Record<string, string | number | boolean | string[] | null>,
     expectedUpdated: string,
-  ): Promise<UpdatePageResult> => {
-    const set: Record<string, string | number | boolean | string[]> = {};
-    const remove: string[] = [];
-    for (const [key, value] of Object.entries(values)) {
-      if (value === null || (Array.isArray(value) && value.length === 0)) remove.push(key);
-      else set[key] = value;
-    }
-    return mutate(() =>
+  ): Promise<UpdatePageResult> =>
+    mutate(() =>
       request(pagePath(id), {
         method: "PUT",
-        body: JSON.stringify({ properties: { set, remove }, expectedUpdated }),
+        body: JSON.stringify({ properties: { set: values }, expectedUpdated }),
       }),
-    );
-  },
+    ),
 
   /** spec/api-bases: a database view's config. */
   getBase: (id: PageId): Promise<BaseDocument> => request(basePath(id)),
