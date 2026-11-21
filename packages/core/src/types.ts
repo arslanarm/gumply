@@ -41,6 +41,13 @@ export interface PageMeta {
 
 /** Full page: metadata plus the Markdown body (without frontmatter). */
 export interface Page extends PageMeta {
+  /**
+   * #8k4ssrkb (spec/api-attachments-resolve): each Obsidian-style file link
+   * in the body, as written before `|` (`photo.png`, `att/pic.png`), mapped to
+   * the vault file it resolves to from this page, or null. Absent when the
+   * page has none.
+   */
+  fileLinks?: Record<string, string | null>;
   content: string;
   /** v1.12 (D34): the frontmatter's properties (without title, icon, created, updated). */
   properties?: import("./properties.js").Property[];
@@ -57,6 +64,8 @@ export type PageUpdateResult = Page & {
 export interface BoardDocument {
   meta: PageMeta;
   board: import("./canvas.js").CanvasBoard;
+  /** #8k4ssrkb: Obsidian-style file links in the board's text, resolved from the board. */
+  fileLinks?: Record<string, string | null>;
 }
 
 /** `PUT /api/boards/:id` response. */

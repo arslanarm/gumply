@@ -4,6 +4,7 @@ import { api } from "../api/client.js";
 import { hrefForAttachment, isExternalLink, urlForLink } from "../lib/attachment-links.js";
 import { errorMessage } from "../lib/errors.js";
 import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
+import { useFileLinkVersion } from "../lib/file-links.js";
 import { t, useT } from "../i18n/index.js";
 
 /** Image block with a loading skeleton and an editable caption (= alt text). */
@@ -13,7 +14,9 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
   const alt = String(node.attrs.alt ?? "");
   // D23: `src` is the link as written; resolve it against the open page.
   const env = useWikiLinkEnvironment();
-  const url = urlForLink(src, env, "image");
+  // An Obsidian link resolves across the vault (#8k4ssrkb); re-render once a new one is resolved.
+  useFileLinkVersion();
+  const url = urlForLink(src, env, "image", node.attrs.obsidian as string | null);
   const uploading = Boolean(node.attrs.uploading) || src.length === 0;
   const [caption, setCaption] = useState(alt);
   const [failed, setFailed] = useState(false);

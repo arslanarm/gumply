@@ -194,6 +194,7 @@ export {
   type TemplateContext,
   type TemplateSettings,
 } from "./templates.js";
+export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "./link-files.js";
 
 export {
   coverValue,
