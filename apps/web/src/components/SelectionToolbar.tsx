@@ -10,6 +10,7 @@
  */
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { t } from "../i18n/index.js";
 import { blockAt } from "../lib/blocks.js";
 import { buildLinkSuggestions, type LinkSuggestion } from "../lib/wikilinks.js";
 import { TURN_INTO, turnInto } from "../editor/block-editing.js";
@@ -212,7 +213,7 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
       ref={ref}
       className={`selection-toolbar${place.below ? " is-below" : ""}`}
       role="toolbar"
-      aria-label="Text formatting"
+      aria-label={t("format.toolbarLabel")}
       data-testid="selection-toolbar"
       style={{ top: place.top, left: place.left }}
       onMouseDown={(event) => {
@@ -243,7 +244,7 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
             data-testid="selection-turn-into"
             aria-haspopup="menu"
             aria-expanded={mode === "turn"}
-            data-tooltip="Turn into"
+            data-tooltip={t("blocks.turnIntoHeading")}
             onClick={() => setMode(mode === "turn" ? "buttons" : "turn")}
           >
             {currentBlockLabel(editor)}
@@ -270,9 +271,9 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
           <button
             type="button"
             className={`selection-toolbar-button${linkActive ? " is-active" : ""}`}
-            aria-label="Link"
+            aria-label={t("format.link")}
             aria-pressed={linkActive}
-            data-tooltip={`Link · ${linkKeys()}`}
+            data-tooltip={t("format.linkTooltip", { keys: linkKeys() })}
             data-testid="format-link"
             onClick={() => setMode("link")}
           >
@@ -310,22 +311,22 @@ function currentBlockLabel(editor: Editor): string {
     const node = $from.node(depth);
     switch (node.type.name) {
       case "heading":
-        return `Heading ${node.attrs.level}`;
+        return t("format.headingLevel", { level: String(node.attrs.level) });
       case "codeBlock":
-        return "Code";
+        return t("blocks.turnInto.code");
       case "taskItem":
-        return "To-do";
+        return t("blocks.turnInto.todo");
       case "listItem":
-        return $from.node(depth - 1).type.name === "orderedList" ? "Numbered list" : "Bullet list";
+        return $from.node(depth - 1).type.name === "orderedList" ? t("blocks.turnInto.ordered") : t("blocks.turnInto.bullet");
       case "blockquote":
-        return "Quote";
+        return t("blocks.turnInto.quote");
       case "callout":
-        return node.attrs.fold ? "Toggle" : "Callout";
+        return node.attrs.fold ? t("blocks.turnInto.toggle") : t("blocks.turnInto.callout");
       default:
         break;
     }
   }
-  return "Text";
+  return t("blocks.turnInto.text");
 }
 
 interface LinkFieldProps {
@@ -378,8 +379,8 @@ function LinkField({ editor, initial, onDone, onCancel, onRemove }: LinkFieldPro
         ref={inputRef}
         className="selection-link-input"
         data-testid="selection-link-input"
-        aria-label="Link to a web address or a page"
-        placeholder="Paste a link, or search pages"
+        aria-label={t("format.linkFieldLabel")}
+        placeholder={t("format.linkPlaceholder")}
         value={value}
         onChange={(event) => {
           setValue(event.target.value);
@@ -406,8 +407,8 @@ function LinkField({ editor, initial, onDone, onCancel, onRemove }: LinkFieldPro
         <button
           type="button"
           className="selection-toolbar-button"
-          aria-label="Remove link"
-          data-tooltip="Remove link"
+          aria-label={t("editorMenu.removeLink")}
+          data-tooltip={t("editorMenu.removeLink")}
           data-testid="selection-link-remove"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
@@ -419,7 +420,7 @@ function LinkField({ editor, initial, onDone, onCancel, onRemove }: LinkFieldPro
         </button>
       ) : null}
       {pages.length > 0 ? (
-        <div className="selection-link-pages" role="listbox" aria-label="Pages" data-testid="selection-link-pages">
+        <div className="selection-link-pages" role="listbox" aria-label={t("format.pagesLabel")} data-testid="selection-link-pages">
           {pages.map((item, itemIndex) => (
             <button
               key={item.key}
@@ -439,7 +440,7 @@ function LinkField({ editor, initial, onDone, onCancel, onRemove }: LinkFieldPro
           ))}
         </div>
       ) : url === null && value.trim().length > 0 ? (
-        <div className="selection-link-pages selection-link-hint">No pages match. Type a web address to link it.</div>
+        <div className="selection-link-pages selection-link-hint">{t("format.noPagesMatch")}</div>
       ) : null}
     </div>
   );

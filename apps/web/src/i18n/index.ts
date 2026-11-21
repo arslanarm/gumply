@@ -130,6 +130,12 @@ export function t(key: MessageKey, vars?: MessageVars): string {
   return interpolate(text ?? key, vars);
 }
 
+/** "a, b and c" in the current language (no serial comma in any shipped language). */
+export function listJoin(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(t("common.listComma"))}${t("common.listAnd")}${parts[parts.length - 1]}`;
+}
+
 /** Load (if needed) and switch to `next`; components using `useT()` re-render. */
 export async function setLanguage(next: Language): Promise<void> {
   const loaded = next === "en" ? english : flattenMessages((await LOADERS[next]()).default);

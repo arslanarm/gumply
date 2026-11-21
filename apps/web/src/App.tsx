@@ -1174,12 +1174,12 @@ export function App() {
     try {
       if (pending.kind === "forever") {
         await api.deleteTrashed(pending.item.trashId);
-        setToast({ message: `Deleted “${pending.item.title}” forever`, icon: "trash" });
+        setToast({ message: t("trash.deletedForever", { title: pending.item.title }), icon: "trash" });
         // A trashed page that is gone now: back to the list.
         if (trashRoute?.trashId === pending.item.trashId) navigateTrash();
       } else {
         const { deleted } = await api.emptyTrash();
-        setToast({ message: deleted === 1 ? "Deleted 1 item forever" : `Deleted ${deleted} items forever`, icon: "trash" });
+        setToast({ message: t("trash.deletedItemsForever", { count: deleted }), icon: "trash" });
       }
     } catch (error) {
       setActionError(errorMessage(error));
@@ -1777,10 +1777,10 @@ export function App() {
       {trashConfirm ? (
         <ConfirmDialog
           heading={
-            trashConfirm.kind === "forever" ? <>Delete “{trashConfirm.item.title}” forever?</> : <>Empty the trash?</>
+            trashConfirm.kind === "forever" ? <>{t("trash.confirmForever", { title: trashConfirm.item.title })}</> : <>{t("trash.confirmEmpty")}</>
           }
           body={trashConfirm.kind === "forever" ? deleteForeverBody(trashConfirm.item) : emptyTrashBody(trashConfirm.items)}
-          confirmLabel={trashConfirm.kind === "forever" ? "Delete forever" : "Empty trash"}
+          confirmLabel={trashConfirm.kind === "forever" ? t("trash.deleteForever") : t("trash.empty")}
           testId="trash-confirm-dialog"
           onCancel={() => setTrashConfirm(null)}
           onConfirm={() => void confirmTrashAction()}

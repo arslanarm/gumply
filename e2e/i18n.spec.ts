@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
+import { E2E_VAULT } from './support/env';
 
 /**
  * Translations (#7h5utv23): with Russian chosen, the sidebar, slash menu,
@@ -35,7 +38,7 @@ const leftovers = [
       .filter((piece) => /[A-Za-z]{3,}\s+[A-Za-z]{2,}/.test(piece)),
   ),
 ];
-const KEY_PATTERN = /\b(?:common|sidebar|board|slash|graph|page|search|settings|templates|blocks|save|table|emoji|delete|move)\.[a-z][A-Za-z.]+\b/;
+const KEY_PATTERN = /\b(?:common|sidebar|board|slash|graph|page|search|settings|templates|blocks|save|table|emoji|delete|move|trash|folders|counts|format|editorMenu)\.[a-z][A-Za-z.]+\b/;
 
 /** Everything a user sees or hears: text, labels, tooltips, placeholders. */
 async function visibleStrings(page: Page): Promise<string[]> {
@@ -123,6 +126,63 @@ test.describe('Russian interface (#7h5utv23)', () => {
     await page.getByTestId('settings-button').click();
     await expect(page.getByTestId('settings-popover')).toContainText('Язык');
     await expectNoEnglish(page, 'Settings');
+  });
+
+  test('trash, folders, the formatting toolbar and the right-click menu in Russian', async ({ page, request, vault }) => {
+    await vault.seed([
+      { title: 'Заметки', content: 'Первая строка текста' },
+      { title: 'Черновик', content: 'x' },
+    ]);
+    // A plain folder (D33) with a page and another file.
+    await fs.mkdir(path.join(E2E_VAULT, 'Архив'), { recursive: true });
+    await fs.writeFile(path.join(E2E_VAULT, 'Архив', 'Старое.md'), 'Старое', 'utf8');
+    await fs.writeFile(path.join(E2E_VAULT, 'Архив', 'скан.pdf'), '%PDF-1.4', 'utf8');
+    await expect
+      .poll(async () => (await api.listPages(request)).some((meta) => meta.kind === 'folder' && meta.id === 'Архив'), { timeout: 10_000 })
+      .toBe(true);
+    await openInRussian(page, '#/Заметки');
+
+    // The formatting toolbar on a selection, and the editor's right-click menu.
+    await page.getByTestId('editor-content').getByText('Первая строка текста').dblclick();
+    await expect(page.getByTestId('selection-toolbar')).toBeVisible();
+    await expect(page.getByTestId('selection-turn-into')).toContainText('Текст');
+    await expectNoEnglish(page, 'the formatting toolbar');
+    await page.getByTestId('editor-content').getByText('Первая строка текста').click({ button: 'right' });
+    await expect(page.getByTestId('editor-context-menu')).toContainText('Дублировать блок');
+    await expect(page.getByTestId('editor-context-menu')).toContainText('Жирный');
+    await expectNoEnglish(page, 'the right-click menu');
+    await page.keyboard.press('Escape');
+
+    // A folder's overview and its delete dialog.
+    await page.getByTestId('page-item-Архив').click();
+    await expect(page.getByTestId('folder-view-meta')).toHaveText('Папка · 1 элемент · 1 другой файл');
+    await expect(page.getByTestId('folder-new-page')).toHaveText('Новая страница здесь');
+    await expectNoEnglish(page, 'the folder overview');
+    await page.getByTestId('page-item-Архив').hover();
+    await page.getByTestId('page-menu-button-Архив').click();
+    await expect(page.getByTestId('delete-page-Архив')).toHaveText('Удалить папку');
+    await page.getByTestId('delete-page-Архив').click();
+    await expect(page.getByTestId('delete-confirm-dialog')).toContainText('Её содержимое (1 страница и 1 другой файл) будет перемещено в корзину.');
+    await expectNoEnglish(page, 'the folder delete dialog');
+    await page.getByTestId('delete-cancel').click();
+
+    // The trash: list, a trashed page and the "delete forever" dialog.
+    await page.getByTestId('page-item-Черновик').hover();
+    await page.getByTestId('page-menu-button-Черновик').click();
+    // No sub-pages: deleted at once (D15), with an Undo toast.
+    await page.getByTestId('delete-page-Черновик').click();
+    await expect(page.getByTestId('sidebar-trash-count')).toHaveText('1');
+    await page.getByTestId('sidebar-trash').click();
+    await expect(page.getByTestId('trash-view')).toContainText('Корзина');
+    await expect(page.getByTestId('trash-search')).toHaveAttribute('placeholder', 'Поиск по 1 удалённому объекту');
+    await expectNoEnglish(page, 'the trash');
+    await page.getByTestId('trash-item-Черновик').getByTestId('trash-delete-forever').click();
+    await expect(page.getByTestId('trash-confirm-dialog')).toContainText('Удалить «Черновик» навсегда?');
+    await expectNoEnglish(page, 'the delete-forever dialog');
+    await page.keyboard.press('Escape');
+    await page.getByTestId('trash-item-Черновик').locator('.trash-row-main').click();
+    await expect(page.getByTestId('trashed-banner')).toContainText('Эта страница в корзине.');
+    await expectNoEnglish(page, 'a trashed page');
   });
 
   test('board toolbar, menu and a template board in Russian', async ({ page, request, vault }) => {

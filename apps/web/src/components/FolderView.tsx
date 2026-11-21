@@ -1,5 +1,6 @@
 import type { PageId, PageMeta } from "@gumply/core";
 import { useMemo } from "react";
+import { t as translate, useT } from "../i18n/index.js";
 import { isBoard } from "../lib/boards.js";
 import { folderSummary } from "../lib/folders.js";
 import { comparePages } from "../lib/tree.js";
@@ -15,8 +16,8 @@ export interface FolderViewProps {
 
 function kindLabel(item: PageMeta): string {
   if (item.kind === "folder") return folderSummary(item.childCount, item.otherFiles);
-  if (isBoard(item)) return "Whiteboard";
-  return item.childCount > 0 ? `Page · ${item.childCount} sub-page${item.childCount === 1 ? "" : "s"}` : "Page";
+  if (isBoard(item)) return translate("folders.whiteboard");
+  return item.childCount > 0 ? translate("folders.pageWithSubPages", { count: item.childCount }) : translate("folders.page");
 }
 
 /**
@@ -24,6 +25,7 @@ function kindLabel(item: PageMeta): string {
  * reads or writes a file; there is no `<Folder>.md`.
  */
 export function FolderView({ folder, pages, onOpen, onNewPage, onNewBoard }: FolderViewProps) {
+  const t = useT();
   const children = useMemo(
     () => pages.filter((item) => item.parentId === folder.id).sort(comparePages),
     [pages, folder.id],
@@ -45,19 +47,19 @@ export function FolderView({ folder, pages, onOpen, onNewPage, onNewBoard }: Fol
       <div className="folder-view-actions">
         <button type="button" className="button-secondary" data-testid="folder-new-page" onClick={() => onNewPage(folder.id)}>
           <Icon name="plus" size={15} />
-          New page here
+          {t("folders.newPageHere")}
         </button>
         <button type="button" className="button-secondary" data-testid="folder-new-board" onClick={() => onNewBoard(folder.id)}>
           <Icon name="board" size={15} />
-          New whiteboard here
+          {t("folders.newBoardHere")}
         </button>
       </div>
       {children.length === 0 ? (
         <p className="folder-view-empty" data-testid="folder-view-empty">
-          This folder is empty.
+          {t("folders.empty")}
         </p>
       ) : (
-        <ul className="folder-view-list" aria-label={`In ${folder.title}`}>
+        <ul className="folder-view-list" aria-label={t("folders.contentsOf", { title: folder.title })}>
           {children.map((item) => (
             <li key={item.id}>
               <button

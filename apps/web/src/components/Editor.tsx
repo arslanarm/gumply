@@ -708,7 +708,7 @@ export function Editor({
     editorProps: {
       attributes: {
         class: "gumply-editor",
-        "aria-label": "Page content",
+        "aria-label": t("page.contentLabel"),
         "data-testid": "editor-content",
       },
       // Pasted HTML tables become a GFM table block (#y5iqswjf).

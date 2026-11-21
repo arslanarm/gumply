@@ -4,7 +4,7 @@
  */
 import type { PageId, PageMeta } from "@gumply/core";
 import { comparePages } from "./tree.js";
-import { t } from "../i18n/index.js";
+import { listJoin, t } from "../i18n/index.js";
 
 /** Direct sub-pages of `id` (what the delete dialog counts). */
 export function directSubPages(pages: readonly PageMeta[], id: PageId): PageMeta[] {
@@ -49,17 +49,14 @@ export function folderContents(pages: readonly PageMeta[], id: PageId): FolderCo
   return { pages: inside.length - boards, boards, otherFiles };
 }
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 /** D33 confirm copy: "Its 3 pages, 1 board and 5 other files will be moved to the trash." */
 export function folderDeleteBody({ pages, boards, otherFiles }: FolderContents): string {
   const parts = [
-    pages > 0 ? count(pages, "page", "pages") : null,
-    boards > 0 ? count(boards, "board", "boards") : null,
-    otherFiles > 0 ? count(otherFiles, "other file", "other files") : null,
+    pages > 0 ? t("counts.pages", { count: pages }) : null,
+    boards > 0 ? t("counts.boards", { count: boards }) : null,
+    otherFiles > 0 ? t("counts.otherFiles", { count: otherFiles }) : null,
   ].filter((part): part is string => part !== null);
-  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : (parts[0] ?? "");
-  return `Its ${list} will be moved to the trash.`;
+  return t("delete.folderBody", { list: listJoin(parts) });
 }
 
 /** D15 copy. */
