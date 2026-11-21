@@ -38,6 +38,11 @@ export function contention(): Contention {
   return { load1: loadavg()[0] ?? 0, cores: Math.max(1, cpus().length), cpuPressure };
 }
 
+/** "load 18.2 on 24 cores, CPU pressure 34.0 %", for annotations and error messages. */
+export function describeContention(c: Contention): string {
+  return `load ${c.load1.toFixed(1)} on ${c.cores} cores` + (c.cpuPressure === null ? '' : `, CPU pressure ${c.cpuPressure.toFixed(1)} %`);
+}
+
 /** A check: [measured value, quiet-machine budget, description]. */
 export type Check = readonly [value: number, base: number, what: string];
 
@@ -58,8 +63,7 @@ export async function measure<T>(
     const c = contention();
     const scale = budgetScale(c, strict());
     const unmeasurable = !strict() && scale >= UNMEASURABLE;
-    const signal =
-      `load ${c.load1.toFixed(1)} on ${c.cores} cores` + (c.cpuPressure === null ? '' : `, CPU pressure ${c.cpuPressure.toFixed(1)} %`);
+    const signal = describeContention(c);
     const verdict = strict()
       ? 'strict budgets (GUMPLY_PERF_STRICT=1)'
       : unmeasurable

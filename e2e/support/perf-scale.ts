@@ -39,6 +39,22 @@ export function budgetScale(c: Contention, strict = false): number {
   return scale <= QUIET_TOLERANCE ? 1 : Math.min(scale, MAX_SCALE);
 }
 
+/** How long a page open (navigation + the app booting) may take on a quiet machine. */
+export const PAGE_OPEN_BASE_MS = 5_000;
+/** Page opens never get more than this, however busy the machine is. */
+export const PAGE_OPEN_MAX_MS = 15_000;
+
+/**
+ * The budget for one page open (#rqtacq4d), given the current `budgetScale`:
+ * the quiet 5 s scaled for contention, and the full 15 s once the machine is
+ * too busy to judge. Only navigation waits use this; in-page interactions keep
+ * the strict 5 s `expect` timeout, so real slowness inside the app still fails.
+ */
+export function pageOpenTimeout(scale: number): number {
+  if (scale >= UNMEASURABLE) return PAGE_OPEN_MAX_MS;
+  return Math.min(PAGE_OPEN_MAX_MS, Math.round(PAGE_OPEN_BASE_MS * Math.max(1, scale)));
+}
+
 /** Parse `/proc/pressure/cpu`; null if it isn't in the expected format. */
 export function parseCpuPressure(text: string): number | null {
   const match = /^some\s.*\bavg10=([\d.]+)/m.exec(text);
