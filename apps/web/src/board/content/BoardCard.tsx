@@ -15,6 +15,7 @@ import { useBoardActions, type BoardCardRenderProps } from "../context.js";
 import { BoardIcon } from "../icons.js";
 import { useBoardContent } from "./context.js";
 import { safeWebUrl } from "./links.js";
+import { t, useT } from "../../i18n/index.js";
 
 function baseName(path: string): string {
   return (path.split("/").pop() ?? path).replace(/\.(md|canvas)$/i, "");
@@ -120,7 +121,7 @@ function PageCard({ node }: { node: CanvasNode }) {
           <BoardIcon name="page" size={16} />
           <span>{baseName(path)}</span>
         </div>
-        <div className="board-card-sub">This page doesn't exist anymore.</div>
+        <div className="board-card-sub">{t("board.cards.pageMissing")}</div>
       </div>
     );
   }
@@ -135,9 +136,9 @@ function PageCard({ node }: { node: CanvasNode }) {
           {preview}
         </div>
       ) : (
-        <div className="board-card-sub">{preview === null ? "" : "Empty page"}</div>
+        <div className="board-card-sub">{preview === null ? "" : t("board.cards.emptyPage")}</div>
       )}
-      <OpenButton node={node} label="Open page" />
+      <OpenButton node={node} label={t("board.cards.openPage")} />
     </div>
   );
 }
@@ -152,8 +153,8 @@ function BoardRefCard({ node }: { node: CanvasNode }) {
         {board?.icon ? <span className="board-card-emoji" aria-hidden="true">{board.icon}</span> : <BoardIcon name="board" size={16} />}
         <span>{board?.title ?? baseName(path)}</span>
       </div>
-      <div className="board-card-sub">{board ? "Whiteboard" : "This board doesn't exist anymore."}</div>
-      {board ? <OpenButton node={node} label="Open board" /> : null}
+      <div className="board-card-sub">{board ? t("board.cards.whiteboard") : t("board.cards.boardMissing")}</div>
+      {board ? <OpenButton node={node} label={t("board.cards.openBoard")} /> : null}
     </div>
   );
 }
@@ -168,7 +169,7 @@ function ImageCard({ node }: { node: CanvasNode }) {
           <BoardIcon name="image" size={16} />
           <span>{path.split("/").pop()}</span>
         </div>
-        <div className="board-card-sub">Image not found</div>
+        <div className="board-card-sub">{t("board.cards.imageMissing")}</div>
       </div>
     );
   }
@@ -193,8 +194,8 @@ function FileCard({ node }: { node: CanvasNode }) {
         <BoardIcon name="page" size={16} />
         <span>{path.split("/").pop()}</span>
       </div>
-      <div className="board-card-sub">{extension(path) ? `${extension(path)} file` : "File"}</div>
-      <OpenButton node={node} label="Open file" />
+      <div className="board-card-sub">{extension(path) ? t("board.cards.extFile", { ext: extension(path) }) : t("board.cards.file")}</div>
+      <OpenButton node={node} label={t("board.cards.openFile")} />
     </div>
   );
 }
@@ -215,17 +216,18 @@ function LinkCard({ node }: { node: CanvasNode }) {
     <div className={`board-card-body${safe ? "" : " is-unsafe"}`} data-testid="board-link-card" data-safe={safe ? "true" : "false"}>
       <div className="board-card-title">
         <BoardIcon name="link" size={16} />
-        <span>{safe ? hostOf(safe) : "Blocked link"}</span>
+        <span>{safe ? hostOf(safe) : t("board.cards.blockedLink")}</span>
       </div>
       <div className="board-card-sub" title={url}>
         {url}
       </div>
-      {safe ? <OpenButton node={node} label="Open link" /> : null}
+      {safe ? <OpenButton node={node} label={t("board.cards.openLink")} /> : null}
     </div>
   );
 }
 
 export const BoardCard = memo(function BoardCard({ node, kind }: BoardCardRenderProps) {
+  useT();
   switch (kind) {
     case "page":
       return <PageCard node={node} />;
@@ -240,7 +242,7 @@ export const BoardCard = memo(function BoardCard({ node, kind }: BoardCardRender
     default:
       return (
         <div className="board-card-body">
-          <div className="board-card-sub">Unsupported item ({String(node.type)})</div>
+          <div className="board-card-sub">{t("board.cards.unsupported", { type: String(node.type) })}</div>
         </div>
       );
   }

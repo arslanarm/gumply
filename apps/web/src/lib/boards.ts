@@ -7,9 +7,13 @@
  * list has loaded (a deep link).
  */
 import type { PageId, PageMeta } from "@gumply/core";
+import { t } from "../i18n/index.js";
 
 export const BOARD_EXTENSION = ".canvas";
-export const NEW_BOARD_TITLE = "Untitled whiteboard";
+/** "Untitled whiteboard" in the interface language (#7h5utv23). */
+export function newBoardTitle(): string {
+  return t("defaults.untitledBoard");
+}
 
 export function isBoardId(id: PageId | null | undefined): boolean {
   return typeof id === "string" && id.toLowerCase().endsWith(BOARD_EXTENSION);

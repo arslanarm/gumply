@@ -225,14 +225,15 @@ describe("canvasLinks / canvasAttachments", () => {
     expect(alias?.nodeId).toBe("a1b2c3d4e5f60718");
   });
 
-  it("finds links in stickies and shapes and ignores embeds", () => {
+  it("finds links in stickies and shapes and ignores attachment embeds", () => {
     const board: CanvasBoard = {
       nodes: [
         { id: "s", type: "text", text: "[[Alice]] ![[pic.png]] ![[Embedded note]]", x: 0, y: 0, width: 1, height: 1, gumply: { kind: "sticky" } },
       ],
       edges: [],
     };
-    expect(canvasLinks(board).map((link) => link.kind === "wikilink" && link.link.targetTitle)).toEqual(["Alice"]);
+    // A note embed links to the note (#5dpxwac4), like Obsidian's backlinks.
+    expect(canvasLinks(board).map((link) => link.kind === "wikilink" && link.link.targetTitle)).toEqual(["Alice", "Embedded note"]);
   });
 
   it("lists attachments once", () => {

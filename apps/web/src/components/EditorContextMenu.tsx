@@ -19,6 +19,8 @@ import type { Editor } from "@tiptap/core";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { blockAt, deleteBlock, duplicateBlock } from "../lib/blocks.js";
+import { copyBlockLink } from "../editor/page-embed/block-ids.js";
+import { t } from "../i18n/index.js";
 import { TURN_INTO, turnInto } from "../editor/block-editing.js";
 import { canFormat, markActions, openLinkField, removeLink, toggleMark } from "../editor/formatting.js";
 import { getWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
@@ -219,13 +221,13 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
   const hasSelection = !editor.state.selection.empty;
   if (menu.context.kind !== "image") {
     if (hasSelection) {
-      clipboard.push({ id: "cut", label: "Cut", icon: "scissors", keys: `${currentModifierLabel()}+X`, run: inText(() => document.execCommand("cut")) });
-      clipboard.push({ id: "copy", label: "Copy", icon: "copy", keys: `${currentModifierLabel()}+C`, run: inText(() => document.execCommand("copy")) });
+      clipboard.push({ id: "cut", label: t("editorMenu.cut"), icon: "scissors", keys: `${currentModifierLabel()}+X`, run: inText(() => document.execCommand("cut")) });
+      clipboard.push({ id: "copy", label: t("editorMenu.copy"), icon: "copy", keys: `${currentModifierLabel()}+C`, run: inText(() => document.execCommand("copy")) });
     }
     if (clipboardReadable()) {
       clipboard.push({
         id: "paste",
-        label: "Paste",
+        label: t("editorMenu.paste"),
         icon: "clipboard",
         keys: `${currentModifierLabel()}+V`,
         run: async () => {
@@ -242,13 +244,13 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
             }
             editor.view.pasteText(await navigator.clipboard.readText());
           } catch {
-            notice(`The browser blocked reading the clipboard. Use ${currentModifierLabel()}+V instead.`);
+            notice(t("editorMenu.pasteBlocked", { keys: `${currentModifierLabel()}+V` }));
           }
         },
       });
       clipboard.push({
         id: "paste-plain",
-        label: "Paste as plain text",
+        label: t("editorMenu.pastePlain"),
         keys: `${currentModifierLabel()}+Shift+V`,
         run: async () => {
           done();
@@ -258,7 +260,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
             // Plain: inserted as typed text, never parsed as Markdown or HTML.
             editor.view.dispatch(editor.state.tr.insertText(text));
           } catch {
-            notice(`The browser blocked reading the clipboard. Use ${currentModifierLabel()}+Shift+V instead.`);
+            notice(t("editorMenu.pasteBlocked", { keys: `${currentModifierLabel()}+Shift+V` }));
           }
         },
       });
@@ -271,35 +273,35 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
   if (context.kind === "link") {
     const href = safeHref(context.href);
     sections.push([
-      ...(href ? [{ id: "open-link", label: "Open link", icon: "externalLink" as const, run: () => { done(); window.open(href, "_blank", "noopener,noreferrer"); } }] : []),
+      ...(href ? [{ id: "open-link", label: t("editorMenu.openLink"), icon: "externalLink" as const, run: () => { done(); window.open(href, "_blank", "noopener,noreferrer"); } }] : []),
       ...(clipboardWritable()
-        ? [{ id: "copy-link", label: "Copy link", icon: "copy" as const, run: () => { done(); void navigator.clipboard.writeText(context.href); } }]
+        ? [{ id: "copy-link", label: t("editorMenu.copyLink"), icon: "copy" as const, run: () => { done(); void navigator.clipboard.writeText(context.href); } }]
         : []),
       {
         id: "edit-link",
-        label: "Edit link",
+        label: t("editorMenu.editLink"),
         icon: "pencil",
         run: inText(() => {
           editor.chain().focus().extendMarkRange("link").run();
           openLinkField();
         }),
       },
-      { id: "remove-link", label: "Remove link", icon: "unlink", run: inText(() => removeLink(editor)) },
+      { id: "remove-link", label: t("editorMenu.removeLink"), icon: "unlink", run: inText(() => removeLink(editor)) },
     ]);
   } else if (context.kind === "wiki") {
     const raw = `[[${context.targetTitle}${context.heading ? `#${context.heading}` : ""}${context.alias ? `|${context.alias}` : ""}]]`;
     sections.push([
-      { id: "open-link", label: "Open page", icon: "externalLink", run: () => { done(); getWikiLinkEnvironment().openLink({ targetTitle: context.targetTitle, heading: context.heading }); } },
-      ...(clipboardWritable() ? [{ id: "copy-link", label: "Copy link", icon: "copy" as const, run: () => { done(); void navigator.clipboard.writeText(raw); } }] : []),
+      { id: "open-link", label: t("editorMenu.openPage"), icon: "externalLink", run: () => { done(); getWikiLinkEnvironment().openLink({ targetTitle: context.targetTitle, heading: context.heading }); } },
+      ...(clipboardWritable() ? [{ id: "copy-link", label: t("editorMenu.copyLink"), icon: "copy" as const, run: () => { done(); void navigator.clipboard.writeText(raw); } }] : []),
     ]);
   } else if (context.kind === "image") {
     const canCopyImage = typeof window !== "undefined" && "ClipboardItem" in window && typeof navigator.clipboard?.write === "function";
     sections.push([
-      { id: "open-image", label: "Open image", icon: "externalLink", run: () => { done(); window.open(context.url, "_blank", "noopener,noreferrer"); } },
+      { id: "open-image", label: t("editorMenu.openImage"), icon: "externalLink", run: () => { done(); window.open(context.url, "_blank", "noopener,noreferrer"); } },
       ...(canCopyImage
         ? [{
             id: "copy-image",
-            label: "Copy image",
+            label: t("editorMenu.copyImage"),
             icon: "copy" as const,
             run: async () => {
               done();
@@ -309,14 +311,14 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
                 const png = blob.type === "image/png" ? blob : await toPng(blob);
                 await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
               } catch {
-                notice("Couldn't copy the image.");
+                notice(t("editorMenu.copyImageFailed"));
               }
             },
           }]
         : []),
       {
         id: "delete-image",
-        label: "Delete",
+        label: t("common.delete"),
         icon: "trash",
         danger: true,
         run: inText(() => {
@@ -334,13 +336,13 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
     sections.push([
       ...markActions().map<Item>((action) => ({
         id: `format-${action.mark}`,
-        label: editor.isActive(action.mark) ? `Remove ${action.label.toLowerCase()}` : action.label,
+        label: editor.isActive(action.mark) ? action.removeLabel : action.label,
         icon: action.icon,
         keys: action.keys,
         run: inText(() => toggleMark(editor, action.mark)),
       })),
       ...(context.kind !== "link"
-        ? [{ id: "format-link", label: "Link…", icon: "link" as const, keys: `${currentModifierLabel()}+K`, run: inText(() => { openLinkField(); }) }]
+        ? [{ id: "format-link", label: t("editorMenu.link"), icon: "link" as const, keys: `${currentModifierLabel()}+K`, run: inText(() => { openLinkField(); }) }]
         : []),
     ]);
   }
@@ -348,12 +350,12 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
   if (context.kind === "text" || context.kind === "code") {
     const blockItems: Section = [];
     if (context.kind === "text") {
-      blockItems.push({ id: "turn-into", label: "Turn into", icon: "text", run: () => setSubmenu((open) => !open) });
+      blockItems.push({ id: "turn-into", label: t("blocks.turnIntoHeading"), icon: "text", run: () => setSubmenu((open) => !open) });
     }
     blockItems.push(
       {
         id: "duplicate-block",
-        label: "Duplicate block",
+        label: t("editorMenu.duplicateBlock"),
         icon: "copy",
         keys: `${currentModifierLabel()}+D`,
         run: inText(() => {
@@ -362,9 +364,32 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
           if (tr) editor.view.dispatch(tr);
         }),
       },
+      // Page previews (#5dpxwac4): link to or embed this block elsewhere.
+      ...(clipboardWritable()
+        ? [
+            {
+              id: "copy-block-link",
+              label: t("blocks.copyLink"),
+              icon: "link" as const,
+              run: inText(() => {
+                const block = blockAt(editor.state.doc, editor.state.selection.from);
+                if (block) copyBlockLink(editor, block, false);
+              }),
+            },
+            {
+              id: "copy-block-embed",
+              label: t("blocks.copyEmbed"),
+              icon: "copy" as const,
+              run: inText(() => {
+                const block = blockAt(editor.state.doc, editor.state.selection.from);
+                if (block) copyBlockLink(editor, block, true);
+              }),
+            },
+          ]
+        : []),
       {
         id: "delete-block",
-        label: "Delete block",
+        label: t("editorMenu.deleteBlock"),
         icon: "trash",
         danger: true,
         run: inText(() => {
@@ -382,7 +407,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
     sections.push([
       {
         id: "copy-heading-link",
-        label: "Copy link to heading",
+        label: t("editorMenu.copyHeadingLink"),
         icon: "link",
         run: () => {
           done();
@@ -422,7 +447,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
       ref={ref}
       className="editor-context-menu"
       role="menu"
-      aria-label="Editor actions"
+      aria-label={t("editorMenu.label")}
       tabIndex={-1}
       data-testid="editor-context-menu"
       data-context={context.kind}
@@ -469,7 +494,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
         ))}
       </div>
       {submenu ? (
-        <div className="context-submenu" role="menu" aria-label="Turn into" data-testid="context-turn-menu">
+        <div className="context-submenu" role="menu" aria-label={t("blocks.turnIntoHeading")} data-testid="context-turn-menu">
           {TURN_INTO.map((item) => (
             <button
               key={item.kind}

@@ -162,6 +162,8 @@ export const api = {
   /** App name, version, vault folder and (v1.9) whether it is the desktop app. */
   health: (): Promise<HealthResponse> => request("/health"),
 
+  /** Desktop app only (v1.8): save the interface language; "system" follows the OS. */
+
   listPages: (): Promise<PageMeta[]> => request("/pages"),
 
   getPage: (id: PageId): Promise<Page> => request(pagePath(id)),

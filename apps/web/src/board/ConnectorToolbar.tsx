@@ -9,6 +9,7 @@ import { useLayoutEffect, useState, type RefObject } from "react";
 import { useBoardActions } from "./context.js";
 import { BoardIcon } from "./icons.js";
 import { Palette } from "./Swatch.js";
+import { t, useT } from "../i18n/index.js";
 
 export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
   edge: CanvasEdge;
@@ -16,6 +17,7 @@ export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
   /** Changes whenever the board does (connected objects may have moved). */
   layoutKey: unknown;
 }) {
+  useT();
   const actions = useBoardActions();
   const viewport = useViewport();
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
@@ -54,9 +56,9 @@ export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
         <button
           type="button"
           className={`board-context-button${end === "arrow" ? " is-active" : ""}`}
-          aria-label="Arrow"
+          aria-label={t("board.connector.arrow")}
           aria-pressed={end === "arrow"}
-          data-tooltip="Arrow"
+          data-tooltip={t("board.connector.arrow")}
           data-testid="board-edge-arrow"
           onClick={() => actions.updateEdge(id, { toEnd: undefined })}
         >
@@ -65,9 +67,9 @@ export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
         <button
           type="button"
           className={`board-context-button${end === "none" ? " is-active" : ""}`}
-          aria-label="Line"
+          aria-label={t("board.connector.line")}
           aria-pressed={end === "none"}
-          data-tooltip="Line"
+          data-tooltip={t("board.connector.line")}
           data-testid="board-edge-line"
           onClick={() => actions.updateEdge(id, { toEnd: "none" })}
         >
@@ -76,8 +78,8 @@ export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
         <button
           type="button"
           className="board-context-button is-danger"
-          aria-label="Delete"
-          data-tooltip="Delete · Del"
+          aria-label={t("common.delete")}
+          data-tooltip={`${t("common.delete")} · Del`}
           data-testid="board-delete"
           onClick={() => actions.deleteEdge(id)}
         >

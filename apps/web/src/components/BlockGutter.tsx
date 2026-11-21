@@ -11,6 +11,8 @@ import {
 } from "../lib/blocks.js";
 import { insertBlockBelow, TURN_INTO, turnInto } from "../editor/block-editing.js";
 import { setCalloutFold } from "../editor/callout/callout.js";
+import { t, useT } from "../i18n/index.js";
+import { copyBlockLink } from "../editor/page-embed/block-ids.js";
 
 interface HoverState {
   block: BlockRef;
@@ -88,6 +90,7 @@ function inRect(rect: DOMRect, x: number, y: number, pad = 6): boolean {
 
 /** Hover gutter + block menu for the top-level block or list item under the pointer. */
 export function BlockGutter({ editor }: BlockGutterProps) {
+  useT();
   const [hover, setHover] = useState<HoverState | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [drop, setDrop] = useState<DropState | null>(null);
@@ -367,8 +370,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             className="block-gutter-button"
             data-testid="block-insert"
-            aria-label="Insert block below"
-            title="Insert block below"
+            aria-label={t("blocks.insertBelow")}
+            title={t("blocks.insertBelow")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => insertBlockBelow(editor, hover.block)}
           >
@@ -378,9 +381,9 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             className="block-gutter-button block-gutter-handle"
             data-testid="block-handle"
-            aria-label="Block actions"
+            aria-label={t("blocks.actions")}
             aria-haspopup="menu"
-            title="Drag to move · click for actions"
+            title={t("blocks.handleHint")}
             draggable
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move";
@@ -412,7 +415,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           ref={menuElementRef}
           className="block-menu"
           role="menu"
-          aria-label="Block actions"
+          aria-label={t("blocks.actions")}
           data-testid="block-menu"
           style={{
             left: menu.menuLeft,
@@ -425,13 +428,31 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             type="button"
             role="menuitem"
             className="block-menu-item"
+            data-testid="block-menu-item-copy-block-link"
+            onClick={() => run((block) => copyBlockLink(editor, block, false))}
+          >
+            {t("blocks.copyLink")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item"
+            data-testid="block-menu-item-copy-block-embed"
+            onClick={() => run((block) => copyBlockLink(editor, block, true))}
+          >
+            {t("blocks.copyEmbed")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item"
             data-testid="block-menu-item-duplicate"
             onClick={() => run((block) => {
               const tr = duplicateBlock(editor.state, block);
               if (tr) editor.view.dispatch(tr);
             })}
           >
-            Duplicate
+            {t("blocks.duplicate")}
           </button>
           <button
             type="button"
@@ -440,7 +461,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             data-testid="block-menu-item-move-up"
             onClick={() => run((block) => move(block, "up"))}
           >
-            Move up
+            {t("blocks.moveUp")}
           </button>
           <button
             type="button"
@@ -449,7 +470,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             data-testid="block-menu-item-move-down"
             onClick={() => run((block) => move(block, "down"))}
           >
-            Move down
+            {t("blocks.moveDown")}
           </button>
           <button
             type="button"
@@ -461,12 +482,12 @@ export function BlockGutter({ editor }: BlockGutterProps) {
               if (tr) editor.view.dispatch(tr);
             })}
           >
-            Delete
+            {t("common.delete")}
           </button>
           {menu.block.node.type.name === "callout" ? (
             <>
               <div className="block-menu-separator" />
-              <p className="block-menu-heading">Toggle</p>
+              <p className="block-menu-heading">{t("blocks.toggleHeading")}</p>
               {menu.block.node.attrs.fold ? (
                 <>
                   <button
@@ -479,7 +500,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
                       setCalloutFold(editor.view, block.from, block.node.attrs.fold === "-" ? "+" : "-"),
                     )}
                   >
-                    {menu.block.node.attrs.fold === "-" ? "Start open" : "Start closed"}
+                    {menu.block.node.attrs.fold === "-" ? t("blocks.startOpen") : t("blocks.startClosed")}
                   </button>
                   <button
                     type="button"
@@ -488,7 +509,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
                     data-testid="block-menu-item-not-toggle"
                     onClick={() => run((block) => setCalloutFold(editor.view, block.from, ""))}
                   >
-                    Always show contents
+                    {t("blocks.alwaysShow")}
                   </button>
                 </>
               ) : (
@@ -499,7 +520,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
                   data-testid="block-menu-item-make-toggle"
                   onClick={() => run((block) => setCalloutFold(editor.view, block.from, "+"))}
                 >
-                  Make foldable
+                  {t("blocks.makeFoldable")}
                 </button>
               )}
             </>
@@ -507,7 +528,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           {menu.block.node.type.name === "table" || menu.block.node.type.name === "callout" ? null : (
             <>
           <div className="block-menu-separator" />
-          <p className="block-menu-heading">Turn into</p>
+          <p className="block-menu-heading">{t("blocks.turnIntoHeading")}</p>
           {TURN_INTO.map((item) => (
             <button
               key={item.kind}

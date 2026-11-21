@@ -3,6 +3,7 @@
  * after a restore. Pure, unit-tested.
  */
 import type { PageId, RestoreResult, TrashItem } from "@gumply/core";
+import { listJoin, t } from "../i18n/index.js";
 
 const normalise = (text: string) => text.toLocaleLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").trim();
 
@@ -20,8 +21,6 @@ export function trashedCount(items: readonly TrashItem[]): number {
   return items.reduce((total, item) => total + 1 + item.children.length, 0);
 }
 
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
 /** "Projects", or "Projects (no longer there)"; "" at the top level. */
 export function trashLocation(item: TrashItem): string {
   if (item.originalParentId === null) return "";
@@ -32,32 +31,29 @@ export function trashLocation(item: TrashItem): string {
 /** Body of the "Delete forever" confirmation. */
 export function deleteForeverBody(item: TrashItem): string {
   if (item.kind === "folder") {
-    const parts = [plural(item.children.length, "page or whiteboard", "pages and whiteboards")];
-    if (item.otherFiles) parts.push(plural(item.otherFiles, "other file", "other files"));
-    return `This deletes this folder with its ${parts.join(" and ")} from your vault for good. You can't undo this.`;
+    const parts = [t("counts.pagesOrBoards", { count: item.children.length })];
+    if (item.otherFiles) parts.push(t("counts.otherFiles", { count: item.otherFiles }));
+    return t("trash.forever.folder", { contents: listJoin(parts) });
   }
-  const what = item.kind === "whiteboard" ? "this whiteboard" : "this page";
-  const subPages = item.children.length > 0 ? ` and ${plural(item.children.length, "sub-page", "sub-pages")}` : "";
-  return `This deletes ${what}${subPages} from your vault for good. You can't undo this.`;
+  const board = item.kind === "whiteboard";
+  if (item.children.length === 0) return t(board ? "trash.forever.board" : "trash.forever.page");
+  return t(board ? "trash.forever.boardWithSubPages" : "trash.forever.pageWithSubPages", { count: item.children.length });
 }
 
 /** Body of the "Empty trash" confirmation. */
 export function emptyTrashBody(items: readonly TrashItem[]): string {
-  return `This deletes ${plural(trashedCount(items), "page or whiteboard", "pages and whiteboards")} from your vault for good. You can't undo this.`;
+  return t("trash.emptyBody", { count: trashedCount(items) });
 }
 
 /** The toast after a restore: where it went, and why if it isn't where it was. */
 export function restoredMessage(item: TrashItem, result: RestoreResult): string {
   const name = result.id.split("/").pop() ?? result.id;
   const shown = item.kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : name;
-  const where = result.movedToTopLevel ? " to the top level" : "";
-  const as = result.renamed ? ` as “${shown}”` : "";
-  const reasons: string[] = [];
-  if (result.movedToTopLevel) reasons.push(`“${trashLocation(item)}” is no longer there`);
-  if (result.renamed) reasons.push("that name was taken");
-  return reasons.length === 0
-    ? `Restored “${item.title}”.`
-    : `Restored “${item.title}”${where}${as}: ${reasons.join(" and ")}.`;
+  const vars = { title: item.title, name: shown, location: trashLocation(item) };
+  if (result.movedToTopLevel && result.renamed) return t("trash.restored.toTopAs", vars);
+  if (result.movedToTopLevel) return t("trash.restored.toTop", vars);
+  if (result.renamed) return t("trash.restored.as", vars);
+  return t("trash.restored.plain", vars);
 }
 
 /** Where a page of a restored entry is now (`id` as it was in the trash). */

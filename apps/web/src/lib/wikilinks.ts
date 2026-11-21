@@ -3,6 +3,7 @@
  */
 import type { Attachment, PageId, PageMeta } from "@gumply/core";
 import { isBoard } from "./boards.js";
+import { t } from "../i18n/index.js";
 
 export interface LinkSuggestion {
   kind: "page" | "attachment" | "create";
@@ -19,6 +20,10 @@ export interface LinkSuggestion {
   board?: boolean;
   /** File/image row from `vault/attachments/`. */
   attachment?: Attachment;
+  /** `![[Page#…]]` (#5dpxwac4): a heading's text or `^blockid`. */
+  part?: string;
+  /** Indent of a heading row in the `![[Page#` menu (its level). */
+  level?: number;
 }
 
 const MAX_PAGES = 8;
@@ -99,7 +104,7 @@ export function buildLinkSuggestions(
     items.push({
       kind: "create",
       key: "create",
-      label: `Create “${typed}”`,
+      label: t("search.create", { title: typed }),
       title: typed,
     });
   }

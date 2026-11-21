@@ -28,6 +28,7 @@ import {
   svgIcon,
   type CalloutFold,
 } from "./types.js";
+import { t } from "../../i18n/index.js";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -324,7 +325,7 @@ function calloutView({
   dom.className = "callout";
   dom.dataset.testid = "callout";
   const icon = button("callout-icon", "callout-icon");
-  icon.title = "Change callout type";
+  icon.title = t("callout.changeType");
   icon.setAttribute("aria-haspopup", "listbox");
   const fold = button("callout-fold", "callout-fold");
   fold.append(svgIcon(CHEVRON_ICON, 16));
@@ -352,12 +353,13 @@ function calloutView({
     dom.classList.toggle("is-body-empty", isEmptyBody(current));
     dom.style.setProperty("--callout-placeholder", JSON.stringify(defaultCalloutTitle(type)));
     icon.replaceChildren(calloutIcon(type));
-    icon.setAttribute("aria-label", `Callout type: ${defaultCalloutTitle(type)}`);
+    icon.setAttribute("aria-label", t("callout.typeLabel", { type: defaultCalloutTitle(type) }));
     icon.setAttribute("aria-expanded", picker ? "true" : "false");
     fold.hidden = !foldable;
-    fold.setAttribute("aria-label", open ? "Close toggle" : "Open toggle");
+    fold.setAttribute("aria-label", open ? t("callout.closeToggle") : t("callout.openToggle"));
     fold.setAttribute("aria-expanded", String(open));
-    fold.title = `${open ? "Close" : "Open"} (${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter)`;
+    const keys = `${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter`;
+    fold.title = open ? t("callout.closeHint", { keys }) : t("callout.openHint", { keys });
   };
 
   const closePicker = (refocus: boolean) => {
@@ -382,7 +384,7 @@ function calloutView({
     list.className = "callout-picker";
     list.contentEditable = "false";
     list.setAttribute("role", "listbox");
-    list.setAttribute("aria-label", "Callout type");
+    list.setAttribute("aria-label", t("callout.typePicker"));
     list.dataset.testid = "callout-picker";
     const types: string[] = [...CALLOUT_TYPES];
     if (!types.includes(type)) types.push(type);

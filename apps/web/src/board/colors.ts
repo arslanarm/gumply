@@ -5,21 +5,23 @@
  */
 import { isPresetColor } from "@gumply/core";
 import type { CSSProperties } from "react";
+import { t } from "../i18n/index.js";
 
 export interface PaletteEntry {
   value: string | undefined;
-  label: string;
+  /** In the interface language (read at render time). */
+  readonly label: string;
 }
 
 /** The palette offered in the UI: default plus Obsidian's six presets. */
 export const PALETTE: readonly PaletteEntry[] = [
-  { value: undefined, label: "Default" },
-  { value: "1", label: "Red" },
-  { value: "2", label: "Orange" },
-  { value: "3", label: "Yellow" },
-  { value: "4", label: "Green" },
-  { value: "5", label: "Cyan" },
-  { value: "6", label: "Purple" },
+  { value: undefined, get label() { return t("board.colors.default"); } },
+  { value: "1", get label() { return t("board.colors.red"); } },
+  { value: "2", get label() { return t("board.colors.orange"); } },
+  { value: "3", get label() { return t("board.colors.yellow"); } },
+  { value: "4", get label() { return t("board.colors.green"); } },
+  { value: "5", get label() { return t("board.colors.cyan"); } },
+  { value: "6", get label() { return t("board.colors.purple"); } },
 ];
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;

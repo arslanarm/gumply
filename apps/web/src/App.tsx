@@ -26,15 +26,16 @@ import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
+import { SettingsMenu } from "./components/SettingsMenu.js";
 import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 // Graph and dialogs load on demand (#evh35bn7).
 import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, TemplateGallery, preloadWhenIdle } from "./lazy-parts.js";
 import type { BoardTemplateId } from "./board/templates.js";
-import { idFromVaultPath, isBoard, isBoardId, NEW_BOARD_TITLE, vaultPathOf } from "./lib/boards.js";
+import { idFromVaultPath, isBoard, isBoardId, newBoardTitle, vaultPathOf } from "./lib/boards.js";
 import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
-import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
+import { errorMessage, serverDownMessage } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { installUnloadGuards } from "./lib/pending-saves.js";
@@ -51,6 +52,7 @@ import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashed
 import { isTypingTarget } from "./lib/shortcuts.js";
 import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
+import { t, useT } from "./i18n/index.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
@@ -105,12 +107,13 @@ interface PendingHeading {
  */
 async function createBoardFile(
   parentId: PageId | null,
-  title: string,
+  /** Undefined: the template's name, or "Untitled whiteboard" (in the UI language). */
+  title: string | undefined,
   templateId: BoardTemplateId | null,
 ): Promise<{ meta: PageMeta }> {
   // Templates load with the gallery's chunk, never with the app.
   const template = templateId ? (await import("./board/templates.js")).boardTemplate(templateId) : undefined;
-  const created = await api.createBoard({ title: template && title === NEW_BOARD_TITLE ? template.name : title, parentId });
+  const created = await api.createBoard({ title: title ?? template?.name() ?? newBoardTitle(), parentId });
   if (!template) return created;
   const saved = await api.saveBoard(created.meta.id, {
     board: { ...template.build(), ...(created.board.gumply ? { gumply: created.board.gumply } : {}) },
@@ -120,6 +123,8 @@ async function createBoardFile(
 }
 
 export function App() {
+  // Re-render on a language switch (#7h5utv23).
+  useT();
   const [pages, setPages] = useState<PageMeta[]>([]);
   // D33: plain folders are tree items only. Everything that means "documents"
   // (links, search, the board picker, the editor) uses this list.
@@ -147,6 +152,8 @@ export function App() {
    * §D). With `resolve`, the pick goes back to the caller (`/template`;
    * `undefined` is Cancel) instead of creating and opening the board here.
    */
+  /** The Settings popover (language, theme; #7h5utv23). */
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [galleryParent, setGalleryParent] = useState<{
     parentId: PageId | null;
     resolve?: (template: BoardTemplateId | null | undefined) => void;
@@ -252,7 +259,7 @@ export function App() {
       .then((health) => setVaultPath(health.vaultPath))
       .catch(() => undefined);
   }, []);
-  const shownTitle = graphOpen ? "Graph" : (page?.title ?? selectedFolder?.title ?? null);
+  const shownTitle = graphOpen ? t("graph.title") : (page?.title ?? selectedFolder?.title ?? null);
   useEffect(() => {
     document.title = windowTitle({ page: shownTitle, vaultPath });
   }, [shownTitle, vaultPath]);
@@ -776,7 +783,7 @@ export function App() {
       setAutoFocusTitle(true);
       if (window.innerWidth <= 900) setSidebarOpen(false);
       try {
-        const created = await api.createPage({ title: "Untitled", parentId });
+        const created = await api.createPage({ title: t("defaults.untitledPage"), parentId });
         await loadPages();
         navigate(created.id);
       } catch (error) {
@@ -791,7 +798,7 @@ export function App() {
    * New whiteboard and Add whiteboard inside open the template gallery first.
    */
   const handleCreateBoard = useCallback(
-    async (parentId: PageId | null, title: string = NEW_BOARD_TITLE, templateId: BoardTemplateId | null = null) => {
+    async (parentId: PageId | null, title?: string, templateId: BoardTemplateId | null = null) => {
       setActionError(null);
       setAutoFocusTitle(true);
       if (window.innerWidth <= 900) setSidebarOpen(false);
@@ -817,7 +824,16 @@ export function App() {
       else if (command === "search") openSearch();
     };
     window.addEventListener("gumply:command", onCommand);
-    return () => window.removeEventListener("gumply:command", onCommand);
+    // Toasts from parts of the editor that don't see the app (#5dpxwac4).
+    const onToast = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: unknown; icon?: unknown }>).detail;
+      if (typeof detail?.message === "string") setToast({ message: detail.message, icon: detail.icon === "link" ? "link" : "info" });
+    };
+    window.addEventListener("gumply:toast", onToast);
+    return () => {
+      window.removeEventListener("gumply:command", onCommand);
+      window.removeEventListener("gumply:toast", onToast);
+    };
   }, [handleCreate, openSearch]);
 
   /**
@@ -831,7 +847,7 @@ export function App() {
       if (!meta) return;
       setActionError(null);
       setAutoFocusTitle(true);
-      const title = `${meta.title} copy`;
+      const title = t("sidebar.copyTitle", { title: meta.title });
       try {
         // Unsaved edits in the open document go into the copy too.
         if (id === selectedRef.current) await documentControls()?.flush();
@@ -875,9 +891,9 @@ export function App() {
       const link = formatWikilink(meta, documentPages);
       try {
         await navigator.clipboard.writeText(link);
-        setToast({ message: "Link copied", icon: "link" });
+        setToast({ message: t("sidebar.linkCopied"), icon: "link" });
       } catch {
-        setActionError("Couldn't copy the link. Your browser blocked the clipboard.");
+        setActionError(t("sidebar.copyLinkBlocked"));
       }
     },
     [pages, documentPages],
@@ -900,7 +916,7 @@ export function App() {
         templateId = picked;
       }
       try {
-        const created = await createBoardFile(parentId, options.title ?? NEW_BOARD_TITLE, templateId);
+        const created = await createBoardFile(parentId, options.title, templateId);
         await loadPages();
         return created.meta;
       } catch (error) {
@@ -1008,7 +1024,7 @@ export function App() {
 
   const handleHeadingResult = useCallback((found: boolean) => {
     setPendingHeading(null);
-    if (!found) setToast({ message: "Couldn't find that heading", icon: "info" });
+    if (!found) setToast({ message: t("page.headingNotFound"), icon: "info" });
   }, []);
 
   const handleRename = useCallback(
@@ -1100,7 +1116,7 @@ export function App() {
         void loadTrash();
         const trashId = result.trashId;
         setToast({
-          message: wasBoard ? "Whiteboard deleted" : "Page deleted",
+          message: wasBoard ? t("delete.boardDeleted") : t("delete.pageDeleted"),
           icon: "trash",
           undo: trashId
             ? async () => {
@@ -1158,12 +1174,12 @@ export function App() {
     try {
       if (pending.kind === "forever") {
         await api.deleteTrashed(pending.item.trashId);
-        setToast({ message: `Deleted “${pending.item.title}” forever`, icon: "trash" });
+        setToast({ message: t("trash.deletedForever", { title: pending.item.title }), icon: "trash" });
         // A trashed page that is gone now: back to the list.
         if (trashRoute?.trashId === pending.item.trashId) navigateTrash();
       } else {
         const { deleted } = await api.emptyTrash();
-        setToast({ message: deleted === 1 ? "Deleted 1 item forever" : `Deleted ${deleted} items forever`, icon: "trash" });
+        setToast({ message: t("trash.deletedItemsForever", { count: deleted }), icon: "trash" });
       }
     } catch (error) {
       setActionError(errorMessage(error));
@@ -1348,7 +1364,7 @@ export function App() {
         return;
       }
       if (pages.some((item) => item.id === id)) handleOpen(id);
-      else setToast({ message: "That page no longer exists", icon: "info" });
+      else setToast({ message: t("page.noLongerExists"), icon: "info" });
     },
     [pages, handleOpen],
   );
@@ -1424,7 +1440,7 @@ export function App() {
   }, [deletedOnDisk, loadPages, applySavedPage]);
 
   const handleConflictBackup = useCallback((path: string) => {
-    setToast({ message: `Other version kept in ${path}`, icon: "info" });
+    setToast({ message: t("page.conflictKept", { path }), icon: "info" });
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
@@ -1449,8 +1465,8 @@ export function App() {
           type="button"
           className="icon-button sidebar-toggle"
           data-testid="sidebar-toggle"
-          data-tooltip={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-          aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          data-tooltip={sidebarOpen ? t("sidebar.hide") : t("sidebar.show")}
+          aria-label={sidebarOpen ? t("sidebar.hide") : t("sidebar.show")}
           aria-pressed={sidebarOpen}
           onClick={() => setSidebarOpen((open) => !open)}
         >
@@ -1461,7 +1477,7 @@ export function App() {
         </span>
         <h1 className="app-name">Gumply</h1>
         {breadcrumb.length > 0 ? (
-          <nav className="breadcrumb" aria-label="Page path">
+          <nav className="breadcrumb" aria-label={t("page.path")}>
             {breadcrumb.map((item, index) => (
               <span className="breadcrumb-item" key={item.id}>
                 {index > 0 ? (
@@ -1490,12 +1506,13 @@ export function App() {
           onKeepMine={handleConflictKeepMine}
         />
         <ThemeToggle />
+        <SettingsMenu open={settingsOpen} onOpenChange={setSettingsOpen} />
         <button
           type="button"
           className="icon-button"
           data-testid="shortcuts-button"
-          data-tooltip="Keyboard shortcuts (?)"
-          aria-label="Keyboard shortcuts (?)"
+          data-tooltip={t("shortcuts.button")}
+          aria-label={t("shortcuts.button")}
           onClick={() => setShortcutsOpen(true)}
         >
           <Icon name="keyboard" size={16} />
@@ -1539,14 +1556,14 @@ export function App() {
         <main className="content">
           {deletedOnDisk ? (
             <div className="banner banner-error" role="alert" data-testid="deleted-on-disk-banner">
-              <span>This page was deleted on disk. Your unsaved text is still here.</span>
+              <span>{t("page.deletedOnDisk")}</span>
               <button type="button" className="link-button" onClick={() => void restoreDeletedPage()}>
-                Restore page
+                {t("page.restore")}
               </button>
               <button
                 type="button"
                 className="banner-close"
-                aria-label="Dismiss"
+                aria-label={t("common.dismiss")}
                 onClick={() => setDeletedOnDisk(null)}
               >
                 ×
@@ -1555,7 +1572,7 @@ export function App() {
           ) : actionError ? (
             <div className="banner banner-error" role="alert">
               <span>{actionError}</span>
-              <button type="button" className="banner-close" onClick={() => setActionError(null)}>
+              <button type="button" className="banner-close" aria-label={t("common.dismiss")} onClick={() => setActionError(null)}>
                 ×
               </button>
             </div>
@@ -1600,13 +1617,13 @@ export function App() {
                   <span className="empty-state-icon" aria-hidden="true">
                     <Icon name="monitor" size={26} />
                   </span>
-                  <h2>{SERVER_DOWN_MESSAGE}</h2>
-                  <p>Your pages are safe on disk. Start the app again to reconnect.</p>
+                  <h2>{serverDownMessage()}</h2>
+                  <p>{t("errors.serverDownHint")}</p>
                   <button type="button" className="button-primary" onClick={handleRetry}>
-                    Retry
+                    {t("common.retry")}
                   </button>
                   <p className="empty-hint">
-                    Run <code>npm run dev</code> in the Gumply folder.
+                    {t("errors.runDevBefore")}<code>npm run dev</code>{t("errors.runDevAfter")}
                   </p>
                 </div>
               ) : selectedId === null ? (
@@ -1614,11 +1631,11 @@ export function App() {
                   <span className="empty-state-icon" aria-hidden="true">
                     <Icon name={documentPages.length === 0 ? "file" : "search"} size={26} />
                   </span>
-                  <h2>{documentPages.length === 0 ? "No pages yet." : "No page selected"}</h2>
+                  <h2>{documentPages.length === 0 ? t("empty.noPages") : t("empty.noSelection")}</h2>
                   <p>
                     {documentPages.length === 0
-                      ? "Create a page to get started."
-                      : "Choose a page in the sidebar, or create a new one."}
+                      ? t("empty.noPagesHint")
+                      : t("empty.noSelectionHint")}
                   </p>
                   <button
                     type="button"
@@ -1626,7 +1643,7 @@ export function App() {
                     data-testid="empty-new-page"
                     onClick={() => void handleCreate(null)}
                   >
-                    New page
+                    {t("sidebar.newPage")}
                   </button>
                 </div>
               ) : selectedFolder ? (
@@ -1715,23 +1732,23 @@ export function App() {
                   <span className="empty-state-icon" aria-hidden="true">
                     <Icon name="file" size={26} />
                   </span>
-                  <h2>This page doesn't exist.</h2>
-                  <p>It may have been deleted or renamed.</p>
+                  <h2>{t("page.notFound")}</h2>
+                  <p>{t("page.notFoundHint")}</p>
                   <div className="empty-actions">
                     <button type="button" className="button-secondary" onClick={goToWelcome}>
-                      Go to Welcome
+                      {t("page.goToWelcome")}
                     </button>
                     <button
                       type="button"
                       className="button-primary"
                       onClick={() => void handleCreate(null)}
                     >
-                      Create page
+                      {t("page.create")}
                     </button>
                   </div>
                 </div>
               ) : (
-                <p className="editor-note">Loading page…</p>
+                <p className="editor-note">{t("page.loading")}</p>
               )}
             </div>
           )}
@@ -1760,10 +1777,10 @@ export function App() {
       {trashConfirm ? (
         <ConfirmDialog
           heading={
-            trashConfirm.kind === "forever" ? <>Delete “{trashConfirm.item.title}” forever?</> : <>Empty the trash?</>
+            trashConfirm.kind === "forever" ? <>{t("trash.confirmForever", { title: trashConfirm.item.title })}</> : <>{t("trash.confirmEmpty")}</>
           }
           body={trashConfirm.kind === "forever" ? deleteForeverBody(trashConfirm.item) : emptyTrashBody(trashConfirm.items)}
-          confirmLabel={trashConfirm.kind === "forever" ? "Delete forever" : "Empty trash"}
+          confirmLabel={trashConfirm.kind === "forever" ? t("trash.deleteForever") : t("trash.empty")}
           testId="trash-confirm-dialog"
           onCancel={() => setTrashConfirm(null)}
           onConfirm={() => void confirmTrashAction()}
@@ -1779,7 +1796,7 @@ export function App() {
           onSelect={(templateId) => {
             setGalleryParent(null);
             if (galleryParent.resolve) galleryParent.resolve(templateId);
-            else void handleCreateBoard(galleryParent.parentId, NEW_BOARD_TITLE, templateId);
+            else void handleCreateBoard(galleryParent.parentId, undefined, templateId);
           }}
         />
       ) : null}
@@ -1815,6 +1832,10 @@ export function App() {
           onNewFromTemplate={() => {
             dismissSearch();
             setGalleryParent({ parentId: null });
+          }}
+          onOpenLanguage={() => {
+            dismissSearch();
+            setSettingsOpen(true);
           }}
           onClose={closeSearch}
         />

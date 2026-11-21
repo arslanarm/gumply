@@ -192,6 +192,12 @@ and save in Obsidian without changes, and Obsidian's own boards open in Gumply.
   **Reload** or **Keep mine** (Keep mine keeps a backup), as for pages. A board file with entries Gumply can't keep is
   backed up to `.gumply/conflicts/` before the first save.
 
+## Languages
+
+The interface is in English and Russian, following your system language. Change it in
+Settings (the 文A button in the top bar) or with Cmd/Ctrl+K → **Language…**. To add a
+language, see [docs/translating.md](docs/translating.md).
+
 ## Layout
 
 ```

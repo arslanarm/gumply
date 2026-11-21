@@ -3895,6 +3895,267 @@ input {
   }
 }
 
+/* ---------- Settings popover: language and theme (#7h5utv23) ---------- */
+.settings {
+  position: relative;
+}
+
+.settings-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 60;
+  width: 260px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 18%);
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settings-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.settings-select {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-page, var(--panel));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.settings-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--hover);
+}
+
+.settings-segment {
+  padding: 0.3rem 0.25rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.settings-segment.is-active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
+.settings-segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------- Page previews: ![[Page#Heading]] (#5dpxwac4) ---------- */
+/* A calm frame (Obsidian's embed line + Notion's synced-block outline), the
+   source's title and Open on hover, content up to a max height. */
+.page-embed {
+  position: relative;
+  margin: 0.6em 0 0.9em;
+}
+
+.page-embed-frame {
+  position: relative;
+  max-height: 480px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.55rem 0.9rem 0.6rem 1rem;
+  border: 1px solid transparent;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 4px 8px 8px 4px;
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.page-embed:hover .page-embed-frame,
+.page-embed:focus-within .page-embed-frame {
+  border-color: var(--border);
+  border-left-color: var(--accent);
+}
+
+.page-embed.is-selected .page-embed-frame {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.page-embed.is-missing .page-embed-frame {
+  border-left-color: var(--border);
+}
+
+.page-embed-bar {
+  position: absolute;
+  top: -11px;
+  right: 10px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.page-embed:hover > .page-embed-bar,
+.page-embed:focus-within > .page-embed-bar,
+.page-embed.is-selected > .page-embed-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.page-embed-title,
+.page-embed-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  max-width: 320px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.78rem;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.page-embed-title > span:not(.page-embed-emoji) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-embed-part {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.page-embed-open {
+  color: var(--text);
+  cursor: pointer;
+}
+
+.page-embed-open:hover {
+  background: var(--hover);
+}
+
+/* The rendered part: the editor's typography, a touch tighter, none of the
+   editor's own box (min-height, padding, focus ring). */
+.page-embed-body.gumply-editor {
+  min-height: 0;
+  padding: 0;
+  font-size: 0.97em;
+  outline: none;
+}
+
+.page-embed-body > :first-child {
+  margin-top: 0;
+}
+
+.page-embed-body > :last-child {
+  margin-bottom: 0;
+}
+
+.page-embed-body input[type="checkbox"] {
+  pointer-events: none;
+}
+
+.page-embed-body img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.page-embed-body .callout.is-foldable .callout-title {
+  cursor: pointer;
+}
+
+.page-embed-body .callout.is-closed .callout-body {
+  display: none;
+}
+
+.page-embed-body .callout-fold {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.page-embed-body .callout:not(.is-closed) .callout-fold svg {
+  transform: rotate(90deg);
+}
+
+.page-embed.is-nested {
+  margin: 0.4em 0;
+}
+
+.page-embed.is-nested .page-embed-content {
+  padding-left: 0.75rem;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+.page-embed-board-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0.3em 0;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.page-embed-missing,
+.page-embed-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.page-embed-missing strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Obsidian block ids (` ^abc123`): kept as text, drawn faintly (#5dpxwac4). */
+.gumply-editor .block-id-chip {
+  color: var(--muted);
+  font-size: 0.78em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.6;
+}
+
 /* ---------- Selection toolbar and editor context menu (#bg3cb83t) ---------- */
 
 .selection-toolbar {

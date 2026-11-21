@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.js";
 /**
  * Turning an exported SVG into a file (spec/v0-6 §D): PNGs are rasterised
  * from the SVG at 2×, and files are saved with a normal browser download.
@@ -30,11 +31,11 @@ export async function svgToPng(svg: string, width: number, height: number, scale
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Couldn't draw the image (no canvas)");
+    if (!context) throw new Error(t("board.export.noCanvas"));
     context.imageSmoothingQuality = "high";
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't encode the PNG"))), "image/png"),
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error(t("board.export.encodeFailed")))), "image/png"),
     );
   } finally {
     URL.revokeObjectURL(url);
@@ -43,8 +44,8 @@ export async function svgToPng(svg: string, width: number, height: number, scale
 
 /** A file name from the board's title: no path separators or reserved characters. */
 export function exportFileName(title: string, extension: "png" | "svg", selection: boolean): string {
-  const base = title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim() || "Whiteboard";
-  return `${base}${selection ? " (selection)" : ""}.${extension}`;
+  const base = title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim() || t("board.export.fileName");
+  return `${base}${selection ? t("board.export.selectionSuffix") : ""}.${extension}`;
 }
 
 export function downloadBlob(blob: Blob, fileName: string): void {

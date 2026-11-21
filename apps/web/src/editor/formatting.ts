@@ -5,6 +5,7 @@
  */
 import { Extension, type Editor } from "@tiptap/core";
 import type { IconName } from "../components/Icon.js";
+import { t } from "../i18n/index.js";
 import { currentModifierLabel } from "../lib/shortcuts.js";
 
 export type MarkName = "bold" | "italic" | "strike" | "code" | "highlight";
@@ -12,6 +13,8 @@ export type MarkName = "bold" | "italic" | "strike" | "code" | "highlight";
 export interface MarkAction {
   mark: MarkName;
   label: string;
+  /** "Remove bold" etc., when the selection has the mark already. */
+  removeLabel: string;
   icon: IconName;
   /** Shortcut as shown in tooltips (⌘ or Ctrl). */
   keys: string;
@@ -20,11 +23,11 @@ export interface MarkAction {
 export function markActions(): MarkAction[] {
   const mod = currentModifierLabel();
   return [
-    { mark: "bold", label: "Bold", icon: "bold", keys: `${mod}+B` },
-    { mark: "italic", label: "Italic", icon: "italic", keys: `${mod}+I` },
-    { mark: "strike", label: "Strikethrough", icon: "strike", keys: `${mod}+Shift+S` },
-    { mark: "code", label: "Inline code", icon: "code", keys: `${mod}+E` },
-    { mark: "highlight", label: "Highlight", icon: "highlight", keys: `${mod}+Shift+H` },
+    { mark: "bold", label: t("format.bold"), removeLabel: t("format.removeBold"), icon: "bold", keys: `${mod}+B` },
+    { mark: "italic", label: t("format.italic"), removeLabel: t("format.removeItalic"), icon: "italic", keys: `${mod}+I` },
+    { mark: "strike", label: t("format.strike"), removeLabel: t("format.removeStrike"), icon: "strike", keys: `${mod}+Shift+S` },
+    { mark: "code", label: t("format.code"), removeLabel: t("format.removeCode"), icon: "code", keys: `${mod}+E` },
+    { mark: "highlight", label: t("format.highlight"), removeLabel: t("format.removeHighlight"), icon: "highlight", keys: `${mod}+Shift+H` },
   ];
 }
 

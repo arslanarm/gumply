@@ -1,4 +1,5 @@
 import { deleteDialogBody } from "../lib/delete.js";
+import { useT } from "../i18n/index.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 
 export interface DeleteDialogProps {
@@ -12,11 +13,12 @@ export interface DeleteDialogProps {
 
 /** In-app delete confirmation (D15). Cancel is focused by default. */
 export function DeleteDialog({ title, subPages, body, onCancel, onConfirm }: DeleteDialogProps) {
+  const t = useT();
   return (
     <ConfirmDialog
-      heading={<>Delete “{title}”?</>}
+      heading={<>{t("delete.title", { title })}</>}
       body={body ?? deleteDialogBody(subPages)}
-      confirmLabel="Delete"
+      confirmLabel={t("common.delete")}
       testId="delete-confirm-dialog"
       cancelTestId="delete-cancel"
       confirmTestId="delete-confirm"

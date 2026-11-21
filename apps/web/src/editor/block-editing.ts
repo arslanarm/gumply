@@ -13,6 +13,7 @@ import {
   type BlockDirection,
   type BlockRef,
 } from "../lib/blocks.js";
+import { t } from "../i18n/index.js";
 
 export type TurnIntoKind =
   | "text"
@@ -28,19 +29,15 @@ export type TurnIntoKind =
   | "code";
 
 /** "Turn into" choices, in menu order (block menu, selection toolbar, context menu). */
-export const TURN_INTO: ReadonlyArray<{ kind: TurnIntoKind; label: string }> = [
-  { kind: "text", label: "Text" },
-  { kind: "h1", label: "Heading 1" },
-  { kind: "h2", label: "Heading 2" },
-  { kind: "h3", label: "Heading 3" },
-  { kind: "bullet", label: "Bullet list" },
-  { kind: "ordered", label: "Numbered list" },
-  { kind: "todo", label: "To-do" },
-  { kind: "quote", label: "Quote" },
-  { kind: "callout", label: "Callout" },
-  { kind: "toggle", label: "Toggle" },
-  { kind: "code", label: "Code" },
-];
+export const TURN_INTO: ReadonlyArray<{ readonly kind: TurnIntoKind; readonly label: string }> = (
+  ["text", "h1", "h2", "h3", "bullet", "ordered", "todo", "quote", "callout", "toggle", "code"] as const
+).map((kind) => ({
+  kind,
+  // A getter: the label follows the interface language (#7h5utv23).
+  get label() {
+    return t(`blocks.turnInto.${kind}`);
+  },
+}));
 
 /** Put the caret at the start of a block so block commands act on it. */
 function focusBlock(editor: Editor, block: BlockRef): boolean {

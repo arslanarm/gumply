@@ -16,6 +16,7 @@ import { useLinkAutocomplete } from "./content/LinkAutocomplete.js";
 import type { FitBatch } from "./fit-batch.js";
 import { textBucket } from "./lod.js";
 import { safeExternalUrl } from "./model.js";
+import { t, useT } from "../i18n/index.js";
 
 type BoardNodeProps = NodeProps<BoardFlowNode>;
 
@@ -257,6 +258,7 @@ export const StickyNode = memo(function StickyNode({ id, data, selected, width, 
 });
 
 export const TextNode = memo(function TextNode({ id, data, selected }: BoardNodeProps) {
+  useT();
   const { node, editing } = data;
   const text = nodeText(node);
   return (
@@ -268,12 +270,12 @@ export const TextNode = memo(function TextNode({ id, data, selected }: BoardNode
           <TextEditor
             node={node}
             className="board-textarea"
-            placeholder="Type something"
+            placeholder={t("board.typeSomething")}
             onHeight={(area) => (area.scrollHeight > node.height ? area.scrollHeight + 4 : undefined)}
           />
         ) : (
           <div className="board-text" data-text-size={textBucket(16)}>
-            {text ? <TextView text={text} node={data} /> : "Type something"}
+            {text ? <TextView text={text} node={data} /> : t("board.typeSomething")}
           </div>
         )}
       </div>
@@ -388,7 +390,7 @@ function FrameLabelEditor({ node }: { node: CanvasNode }) {
       ref={ref}
       className="board-frame-input nodrag"
       defaultValue={typeof node.label === "string" ? node.label : ""}
-      aria-label="Frame name"
+      aria-label={t("board.frameName")}
       data-testid="board-frame-input"
       onInput={() => {
         if (ref.current) actions.draftText(node.id, ref.current.value);
@@ -407,6 +409,7 @@ function FrameLabelEditor({ node }: { node: CanvasNode }) {
 }
 
 export const FrameNode = memo(function FrameNode({ id, data, selected }: BoardNodeProps) {
+  useT();
   const { node, editing } = data;
   const actions = useBoardActions();
   const label = typeof node.label === "string" ? node.label : "";
@@ -418,7 +421,7 @@ export const FrameNode = memo(function FrameNode({ id, data, selected }: BoardNo
           event.stopPropagation();
           actions.startEditing(id);
         }}>
-          {editing ? <FrameLabelEditor node={node} /> : <span>{label || "Frame"}</span>}
+          {editing ? <FrameLabelEditor node={node} /> : <span>{label || t("board.frame")}</span>}
         </div>
       </div>
     </>
@@ -476,7 +479,7 @@ export function DefaultCard({ node, kind }: BoardCardRenderProps) {
             <BoardIcon name={kind === "board" ? "board" : "page"} size={16} />
             <span>{baseName(file)}</span>
           </div>
-          <OpenButton node={node} label={kind === "board" ? "Open board" : "Open page"} />
+          <OpenButton node={node} label={kind === "board" ? t("board.cards.openBoard") : t("board.cards.openPage")} />
         </div>
       );
     case "file":
@@ -486,7 +489,7 @@ export function DefaultCard({ node, kind }: BoardCardRenderProps) {
             <BoardIcon name="page" size={16} />
             <span>{file.split("/").pop()}</span>
           </div>
-          <OpenButton node={node} label="Open file" />
+          <OpenButton node={node} label={t("board.cards.openFile")} />
         </div>
       );
     case "link": {
@@ -497,23 +500,24 @@ export function DefaultCard({ node, kind }: BoardCardRenderProps) {
         <div className="board-card-body">
           <div className="board-card-title">
             <BoardIcon name="link" size={16} />
-            <span>{safe ? hostOf(url) : "Link"}</span>
+            <span>{safe ? hostOf(url) : t("board.cards.link")}</span>
           </div>
           <div className="board-card-sub">{url}</div>
-          {safe ? <OpenButton node={node} label="Open link" /> : null}
+          {safe ? <OpenButton node={node} label={t("board.cards.openLink")} /> : null}
         </div>
       );
     }
     default:
       return (
         <div className="board-card-body">
-          <div className="board-card-sub">Unsupported item ({String(node.type)})</div>
+          <div className="board-card-sub">{t("board.cards.unsupported", { type: String(node.type) })}</div>
         </div>
       );
   }
 }
 
 export const CardNode = memo(function CardNode({ id, data, selected }: BoardNodeProps) {
+  useT();
   const { node, kind } = data;
   const renderers = useBoardRenderers();
   const props: BoardCardRenderProps = { node, kind, selected };

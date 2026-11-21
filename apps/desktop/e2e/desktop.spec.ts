@@ -300,6 +300,36 @@ test('board export saves through the download handler; other downloads are refus
   }
 });
 
+test('the interface language: menus follow it, Settings changes it, the desktop settings keep it (#7h5utv23)', async () => {
+  // Saved with the app's other preferences (#c7fzzxk8): the window's storage changes with its random port.
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(join(userData, 'gumply-desktop.json'), JSON.stringify({ lastVault: null, recentVaults: [], window: null, uiState: { 'gumply:language': 'ru' } }));
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    const menuLabel = (id: string) =>
+      app.evaluate(({ Menu }, itemId) => Menu.getApplicationMenu()!.getMenuItemById(itemId)!.label, id);
+    await expect.poll(() => menuLabel('new-page')).toBe('Новая страница');
+    await expect(window.getByTestId('new-page-button')).toHaveText('Новая страница');
+    await expect(window.locator('html')).toHaveAttribute('lang', 'ru');
+
+    // Switch to English in Settings: the page, the menu and the saved setting follow.
+    await window.getByTestId('settings-button').click();
+    await window.getByTestId('settings-language').selectOption('en');
+    await expect(window.getByTestId('new-page-button')).toHaveText('New page');
+    await expect.poll(() => menuLabel('new-page')).toBe('New Page');
+    await expect.poll(() => menuLabel('about')).toBe('About Gumply');
+    await expect
+      .poll(
+        () =>
+          (JSON.parse(readFileSync(join(userData, 'gumply-desktop.json'), 'utf8')) as { uiState?: Record<string, string> })
+            .uiState?.['gumply:language'],
+      )
+      .toBe('en');
+  } finally {
+    await app.close();
+  }
+});
+
 function readdirSafe(dir: string): string[] {
   try {
     return readdirSync(dir);

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { currentModifierLabel, shortcutGroups } from "../lib/shortcuts.js";
+import { useT } from "../i18n/index.js";
 
 export interface ShortcutsDialogProps {
   onClose: () => void;
@@ -7,6 +8,7 @@ export interface ShortcutsDialogProps {
 
 /** `?` help overlay: grouped shortcuts, focus trap and focus return. */
 export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
+  const t = useT();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -67,9 +69,9 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
         data-testid="shortcuts-dialog"
         ref={dialogRef}
       >
-        <h2 id="shortcuts-dialog-title">Keyboard shortcuts</h2>
+        <h2 id="shortcuts-dialog-title">{t("shortcuts.title")}</h2>
         <p className="shortcuts-intro">
-          Press <kbd>?</kbd> anywhere outside a text field or the editor to open this again.
+          {t("shortcuts.introBefore")}<kbd>?</kbd>{t("shortcuts.introAfter")}
         </p>
 
         <div className="shortcut-groups">
@@ -96,7 +98,7 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
             onClick={onClose}
             ref={closeRef}
           >
-            Close
+            {t("common.close")}
           </button>
         </div>
       </div>

@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import type { BoardPageOption } from "../BoardEditor.js";
 import { BoardIcon } from "../icons.js";
 import { isBoardPath, wikiLinkFor } from "./links.js";
+import { t } from "../../i18n/index.js";
 
 const MAX_ITEMS = 8;
 
@@ -151,7 +152,7 @@ export function useLinkAutocomplete(ref: RefObject<HTMLTextAreaElement | null>, 
           <div
             className="board-link-menu"
             role="listbox"
-            aria-label="Link a page"
+            aria-label={t("board.linkPage")}
             data-testid="board-link-menu"
             style={{ left: open.left, top: open.top }}
             onPointerDown={(event) => event.preventDefault()}
@@ -173,7 +174,7 @@ export function useLinkAutocomplete(ref: RefObject<HTMLTextAreaElement | null>, 
                   {page.icon ?? <BoardIcon name={isBoardPath(page.path) ? "board" : "page"} size={15} />}
                 </span>
                 <span className="board-link-title">{page.title}</span>
-                {isBoardPath(page.path) ? <span className="board-link-kind">Board</span> : null}
+                {isBoardPath(page.path) ? <span className="board-link-kind">{t("board.kindBoard")}</span> : null}
               </button>
             ))}
           </div>,

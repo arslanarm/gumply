@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useT } from "../i18n/index.js";
 
 export interface ConfirmDialogProps {
   heading: ReactNode;
@@ -27,6 +28,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
+  const t = useT();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const id = useId();
@@ -89,7 +91,7 @@ export function ConfirmDialog({
             onClick={onCancel}
             ref={cancelRef}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
