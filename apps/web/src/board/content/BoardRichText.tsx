@@ -13,6 +13,26 @@ import { resolveBoardLink, safeWebUrl } from "./links.js";
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
 wikilinkMarkdownPlugin(markdown);
 
+/**
+ * `![[Loop.canvas]]` on a board (#ux5cukze): a board can't show a live board
+ * inside a node, so the embed reads as a link to it, labelled with the
+ * board's name, with no stray `!` (and its `|height` isn't an alias).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+markdown.inline.ruler.before("image", "board_embed_link", (state: any, silent: boolean) => {
+  const match = /^!\[\[([^[\]|#]+?\.canvas)(?:\|[^[\]]*)?\]\]/i.exec(state.src.slice(state.pos));
+  if (!match) return false;
+  if (!silent) {
+    const target = (match[1] ?? "").trim();
+    const name = (target.split("/").pop() ?? target).replace(/\.canvas$/i, "");
+    const token = state.push("wikilink", "wiki-link", 0);
+    token.meta = { title: target, alias: name, heading: "" };
+    token.content = match[0];
+  }
+  state.pos += match[0].length;
+  return true;
+});
+
 export function renderBoardMarkdown(text: string): string {
   return markdown.render(text);
 }

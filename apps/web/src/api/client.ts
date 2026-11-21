@@ -3,6 +3,7 @@
  * server, so paths are relative and work in dev and in e2e.
  */
 import type {
+  HealthResponse,
   ApiError,
   BoardDocument,
   BoardUpdateResult,
@@ -137,6 +138,9 @@ function mutate<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export const api = {
+  /** App name, version and vault folder (`/api/health`). */
+  health: (): Promise<HealthResponse> => request("/health"),
+
   listPages: (): Promise<PageMeta[]> => request("/pages"),
 
   getPage: (id: PageId): Promise<Page> => request(pagePath(id)),

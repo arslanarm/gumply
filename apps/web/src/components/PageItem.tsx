@@ -21,6 +21,8 @@ export interface PageItemProps {
   onDelete: (id: PageId) => void;
   onToggle: (id: PageId) => void;
   onStartMove: (id: PageId) => void;
+  onDuplicate: (id: PageId) => void;
+  onCopyLink: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
   onStartRename: (id: PageId, title: string) => void;
   onCommitRename: () => void;
@@ -47,8 +49,18 @@ function PageItemRow(props: PageItemProps) {
   const isRenaming = renamingId === page.id;
   const expanded = hasChildren && !collapsed.has(page.id);
   const [dropTarget, setDropTarget] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  // The ⋯ menu: under the button, or at the pointer for a right-click
+  // (#ux5cukze). `focus` puts focus on the first item (keyboard opening).
+  const [menu, setMenu] = useState<{ at?: { x: number; y: number }; focus: boolean } | null>(null);
+  const menuOpen = menu !== null;
+  const setMenuOpen = (open: boolean | ((open: boolean) => boolean)) =>
+    setMenu((current) => {
+      const next = typeof open === "function" ? open(current !== null) : open;
+      return next ? (current ?? { focus: false }) : null;
+    });
   const menuRef = useRef<HTMLSpanElement | null>(null);
+  const menuListRef = useRef<HTMLDivElement | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   const canDrop = draggingId !== null && canMovePage(pages, draggingId, page.id);
@@ -69,7 +81,19 @@ function PageItemRow(props: PageItemProps) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        setMenu(null);
+        rowRef.current?.focus();
+        return;
+      }
+      const list = menuListRef.current;
+      if (!list || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+      const items = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+      if (items.length === 0) return;
+      event.preventDefault();
+      const index = items.indexOf(document.activeElement as HTMLButtonElement);
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(index + step + items.length) % items.length]?.focus();
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -79,18 +103,38 @@ function PageItemRow(props: PageItemProps) {
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!menu?.focus) return;
+    menuListRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [menu]);
+
+  /** Right-click or Shift+F10 / the context-menu key: the same menu as ⋯. */
+  const openMenuAt = (x: number, y: number, focus: boolean) => {
+    // Keep the menu on screen (it's about 200 × 230 px).
+    const left = Math.max(8, Math.min(x, window.innerWidth - 216));
+    const top = Math.max(8, Math.min(y, window.innerHeight - 248));
+    setMenu({ at: { x: left, y: top }, focus });
+  };
+
   return (
     <div className="tree-node">
       <div
-        className={`page-item${isSelected ? " is-selected" : ""}${dropTarget ? " is-drop-target" : ""}`}
+        className={`page-item${isSelected ? " is-selected" : ""}${dropTarget ? " is-drop-target" : ""}${menuOpen ? " has-menu" : ""}`}
         data-testid={`page-item-${page.id}`}
         data-page-id={page.id}
         role="treeitem"
         tabIndex={0}
         aria-selected={isSelected}
         aria-expanded={hasChildren ? expanded : undefined}
+        ref={rowRef}
         style={{ paddingLeft: `${6 + depth * 14}px` }}
         onClick={() => props.onOpen(page.id)}
+        onContextMenu={(event) => {
+          if (isRenaming) return;
+          event.preventDefault();
+          event.stopPropagation();
+          openMenuAt(event.clientX, event.clientY, false);
+        }}
         onDoubleClick={(event) => {
           event.stopPropagation();
           props.onStartRename(page.id, page.title);
@@ -103,6 +147,10 @@ function PageItemRow(props: PageItemProps) {
           } else if (event.key === "F2") {
             event.preventDefault();
             props.onStartRename(page.id, page.title);
+          } else if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+            event.preventDefault();
+            const rect = event.currentTarget.getBoundingClientRect();
+            openMenuAt(rect.left + 24, rect.bottom + 2, true);
           }
         }}
         draggable={!isRenaming}
@@ -219,7 +267,15 @@ function PageItemRow(props: PageItemProps) {
             </button>
 
             {menuOpen ? (
-              <div className="page-menu-list" role="menu" data-testid={`page-menu-${page.id}`}>
+              <div
+                ref={menuListRef}
+                className={`page-menu-list${menu?.at ? " is-at-pointer" : ""}`}
+                role="menu"
+                aria-label={`Actions for ${page.title}`}
+                data-testid={`page-menu-${page.id}`}
+                style={menu?.at ? { left: menu.at.x, top: menu.at.y } : undefined}
+                onContextMenu={(event) => event.preventDefault()}
+              >
                 <button
                   type="button"
                   role="menuitem"
@@ -231,6 +287,31 @@ function PageItemRow(props: PageItemProps) {
                   }}
                 >
                   Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid={`duplicate-page-${page.id}`}
+                  title={!board && hasChildren ? "Sub-pages aren't copied" : undefined}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    props.onDuplicate(page.id);
+                  }}
+                >
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid={`copy-link-${page.id}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    props.onCopyLink(page.id);
+                  }}
+                >
+                  Copy link
                 </button>
                 <button
                   type="button"

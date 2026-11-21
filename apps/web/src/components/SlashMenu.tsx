@@ -23,6 +23,10 @@ const SLASH_ICONS: Record<string, IconName> = {
   code: "code",
   divider: "minus",
   table: "table",
+  // Boards (#ux5cukze): the board icon, not the page one.
+  whiteboard: "board",
+  "embed-whiteboard": "board",
+  "board-template": "board",
 };
 
 /** Floating `/` menu. Positioned from the suggestion's client rect. */

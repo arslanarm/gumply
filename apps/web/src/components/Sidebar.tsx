@@ -24,6 +24,9 @@ export interface SidebarProps {
   onDelete: (id: PageId) => void;
   onMove: (id: PageId, parentId: PageId | null) => void;
   onStartMove: (id: PageId) => void;
+  /** ⋯ → Duplicate and Copy link (#ux5cukze). */
+  onDuplicate: (id: PageId) => void;
+  onCopyLink: (id: PageId) => void;
   onRetry: () => void;
   onSearch: () => void;
   onGraph: () => void;
@@ -99,6 +102,8 @@ export function Sidebar(props: SidebarProps) {
     onOpen: props.onOpen,
     onDelete: props.onDelete,
     onStartMove: props.onStartMove,
+    onDuplicate: props.onDuplicate,
+    onCopyLink: props.onCopyLink,
     onMove: props.onMove,
     onCreateBoard: props.onCreateBoard,
     createChild,
@@ -112,6 +117,8 @@ export function Sidebar(props: SidebarProps) {
     onOpen: props.onOpen,
     onDelete: props.onDelete,
     onStartMove: props.onStartMove,
+    onDuplicate: props.onDuplicate,
+    onCopyLink: props.onCopyLink,
     onMove: props.onMove,
     createChild,
     toggle,
@@ -135,6 +142,8 @@ export function Sidebar(props: SidebarProps) {
       onDelete: (id: PageId) => latest.current.onDelete(id),
       onToggle: (id: PageId) => latest.current.toggle(id),
       onStartMove: (id: PageId) => latest.current.onStartMove(id),
+      onDuplicate: (id: PageId) => latest.current.onDuplicate(id),
+      onCopyLink: (id: PageId) => latest.current.onCopyLink(id),
       onStartRename: (id: PageId, title: string) => latest.current.startRename(id, title),
       onCommitRename: () => latest.current.commitRename(),
       onCancelRename: () => latest.current.cancelRename(),
