@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import type { APIRequestContext, Download, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { measure } from './support/perf';
 
 /**
  * Board export (spec/v0-6 §D, #yewapn9k): the ⋯ menu exports the board or
@@ -337,18 +338,25 @@ test.describe('board export (#yewapn9k)', () => {
   // The spec's 3 s is measured on a production build: scripts/export-perf.mjs
   // (--check). This dev-server run guards against regressions (before batched
   // text fitting it took ~7 s) without flaking when the machine is busy.
-  test('a 1000-object board exports completely and quickly', async ({ page }) => {
+  test('a 1000-object board exports completely and quickly', async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.goto(`/board-lab.html?seed=1000&mix=1&id=export-${Date.now()}`);
     await page.waitForSelector('.react-flow__node');
     for (const format of ['svg', 'png'] as const) {
-      const started = Date.now();
-      const download = await exportBoard(page, format);
-      const bytes = await downloaded(download);
-      const elapsed = Date.now() - started;
-      console.log(`1000 objects → ${format}: ${elapsed} ms, ${(bytes.length / 1024).toFixed(0)} KB`);
-      expect(elapsed).toBeLessThan(6000);
+      const { bytes } = await measure(
+        testInfo,
+        `1000-object ${format} export`,
+        async () => {
+          const started = Date.now();
+          const bytes = await downloaded(await exportBoard(page, format));
+          const elapsed = Date.now() - started;
+          console.log(`1000 objects → ${format}: ${elapsed} ms, ${(bytes.length / 1024).toFixed(0)} KB`);
+          return { bytes, elapsed };
+        },
+        (r) => [[r.elapsed, 6000, `1000-object ${format} export ms`]],
+        { attempts: 2 },
+      );
       if (format === 'svg') {
         validSvg(bytes.toString('utf8'));
         // Every sticky made it in, not just the ones on screen.
