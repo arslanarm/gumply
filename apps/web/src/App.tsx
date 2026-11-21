@@ -1,5 +1,6 @@
 import { flushSync } from "react-dom";
 import {
+  formatWikilink,
   resolveWikilink,
   type Backlink,
   type BoardDocument,
@@ -25,14 +26,16 @@ import type { SaveState } from "./editor/autosave.js";
 // Graph and dialogs load on demand (#evh35bn7).
 import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, TemplateGallery, preloadWhenIdle } from "./lazy-parts.js";
 import type { BoardTemplateId } from "./board/templates.js";
-import { idFromVaultPath, isBoardId, NEW_BOARD_TITLE, vaultPathOf } from "./lib/boards.js";
+import { idFromVaultPath, isBoard, isBoardId, NEW_BOARD_TITLE, vaultPathOf } from "./lib/boards.js";
 import { focusAfterDelete } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
+import { installUnloadGuards } from "./lib/pending-saves.js";
 import { isTypingTarget } from "./lib/shortcuts.js";
+import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 
 type ListStatus = "loading" | "ready" | "error";
@@ -100,7 +103,7 @@ export function App() {
   const [boardDoc, setBoardDoc] = useState<BoardDocument | null>(null);
   // A board created just now opens with its title selected (type to name it);
   // any other board opens with the canvas focused (#ksx7szar).
-  const [newBoardId, setNewBoardId] = useState<PageId | null>(null);
+  const [editTitleId, setEditTitleId] = useState<PageId | null>(null);
   /**
    * The template gallery is open for a new board under this parent (spec/v0-6
    * §D). With `resolve`, the pick goes back to the caller (`/template`;
@@ -189,11 +192,28 @@ export function App() {
   }, []);
 
   // D13: one overlay, opened by Cmd/Ctrl+K and by the sidebar Search row.
-  const openSearch = useCallback(() => {
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // "<Page> — <Vault folder> — Gumply" (#ux5cukze); the desktop window shows it.
+  const [vaultPath, setVaultPath] = useState<string | null>(null);
+  useEffect(() => {
+    void api
+      .health()
+      .then((health) => setVaultPath(health.vaultPath))
+      .catch(() => undefined);
+  }, []);
+  const shownTitle = graphOpen ? "Graph" : (page?.title ?? null);
+  useEffect(() => {
+    document.title = windowTitle({ page: shownTitle, vaultPath });
+  }, [shownTitle, vaultPath]);
+  const openSearch = useCallback((query = "") => {
     const active = document.activeElement;
     searchTrigger.current = active instanceof HTMLElement ? active : null;
+    setSearchQuery(typeof query === "string" ? query : "");
     setSearchOpen(true);
   }, []);
+  /** A clicked inline `#tag` searches for it (#ux5cukze). */
+  const openTagSearch = useCallback((tag: string) => openSearch(`#${tag}`), [openSearch]);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
@@ -609,16 +629,10 @@ export function App() {
     };
   }, [selectedId, pageReload, navigate]);
 
-  // beforeunload guard while edits are pending or a save has failed (D14 §7).
-  useEffect(() => {
-    if (saveState !== "saving" && saveState !== "error") return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [saveState]);
+  // Reload, close and quit never lose the last edits (D14 §7, #3t6v62cb):
+  // pending saves go out as keepalive requests; the browser only asks
+  // "Leave site?" when they can't (too big, a conflict, a failed save).
+  useEffect(() => installUnloadGuards(), []);
 
   // backlinks follow the open page and refresh after a successful save.
   useEffect(() => {
@@ -675,7 +689,7 @@ export function App() {
       try {
         const created = await createBoardFile(parentId, title, templateId);
         await loadPages();
-        setNewBoardId(created.meta.id);
+        setEditTitleId(created.meta.id);
         navigate(created.meta.id);
       } catch (error) {
         setActionError(errorMessage(error));
@@ -696,6 +710,69 @@ export function App() {
     window.addEventListener("gumply:command", onCommand);
     return () => window.removeEventListener("gumply:command", onCommand);
   }, [handleCreate, openSearch]);
+
+  /**
+   * ⋯ → Duplicate (#ux5cukze): "<Title> copy" next to the original (D20 name;
+   * sub-pages aren't copied). A board copies its whole canvas. The copy opens
+   * with its title selected, ready to rename.
+   */
+  const handleDuplicate = useCallback(
+    async (id: PageId) => {
+      const meta = pages.find((item) => item.id === id);
+      if (!meta) return;
+      setActionError(null);
+      setAutoFocusTitle(true);
+      const title = `${meta.title} copy`;
+      try {
+        // Unsaved edits in the open document go into the copy too.
+        if (id === selectedRef.current) await documentControls()?.flush();
+        let createdId: PageId;
+        if (isBoard(meta)) {
+          const original = await api.getBoard(id);
+          const created = await api.createBoard({ title, parentId: meta.parentId, ...(meta.icon ? { icon: meta.icon } : {}) });
+          // The server re-applies the copy's own title and icon on save.
+          await api.saveBoard(created.meta.id, {
+            board: original.board,
+            expectedUpdated: created.meta.updated,
+            ...(meta.icon ? { icon: meta.icon } : {}),
+          });
+          createdId = created.meta.id;
+        } else {
+          const original = await api.getPage(id);
+          const created = await api.createPage({
+            title,
+            parentId: meta.parentId,
+            content: original.content,
+            ...(meta.icon ? { icon: meta.icon } : {}),
+          });
+          createdId = created.id;
+        }
+        await loadPages();
+        setEditTitleId(createdId);
+        navigate(createdId);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    [pages, loadPages, navigate],
+  );
+
+  /** ⋯ → Copy link (#ux5cukze): `[[Title]]`, or `[[Map.canvas|Map]]` for a board. */
+  const handleCopyLink = useCallback(
+    async (id: PageId) => {
+      const meta = pages.find((item) => item.id === id);
+      if (!meta) return;
+      // A board's link always names its file (`[[Map.canvas|Map]]`, v1.7).
+      const link = formatWikilink(meta, pages);
+      try {
+        await navigator.clipboard.writeText(link);
+        setToast({ message: "Link copied", icon: "link" });
+      } catch {
+        setActionError("Couldn't copy the link. Your browser blocked the clipboard.");
+      }
+    },
+    [pages],
+  );
 
   /**
    * `/whiteboard`, a missing embed's Create, and `/template`: a board inside
@@ -1114,13 +1191,13 @@ export function App() {
     [applySavedPage],
   );
 
-  const newBoardRef = useRef(newBoardId);
-  newBoardRef.current = newBoardId;
+  const editTitleRef = useRef(editTitleId);
+  editTitleRef.current = editTitleId;
   const handleBoardReady = useCallback((controls: BoardViewControls) => {
     boardControls.current = controls;
     // An existing board: put focus on the canvas so its shortcuts (N, V,
     // Delete…) work right away instead of landing in the title or the tree.
-    if (newBoardRef.current !== null && newBoardRef.current === selectedRef.current) return;
+    if (editTitleRef.current !== null && editTitleRef.current === selectedRef.current) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && active.closest('[data-testid^="page-rename-input-"]')) return;
     document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true });
@@ -1128,8 +1205,8 @@ export function App() {
 
   // "New" lasts only while that board stays open.
   useEffect(() => {
-    if (newBoardId !== null && selectedId !== newBoardId) setNewBoardId(null);
-  }, [selectedId, newBoardId]);
+    if (editTitleId !== null && selectedId !== editTitleId) setEditTitleId(null);
+  }, [selectedId, editTitleId]);
 
   const boardPageOptions = useMemo(
     () =>
@@ -1275,6 +1352,8 @@ export function App() {
           onDelete={requestDelete}
           onMove={(id, parentId) => void handleMove(id, parentId)}
           onStartMove={startMove}
+          onDuplicate={(id) => void handleDuplicate(id)}
+          onCopyLink={(id) => void handleCopyLink(id)}
           onRetry={handleRetry}
           onSearch={openSearch}
           onGraph={navigateGraph}
@@ -1366,7 +1445,7 @@ export function App() {
                     onSetIcon={handleSetIcon}
                     onDelete={() => requestDelete(page.id)}
                     onStartBody={() => document.querySelector<HTMLElement>('[data-testid="board"]')?.focus()}
-                    editTitleOnOpen={newBoardId === page.id}
+                    editTitleOnOpen={editTitleId === page.id}
                     focusTitleSignal={titleFocusSignal}
                     sessionKey={sessionKeyOf(page.id)}
                   />
@@ -1396,6 +1475,8 @@ export function App() {
                     onSetIcon={handleSetIcon}
                     onDelete={() => requestDelete(page.id)}
                     onStartBody={handleStartBody}
+                    // A duplicate opens with its title selected (#ux5cukze).
+                    editTitleOnOpen={editTitleId === page.id ? true : undefined}
                     focusTitleSignal={titleFocusSignal}
                     sessionKey={sessionKeyOf(page.id)}
                   />
@@ -1418,6 +1499,7 @@ export function App() {
                     onAttachmentError={setActionError}
                     onExitTop={handleExitTop}
                     onCreateBoard={createBoardForLink}
+                    onOpenTag={openTagSearch}
                   />
                   <BacklinksPanel
                     items={backlinks}
@@ -1506,6 +1588,7 @@ export function App() {
       {searchOpen ? (
         <QuickSwitcher
           pages={pages}
+          initialQuery={searchQuery}
           onOpen={openSearchResult}
           onCreate={createSearchPage}
           onCreateBoard={createSearchBoard}

@@ -57,6 +57,28 @@ describe("boards in the tree (D25, spec/api v1.7)", () => {
     expect(() => store.get("Projects/Project map.canvas")).toThrow(/whiteboard/);
   });
 
+  it("a new board's title follows its unique file name (#ux5cukze)", async () => {
+    const { store, dir } = await vault({});
+    const titles = [];
+    for (let i = 0; i < 3; i += 1) titles.push((await store.createBoard({ title: "Untitled whiteboard" })).meta.title);
+    expect(titles).toEqual(["Untitled whiteboard", "Untitled whiteboard 2", "Untitled whiteboard 3"]);
+    // The file name says it all: no `gumply.title` on disk.
+    expect(await readFile(join(dir, "Untitled whiteboard 2.canvas"), "utf8")).not.toContain('"title"');
+    // A title the file name can't hold keeps it, with the suffix.
+    await store.createBoard({ title: "Roadmap: Q3?" });
+    expect((await store.createBoard({ title: "Roadmap: Q3?" })).meta).toMatchObject({
+      id: "Roadmap Q3 2.canvas",
+      title: "Roadmap: Q3? 2",
+    });
+    expect(store.list().map((meta) => meta.title).sort()).toEqual([
+      "Roadmap: Q3?",
+      "Roadmap: Q3? 2",
+      "Untitled whiteboard",
+      "Untitled whiteboard 2",
+      "Untitled whiteboard 3",
+    ]);
+  });
+
   it("checks title collisions across pages and boards (case-insensitively)", async () => {
     const { store } = await vault({ "Map.md": "Page\n" });
     expect((await store.createBoard({ title: "map" })).meta.id).toBe("map 2.canvas");
@@ -337,9 +359,11 @@ describe("display titles the file name can't hold (#phvu6zt9)", () => {
     expect(created.meta).toMatchObject({ id: "Ideas later.canvas", title: "Ideas / later" });
     expect(created.board.gumply).toEqual({ title: "Ideas / later" });
 
+    // #ux5cukze: behind a collision suffix the title takes the suffix too, so
+    // the file name says it all again.
     const suffixed = await store.createBoard({ title: "Map", icon: "🧭" });
-    expect(suffixed.meta).toMatchObject({ id: "Map 2.canvas", title: "Map" });
-    expect(suffixed.board.gumply).toEqual({ icon: "🧭", title: "Map" });
+    expect(suffixed.meta).toMatchObject({ id: "Map 2.canvas", title: "Map 2" });
+    expect(suffixed.board.gumply).toEqual({ icon: "🧭" });
 
     const plain = await store.updateBoard("Ideas later.canvas", { title: "Ideas" });
     expect(plain.meta).toMatchObject({ id: "Ideas.canvas", title: "Ideas" });

@@ -11,7 +11,7 @@
  *   a vault.
  */
 import { mkdirSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
 import { startGumplyServer, type RunningServer } from "../../server/src/start.js";
@@ -41,6 +41,8 @@ let settings: DesktopSettings;
 let server: RunningServer | null = null;
 let vaultPath: string | null = null;
 let window: BrowserWindow | null = null;
+/** Set once the pages are flushed and the app may really quit (#3t6v62cb). */
+let quitting = false;
 
 function persist(next: DesktopSettings): void {
   settings = next;
@@ -113,10 +115,10 @@ async function openVault(path: string): Promise<void> {
     return;
   }
   const previous = server;
-  server = null;
   if (previous) {
-    // Save what the page still holds before switching.
-    await flushRenderer();
+    // Save what the page still holds before switching (#3t6v62cb).
+    if (!(await flushRenderer()) && !(await confirmUnsaved("Switch vaults"))) return;
+    server = null;
     await previous.close();
   }
 
@@ -136,20 +138,42 @@ async function openVault(path: string): Promise<void> {
   buildMenu();
 
   if (!window) createWindow();
-  window!.setTitle(`Gumply — ${basename(target)}`);
   await window!.loadURL(`${server.url}/`);
 }
 
-async function flushRenderer(): Promise<void> {
-  if (!window || window.isDestroyed()) return;
-  // The editor saves on blur/visibility; give pending autosaves a moment.
+/**
+ * Ask the page to save everything now and wait for the server to confirm
+ * (#3t6v62cb). The web app exposes `window.__gumplyFlush()` (no preload or
+ * IPC, D26); it resolves within 3 s with whether everything is on disk.
+ */
+async function flushRenderer(): Promise<boolean> {
+  if (!window || window.isDestroyed()) return true;
   try {
-    await window.webContents.executeJavaScript(
-      "document.activeElement instanceof HTMLElement && document.activeElement.blur(); new Promise((r) => setTimeout(r, 800))",
-    );
+    const saved = await Promise.race([
+      window.webContents.executeJavaScript(
+        "window.__gumplyFlush ? window.__gumplyFlush() : (document.activeElement instanceof HTMLElement && document.activeElement.blur(), new Promise((r) => setTimeout(() => r(true), 800)))",
+      ),
+      new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+    ]);
+    return saved !== false;
   } catch {
-    // The page may be gone already.
+    return true; // the page is gone already: nothing left to save
   }
+}
+
+/** The flush failed: ask before losing those edits. */
+async function confirmUnsaved(action: string): Promise<boolean> {
+  const options = {
+    type: "warning" as const,
+    buttons: [`${action} anyway`, "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Some changes couldn't be saved.",
+    detail: "The last edits aren't on disk yet. If you continue, they're lost.",
+  };
+  const { response } =
+    window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+  return response === 0;
 }
 
 // --- window --------------------------------------------------------------
@@ -195,8 +219,8 @@ function createWindow(): void {
     },
   });
   if (settings.window?.maximized) window.maximize();
-  // The window title names the vault; the page's <title> doesn't replace it.
-  window.on("page-title-updated", (event) => event.preventDefault());
+  // The window title is the page's own `document.title` (the web app names
+  // the page and the vault, #ux5cukze).
   window.once("ready-to-show", () => window?.show());
 
   const contents = window.webContents;
@@ -229,7 +253,33 @@ function createWindow(): void {
     const normal = window.getNormalBounds();
     persist({ ...settings, window: { x: normal.x, y: normal.y, width: normal.width, height: normal.height, maximized } });
   };
-  window.on("close", saveState);
+  // Closing the window first saves what the page still holds (#3t6v62cb).
+  let closeReady = false;
+  window.on("close", (event) => {
+    saveState();
+    if (closeReady || quitting) return;
+    event.preventDefault();
+    void (async () => {
+      if (!(await flushRenderer()) && !(await confirmUnsaved("Close"))) return;
+      closeReady = true;
+      window?.close();
+    })();
+  });
+  // The page asks to stay ("Leave site?", only when a save can't go out):
+  // Electron would just cancel the close silently, so ask natively.
+  contents.on("will-prevent-unload", (event) => {
+    const target = window && !window.isDestroyed() ? window : null;
+    const options = {
+      type: "warning" as const,
+      buttons: ["Leave anyway", "Stay"],
+      defaultId: 1,
+      cancelId: 1,
+      message: "Unsaved changes",
+      detail: "Some changes couldn't be saved. If you leave, they're lost.",
+    };
+    const choice = target ? dialog.showMessageBoxSync(target, options) : dialog.showMessageBoxSync(options);
+    if (choice === 0) event.preventDefault();
+  });
   window.on("closed", () => {
     window = null;
   });
@@ -396,9 +446,16 @@ if (!app.requestSingleInstanceLock()) {
     if (closing || !server) return;
     event.preventDefault();
     closing = true;
-    void server.close().finally(() => {
+    void (async () => {
+      // Save the last edits while the server still runs (#3t6v62cb).
+      if (!(await flushRenderer()) && !(await confirmUnsaved("Quit"))) {
+        closing = false;
+        return;
+      }
+      quitting = true;
+      await server?.close().catch(() => undefined);
       server = null;
       app.quit();
-    });
+    })();
   });
 }

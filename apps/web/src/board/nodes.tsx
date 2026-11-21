@@ -131,7 +131,10 @@ function TextEditor({ node, className, placeholder, onHeight }: {
       data-testid="board-text-editor"
       onBlur={finish}
       onKeyDown={onKeyDown}
-      onInput={links.update}
+      onInput={() => {
+        links.update();
+        if (ref.current) actions.draftText(node.id, ref.current.value);
+      }}
       onKeyUp={(event) => {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") links.update();
       }}
@@ -387,6 +390,9 @@ function FrameLabelEditor({ node }: { node: CanvasNode }) {
       defaultValue={typeof node.label === "string" ? node.label : ""}
       aria-label="Frame name"
       data-testid="board-frame-input"
+      onInput={() => {
+        if (ref.current) actions.draftText(node.id, ref.current.value);
+      }}
       onBlur={finish}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {

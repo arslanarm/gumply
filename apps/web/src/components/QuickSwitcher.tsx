@@ -26,12 +26,14 @@ export interface QuickSwitcherProps {
   /** `New board from template…`: opens the template gallery (spec/v0-6 §D). */
   onNewFromTemplate?: () => void;
   onClose: () => void;
+  /** Start with this query (a clicked `#tag`, #ux5cukze). */
+  initialQuery?: string;
 }
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
-export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onClose }: QuickSwitcherProps) {
+export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onClose, initialQuery = "" }: QuickSwitcherProps) {
   const pointerMoved = usePointerMovedSinceOpen();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [settled, setSettled] = useState("");
   const [index, setIndex] = useState(0);

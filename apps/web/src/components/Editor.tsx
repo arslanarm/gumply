@@ -13,6 +13,7 @@ import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { TableControls } from "./TableControls.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
+import { registerSaver } from "../lib/pending-saves.js";
 import {
   findUploadNode,
   finishUpload,
@@ -30,6 +31,7 @@ import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extens
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
+import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
 import {
@@ -39,6 +41,7 @@ import {
   MarkdownOrderedList,
 } from "../editor/raw-markdown/markup.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
+import { Callout, CalloutTitle } from "../editor/callout/callout.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
 import {
   GumplyTable,
@@ -110,6 +113,8 @@ export interface EditorProps {
    * `pickTemplate`); resolves to it (or null).
    */
   onCreateBoard?: (request: WhiteboardRequest) => Promise<PageMeta | null>;
+  /** A click on an inline `#tag` chip (#ux5cukze). */
+  onOpenTag?: (tag: string) => void;
 }
 
 interface SlashMenuState {
@@ -165,6 +170,7 @@ export function Editor({
   onAttachmentError,
   onExitTop,
   onCreateBoard,
+  onOpenTag,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -190,6 +196,9 @@ export function Editor({
   onCreateBoardRef.current = onCreateBoard;
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
+  const onOpenTagRef = useRef(onOpenTag);
+  onOpenTagRef.current = onOpenTag;
+  useEffect(() => setTagOpener((tag) => onOpenTagRef.current?.(tag)), []);
   const onExitTopRef = useRef(onExitTop);
   onExitTopRef.current = onExitTop;
   const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
@@ -225,6 +234,26 @@ export function Editor({
           if (!force) forceRef.current = false;
           throw error;
         }
+      },
+      // Leaving the page (#3t6v62cb): a keepalive PUT. After a write still in
+      // flight its new version isn't known yet, so this one goes without
+      // `expectedUpdated`; the server's own mtime check still catches an
+      // outside edit.
+      exitSave: (content, afterInFlight) => {
+        const savedId = pageIdRef.current;
+        const request = api.updatePageOnExit(savedId, {
+          content,
+          ...(afterInFlight ? {} : { expectedUpdated: versionRef.current }),
+        });
+        // If the page stays after all (a `mailto:` link fires beforeunload),
+        // the app learns the new version like after any save, so the disk
+        // poll never mistakes our own write for an outside change.
+        return (
+          request?.then((updated) => {
+            versionRef.current = updated.updated;
+            onSavedRef.current?.(updated, savedId);
+          }) ?? null
+        );
       },
       isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
       onState: (state) => onSaveStateRef.current(state),
@@ -606,6 +635,8 @@ export function Editor({
       MarkdownHardBreak,
       RawBlock,
       RawInline,
+      Callout,
+      CalloutTitle,
       MarkdownLink,
       MarkdownTaskList,
       AccessibleTaskItem.configure({
@@ -627,6 +658,7 @@ export function Editor({
       }),
       ImageBlock,
       BoardEmbed,
+      TagChips,
       InlineImage,
       FileAttachment,
       Markdown.configure({
@@ -704,7 +736,15 @@ export function Editor({
   editorRef.current = editor;
 
   useEffect(() => {
+    // Reload, close and quit flush this page too (#3t6v62cb).
+    const unregister = registerSaver({
+      isDirty: () => autosave.isDirty(),
+      hasFailed: () => autosave.hasFailed(),
+      flush: () => autosave.flush(),
+      flushOnExit: () => autosave.flushOnExit(),
+    });
     return () => {
+      unregister();
       autosave.dispose();
     };
   }, [autosave]);

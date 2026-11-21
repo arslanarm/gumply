@@ -452,6 +452,9 @@ function BoardCanvas(props: BoardEditorProps) {
   const board = history.present;
   const boardRef = useRef(board);
   boardRef.current = board;
+  // Drafts (text being typed) go straight to the host's autosave.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const [editing, setEditing] = useState<{ type: "node" | "edge"; id: string } | null>(null);
   const editingNodeId = editing?.type === "node" ? editing.id : null;
@@ -574,8 +577,19 @@ function BoardCanvas(props: BoardEditorProps) {
         });
         rootRef.current?.focus({ preventScroll: true });
       },
+      draftText: (id, text) => {
+        const node = boardRef.current.nodes.find((candidate) => candidate.id === id);
+        if (!node) return;
+        const patch = node.type === "group" ? { label: text.trim() || "Frame" } : { text };
+        onChangeRef.current(updateNode(boardRef.current, id, patch));
+      },
+      draftEdgeLabel: (id, label) => {
+        onChangeRef.current(updateEdge(boardRef.current, id, { label: label.trim() ? label.trim() : undefined }));
+      },
       cancelEditing: () => {
         setEditing(null);
+        // A draft may already be queued: the board as it is wins again.
+        onChangeRef.current(boardRef.current);
         rootRef.current?.focus({ preventScroll: true });
       },
       startEditingEdge: (id) => {
