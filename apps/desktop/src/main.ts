@@ -10,7 +10,7 @@
  * - Settings (last/recent vaults, window state) live in `userData`, never in
  *   a vault.
  */
-import { mkdirSync, realpathSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
@@ -130,6 +130,7 @@ async function openVault(path: string): Promise<void> {
     webRoot: WEB_ROOT,
     // The installer's version (set from the release tag), not the source default.
     version: app.getVersion(),
+    desktop: true,
     log: (message) => console.log(message),
   });
   vaultPath = target;
@@ -230,6 +231,7 @@ function createWindow(): void {
     if (action.kind === "app") return true;
     if (action.kind === "external") void shell.openExternal(action.url);
     else if (action.kind === "vault-file" && vaultPath) openVaultFile(action.path);
+    else if (action.kind === "trash-reveal" && vaultPath) revealTrashed(action.trashId);
     return false;
   };
   contents.on("will-navigate", (event, url) => {
@@ -243,6 +245,7 @@ function createWindow(): void {
     const action = classifyNavigation(url, appOrigin());
     if (action.kind === "external") void shell.openExternal(action.url);
     else if (action.kind === "vault-file" && vaultPath) openVaultFile(action.path);
+    else if (action.kind === "trash-reveal" && vaultPath) revealTrashed(action.trashId);
     return { action: "deny" };
   });
 
@@ -303,6 +306,38 @@ function openVaultFile(path: string): void {
   if (!real.startsWith(`${vaultReal}${sep}`) || !statSync(real).isFile()) return;
   if (vaultFileAction(real) === "open") void shell.openPath(real);
   else shell.showItemInFolder(real);
+}
+
+/**
+ * "Show in file manager" for a trash entry (#ppag3ugh): select the trashed
+ * page or board in the file manager. Only ever revealed, never opened (a
+ * trashed file can be anything). The entry must be a real folder inside the
+ * vault's `.trash/`, and the file must stay inside it; otherwise the entry
+ * folder itself is shown, or nothing.
+ */
+function revealTrashed(trashId: string): void {
+  if (!vaultPath || !/^[A-Za-z0-9-]+$/.test(trashId)) return;
+  let entry: string;
+  try {
+    const trashRoot = realpathSync(join(vaultPath, ".trash"));
+    entry = realpathSync(join(trashRoot, trashId));
+    if (!trashRoot.startsWith(`${realpathSync(vaultPath)}${sep}`) || !entry.startsWith(`${trashRoot}${sep}`)) return;
+    if (!statSync(entry).isDirectory()) return;
+  } catch {
+    return; // gone (restored or deleted meanwhile)
+  }
+  let target = entry;
+  try {
+    const manifest = JSON.parse(readFileSync(join(entry, "meta.json"), "utf8")) as { file?: unknown; id?: unknown };
+    const file = typeof manifest.file === "string" ? manifest.file : typeof manifest.id === "string" ? `${manifest.id}.md` : null;
+    if (file) {
+      const real = realpathSync(resolve(entry, file));
+      if (real.startsWith(`${entry}${sep}`) && statSync(real).isFile()) target = real;
+    }
+  } catch {
+    // No usable manifest or file: show the entry folder.
+  }
+  shell.showItemInFolder(target);
 }
 
 function sendCommand(command: "new-page" | "new-whiteboard" | "search"): void {

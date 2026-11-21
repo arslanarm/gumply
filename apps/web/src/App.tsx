@@ -7,13 +7,17 @@ import {
   type Page,
   type PageId,
   type PageMeta,
+  type TrashItem,
 } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, consumeNewVaultPage, fileUrl } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
+import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
+import { TrashedPageView } from "./components/TrashedPageView.js";
+import { TrashView } from "./components/TrashView.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
 import { Icon, type IconName } from "./components/Icon.js";
@@ -31,8 +35,17 @@ import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
-import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
 import { installUnloadGuards } from "./lib/pending-saves.js";
+import {
+  GRAPH_HASH,
+  isGraphHash,
+  pageHash,
+  pageIdFromHash,
+  trashHash,
+  trashRouteFromHash,
+  type TrashRoute,
+} from "./lib/routing.js";
+import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashedCount } from "./lib/trash.js";
 import { isTypingTarget } from "./lib/shortcuts.js";
 import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
@@ -102,6 +115,15 @@ export function App() {
     return window.innerWidth > 900;
   });
   const [graphOpen, setGraphOpen] = useState(() => isGraphHash(window.location.hash));
+  // #ppag3ugh: the trash list (`#trash`) or a trashed page (`#trash/<id>`).
+  const [trashRoute, setTrashRoute] = useState<TrashRoute | null>(() => trashRouteFromHash(window.location.hash));
+  const [trashItems, setTrashItems] = useState<TrashItem[] | null>(null);
+  const [trashError, setTrashError] = useState<string | null>(null);
+  const [trashConfirm, setTrashConfirm] = useState<
+    { kind: "forever"; item: TrashItem } | { kind: "empty"; items: TrashItem[] } | null
+  >(null);
+  // The desktop app offers "Show in file manager" (GET /api/health, v1.9).
+  const [desktop, setDesktop] = useState(false);
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
     try {
@@ -296,13 +318,37 @@ export function App() {
     }
     setSelectedId(id);
     setGraphOpen(false);
+    setTrashRoute(null);
   }, []);
 
   const navigateGraph = useCallback(() => {
     if (window.location.hash !== GRAPH_HASH) window.location.hash = GRAPH_HASH;
     setSelectedId(null);
     setGraphOpen(true);
+    setTrashRoute(null);
   }, []);
+
+  const loadTrash = useCallback(async () => {
+    try {
+      setTrashItems(await api.listTrash());
+      setTrashError(null);
+    } catch (error) {
+      setTrashError(errorMessage(error));
+    }
+  }, []);
+
+  /** The trash list, or a trashed page read-only (#ppag3ugh). */
+  const navigateTrash = useCallback(
+    (trashId?: string, id?: PageId | null) => {
+      const hash = trashHash(trashId, id);
+      if (window.location.hash !== hash) window.location.hash = hash;
+      setSelectedId(null);
+      setGraphOpen(false);
+      setTrashRoute({ trashId: trashId ?? null, id: id ?? null });
+      if (!trashId) void loadTrash();
+    },
+    [loadTrash],
+  );
 
   /** Refetch the open page and remount the editor with the new content. */
   const requestPageReload = useCallback(() => {
@@ -482,7 +528,13 @@ export function App() {
       const newVaultPage = consumeNewVaultPage();
 
       if (list.length === 0) return;
-      if (selectedRef.current !== null || isGraphHash(window.location.hash)) return;
+      if (
+        selectedRef.current !== null ||
+        isGraphHash(window.location.hash) ||
+        trashRouteFromHash(window.location.hash) !== null
+      ) {
+        return;
+      }
 
       const target = chooseLandingPage(list, newVaultPage);
       if (!target) return;
@@ -499,10 +551,23 @@ export function App() {
     const onHashChange = () => {
       setSelectedId(pageIdFromHash(window.location.hash));
       setGraphOpen(isGraphHash(window.location.hash));
+      const trash = trashRouteFromHash(window.location.hash);
+      setTrashRoute(trash);
+      // Back/forward or a typed `#trash`: show the trash as it is now.
+      if (trash && !trash.trashId) void loadTrash();
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+  }, [loadTrash]);
+
+  // The trash count in the sidebar, and whether this is the desktop app.
+  useEffect(() => {
+    void loadTrash();
+    api.health().then(
+      (health) => setDesktop(health.desktop === true),
+      () => undefined,
+    );
+  }, [loadTrash]);
 
   // Fetch the graph and dialog code in the background once startup is done.
   useEffect(() => preloadWhenIdle(), []);
@@ -951,6 +1016,7 @@ export function App() {
         }
 
         moveFocus(nextId);
+        void loadTrash();
         const trashId = result.trashId;
         setToast({
           message: wasBoard ? "Whiteboard deleted" : "Page deleted",
@@ -958,10 +1024,11 @@ export function App() {
           undo: trashId
             ? async () => {
                 try {
-                  await api.restoreTrash(trashId);
+                  const restored = await api.restoreTrash(trashId);
                   await loadPages();
+                  void loadTrash();
                   setAutoFocusTitle(true);
-                  navigate(id);
+                  navigate(restored.id);
                 } catch (error) {
                   setActionError(errorMessage(error));
                 }
@@ -972,8 +1039,56 @@ export function App() {
         setActionError(errorMessage(error));
       }
     },
-    [pages, loadPages, navigate, moveFocus],
+    [pages, loadPages, loadTrash, navigate, moveFocus],
   );
+
+  // --- trash (#ppag3ugh) ---
+  const restoreFromTrash = useCallback(
+    async (item: TrashItem, openId?: PageId) => {
+      setActionError(null);
+      try {
+        const result = await api.restoreTrash(item.trashId);
+        await loadPages();
+        await loadTrash();
+        setToast({ message: restoredMessage(item, result), icon: "info" });
+        if (openId !== undefined) {
+          setAutoFocusTitle(false);
+          // A folder (D33) opens its first page until folders are tree items.
+          const target =
+            item.kind === "folder" && openId === item.id
+              ? (result.restored.find((meta) => meta.parentId === result.id)?.id ?? result.restored[0]?.id ?? null)
+              : restoredId(item, result, openId);
+          if (target) navigate(target);
+          else navigateTrash();
+        }
+      } catch (error) {
+        setActionError(errorMessage(error));
+        void loadTrash();
+      }
+    },
+    [loadPages, loadTrash, navigate],
+  );
+
+  const confirmTrashAction = useCallback(async () => {
+    const pending = trashConfirm;
+    setTrashConfirm(null);
+    if (!pending) return;
+    setActionError(null);
+    try {
+      if (pending.kind === "forever") {
+        await api.deleteTrashed(pending.item.trashId);
+        setToast({ message: `Deleted “${pending.item.title}” forever`, icon: "trash" });
+        // A trashed page that is gone now: back to the list.
+        if (trashRoute?.trashId === pending.item.trashId) navigateTrash();
+      } else {
+        const { deleted } = await api.emptyTrash();
+        setToast({ message: deleted === 1 ? "Deleted 1 item forever" : `Deleted ${deleted} items forever`, icon: "trash" });
+      }
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+    await loadTrash();
+  }, [trashConfirm, trashRoute, navigateTrash, loadTrash]);
 
   const requestDelete = useCallback(
     (id: PageId) => {
@@ -1309,6 +1424,9 @@ export function App() {
           error={listError}
           focusTarget={focusTarget}
           graphActive={graphOpen}
+          trashActive={trashRoute !== null}
+          trashCount={trashItems ? trashedCount(trashItems) : 0}
+          onTrash={() => navigateTrash()}
           onOpen={handleOpen}
           onCreate={(parentId) => void handleCreate(parentId)}
           onRename={handleRename}
@@ -1354,7 +1472,32 @@ export function App() {
             </div>
           ) : null}
 
-          {graphOpen ? (
+          {trashRoute?.trashId ? (
+            <TrashedPageView
+              trashId={trashRoute.trashId}
+              id={trashRoute.id}
+              pages={pages}
+              desktop={desktop}
+              onRestore={(item, openId) => void restoreFromTrash(item, openId)}
+              onDeleteForever={(item) => setTrashConfirm({ kind: "forever", item })}
+              onOpenTrash={() => navigateTrash()}
+              onOpenChild={(item, id) => navigateTrash(item.trashId, id)}
+              onOpenLink={handleOpenLink}
+            />
+          ) : trashRoute ? (
+            <div className="editor-pane">
+              <TrashView
+                items={trashItems}
+                error={trashError}
+                desktop={desktop}
+                onOpen={(item, id) => navigateTrash(item.trashId, id ?? null)}
+                onRestore={(item) => void restoreFromTrash(item)}
+                onDeleteForever={(item) => setTrashConfirm({ kind: "forever", item })}
+                onEmpty={() => trashItems && setTrashConfirm({ kind: "empty", items: trashItems })}
+                onRetry={() => void loadTrash()}
+              />
+            </div>
+          ) : graphOpen ? (
             <GraphView
               highlightId={lastPageId}
               onOpenPage={handleOpen}
@@ -1513,6 +1656,19 @@ export function App() {
           subPages={pendingDelete.subPages}
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
+        />
+      ) : null}
+
+      {trashConfirm ? (
+        <ConfirmDialog
+          heading={
+            trashConfirm.kind === "forever" ? <>Delete “{trashConfirm.item.title}” forever?</> : <>Empty the trash?</>
+          }
+          body={trashConfirm.kind === "forever" ? deleteForeverBody(trashConfirm.item) : emptyTrashBody(trashConfirm.items)}
+          confirmLabel={trashConfirm.kind === "forever" ? "Delete forever" : "Empty trash"}
+          testId="trash-confirm-dialog"
+          onCancel={() => setTrashConfirm(null)}
+          onConfirm={() => void confirmTrashAction()}
         />
       ) : null}
 

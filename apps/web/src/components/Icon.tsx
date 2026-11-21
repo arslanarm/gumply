@@ -10,6 +10,7 @@ export type IconName =
   | "chevronRight"
   | "code"
   | "file"
+  | "folder"
   | "graph"
   | "grip"
   | "heading"
@@ -82,6 +83,9 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
       <path d="M14 2v5h5" />
     </>
+  ),
+  folder: (
+    <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6a2 2 0 0 1 1.5.7l1.3 1.5a1 1 0 0 0 .8.3h5.8A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" />
   ),
   graph: (
     <>
