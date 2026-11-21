@@ -762,5 +762,16 @@
     "export": {
       "saveTitle": "Экспорт доски"
     }
+  },
+  "pageEmbed": {
+    "open": "Открыть «{{title}}»",
+    "pageMissing": "Страница не найдена",
+    "pageMissingHint": "«{{target}}» нет в этом хранилище.",
+    "headingMissing": "Заголовок не найден",
+    "blockMissing": "Блок не найден",
+    "partMissingHint": "«{{part}}» больше нет на странице «{{title}}».",
+    "alreadyHere": "«{{title}}» уже показана здесь.",
+    "loadFailed": "Не удалось загрузить страницу: {{error}}",
+    "empty": "Здесь пока пусто."
   }
 }

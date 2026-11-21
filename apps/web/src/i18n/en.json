@@ -748,5 +748,16 @@
     "export": {
       "saveTitle": "Export board"
     }
+  },
+  "pageEmbed": {
+    "open": "Open “{{title}}”",
+    "pageMissing": "Page not found",
+    "pageMissingHint": "“{{target}}” doesn't exist in this vault.",
+    "headingMissing": "Heading not found",
+    "blockMissing": "Block not found",
+    "partMissingHint": "“{{part}}” isn't in “{{title}}” any more.",
+    "alreadyHere": "“{{title}}” is embedded here already.",
+    "loadFailed": "Couldn't load the page: {{error}}",
+    "empty": "Nothing here yet."
   }
 }

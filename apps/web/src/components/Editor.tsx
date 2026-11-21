@@ -31,6 +31,7 @@ import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extens
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
+import { PageEmbed } from "../editor/page-embed/node.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
@@ -59,6 +60,7 @@ import type { SlashItem } from "../editor/slash-items.js";
 import { AccessibleTaskItem } from "../editor/task-item.js";
 import { TaskShortcut } from "../editor/task-shortcut.js";
 import { setWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
+import { headingKey } from "@gumply/core";
 import { WikiLink } from "../editor/wikilink/node.js";
 import {
   createWikiLinkExtension,
@@ -665,6 +667,7 @@ export function Editor({
       }),
       ImageBlock,
       BoardEmbed,
+      PageEmbed,
       TagChips,
       InlineImage,
       FileAttachment,
@@ -802,12 +805,27 @@ export function Editor({
   useEffect(() => {
     if (!editor || !headingToReveal) return;
 
-    const wanted = headingToReveal.trim().toLowerCase();
+    // `#^id` (#5dpxwac4): the block that ends with ` ^id`; an id alone on a
+    // line names the block above it. Headings match by their words.
+    const block = headingToReveal.trim().startsWith("^") ? headingToReveal.trim().slice(1) : null;
+    const wanted = headingKey(headingToReveal);
+    const marker = block ? new RegExp(`(?:^|\\s)\\^${block.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`) : null;
     let headingPos: number | null = null;
+    let previousBlock: number | null = null;
 
     editor.state.doc.descendants((node, pos) => {
       if (headingPos !== null) return false;
-      if (node.type.name === "heading" && node.textContent.trim().toLowerCase() === wanted) {
+      if (marker) {
+        if (!node.isTextblock) return true;
+        const text = node.textContent;
+        if (marker.test(text)) {
+          headingPos = text.trim().startsWith("^") && previousBlock !== null ? previousBlock : pos;
+          return false;
+        }
+        if (text.trim() !== "") previousBlock = pos;
+        return false;
+      }
+      if (node.type.name === "heading" && headingKey(node.textContent) === wanted) {
         headingPos = pos;
         return false;
       }
