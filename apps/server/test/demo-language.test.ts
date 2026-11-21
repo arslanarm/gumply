@@ -101,6 +101,9 @@ describe("seeding on the first GET /pages", () => {
       { "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors" }, // <img src> from another port
       { "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate" }, // typed into the address bar
       { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors" },
+      // Allow-list: a mode or site this server doesn't know never seeds.
+      { "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "some-future-mode" },
+      { "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors" },
     ];
     for (const extra of headers) {
       const response = await app.request("/api/pages", { headers: { ...extra, "Accept-Language": "en" } });

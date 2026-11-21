@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import { DEMO_API_URL, DEMO_WEB_URL, DemoApp } from './support/demo-app';
+import { waitForBootOnNavigation } from './support/nav';
 import { expectPageTitle } from './support/ui';
 
 /**
@@ -25,6 +26,12 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.stop();
+});
+
+// #rqtacq4d: this spec has its own app (cold Vite, first-run seeding), so it
+// installs the shared load-aware page-open wait itself, for that app's URL.
+test.beforeEach(({ page }, testInfo) => {
+  waitForBootOnNavigation(page, testInfo, DEMO_WEB_URL);
 });
 
 test('a fresh vault is seeded once, opens Welcome and never duplicates or re-seeds', async ({

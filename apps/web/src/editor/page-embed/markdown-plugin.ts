@@ -11,7 +11,7 @@
  */
 import { formatPageEmbed, hasAttachmentExtension, isBaseTarget, isBoardTarget } from "@gumply/core";
 
-const EMBED = /^!\[\[([^[\]|#]+?)(?:#([^[\]|]*))?(?:\|([^[\]]*))?\]\]$/;
+const EMBED = /^!\[\[([^[\]|#\r\n]+?)(?:#([^[\]|\r\n]*))?(?:\|([^[\]\r\n]*))?\]\]$/;
 
 export interface PageEmbedMarkup {
   /** The page as linked: `Plan`, `Folder/Plan`. */

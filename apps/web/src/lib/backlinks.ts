@@ -23,7 +23,7 @@ function wikiLinkLabel(raw: string): string {
 /** Split a backlink snippet so `[[Page]]` fragments can be highlighted. */
 export function splitSnippet(snippet: string): SnippetPart[] {
   const parts: SnippetPart[] = [];
-  const pattern = /!?\[\[[^[\]]*\]\]/g;
+  const pattern = /!?\[\[[^[\]\r\n]*\]\]/g;
   let last = 0;
 
   for (const match of snippet.matchAll(pattern)) {

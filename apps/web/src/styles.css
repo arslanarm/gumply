@@ -1657,6 +1657,11 @@ input {
   transform: translateY(0);
 }
 
+/* A button whose popover is open (Colour, Turn into) doesn't cover it with its tooltip. */
+[data-tooltip][aria-expanded="true"]::after {
+  display: none;
+}
+
 /* The page tree is a scroll container, so tooltips above a row action get
    clipped. Place them inside the row, to the left of the button. */
 .tree-action[data-tooltip]::after {
@@ -4545,6 +4550,30 @@ input {
   color: var(--text);
   box-shadow: 0 6px 22px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
   animation: soft-pop 110ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/*
+ * Above the selection, the bar grows upwards (#h368c8ni): an open palette or
+ * Turn into list sits over the buttons, and page results open above, so
+ * nothing covers the selected text.
+ */
+.selection-toolbar.is-above {
+  flex-direction: column-reverse;
+}
+
+.selection-toolbar.is-above .selection-turn-list,
+.selection-toolbar.is-above .selection-color-menu {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+  margin-bottom: 3px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.selection-toolbar.is-above .selection-link-pages {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 .selection-toolbar-buttons {

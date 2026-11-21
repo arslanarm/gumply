@@ -109,8 +109,32 @@ function isolatedEnv(): Record<string, string> {
   return { ...base, ...dirs };
 }
 
+/** What the app does after each launch phase (#tcw8r7vc): names the slow step when the window is late. */
+const NEXT_STEP: Record<string, string> = {
+  start: 'Electron starting and loading the app bundle (dist/main.mjs, with the server)',
+  'main-loaded': "Electron's app ready",
+  'app-ready': 'opening the vault',
+  'server-starting': 'the in-process server starting (vault index, demo seed)',
+  'server-started': 'creating the window',
+  'window-created': 'Playwright seeing the window',
+};
+
+/** How long the first window may take; a cold first launch on a loaded machine is the slow one. */
+const FIRST_WINDOW_MS = Number(process.env.GUMPLY_DESKTOP_FIRST_WINDOW_MS ?? 45_000);
+
+/** The app's launch phases (ms since its process started), or [] if it doesn't answer. */
+async function launchPhases(app: ElectronApplication): Promise<Array<[string, number]>> {
+  const phases = app
+    .evaluate(() => (globalThis as { __gumplyLaunchPhases?: Array<[string, number]> }).__gumplyLaunchPhases ?? [])
+    .catch(() => []);
+  return Promise.race([phases, new Promise<Array<[string, number]>>((resolve) => setTimeout(() => resolve([]), 5_000))]);
+}
+
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
 async function launch(env: Record<string, string> = {}): Promise<{ app: ElectronApplication; window: Page }> {
   const base = isolatedEnv();
+  const started = Date.now();
   const app = await electron.launch({
     args: ['--ozone-platform=x11', appDir],
     env: {
@@ -121,8 +145,28 @@ async function launch(env: Record<string, string> = {}): Promise<{ app: Electron
     },
   });
   launched.set(app, app.process());
-  const window = await app.firstWindow();
-  return { app, window };
+  const connected = Date.now() - started;
+  try {
+    const window = await app.firstWindow({ timeout: Math.max(1, FIRST_WINDOW_MS - connected) });
+    const phases = await launchPhases(app);
+    console.log(
+      `[desktop launch] Playwright connected ${seconds(connected)}; app: ${phases.map(([phase, ms]) => `${phase} ${seconds(ms)}`).join(', ')}; window seen ${seconds(Date.now() - started)}`,
+    );
+    return { app, window };
+  } catch (error) {
+    const phases: Array<[string, number]> = [['start', 0], ...(await launchPhases(app))];
+    const [last, lastAt] = phases[phases.length - 1]!;
+    const steps = phases.slice(1).map(([phase, ms], index) => [phase, ms - phases[index]![1]] as const);
+    const slowest = steps.reduce<readonly [string, number]>((worst, step) => (step[1] > worst[1] ? step : worst), ['', -1]);
+    const elapsed = Date.now() - started;
+    throw new Error(
+      `The app's first window didn't open within ${seconds(FIRST_WINDOW_MS)}: stuck after "${last}" (at ${seconds(lastAt)}), ` +
+        `waiting on ${NEXT_STEP[last] ?? 'the next step'} for ${seconds(Math.max(0, elapsed - lastAt))}. ` +
+        `Playwright connected after ${seconds(connected)}. App phases (since its process started): ${phases.slice(1).map(([phase, ms]) => `${phase} ${seconds(ms)}`).join(', ') || 'none (the app never answered)'}` +
+        (slowest[1] >= 0 ? `; slowest finished step: up to ${slowest[0]}, ${seconds(slowest[1])}.` : '.'),
+      { cause: error },
+    );
+  }
 }
 
 test('opens a new vault with the demo, saves typing to disk, opens a board', async () => {

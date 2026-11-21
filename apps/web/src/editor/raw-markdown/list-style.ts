@@ -66,14 +66,41 @@ function styleOf(editor: Editor): ListStyle {
   return storage.markdownListStyle?.style ?? DEFAULT_LIST_STYLE;
 }
 
+const HALVES = new Set(["bulletList", "taskList"]);
+
 /**
  * prosemirror-markdown puts two blank lines between adjacent lists of the
  * same type (an old CommonMark idiom). Adjacent lists here always differ in
  * marker, so the usual single blank line keeps them apart.
+ *
+ * A bullet list next to a task list is one Markdown list split in two (plain
+ * and to-do items): when both use the same bullet, are tight, and no blank
+ * line separated them in the source, they are written as one tight list
+ * (#fmmght8w). Different bullets are two Markdown lists: the blank line
+ * between them stays.
  */
-export function separateFromPreviousList(state: ListSerializerState, node: PMNode): void {
+export function separateFromPreviousList(state: ListSerializerState, node: PMNode, sameMarker = false): void {
   const closed = state.closed as PMNode | null | undefined;
-  if (closed && closed.type === node.type) state.flushClose(2);
+  if (!closed) return;
+  if (closed.type.name === "paragraph") {
+    // A list right under a line of text, as written (a nested list under its
+    // item's text in a loose list, or `Text` ⏎ `- a`). An ordered list can
+    // only follow text directly when it starts at 1.
+    const start = node.type.name === "orderedList" ? Number(node.attrs.start ?? 1) : 1;
+    if (node.attrs.markdownAfterText && start === 1) state.flushClose(1);
+    return;
+  }
+  if (closed.type === node.type) state.flushClose(2);
+  else if (
+    sameMarker &&
+    HALVES.has(closed.type.name) &&
+    HALVES.has(node.type.name) &&
+    closed.attrs.tight !== false &&
+    node.attrs.tight !== false &&
+    !node.attrs.markdownLooseJoin
+  ) {
+    state.flushClose(1);
+  }
 }
 
 const MARKERS = new Set(["-", "*", "+"]);
@@ -100,7 +127,10 @@ function serializeBullets(
   index?: number,
 ) {
   const marker = bulletMarker(this.editor, node, parent, index);
-  separateFromPreviousList(state, node);
+  const previous = parent && index ? parent.child(index - 1) : null;
+  const sameMarker =
+    !!previous && HALVES.has(previous.type.name) && bulletMarker(this.editor, previous, parent, index! - 1) === marker;
+  separateFromPreviousList(state, node, sameMarker);
   state.renderList(node, styleOf(this.editor).indent, () => `${marker} `);
 }
 

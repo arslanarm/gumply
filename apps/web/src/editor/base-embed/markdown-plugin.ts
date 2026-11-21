@@ -12,7 +12,7 @@
 import { formatPageEmbed } from "@gumply/core";
 
 /** `Tasks.base` or `Folder/Tasks.base`, an optional `#View`, an optional `|alias` (kept as written). */
-const EMBED = /^!\[\[([^[\]|#]+?\.base)(?:#([^[\]|]*))?(?:\|([^[\]]*))?\]\]$/i;
+const EMBED = /^!\[\[([^[\]|#\r\n]+?\.base)(?:#([^[\]|\r\n]*))?(?:\|([^[\]\r\n]*))?\]\]$/i;
 
 export interface BaseEmbedMarkup {
   target: string;

@@ -24,7 +24,7 @@ highlightMarkdownPlugin(markdown);
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 markdown.inline.ruler.before("image", "board_embed_link", (state: any, silent: boolean) => {
-  const match = /^!\[\[([^[\]|#]+?\.canvas)(?:\|[^[\]]*)?\]\]/i.exec(state.src.slice(state.pos));
+  const match = /^!\[\[([^[\]|#\r\n]+?\.canvas)(?:\|[^[\]\r\n]*)?\]\]/i.exec(state.src.slice(state.pos));
   if (!match) return false;
   if (!silent) {
     const target = (match[1] ?? "").trim();

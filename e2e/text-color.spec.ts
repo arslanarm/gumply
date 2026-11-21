@@ -177,6 +177,39 @@ test.describe('text and background colour', () => {
     expect(fileBytes('Foreign')).toContain(`${body}!`);
   });
 
+  test('the toolbar and its palette never cover the selected text, near the top or lower down', async ({ page, vault }) => {
+    const lines = Array.from({ length: 14 }, (_, index) => `Line ${index} with some words`);
+    await vault.seed([{ title: 'Placement', content: lines.join('\n\n') }]);
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await openPage(page, 'Placement');
+
+    /** Whether the bar's box overlaps any of the selection's line boxes. */
+    const covers = () =>
+      page.evaluate(() => {
+        const bar = document.querySelector<HTMLElement>('[data-testid="selection-toolbar"]')!.getBoundingClientRect();
+        const rects = [...window.getSelection()!.getRangeAt(0).getClientRects()];
+        return rects.some((r) => r.left < bar.right && r.right > bar.left && r.top < bar.bottom && r.bottom > bar.top);
+      });
+
+    for (const word of ['Line 0', 'Line 6']) {
+      await selectText(page, word);
+      expect(await covers(), `${word}, buttons only`).toBe(false);
+      await page.getByTestId('format-color').click();
+      await expect(page.getByTestId('selection-color-palette')).toBeVisible();
+      expect(await covers(), `${word}, palette open`).toBe(false);
+      // The button's tooltip is hidden while its palette is open (the pointer still rests on it).
+      expect(
+        await page.getByTestId('format-color').evaluate((element) => getComputedStyle(element, '::after').display),
+      ).toBe('none');
+      // Each button toggles its panel (Escape in the text would close the whole bar).
+      await page.getByTestId('format-color').click();
+      await page.getByTestId('selection-turn-into').click();
+      await expect(page.getByTestId('selection-turn-menu')).toBeVisible();
+      expect(await covers(), `${word}, Turn into open`).toBe(false);
+      await page.getByTestId('selection-turn-into').click();
+    }
+  });
+
   test('dark theme: palette colours follow the theme', async ({ page, vault }) => {
     await page.addInitScript(() => window.localStorage.setItem('gumply:theme', 'dark'));
     await vault.seed([{ title: 'Dark', content: `${RED_TEXT}red</span> and ${BLUE_BG}blue</span>` }]);

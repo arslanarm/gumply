@@ -13,7 +13,7 @@
 import { formatBoardEmbed } from "@gumply/core";
 
 /** `Board.canvas` or `Folder/Board.canvas`, then an optional `|size`. */
-const EMBED = /^!\[\[([^[\]|#]+?\.canvas)(?:\|([^[\]]*))?\]\]/i;
+const EMBED = /^!\[\[([^[\]|#\r\n]+?\.canvas)(?:\|([^[\]\r\n]*))?\]\]/i;
 
 export interface BoardEmbedMarkup {
   target: string;
