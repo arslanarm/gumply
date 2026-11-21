@@ -77,3 +77,44 @@ describe("the read-only renderer (#5dpxwac4)", () => {
     expect(stripBlockIds("Done ^abc123\n\n^table\n\n```\nx ^keep\n```")).toBe("Done\n\n\n\n```\nx ^keep\n```");
   });
 });
+
+describe("renderer snapshot (#5dpxwac4)", () => {
+  it("renders a page with everything people embed, matching the editor's markup", () => {
+    const fixture = [
+      "# Project",
+      "",
+      "Intro with **bold**, _italic_, ~~gone~~, `code`, ==marked==, #tag and [[Other page|a link]].",
+      "",
+      "## Tasks",
+      "",
+      "- [ ] Open task",
+      "- [x] Done task ^done1",
+      "  - nested point",
+      "",
+      "1. First",
+      "2. Second",
+      "",
+      "> [!warning]- Folded",
+      "> Hidden body.",
+      "",
+      "> A plain quote.",
+      "",
+      "| Name | Owner |",
+      "| --- | --- |",
+      "| Docs | Ana |",
+      "",
+      "```ts",
+      "const answer: number = 42;",
+      "```",
+      "",
+      "![Diagram](../attachments/diagram.png)",
+      "",
+      "![[Board.canvas]]",
+      "",
+      "![[Other page#Section]]",
+      "",
+      "---",
+    ].join("\n");
+    expect(renderEmbeddedMarkdown(fixture)).toMatchSnapshot();
+  });
+});

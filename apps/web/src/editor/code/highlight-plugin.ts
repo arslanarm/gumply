@@ -61,6 +61,32 @@ export function loadGrammar(language: CodeLanguage): Promise<void> {
   return load;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function hastToHtml(nodes: HastNode[]): string {
+  return nodes
+    .map((node) =>
+      node.type === "text"
+        ? escapeHtml(node.value ?? "")
+        : `<span class="${escapeHtml((node.properties?.className ?? []).join(" "))}">${hastToHtml(node.children ?? [])}</span>`,
+    )
+    .join("");
+}
+
+/**
+ * Highlighted HTML for `code` in `languageName` (read-only views such as page
+ * previews, #5dpxwac4), with the same lazily loaded grammars as the editor.
+ * Null for an unknown language; the text is escaped.
+ */
+export async function highlightToHtml(languageName: string, code: string): Promise<string | null> {
+  const language = findLanguage(languageName);
+  if (!language?.grammar) return null;
+  await loadGrammar(language);
+  return hastToHtml(lowlight!.highlight(language.id, code).children);
+}
+
 function isReady(language: CodeLanguage): boolean {
   return lowlight !== null && lowlight.registered(language.id);
 }

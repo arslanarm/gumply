@@ -17,6 +17,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent,
 import { createPortal } from "react-dom";
 import { api, fileUrl } from "../api/client.js";
 import { safeWebUrl } from "../board/content/links.js";
+import { highlightToHtml } from "../editor/code/highlight-plugin.js";
 import { CHEVRON_ICON, calloutIcon, svgIcon } from "../editor/callout/types.js";
 import { renderEmbeddedMarkdown } from "../editor/page-embed/render.js";
 import { useWikiLinkEnvironment, type WikiLinkEnvironment } from "../editor/wikilink/link-store.js";
@@ -151,6 +152,17 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
     }
     for (const fold of Array.from(root.querySelectorAll<HTMLElement>("[data-callout-fold]"))) {
       if (!fold.firstChild) fold.append(svgIcon(CHEVRON_ICON, 16));
+    }
+    // Code: the editor's highlighter, loaded on demand.
+    for (const code of Array.from(root.querySelectorAll<HTMLElement>("pre > code[class*='language-']"))) {
+      const language = /language-(\S+)/.exec(code.className)?.[1] ?? "";
+      const text = code.textContent ?? "";
+      void highlightToHtml(language, text).then(
+        (highlighted) => {
+          if (highlighted !== null && code.isConnected && code.textContent === text) code.innerHTML = highlighted;
+        },
+        () => undefined,
+      );
     }
     setNested(
       Array.from(root.querySelectorAll<HTMLElement>(".page-embed-nested")).map((element) => ({

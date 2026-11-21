@@ -109,9 +109,17 @@ function taskListRule(state: Any): void {
     if (first?.type === "text") first.content = first.content.replace(/^\[[ xX]\]\s+/, "");
     const box = new state.Token("html_inline", "", 0);
     box.content = `<label contenteditable="false"><input type="checkbox" disabled${checked ? " checked" : ""}><span></span></label><div>`;
-    const end = new state.Token("html_inline", "", 0);
-    end.content = "</div>";
-    inline.children = [box, ...(inline.children ?? []), end];
+    inline.children = [box, ...(inline.children ?? [])];
+    // The content div holds the whole item, nested lists too (as in the editor).
+    for (let close = index + 1; close < tokens.length; close += 1) {
+      const token = tokens[close];
+      if (token.type === "list_item_close" && token.level === item.level) {
+        const end = new state.Token("html_block", "", 0);
+        end.content = "</div>";
+        tokens.splice(close, 0, end);
+        break;
+      }
+    }
   }
 }
 
