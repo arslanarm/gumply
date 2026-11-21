@@ -6,7 +6,7 @@ import { E2E_VAULT } from './support/env';
 
 /**
  * Whiteboards in the app (W2a, #7752gn9x; spec/whiteboard §2 and §4, D25):
- * tree, New whiteboard, routing, rename, Cmd+K, `/whiteboard`, Linked from,
+ * tree, New whiteboard, routing, rename, Cmd+K, Linked from,
  * graph node, drag a page onto a board, delete/undo and move.
  */
 
@@ -155,31 +155,7 @@ test.describe('whiteboards in the app (W2a)', () => {
     await expect(page.getByTestId('board-empty')).toBeVisible();
   });
 
-  test('/whiteboard creates a board inside the page and links it; the link opens it', async ({ page, request, vault }) => {
-    await vault.seed([{ title: 'Kickoff', content: 'Agenda' }]);
-    await page.goto(`/${hashOf('Kickoff')}`);
-    const editor = page.getByTestId('editor-content');
-    await editor.click();
-    await page.keyboard.press('Control+End');
-    await page.keyboard.press('Enter');
-    await page.keyboard.type('/whiteb');
-    await expect(page.getByTestId('slash-menu-item-whiteboard')).toBeVisible();
-    await page.keyboard.press('Enter');
-
-    const link = page.getByTestId('wiki-link-Kickoff/Untitled whiteboard.canvas');
-    await expect(link).toHaveText('Untitled whiteboard');
-    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
-    // On disk: Obsidian-compatible `[[file.canvas|Title]]`.
-    expect((await api.getPage(request, 'Kickoff')).content).toContain('[[Untitled whiteboard.canvas|Untitled whiteboard]]');
-    expect((await api.listPages(request)).find((item) => item.id === 'Kickoff/Untitled whiteboard.canvas')).toMatchObject({
-      kind: 'whiteboard',
-      parentId: 'Kickoff',
-    });
-
-    await link.click();
-    await expect(page).toHaveURL(/#\/Kickoff\/Untitled%20whiteboard\.canvas$/);
-    await expect(page.getByTestId('board-page')).toBeVisible();
-  });
+  // `/whiteboard` (New board here, an embed since D30) is covered in board-embeds.spec.ts.
 
   test('Linked from shows boards with a board icon; dragging a page from the sidebar adds a card', async ({ page, request, vault }) => {
     await vault.seed([{ title: 'Spec', content: 'The spec' }, { title: 'Design', content: 'Mockups' }]);

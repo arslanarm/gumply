@@ -20,6 +20,7 @@ describe("filterSlashItems", () => {
       "file",
       "whiteboard",
       "board-template",
+      "embed-whiteboard",
       "divider",
     ]);
   });

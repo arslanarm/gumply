@@ -78,7 +78,7 @@ test.describe('board templates (#yewapn9k)', () => {
     await expect(page.locator('.react-flow__edge')).toHaveCount(5);
   });
 
-  test('/template in a page: pick Retrospective; the board is made inside the page and linked', async ({ page, request, vault }) => {
+  test('/template in a page: pick Retrospective; the board is made inside the page and embedded', async ({ page, request, vault }) => {
     await vault.seed([{ title: 'Sprint 12', content: 'Notes' }]);
     await page.goto('/#/Sprint%2012');
     const editor = page.getByTestId('editor-content');
@@ -90,10 +90,12 @@ test.describe('board templates (#yewapn9k)', () => {
     await page.keyboard.press('Enter');
     await page.getByTestId('template-retrospective').click();
 
-    const link = page.getByTestId('wiki-link-Sprint 12/Retrospective.canvas');
-    await expect(link).toHaveText('Retrospective');
+    // Embedded like /whiteboard → New board here (D30).
+    const embed = page.getByTestId('board-embed');
+    await expect(embed).toHaveAttribute('data-board-id', 'Sprint 12/Retrospective.canvas');
+    await expect(embed.getByTestId('board-preview')).toBeVisible();
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
-    expect((await api.getPage(request, 'Sprint 12')).content).toContain('[[Retrospective.canvas|Retrospective]]');
+    expect((await api.getPage(request, 'Sprint 12')).content).toContain('![[Retrospective.canvas]]');
     const board = await boardOnDisk(request, 'Sprint 12/Retrospective.canvas');
     expect(board.nodes.filter((node) => node.type === 'group').map((node) => node.label)).toEqual([
       'Went well',

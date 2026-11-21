@@ -22,6 +22,18 @@ describe("backlinks", () => {
     expect(links[0]?.snippet).toContain("[[Target]]");
   });
 
+  it("shows plain text around the link, like search snippets (#zrxjbn6e)", async () => {
+    const { app } = await createTestServer();
+    const target = await createPage(app, { title: "Budget" });
+    await createPage(app, {
+      title: "Trip",
+      content: "# Packing\n\n- passport\n- [ ] book the hotel\n\nSee [[Budget|the budget]] for `costs`. #travel\n",
+    });
+
+    const links = await getJson<Backlink[]>(app, `${pagePath(target.id)}/backlinks`);
+    expect(links[0]?.snippet).toBe("Packing passport book the hotel See [[Budget|the budget]] for costs. #travel");
+  });
+
   it("keeps backlinks stable across a target rename", async () => {
     const { app } = await createTestServer();
     const target = await createPage(app, { title: "Old Name" });

@@ -1105,3 +1105,20 @@ img.board-card-image {
 .board-root:is([data-lod="2"], [data-lod="3"], [data-lod="4"], [data-lod="5"]) .board-card-title > span:not(.board-card-emoji) {
   color: transparent;
 }
+
+/* ---------- Read-only preview (embedded in a page, D30) ---------- */
+
+/* Nothing inside reacts: a click opens the board, the wheel scrolls the page. */
+.board-root.board-preview .react-flow__renderer {
+  pointer-events: none;
+}
+
+/* Handles stay in the layout (connectors are drawn from their positions). */
+.board-root.board-preview .react-flow__handle {
+  opacity: 0;
+}
+
+.board-root.board-preview .board-resize-handle,
+.board-root.board-preview .board-card-open {
+  display: none;
+}

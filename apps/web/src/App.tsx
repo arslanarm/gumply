@@ -698,11 +698,12 @@ export function App() {
   }, [handleCreate, openSearch]);
 
   /**
-   * `/whiteboard`: a board inside the open page; the editor links to it.
-   * `/template` opens the gallery first and resolves to null on Cancel.
+   * `/whiteboard`, a missing embed's Create, and `/template`: a board inside
+   * the open page; the editor embeds it (D30). `/template` opens the gallery
+   * first and resolves to null on Cancel (spec/v0-6 §D).
    */
   const createBoardForLink = useCallback(
-    async (options: { pickTemplate?: boolean } = {}): Promise<PageMeta | null> => {
+    async (options: { title?: string; pickTemplate?: boolean } = {}): Promise<PageMeta | null> => {
       const parentId = selectedRef.current;
       let templateId: BoardTemplateId | null = null;
       if (options.pickTemplate) {
@@ -713,7 +714,7 @@ export function App() {
         templateId = picked;
       }
       try {
-        const created = await createBoardFile(parentId, NEW_BOARD_TITLE, templateId);
+        const created = await createBoardFile(parentId, options.title ?? NEW_BOARD_TITLE, templateId);
         await loadPages();
         return created.meta;
       } catch (error) {
