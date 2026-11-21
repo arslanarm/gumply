@@ -188,6 +188,20 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await readFile(join(dir, "Projects/Work items.base"), "utf8")).toBe(TASKS_BASE);
   });
 
+  it("moves with a renamed plain folder (D33): path links keep #View, and it isn't an other file", async () => {
+    const { app, dir } = await vault({
+      "Work/Tasks.base": TASKS_BASE,
+      "Work/Note.md": "Note\n",
+      "Home.md": "![[Work/Tasks.base#Board]]\n",
+    });
+    const pages = await getJson<PageMeta[]>(app, "/api/pages");
+    expect(pages.find((page) => page.id === "Work")).toMatchObject({ kind: "folder", otherFiles: 0 });
+    const response = await jsonRequest(app, "PUT", "/api/pages/Work", { title: "Office" });
+    expect(response.status).toBe(200);
+    expect(await readFile(join(dir, "Home.md"), "utf8")).toBe("![[Office/Tasks.base#Board]]\n");
+    expect(await readFile(join(dir, "Office/Tasks.base"), "utf8")).toBe(TASKS_BASE);
+  });
+
   it("goes to the trash and comes back like any item", async () => {
     const { app, dir } = await vault(files);
     const removed = await jsonRequest(app, "DELETE", `/api/pages/${encodeId("Projects/Tasks.base")}`);

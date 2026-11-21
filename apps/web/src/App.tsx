@@ -10,7 +10,7 @@ import {
   type TrashItem,
 } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, consumeNewVaultPage, fileUrl } from "./api/client.js";
+import { api, consumeNewVaultPage, fileUrl, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -33,6 +33,8 @@ import type { SaveState } from "./editor/autosave.js";
 import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, TemplateGallery, preloadWhenIdle } from "./lazy-parts.js";
 import type { BoardTemplateId } from "./board/templates.js";
 import { idFromVaultPath, isBoard, isBoardId, newBoardTitle, vaultPathOf } from "./lib/boards.js";
+import { isBase, isBaseId, newBaseTitle } from "./lib/bases.js";
+import { BaseView } from "./bases/BaseView.js";
 import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, serverDownMessage } from "./lib/errors.js";
@@ -129,6 +131,15 @@ export function App() {
   // D33: plain folders are tree items only. Everything that means "documents"
   // (links, search, the board picker, the editor) uses this list.
   const documentPages = useMemo(() => pages.filter((item) => item.kind !== "folder"), [pages]);
+  /** Changes when any page changed (database views re-run on it, D34). */
+  const pagesStamp = useMemo(() => {
+    let hash = 0;
+    for (const item of pages) {
+      const text = `${item.id}\u0000${item.updated}`;
+      for (let i = 0; i < text.length; i += 1) hash = (Math.imul(hash, 31) + text.charCodeAt(i)) | 0;
+    }
+    return `${pages.length}:${hash}`;
+  }, [pages]);
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
@@ -144,6 +155,8 @@ export function App() {
   const [page, setPage] = useState<Page | null>(null);
   // The open board's document as loaded (BoardView starts from it).
   const [boardDoc, setBoardDoc] = useState<BoardDocument | null>(null);
+  // D34: the open database view's file as loaded (BaseView starts from it).
+  const [baseDoc, setBaseDoc] = useState<BaseDocument | null>(null);
   // A board created just now opens with its title selected (type to name it);
   // any other board opens with the canvas focused (#ksx7szar).
   const [editTitleId, setEditTitleId] = useState<PageId | null>(null);
@@ -684,6 +697,30 @@ export function App() {
     let cancelled = false;
     setPageStatus("loading");
 
+    if (isBaseId(selectedId)) {
+      api
+        .getBase(selectedId)
+        .then((loaded) => {
+          if (cancelled) return;
+          if (loaded.meta.id !== selectedId) {
+            navigate(loaded.meta.id, true);
+            return;
+          }
+          setBaseDoc(loaded);
+          setPage(boardAsPage(loaded.meta));
+          setPageStatus("ready");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setPage(null);
+          setBaseDoc(null);
+          setPageStatus("error");
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (isBoardId(selectedId)) {
       api
         .getBoard(selectedId)
@@ -814,6 +851,28 @@ export function App() {
     [loadPages, navigate],
   );
 
+  /** D34: "New database view": a table of the folder it's created in. */
+  const handleCreateBase = useCallback(
+    async (parentId: PageId | null, title?: string) => {
+      setActionError(null);
+      setAutoFocusTitle(true);
+      if (window.innerWidth <= 900) setSidebarOpen(false);
+      try {
+        const created = await api.createBase({
+          title: title ?? newBaseTitle(),
+          parentId,
+          ...(parentId ? { source: { folder: parentId } } : {}),
+        });
+        await loadPages();
+        if (!title) setEditTitleId(created.meta.id);
+        navigate(created.meta.id);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    [loadPages, navigate],
+  );
+
   // D26: the desktop app's native menu (New page, New whiteboard, Search)
   // sends the same commands as the in-app buttons and shortcuts.
   useEffect(() => {
@@ -852,7 +911,12 @@ export function App() {
         // Unsaved edits in the open document go into the copy too.
         if (id === selectedRef.current) await documentControls()?.flush();
         let createdId: PageId;
-        if (isBoard(meta)) {
+        if (isBase(meta)) {
+          const original = await api.getBase(id);
+          const created = await api.createBase({ title, parentId: meta.parentId });
+          await api.saveBase(created.meta.id, { config: original.config, expectedUpdated: created.meta.updated });
+          createdId = created.meta.id;
+        } else if (isBoard(meta)) {
           const original = await api.getBoard(id);
           const created = await api.createBoard({ title, parentId: meta.parentId, ...(meta.icon ? { icon: meta.icon } : {}) });
           // The server re-applies the copy's own title and icon on save.
@@ -926,6 +990,23 @@ export function App() {
     },
     [loadPages],
   );
+
+  /** `/database` (D34): a database view inside the open page, of that page's sub-pages. */
+  const createBaseInPage = useCallback(async (): Promise<PageMeta | null> => {
+    const parentId = selectedRef.current;
+    try {
+      const created = await api.createBase({
+        title: newBaseTitle(),
+        parentId,
+        ...(parentId ? { source: { folder: parentId } } : {}),
+      });
+      await loadPages();
+      return created.meta;
+    } catch (error) {
+      setActionError(errorMessage(error));
+      return null;
+    }
+  }, [loadPages]);
 
   /** D13: open a result from the quick switcher. */
   const openSearchResult = useCallback(
@@ -1052,6 +1133,11 @@ export function App() {
             // A board's title is its file name: the server renames the file.
             const result = await api.saveBoard(id, { title });
             updated = { ...boardAsPage(result.meta), rewrittenPages: result.rewrittenPages };
+          } else if (isBaseId(id)) {
+            // So is a database view's (D34).
+            const result = await api.saveBase(id, { title, force: true });
+            updated = { ...boardAsPage(result.meta), rewrittenPages: result.rewrittenPages };
+            if (id === selectedRef.current) setBaseDoc({ meta: result.meta, config: result.config });
           } else {
             updated = await api.updatePage(id, { title });
           }
@@ -1099,6 +1185,7 @@ export function App() {
       setActionError(null);
 
       const wasBoard = isBoardId(id);
+      const wasBase = isBaseId(id);
       try {
         const result = await api.deletePage(id);
         const nextId = focusAfterDelete(pages, id);
@@ -1116,7 +1203,7 @@ export function App() {
         void loadTrash();
         const trashId = result.trashId;
         setToast({
-          message: wasBoard ? t("delete.boardDeleted") : t("delete.pageDeleted"),
+          message: wasBoard ? t("delete.boardDeleted") : wasBase ? t("bases.deleted") : t("delete.pageDeleted"),
           icon: "trash",
           undo: trashId
             ? async () => {
@@ -1453,6 +1540,7 @@ export function App() {
 
   const showingPage = selectedId !== null && page !== null && page.id === selectedId;
   const showingBoard = showingPage && isBoardId(page.id) && boardDoc !== null;
+  const showingBase = showingPage && isBaseId(page.id) && baseDoc !== null && baseDoc.meta.id === page.id;
   const movingPage = movingId ? (pages.find((item) => item.id === movingId) ?? null) : null;
 
   const serverError = listStatus === "error" && pages.length === 0;
@@ -1524,6 +1612,7 @@ export function App() {
       >
         <Sidebar
           onCreateBoard={(parentId) => setGalleryParent({ parentId })}
+          onCreateBase={(parentId) => void handleCreateBase(parentId)}
           pages={pages}
           selectedId={selectedId}
           status={listStatus}
@@ -1611,7 +1700,7 @@ export function App() {
               onNewPage={() => void handleCreate(null)}
             />
           ) : (
-            <div className={`editor-pane${showingBoard ? " is-board" : ""}`} data-testid="editor">
+            <div className={`editor-pane${showingBoard ? " is-board" : showingBase ? " is-base" : ""}`} data-testid="editor">
               {serverError ? (
                 <div className="empty-state" data-testid="server-error">
                   <span className="empty-state-icon" aria-hidden="true">
@@ -1654,6 +1743,29 @@ export function App() {
                   onNewPage={(parentId) => void handleCreate(parentId)}
                   onNewBoard={(parentId) => void handleCreateBoard(parentId)}
                 />
+              ) : showingBase && baseDoc ? (
+                <div className="base-page" data-testid="base-page">
+                  <PageHeader
+                    page={page}
+                    autoFocusTitle={autoFocusTitle}
+                    onRename={(title) => handleRename(page.id, title)}
+                    onDelete={() => requestDelete(page.id)}
+                    onStartBody={() => document.querySelector<HTMLElement>('[data-testid="base-view"] button')?.focus()}
+                    editTitleOnOpen={editTitleId === page.id}
+                    focusTitleSignal={titleFocusSignal}
+                    sessionKey={sessionKeyOf(page.id)}
+                  />
+                  <BaseView
+                    key={`${sessionKeyOf(page.id)}:${editorRevision}`}
+                    baseId={page.id}
+                    initial={baseDoc}
+                    pages={pages}
+                    refreshKey={pagesStamp}
+                    onOpen={handleOpen}
+                    onError={setActionError}
+                    onSaved={(meta) => setPage((current) => (current && current.id === meta.id ? { ...current, updated: meta.updated } : current))}
+                  />
+                </div>
               ) : showingBoard && boardDoc ? (
                 <div className="board-page" data-testid="board-page">
                   <PageHeader
@@ -1719,6 +1831,7 @@ export function App() {
                     onAttachmentError={setActionError}
                     onExitTop={handleExitTop}
                     onCreateBoard={createBoardForLink}
+                    onCreateBase={createBaseInPage}
                     onOpenTag={openTagSearch}
                   />
                   <BacklinksPanel
@@ -1829,6 +1942,10 @@ export function App() {
           onOpen={openSearchResult}
           onCreate={createSearchPage}
           onCreateBoard={createSearchBoard}
+          onCreateBase={(title) => {
+            dismissSearch();
+            void handleCreateBase(null, title);
+          }}
           onNewFromTemplate={() => {
             dismissSearch();
             setGalleryParent({ parentId: null });

@@ -9,7 +9,7 @@ export const MAX_SEARCH_ROWS = 8;
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "from-template" | "language";
+  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -29,6 +29,8 @@ export interface SearchSections {
   create: SearchRow | null;
   /** `Create whiteboard “X”`, offered next to `Create “X”` (spec/whiteboard §4). */
   createBoard: SearchRow | null;
+  /** `Create database view “X”` (D34). */
+  createBase?: SearchRow | null;
   /** `New board from template…` when the query asks for it (spec/v0-6 §D). */
   fromTemplate: SearchRow | null;
   /** `Language…` (opens Settings) when the query asks for it (#7h5utv23). */
@@ -195,11 +197,15 @@ export function searchSections(
     ? { kind: "create-board" as const, key: "create-board", label: t("search.createBoard", { title: trimmed }), title: trimmed }
     : null;
 
+  const createBase = create
+    ? { kind: "create-base" as const, key: "create-base", label: t("bases.createNamed", { title: trimmed }), title: trimmed }
+    : null;
+
   const fromTemplate = wantsTemplate(query) ? fromTemplateRow() : null;
 
   const language = wantsLanguage(query) ? { kind: "language" as const, key: "language", label: t("settings.languageCommand") } : null;
 
-  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate, language };
+  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language };
 }
 
 export interface SnippetPart {

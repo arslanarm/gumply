@@ -1724,12 +1724,14 @@ input {
 
 .sidebar-new-page,
 .sidebar-new-board,
+.sidebar-new-base,
 .sidebar-search {
   color: var(--text);
   font-weight: 500;
 }
 
-.sidebar-new-board .sidebar-row-icon {
+.sidebar-new-board .sidebar-row-icon,
+.sidebar-new-base .sidebar-row-icon {
   color: var(--muted);
 }
 

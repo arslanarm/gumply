@@ -83,7 +83,7 @@ function TrashedFolder(props: TrashedPageViewProps & { item: TrashItem }) {
                     {child.icon ? (
                       <span className="trash-item-emoji">{child.icon}</span>
                     ) : (
-                      <Icon name={child.kind === "whiteboard" ? "board" : "file"} size={16} />
+                      <Icon name={child.kind === "whiteboard" ? "board" : child.kind === "base" ? "database" : "file"} size={16} />
                     )}
                   </span>
                   <span className="trash-item-title">{child.title}</span>

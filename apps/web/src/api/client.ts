@@ -18,6 +18,8 @@ import type {
   SearchResult,
   TrashedDocument,
   TrashItem,
+  BaseConfig,
+  BaseViewResult,
 } from "@gumply/core";
 
 export class ApiRequestError extends Error {
@@ -115,6 +117,24 @@ function exitPut<T>(path: string, body: unknown): Promise<T> | null {
   return request<T>(path, { method: "PUT", body: json, keepalive: true });
 }
 const boardPath = (id: PageId): string => `/boards/${encodeURIComponent(id)}`;
+const basePath = (id: PageId): string => `/bases/${encodeURIComponent(id)}`;
+
+/** spec/api-bases: a database view file (`meta.kind === "base"`). `error`: its YAML can't be read. */
+export interface BaseDocument {
+  meta: PageMeta;
+  config: BaseConfig;
+  error?: string;
+}
+
+export interface SaveBaseInput {
+  config?: BaseConfig;
+  title?: string;
+  expectedUpdated?: string;
+  force?: boolean;
+  writer?: string;
+}
+
+export type SaveBaseResult = BaseDocument & { rewrittenPages?: PageId[]; conflictBackup?: string };
 
 /** spec/api v1.7: a board and its tree metadata (`meta.kind === "whiteboard"`). */
 export type BoardResponse = BoardDocument;
@@ -253,6 +273,51 @@ export const api = {
 
   createBoard: (input: { title: string; parentId?: PageId | null; icon?: string }): Promise<BoardResponse> =>
     mutate(() => request("/boards", { method: "POST", body: JSON.stringify(input) })),
+
+  /**
+   * spec/api v1.12 (#qw4pcm2h): set or remove (null) frontmatter properties of
+   * one page, conditionally. Used by database views to edit a cell.
+   */
+  setPageProperties: (
+    id: PageId,
+    values: Record<string, string | number | boolean | string[] | null>,
+    expectedUpdated: string,
+  ): Promise<UpdatePageResult> => {
+    const set: Record<string, string | number | boolean | string[]> = {};
+    const remove: string[] = [];
+    for (const [key, value] of Object.entries(values)) {
+      if (value === null || (Array.isArray(value) && value.length === 0)) remove.push(key);
+      else set[key] = value;
+    }
+    return mutate(() =>
+      request(pagePath(id), {
+        method: "PUT",
+        body: JSON.stringify({ properties: { set, remove }, expectedUpdated }),
+      }),
+    );
+  },
+
+  /** spec/api-bases: a database view's config. */
+  getBase: (id: PageId): Promise<BaseDocument> => request(basePath(id)),
+
+  /** spec/api-bases: run one view (`name`; default the first) on the server, `this` = the embedding page. */
+  runBaseView: (id: PageId, options: { name?: string; thisId?: PageId | null } = {}): Promise<BaseViewResult> => {
+    const params = new URLSearchParams();
+    if (options.name) params.set("name", options.name);
+    if (options.thisId) params.set("this", options.thisId);
+    const query = params.toString();
+    return request(`${basePath(id)}/view${query ? `?${query}` : ""}`);
+  },
+
+  /** spec/api-bases: save a config (only what changed is written) and/or rename. 409 like pages. */
+  saveBase: (id: PageId, input: SaveBaseInput): Promise<SaveBaseResult> =>
+    mutate(() => request(basePath(id), { method: "PUT", body: JSON.stringify(input) })),
+
+  createBase: (input: {
+    title: string;
+    parentId?: PageId | null;
+    source?: { folder?: PageId | null; tag?: string };
+  }): Promise<BaseDocument> => mutate(() => request("/bases", { method: "POST", body: JSON.stringify(input) })),
 
   /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */
   getGraph: (options: { center?: PageId; depth?: number } = {}): Promise<GraphData> => {

@@ -71,6 +71,8 @@ export interface BaseViewResult {
   summaries?: Record<string, string>;
   total: number;
   warnings: string[];
+  /** Server: every note property in the vault (for column and filter pickers), most used first. */
+  properties?: { id: string; type: string; count: number }[];
 }
 
 export interface RunBaseOptions {

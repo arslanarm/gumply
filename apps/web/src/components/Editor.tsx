@@ -31,6 +31,9 @@ import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extens
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
+import { BaseEmbed } from "../editor/base-embed/node.js";
+import { setDatabaseCreator } from "../editor/base-embed/actions.js";
+import { linkTargetFor } from "@gumply/core";
 import { PageEmbed } from "../editor/page-embed/node.js";
 import { BlockIdChips } from "../editor/page-embed/block-ids.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
@@ -121,6 +124,8 @@ export interface EditorProps {
    * `pickTemplate`); resolves to it (or null).
    */
   onCreateBoard?: (request: WhiteboardRequest) => Promise<PageMeta | null>;
+  /** `/database` (D34): create a database view inside this page; the editor embeds it. */
+  onCreateBase?: () => Promise<PageMeta | null>;
   /** A click on an inline `#tag` chip (#ux5cukze). */
   onOpenTag?: (tag: string) => void;
   /** Show only (a page in the trash, #ppag3ugh): not editable, never saved. */
@@ -180,6 +185,7 @@ export function Editor({
   onAttachmentError,
   onExitTop,
   onCreateBoard,
+  onCreateBase,
   onOpenTag,
   readOnly = false,
 }: EditorProps) {
@@ -205,6 +211,8 @@ export function Editor({
   onAttachmentErrorRef.current = onAttachmentError;
   const onCreateBoardRef = useRef(onCreateBoard);
   onCreateBoardRef.current = onCreateBoard;
+  const onCreateBaseRef = useRef(onCreateBase);
+  onCreateBaseRef.current = onCreateBase;
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const onOpenTagRef = useRef(onOpenTag);
@@ -595,6 +603,23 @@ export function Editor({
     setBoardEmbedActions({
       createBoard: async (title) => (await onCreateBoardRef.current?.({ title })) ?? null,
     });
+    setDatabaseCreator(() => {
+      const instance = editorRef.current;
+      const create = onCreateBaseRef.current;
+      if (!instance || !create) return;
+      const pos = instance.state.selection.from;
+      void create().then((base) => {
+        const current = editorRef.current;
+        if (!base || !current || current.isDestroyed) return;
+        const pages = pagesRef.current.some((item) => item.id === base.id) ? pagesRef.current : [...pagesRef.current, base];
+        const at = Math.min(pos, current.state.doc.content.size);
+        current
+          .chain()
+          .focus()
+          .insertContentAt(at, { type: "baseEmbed", attrs: { target: linkTargetFor(base, pages).target, view: "", raw: "" } })
+          .run();
+      });
+    });
   }, []);
 
   useEffect(() => {
@@ -679,6 +704,7 @@ export function Editor({
       }),
       ImageBlock,
       BoardEmbed,
+      BaseEmbed,
       PageEmbed,
       TagChips,
       BlockIdChips,

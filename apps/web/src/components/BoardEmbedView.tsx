@@ -39,7 +39,7 @@ function titleOfTarget(target: string): string {
 }
 
 /** Mount `true` once the element comes within `margin` of the viewport. */
-function useNearViewport(ref: React.RefObject<HTMLElement | null>, margin = "600px"): boolean {
+export function useNearViewport(ref: React.RefObject<HTMLElement | null>, margin = "600px"): boolean {
   const [near, setNear] = useState(false);
   useEffect(() => {
     if (near) return;

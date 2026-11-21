@@ -20,7 +20,10 @@ export interface TrashViewProps {
 
 function ItemIcon({ page }: { page: TrashedPage }) {
   if (page.icon) return <span className="trash-item-emoji">{page.icon}</span>;
-  return <Icon name={page.kind === "whiteboard" ? "board" : page.kind === "folder" ? "folder" : "file"} size={16} />;
+  return <Icon
+      name={page.kind === "whiteboard" ? "board" : page.kind === "base" ? "database" : page.kind === "folder" ? "folder" : "file"}
+      size={16}
+    />;
 }
 
 /** The trash (#ppag3ugh): deleted pages and boards, newest first. */

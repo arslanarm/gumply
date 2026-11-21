@@ -27,6 +27,8 @@ describe("filterSlashItems", () => {
       "board-template",
       "page-preview",
       "embed-whiteboard",
+      "database",
+      "embed-database",
       "divider",
     ]);
   });

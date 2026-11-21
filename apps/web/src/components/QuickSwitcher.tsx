@@ -24,6 +24,8 @@ export interface QuickSwitcherProps {
   onCreate: (title: string) => void;
   /** `Create whiteboard “X”`; without it the row isn't offered. */
   onCreateBoard?: (title: string) => void;
+  /** `Create database view “X”` (D34); without it the row isn't offered. */
+  onCreateBase?: (title: string) => void;
   /** `New board from template…`: opens the template gallery (spec/v0-6 §D). */
   onNewFromTemplate?: () => void;
   /** `Language…`: opens Settings (#7h5utv23). */
@@ -34,7 +36,7 @@ export interface QuickSwitcherProps {
 }
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
-export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onOpenLanguage, onClose, initialQuery = "" }: QuickSwitcherProps) {
+export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onCreateBase, onNewFromTemplate, onOpenLanguage, onClose, initialQuery = "" }: QuickSwitcherProps) {
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState(initialQuery);
@@ -96,6 +98,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
 
   const fromTemplate = onNewFromTemplate ? sections.fromTemplate : null;
   const languageRow = onOpenLanguage ? sections.language : null;
+  const createBaseRow = onCreateBase ? (sections.createBase ?? null) : null;
   const rows: SearchRow[] =
     needle.length > 0
       ? [
@@ -103,6 +106,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
           ...sections.text,
           ...(sections.create ? [sections.create] : []),
           ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
+          ...(createBaseRow ? [createBaseRow] : []),
           ...(fromTemplate ? [fromTemplate] : []),
           ...(languageRow ? [languageRow] : []),
         ]
@@ -136,6 +140,10 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
     }
     if (row.kind === "create-board") {
       if (row.title) onCreateBoard?.(row.title);
+      return;
+    }
+    if (row.kind === "create-base") {
+      if (row.title) onCreateBase?.(row.title);
       return;
     }
     if (row.page) onOpen(row.page.id);
@@ -181,7 +189,9 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
             ? `search-result-${row.page.id}`
             : row.kind === "create-board"
               ? "search-create-board"
-              : row.kind === "from-template"
+              : row.kind === "create-base"
+                ? "search-create-base"
+                : row.kind === "from-template"
                 ? "search-from-template"
                 : row.kind === "language"
                   ? "search-language"
@@ -203,10 +213,12 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
             <Icon name="languages" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
+          ) : row.kind === "create-base" ? (
+            <Icon name="database" size={16} />
           ) : row.page?.icon ? (
             row.page.icon
           ) : (
-            <Icon name={isBoard(row.page) ? "board" : "file"} size={16} />
+            <Icon name={isBoard(row.page) ? "board" : row.page?.kind === "base" ? "database" : "file"} size={16} />
           )}
         </span>
         <span className="quick-switcher-text">
@@ -312,6 +324,15 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
                 ? renderRow(
                     sections.createBoard,
                     sections.pages.length + sections.text.length + (sections.create ? 1 : 0),
+                  )
+                : null}
+              {createBaseRow
+                ? renderRow(
+                    createBaseRow,
+                    sections.pages.length +
+                      sections.text.length +
+                      (sections.create ? 1 : 0) +
+                      (sections.createBoard && onCreateBoard ? 1 : 0),
                   )
                 : null}
               {fromTemplate ? renderRow(fromTemplate, rows.length - (languageRow ? 2 : 1)) : null}

@@ -2,6 +2,7 @@
  * Slash-menu catalogue. Keys double as `data-testid="slash-menu-item-<key>"`
  * values (UI contract in wiki `spec/e2e-tests`).
  */
+import { requestDatabase } from "./base-embed/actions.js";
 import type { Editor, Range } from "@tiptap/core";
 import { requestAttachmentPicker } from "./attachments/store.js";
 import { requestEmojiPicker } from "./emoji/store.js";
@@ -359,6 +360,38 @@ export const SLASH_ITEMS: SlashItem[] = [
       return withLocalKeywords(["whiteboard", "board", "canvas", "embed", "existing", "miro", "diagram"], t("slash.embedWhiteboard.keywords"));
     },
     // `![[` opens the link menu with boards only (D30).
+    run: (editor, range) => editor.chain().focus().deleteRange(range).insertContent("![[").run(),
+  },
+  {
+    key: "database",
+    get title() {
+      return t("slash.database.title");
+    },
+    get hint() {
+      return t("slash.database.hint");
+    },
+    // English words always match; the current language adds its own.
+    get keywords() {
+      return withLocalKeywords(["database", "base", "table", "view", "notion", "collection", "inline database"], t("slash.database.keywords"));
+    },
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      requestDatabase();
+    },
+  },
+  {
+    key: "embed-database",
+    get title() {
+      return t("slash.embedDatabase.title");
+    },
+    get hint() {
+      return t("slash.embedDatabase.hint");
+    },
+    // English words always match; the current language adds its own.
+    get keywords() {
+      return withLocalKeywords(["database", "base", "embed", "existing", "table", "view"], t("slash.embedDatabase.keywords"));
+    },
+    // `![[` opens the link menu; picking a database view embeds it (D34).
     run: (editor, range) => editor.chain().focus().deleteRange(range).insertContent("![[").run(),
   },
   {

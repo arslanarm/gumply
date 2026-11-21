@@ -89,8 +89,10 @@ export class BaseQueries {
 
     const values = await Promise.all(index.map((entry) => this.frontmatterOf(entry)));
     const types = await this.declaredTypes();
+    const counts = new Map<string, number>();
     for (const record of values) {
       for (const [key, value] of Object.entries(record)) {
+        counts.set(key, (counts.get(key) ?? 0) + 1);
         if (types.has(key)) continue;
         const inferred = inferType(key, value);
         if (inferred) types.set(key, inferred);
@@ -139,7 +141,7 @@ export class BaseQueries {
       if (!titles.has(name.toLowerCase())) titles.set(name.toLowerCase(), row.file.path);
     }
 
-    return runBaseView({
+    const result = runBaseView({
       config: document.config,
       view: options.view,
       rows,
@@ -151,5 +153,9 @@ export class BaseQueries {
         return titles.get(clean.toLowerCase()) ?? null;
       },
     });
+    result.properties = [...counts]
+      .map(([key, count]) => ({ id: `note.${key}`, type: types.get(key) ?? "text", count }))
+      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
+    return result;
   }
 }
