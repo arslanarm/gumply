@@ -155,4 +155,27 @@ test.describe('database view layouts (D34)', () => {
       .poll(() => read('Work/Tasks.base'))
       .toBe(`${BASE}  - type: calendar\n    name: Calendar 2\n    order:\n      - file.name\n    dateProperty: note.due\n`);
   });
+
+  test('"Embed existing database…" lists database views only, then embeds the picked one live', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request, { ...FILES, 'Host.md': 'Host page\n' });
+    await page.goto('/#/Host');
+    await page.getByTestId('editor-content').click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('/embed');
+    await page.getByTestId('slash-menu-item-embed-database').click();
+    const menu = page.getByTestId('link-menu');
+    await expect(menu.getByRole('option')).toHaveCount(1);
+    await expect(page.getByTestId('link-suggestion-Work/Tasks.base')).toBeVisible();
+    await page.getByTestId('link-suggestion-Work/Tasks.base').click();
+    await expect(page.getByTestId('base-embed').locator('.base-title-text').first()).toBeVisible();
+    await expect.poll(async () => (await api.getPage(request, 'Host')).content, { timeout: 8_000 }).toBe('Host page\n\n![[Tasks.base]]');
+
+    // A plain `![[` still offers pages too (page previews, #5dpxwac4).
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('![[');
+    await expect(page.getByTestId('link-suggestion-Work/Alpha')).toBeVisible();
+  });
 });
