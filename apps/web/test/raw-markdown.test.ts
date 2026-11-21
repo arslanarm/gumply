@@ -34,9 +34,8 @@ describe("raw Markdown blocks (#82x82ek7)", () => {
     expect(lastParsedTableSources()).toEqual([table]);
   });
 
-  it("keeps callouts, footnote definitions and math blocks", () => {
-    const callout = "> [!note] Callout title\n> Callout body text.";
-    expect(rawBlocks(callout)).toEqual([["callout", callout]]);
+  it("keeps footnote definitions and math blocks (callouts are editable nodes, #uigzc42i)", () => {
+    expect(rawBlocks("> [!note] Callout title\n> Callout body text.")).toEqual([]);
     expect(rawBlocks("[^1]: The footnote.")).toEqual([["footnote", "[^1]: The footnote."]]);
     expect(rawBlocks("$$\n\\int_0^1 x\\,dx\n$$")).toEqual([["math", "$$\n\\int_0^1 x\\,dx\n$$"]]);
   });

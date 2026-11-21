@@ -10,6 +10,7 @@ import {
   type BlockRef,
 } from "../lib/blocks.js";
 import { insertBlockBelow, turnInto, type TurnIntoKind } from "../editor/block-editing.js";
+import { setCalloutFold } from "../editor/callout/callout.js";
 
 interface HoverState {
   block: BlockRef;
@@ -50,6 +51,8 @@ const TURN_INTO: Array<{ kind: TurnIntoKind; label: string }> = [
   { kind: "ordered", label: "Numbered list" },
   { kind: "todo", label: "To-do" },
   { kind: "quote", label: "Quote" },
+  { kind: "callout", label: "Callout" },
+  { kind: "toggle", label: "Toggle" },
   { kind: "code", label: "Code" },
 ];
 
@@ -473,7 +476,48 @@ export function BlockGutter({ editor }: BlockGutterProps) {
           >
             Delete
           </button>
-          {menu.block.node.type.name === "table" ? null : (
+          {menu.block.node.type.name === "callout" ? (
+            <>
+              <div className="block-menu-separator" />
+              <p className="block-menu-heading">Toggle</p>
+              {menu.block.node.attrs.fold ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={menu.block.node.attrs.fold === "-"}
+                    className="block-menu-item"
+                    data-testid="block-menu-item-start-closed"
+                    onClick={() => run((block) =>
+                      setCalloutFold(editor.view, block.from, block.node.attrs.fold === "-" ? "+" : "-"),
+                    )}
+                  >
+                    {menu.block.node.attrs.fold === "-" ? "Start open" : "Start closed"}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="block-menu-item"
+                    data-testid="block-menu-item-not-toggle"
+                    onClick={() => run((block) => setCalloutFold(editor.view, block.from, ""))}
+                  >
+                    Always show contents
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block-menu-item"
+                  data-testid="block-menu-item-make-toggle"
+                  onClick={() => run((block) => setCalloutFold(editor.view, block.from, "+"))}
+                >
+                  Make foldable
+                </button>
+              )}
+            </>
+          ) : null}
+          {menu.block.node.type.name === "table" || menu.block.node.type.name === "callout" ? null : (
             <>
           <div className="block-menu-separator" />
           <p className="block-menu-heading">Turn into</p>

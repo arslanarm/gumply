@@ -23,6 +23,11 @@ const SLASH_ICONS: Record<string, IconName> = {
   code: "code",
   divider: "minus",
   table: "table",
+  callout: "callout",
+  toggle: "toggle",
+  note: "pencil",
+  tip: "flame",
+  warning: "alert",
 };
 
 /** Floating `/` menu. Positioned from the suggestion's client rect. */
