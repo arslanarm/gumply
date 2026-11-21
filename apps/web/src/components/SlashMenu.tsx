@@ -23,6 +23,11 @@ const SLASH_ICONS: Record<string, IconName> = {
   code: "code",
   divider: "minus",
   table: "table",
+  callout: "callout",
+  toggle: "toggle",
+  note: "pencil",
+  tip: "flame",
+  warning: "alert",
   // Boards (#ux5cukze): the board icon, not the page one.
   whiteboard: "board",
   "embed-whiteboard": "board",

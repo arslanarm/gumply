@@ -3115,6 +3115,203 @@ input {
   vertical-align: -2px;
 }
 
+/* ---------- #uigzc42i: editable callouts and toggles (D29) ---------- */
+
+.callout {
+  /* Obsidian's callout colours (light); dark values below. */
+  --callout-rgb: 8, 109, 221;
+  position: relative;
+  margin: 0.55em 0;
+  padding: 0.7rem 0.95rem 0.7rem 2.6rem;
+  border-radius: 6px;
+  background: rgba(var(--callout-rgb), 0.08);
+  border: 1px solid rgba(var(--callout-rgb), 0.16);
+}
+
+.callout[data-callout-style="abstract"],
+.callout[data-callout-style="tip"] { --callout-rgb: 0, 160, 158; }
+.callout[data-callout-style="info"],
+.callout[data-callout-style="todo"],
+.callout[data-callout-style="note"] { --callout-rgb: 8, 109, 221; }
+.callout[data-callout-style="success"] { --callout-rgb: 8, 155, 66; }
+.callout[data-callout-style="question"],
+.callout[data-callout-style="warning"] { --callout-rgb: 214, 106, 0; }
+.callout[data-callout-style="failure"],
+.callout[data-callout-style="danger"],
+.callout[data-callout-style="bug"] { --callout-rgb: 221, 44, 66; }
+.callout[data-callout-style="example"] { --callout-rgb: 120, 82, 238; }
+.callout[data-callout-style="quote"] { --callout-rgb: 120, 119, 116; }
+
+:root[data-theme="dark"] .callout { --callout-rgb: 2, 122, 255; }
+:root[data-theme="dark"] .callout[data-callout-style="abstract"],
+:root[data-theme="dark"] .callout[data-callout-style="tip"] { --callout-rgb: 83, 223, 221; }
+:root[data-theme="dark"] .callout[data-callout-style="success"] { --callout-rgb: 68, 207, 110; }
+:root[data-theme="dark"] .callout[data-callout-style="question"],
+:root[data-theme="dark"] .callout[data-callout-style="warning"] { --callout-rgb: 233, 151, 63; }
+:root[data-theme="dark"] .callout[data-callout-style="failure"],
+:root[data-theme="dark"] .callout[data-callout-style="danger"],
+:root[data-theme="dark"] .callout[data-callout-style="bug"] { --callout-rgb: 251, 70, 76; }
+:root[data-theme="dark"] .callout[data-callout-style="example"] { --callout-rgb: 168, 130, 255; }
+:root[data-theme="dark"] .callout[data-callout-style="quote"] { --callout-rgb: 158, 158, 158; }
+
+.callout-content > * + * {
+  margin-top: 0.3em;
+}
+
+.callout-content > p {
+  margin: 0.12em 0;
+}
+
+.gumply-editor .callout-content > :last-child {
+  margin-bottom: 0;
+}
+
+.callout-title {
+  font-weight: 600;
+  color: rgb(var(--callout-rgb));
+  min-height: 1.6em;
+}
+
+.callout.is-foldable .callout-title {
+  padding-right: 1.6rem;
+}
+
+/* Untitled: show the type name like Obsidian; typing replaces it. */
+.callout.is-title-empty .callout-title::before {
+  content: var(--callout-placeholder);
+  float: left;
+  height: 0;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.callout-icon,
+.callout-fold {
+  position: absolute;
+  top: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.6em;
+  width: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: rgb(var(--callout-rgb));
+  cursor: pointer;
+}
+
+.callout-icon {
+  left: 0.65rem;
+}
+
+.callout-fold {
+  right: 0.5rem;
+  color: rgba(var(--callout-rgb), 0.8);
+}
+
+.callout-fold[hidden] {
+  display: none;
+}
+
+.callout-icon:hover,
+.callout-fold:hover,
+.callout-icon[aria-expanded="true"] {
+  background: rgba(var(--callout-rgb), 0.14);
+}
+
+.callout-fold svg {
+  transition: transform 120ms ease;
+}
+
+.callout-fold[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.callout.is-closed .callout-content > :not(.callout-title) {
+  display: none;
+}
+
+/* Notion's "Empty toggle" hint in an open toggle with nothing inside. */
+.callout.is-foldable.is-body-empty:not(.is-closed) .callout-content > p:nth-child(2)::before {
+  content: "Empty toggle. Click here to add blocks inside.";
+  float: left;
+  height: 0;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.callout-picker {
+  position: absolute;
+  z-index: 30;
+  left: 0.4rem;
+  top: calc(0.7rem + 1.8em);
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  font-weight: 400;
+  color: var(--text);
+}
+
+.callout-picker-item {
+  --callout-rgb: 8, 109, 221;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.callout-picker-item:hover,
+.callout-picker-item:focus-visible,
+.callout-picker-item[aria-selected="true"] {
+  background: var(--hover);
+  outline: none;
+}
+
+.callout-picker-icon {
+  display: flex;
+  color: rgb(var(--callout-rgb));
+}
+
+.callout-picker-item[data-callout-style="abstract"],
+.callout-picker-item[data-callout-style="tip"] { --callout-rgb: 0, 160, 158; }
+.callout-picker-item[data-callout-style="success"] { --callout-rgb: 8, 155, 66; }
+.callout-picker-item[data-callout-style="question"],
+.callout-picker-item[data-callout-style="warning"] { --callout-rgb: 214, 106, 0; }
+.callout-picker-item[data-callout-style="failure"],
+.callout-picker-item[data-callout-style="danger"],
+.callout-picker-item[data-callout-style="bug"] { --callout-rgb: 221, 44, 66; }
+.callout-picker-item[data-callout-style="example"] { --callout-rgb: 120, 82, 238; }
+.callout-picker-item[data-callout-style="quote"] { --callout-rgb: 120, 119, 116; }
+:root[data-theme="dark"] .callout-picker-item { --callout-rgb: 2, 122, 255; }
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="abstract"],
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="tip"] { --callout-rgb: 83, 223, 221; }
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="success"] { --callout-rgb: 68, 207, 110; }
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="question"],
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="warning"] { --callout-rgb: 233, 151, 63; }
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="failure"],
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="danger"],
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="bug"] { --callout-rgb: 251, 70, 76; }
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="example"] { --callout-rgb: 168, 130, 255; }
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="quote"] { --callout-rgb: 158, 158, 158; }
+
+/* A title-only callout: no empty body line unless the caret is in it. */
+.callout.is-body-empty:not(.is-foldable):not(.has-caret) .callout-content > p:nth-child(2) {
+  display: none;
+}
+
 /* ---------- Boards embedded in pages (spec/v0-6 B, D30) ---------- */
 
 .board-embed {
