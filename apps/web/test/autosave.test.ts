@@ -192,3 +192,99 @@ describe("Autosave conflict", () => {
     expect(states).toContain("conflict");
   });
 });
+
+describe("Autosave on the way out (#3t6v62cb)", () => {
+  it("sends a pending edit at once with exitSave, and only says Saved when it is confirmed", async () => {
+    vi.useFakeTimers();
+    const save = vi.fn(async (_value: string) => {});
+    let confirm: (() => void) | undefined;
+    const exitSave = vi.fn(
+      (_value: string, _afterInFlight: boolean) =>
+        new Promise<void>((resolve) => {
+          confirm = resolve;
+        }),
+    );
+    const autosave = new Autosave({ save, exitSave, delay: 600 });
+
+    autosave.schedule("typed just now");
+    expect(autosave.flushOnExit()).toBe(true);
+    expect(exitSave).toHaveBeenCalledWith("typed just now", false);
+    // The debounce is cancelled: no second, normal write.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).not.toHaveBeenCalled();
+    expect(autosave.isDirty()).toBe(true);
+    expect(autosave.state).toBe("idle");
+
+    confirm?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(autosave.isDirty()).toBe(false);
+    expect(autosave.state).toBe("saved");
+    // Called twice (beforeunload, then pagehide): sent once.
+    expect(autosave.flushOnExit()).toBe(true);
+    expect(exitSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("has nothing to send when everything is saved", () => {
+    const exitSave = vi.fn(() => Promise.resolve());
+    const autosave = new Autosave({ save: async () => {}, exitSave });
+    autosave.reset("on disk");
+    expect(autosave.flushOnExit()).toBe(true);
+    autosave.schedule("on disk");
+    expect(autosave.flushOnExit()).toBe(true);
+    expect(exitSave).not.toHaveBeenCalled();
+  });
+
+  it("resends a write still in flight (an unload may cancel it), marked as after it", async () => {
+    vi.useFakeTimers();
+    const save = vi.fn(() => new Promise<void>(() => {}));
+    const exitSave = vi.fn((_value: string, _afterInFlight: boolean) => Promise.resolve());
+    const autosave = new Autosave({ save, exitSave, delay: 100 });
+    autosave.schedule("in flight");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(save).toHaveBeenCalledWith("in flight");
+    expect(autosave.flushOnExit()).toBe(true);
+    expect(exitSave).toHaveBeenCalledWith("in flight", true);
+
+    autosave.schedule("newer");
+    expect(autosave.flushOnExit()).toBe(true);
+    expect(exitSave).toHaveBeenLastCalledWith("newer", true);
+  });
+
+  it("reports false when it can't send (too big, no exitSave, a conflict), so the page warns", async () => {
+    vi.useFakeTimers();
+    const tooBig = new Autosave({ save: async () => {}, exitSave: () => null });
+    tooBig.schedule("x".repeat(10));
+    expect(tooBig.flushOnExit()).toBe(false);
+    expect(tooBig.isDirty()).toBe(true);
+
+    const none = new Autosave({ save: async () => {} });
+    none.schedule("edit");
+    expect(none.flushOnExit()).toBe(false);
+
+    const conflict = new Error("409");
+    const exitSave = vi.fn(() => Promise.resolve());
+    const conflicted = new Autosave({
+      save: async () => {
+        throw conflict;
+      },
+      exitSave,
+      isConflict: (error) => error === conflict,
+      delay: 10,
+    });
+    conflicted.schedule("mine");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(conflicted.state).toBe("conflict");
+    expect(conflicted.flushOnExit()).toBe(false);
+    expect(exitSave).not.toHaveBeenCalled();
+  });
+
+  it("a failed exit write keeps the edit pending and shows the error", async () => {
+    const autosave = new Autosave({ save: async () => {}, exitSave: () => Promise.reject(new Error("offline")) });
+    autosave.schedule("keep me");
+    expect(autosave.flushOnExit()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(autosave.state).toBe("error");
+    expect(autosave.hasFailed()).toBe(true);
+    expect(autosave.isDirty()).toBe(true);
+  });
+});

@@ -13,6 +13,7 @@ import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { TableControls } from "./TableControls.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
+import { registerSaver } from "../lib/pending-saves.js";
 import {
   findUploadNode,
   finishUpload,
@@ -219,6 +220,21 @@ export function Editor({
           if (!force) forceRef.current = false;
           throw error;
         }
+      },
+      // Leaving the page (#3t6v62cb): a keepalive PUT. After a write still in
+      // flight its new version isn't known yet, so this one goes without
+      // `expectedUpdated`; the server's own mtime check still catches an
+      // outside edit.
+      exitSave: (content, afterInFlight) => {
+        const request = api.updatePageOnExit(pageIdRef.current, {
+          content,
+          ...(afterInFlight ? {} : { expectedUpdated: versionRef.current }),
+        });
+        return (
+          request?.then((updated) => {
+            versionRef.current = updated.updated;
+          }) ?? null
+        );
       },
       isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
       onState: (state) => onSaveStateRef.current(state),
@@ -694,7 +710,15 @@ export function Editor({
   editorRef.current = editor;
 
   useEffect(() => {
+    // Reload, close and quit flush this page too (#3t6v62cb).
+    const unregister = registerSaver({
+      isDirty: () => autosave.isDirty(),
+      hasFailed: () => autosave.hasFailed(),
+      flush: () => autosave.flush(),
+      flushOnExit: () => autosave.flushOnExit(),
+    });
     return () => {
+      unregister();
       autosave.dispose();
     };
   }, [autosave]);
