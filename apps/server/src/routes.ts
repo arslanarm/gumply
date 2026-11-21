@@ -127,6 +127,8 @@ export function createApiRoutes(store: VaultStore): Hono {
     const expectedUpdated = optionalString(body, "expectedUpdated");
     if (expectedUpdated !== undefined) patch.expectedUpdated = expectedUpdated;
     if (body.force === true) patch.force = true;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) patch.writer = writer.slice(0, 64);
 
     const result = await store.update(c.req.param("id"), patch);
     const { rewrittenPages, ...page } = result;
@@ -179,6 +181,8 @@ export function createApiRoutes(store: VaultStore): Hono {
     const expectedUpdated = optionalString(body, "expectedUpdated");
     if (expectedUpdated !== undefined) patch.expectedUpdated = expectedUpdated;
     if (body.force === true) patch.force = true;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) patch.writer = writer.slice(0, 64);
 
     const { rewrittenPages, ...result } = await store.updateBoard(c.req.param("id"), patch);
     return c.json<BoardUpdateResult>(rewrittenPages.length > 0 ? { ...result, rewrittenPages } : result);

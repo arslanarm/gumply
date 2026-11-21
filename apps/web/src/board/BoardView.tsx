@@ -7,7 +7,7 @@ import { serializeCanvas, type BoardDocument, type CanvasBoard, type PageMeta } 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError, api } from "../api/client.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
-import { registerSaver } from "../lib/pending-saves.js";
+import { newWriterId, registerSaver } from "../lib/pending-saves.js";
 import type { BoardEditorControls, BoardPageOption } from "./BoardEditor.js";
 import type { BoardRenderers } from "./context.js";
 import { LazyBoardEditor } from "./index.js";
@@ -72,6 +72,8 @@ export function BoardView(props: BoardViewProps) {
   idRef.current = boardId;
   const versionRef = useRef<string | undefined>(undefined);
   const forceRef = useRef(false);
+  // Identifies this view's saves to the server (spec/api `writer`).
+  const writerRef = useRef(newWriterId());
   const editorRef = useRef<BoardEditorControls | null>(null);
 
   const autosave = useMemo(
@@ -84,6 +86,7 @@ export function BoardView(props: BoardViewProps) {
             const result = await api.saveBoard(savedId, {
               board: JSON.parse(value) as CanvasBoard,
               ...(versionRef.current ? { expectedUpdated: versionRef.current } : {}),
+              writer: writerRef.current,
               ...(force ? { force: true } : {}),
             });
             forceRef.current = false;
@@ -100,11 +103,12 @@ export function BoardView(props: BoardViewProps) {
           }
         },
         // Leaving the page (#3t6v62cb): a keepalive PUT (null over 64 KB).
-        exitSave: (value, afterInFlight) => {
+        exitSave: (value) => {
           const savedId = idRef.current;
           const request = api.saveBoardOnExit(savedId, {
             board: JSON.parse(value) as CanvasBoard,
-            ...(!afterInFlight && versionRef.current ? { expectedUpdated: versionRef.current } : {}),
+            ...(versionRef.current ? { expectedUpdated: versionRef.current } : {}),
+            writer: writerRef.current,
           });
           return (
             request?.then((result) => {
@@ -152,9 +156,10 @@ export function BoardView(props: BoardViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A rename by the app (its own PUT) moves the version this view must send.
+  // A rename by the app (its own PUT) moves the version this view must send,
+  // never back to an older one (#d5e4mawv).
   useEffect(() => {
-    if (props.updated) versionRef.current = props.updated;
+    if (props.updated && (!versionRef.current || props.updated > versionRef.current)) versionRef.current = props.updated;
   }, [props.updated]);
 
   // Never lose the last edits when the view goes away, or the page does

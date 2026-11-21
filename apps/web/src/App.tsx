@@ -135,6 +135,9 @@ export function App() {
   // Bumped when a rename starts and ends: a poll that began before then has a
   // list that may disagree with the ids the client now uses.
   const renameEpoch = useRef(0);
+  // Bumped by every confirmed save (#m6ppcam2): a disk poll that started
+  // before it has an older list and must not reload the editor.
+  const saveEpoch = useRef(0);
   const lastPageReload = useRef(0);
   // The page id the load effect last loaded (or followed a rename to).
   const loadedSelection = useRef<PageId | null>(null);
@@ -297,6 +300,7 @@ export function App() {
    */
   const applySavedPage = useCallback(
     (previousId: PageId, updated: Page) => {
+      saveEpoch.current += 1;
       const newId = updated.id;
       const remap = (id: PageId): PageId =>
         newId === previousId
@@ -378,6 +382,7 @@ export function App() {
   // restart. Only reload the open page when it has no local unsaved edits.
   const refreshFromDisk = useCallback(async () => {
     const epoch = renameEpoch.current;
+    const saves = saveEpoch.current;
     let list: PageMeta[] | null = null;
     try {
       list = await api.listPages();
@@ -385,6 +390,9 @@ export function App() {
       return;
     }
     if (epoch !== renameEpoch.current || renamesInFlight.current.size > 0) return;
+    // A save landed while this list was on its way: it is older than what we
+    // hold (#m6ppcam2). The next poll brings the current one.
+    if (saves !== saveEpoch.current) return;
     setPages((previous) =>
       JSON.stringify(previous) === JSON.stringify(list) ? previous : (list as PageMeta[]),
     );
@@ -417,6 +425,9 @@ export function App() {
       loaded &&
       loaded.id === currentId &&
       meta.updated !== loaded.updated &&
+      // Only a newer version on disk is an outside change (with the epoch
+      // check above, our own saves never trigger a reload).
+      meta.updated > loaded.updated &&
       !documentControls()?.isDirty()
     ) {
       const active = document.activeElement;
