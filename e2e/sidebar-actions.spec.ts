@@ -173,6 +173,8 @@ test.describe('boards (#ux5cukze)', () => {
     await page.goto(`/${hashOf('Home')}`);
     for (const id of ['Untitled whiteboard.canvas', 'Untitled whiteboard 2.canvas', 'Untitled whiteboard 3.canvas']) {
       await page.getByTestId('new-board-button').click();
+      // New whiteboard opens the template gallery (#yewapn9k): Blank.
+      await page.getByTestId('template-blank').click();
       await expect(page.getByTestId(`page-item-${id}`)).toBeVisible();
     }
     await expect(page.locator('[data-page-id$=".canvas"] .page-item-title')).toHaveText([

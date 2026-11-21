@@ -8,7 +8,7 @@ export const MAX_SEARCH_ROWS = 8;
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board";
+  kind: "page" | "text" | "create" | "create-board" | "from-template";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -28,7 +28,25 @@ export interface SearchSections {
   create: SearchRow | null;
   /** `Create whiteboard “X”`, offered next to `Create “X”` (spec/whiteboard §4). */
   createBoard: SearchRow | null;
+  /** `New board from template…` when the query asks for it (spec/v0-6 §D). */
+  fromTemplate: SearchRow | null;
 }
+
+/** Words that offer `New board from template…`: the command and the template names. */
+const TEMPLATE_WORDS = "new board from template whiteboard kanban mind map retrospective retro flowchart weekly plan".split(" ");
+
+/**
+ * Whether `query` asks for a board template: every word of it starts a word
+ * of the command or of a template name ("templ", "new board", "kanban"…).
+ */
+export function wantsTemplate(query: string): boolean {
+  const words = normalise(query).split(" ").filter((word) => word.length > 0);
+  if (words.length === 0) return false;
+  const meaningful = words.some((word) => !["new", "from", "a"].includes(word));
+  return meaningful && words.every((word) => TEMPLATE_WORDS.some((known) => known.startsWith(word)));
+}
+
+const FROM_TEMPLATE_ROW: SearchRow = { kind: "from-template", key: "from-template", label: "New board from template…" };
 
 function normalise(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
@@ -138,7 +156,7 @@ export function searchSections(
 ): SearchSections {
   const needle = normalise(query);
   const trimmed = query.trim();
-  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null };
+  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null, fromTemplate: null };
 
   const counts = titleCounts(pages);
   const pagesRows: SearchRow[] = [];
@@ -162,7 +180,9 @@ export function searchSections(
     ? { kind: "create-board" as const, key: "create-board", label: `Create whiteboard “${trimmed}”`, title: trimmed }
     : null;
 
-  return { pages: pagesRows, text: textRows, create, createBoard };
+  const fromTemplate = wantsTemplate(query) ? FROM_TEMPLATE_ROW : null;
+
+  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate };
 }
 
 export interface SnippetPart {
