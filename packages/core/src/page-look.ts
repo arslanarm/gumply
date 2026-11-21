@@ -8,9 +8,12 @@
  * - `cover-position:` the vertical focus, 0–100 (default 50).
  * - `background:` a palette name.
  *
- * Notes made with the Obsidian Banners plugin are read too: `banner:` when
- * there is no `cover:`, and `banner_y` (0–1) as the position. Gumply never
- * writes `banner*` keys.
+ * Notes made with the Obsidian Banners plugin are read too (verified against
+ * its source by @opus-hunter): `banner:` when there is no `cover:` (as
+ * `[[file]]`, the legacy `![[file]]`, a path or a URL), `banner_y` (0–1,
+ * clamped) as the position, and `banner_icon` as the page icon when the page
+ * has none. Gumply never writes or deletes `banner*` keys. The plugin's field
+ * name is configurable; only its default, `banner`, is read.
  *
  * These keys are written through the property patch (only their own lines
  * change) and are hidden from the properties block.
@@ -39,6 +42,8 @@ export interface PageLook {
   background: PageColor | null;
   /** Where the cover came from: Gumply's key, or the Banners plugin's. */
   coverSource: "cover" | "banner" | null;
+  /** The Banners plugin's `banner_icon` (first character), shown read-only when the page has no icon. */
+  bannerIcon: string | null;
 }
 
 const isColor = (value: string): value is PageColor => (PAGE_COLORS as readonly string[]).includes(value);
@@ -106,7 +111,10 @@ export function pageLook(properties: readonly Property[] | undefined): PageLook 
 
   const background = value("background");
   const name = typeof background === "string" ? background.trim().toLowerCase() : "";
-  return { cover, position, background: isColor(name) ? name : null, coverSource };
+  const icon = value("banner_icon");
+  // An emoji, or the first character (as the plugin shows it).
+  const bannerIcon = typeof icon === "string" && icon.trim() ? (Array.from(new Intl.Segmenter().segment(icon.trim()))[0]?.segment ?? null) : null;
+  return { cover, position, background: isColor(name) ? name : null, coverSource, bannerIcon };
 }
 
 /** The `cover:` value Gumply writes. Images always carry their full vault path. */

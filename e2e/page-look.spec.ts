@@ -56,6 +56,8 @@ test.describe('page cover and background (#385sexd6)', () => {
 
     await page.getByTestId('page-cover').hover();
     await page.getByTestId('cover-change').click();
+    // Remove lives in the cover bar only, not in the picker too.
+    await expect(page.getByTestId('cover-picker').getByRole('button', { name: 'Remove' })).toHaveCount(0);
     await page.getByTestId('cover-tab-upload').click();
     await page.getByTestId('cover-upload-input').setInputFiles({ name: 'cover photo.png', mimeType: 'image/png', buffer: PNG });
     const image = page.getByTestId('page-cover-image');
@@ -136,7 +138,8 @@ test.describe('page cover and background (#385sexd6)', () => {
 
   test('a Banners plugin cover shows, opening writes nothing, and Hide in Gumply never deletes its keys', async ({ page, request, vault }) => {
     void vault;
-    const original = '---\nbanner: "[[att/banner.png]]"\nbanner_y: 0.3\n---\n\nText\n';
+    // The plugin's legacy `![[…]]` form, and its icon shown when the page has none.
+    const original = '---\nbanner: "![[att/banner.png]]"\nbanner_y: 0.3\nbanner_icon: 🏔️\n---\n\nText\n';
     await write({ 'Banner note.md': original, 'att/banner.png': PNG });
     await open(page, request, 'Banner note');
 
@@ -144,6 +147,7 @@ test.describe('page cover and background (#385sexd6)', () => {
     await expect(image).toBeVisible();
     await expect(image).toHaveCSS('object-position', '50% 30%');
     await expect(page.getByTestId('cover-from-banners')).toBeVisible();
+    await expect(page.getByTestId('page-banner-icon')).toHaveText('🏔️');
     await expect(page.getByTestId('properties-block')).toContainText('banner');
     // Nothing is written just by looking.
     await page.waitForTimeout(1500);
@@ -152,7 +156,7 @@ test.describe('page cover and background (#385sexd6)', () => {
     await page.getByTestId('page-cover').hover();
     await page.getByTestId('cover-remove').click();
     await expect(page.getByTestId('page-cover')).toHaveCount(0);
-    await expect.poll(() => read('Banner note.md')).toBe(original.replace('banner_y: 0.3\n', 'banner_y: 0.3\ncover: none\n'));
+    await expect.poll(() => read('Banner note.md')).toBe(original.replace('banner_icon: 🏔️\n', 'banner_icon: 🏔️\ncover: none\n'));
   });
 
   test('a cover from a web address is saved into the vault first', async ({ page, request, vault }) => {

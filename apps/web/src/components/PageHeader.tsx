@@ -47,6 +47,8 @@ export interface PageHeaderProps {
   /** v0.7 F: the page background colour, and setting it (null = default). */
   background?: PageColor | null;
   onSetBackground?: (color: PageColor | null) => void;
+  /** Shown when the page has no icon of its own (the Banners plugin's `banner_icon`), read-only. */
+  fallbackIcon?: string | null;
 }
 
 function formatUpdated(value: string): string {
@@ -73,6 +75,7 @@ export function PageHeader({
   onAddCover,
   background = null,
   onSetBackground,
+  fallbackIcon = null,
 }: PageHeaderProps) {
   useT();
   const isEmpty = page.content.trim().length === 0;
@@ -267,7 +270,7 @@ export function PageHeader({
         <div className="page-icon-control" ref={iconControlRef}>
           <button
             type="button"
-            className={`page-icon-button${page.icon ? " has-icon" : ""}`}
+            className={`page-icon-button${page.icon || fallbackIcon ? " has-icon" : ""}`}
             data-testid="page-icon-button"
             data-tooltip={page.icon ? t("page.changeIcon") : t("page.addIcon")}
             aria-label={page.icon ? t("page.changeIconLabel") : t("page.addIconLabel")}
@@ -279,8 +282,10 @@ export function PageHeader({
             onFocus={() => void loadEmojiData().catch(() => undefined)}
             onClick={() => setIconOpen((open) => !open)}
           >
-            {page.icon ? (
-              <span className="page-icon-large">{page.icon}</span>
+            {page.icon || fallbackIcon ? (
+              <span className="page-icon-large" data-testid={page.icon ? undefined : "page-banner-icon"}>
+                {page.icon ?? fallbackIcon}
+              </span>
             ) : (
               <span className="page-icon-add">
                 <Icon name="plus" size={13} /> {t("page.addIcon")}

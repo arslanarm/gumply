@@ -210,7 +210,6 @@ export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
         <CoverPicker
           current={cover}
           onPick={(next) => void set(next)}
-          onRemove={cover ? () => void remove() : undefined}
           onClose={() => setPickerOpen(false)}
           onError={setError}
         />
@@ -224,12 +223,11 @@ type Tab = "gallery" | "upload" | "vault" | "link";
 interface CoverPickerProps {
   current: Cover | null;
   onPick: (cover: Cover) => void;
-  onRemove?: () => void;
   onClose: () => void;
   onError: (message: string) => void;
 }
 
-function CoverPicker({ current, onPick, onRemove, onClose, onError }: CoverPickerProps) {
+function CoverPicker({ current, onPick, onClose, onError }: CoverPickerProps) {
   const [tab, setTab] = useState<Tab>("gallery");
   const [images, setImages] = useState<Attachment[] | null>(null);
   const [url, setUrl] = useState("");
@@ -298,12 +296,6 @@ function CoverPicker({ current, onPick, onRemove, onClose, onError }: CoverPicke
             {label}
           </button>
         ))}
-        <span className="cover-picker-spacer" />
-        {onRemove ? (
-          <button type="button" className="cover-picker-tab" data-testid="cover-picker-remove" onClick={onRemove}>
-            {t("cover.remove")}
-          </button>
-        ) : null}
       </div>
 
       {tab === "gallery" ? (

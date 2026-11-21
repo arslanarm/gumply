@@ -2029,6 +2029,7 @@ export function App() {
                   />
                   <PageHeader
                     page={page}
+                    fallbackIcon={look.bannerIcon}
                     onAddCover={look.cover ? undefined : () => setCoverPickerSignal((value) => value + 1)}
                     background={look.background}
                     onSetBackground={(color) =>

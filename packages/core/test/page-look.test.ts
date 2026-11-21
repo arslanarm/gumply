@@ -19,12 +19,13 @@ describe("page cover and background (#385sexd6)", () => {
   });
 
   it("reads the look, with Banners plugin keys as a fallback", () => {
-    expect(pageLook(undefined)).toEqual({ cover: null, position: 50, background: null, coverSource: null });
+    expect(pageLook(undefined)).toEqual({ cover: null, position: 50, background: null, coverSource: null, bannerIcon: null });
     expect(pageLook(props({ cover: "color:red", "cover-position": 120, background: "green" }))).toEqual({
       cover: { kind: "color", name: "red" },
       position: 100,
       background: "green",
       coverSource: "cover",
+      bannerIcon: null,
     });
     expect(pageLook(props({ banner: "[[b.png]]", banner_y: 0.25 }))).toMatchObject({
       cover: { kind: "image", link: "b.png" },
@@ -35,6 +36,13 @@ describe("page cover and background (#385sexd6)", () => {
     expect(pageLook(props({ cover: "color:blue", banner: "[[b.png]]" })).coverSource).toBe("cover");
     expect(pageLook(props({ cover: "none", banner: "[[b.png]]" }))).toMatchObject({ cover: null, coverSource: "cover" });
     expect(pageLook(props({ background: "teal" })).background).toBeNull();
+    // Legacy `![[…]]`, an out-of-range banner_y (clamped), and the icon.
+    expect(pageLook(props({ banner: "![[b.png]]", banner_y: 1.7, banner_icon: "🏔️ peaks" }))).toMatchObject({
+      cover: { kind: "image", link: "b.png" },
+      position: 100,
+      bannerIcon: "🏔️",
+    });
+    expect(pageLook(props({ banner: "https://example.com/b.png" })).cover).toEqual({ kind: "url", url: "https://example.com/b.png" });
   });
 
   it("writes images with their full vault path", () => {

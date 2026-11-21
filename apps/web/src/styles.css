@@ -650,10 +650,6 @@ input {
   border-bottom: 1px solid var(--border);
 }
 
-.cover-picker-spacer {
-  flex: 1;
-}
-
 .cover-picker-tab {
   border: 0;
   border-bottom: 2px solid transparent;
