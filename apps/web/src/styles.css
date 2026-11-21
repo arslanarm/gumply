@@ -3286,6 +3286,7 @@ input {
 /* A title-only callout: no empty body line unless the caret is in it. */
 .callout.is-body-empty:not(.is-foldable):not(.has-caret) .callout-content > p:nth-child(2) {
   display: none;
+}
 
 /* ---------- Boards embedded in pages (spec/v0-6 B, D30) ---------- */
 
