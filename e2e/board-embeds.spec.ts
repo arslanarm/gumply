@@ -147,6 +147,25 @@ test.describe('boards embedded in pages (D30)', () => {
     await expect(embed.locator('.board-node-sticky')).toHaveCount(2);
   });
 
+  test('an embed inside running text stays text and a link; an unrelated edit leaves that line byte for byte', async ({ page, request, vault }) => {
+    const board = await createBoard(request, 'Inline');
+    await saveBoard(request, board.meta.id, [sticky('x')]);
+    const file = 'see ![[Inline.canvas]] here\n\nOther text';
+    await vault.seed([{ title: 'Prose', content: file }]);
+    await openPage(page, 'Prose');
+    // Not a live block: the sentence keeps its link.
+    await expect(page.getByTestId('board-embed')).toHaveCount(0);
+    await expect(page.getByTestId('wiki-link-Inline.canvas')).toBeVisible();
+    expect((await api.getPage(request, 'Prose')).content).toBe(file);
+
+    // Edit the other paragraph only.
+    await page.getByTestId('editor-content').getByText('Other text').click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(', edited');
+    await expectSaved(request, 'Prose', (content) => content.endsWith('edited'));
+    expect((await api.getPage(request, 'Prose')).content).toBe('see ![[Inline.canvas]] here\n\nOther text, edited');
+  });
+
   test('resize: dragging the bottom edge sets the height, saved Obsidian-style as |480', async ({ page, request, vault }) => {
     const board = await createBoard(request, 'Tall');
     await saveBoard(request, board.meta.id, [sticky('Hi')]);

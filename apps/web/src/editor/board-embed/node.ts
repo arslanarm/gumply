@@ -67,7 +67,8 @@ export const BoardEmbed = Node.create({
   addInputRules() {
     return [
       nodeInputRule({
-        find: /!\[\[([^[\]|#]+?\.canvas)(?:\|(\d{2,4}))?\]\]$/i,
+        // Only alone in its block: inside a sentence it stays text + link.
+        find: /^!\[\[([^[\]|#]+?\.canvas)(?:\|(\d{2,4}))?\]\]$/i,
         type: this.type,
         getAttributes: (match) => ({ target: (match[1] ?? "").trim(), size: match[2] ?? "", raw: "" }),
       }),

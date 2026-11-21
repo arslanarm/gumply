@@ -1,4 +1,6 @@
 import MarkdownIt from "markdown-it";
+import { Schema } from "@tiptap/pm/model";
+import { defaultMarkdownSerializer, MarkdownSerializer } from "prosemirror-markdown";
 import { describe, expect, it } from "vitest";
 import {
   boardEmbedMarkdown,
@@ -7,6 +9,7 @@ import {
   parseBoardEmbed,
 } from "../src/editor/board-embed/markdown-plugin.js";
 import { wikilinkMarkdownPlugin } from "../src/editor/wikilink/markdown-plugin.js";
+import { WikiLink } from "../src/editor/wikilink/node.js";
 
 // Same order as the editor: the wiki link rules, then the embed rules.
 const md = new MarkdownIt({ html: false });
@@ -28,8 +31,51 @@ describe("board embeds in Markdown (D30)", () => {
     );
   });
 
-  it("an embed inside running text is still an embed (Obsidian renders it as a block)", () => {
-    expect(render("See ![[Map.canvas]] here")).toBe(`<p>See ${embed("Map.canvas", "", "![[Map.canvas]]")} here</p>`);
+  it("inside running text it stays text plus a link, never a block (files stay yours)", () => {
+    expect(render("See ![[Map.canvas]] here")).toBe(
+      '<p>See !<wiki-link data-wikilink-title="Map.canvas">Map.canvas</wiki-link> here</p>',
+    );
+    // A line right under text belongs to that paragraph, as in CommonMark.
+    expect(render("Intro\n![[Map.canvas|480]]")).toBe(
+      '<p>Intro\n!<wiki-link data-wikilink-title="Map.canvas" data-wikilink-alias="480">480</wiki-link></p>',
+    );
+  });
+
+  it("round-trips `see ![[X.canvas]] here` byte for byte after an unrelated edit", () => {
+    // The document markdown-it + TipTap build for that file: text, a `!`, the
+    // wiki link node, text; and a second paragraph the user edits.
+    const schema = new Schema({
+      nodes: {
+        doc: { content: "block+" },
+        paragraph: { group: "block", content: "inline*" },
+        text: { group: "inline" },
+        wikiLink: { group: "inline", inline: true, atom: true, attrs: { targetTitle: {}, alias: { default: "" }, heading: { default: "" } } },
+      },
+    });
+    const wikiLinkSerializer = (WikiLink.config.addStorage as () => { markdown: { serialize: never } }).call({} as never)
+      .markdown.serialize;
+    const serializer = new MarkdownSerializer(
+      {
+        paragraph: defaultMarkdownSerializer.nodes.paragraph!,
+        text: defaultMarkdownSerializer.nodes.text!,
+        wikiLink: wikiLinkSerializer,
+      },
+      {},
+    );
+    const file = "see ![[X.canvas]] here\n\nOther text";
+    const doc = (other: string) =>
+      schema.node("doc", null, [
+        schema.node("paragraph", null, [
+          schema.text("see !"),
+          schema.node("wikiLink", { targetTitle: "X.canvas" }),
+          schema.text(" here"),
+        ]),
+        schema.node("paragraph", null, [schema.text(other)]),
+      ]);
+    expect(render(file)).toContain('<p>see !<wiki-link data-wikilink-title="X.canvas">X.canvas</wiki-link> here</p>');
+    expect(serializer.serialize(doc("Other text"))).toBe(file);
+    // An unrelated edit changes only that paragraph.
+    expect(serializer.serialize(doc("Other text, edited"))).toBe("see ![[X.canvas]] here\n\nOther text, edited");
   });
 
   it("works in lists and quotes", () => {

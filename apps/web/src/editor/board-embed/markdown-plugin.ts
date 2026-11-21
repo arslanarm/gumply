@@ -2,10 +2,11 @@
  * markdown-it rules for board embeds (D30): `![[Board.canvas]]` and
  * `![[Board.canvas|480]]` (Obsidian's embed syntax; the number is the height).
  *
- * On its own line it is a block. Inside running text Obsidian renders an embed
- * as a block too, so the inline form becomes the same block (the paragraph
- * splits around it). Other `![[…]]` embeds (images, files, notes) are left to
- * their own rules.
+ * Only an embed on a line of its own becomes the live block. Inside running
+ * text (`see ![[Map.canvas]] here`) it stays text: a `!` and the usual
+ * `[[Map.canvas]]` link, so the paragraph round-trips byte for byte instead
+ * of being split around a block (files stay the user's, D20–D23). Other
+ * `![[…]]` embeds (images, files, notes) are left to their own rules.
  *
  * markdown-it's types are an optional peer dep of tiptap-markdown, hence `any`.
  */
@@ -67,26 +68,10 @@ function blockRule(state: any, startLine: number, _endLine: number, silent: bool
   return true;
 }
 
-function inlineRule(state: any, silent: boolean): boolean {
-  const pos: number = state.pos;
-  if (state.src.charCodeAt(pos) !== 0x21 /* ! */ || state.src.charCodeAt(pos + 1) !== 0x5b) return false;
-  const match = EMBED.exec(state.src.slice(pos));
-  if (!match) return false;
-  if (!silent) {
-    const token = state.push("board_embed", "board-embed", 0);
-    token.meta = { target: (match[1] ?? "").trim(), size: (match[2] ?? "").trim(), raw: match[0] } satisfies BoardEmbedMarkup;
-  }
-  state.pos = pos + match[0].length;
-  return true;
-}
-
 export function boardEmbedMarkdownPlugin(md: any): void {
   md.block.ruler.before("paragraph", "board_embed", blockRule);
-  md.inline.ruler.before("image", "board_embed_inline", inlineRule);
   md.renderer.rules.board_embed = (tokens: any[], index: number): string => {
-    const token = tokens[index];
-    const meta = token?.meta as BoardEmbedMarkup | undefined;
-    if (!meta) return "";
-    return token.block ? `${renderEmbed(meta)}\n` : renderEmbed(meta);
+    const meta = tokens[index]?.meta as BoardEmbedMarkup | undefined;
+    return meta ? `${renderEmbed(meta)}\n` : "";
   };
 }
