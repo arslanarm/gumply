@@ -2439,7 +2439,13 @@ export class VaultStore {
       added.tags = tags;
       changes.push("tags");
     }
-    await this.writePage(record.filePath, added, parsed.content, changes);
+    // The template's keys are properties the user asked for (e.g. its own
+    // `created:`), not Gumply's header: written as given (#vi74zw3s).
+    await this.writePage(record.filePath, added, parsed.content, [], undefined, undefined, {
+      values: added,
+      changed: changes,
+      renames: [],
+    });
     const fresh = await this.readRecord(record.filePath, id);
     fresh.parentId = record.parentId;
     this.pages.set(id, fresh);
@@ -2926,8 +2932,11 @@ export class VaultStore {
     // comments, key order, flow style, CRLF and the trailing newline survive
     // (#tterskg4). Only the keys in `changes` are touched.
     let template = null;
+    // The file is already on disk (not a new page, not a template's seed).
+    let existing = false;
     try {
       template = parseNoteTemplate(await readFile(filePath, "utf8"));
+      existing = true;
     } catch {
       // New file: write canonical frontmatter, or keep a template's layout.
       if (seed !== undefined) template = parseNoteTemplate(seed);
@@ -2953,6 +2962,10 @@ export class VaultStore {
       !frontmatter.icon &&
       frontmatter.title === implicitTitle;
     let text: string;
+    // Whether the file now carries Gumply's version in `updated:` (else the
+    // version is the file time, D22/v1.8).
+    let versionKey = false;
+    let titleWritten = false;
     if (bare) {
       const keys = new Set(properties.changed);
       if ((changes ?? []).includes("tags")) keys.add("tags");
@@ -2964,7 +2977,36 @@ export class VaultStore {
     } else if (plain) {
       text = serializeNoteLike(template, {}, content, []);
     } else {
-      text = serializeNoteLike(template, frontmatter, content, [...(changes ?? []), ...(properties?.changed ?? [])], properties?.renames ?? []);
+      // Only the header keys a caller manages are filtered; property writes
+      // (a user's or a template's `created:`) are written as asked.
+      let managed = [...(changes ?? [])];
+      const asked = properties?.changed ?? [];
+      if (existing && template !== null && template.yaml !== null) {
+        // #vi74zw3s: Gumply's header keys are never added to an existing note
+        // that lacks them (an Obsidian note with `status:`/`tags:`): a body
+        // save, a link rewrite or a tag rename changes only what it changes.
+        // `title:` is written when the file has it, or when the title is
+        // something the file name can't hold.
+        const present = new Set(frontmatterKeys(template.yaml));
+        managed = managed.filter((key) => {
+          if (key === "updated" || key === "created") return present.has(key);
+          if (key === "title") {
+            return present.has("title") || implicitTitle === undefined || frontmatter.title !== implicitTitle;
+          }
+          return true;
+        });
+        versionKey = managed.includes("updated") || asked.includes("updated");
+        titleWritten = managed.includes("title") || asked.includes("title");
+      } else if (template !== null && template.yaml !== null) {
+        // A new page from a template: its keys plus Gumply's, as asked.
+        versionKey = managed.includes("updated") || asked.includes("updated");
+        titleWritten = managed.includes("title") || asked.includes("title");
+      } else {
+        // A new file or a new block: canonical frontmatter with every key given.
+        versionKey = frontmatter.updated !== undefined && frontmatter.updated !== null;
+        titleWritten = true;
+      }
+      text = serializeNoteLike(template, frontmatter, content, [...managed, ...asked], properties?.renames ?? []);
     }
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
@@ -2972,10 +3014,11 @@ export class VaultStore {
       await rename(temporary, filePath);
       return {
         mtimeMs: (await stat(filePath)).mtimeMs,
-        frontmatter: !plain,
-        // A new block always has `title:`; an edited one only if it changed.
-        titleKey:
-          !plain && (template === null || template.yaml === null || (changes ?? []).includes("title")),
+        // True when the version is the `updated:` just written; otherwise the
+        // caller uses the file time (`mtimeVersion`), as for plain notes.
+        frontmatter: !plain && versionKey,
+        // A new block always has `title:`; an edited one only if it was written.
+        titleKey: !plain && titleWritten,
       };
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
