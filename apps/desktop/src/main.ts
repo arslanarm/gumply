@@ -201,8 +201,11 @@ async function openVault(path: string): Promise<void> {
 /**
  * Ask the page to save everything now and wait for the server to confirm
  * (#3t6v62cb). The web app exposes `window.__gumplyFlush()` (no preload or
- * IPC, D26); it resolves within 3 s with whether everything is on disk.
+ * IPC, D26); it resolves within 10 s with whether everything is on disk
+ * (#8zc7xkgq: 3 s made a slow-but-fine save on a busy machine look failed).
  */
+const FLUSH_WAIT_MS = 11_000;
+
 async function flushRenderer(): Promise<boolean> {
   if (!window || window.isDestroyed()) return true;
   try {
@@ -210,13 +213,21 @@ async function flushRenderer(): Promise<boolean> {
       window.webContents.executeJavaScript(
         "window.__gumplyFlush ? window.__gumplyFlush() : (document.activeElement instanceof HTMLElement && document.activeElement.blur(), new Promise((r) => setTimeout(() => r(true), 800)))",
       ),
-      new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+      new Promise((resolve) => setTimeout(() => resolve(false), FLUSH_WAIT_MS)),
     ]);
     return saved !== false;
   } catch {
     return true; // the page is gone already: nothing left to save
   }
 }
+
+/**
+ * Whether the "couldn't be saved" dialog is up. Readable from the main
+ * process (`globalThis.__gumplyUnsavedDialog`) so a test that waits for the
+ * app to quit can say why it didn't, instead of timing out blind.
+ */
+const unsavedDialog = { open: false };
+(globalThis as { __gumplyUnsavedDialog?: { open: boolean } }).__gumplyUnsavedDialog = unsavedDialog;
 
 /** The flush failed: ask before losing those edits. */
 async function confirmUnsaved(action: "switchVaults" | "close" | "quit"): Promise<boolean> {
@@ -228,9 +239,14 @@ async function confirmUnsaved(action: "switchVaults" | "close" | "quit"): Promis
     message: tr("unsaved.message"),
     detail: tr("unsaved.detail"),
   };
-  const { response } =
-    window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
-  return response === 0;
+  unsavedDialog.open = true;
+  try {
+    const { response } =
+      window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+    return response === 0;
+  } finally {
+    unsavedDialog.open = false;
+  }
 }
 
 // --- window --------------------------------------------------------------
