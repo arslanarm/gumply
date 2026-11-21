@@ -50,6 +50,13 @@ test.describe('trash', () => {
     await body.click();
     await page.keyboard.type('typed into the trash');
     await expect(body).not.toContainText('typed into the trash');
+    // No formatting on a trashed page: no selection toolbar, and a right-click
+    // gets the browser's own menu, not the editor's (#bg3cb83t).
+    await body.getByText('bold').dblclick();
+    await expect(page.getByTestId('selection-toolbar')).toHaveCount(0);
+    await body.getByText('bold').click({ button: 'right' });
+    await expect(page.getByTestId('editor-context-menu')).toHaveCount(0);
+    await page.keyboard.press('Escape');
 
     // Restore: back where it was, with the sub-page, and opened.
     await page.getByTestId('trashed-restore').click();

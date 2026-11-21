@@ -2800,11 +2800,16 @@ input {
   cursor: default;
 }
 
-.raw-inline-highlight {
+/* `==highlight==` (#bg3cb83t): an editable mark, Obsidian's yellow. */
+.ProseMirror mark.md-highlight {
   background: color-mix(in srgb, #f5d90a 45%, transparent);
   color: inherit;
   border-radius: 3px;
-  padding: 0 2px;
+  padding: 0 1px;
+}
+
+:root[data-theme="dark"] .ProseMirror mark.md-highlight {
+  background: color-mix(in srgb, #d8b600 38%, transparent);
 }
 
 .raw-inline-math,
@@ -3888,6 +3893,243 @@ input {
   .template-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ---------- Selection toolbar and editor context menu (#bg3cb83t) ---------- */
+
+.selection-toolbar {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
+  animation: soft-pop 110ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.selection-toolbar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.selection-toolbar-button,
+.selection-turn-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.selection-turn-button {
+  gap: 4px;
+  padding: 0 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.selection-toolbar-button:hover,
+.selection-turn-button:hover,
+.selection-turn-button.is-open {
+  background: var(--hover);
+}
+
+.selection-toolbar-button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.selection-toolbar-button:focus-visible,
+.selection-turn-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.selection-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.selection-turn-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+}
+
+.selection-turn-list button,
+.selection-link-pages button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.selection-turn-list button:hover,
+.selection-turn-list button:focus-visible,
+.selection-link-pages button:hover,
+.selection-link-pages button.is-active {
+  background: var(--hover);
+  outline: none;
+}
+
+.selection-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 320px;
+  padding: 0 4px 0 8px;
+  color: var(--muted);
+}
+
+.selection-link-input {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.selection-link-pages {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 14%);
+}
+
+.selection-link-hint {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.selection-link-page-icon {
+  display: inline-flex;
+  width: 18px;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.editor-context-menu {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  outline: none;
+  animation: soft-pop 110ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.context-main,
+.context-submenu {
+  display: flex;
+  flex-direction: column;
+  min-width: 230px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 16%), 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.context-submenu {
+  min-width: 170px;
+  margin-left: 4px;
+}
+
+.context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-item:hover,
+.context-item:focus-visible,
+.context-item.is-open {
+  background: var(--hover);
+  outline: none;
+}
+
+.context-item.is-danger {
+  color: var(--danger);
+}
+
+.context-item-icon {
+  display: inline-flex;
+  width: 16px;
+  color: var(--muted);
+}
+
+.context-item.is-danger .context-item-icon {
+  color: inherit;
+}
+
+.context-item-label {
+  flex: 1;
+}
+
+.context-item-keys {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.context-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* `==highlight==` on stickies and board text. */
+.board-rich mark {
+  background: color-mix(in srgb, #f5d90a 45%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
 }
 
 /* ---------- #mf397jyx: plain folders (D33) ---------- */

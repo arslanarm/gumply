@@ -284,6 +284,8 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      // The editor took it: Mod+K with text selected adds a link (#bg3cb83t).
+      if (event.defaultPrevented) return;
       if (pendingDelete || movingId || shortcutsOpen) return;
       event.preventDefault();
       if (searchOpen) closeSearch();

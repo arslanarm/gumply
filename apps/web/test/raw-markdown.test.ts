@@ -55,14 +55,20 @@ describe("raw Markdown blocks (#82x82ek7)", () => {
 });
 
 describe("raw Markdown inline atoms", () => {
-  it("keeps footnote refs, highlights, inline math and inline HTML", () => {
+  it("keeps footnote refs, inline math and inline HTML (highlights are a mark now, #bg3cb83t)", () => {
     expect(rawInlines("a footnote[^1] and ==marked== and $e^{i\\pi}$ and <kbd>K</kbd>")).toEqual([
       ["footnote-ref", "[^1]"],
-      ["highlight", "==marked=="],
       ["math", "$e^{i\\pi}$"],
       ["html", "<kbd>"],
       ["html", "</kbd>"],
     ]);
+  });
+
+  it("keeps an escaped \\= as written, whatever highlight pairing surrounds it (#bg3cb83t)", () => {
+    expect(rawInlines("c==d and \\==literal== here")).toEqual([["escape", "\\="]]);
+    expect(rawInlines("\\==literal==")).toEqual([["escape", "\\="]]);
+    // Other escapes are still plain text.
+    expect(rawInlines("\\*not em\\*")).toEqual([]);
   });
 
   it("doesn't take prices or spaced operators for math or highlights", () => {
