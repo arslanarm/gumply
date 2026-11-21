@@ -56,9 +56,8 @@ export type IconName =
   | "externalLink"
   | "unlink"
   | "text"
-  // Property types (v0.7 A).
+  // Property types (v0.7 A); "calendar" is shared with daily notes.
   | "hash"
-  | "calendar"
   | "clock"
   | "tag";
 
@@ -287,12 +286,6 @@ const ICONS: Record<IconName, ReactNode> = {
     </>
   ),
   hash: <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />,
-  calendar: (
-    <>
-      <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
-      <path d="M16 2.5v4M8 2.5v4M3 10h18" />
-    </>
-  ),
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />
