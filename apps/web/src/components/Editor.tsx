@@ -41,6 +41,7 @@ import {
   MarkdownOrderedList,
 } from "../editor/raw-markdown/markup.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
+import { Callout, CalloutTitle } from "../editor/callout/callout.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
 import {
   GumplyTable,
@@ -633,6 +634,8 @@ export function Editor({
       MarkdownHardBreak,
       RawBlock,
       RawInline,
+      Callout,
+      CalloutTitle,
       MarkdownLink,
       MarkdownTaskList,
       AccessibleTaskItem.configure({

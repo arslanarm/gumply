@@ -23,6 +23,8 @@ export type TurnIntoKind =
   | "ordered"
   | "todo"
   | "quote"
+  | "callout"
+  | "toggle"
   | "code";
 
 /** Put the caret at the start of a block so block commands act on it. */
@@ -90,6 +92,12 @@ export function turnInto(editor: Editor, block: BlockRef, kind: TurnIntoKind): b
       break;
     case "quote":
       chain.setBlockquote().run();
+      break;
+    case "callout":
+      chain.setParagraph().setCallout({ type: "note" }).run();
+      break;
+    case "toggle":
+      chain.setParagraph().setCallout({ type: "note", fold: "-", textInto: "title" }).run();
       break;
     case "code":
       chain.setCodeBlock().run();

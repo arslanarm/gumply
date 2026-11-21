@@ -71,11 +71,16 @@ test.describe('editor', () => {
     await expect(body.locator('ol li')).toHaveText('first item');
   });
 
-  test('> creates a quote', async ({ page, vault }) => {
+  test('" creates a quote; > creates a toggle (Notion, D29)', async ({ page, vault }) => {
     const { body } = await openPage(page, vault, 'Quote shortcut');
 
-    await page.keyboard.type('> quoted text');
+    await page.keyboard.type('" quoted text');
     await expect(body.locator('blockquote')).toContainText('quoted text');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('> toggle title');
+    await expect(body.getByTestId('callout')).toHaveAttribute('data-fold', '-');
+    await expect(body.getByTestId('callout').locator('.callout-title')).toHaveText('toggle title');
   });
 
   test('``` creates a code block', async ({ page, vault }) => {

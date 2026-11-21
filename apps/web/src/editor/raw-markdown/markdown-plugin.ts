@@ -7,9 +7,9 @@
  * escaped. Now such constructs become opaque "raw" nodes holding their exact
  * source, which the serializer writes back unchanged:
  *
- * - blocks (top level): callouts (`> [!note] …`), footnote
- *   definitions (`[^1]: …`), math blocks (`$$ … $$`), and HTML blocks at
- *   any depth;
+ * - blocks (top level): footnote definitions (`[^1]: …`), math blocks
+ *   (`$$ … $$`), and HTML blocks at any depth (callouts are editable nodes
+ *   now, see editor/callout);
  * - inline: footnote references `[^1]`, `==highlight==`, inline math `$x$`,
  *   inline HTML (`<kbd>`, `<br>`, `<!-- -->`).
  *
@@ -24,6 +24,7 @@
 /* markdown-it is an untyped optional peer dep here (see wikilink plugin). */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { calloutRule, installCalloutRenderer } from "../callout/markdown.js";
 import { markupRule } from "./markup.js";
 import { inlineImageRule } from "../attachments/inline-image.js";
 
@@ -39,7 +40,6 @@ export function escapeAttr(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-const CALLOUT = /^\[![\w-]+\][+-]?/;
 const FOOTNOTE_DEF = /^\[\^[^\]\s]+\]:/;
 
 function isBlank(line: string | undefined): boolean {
@@ -88,10 +88,6 @@ function tableOverflows(source: string): boolean {
 function rawKind(tokens: any[], index: number, source: string): string | null {
   const token = tokens[index];
   if (token.type === "table_open" && tableOverflows(source)) return "table";
-  if (token.type === "blockquote_open") {
-    const inline = tokens.slice(index, closingIndex(tokens, index)).find((t) => t.type === "inline");
-    if (inline && CALLOUT.test(inline.content)) return "callout";
-  }
   if (token.type === "paragraph_open") {
     if (FOOTNOTE_DEF.test(source)) return "footnote";
     const trimmed = source.trim();
@@ -319,7 +315,8 @@ export function rawMarkdownPlugin(md: any): void {
   // Recognise HTML so it can be captured below; it is never rendered as HTML.
   md.set({ html: true });
 
-  md.core.ruler.after("block", "gumply_raw_blocks", rawBlocksRule);
+  md.core.ruler.after("block", "gumply_callouts", calloutRule);
+  md.core.ruler.after("gumply_callouts", "gumply_raw_blocks", rawBlocksRule);
   md.core.ruler.after("gumply_raw_blocks", "gumply_markup", markupRule);
   md.core.ruler.after("inline", "gumply_break_style", breakStyleRule);
   md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
@@ -334,6 +331,7 @@ export function rawMarkdownPlugin(md: any): void {
   const inline = (source: string, kind: string) =>
     `<span ${RAW_INLINE_ATTR}="${escapeAttr(source)}" data-raw-kind="${escapeAttr(kind)}"></span>`;
 
+  installCalloutRenderer(md);
   md.renderer.rules.gumply_raw_block = (tokens: any[], index: number) =>
     block(tokens[index].content, tokens[index].info);
   md.renderer.rules.gumply_raw_inline = (tokens: any[], index: number) =>

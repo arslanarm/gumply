@@ -3,13 +3,16 @@ import type { ReactNode } from "react";
 /** One coherent line-icon set for UI chrome (Lucide-style, 24px grid). */
 export type IconName =
   | "arrowUp"
+  | "alert"
   | "board"
   | "brand"
+  | "callout"
   | "checkSquare"
   | "chevronDown"
   | "chevronRight"
   | "code"
   | "file"
+  | "flame"
   | "graph"
   | "grip"
   | "heading"
@@ -20,6 +23,7 @@ export type IconName =
   | "link"
   | "list"
   | "listOrdered"
+  | "toggle"
   | "minus"
   | "monitor"
   | "moon"
@@ -37,6 +41,32 @@ export type IconName =
   | "x";
 
 const ICONS: Record<IconName, ReactNode> = {
+  alert: (
+    <>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </>
+  ),
+  callout: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M8 9.5h.01" />
+      <path d="M11 9.5h6" />
+      <path d="M8 14.5h9" />
+    </>
+  ),
+  flame: (
+    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+  ),
+  toggle: (
+    <>
+      <path d="m4 6 4 3-4 3z" />
+      <path d="M12 9h8" />
+      <path d="M12 15h8" />
+      <path d="M8 19h12" />
+    </>
+  ),
   x: (
     <>
       <path d="M18 6 6 18" />

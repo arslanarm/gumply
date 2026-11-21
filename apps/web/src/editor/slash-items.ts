@@ -73,6 +73,46 @@ export const SLASH_ITEMS: SlashItem[] = [
       editor.chain().focus().deleteRange(range).toggleBlockquote().run(),
   },
   {
+    key: "callout",
+    title: "Callout",
+    hint: "Make writing stand out",
+    keywords: ["callout", "admonition", "box", "note", "info", "highlight"],
+    run: (editor, range) =>
+      editor.chain().focus().deleteRange(range).setCallout({ type: "note" }).run(),
+  },
+  {
+    key: "toggle",
+    title: "Toggle",
+    hint: "Hide content inside",
+    keywords: ["toggle", "collapse", "collapsible", "fold", "details", "expand", "dropdown"],
+    run: (editor, range) =>
+      editor.chain().focus().deleteRange(range).setCallout({ type: "note", fold: "-", textInto: "title" }).run(),
+  },
+  {
+    key: "note",
+    title: "Note",
+    hint: "Note callout",
+    keywords: ["note", "callout"],
+    run: (editor, range) =>
+      editor.chain().focus().deleteRange(range).setCallout({ type: "note" }).run(),
+  },
+  {
+    key: "tip",
+    title: "Tip",
+    hint: "Tip callout",
+    keywords: ["tip", "hint", "callout"],
+    run: (editor, range) =>
+      editor.chain().focus().deleteRange(range).setCallout({ type: "tip" }).run(),
+  },
+  {
+    key: "warning",
+    title: "Warning",
+    hint: "Warning callout",
+    keywords: ["warning", "caution", "callout"],
+    run: (editor, range) =>
+      editor.chain().focus().deleteRange(range).setCallout({ type: "warning" }).run(),
+  },
+  {
     key: "code",
     title: "Code block",
     hint: "Monospaced code",

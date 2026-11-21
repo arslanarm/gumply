@@ -68,7 +68,7 @@ test.describe('imported Markdown survives editing', () => {
 
     // Rendered, not flattened: a real table, a callout, no live HTML.
     await expect(body.locator('table td').first()).toHaveText('Ann');
-    await expect(body.locator('.raw-callout-title')).toHaveText('Callout title');
+    await expect(body.getByTestId('callout').locator('.callout-title')).toHaveText('Callout title');
     await expect(body.locator('mark')).toHaveText('highlighted');
     await expect(body.locator('details')).toHaveCount(0);
     await expect(body.locator('kbd')).toHaveCount(0);
