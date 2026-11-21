@@ -5,15 +5,22 @@
  */
 import type { PageMeta } from "@gumply/core";
 
-let creator: () => void = () => {};
+export interface WhiteboardRequest {
+  /** The new board's title (a missing embed's Create); default "Untitled whiteboard". */
+  title?: string;
+  /** `/template`: pick a template in the gallery first (spec/v0-6 §D). */
+  pickTemplate?: boolean;
+}
 
-/** `/whiteboard` → New board here: create a board inside the page and embed it. */
-export function setWhiteboardCreator(next: () => void): void {
+let creator: (request: WhiteboardRequest) => void = () => {};
+
+/** `/whiteboard` → New board here (and `/template`): create a board inside the page and embed it. */
+export function setWhiteboardCreator(next: (request: WhiteboardRequest) => void): void {
   creator = next;
 }
 
-export function requestWhiteboard(): void {
-  creator();
+export function requestWhiteboard(request: WhiteboardRequest = {}): void {
+  creator(request);
 }
 
 export interface BoardEmbedActions {

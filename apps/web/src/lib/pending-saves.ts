@@ -25,6 +25,17 @@ export interface PendingSaver {
 
 const savers = new Set<PendingSaver>();
 
+/**
+ * A random id for one editor's saves (`writer` in spec/api): the server lets
+ * only the editor that made its last write send the version that write
+ * replaced (a save that left while that write was in flight).
+ */
+export function newWriterId(): string {
+  const bytes = new Uint8Array(9);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export function registerSaver(saver: PendingSaver): () => void {
   savers.add(saver);
   return () => {

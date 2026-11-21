@@ -25,7 +25,8 @@ import { ThemeToggle } from "./components/ThemeToggle.js";
 import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 // Graph and dialogs load on demand (#evh35bn7).
-import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, preloadWhenIdle } from "./lazy-parts.js";
+import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, TemplateGallery, preloadWhenIdle } from "./lazy-parts.js";
+import type { BoardTemplateId } from "./board/templates.js";
 import { idFromVaultPath, isBoard, isBoardId, NEW_BOARD_TITLE, vaultPathOf } from "./lib/boards.js";
 import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
@@ -72,6 +73,26 @@ interface PendingHeading {
   heading: string;
 }
 
+/**
+ * Create a board file; with a template (spec/v0-6 §D) its content is saved
+ * right after, so the file is a normal `.canvas` named after the template.
+ */
+async function createBoardFile(
+  parentId: PageId | null,
+  title: string,
+  templateId: BoardTemplateId | null,
+): Promise<{ meta: PageMeta }> {
+  // Templates load with the gallery's chunk, never with the app.
+  const template = templateId ? (await import("./board/templates.js")).boardTemplate(templateId) : undefined;
+  const created = await api.createBoard({ title: template && title === NEW_BOARD_TITLE ? template.name : title, parentId });
+  if (!template) return created;
+  const saved = await api.saveBoard(created.meta.id, {
+    board: { ...template.build(), ...(created.board.gumply ? { gumply: created.board.gumply } : {}) },
+    expectedUpdated: created.meta.updated,
+  });
+  return { meta: saved.meta };
+}
+
 export function App() {
   const [pages, setPages] = useState<PageMeta[]>([]);
   // D33: plain folders are tree items only. Everything that means "documents"
@@ -95,6 +116,15 @@ export function App() {
   // A board created just now opens with its title selected (type to name it);
   // any other board opens with the canvas focused (#ksx7szar).
   const [editTitleId, setEditTitleId] = useState<PageId | null>(null);
+  /**
+   * The template gallery is open for a new board under this parent (spec/v0-6
+   * §D). With `resolve`, the pick goes back to the caller (`/template`;
+   * `undefined` is Cancel) instead of creating and opening the board here.
+   */
+  const [galleryParent, setGalleryParent] = useState<{
+    parentId: PageId | null;
+    resolve?: (template: BoardTemplateId | null | undefined) => void;
+  } | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
@@ -149,6 +179,9 @@ export function App() {
   // Bumped when a rename starts and ends: a poll that began before then has a
   // list that may disagree with the ids the client now uses.
   const renameEpoch = useRef(0);
+  // Bumped by every confirmed save (#m6ppcam2): a disk poll that started
+  // before it has an older list and must not reload the editor.
+  const saveEpoch = useRef(0);
   const lastPageReload = useRef(0);
   // The page id the load effect last loaded (or followed a rename to).
   const loadedSelection = useRef<PageId | null>(null);
@@ -328,6 +361,7 @@ export function App() {
    */
   const applySavedPage = useCallback(
     (previousId: PageId, updated: Page) => {
+      saveEpoch.current += 1;
       const newId = updated.id;
       const remap = (id: PageId): PageId =>
         newId === previousId
@@ -409,6 +443,7 @@ export function App() {
   // restart. Only reload the open page when it has no local unsaved edits.
   const refreshFromDisk = useCallback(async () => {
     const epoch = renameEpoch.current;
+    const saves = saveEpoch.current;
     let list: PageMeta[] | null = null;
     try {
       list = await api.listPages();
@@ -416,6 +451,9 @@ export function App() {
       return;
     }
     if (epoch !== renameEpoch.current || renamesInFlight.current.size > 0) return;
+    // A save landed while this list was on its way: it is older than what we
+    // hold (#m6ppcam2). The next poll brings the current one.
+    if (saves !== saveEpoch.current) return;
     setPages((previous) =>
       JSON.stringify(previous) === JSON.stringify(list) ? previous : (list as PageMeta[]),
     );
@@ -448,6 +486,9 @@ export function App() {
       loaded &&
       loaded.id === currentId &&
       meta.updated !== loaded.updated &&
+      // Only a newer version on disk is an outside change (with the epoch
+      // check above, our own saves never trigger a reload).
+      meta.updated > loaded.updated &&
       !documentControls()?.isDirty()
     ) {
       const active = document.activeElement;
@@ -665,14 +706,17 @@ export function App() {
     [loadPages, navigate],
   );
 
-  /** spec/whiteboard §4: + → New whiteboard, ⋯ → Add whiteboard inside, Cmd+K. */
+  /**
+   * spec/whiteboard §4: + → New whiteboard, ⋯ → Add whiteboard inside, Cmd+K.
+   * New whiteboard and Add whiteboard inside open the template gallery first.
+   */
   const handleCreateBoard = useCallback(
-    async (parentId: PageId | null, title: string = NEW_BOARD_TITLE) => {
+    async (parentId: PageId | null, title: string = NEW_BOARD_TITLE, templateId: BoardTemplateId | null = null) => {
       setActionError(null);
       setAutoFocusTitle(true);
       if (window.innerWidth <= 900) setSidebarOpen(false);
       try {
-        const created = await api.createBoard({ title, parentId });
+        const created = await createBoardFile(parentId, title, templateId);
         await loadPages();
         setEditTitleId(created.meta.id);
         navigate(created.meta.id);
@@ -689,12 +733,12 @@ export function App() {
     const onCommand = (event: Event) => {
       const command = (event as CustomEvent<unknown>).detail;
       if (command === "new-page") void handleCreate(null);
-      else if (command === "new-whiteboard") void handleCreateBoard(null);
+      else if (command === "new-whiteboard") setGalleryParent({ parentId: null });
       else if (command === "search") openSearch();
     };
     window.addEventListener("gumply:command", onCommand);
     return () => window.removeEventListener("gumply:command", onCommand);
-  }, [handleCreate, handleCreateBoard, openSearch]);
+  }, [handleCreate, openSearch]);
 
   /**
    * ⋯ → Duplicate (#ux5cukze): "<Title> copy" next to the original (D20 name;
@@ -759,18 +803,33 @@ export function App() {
     [pages, documentPages],
   );
 
-  /** `/whiteboard` and a missing embed's Create: a board inside the open page; the editor embeds it (D30). */
-  const createBoardForLink = useCallback(async (title: string = NEW_BOARD_TITLE): Promise<PageMeta | null> => {
-    const parentId = selectedRef.current;
-    try {
-      const created = await api.createBoard({ title, parentId });
-      await loadPages();
-      return created.meta;
-    } catch (error) {
-      setActionError(errorMessage(error));
-      return null;
-    }
-  }, [loadPages]);
+  /**
+   * `/whiteboard`, a missing embed's Create, and `/template`: a board inside
+   * the open page; the editor embeds it (D30). `/template` opens the gallery
+   * first and resolves to null on Cancel (spec/v0-6 §D).
+   */
+  const createBoardForLink = useCallback(
+    async (options: { title?: string; pickTemplate?: boolean } = {}): Promise<PageMeta | null> => {
+      const parentId = selectedRef.current;
+      let templateId: BoardTemplateId | null = null;
+      if (options.pickTemplate) {
+        const picked = await new Promise<BoardTemplateId | null | undefined>((resolve) =>
+          setGalleryParent({ parentId, resolve }),
+        );
+        if (picked === undefined) return null;
+        templateId = picked;
+      }
+      try {
+        const created = await createBoardFile(parentId, options.title ?? NEW_BOARD_TITLE, templateId);
+        await loadPages();
+        return created.meta;
+      } catch (error) {
+        setActionError(errorMessage(error));
+        return null;
+      }
+    },
+    [loadPages],
+  );
 
   /** D13: open a result from the quick switcher. */
   const openSearchResult = useCallback(
@@ -1317,7 +1376,7 @@ export function App() {
         className={`layout${!graphOpen && showingPage && localGraphOpen ? " layout-with-panel" : ""}`}
       >
         <Sidebar
-          onCreateBoard={(parentId) => void handleCreateBoard(parentId)}
+          onCreateBoard={(parentId) => setGalleryParent({ parentId })}
           pages={pages}
           selectedId={selectedId}
           status={listStatus}
@@ -1540,6 +1599,20 @@ export function App() {
         />
       ) : null}
 
+      {galleryParent ? (
+        <TemplateGallery
+          onCancel={() => {
+            setGalleryParent(null);
+            galleryParent.resolve?.(undefined);
+          }}
+          onSelect={(templateId) => {
+            setGalleryParent(null);
+            if (galleryParent.resolve) galleryParent.resolve(templateId);
+            else void handleCreateBoard(galleryParent.parentId, NEW_BOARD_TITLE, templateId);
+          }}
+        />
+      ) : null}
+
       {movingPage ? (
         <MoveDialog
           page={movingPage}
@@ -1565,6 +1638,10 @@ export function App() {
           onOpen={openSearchResult}
           onCreate={createSearchPage}
           onCreateBoard={createSearchBoard}
+          onNewFromTemplate={() => {
+            dismissSearch();
+            setGalleryParent({ parentId: null });
+          }}
           onClose={closeSearch}
         />
       ) : null}

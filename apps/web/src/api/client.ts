@@ -80,6 +80,8 @@ export interface UpdatePageInput {
   expectedUpdated?: string;
   /** Force-save after a conflict ("Keep mine"). */
   force?: boolean;
+  /** This editor's id (#d5e4mawv): see `newWriterId`. */
+  writer?: string;
 }
 
 /** v1.1: a rename reports which other pages had their links rewritten (D12). */
@@ -124,6 +126,8 @@ export interface SaveBoardInput {
   expectedUpdated?: string;
   /** Force-save after a conflict ("Keep mine"); the disk version is backed up. */
   force?: boolean;
+  /** This view's id (#d5e4mawv): see `newWriterId`. */
+  writer?: string;
 }
 
 /** `PUT /api/boards/:id`: `rewrittenPages`, `conflictBackup`, `repairBackup` (once). */

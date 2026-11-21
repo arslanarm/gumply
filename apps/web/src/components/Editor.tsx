@@ -13,7 +13,7 @@ import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { TableControls } from "./TableControls.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
-import { registerSaver } from "../lib/pending-saves.js";
+import { newWriterId, registerSaver } from "../lib/pending-saves.js";
 import {
   findUploadNode,
   finishUpload,
@@ -29,7 +29,7 @@ import { pastedTablesToMarkdown } from "../editor/paste-table.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
-import { setBoardEmbedActions, setWhiteboardCreator } from "../editor/whiteboard-link.js";
+import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
@@ -108,10 +108,11 @@ export interface EditorProps {
   /** ArrowUp / Backspace at the very start of the body: go to the title. */
   onExitTop?: () => void;
   /**
-   * `/whiteboard` (and Create on a missing embed): create a board inside this
-   * page; resolves to it (or null).
+   * `/whiteboard`, `/template` and Create on a missing embed: create a board
+   * inside this page (from a template picked in the gallery with
+   * `pickTemplate`); resolves to it (or null).
    */
-  onCreateBoard?: (title?: string) => Promise<PageMeta | null>;
+  onCreateBoard?: (request: WhiteboardRequest) => Promise<PageMeta | null>;
   /** A click on an inline `#tag` chip (#ux5cukze). */
   onOpenTag?: (tag: string) => void;
 }
@@ -208,10 +209,14 @@ export function Editor({
   pageIdRef.current = page.id;
   const forceRef = useRef(false);
 
-  // A rename/reload from App updates the version this editor must send.
+  // A rename/reload from App updates the version this editor must send, but
+  // never back to an older one than this editor already saved (#d5e4mawv):
+  // a stale list from the disk poll would turn the next save into a 409.
   useEffect(() => {
-    versionRef.current = page.updated;
+    if (!versionRef.current || page.updated > versionRef.current) versionRef.current = page.updated;
   }, [page.updated]);
+  // Identifies this editor's saves to the server (see spec/api `writer`).
+  const writerRef = useRef(newWriterId());
 
   const autosave = useMemo(() => {
     const instance = new Autosave({
@@ -222,6 +227,7 @@ export function Editor({
           const updated = await api.updatePage(savedId, {
             content,
             expectedUpdated: versionRef.current,
+            writer: writerRef.current,
             ...(force ? { force: true } : {}),
           });
           forceRef.current = false;
@@ -234,15 +240,16 @@ export function Editor({
           throw error;
         }
       },
-      // Leaving the page (#3t6v62cb): a keepalive PUT. After a write still in
-      // flight its new version isn't known yet, so this one goes without
-      // `expectedUpdated`; the server's own mtime check still catches an
-      // outside edit.
-      exitSave: (content, afterInFlight) => {
+      // Leaving the page (#3t6v62cb): a keepalive PUT, always conditional.
+      // After a write still in flight, the version we hold is the one that
+      // write replaced; the server accepts it from this same editor (`writer`)
+      // only while the file is still exactly that write (#d5e4mawv).
+      exitSave: (content) => {
         const savedId = pageIdRef.current;
         const request = api.updatePageOnExit(savedId, {
           content,
-          ...(afterInFlight ? {} : { expectedUpdated: versionRef.current }),
+          expectedUpdated: versionRef.current,
+          writer: writerRef.current,
         });
         // If the page stays after all (a `mailto:` link fires beforeunload),
         // the app learns the new version like after any save, so the disk
@@ -552,15 +559,15 @@ export function Editor({
   );
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
 
-  // `/whiteboard` → New board here: create the board, then embed it where
-  // the command was typed (D30).
+  // `/whiteboard` → New board here (and `/template`): create the board, then
+  // embed it where the command was typed (D30).
   useEffect(() => {
-    setWhiteboardCreator(() => {
+    setWhiteboardCreator((request) => {
       const instance = editorRef.current;
       const create = onCreateBoardRef.current;
       if (!instance || !create) return;
       const pos = instance.state.selection.from;
-      void create().then((board) => {
+      void create(request).then((board) => {
         const current = editorRef.current;
         if (!board || !current || current.isDestroyed) return;
         const pages = pagesRef.current.some((item) => item.id === board.id)
@@ -575,7 +582,7 @@ export function Editor({
       });
     });
     setBoardEmbedActions({
-      createBoard: async (title) => (await onCreateBoardRef.current?.(title)) ?? null,
+      createBoard: async (title) => (await onCreateBoardRef.current?.({ title })) ?? null,
     });
   }, []);
 

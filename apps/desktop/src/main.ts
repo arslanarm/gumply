@@ -23,6 +23,7 @@ import {
   type DesktopSettings,
   type WindowState,
 } from "./settings.js";
+import { isAppDownload, suggestedName } from "./downloads.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -403,6 +404,22 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
       callback(permission === "clipboard-sanitized-write"),
     );
+
+    // Board exports (spec/v0-6 §D) are browser downloads of blob URLs the app
+    // made: they get the native Save dialog, starting in Downloads. Any other
+    // download is refused.
+    session.defaultSession.on("will-download", (event, item) => {
+      const appOrigin = server ? new URL(server.url).origin : "";
+      if (!isAppDownload(item.getURL(), appOrigin)) {
+        event.preventDefault();
+        return;
+      }
+      const name = suggestedName(item.getFilename());
+      // Tests save without the dialog (it would wait for a click).
+      const testDir = process.env.GUMPLY_DESKTOP_DOWNLOAD_DIR;
+      if (testDir) item.setSavePath(join(resolve(testDir), name));
+      else item.setSaveDialogOptions({ title: "Export board", defaultPath: join(app.getPath("downloads"), name) });
+    });
 
     settings = loadSettings(app.getPath("userData"));
     buildMenu();
