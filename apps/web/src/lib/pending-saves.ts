@@ -9,10 +9,19 @@
  *   browser asks "Leave site?".
  * - The desktop app calls `window.__gumplyFlush()` before closing a window,
  *   quitting or switching vaults; it resolves once the server confirmed (at
- *   most `timeout` ms) with whether everything is saved.
+ *   most `timeout` ms) with a report: whether everything is saved and, if
+ *   not, which savers weren't (#ms44vnit).
+ *
+ * UI preferences (`gumply:*` keys) are a best-effort saver: flushed with the
+ * rest, but never counted as unsaved work, so a preference written while
+ * the app closes (a board's viewport) can't hold up quitting (#ms44vnit).
  */
 
 export interface PendingSaver {
+  /** What it saves, for reports ("page", "board", "ui-state"). */
+  kind?: string;
+  /** Flushed with the rest, but never unsaved work: nothing asks before losing it. */
+  bestEffort?: boolean;
   /** Edits newer than the last confirmed save. */
   isDirty(): boolean;
   /** The last save failed or conflicted. */
@@ -43,9 +52,13 @@ export function registerSaver(saver: PendingSaver): () => void {
   };
 }
 
+/** Savers holding work that isn't on disk (best-effort ones never count). */
+function unsavedSavers(): PendingSaver[] {
+  return [...savers].filter((saver) => !saver.bestEffort && (saver.isDirty() || saver.hasFailed()));
+}
+
 export function hasUnsavedChanges(): boolean {
-  for (const saver of savers) if (saver.isDirty() || saver.hasFailed()) return true;
-  return false;
+  return unsavedSavers().length > 0;
 }
 
 /**
@@ -55,18 +68,48 @@ export function hasUnsavedChanges(): boolean {
  */
 export const EXIT_FLUSH_TIMEOUT = 10_000;
 
+/** What a flush did (#ms44vnit): the desktop app says why it asks before closing. */
+export interface FlushReport {
+  saved: boolean;
+  /** How long the flush took, in ms. */
+  ms: number;
+  /** The wait ran out before every saver finished. */
+  timedOut: boolean;
+  /** The savers still holding unsaved work. */
+  unsaved: Array<{ kind: string; dirty: boolean; failed: boolean }>;
+}
+
+/** Flush everything and wait (at most `timeout`); report what isn't saved. */
+export async function flushAllSavesReport(timeout = 3000): Promise<FlushReport> {
+  const started = performance.now();
+  const all = Promise.all([...savers].map((saver) => saver.flush().catch(() => undefined)));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const finished = await Promise.race([
+    all.then(() => true),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeout);
+    }),
+  ]);
+  clearTimeout(timer);
+  const unsaved = unsavedSavers().map((saver) => ({
+    kind: saver.kind ?? "editor",
+    dirty: saver.isDirty(),
+    failed: saver.hasFailed(),
+  }));
+  return { saved: unsaved.length === 0, ms: Math.round(performance.now() - started), timedOut: !finished, unsaved };
+}
+
 /** Flush everything and wait (at most `timeout`). True when all is saved. */
 export async function flushAllSaves(timeout = 3000): Promise<boolean> {
-  const all = Promise.all([...savers].map((saver) => saver.flush().catch(() => undefined)));
-  await Promise.race([all, new Promise((resolve) => setTimeout(resolve, timeout))]);
-  return !hasUnsavedChanges();
+  return (await flushAllSavesReport(timeout)).saved;
 }
 
 /** Send everything pending now (page unloading). True when nothing is left unsent. */
 export function flushAllOnExit(): boolean {
   let sent = true;
   for (const saver of savers) {
-    if (!saver.flushOnExit() || saver.hasFailed()) sent = false;
+    const ok = saver.flushOnExit() && !saver.hasFailed();
+    if (!ok && !saver.bestEffort) sent = false;
   }
   return sent;
 }
@@ -74,7 +117,7 @@ export function flushAllOnExit(): boolean {
 declare global {
   interface Window {
     /** For the desktop shell (no preload, D26): flush and report. */
-    __gumplyFlush?: () => Promise<boolean>;
+    __gumplyFlush?: () => Promise<FlushReport | boolean>;
   }
 }
 
@@ -95,7 +138,7 @@ export function installUnloadGuards(): () => void {
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("beforeunload", onBeforeUnload);
   window.addEventListener("pagehide", onPageHide);
-  window.__gumplyFlush = () => flushAllSaves(EXIT_FLUSH_TIMEOUT);
+  window.__gumplyFlush = () => flushAllSavesReport(EXIT_FLUSH_TIMEOUT);
   return () => {
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("beforeunload", onBeforeUnload);

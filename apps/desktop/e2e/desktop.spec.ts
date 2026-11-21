@@ -59,12 +59,20 @@ async function quitAndWait(app: ElectronApplication, how: 'quit' | 'close-window
   } catch (error) {
     // Say why it didn't quit (#8zc7xkgq): the save flush didn't finish and
     // the "couldn't be saved" dialog is waiting (invisible under xvfb).
-    const dialogOpen = await app
-      .evaluate(() => (globalThis as { __gumplyUnsavedDialog?: { open: boolean } }).__gumplyUnsavedDialog?.open === true)
-      .catch(() => false);
+    const dialog = await app
+      .evaluate(() => (globalThis as { __gumplyUnsavedDialog?: { open: boolean; reason: string | null } }).__gumplyUnsavedDialog ?? null)
+      .catch(() => null);
     const child = launched.get(app);
     if (child) stopProcess(child);
-    if (dialogOpen) throw new Error(`The app didn't ${how === 'quit' ? 'quit' : 'close'}: the save flush didn't finish, and the "couldn't be saved" dialog is shown.`);
+    const verb = how === 'quit' ? 'quit' : 'close';
+    if (dialog?.open) {
+      throw new Error(
+        `The app didn't ${verb}: the save flush didn't finish, and the "couldn't be saved" dialog is shown. ` +
+          `Why (#ms44vnit): ${dialog.reason ?? 'unknown'}.`,
+      );
+    }
+    // The dialog came and was answered "Cancel": still say why it came.
+    if (dialog?.reason) throw new Error(`The app didn't ${verb}: the save flush wasn't complete (${dialog.reason}), so it asked first.`);
     throw error;
   } finally {
     launched.delete(app);
@@ -540,6 +548,36 @@ test('quitting right after typing keeps the words, in a page and in a sticky (#3
   expect(saved.nodes.map((node) => node.text)).toEqual(['Book flights']);
 });
 
+test('a preference written while the window closes never asks; the typed words are saved (#ms44vnit)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  await expectPageTitle(window, 'Welcome');
+  const body = window.getByTestId('editor').locator('.ProseMirror');
+  await expect(body).toHaveAttribute('contenteditable', 'true');
+  await body.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.type(' Closed with a preference in flight.');
+  // As a board does with its viewport: a gumply:* key is written while the
+  // close flush runs, so the preference mirror is busy again at its end.
+  await window.evaluate(() => {
+    const original = window.__gumplyFlush!;
+    window.__gumplyFlush = () => {
+      const report = original();
+      localStorage.setItem('gumply:theme', 'dark');
+      return report;
+    };
+  });
+  // Any dialog would be answered Cancel (keep the app), so the test fails with its reason.
+  await app.evaluate(({ dialog }) => {
+    const shown = ((globalThis as { __shown?: string[] }).__shown ??= []);
+    dialog.showMessageBox = (async (...args: unknown[]) => {
+      shown.push((args.at(-1) as { message?: string }).message ?? '');
+      return { response: 1, checkboxChecked: false };
+    }) as typeof dialog.showMessageBox;
+  });
+  await quitAndWait(app, 'close-window');
+  expect(readFileSync(join(vault, 'Welcome.md'), 'utf8')).toContain('Closed with a preference in flight.');
+});
+
 test('trash: "Show in file manager" reveals the trashed file and never opens it (#ppag3ugh)', async () => {
   const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
   try {
@@ -639,7 +677,12 @@ test('a save that never confirms asks before quitting; Cancel keeps the app, "Qu
   await expectPageTitle(window, 'Welcome');
   // The page reports its saves as not done (a stuck disk), and the dialog's answer is scripted.
   await window.evaluate(() => {
-    window.__gumplyFlush = async () => false;
+    window.__gumplyFlush = async () => ({
+      saved: false,
+      ms: 10_000,
+      timedOut: true,
+      unsaved: [{ kind: 'page', dirty: true, failed: false }],
+    });
   });
   const answer = async (response: number) =>
     app.evaluate(({ dialog }, choice) => {
@@ -656,6 +699,10 @@ test('a save that never confirms asks before quitting; Cancel keeps the app, "Qu
   await expect.poll(() => app.evaluate(() => (globalThis as { __shown?: string[] }).__shown?.length ?? 0)).toBe(1);
   // Still running and usable.
   await expectPageTitle(window, 'Welcome');
+  // It says why (#ms44vnit).
+  expect(
+    await app.evaluate(() => (globalThis as { __gumplyUnsavedDialog?: { reason: string | null } }).__gumplyUnsavedDialog?.reason),
+  ).toBe('page still saving (flush took 10.0 s, timed out)');
 
   await answer(0); // Quit anyway
   await quitAndWait(app, 'quit');
