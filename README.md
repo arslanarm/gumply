@@ -203,3 +203,7 @@ trash + restore, rename with link rewriting, backlinks, global graph with ghost 
 graph panel and search, all with Vitest coverage. M1b provides the page shell and TipTap editor;
 wikilinks/backlinks UI (M2) and search overlay (M4) are next.
 See the team wiki (`plan`, `decisions`, `spec/api`) for the API contract and roadmap.
+
+## License
+
+[MIT](LICENSE) © 2026 Arslan Armanuly
