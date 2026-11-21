@@ -10,7 +10,8 @@ import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResu
 import { Icon } from "../components/Icon.js";
 import { dateFormat, useT, type MessageKey } from "../i18n/index.js";
 import { Popover } from "./Popover.js";
-import { isTitleColumn, propertyLabel } from "./labels.js";
+import { propertyId } from "@gumply/core";
+import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
 
 export const ROW_HEIGHT = 34;
 const TITLE_WIDTH = 280;
@@ -38,7 +39,9 @@ type Item = { kind: "group"; label: string; count: number } | { kind: "row"; ind
 function columnWidth(view: BaseView, column: BaseColumn): number {
   const sizes = view.columnSize;
   if (sizes && typeof sizes === "object" && !Array.isArray(sizes)) {
-    const size = (sizes as Record<string, unknown>)[column.id];
+    // Obsidian keys `columnSize` by full id (`note.status`); accept the short one too.
+    const map = sizes as Record<string, unknown>;
+    const size = map[column.id] ?? map[writtenId(column.id)];
     if (typeof size === "number" && size >= 60 && size <= 1200) return size;
   }
   return isTitleColumn(column.id) ? TITLE_WIDTH : COLUMN_WIDTH;
@@ -96,12 +99,12 @@ export function TableView(props: TableViewProps) {
   const sorts = Array.isArray(view.sort) ? view.sort : [];
 
   const setSort = (column: BaseColumn, direction: "ASC" | "DESC") => {
-    const others = sorts.filter((sort) => sort.property !== column.id && `note.${sort.property}` !== column.id);
-    props.onChangeView({ ...view, sort: [{ property: column.id, direction }, ...others] });
+    const others = sorts.filter((sort) => propertyId(String(sort.property)) !== column.id);
+    props.onChangeView({ ...view, sort: [{ property: writtenId(column.id), direction }, ...others] });
   };
   const hide = (column: BaseColumn) => {
     const order = (Array.isArray(view.order) ? view.order.map(String) : ["file.name"]).filter(
-      (id) => id !== column.id && `note.${id}` !== column.id,
+      (id) => propertyId(id) !== column.id,
     );
     props.onChangeView({ ...view, order });
   };
@@ -117,7 +120,7 @@ export function TableView(props: TableViewProps) {
       <div className="base-table-scroll" ref={scrollRef} data-testid="base-table-scroll">
         <div className="base-table-head" role="row">
           {columns.map((column) => {
-            const sort = sorts.find((item) => item.property === column.id || `note.${item.property}` === column.id);
+            const sort = sorts.find((item) => propertyId(String(item.property)) === column.id);
             return (
               <div className="base-th" role="columnheader" key={column.id} aria-sort={sort ? (sort.direction === "ASC" ? "ascending" : "descending") : undefined}>
                 <button

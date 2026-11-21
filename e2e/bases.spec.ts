@@ -126,7 +126,7 @@ test.describe('database views (.base, D34)', () => {
       .toBe(
         TASKS_BASE.replace(
           '    sort:\n      - property: due\n        direction: ASC\n',
-          '    sort:\n      - property: note.estimate\n        direction: DESC\n      - property: due\n        direction: ASC\n',
+          '    sort:\n      - property: estimate\n        direction: DESC\n      - property: due\n        direction: ASC\n',
         ),
       );
 

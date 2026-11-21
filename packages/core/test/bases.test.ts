@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   UnsupportedError,
@@ -51,6 +53,7 @@ views:
 
 const NOW = new Date(2026, 10, 21, 12, 0, 0).getTime();
 const TYPES = new Map([
+  ["priority", "number"],
   ["status", "text"],
   ["due", "date"],
   ["price", "number"],
@@ -387,5 +390,50 @@ describe("runBaseView", () => {
     const result = runBaseView({ config, rows: many, types: TYPES, now: NOW });
     expect(result.rows).toHaveLength(2000);
     expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
+describe("files Obsidian 1.14.4 wrote (@opus-hunter's fixtures)", () => {
+  const fixture = (name: string) => readFileSync(join(__dirname, "fixtures", "bases", name), "utf8");
+  const ALL = fixture("all-settings.obsidian-1.14.4.base");
+  const projects = ["todo", "doing", "done", "todo"].map((status, i) =>
+    row(`Projects/P${i}.md`, { status, due: `2026-12-0${i + 1}`, priority: i + 1 }),
+  );
+
+  it("reads every view and runs it, with property ids in both forms", () => {
+    const config = parseBase(ALL);
+    expect(config.views.map((view) => view.type)).toEqual(["table", "cards", "list", "kanban"]);
+    const table = runBaseView({ config, rows: projects, types: TYPES, now: NOW });
+    expect(table.rows.map((r) => r.title)).toEqual(["P3", "P2", "P1", "P0"]);
+    expect(table.columns.map((column) => column.id)).toEqual(["file.name", "note.status", "note.due", "note.priority"]);
+    expect(table.summaries).toEqual({ "note.priority": "2.5" });
+    const kanban = runBaseView({ config, view: "Kanban", rows: projects, types: TYPES, now: NOW });
+    expect(kanban.groups!.map((group) => [group.label, group.rows.length])).toEqual([
+      ["todo", 2],
+      ["doing", 1],
+      ["done", 1],
+    ]);
+    const cards = runBaseView({ config, view: "Cards", rows: projects, types: TYPES, now: NOW });
+    // The cover image property is fetched for the layout.
+    expect(Object.keys(cards.rows[0]!.values)).toContain("note.cover");
+  });
+
+  it("an unrelated edit changes only its own line", () => {
+    const config = parseBase(ALL);
+    expect(updateBaseSource(ALL, config)).toBe(ALL);
+    config.views[1]!.name = "Gallery";
+    expect(updateBaseSource(ALL, config)).toBe(ALL.replace("    name: Cards\n", "    name: Gallery\n"));
+    const sorted = parseBase(ALL);
+    sorted.views[0]!.sort = [{ property: "due", direction: "ASC" }];
+    expect(updateBaseSource(ALL, sorted)).toBe(ALL.replace("        direction: DESC\n", "        direction: ASC\n"));
+  });
+
+  it("keeps our calendar view and unknown keys after Obsidian re-saved the file", () => {
+    const after = fixture("with-calendar.after-obsidian-edit.base");
+    const config = parseBase(after);
+    expect(config.gumply).toEqual({ version: 1, note: "unknown top-level key" });
+    expect(config.views[0]).toMatchObject({ type: "calendar", dateProperty: "note.due", endDateProperty: "note.end", gumplyWeekStart: "monday" });
+    config.views[1]!.limit = 20;
+    expect(updateBaseSource(after, config)).toBe(after.replace("    limit: 50\n", "    limit: 20\n"));
   });
 });

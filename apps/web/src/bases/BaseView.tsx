@@ -243,6 +243,14 @@ export function BaseView(props: BaseViewProps) {
         ) : null}
       </div>
 
+      {!embed && views[0]?.type === "calendar" ? (
+        // Obsidian opens a base (and `![[X.base]]`) on its first view, and has no Calendar (@opus-hunter, 1.14.4).
+        <div className="base-warning" role="status" data-testid="base-calendar-first">
+          <Icon name="info" size={14} />
+          <span>{t("bases.calendarFirst")}</span>
+        </div>
+      ) : null}
+
       {result && result.warnings.length > 0 ? (
         <div className="base-warning" role="status" data-testid="base-warning">
           <Icon name="info" size={14} />

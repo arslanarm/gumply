@@ -8,7 +8,8 @@ import type { BaseConfig, BaseView, BaseViewResult, PageMeta } from "@gumply/cor
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
 import { Popover } from "./Popover.js";
-import { pickerProperties, propertyLabel, propertyType } from "./labels.js";
+import { propertyId } from "@gumply/core";
+import { pickerProperties, propertyLabel, propertyType, writtenId } from "./labels.js";
 import {
   baseSource,
   hasOtherGlobalFilters,
@@ -391,12 +392,12 @@ function SortPanel(props: {
       {sorts.map((sort, index) => (
         <div className="base-rule" key={index} data-testid="base-sort">
           <PropertySelect
-            value={sort.property}
+            value={propertyId(String(sort.property))}
             options={options}
             config={props.config}
             label={t("bases.sort")}
             testId="base-sort-property"
-            onChange={(property) => set(sorts.map((item, i) => (i === index ? { ...item, property } : item)))}
+            onChange={(property) => set(sorts.map((item, i) => (i === index ? { ...item, property: writtenId(property) } : item)))}
           />
           <select
             className="base-select"
@@ -426,9 +427,9 @@ function SortPanel(props: {
         className="base-add"
         data-testid="base-add-sort"
         onClick={() => {
-          const used = new Set(sorts.map((sort) => sort.property));
+          const used = new Set(sorts.map((sort) => propertyId(String(sort.property))));
           const property = options.find((id) => !used.has(id)) ?? "file.name";
-          set([...sorts, { property, direction: "ASC" }]);
+          set([...sorts, { property: writtenId(property), direction: "ASC" }]);
         }}
       >
         <Icon name="plus" size={14} />
@@ -449,14 +450,14 @@ function PropertiesPanel(props: {
   const t = useT();
   const [query, setQuery] = useState("");
   const order = Array.isArray(props.view.order) && props.view.order.length ? props.view.order.map(String) : ["file.name"];
-  const normalised = order.map((id) => (id.includes(".") ? id : `note.${id}`));
+  const normalised = order.map((id) => propertyId(id));
   const all = pickerProperties(props.config, props.result);
   const shown = (id: string) => normalised.includes(id);
   const visible = all.filter((id) => propertyLabel(id, props.config, t).toLowerCase().includes(query.trim().toLowerCase()));
   const toggle = (id: string) => {
     const index = normalised.indexOf(id);
     // Keep the ids as written in the file (`status` stays `status`).
-    const next = index >= 0 ? order.filter((_, i) => i !== index) : [...order, id];
+    const next = index >= 0 ? order.filter((_, i) => i !== index) : [...order, writtenId(id)];
     props.onChange({ ...props.view, order: next });
   };
   return (

@@ -67,6 +67,15 @@ export function pickerProperties(config: BaseConfig | null, result: BaseViewResu
   return [...new Set(ids)];
 }
 
+/**
+ * A property id as Obsidian writes it in `order`, `sort`, `groupBy` and
+ * `summaries`: `note.status` → `status` (@opus-hunter, Obsidian 1.14.4).
+ * Both forms are read; this is the one written.
+ */
+export function writtenId(id: string): string {
+  return id.startsWith("note.") ? id.slice(5) : id;
+}
+
 /** `file.name` and `file.basename` show the page itself (title, icon, link). */
 export function isTitleColumn(id: string): boolean {
   return id === "file.name" || id === "file.basename";

@@ -974,6 +974,7 @@
     "viewCopy": "{{name}} copy",
     "unsupportedView": "Gumply can't show “{{type}}” views yet. The view is kept as it is in the file; open the base in Obsidian to see it.",
     "notYet": "This layout arrives in the next update. The view is kept as it is in the file.",
+    "calendarFirst": "Obsidian opens a base on its first view and can't show Calendar. Put another view first so the base opens there too.",
     "filter": "Filter",
     "sort": "Sort",
     "properties": "Properties",
