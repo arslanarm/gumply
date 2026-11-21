@@ -94,7 +94,7 @@ test.describe('boards embedded in pages (D30)', () => {
     await expect(page.getByTestId('board-page')).toBeVisible();
   });
 
-  test('`![[` suggests boards only and embeds the pick; the embed is a link (backlinks)', async ({ page, request, vault }) => {
+  test('`![[` suggests boards (and pages, #5dpxwac4) and embeds the pick; the embed is a link (backlinks)', async ({ page, request, vault }) => {
     await vault.seed([{ title: 'Notes', content: 'Intro' }, { title: 'Roadmap page', content: 'x' }]);
     const board = await createBoard(request, 'Roadmap');
     const ship = sticky('Ship v0.6', 0, 0);
@@ -111,10 +111,9 @@ test.describe('boards embedded in pages (D30)', () => {
     await page.keyboard.type('![[Road');
     const menu = page.getByTestId('link-menu');
     await expect(menu).toBeVisible();
-    // Only the board, not the page with a similar title, and no Create row.
-    await expect(menu.getByRole('option')).toHaveCount(1);
-    await expect(menu.getByRole('option')).toContainText('Roadmap');
-    await page.keyboard.press('Enter');
+    // The board and the page (page previews, #5dpxwac4), and no Create row.
+    await expect(menu.getByRole('option')).toHaveCount(2);
+    await menu.getByRole('option').filter({ hasText: /^Roadmap$/ }).click();
 
     const embed = page.getByTestId('board-embed');
     await expect(embed).toHaveAttribute('data-board-id', 'Roadmap.canvas');
