@@ -2,15 +2,12 @@
  * Database views (D34, spec/api-bases, #sg36ng2d): run a `.base` view over
  * the vault's pages on the server.
  *
- * Frontmatter values come from a per-file cache keyed by mtime, so a query
- * re-reads only files that changed since the last one. Property types follow
- * D34: `.obsidian/types.json`, else `.gumply/types.json`, else inferred.
- * (When #qw4pcm2h's indexed properties land, both come from VaultStore.)
+ * Values and types come from the properties index (v1.12, #qw4pcm2h):
+ * `listWithProperties()` parses each file once and caches it by the
+ * in-memory mtime, so a warm query reads no file; `propertyTypeMap()` is
+ * types.json merged with the inferred types, as a page's properties show them.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import {
-  frontmatterValues,
   runBaseView,
   typedProperties,
   type BaseSourceRow,
@@ -18,89 +15,25 @@ import {
   type FileInfo,
 } from "@gumply/core";
 import { notFound } from "./errors.js";
-import type { BaseIndexEntry, VaultStore } from "./vault-store.js";
-
-interface CachedFrontmatter {
-  mtimeMs: number;
-  values: Record<string, unknown>;
-}
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-const DATE_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
-
-/** Obsidian's type names, inferred from a value (D34: when no types.json says). */
-function inferType(key: string, value: unknown): string | null {
-  if (key === "tags") return "tags";
-  if (key === "aliases") return "aliases";
-  if (value === null || value === undefined) return null;
-  if (typeof value === "boolean") return "checkbox";
-  if (typeof value === "number") return "number";
-  if (Array.isArray(value)) return "multitext";
-  if (typeof value === "string") {
-    if (DATE_ONLY.test(value)) return "date";
-    if (DATE_TIME.test(value)) return "datetime";
-  }
-  return "text";
-}
+import type { VaultStore } from "./vault-store.js";
 
 export class BaseQueries {
-  private readonly cache = new Map<string, CachedFrontmatter>();
-
-  constructor(
-    private readonly store: VaultStore,
-    private readonly root: string,
-  ) {}
-
-  private async frontmatterOf(entry: BaseIndexEntry): Promise<Record<string, unknown>> {
-    const cached = this.cache.get(entry.filePath);
-    if (cached && cached.mtimeMs === entry.fileMtimeMs) return cached.values;
-    let values: Record<string, unknown> = {};
-    try {
-      values = frontmatterValues(await readFile(entry.filePath, "utf8"));
-    } catch {
-      // Gone since the last scan: no values.
-    }
-    this.cache.set(entry.filePath, { mtimeMs: entry.fileMtimeMs, values });
-    return values;
-  }
-
-  /** `types[key]` from the vault's types.json (Obsidian's first, D34). */
-  private async declaredTypes(): Promise<Map<string, string>> {
-    for (const file of [join(this.root, ".obsidian", "types.json"), join(this.root, ".gumply", "types.json")]) {
-      try {
-        const data = JSON.parse(await readFile(file, "utf8")) as { types?: Record<string, unknown> };
-        const types = new Map<string, string>();
-        for (const [key, value] of Object.entries(data.types ?? {})) if (typeof value === "string") types.set(key, value);
-        return types;
-      } catch {
-        // Missing or unreadable: try the next one, then infer.
-      }
-    }
-    return new Map();
-  }
+  constructor(private readonly store: VaultStore) {}
 
   async run(baseId: string, options: { view?: string; thisId?: string; now?: number } = {}): Promise<BaseViewResult> {
     const document = this.store.getBase(baseId);
     if (document.error) throw notFound(`This base can't be read: ${document.error}`);
+    const [withProperties, typeMap, infos] = await Promise.all([
+      this.store.listWithProperties(),
+      this.store.propertyTypeMap(),
+      this.store.listProperties(),
+    ]);
+    const types = new Map<string, string>(typeMap);
+    const propertiesOf = new Map(withProperties.map((meta) => [meta.id, meta.properties ?? []]));
     const index = this.store.baseIndex();
-    // Drop cache entries of files that are gone.
-    const live = new Set(index.map((entry) => entry.filePath));
-    for (const key of this.cache.keys()) if (!live.has(key)) this.cache.delete(key);
-
-    const values = await Promise.all(index.map((entry) => this.frontmatterOf(entry)));
-    const types = await this.declaredTypes();
-    const counts = new Map<string, number>();
-    for (const record of values) {
-      for (const [key, value] of Object.entries(record)) {
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-        if (types.has(key)) continue;
-        const inferred = inferType(key, value);
-        if (inferred) types.set(key, inferred);
-      }
-    }
 
     const byPath = new Map<string, FileInfo>();
-    const rows: BaseSourceRow[] = index.map((entry, i) => {
+    const rows: BaseSourceRow[] = index.map((entry) => {
       const file: FileInfo = {
         path: entry.path,
         title: entry.meta.title,
@@ -108,7 +41,10 @@ export class BaseQueries {
         mtime: Math.floor(entry.fileMtimeMs),
         tags: entry.meta.tags,
         links: entry.links,
-        props: typedProperties(Object.entries(values[i]!), types),
+        props: typedProperties(
+          (propertiesOf.get(entry.meta.id) ?? []).map((property) => [property.key, property.value] as [string, unknown]),
+          types,
+        ),
       };
       byPath.set(entry.path.toLowerCase(), file);
       return {
@@ -153,8 +89,8 @@ export class BaseQueries {
         return titles.get(clean.toLowerCase()) ?? null;
       },
     });
-    result.properties = [...counts]
-      .map(([key, count]) => ({ id: `note.${key}`, type: types.get(key) ?? "text", count }))
+    result.properties = infos
+      .map((info) => ({ id: `note.${info.key}`, type: info.type, count: info.count }))
       .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
     return result;
   }

@@ -9,6 +9,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { dateFormat, useT, type MessageKey } from "../i18n/index.js";
+import { PROPERTY_TYPES, type Property, type PropertyType } from "@gumply/core";
+import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
@@ -32,7 +34,7 @@ export interface TableViewProps {
   /** Embedded: the table scrolls within this height. */
   maxHeight?: number;
   onOpen: (id: string) => void;
-  onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<void>;
+  onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   onRename: (row: BaseRow, title: string) => Promise<void>;
   onNewRow?: () => void;
   onChangeView: (view: BaseView) => void;
@@ -251,7 +253,7 @@ interface TableRowProps {
   readOnly?: boolean;
   renaming: boolean;
   onOpen: (id: string) => void;
-  onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<void>;
+  onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   onRename: (row: BaseRow, title: string) => Promise<void>;
   onRenameDone?: () => void;
 }
@@ -346,43 +348,17 @@ function TitleCell(props: TableRowProps) {
   );
 }
 
-function toInput(value: BaseValue, type: string): string {
-  if (value === null || typeof value === "boolean") return "";
-  if (Array.isArray(value)) return value.join(", ");
-  if (type === "datetime" && typeof value === "string") return value.slice(0, 16);
-  return String(value);
-}
-
-function fromInput(text: string, type: string): BaseValue {
-  const trimmed = text.trim();
-  if (trimmed === "") return null;
-  switch (type) {
-    case "number":
-      return Number.isFinite(Number(trimmed)) ? Number(trimmed) : trimmed;
-    case "multitext":
-    case "tags":
-    case "aliases":
-      return trimmed
-        .split(",")
-        .map((item) => item.trim().replace(type === "tags" ? /^#/ : /^$/, ""))
-        .filter(Boolean);
-    default:
-      return trimmed;
-  }
-}
-
 function ValueCell(props: {
   row: BaseRow;
   column: BaseColumn;
   readOnly?: boolean;
-  onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<void>;
+  onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
 }) {
   const t = useT();
   const { row, column } = props;
   const value = row.values[column.id] ?? null;
   const editable = column.editable && !props.readOnly;
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
   const label = t("bases.editCell", { property: column.displayName ?? column.id.replace(/^note\./, ""), title: row.title });
 
   if (column.type === "checkbox") {
@@ -401,25 +377,34 @@ function ValueCell(props: {
   }
 
   if (editing) {
-    const commit = () => {
-      setEditing(false);
-      const next = fromInput(draft, column.type);
-      if (JSON.stringify(next) !== JSON.stringify(value)) void props.onEditValue(row, column, next);
+    // The properties header's own editor (v1.12, #qw4pcm2h), without chrome.
+    const property: Property = {
+      key: column.id.replace(/^note\./, ""),
+      type: (PROPERTY_TYPES as readonly string[]).includes(column.type) ? (column.type as PropertyType) : "text",
+      value,
+      editable: true,
     };
     return (
-      <div className="base-td is-editing" role="cell">
-        <input
+      <div
+        className="base-td is-editing"
+        role="cell"
+        data-testid={`base-cell-editor-${row.id}-${column.id}`}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setEditing(false);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setEditing(false);
+        }}
+      >
+        <PropertyValueEditor
+          compact
           autoFocus
-          className="base-cell-input"
-          aria-label={label}
-          data-testid={`base-cell-input-${row.id}-${column.id}`}
-          type={column.type === "date" ? "date" : column.type === "datetime" ? "datetime-local" : column.type === "number" ? "number" : "text"}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commit();
-            else if (event.key === "Escape") setEditing(false);
+          property={property}
+          onSave={async (next) => {
+            const saved = await props.onEditValue(row, column, next);
+            // Lists stay open for the next chip; single values close.
+            if (saved && !Array.isArray(next)) setEditing(false);
+            return saved;
           }}
         />
       </div>
@@ -449,14 +434,11 @@ function ValueCell(props: {
       aria-label={editable ? label : undefined}
       title={column.editable ? undefined : t("bases.readOnlyCell")}
       onClick={() => {
-        if (!editable) return;
-        setDraft(toInput(value, column.type));
-        setEditing(true);
+        if (editable) setEditing(true);
       }}
       onKeyDown={(event) => {
         if (!editable || (event.key !== "Enter" && event.key !== "F2")) return;
         event.preventDefault();
-        setDraft(toInput(value, column.type));
         setEditing(true);
       }}
     >

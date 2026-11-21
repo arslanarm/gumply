@@ -11,6 +11,9 @@ import type {
   PageId,
   PageMeta,
   PageUpdateResult,
+  PropertiesPatch,
+  PropertyInfo,
+  PropertyType,
   RestoreResult,
   SearchResult,
   TrashedDocument,
@@ -103,27 +106,34 @@ function isUploadedFile(value: unknown): value is UploadedFile {
 
 /** All `/api` routes; mounted by `createApp`. */
 export function createApiRoutes(store: VaultStore): Hono {
-  const bases = new BaseQueries(store, store.root);
+  const bases = new BaseQueries(store);
   const api = new Hono();
 
-  api.get("/pages", (c) => {
+  api.get("/pages", async (c) => {
     const firstPage = store.consumeNewVaultPage();
     if (firstPage) c.header("X-Gumply-New-Vault", firstPage);
+    // v1.12: opt-in properties per page (database views); the default stays light.
+    if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());
   });
 
   api.post("/pages", async (c) => {
     const body = await readJson(c);
+    const template = optionalString(body, "template");
     const page = await store.create({
       title: typeof body.title === "string" ? body.title : "",
       parentId: parentIdValue(body) ?? null,
       content: optionalString(body, "content") ?? "",
       icon: optionalString(body, "icon"),
+      ...(template !== undefined ? { template } : {}),
     });
     return c.json<Page>(page, 201);
   });
 
-  api.get("/pages/:id", (c) => c.json<Page>(store.get(c.req.param("id"))));
+  api.get("/pages/:id", async (c) => {
+    const page = store.get(c.req.param("id"));
+    return c.json<Page>({ ...page, properties: (await store.pageProperties(page.id)) ?? [] });
+  });
 
   api.put("/pages/:id", async (c) => {
     const body = await readJson(c);
@@ -142,12 +152,25 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (body.force === true) patch.force = true;
     const writer = optionalString(body, "writer");
     if (writer !== undefined) patch.writer = writer.slice(0, 64);
+    // v1.12 (D34): validated by the store against the page's frontmatter.
+    if (body.properties !== undefined) patch.properties = body.properties as PropertiesPatch;
 
     const result = await store.update(c.req.param("id"), patch);
-    const { rewrittenPages, ...page } = result;
+    const { rewrittenPages, ...rest } = result;
+    // Pages carry their properties; a renamed folder (D33) has none.
+    const properties = await store.pageProperties(rest.id);
+    const page = properties === null ? rest : { ...rest, properties };
     return c.json<PageUpdateResult>(
       rewrittenPages.length > 0 ? { ...page, rewrittenPages } : page,
     );
+  });
+
+  // --- properties (v0.7 A, D34, spec/api v1.12) ---
+  api.get("/properties", async (c) => c.json<PropertyInfo[]>(await store.listProperties()));
+
+  api.put("/properties/:key", async (c) => {
+    const body = await readJson(c);
+    return c.json<PropertyInfo[]>(await store.setPropertyType(c.req.param("key"), body.type as PropertyType));
   });
 
   api.delete("/pages/:id", async (c) => {
@@ -173,6 +196,32 @@ export function createApiRoutes(store: VaultStore): Hono {
   });
 
   api.delete("/trash", async (c) => c.json({ deleted: await store.emptyTrash() }));
+
+  // --- templates and daily notes (v0.7 C, spec/api-templates) ---
+  api.get("/templates", async (c) => c.json(await store.listTemplates()));
+
+  api.post("/pages/:id/template", async (c) => {
+    const body = await readJson(c);
+    const template = optionalString(body, "template");
+    if (!template) throw badRequest("template is required");
+    return c.json<Page>(await store.applyTemplate(c.req.param("id"), template));
+  });
+
+  api.get("/templates/render", async (c) => {
+    const template = c.req.query("template");
+    if (!template) throw badRequest("template is required");
+    return c.json(await store.renderTemplateBody(template, c.req.query("title") ?? ""));
+  });
+
+  api.get("/daily/settings", async (c) => c.json(await store.dailySettings()));
+
+  api.post("/daily", async (c) => {
+    const body = await readJson(c);
+    const date = optionalString(body, "date");
+    if (!date) throw badRequest("date is required (YYYY-MM-DD)");
+    const result = await store.dailyNote(date);
+    return c.json(result, result.created ? 201 : 200);
+  });
 
   api.post("/pages/:id/move", async (c) => {
     const body = await readJson(c);

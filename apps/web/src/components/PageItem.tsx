@@ -31,6 +31,8 @@ export interface PageItemProps {
   onStartMove: (id: PageId) => void;
   onDuplicate: (id: PageId) => void;
   onCopyLink: (id: PageId) => void;
+  /** v0.7 C: ⋯ → New page from template… inside this page or folder. */
+  onNewFromTemplate: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
   onStartRename: (id: PageId, title: string) => void;
   onCommitRename: () => void;
@@ -385,6 +387,20 @@ function PageItemRow(props: PageItemProps) {
                     }}
                   >
                     {t("bases.addBaseInside")}
+                  </button>
+                )}
+                {board ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid={`new-from-template-${page.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      props.onNewFromTemplate(page.id);
+                    }}
+                  >
+                    {t("sidebar.newFromTemplate")}
                   </button>
                 )}
                 <button

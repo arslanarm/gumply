@@ -306,4 +306,50 @@ test.describe('database views (.base, D34)', () => {
     await expectPageTitle(page, 'Reading list');
     await expect.poll(() => exists('Reading list.base')).toBe(true);
   });
+
+  test('cells write the page\'s frontmatter, only the touched line (spec/api v1.12)', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request, PROJECT_FILES);
+    await page.goto('/#/Projects/Tasks.base');
+    await expect(titles(page)).toHaveText(['Beta', 'Alpha', 'Gamma']);
+
+    // Text: click, type, Enter.
+    await page.getByTestId('base-cell-Projects/Alpha-note.status').click();
+    const status = page.getByTestId('base-cell-editor-Projects/Alpha-note.status').locator('input');
+    await status.fill('Doing');
+    await status.press('Enter');
+    await expect(page.getByTestId('base-cell-Projects/Alpha-note.status')).toHaveText('Doing');
+    await expect.poll(() => read('Projects/Alpha.md')).toBe('---\nstatus: Doing\ndue: 2026-12-01\nestimate: 3\n---\nAlpha\n');
+
+    // Number.
+    await page.getByTestId('base-cell-Projects/Gamma-note.estimate').click();
+    const estimate = page.getByTestId('base-cell-editor-Projects/Gamma-note.estimate').locator('input');
+    await estimate.fill('8');
+    await estimate.press('Enter');
+    await expect.poll(() => read('Projects/Gamma.md')).toBe('---\nstatus: Done\nestimate: 8\n---\nGamma\n');
+
+    // Date: re-sorts the table (sorted by due).
+    await page.getByTestId('base-cell-Projects/Beta-note.due').click();
+    await page.getByTestId('base-cell-editor-Projects/Beta-note.due').locator('input[type="date"]').fill('2026-12-20');
+    await expect(titles(page)).toHaveText(['Alpha', 'Beta', 'Gamma']);
+    await expect.poll(() => read('Projects/Beta.md')).toBe('---\nstatus: Doing\ndue: 2026-12-20\nestimate: 5\n---\nBeta\n');
+    // The base file itself is untouched.
+    expect(await read('Projects/Tasks.base')).toBe(TASKS_BASE);
+  });
+
+  test('+ New fills in what the view\'s "is" filter needs, so the row stays visible', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request, {
+      ...PROJECT_FILES,
+      'Projects/Doing.base': 'filters:\n  and:\n    - file.inFolder("Projects")\nviews:\n  - type: table\n    name: Doing\n    filters:\n      and:\n        - status == "Doing"\n    order:\n      - file.name\n      - status\n',
+    });
+    await page.goto('/#/Projects/Doing.base');
+    await expect(titles(page)).toHaveText(['Beta']);
+    await page.getByTestId('base-new-row').click();
+    const title = page.locator('[data-testid^="base-title-input-"]');
+    await title.fill('Epsilon');
+    await title.press('Enter');
+    await expect(titles(page)).toHaveText(['Beta', 'Epsilon']);
+    await expect.poll(() => read('Projects/Epsilon.md')).toContain('status: Doing\n');
+  });
 });

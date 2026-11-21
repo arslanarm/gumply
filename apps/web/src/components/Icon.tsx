@@ -8,6 +8,9 @@ export type IconName =
   | "board"
   | "brand"
   | "callout"
+  | "calendar"
+  | "chevronLeft"
+  | "pageTemplate"
   | "checkSquare"
   | "chevronDown"
   | "chevronRight"
@@ -59,7 +62,10 @@ export type IconName =
   | "sort"
   | "kanban"
   | "cards"
-  | "calendar";
+  // Property types (v0.7 A); "calendar" is shared with daily notes.
+  | "hash"
+  | "clock"
+  | "tag";
 
 const ICONS: Record<IconName, ReactNode> = {
   // A database view: a table of pages (spec/api-bases).
@@ -91,12 +97,6 @@ const ICONS: Record<IconName, ReactNode> = {
       <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
       <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
       <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
-    </>
-  ),
-  calendar: (
-    <>
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <path d="M16 2v4M8 2v4M3 10h18" />
     </>
   ),
   bold: <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />,
@@ -231,6 +231,22 @@ const ICONS: Record<IconName, ReactNode> = {
   ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
   chevronRight: <path d="m9 18 6-6-6-6" />,
+  chevronLeft: <path d="m15 18-6-6 6-6" />,
+  calendar: (
+    <>
+      <rect width="18" height="18" x="3" y="4" rx="2" />
+      <path d="M16 2v4" />
+      <path d="M8 2v4" />
+      <path d="M3 10h18" />
+    </>
+  ),
+  pageTemplate: (
+    <>
+      <rect width="18" height="7" x="3" y="3" rx="1" />
+      <rect width="9" height="7" x="3" y="14" rx="1" />
+      <rect width="5" height="7" x="16" y="14" rx="1" />
+    </>
+  ),
   code: (
     <>
       <path d="m16 18 6-6-6-6" />
@@ -304,6 +320,19 @@ const ICONS: Record<IconName, ReactNode> = {
     <>
       <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
       <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+    </>
+  ),
+  hash: <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />,
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  tag: (
+    <>
+      <path d="M12.6 2.6a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z" />
+      <circle cx="7.5" cy="7.5" r="1.2" />
     </>
   ),
   list: (

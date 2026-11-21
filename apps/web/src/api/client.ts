@@ -8,12 +8,16 @@ import type {
   BoardDocument,
   BoardUpdateResult,
   CanvasBoard,
+  DailyNoteSettings,
   Attachment,
   Backlink,
   GraphData,
   Page,
   PageId,
   PageMeta,
+  PropertiesPatch,
+  PropertyInfo,
+  PropertyType,
   RestoreResult,
   SearchResult,
   TrashedDocument,
@@ -74,6 +78,8 @@ export interface CreatePageInput {
   parentId?: PageId | null;
   content?: string;
   icon?: string;
+  /** v0.7 C: start from this template page. */
+  template?: PageId;
 }
 
 export interface UpdatePageInput {
@@ -87,6 +93,8 @@ export interface UpdatePageInput {
   force?: boolean;
   /** This editor's id (#d5e4mawv): see `newWriterId`. */
   writer?: string;
+  /** v1.12 (D34): change frontmatter properties. */
+  properties?: PropertiesPatch;
 }
 
 /** v1.1: a rename reports which other pages had their links rewritten (D12). */
@@ -208,6 +216,24 @@ export const api = {
   importAttachment: (url: string): Promise<Attachment> =>
     request("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }),
 
+  /** v0.7 C: the templates folder and its pages. */
+  listTemplates: (): Promise<{ folder: string; templates: PageMeta[] }> => request("/templates"),
+
+  /** v0.7 C: a template's body with its variables filled (inserted at the caret). */
+  renderTemplate: (template: PageId, title: string): Promise<{ content: string }> =>
+    request(`/templates/render?template=${encodeURIComponent(template)}&title=${encodeURIComponent(title)}`),
+
+  /** v0.7 C: fill an empty page from a template (body + missing properties). */
+  applyTemplate: (id: PageId, template: PageId): Promise<Page> =>
+    mutate(() => request(`${pagePath(id)}/template`, { method: "POST", body: JSON.stringify({ template }) })),
+
+  /** v0.7 C: Obsidian's daily-note settings (or Gumply's). */
+  dailySettings: (): Promise<DailyNoteSettings> => request("/daily/settings"),
+
+  /** v0.7 C: open or make the note for `date` (YYYY-MM-DD, local). */
+  dailyNote: (date: string): Promise<{ page: PageMeta; created: boolean }> =>
+    mutate(() => request("/daily", { method: "POST", body: JSON.stringify({ date }) })),
+
   createPage: (input: CreatePageInput): Promise<Page> =>
     mutate(() => request("/pages", { method: "POST", body: JSON.stringify(input) })),
 
@@ -219,6 +245,13 @@ export const api = {
   /** Save on the way out (reload, close): keepalive; null when too big. */
   updatePageOnExit: (id: PageId, patch: UpdatePageInput): Promise<UpdatePageResult> | null =>
     exitPut(pagePath(id), patch),
+
+  /** v1.12 (D34): every property key in the vault, with its type and use count. */
+  listProperties: (): Promise<PropertyInfo[]> => request("/properties"),
+
+  /** v1.12: change a key's type vault-wide (types.json; files keep their values). */
+  setPropertyType: (key: string, type: PropertyType): Promise<PropertyInfo[]> =>
+    mutate(() => request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type }) })),
 
   deletePage: (id: PageId): Promise<DeletePageResult> =>
     mutate(async () => {
@@ -275,27 +308,21 @@ export const api = {
     mutate(() => request("/boards", { method: "POST", body: JSON.stringify(input) })),
 
   /**
-   * spec/api v1.12 (#qw4pcm2h): set or remove (null) frontmatter properties of
-   * one page, conditionally. Used by database views to edit a cell.
+   * spec/api v1.12 (#qw4pcm2h): set frontmatter properties of one page,
+   * conditionally. Used by database views (cells, kanban, calendar). A null
+   * value is written as a bare `key:`, as Obsidian does; the key stays.
    */
   setPageProperties: (
     id: PageId,
     values: Record<string, string | number | boolean | string[] | null>,
     expectedUpdated: string,
-  ): Promise<UpdatePageResult> => {
-    const set: Record<string, string | number | boolean | string[]> = {};
-    const remove: string[] = [];
-    for (const [key, value] of Object.entries(values)) {
-      if (value === null || (Array.isArray(value) && value.length === 0)) remove.push(key);
-      else set[key] = value;
-    }
-    return mutate(() =>
+  ): Promise<UpdatePageResult> =>
+    mutate(() =>
       request(pagePath(id), {
         method: "PUT",
-        body: JSON.stringify({ properties: { set, remove }, expectedUpdated }),
+        body: JSON.stringify({ properties: { set: values }, expectedUpdated }),
       }),
-    );
-  },
+    ),
 
   /** spec/api-bases: a database view's config. */
   getBase: (id: PageId): Promise<BaseDocument> => request(basePath(id)),
