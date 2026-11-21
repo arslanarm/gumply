@@ -125,6 +125,20 @@ test.describe('callouts and toggles (D29)', () => {
     );
   });
 
+  test('#tags in a callout title and body are chips; the file stays as written', async ({ page, vault, request }) => {
+    const content = 'Intro\n\n> [!tip] Plan for #project\n> Body with #design';
+    const [created] = await vault.seed([{ title: 'Tagged callout', content }]);
+    await page.goto('/');
+    const callout = page.getByTestId('callout');
+    await expect(callout.locator('.callout-title').getByTestId('tag-chip')).toHaveAttribute('data-tag', 'project');
+    await expect(callout.locator('p').getByTestId('tag-chip')).toHaveAttribute('data-tag', 'design');
+    await page.getByTestId('editor-content').getByText('Intro', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('!');
+    await waitSaved(page);
+    expect(await fileOf(request, created!.id)).toBe(content.replace('Intro', 'Intro!'));
+  });
+
   test('editing inside one callout rewrites only that callout', async ({ page, vault, request }) => {
     const content = 'Intro\n\n> [!tip]   Spaced   title\n> body\n\n> [!note]-  Keep\n>  me   as is';
     const [created] = await vault.seed([{ title: 'One callout', content }]);
