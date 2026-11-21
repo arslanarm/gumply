@@ -76,6 +76,24 @@ export function BaseView(props: BaseViewProps) {
     setDoc(props.initial);
   }, [props.initial]);
 
+  // The file changed outside this view (Obsidian, another tab, the disk):
+  // the vault's page list shows a newer `updated` for it, so read it again.
+  // Our own saves already set `doc.meta.updated` to the saved version.
+  const listedUpdated = props.pages.find((page) => page.id === baseId)?.updated;
+  useEffect(() => {
+    if (!listedUpdated || listedUpdated <= docRef.current.meta.updated) return;
+    let cancelled = false;
+    api
+      .getBase(baseId)
+      .then((loaded) => {
+        if (!cancelled && loaded.meta.updated > docRef.current.meta.updated) setDoc(loaded);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [baseId, listedUpdated]);
+
   const load = useCallback(async () => {
     if (!active || doc.error) return;
     const seq = ++requestSeq.current;

@@ -4,6 +4,7 @@
  * (@opus-hunter's fixture, spec/api-bases). A setting at its default is
  * removed from the file, as Obsidian does.
  */
+import type { CSSProperties } from "react";
 import type { BaseColumn, BaseRow, BaseValue, BaseView } from "@gumply/core";
 import { fileUrl } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
@@ -76,12 +77,20 @@ export function imageOf(row: BaseRow, view: BaseView): { url?: string; color?: s
   return { url: fileUrl(path.includes("/") ? path : `attachments/${path}`) };
 }
 
-export function ImageBox({ row, view, ratio }: { row: BaseRow; view: BaseView; ratio: number }) {
+/**
+ * A card's cover. Cards: a box of the card's width at `imageAspectRatio`.
+ * Kanban (`height`): a fixed box, the card's width × `columnWidth ×
+ * imageAspectRatio` tall, as Obsidian 1.14.4 draws it (@opus-hunter's
+ * measurement, #armmzdrx). `contain` letterboxes inside the box on a muted
+ * fill, `cover` fills it, a colour fills it.
+ */
+export function ImageBox({ row, view, ratio, height }: { row: BaseRow; view: BaseView; ratio: number; height?: number }) {
   const image = imageOf(row, view);
   if (!image) return null;
   const fit = view.imageFit === "contain" ? "contain" : "cover";
+  const size: CSSProperties = height !== undefined ? { height } : { aspectRatio: `${1 / ratio}` };
   return (
-    <div className="base-card-image" style={{ aspectRatio: `${1 / ratio}`, background: image.color }} aria-hidden="true">
+    <div className="base-card-image" data-testid="base-card-image" style={{ ...size, background: image.color }} aria-hidden="true">
       {image.url ? <img src={image.url} alt="" loading="lazy" style={{ objectFit: fit }} /> : null}
     </div>
   );

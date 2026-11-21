@@ -97,8 +97,11 @@ export function installUiStateMirror(storage: Storage, fetchImpl: Fetch = fetch)
     if (this === storage && String(key).startsWith(PREFIX)) queue(String(key), null);
   };
 
-  // Quit, close and vault switch flush this too (`__gumplyFlush`, #3t6v62cb).
+  // Quit, close and vault switch flush this too (`__gumplyFlush`, #3t6v62cb),
+  // best effort: a preference is never "unsaved work" that holds up closing (#ms44vnit).
   const unregister = registerSaver({
+    kind: "ui-state",
+    bestEffort: true,
     isDirty: () => pending.size > 0 || inFlight !== null,
     hasFailed: () => false,
     flush: () => send(),

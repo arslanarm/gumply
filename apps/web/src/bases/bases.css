@@ -811,12 +811,30 @@ ol.base-list {
   white-space: pre;
 }
 
+/* Indented properties, as Obsidian draws them: a thin guide line on the
+   left and a small filled dot per value. */
 .base-list-props {
-  margin: 0.1rem 0 0.3rem;
-  padding-left: 1.2rem;
+  margin: 0.1rem 0 0.3rem 0.45rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.85rem;
-  list-style: circle;
+  list-style: none;
+}
+
+.base-list-props > li {
+  position: relative;
+}
+
+.base-list-props > li::before {
+  content: "";
+  position: absolute;
+  left: -0.55rem;
+  top: 0.62em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .base-cards {
@@ -852,6 +870,7 @@ ol.base-list {
   width: 100%;
   height: 100%;
 }
+
 
 .base-card-body {
   display: flex;

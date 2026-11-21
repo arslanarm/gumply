@@ -169,6 +169,7 @@ export function BoardView(props: BoardViewProps) {
   // queue as a draft (BoardEditor `onChange` while typing).
   useEffect(() => {
     const unregister = registerSaver({
+      kind: "board",
       isDirty: () => autosave.isDirty(),
       hasFailed: () => autosave.hasFailed(),
       flush: () => autosave.flush(),

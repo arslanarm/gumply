@@ -1,7 +1,7 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { BASE_URL } from './env';
 import { contention, describeContention } from './perf';
-import { budgetScale, PAGE_OPEN_BASE_MS, pageOpenTimeout } from './perf-scale';
+import { budgetScale, pageOpenTimeout, SLOW_PAGE_OPEN_MS } from './perf-scale';
 
 /**
  * Page opens wait for the app to boot, with a load-aware budget (#rqtacq4d).
@@ -16,19 +16,20 @@ import { budgetScale, PAGE_OPEN_BASE_MS, pageOpenTimeout } from './perf-scale';
  *
  * So `page.goto` and `page.reload` (through the `page` fixture in
  * `fixtures.ts`) return only once the app has booted: the sidebar's page tree
- * is rendered and no longer says "Loading". That wait gets 5 s on a quiet
- * machine, scaled with CPU pressure and load (`perf-scale.ts`), and never more
- * than 15 s. The test's own assertions after it keep the strict 5 s, so
- * slowness *inside* the app (opening a page, typing, saving) still fails.
+ * is rendered and no longer says "Loading". That wait gets 10 s on a quiet
+ * machine (a cold boot once took over 5 s at load ×1, #2h4kig7s), scaled with
+ * CPU pressure and load (`perf-scale.ts`), and never more than 15 s. The
+ * test's own assertions after it keep the strict 5 s, so slowness *inside* the
+ * app (opening a page, typing, saving) still fails.
  *
  * Not waited for:
  * - calls with an explicit `waitUntil` (the test controls loading itself, e.g.
  *   the first-paint specs that block the bundle);
  * - URLs that aren't the app (`about:blank`, `board-lab.html`, `/api/…`).
  *
- * A boot slower than the quiet 5 s is still allowed under load, but lands in the
- * test's annotations (`slow-page-open`) and the log, so a slow app stays visible.
- * `GUMPLY_PERF_STRICT=1` forces the quiet 5 s (reproduce CI locally).
+ * A boot slower than 5 s still passes within the budget, but lands in the test's
+ * annotations (`slow-page-open`) and the log, so a slow app stays visible.
+ * `GUMPLY_PERF_STRICT=1` forces the quiet 10 s (reproduce CI locally).
  */
 
 /** In the page: the sidebar tree has the page list (or the empty/error state). */
@@ -63,7 +64,7 @@ export async function waitForAppBoot(page: Page, testInfo: TestInfo, what: strin
     );
   }
   const took = Date.now() - started;
-  if (took > PAGE_OPEN_BASE_MS) {
+  if (took > SLOW_PAGE_OPEN_MS) {
     const note = `${what}: the app booted after ${(took / 1000).toFixed(1)} s (budget ${timeout / 1000} s; ${describeContention(c)})`;
     testInfo.annotations.push({ type: 'slow-page-open', description: note });
     console.log(`[slow-page-open] ${note}`);

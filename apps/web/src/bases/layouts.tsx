@@ -124,12 +124,12 @@ export function ListView(props: LayoutProps) {
 
 /* -------------------------------------------------------------- cards */
 
-function Card({ row, props, ratio }: { row: BaseRow; props: LayoutProps; ratio: number }) {
+function Card({ row, props, ratio, coverHeight }: { row: BaseRow; props: LayoutProps; ratio: number; coverHeight?: number }) {
   const t = useT();
   const columns = detailColumns(props.result.columns);
   return (
     <article className="base-card" data-testid={`base-card-${row.id}`}>
-      <ImageBox row={row} view={props.view} ratio={ratio} />
+      <ImageBox row={row} view={props.view} ratio={ratio} height={coverHeight} />
       <div className="base-card-body">
         <TitleButton row={row} onOpen={props.onOpen} />
         {columns.map((column) => {
@@ -199,6 +199,8 @@ export function KanbanView(props: LayoutProps & { onPickGroup: () => void }) {
   const { view, result } = props;
   const width = numberSetting(view, "columnWidth", 280, 200, 500);
   const ratio = numberSetting(view, "imageAspectRatio", 0.5, 0.25, 2.5);
+  // Obsidian: every cover is columnWidth × imageAspectRatio tall (280 × 0.5 = 140 by default).
+  const coverHeight = Math.round(width * ratio);
   const key = groupKey(view);
   const movable = key !== null && !props.readOnly && !!props.onSetValue;
   const [over, setOver] = useState<string | null>(null);
@@ -264,7 +266,7 @@ export function KanbanView(props: LayoutProps & { onPickGroup: () => void }) {
                     event.dataTransfer.effectAllowed = "move";
                   }}
                 >
-                  <Card row={row} props={props} ratio={ratio} />
+                  <Card row={row} props={props} ratio={ratio} coverHeight={coverHeight} />
                 </div>
               );
             })}

@@ -25,6 +25,7 @@ import {
   type WindowState,
 } from "./settings.js";
 import { isAppDownload, suggestedName } from "./downloads.js";
+import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
 
@@ -226,25 +227,29 @@ const FLUSH_WAIT_MS = 11_000;
 async function flushRenderer(): Promise<boolean> {
   if (!window || window.isDestroyed()) return true;
   try {
-    const saved = await Promise.race([
+    const result: unknown = await Promise.race([
       window.webContents.executeJavaScript(
         "window.__gumplyFlush ? window.__gumplyFlush() : (document.activeElement instanceof HTMLElement && document.activeElement.blur(), new Promise((r) => setTimeout(() => r(true), 800)))",
       ),
-      new Promise((resolve) => setTimeout(() => resolve(false), FLUSH_WAIT_MS)),
+      new Promise((resolve) => setTimeout(() => resolve(NO_ANSWER), FLUSH_WAIT_MS)),
     ]);
-    return saved !== false;
+    // Why the dialog will show (#ms44vnit): logged, and readable by the tests.
+    unsavedDialog.reason = describeFlush(result, FLUSH_WAIT_MS);
+    if (unsavedDialog.reason) console.warn(`Not everything is saved: ${unsavedDialog.reason}`);
+    return flushSaved(result);
   } catch {
     return true; // the page is gone already: nothing left to save
   }
 }
 
 /**
- * Whether the "couldn't be saved" dialog is up. Readable from the main
- * process (`globalThis.__gumplyUnsavedDialog`) so a test that waits for the
- * app to quit can say why it didn't, instead of timing out blind.
+ * Whether the "couldn't be saved" dialog is up, and why the last flush
+ * wasn't complete. Readable from the main process
+ * (`globalThis.__gumplyUnsavedDialog`) so a test that waits for the app to
+ * quit can say why it didn't, instead of timing out blind.
  */
-const unsavedDialog = { open: false };
-(globalThis as { __gumplyUnsavedDialog?: { open: boolean } }).__gumplyUnsavedDialog = unsavedDialog;
+const unsavedDialog: { open: boolean; reason: string | null } = { open: false, reason: null };
+(globalThis as { __gumplyUnsavedDialog?: typeof unsavedDialog }).__gumplyUnsavedDialog = unsavedDialog;
 
 /** The flush failed: ask before losing those edits. */
 async function confirmUnsaved(action: "switchVaults" | "close" | "quit"): Promise<boolean> {
