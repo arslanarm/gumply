@@ -3179,6 +3179,7 @@ input {
   .template-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
 /* ---------- Boards embedded in pages (spec/v0-6 B, D30) ---------- */
 
