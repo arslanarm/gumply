@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { BOARD_DRAG_MIME } from "../board/constants.js";
 import { isBoard, vaultPathOf } from "../lib/boards.js";
@@ -400,11 +400,50 @@ function PageItemRow(props: PageItemProps) {
 
       {hasChildren && expanded ? (
         <div className="tree-children" role="group">
-          {node.children.map((child) => (
-            <PageItem key={child.page.id} {...props} node={child} depth={depth + 1} />
-          ))}
+          <TreeChunks
+            items={node.children}
+            render={(child) => <PageItem key={child.page.id} {...props} node={child} depth={depth + 1} />}
+          />
         </div>
       ) : null}
     </div>
   );
 }
+
+/** Rows per chunk, and how long a list must be before it is chunked. */
+const CHUNK_ROWS = 50;
+const ROW_HEIGHT = 30;
+
+/**
+ * Long row lists in chunks the browser can skip while off screen
+ * (#dvy946h5). A 2,000-page folder expanded in the sidebar otherwise keeps
+ * ~40k layout objects alive, which every scroll of the page pays for.
+ * Chunks, not rows: thousands of separately skipped rows made the first
+ * layout 25× slower. Short lists render as before.
+ */
+export function TreeChunks<T extends { page: { id: string } }>({
+  items,
+  render,
+}: {
+  items: readonly T[];
+  render: (item: T) => ReactNode;
+}) {
+  if (items.length <= CHUNK_ROWS * 2) return <>{items.map(render)}</>;
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += CHUNK_ROWS) chunks.push(items.slice(index, index + CHUNK_ROWS));
+  return (
+    <>
+      {chunks.map((chunk, index) => (
+        <div
+          // By position: a row moving across a boundary remounts, nothing else does.
+          key={index}
+          className="tree-chunk"
+          style={{ containIntrinsicSize: `auto ${chunk.length * ROW_HEIGHT}px` }}
+        >
+          {chunk.map(render)}
+        </div>
+      ))}
+    </>
+  );
+}
+

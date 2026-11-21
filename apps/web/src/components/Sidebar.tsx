@@ -3,7 +3,7 @@ import type { PageId, PageMeta } from "@gumply/core";
 import { preloadGraph } from "../lazy-parts.js";
 import { buildPageTree, pageTrail } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
-import { PageItem } from "./PageItem.js";
+import { PageItem, TreeChunks } from "./PageItem.js";
 import { TagsPane, type TagRenameRequest } from "./TagsPane.js";
 import { useT } from "../i18n/index.js";
 
@@ -287,7 +287,9 @@ export function Sidebar(props: SidebarProps) {
             </p>
           </div>
         ) : (
-          tree.map((node) => (
+          <TreeChunks
+            items={tree}
+            render={(node) => (
             <PageItem
               key={node.page.id}
               node={node}
@@ -302,7 +304,8 @@ export function Sidebar(props: SidebarProps) {
               onRenameDraft={setRenameDraft}
               onDragStartItem={setDraggingId}
             />
-          ))
+            )}
+          />
         )}
       </div>
 
