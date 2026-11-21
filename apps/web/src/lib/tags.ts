@@ -1,74 +1,76 @@
 /**
  * The tags pane (#9bx3aznb): every tag in the vault as a tree (`#a/b` nests
- * under `#a`), from the pages' `tags` (frontmatter and inline, as the server
- * indexes them). Pure, unit-tested.
+ * under `#a`), counted like Obsidian's tags pane (measured in Obsidian
+ * 1.14.4): occurrences, a parent including its children, case-insensitive,
+ * the first spelling shown. Pure, unit-tested.
  */
-import type { PageMeta } from "@gumply/core";
+import type { PageId, TagCount } from "@gumply/core";
+
+export type TagSort = "count" | "name";
 
 export interface TagNode {
   /** Full tag without `#`, in the first spelling met (`Work/Ideas`). */
   tag: string;
   /** The last level (`Ideas`). */
   label: string;
-  /** Pages and boards with this tag or one nested under it, each once. */
+  /** Occurrences of this tag and every tag nested under it. */
   count: number;
+  /** Pages and boards with this tag or one nested under it, each once. */
+  pages: number;
   children: TagNode[];
 }
 
 interface Building {
   tag: string;
   label: string;
-  pages: Set<string>;
+  count: number;
+  pages: Set<PageId>;
   children: Map<string, Building>;
 }
 
-const byLabel = (a: TagNode, b: TagNode) =>
+const byName = (a: TagNode, b: TagNode) =>
   a.label.localeCompare(b.label, undefined, { sensitivity: "base", numeric: true }) || a.label.localeCompare(b.label);
 
-function finish(node: Building): TagNode {
+/** Obsidian's default: most used first, then by name. */
+const byCount = (a: TagNode, b: TagNode) => b.count - a.count || byName(a, b);
+
+function finish(node: Building, sort: TagSort): TagNode {
   return {
     tag: node.tag,
     label: node.label,
-    count: node.pages.size,
-    children: [...node.children.values()].map(finish).sort(byLabel),
+    count: node.count,
+    pages: node.pages.size,
+    children: [...node.children.values()].map((child) => finish(child, sort)).sort(sort === "name" ? byName : byCount),
   };
 }
 
-/** The tag tree, sorted by name at every level (case-insensitive, like Obsidian). */
-export function buildTagTree(pages: readonly PageMeta[]): TagNode[] {
+/** The tag tree from `GET /api/tags`, sorted at every level. */
+export function buildTagTree(tags: readonly TagCount[], sort: TagSort = "count"): TagNode[] {
   const roots = new Map<string, Building>();
-  for (const page of pages) {
-    if (page.kind === "folder") continue;
-    for (const tag of page.tags) {
-      const levels = tag.split("/").filter((level) => level.length > 0);
-      let siblings = roots;
-      for (let depth = 0; depth < levels.length; depth += 1) {
-        const label = levels[depth] ?? "";
-        const key = label.toLowerCase();
-        let node = siblings.get(key);
-        if (!node) {
-          node = { tag: levels.slice(0, depth + 1).join("/"), label, pages: new Set(), children: new Map() };
-          siblings.set(key, node);
-        }
-        node.pages.add(page.id);
-        siblings = node.children;
+  for (const entry of tags) {
+    const levels = entry.tag.split("/").filter((level) => level.length > 0);
+    let siblings = roots;
+    for (let depth = 0; depth < levels.length; depth += 1) {
+      const label = levels[depth] ?? "";
+      const key = label.toLowerCase();
+      let node = siblings.get(key);
+      if (!node) {
+        node = { tag: levels.slice(0, depth + 1).join("/"), label, count: 0, pages: new Set(), children: new Map() };
+        siblings.set(key, node);
       }
+      node.count += entry.count;
+      for (const page of entry.pages) node.pages.add(page);
+      siblings = node.children;
     }
   }
-  return [...roots.values()].map(finish).sort(byLabel);
-}
-
-/** How many tags there are, nested ones included. */
-export function countTags(nodes: readonly TagNode[]): number {
-  return nodes.reduce((total, node) => total + 1 + countTags(node.children), 0);
+  return [...roots.values()].map((node) => finish(node, sort)).sort(sort === "name" ? byName : byCount);
 }
 
 /** The node for `tag` (case-insensitive), if any page has it. */
 export function findTag(nodes: readonly TagNode[], tag: string): TagNode | null {
-  const levels = tag.toLowerCase().split("/");
   let current: readonly TagNode[] = nodes;
   let found: TagNode | null = null;
-  for (const level of levels) {
+  for (const level of tag.toLowerCase().split("/")) {
     found = current.find((node) => node.label.toLowerCase() === level) ?? null;
     if (!found) return null;
     current = found.children;

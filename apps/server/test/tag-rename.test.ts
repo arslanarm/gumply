@@ -18,6 +18,32 @@ const FILES: Record<string, string> = {
   ".trash/x/Old.md": "Trashed #work\n",
 };
 
+/** @opus-hunter's fixture, measured in real Obsidian 1.14.4 (pane: proj 9 › alpha 3, beta 1; a-b_c 1; y2024 1). */
+export const OBSIDIAN_FIXTURE: Record<string, string> = {
+  "A.md": "#proj #proj #proj/alpha\n",
+  "B.md": "#proj/alpha #proj/beta\n",
+  "C.md": "---\ntags: [proj, Proj/Alpha]\n---\n\nNo inline tags.\n",
+  "D.md": "#PROJ #2024 #y2024 [link](#anchor) `#incode` #a-b_c\n",
+  "E.md": "```#infence``` plus https://x.com/#frag plus #proj\n",
+};
+
+describe("GET /tags counts like Obsidian's tags pane (#9bx3aznb)", () => {
+  it("counts occurrences (inline repeats, each frontmatter entry), case-folded, first spelling kept", async () => {
+    const { app, dir, store } = await createTestServer();
+    for (const [name, text] of Object.entries(OBSIDIAN_FIXTURE)) await writeFile(join(dir, name), text);
+    await store.rescan();
+    const tags = await getJson<Array<{ tag: string; count: number; pages: string[] }>>(app, "/api/tags");
+    const byTag = Object.fromEntries(tags.map((entry) => [entry.tag, [entry.count, [...entry.pages].sort()]]));
+    expect(byTag).toEqual({
+      proj: [5, ["A", "C", "D", "E"]],
+      "proj/alpha": [3, ["A", "B", "C"]],
+      "proj/beta": [1, ["B"]],
+      y2024: [1, ["D"]],
+      "a-b_c": [1, ["D"]],
+    });
+  });
+});
+
 describe("renaming a tag (#9bx3aznb)", () => {
   it("rewrites frontmatter and inline tags, byte for byte elsewhere", async () => {
     const { app, dir, store } = await createTestServer();

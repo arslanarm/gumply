@@ -13,6 +13,7 @@ export type {
   Embed,
   EmbedKind,
   GraphData,
+  TagCount,
   GraphNode,
   HealthResponse,
   LinkEdge,

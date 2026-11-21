@@ -164,6 +164,9 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   api.delete("/trash", async (c) => c.json({ deleted: await store.emptyTrash() }));
 
+  // #9bx3aznb: every tag with its counts (the tags pane).
+  api.get("/tags", (c) => c.json(store.tags()));
+
   // #9bx3aznb: rename a tag in every page and board.
   api.post("/tags/rename", async (c) => {
     const body = await readJson(c);

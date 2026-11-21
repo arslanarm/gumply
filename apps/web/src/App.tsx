@@ -39,8 +39,8 @@ import { errorMessage, serverDownMessage } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
-import { buildTagTree, findTag } from "./lib/tags.js";
 import { TagRenameDialog } from "./components/TagRenameDialog.js";
+import type { TagRenameRequest } from "./components/TagsPane.js";
 import {
   GRAPH_HASH,
   isGraphHash,
@@ -200,7 +200,7 @@ export function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   /** #9bx3aznb: the tag being renamed (its dialog is open). */
-  const [tagRename, setTagRename] = useState<string | null>(null);
+  const [tagRename, setTagRename] = useState<TagRenameRequest | null>(null);
   const [focusTarget, setFocusTarget] = useState<SidebarFocusTarget | null>(null);
   // D14 §5: after a delete, focus stays on the next sibling; don't let an empty
   // next page's title steal it (walkthrough #4aepmkk4).
@@ -1248,9 +1248,6 @@ export function App() {
     [navigate],
   );
 
-  // Only while the rename dialog is open.
-  const tagTree = useMemo(() => (tagRename !== null ? buildTagTree(pages) : []), [tagRename, pages]);
-
   /** #9bx3aznb: rename a tag in every page and board, after the open editor has saved. */
   const handleRenameTag = useCallback(
     async (from: string, to: string) => {
@@ -1814,11 +1811,9 @@ export function App() {
 
       {tagRename !== null ? (
         <TagRenameDialog
-          tag={tagRename}
-          count={findTag(tagTree, tagRename)?.count ?? 0}
-          exists={(name) => findTag(tagTree, name) !== null}
+          {...tagRename}
           onCancel={() => setTagRename(null)}
-          onRename={(to) => void handleRenameTag(tagRename, to)}
+          onRename={(to) => void handleRenameTag(tagRename.tag, to)}
         />
       ) : null}
       {trashConfirm ? (

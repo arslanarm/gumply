@@ -34,6 +34,10 @@ describe("inline tags follow Obsidian's rules (#9bx3aznb)", () => {
     expect(extractTags(markdown)).toEqual(["real"]);
   });
 
+  it("reads ```code``` on one line as inline code, not a fence (the rest of the file still counts)", () => {
+    expect(extractTags("```#infence``` plus #proj\n\n#later")).toEqual(["proj", "later"]);
+  });
+
   it("drops trailing / and -; headings aren't tags", () => {
     expect(extractTags("# Heading\n#tag/ and #x-")).toEqual(["tag", "x"]);
   });

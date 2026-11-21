@@ -6,6 +6,7 @@ import {
   childPageId,
   collectLinkEdges,
   extractTags,
+  findInlineTags,
   extractWikilinks,
   isValidPageId,
   makeSnippet,
@@ -42,6 +43,7 @@ import {
   withCanvasMeta,
   CanvasParseError,
   type CanvasBoard,
+  type TagCount,
   type BoardDocument,
   type PageKind,
   type Backlink,
@@ -900,6 +902,43 @@ export class VaultStore {
     return out.sort(
       (a, b) => a.page.title.localeCompare(b.page.title) || a.page.id.localeCompare(b.page.id),
     );
+  }
+
+  /**
+   * Every tag with its occurrences and pages (#9bx3aznb), like Obsidian's
+   * tags pane: inline repeats count, each frontmatter entry once, case
+   * folded, first spelling (in id order) kept. Nested tags are their own
+   * entries; the web app adds them up under their parents.
+   */
+  tags(): TagCount[] {
+    const byKey = new Map<string, { tag: string; count: number; pages: Set<PageId> }>();
+    const records = [...this.pages.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (const record of records) {
+      for (const tag of [...record.fmTags, ...this.inlineTags(record)]) {
+        const key = tag.toLowerCase();
+        let entry = byKey.get(key);
+        if (!entry) {
+          entry = { tag, count: 0, pages: new Set() };
+          byKey.set(key, entry);
+        }
+        entry.count += 1;
+        entry.pages.add(record.id);
+      }
+    }
+    return [...byKey.values()].map((entry) => ({ tag: entry.tag, count: entry.count, pages: [...entry.pages] }));
+  }
+
+  /** Inline tags of a page or board text, repeats included; cached until its content changes. */
+  private readonly inlineTagCache = new Map<PageId, { content: string; tags: string[] }>();
+  private inlineTags(record: PageRecord): string[] {
+    const cached = this.inlineTagCache.get(record.id);
+    if (cached && cached.content === record.content) return cached.tags;
+    const tags = findInlineTags(record.content).map((hit) => hit.tag);
+    this.inlineTagCache.set(record.id, { content: record.content, tags });
+    if (this.inlineTagCache.size > this.pages.size * 2 + 100) {
+      for (const id of this.inlineTagCache.keys()) if (!this.pages.has(id)) this.inlineTagCache.delete(id);
+    }
+    return tags;
   }
 
   graph(options: GraphOptions = {}): GraphData {

@@ -31,9 +31,13 @@ test.describe('tags pane (#9bx3aznb)', () => {
     await expect(page.getByTestId('tags-list')).toHaveCount(0);
     await page.getByTestId('tags-pane-toggle').click();
     const list = page.getByTestId('tags-list');
-    await expect(list.locator('.tag-label')).toHaveText(['home', 'work']);
-    await expect(page.getByTestId('tag-count-work')).toHaveText('2');
+    // Counted like Obsidian: occurrences, a parent including its children
+    // (Plan's frontmatter work + #work/ideas, Notes' #work; never code), most used first.
+    await expect(list.locator('.tag-label')).toHaveText(['work', 'home']);
+    await expect(page.getByTestId('tag-count-work')).toHaveText('3');
     await expect(page.getByTestId('tag-count-home')).toHaveText('1');
+    await page.getByTestId('tags-pane-sort').click();
+    await expect(list.locator('.tag-label')).toHaveText(['home', 'work']);
     await page.getByTestId('tag-toggle-work').click();
     await expect(page.getByTestId('tag-count-work/ideas')).toHaveText('1');
 
@@ -45,9 +49,9 @@ test.describe('tags pane (#9bx3aznb)', () => {
     await expect(page.getByTestId('search-result-Home')).toHaveCount(0);
     await page.keyboard.press('Escape');
 
-    // The open state is remembered.
+    // The open state and the sort are remembered.
     await page.reload();
-    await expect(page.getByTestId('tags-list')).toBeVisible();
+    await expect(page.getByTestId('tags-list').locator('.tag-label')).toHaveText(['home', 'work']);
   });
 
   test('renaming a tag rewrites every file (frontmatter, inline, nested), never code or links', async ({ page, request, vault }) => {
@@ -60,7 +64,7 @@ test.describe('tags pane (#9bx3aznb)', () => {
     await page.getByTestId('tag-rename-work').click();
 
     const dialog = page.getByTestId('tag-rename-dialog');
-    await expect(dialog).toContainText('#work is in 2 pages and whiteboards');
+    await expect(dialog).toContainText('Used 3 times, nested tags included');
     const input = page.getByTestId('tag-rename-input');
     await expect(input).toBeFocused();
     await input.fill('two words');
@@ -69,10 +73,11 @@ test.describe('tags pane (#9bx3aznb)', () => {
     await input.fill('home');
     await expect(page.getByTestId('tag-rename-note')).toContainText('#home exists already');
     await input.fill('job');
+    await expect(page.getByTestId('tag-rename-note')).toHaveText('Rename #work to #job in 2 pages?');
     await page.getByTestId('tag-rename-confirm').click();
 
     await expect(page.getByTestId('undo-toast')).toContainText('Renamed #work to #job in 2 pages');
-    await expect(page.getByTestId('tag-count-job')).toHaveText('2');
+    await expect(page.getByTestId('tag-count-job')).toHaveText('3');
     await expect(page.getByTestId('tag-row-work')).toHaveCount(0);
     // The open page shows the new tag (it was reloaded).
     await expect(page.getByTestId('editor-content')).toContainText('Notes about #job');

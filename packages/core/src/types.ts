@@ -139,6 +139,19 @@ export interface GraphNode extends PageMeta {
 }
 
 /** Payload of `GET /api/graph`. */
+/**
+ * `GET /api/tags` (#9bx3aznb): one entry per tag as written (nested tags are
+ * their own entries), counted like Obsidian's tags pane.
+ */
+export interface TagCount {
+  /** Without `#`, in the first spelling met (pages in id order). */
+  tag: string;
+  /** Occurrences: every inline `#tag` (repeats too) plus each frontmatter entry. */
+  count: number;
+  /** Pages and boards that have it. */
+  pages: PageId[];
+}
+
 export interface GraphData {
   nodes: GraphNode[];
   links: Array<{ source: PageId; target: PageId }>;

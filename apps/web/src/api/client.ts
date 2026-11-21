@@ -17,6 +17,7 @@ import type {
   RestoreResult,
   SearchResult,
   TrashedDocument,
+  TagCount,
   TrashItem,
 } from "@gumply/core";
 
@@ -237,6 +238,9 @@ export const api = {
   /** v1.9: empty the trash; resolves to how many entries were deleted. */
   emptyTrash: (): Promise<{ deleted: number }> => mutate(() => request("/trash", { method: "DELETE" })),
 
+
+  /** #9bx3aznb: every tag with its occurrences and pages (the tags pane). */
+  listTags: (): Promise<TagCount[]> => request("/tags"),
 
   /** #9bx3aznb: rename a tag in every page and board (`from`/`to` without `#`). */
   renameTag: (from: string, to: string, skip: PageId[] = []): Promise<TagRenameResult> =>

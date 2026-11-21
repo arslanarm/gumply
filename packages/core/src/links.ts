@@ -64,7 +64,10 @@ function maskFencedCode(text: string): string {
         }
         return " ".repeat(line.length);
       }
-      if (match && match[1]) {
+      // CommonMark: a backtick fence's info string has no backticks, so
+      // ```code``` on one line is an inline code span, not a fence.
+      const info = match ? line.slice(match[0].length) : "";
+      if (match && match[1] && !(match[1][0] === "`" && info.includes("`"))) {
         fence = { char: match[1][0] ?? "`", length: match[1].length };
         return " ".repeat(line.length);
       }

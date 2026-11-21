@@ -1,23 +1,20 @@
 import { isValidTagName } from "@gumply/core";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/index.js";
+import type { TagRenameRequest } from "./TagsPane.js";
 
-export interface TagRenameDialogProps {
-  tag: string;
-  /** Pages and boards with the tag (nested ones included). */
-  count: number;
-  /** Whether a different tag already has the new name (they merge). */
-  exists: (name: string) => boolean;
+export interface TagRenameDialogProps extends TagRenameRequest {
   onCancel: () => void;
   onRename: (to: string) => void;
 }
 
 /**
- * Rename a tag everywhere (#9bx3aznb): the new name, with the page count and
- * a note when it merges into an existing tag. The input is focused; Escape
- * and a click outside cancel; Tab stays inside (D15).
+ * Rename a tag everywhere (#9bx3aznb): the new name, then "Rename #a to #b
+ * in N pages?" (pages are what the user decides about; occurrences are the
+ * detail), and a note when it merges into an existing tag. The input is
+ * focused; Escape and a click outside cancel; Tab stays inside (D15).
  */
-export function TagRenameDialog({ tag, count, exists, onCancel, onRename }: TagRenameDialogProps) {
+export function TagRenameDialog({ tag, pages, count, exists, onCancel, onRename }: TagRenameDialogProps) {
   const t = useT();
   const id = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -77,7 +74,7 @@ export function TagRenameDialog({ tag, count, exists, onCancel, onRename }: TagR
         ref={dialogRef}
       >
         <h2 id={`${id}-title`}>{t("tags.renameTag", { tag })}</h2>
-        <p id={`${id}-body`}>{t("tags.renameCount", { tag, count })}</p>
+        <p id={`${id}-body`}>{t("tags.usedTimes", { count })}</p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -100,7 +97,13 @@ export function TagRenameDialog({ tag, count, exists, onCancel, onRename }: TagR
             />
           </label>
           <p className={`tag-rename-note${valid ? "" : " tag-rename-error"}`} data-testid="tag-rename-note" aria-live="polite">
-            {!valid ? t("tags.invalid") : merges ? t("tags.merges", { tag: name }) : " "}
+            {!valid
+              ? t("tags.invalid")
+              : changed
+                ? [t("tags.renameQuestion", { from: tag, to: name, count: pages }), merges ? t("tags.merges", { tag: name }) : ""]
+                    .filter(Boolean)
+                    .join(" ")
+                : " "}
           </p>
           <div className="modal-actions">
             <button type="button" className="button-secondary" data-testid="tag-rename-cancel" onClick={onCancel}>
