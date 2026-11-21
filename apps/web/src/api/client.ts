@@ -14,7 +14,10 @@ import type {
   Page,
   PageId,
   PageMeta,
+  RestoreResult,
   SearchResult,
+  TrashedDocument,
+  TrashItem,
 } from "@gumply/core";
 
 export class ApiRequestError extends Error {
@@ -156,7 +159,7 @@ function mutate<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export const api = {
-  /** App name, version and vault folder (`/api/health`). */
+  /** App name, version, vault folder and (v1.9) whether it is the desktop app. */
   health: (): Promise<HealthResponse> => request("/health"),
 
   /** Desktop app only (v1.8): save the interface language; "system" follows the OS. */
@@ -209,9 +212,27 @@ export const api = {
       return { trashId: result.trashId ?? null, deleted: result.deleted ?? [id] };
     }),
 
-  /** v1.1: restore a page (and its sub-pages) from the trash. */
-  restoreTrash: (trashId: string): Promise<PageMeta[]> =>
+  /**
+   * Restore a page (and its sub-pages) from the trash. v1.9: where it was, or
+   * at the top level when its folder page is gone; a taken name gets ` 2`.
+   */
+  restoreTrash: (trashId: string): Promise<RestoreResult> =>
     mutate(() => request(`/trash/${encodeURIComponent(trashId)}/restore`, { method: "POST" })),
+
+  /** v1.9 (#ppag3ugh): everything in the trash, newest first. */
+  listTrash: (): Promise<TrashItem[]> => request("/trash"),
+
+  /** v1.9: a trashed page or board (or one of its sub-pages), read-only. */
+  getTrashed: (trashId: string, id?: PageId): Promise<TrashedDocument> =>
+    request(`/trash/${encodeURIComponent(trashId)}${id ? `?id=${encodeURIComponent(id)}` : ""}`),
+
+  /** v1.9: delete one trash entry for good. */
+  deleteTrashed: (trashId: string): Promise<unknown> =>
+    mutate(() => request(`/trash/${encodeURIComponent(trashId)}`, { method: "DELETE" })),
+
+  /** v1.9: empty the trash; resolves to how many entries were deleted. */
+  emptyTrash: (): Promise<{ deleted: number }> => mutate(() => request("/trash", { method: "DELETE" })),
+
 
   movePage: (id: PageId, parentId: PageId | null): Promise<Page> =>
     mutate(() =>

@@ -433,3 +433,52 @@ test('quitting right after typing keeps the words, in a page and in a sticky (#3
   const saved = JSON.parse(readFileSync(join(vault, 'Trip.canvas'), 'utf8')) as { nodes: Array<{ text?: string }> };
   expect(saved.nodes.map((node) => node.text)).toEqual(['Book flights']);
 });
+
+test('trash: "Show in file manager" reveals the trashed file and never opens it (#ppag3ugh)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    const trashId = await window.evaluate(async () => {
+      const response = await fetch(`/api/pages/${encodeURIComponent('Welcome')}`, { method: 'DELETE' });
+      return ((await response.json()) as { trashId: string }).trashId;
+    });
+
+    await app.evaluate(({ shell }) => {
+      const log: string[] = [];
+      (globalThis as { __shell?: string[] }).__shell = log;
+      shell.openPath = async (path: string) => {
+        log.push(`open ${path}`);
+        return '';
+      };
+      shell.openExternal = async (url: string) => {
+        log.push(`external ${url}`);
+      };
+      shell.showItemInFolder = (path: string) => {
+        log.push(`reveal ${path}`);
+      };
+    });
+
+    // The desktop app offers it in the trash list and on the trashed page.
+    await window.evaluate(() => {
+      window.location.hash = '#trash';
+    });
+    const entry = window.getByTestId('trash-item-Welcome');
+    await entry.locator('.trash-row').hover();
+    await entry.getByTestId('trash-reveal').click();
+    await entry.getByRole('button', { name: /Welcome/ }).first().click();
+    await window.getByTestId('trashed-reveal').click();
+    // Hand-made requests: other ids, traversal, or a missing entry do nothing.
+    for (const path of ['/api/trash/..%2F..%2Fetc/reveal', '/api/trash/does-not-exist/reveal', '/api/trash/a.b/reveal']) {
+      await window.evaluate((url) => window.open(url), path);
+    }
+    await window.waitForTimeout(500);
+
+    const log = await app.evaluate(() => (globalThis as { __shell?: string[] }).__shell ?? []);
+    const file = `reveal <vault>/.trash/${trashId}/Welcome.md`;
+    expect(log.map((line) => line.replace(vault, '<vault>'))).toEqual([file, file]);
+    // Still in the trash, untouched.
+    expect(readdirSafe(join(vault, '.trash', trashId)).sort()).toContain('Welcome.md');
+  } finally {
+    await app.close();
+  }
+});

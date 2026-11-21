@@ -9,12 +9,10 @@ import {
   moveBlockTo,
   type BlockRef,
 } from "../lib/blocks.js";
-import { insertBlockBelow, turnInto, type TurnIntoKind } from "../editor/block-editing.js";
+import { insertBlockBelow, TURN_INTO, turnInto } from "../editor/block-editing.js";
 import { setCalloutFold } from "../editor/callout/callout.js";
 import { t, useT } from "../i18n/index.js";
-import { linkTargetFor } from "@gumply/core";
-import { ensureBlockId } from "../editor/page-embed/block-ids.js";
-import { getWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
+import { copyBlockLink } from "../editor/page-embed/block-ids.js";
 
 interface HoverState {
   block: BlockRef;
@@ -46,20 +44,6 @@ export interface BlockGutterProps {
   editor: TipTapEditor;
 }
 
-// Labels are getters, read at render time (interface language).
-const TURN_INTO: Array<{ kind: TurnIntoKind; readonly label: string }> = [
-  { kind: "text", get label() { return t("blocks.turnInto.text"); } },
-  { kind: "h1", get label() { return t("blocks.turnInto.h1"); } },
-  { kind: "h2", get label() { return t("blocks.turnInto.h2"); } },
-  { kind: "h3", get label() { return t("blocks.turnInto.h3"); } },
-  { kind: "bullet", get label() { return t("blocks.turnInto.bullet"); } },
-  { kind: "ordered", get label() { return t("blocks.turnInto.ordered"); } },
-  { kind: "todo", get label() { return t("blocks.turnInto.todo"); } },
-  { kind: "quote", get label() { return t("blocks.turnInto.quote"); } },
-  { kind: "callout", get label() { return t("blocks.turnInto.callout"); } },
-  { kind: "toggle", get label() { return t("blocks.turnInto.toggle"); } },
-  { kind: "code", get label() { return t("blocks.turnInto.code"); } },
-];
 
 function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
   try {
@@ -335,23 +319,6 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     editor.view.focus();
   };
 
-  /**
-   * Copy link to block / Copy block embed (#5dpxwac4): add a `^id` if the
-   * block has none, then copy `[[Page#^id]]` or `![[Page#^id]]`.
-   */
-  const copyBlockLink = (block: BlockRef, embed: boolean) => {
-    const env = getWikiLinkEnvironment();
-    const page = env.pages.find((item) => item.id === env.pageId);
-    const id = ensureBlockId(editor, block);
-    if (!page || !id) return;
-    const target = linkTargetFor(page, env.pages).target;
-    const link = `${embed ? "!" : ""}[[${target}#^${id}]]`;
-    void navigator.clipboard.writeText(link).then(
-      () => window.dispatchEvent(new CustomEvent("gumply:toast", { detail: { message: t("sidebar.linkCopied"), icon: "link" } })),
-      () => env.reportError?.(t("sidebar.copyLinkBlocked")),
-    );
-  };
-
   const move = (block: BlockRef, direction: "up" | "down") => {
     const tr = moveBlock(editor.state, block, direction);
     if (tr) editor.view.dispatch(tr);
@@ -462,7 +429,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             role="menuitem"
             className="block-menu-item"
             data-testid="block-menu-item-copy-block-link"
-            onClick={() => run((block) => copyBlockLink(block, false))}
+            onClick={() => run((block) => copyBlockLink(editor, block, false))}
           >
             {t("blocks.copyLink")}
           </button>
@@ -471,7 +438,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             role="menuitem"
             className="block-menu-item"
             data-testid="block-menu-item-copy-block-embed"
-            onClick={() => run((block) => copyBlockLink(block, true))}
+            onClick={() => run((block) => copyBlockLink(editor, block, true))}
           >
             {t("blocks.copyEmbed")}
           </button>

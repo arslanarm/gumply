@@ -33,6 +33,10 @@ export interface SidebarProps {
   onGraph: () => void;
   /** The global graph view is open (sidebar active state). */
   graphActive?: boolean;
+  /** #ppag3ugh: the Trash row (with how many pages and boards are in it). */
+  trashActive?: boolean;
+  trashCount?: number;
+  onTrash?: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -266,6 +270,26 @@ export function Sidebar(props: SidebarProps) {
         </span>
         {t("graph.title")}
       </button>
+      {props.onTrash ? (
+        <button
+          type="button"
+          className={`sidebar-row sidebar-row-trash${props.trashActive ? " sidebar-row-active" : ""}`}
+          data-testid="sidebar-trash"
+          aria-current={props.trashActive ? "page" : undefined}
+          aria-label={props.trashCount ? `Trash, ${props.trashCount} ${props.trashCount === 1 ? "item" : "items"}` : "Trash"}
+          onClick={props.onTrash}
+        >
+          <span className="sidebar-row-icon" aria-hidden="true">
+            <Icon name="trash" size={16} />
+          </span>
+          Trash
+          {props.trashCount ? (
+            <span className="sidebar-row-count" data-testid="sidebar-trash-count">
+              {props.trashCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
     </aside>
   );
 }

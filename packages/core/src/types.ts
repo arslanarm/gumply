@@ -62,6 +62,54 @@ export type BoardUpdateResult = BoardDocument & {
   repairBackup?: string;
 };
 
+/** A page or board inside a trash entry (spec/api v1.9, #ppag3ugh). */
+export interface TrashedPage {
+  /** Where it was in the vault (its id before the delete). */
+  id: PageId;
+  /** v1.10 (D33): a deleted plain folder is a trash entry of kind "folder". */
+  kind: PageKind | "folder";
+  title: string;
+  icon?: string;
+  /** Its parent inside the same entry, or null for the entry's top page. */
+  parentId: PageId | null;
+}
+
+/** `GET /api/trash`: one delete (a page or board plus its sub-pages). */
+export interface TrashItem extends TrashedPage {
+  trashId: string;
+  /** ISO time of the delete. */
+  deletedAt: string;
+  /** The folder page it was in (its id when deleted), or null at the top level. */
+  originalParentId: PageId | null;
+  /** That folder page's current title, or null when it no longer exists. */
+  originalParentTitle: string | null;
+  /** Sub-pages deleted with it, parents before children. */
+  children: TrashedPage[];
+  /** Folders only: files in it that aren't pages or boards (PDFs, images…). */
+  otherFiles?: number;
+}
+
+/** `GET /api/trash/:trashId[?id=]`: a trashed page or board, read-only. */
+export interface TrashedDocument {
+  item: TrashItem;
+  /** The page shown (the entry's top page, or one of its sub-pages); null for a folder. */
+  page: Page | null;
+  /** Boards only: the board's JSON Canvas. */
+  board?: import("./canvas.js").CanvasBoard;
+}
+
+/** `POST /api/trash/:trashId/restore` (v1.9). */
+export interface RestoreResult {
+  /** Every restored page and board, with their ids now. */
+  restored: PageMeta[];
+  /** The entry's top page, where it is now. */
+  id: PageId;
+  /** Its folder page was gone, so it went to the top level. */
+  movedToTopLevel: boolean;
+  /** Its name was taken, so it got a ` 2` suffix (D20). */
+  renamed: boolean;
+}
+
 /** Response of `DELETE /api/pages/:id` (D11: files move to `.trash/`). */
 export interface DeletePageResult {
   trashId: string;
@@ -117,6 +165,8 @@ export interface HealthResponse {
   name: string;
   version: string;
   vaultPath: string;
+  /** Running inside the desktop app (v1.9): native-only actions are offered. */
+  desktop?: boolean;
   /**
    * v1.8, desktop app only: the saved interface language (`"en"`, `"ru"`…),
    * or `null` to follow the system. Absent in the browser, where the web app

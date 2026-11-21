@@ -1760,8 +1760,31 @@ input {
 
 .sidebar-row-bottom {
   margin-top: 0.35rem;
+  flex: none;
+}
+
+/* #ppag3ugh: Trash, the last row. */
+.sidebar-row-trash {
   margin-bottom: 0.6rem;
   flex: none;
+}
+
+.sidebar-row-count {
+  margin-left: auto;
+  min-width: 1.4em;
+  padding: 0 0.4em;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-row-active .sidebar-row-count {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 
 .sidebar-row-icon {
@@ -2777,11 +2800,16 @@ input {
   cursor: default;
 }
 
-.raw-inline-highlight {
+/* `==highlight==` (#bg3cb83t): an editable mark, Obsidian's yellow. */
+.ProseMirror mark.md-highlight {
   background: color-mix(in srgb, #f5d90a 45%, transparent);
   color: inherit;
   border-radius: 3px;
-  padding: 0 2px;
+  padding: 0 1px;
+}
+
+:root[data-theme="dark"] .ProseMirror mark.md-highlight {
+  background: color-mix(in srgb, #d8b600 38%, transparent);
 }
 
 .raw-inline-math,
@@ -3501,6 +3529,282 @@ input {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+/* ---------- Trash (#ppag3ugh) ---------- */
+
+.trash-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.trash-heading {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.trash-heading .page-title {
+  cursor: default;
+}
+
+.trash-empty-button {
+  margin-left: auto;
+}
+
+.trash-empty-button:not(:disabled):hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.trash-empty-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.trash-intro {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.trash-intro code {
+  font-size: 0.82em;
+}
+
+.trash-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0 0.65rem;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.trash-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.trash-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.trash-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.trash-empty-state {
+  margin-top: 3rem;
+}
+
+.trash-list,
+.trash-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trash-list {
+  border-top: 1px solid var(--border);
+}
+
+.trash-entry {
+  border-bottom: 1px solid var(--border);
+  padding: 0.3rem 0;
+}
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 6px;
+}
+
+.trash-row:hover,
+.trash-row:focus-within {
+  background: var(--hover);
+}
+
+.trash-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.trash-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  flex: none;
+  color: var(--muted);
+}
+
+.trash-item-emoji {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.trash-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trash-item-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.trash-item-meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.trash-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding-right: 0.4rem;
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.trash-row:hover .trash-row-actions,
+.trash-row:focus-within .trash-row-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .trash-row-actions {
+    opacity: 1;
+  }
+}
+
+.trash-restore {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: var(--surface-page);
+  color: var(--text);
+}
+
+.trash-restore:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-page);
+}
+
+.trash-delete-forever:hover {
+  color: var(--danger);
+}
+
+.trash-child {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trash-child .trash-item-title {
+  font-size: 0.86rem;
+  font-weight: 400;
+}
+
+.trash-child:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.banner-trash {
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-page));
+  color: var(--text);
+}
+
+.banner-trash > svg {
+  color: var(--warning);
+  flex: none;
+}
+
+.trashed-delete-forever {
+  color: var(--danger);
+}
+
+.trashed-page-icon {
+  font-size: 2.3rem;
+  line-height: 1;
+}
+
+.trashed-title {
+  cursor: default;
+}
+
+.trashed-page-body .page-header {
+  margin-bottom: 1.4rem;
+}
+
+.editor-host.is-read-only .ProseMirror {
+  cursor: default;
+  caret-color: transparent;
+}
+
+/* Checkboxes, the code language picker and other controls do nothing here. */
+.editor-host.is-read-only .ProseMirror :is(input, select, button) {
+  pointer-events: none;
+}
+
+.trashed-board-note {
+  margin-top: 2rem;
+}
+
+.trashed-folder-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.trashed-folder-list {
+  margin-top: 0.5rem;
+}
+
 /* ---------- New whiteboard: template gallery (spec/v0-6 §D) ---------- */
 .modal.template-gallery {
   width: min(720px, 100%);
@@ -3850,4 +4154,241 @@ input {
   font-size: 0.78em;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   opacity: 0.6;
+}
+
+/* ---------- Selection toolbar and editor context menu (#bg3cb83t) ---------- */
+
+.selection-toolbar {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
+  animation: soft-pop 110ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.selection-toolbar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.selection-toolbar-button,
+.selection-turn-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.selection-turn-button {
+  gap: 4px;
+  padding: 0 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.selection-toolbar-button:hover,
+.selection-turn-button:hover,
+.selection-turn-button.is-open {
+  background: var(--hover);
+}
+
+.selection-toolbar-button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.selection-toolbar-button:focus-visible,
+.selection-turn-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.selection-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.selection-turn-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+}
+
+.selection-turn-list button,
+.selection-link-pages button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.selection-turn-list button:hover,
+.selection-turn-list button:focus-visible,
+.selection-link-pages button:hover,
+.selection-link-pages button.is-active {
+  background: var(--hover);
+  outline: none;
+}
+
+.selection-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 320px;
+  padding: 0 4px 0 8px;
+  color: var(--muted);
+}
+
+.selection-link-input {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.selection-link-pages {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 14%);
+}
+
+.selection-link-hint {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.selection-link-page-icon {
+  display: inline-flex;
+  width: 18px;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.editor-context-menu {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  outline: none;
+  animation: soft-pop 110ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.context-main,
+.context-submenu {
+  display: flex;
+  flex-direction: column;
+  min-width: 230px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 16%), 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.context-submenu {
+  min-width: 170px;
+  margin-left: 4px;
+}
+
+.context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-item:hover,
+.context-item:focus-visible,
+.context-item.is-open {
+  background: var(--hover);
+  outline: none;
+}
+
+.context-item.is-danger {
+  color: var(--danger);
+}
+
+.context-item-icon {
+  display: inline-flex;
+  width: 16px;
+  color: var(--muted);
+}
+
+.context-item.is-danger .context-item-icon {
+  color: inherit;
+}
+
+.context-item-label {
+  flex: 1;
+}
+
+.context-item-keys {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.context-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* `==highlight==` on stickies and board text. */
+.board-rich mark {
+  background: color-mix(in srgb, #f5d90a 45%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
 }

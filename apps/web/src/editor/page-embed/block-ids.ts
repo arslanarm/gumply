@@ -10,12 +10,14 @@
  *   the text stays plain, the caret moves through it and Backspace deletes
  *   one character at a time, like any text.
  */
-import { newBlockId } from "@gumply/core";
+import { linkTargetFor, newBlockId } from "@gumply/core";
 import { Extension, type Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { t } from "../../i18n/index.js";
 import type { BlockRef } from "../../lib/blocks.js";
+import { getWikiLinkEnvironment } from "../wikilink/link-store.js";
 
 const ID_AT_END = /(?:^|\s)\^([A-Za-z0-9-]+)\s*$/;
 /** Blocks whose id goes on its own line after them. */
@@ -76,6 +78,23 @@ export function ensureBlockId(editor: Editor, block: BlockRef): string | null {
   const spacer = text.node.textContent.length === 0 || /\s$/.test(text.node.textContent) ? "" : " ";
   editor.view.dispatch(state.tr.insertText(`${spacer}^${id}`, end));
   return id;
+}
+
+/**
+ * Copy link to block (`[[Page#^id]]`) or Copy block embed (`![[Page#^id]]`),
+ * adding the id first when the block has none. Shared by the block menu and
+ * the editor's right-click menu.
+ */
+export function copyBlockLink(editor: Editor, block: BlockRef, embed: boolean): void {
+  const env = getWikiLinkEnvironment();
+  const page = env.pages.find((item) => item.id === env.pageId);
+  const id = ensureBlockId(editor, block);
+  if (!page || !id) return;
+  const link = `${embed ? "!" : ""}[[${linkTargetFor(page, env.pages).target}#^${id}]]`;
+  void navigator.clipboard.writeText(link).then(
+    () => window.dispatchEvent(new CustomEvent("gumply:toast", { detail: { message: t("sidebar.linkCopied"), icon: "link" } })),
+    () => env.reportError?.(t("sidebar.copyLinkBlocked")),
+  );
 }
 
 const chipKey = new PluginKey("blockIdChips");

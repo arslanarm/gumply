@@ -24,6 +24,8 @@ export interface StartOptions {
   watch?: boolean;
   /** The app version /api/health reports (defaults to the core version). */
   version?: string;
+  /** Started by the desktop app (reported by /api/health). */
+  desktop?: boolean;
   /** Desktop app only: the interface language setting (#7h5utv23). */
   uiLanguage?: UiLanguageStore;
   log?: (message: string) => void;
@@ -72,6 +74,7 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
     security,
     ...(options.webRoot ? { webRoot: options.webRoot } : {}),
     ...(options.version ? { version: options.version } : {}),
+    ...(options.desktop ? { desktop: true } : {}),
     ...(options.uiLanguage ? { uiLanguage: options.uiLanguage } : {}),
   });
 

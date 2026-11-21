@@ -5,8 +5,9 @@
  * `a &gt; b`), and prosemirror-markdown backslash-escapes every `[`, `]`,
  * `*`, `_`, `~` and `` ` ``. Here a character is escaped only when, left
  * alone, it could change how the line parses. Obsidian syntax typed as text
- * (`==highlight==`, `$math$`, `[^1]`) is deliberately left unescaped, so it
- * means the same in Gumply and Obsidian after a reload.
+ * (`$math$`, `[^1]`) is deliberately left unescaped, so it means the same in
+ * Gumply and Obsidian after a reload. `==highlight==` is a mark now; a
+ * balanced `==x==` left in plain text was an escaped literal and stays one.
  */
 import HardBreak from "@tiptap/extension-hard-break";
 import Text from "@tiptap/extension-text";
@@ -32,6 +33,13 @@ function isSpace(char: string | undefined): boolean {
 export function escapeMarkdownText(text: string, startOfLine: boolean): string {
   // Brackets only matter when they could form a link: `](`, `][`, `]:`.
   const linkish = /\]\s*[([:]/.test(text) || /^\[[^\]]*$/.test(text);
+  // `==x==` in plain text is a literal the file had escaped (`\==x==`), since
+  // a real highlight is a mark (#bg3cb83t). Escape its opening `=` so it
+  // doesn't turn into a highlight on reload; `a == b` stays as typed.
+  const highlightOpeners = new Set<number>();
+  for (const match of text.matchAll(/(?<!=)==(?=[^\s=])(?:[^=]|=(?!=))*?[^\s=]==(?!=)/g)) {
+    highlightOpeners.add(match.index ?? 0);
+  }
   let out = "";
   for (let i = 0; i < text.length; i += 1) {
     const char = text[i]!;
@@ -71,6 +79,9 @@ export function escapeMarkdownText(text: string, startOfLine: boolean): string {
         // Only before something markdown-it would read as a tag, comment or
         // autolink; `a < b` and `a<b` stay as typed.
         escape = TAG_LIKE.test(text.slice(i));
+        break;
+      case "=":
+        escape = highlightOpeners.has(i);
         break;
       case "&":
         // Only something that reads as an entity (`&amp;`, `&#38;`).

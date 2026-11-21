@@ -21,7 +21,11 @@ export type {
   PageKind,
   PageMeta,
   PageUpdateResult,
+  RestoreResult,
   SearchResult,
+  TrashedDocument,
+  TrashedPage,
+  TrashItem,
 } from "./types.js";
 
 export {
