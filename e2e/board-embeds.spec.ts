@@ -1,5 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
+import { measure } from './support/perf';
 
 /**
  * Boards embedded in pages (spec/v0-6 B, D30, #9ehu8zjg): `![[Board.canvas]]`
@@ -253,7 +254,7 @@ test.describe('boards embedded in pages (D30)', () => {
 });
 
 test.describe('embed performance', () => {
-  test('a page with a 1000-object board embedded scrolls smoothly', async ({ page, request, vault }) => {
+  test('a page with a 1000-object board embedded scrolls smoothly', async ({ page, request, vault }, testInfo) => {
     test.setTimeout(90_000);
     const board = await createBoard(request, 'Big');
     const nodes: BoardNode[] = [];
@@ -300,8 +301,12 @@ test.describe('embed performance', () => {
     const format = (r: { frames: number; avg: number; p95: number; max: number }) =>
       `${r.frames} frames: avg ${r.avg.toFixed(1)} ms, p95 ${r.p95.toFixed(1)} ms, max ${r.max.toFixed(1)} ms`;
 
-    // Cold: from the top, scroll down until the embed has mounted and is in view.
-    const cold = await scrollFrames(160, 24, false);
+    // Budgets scale with how busy the machine is right now (#eiyrbvgx,
+    // e2e/support/perf.ts). Mounting the board in chunks keeps the cold scroll
+    // free of long hitches. Cold can only be measured once.
+    const cold = await measure(testInfo, 'cold scroll', () => scrollFrames(160, 24, false), (r) => [
+      [r.max, 150, 'cold scroll longest frame ms'],
+    ]);
     console.log(`[embed-perf] cold scroll onto a 1000-object embed, ${format(cold)}`);
     await embed.scrollIntoViewIfNeeded();
     await expect(embed.getByTestId('board-preview')).toHaveAttribute('data-nodes', '1000', { timeout: 20_000 });
@@ -310,13 +315,12 @@ test.describe('embed performance', () => {
     await expect(embed.getByTestId('board-preview')).toHaveAttribute('data-lod', /^[1-5]$/);
 
     // Warm: up and down over the mounted embed.
-    const result = await scrollFrames(120, 24, true);
+    // 60 fps is 16.7 ms a frame; the base numbers leave headroom for the dev
+    // build (React dev mode is ~2× slower than production) on a quiet machine.
+    const result = await measure(testInfo, 'warm scroll', () => scrollFrames(120, 24, true), (r) => [
+      [r.avg, 20, 'warm scroll avg frame ms'],
+      [r.p95, 34, 'warm scroll p95 frame ms'],
+    ], { attempts: 2 });
     console.log(`[embed-perf] warm scroll over a 1000-object embed, ${format(result)}`);
-    // 60 fps is 16.7 ms a frame; allow headroom for a loaded CI machine and
-    // the dev build (React dev mode is ~2× slower than production).
-    expect(result.avg).toBeLessThan(20);
-    expect(result.p95).toBeLessThan(34);
-    // Mounting the board in chunks keeps the cold scroll free of long hitches.
-    expect(cold.max).toBeLessThan(150);
   });
 });

@@ -1,7 +1,7 @@
 /** Public API of `@gumply/core`. */
 
 export const APP_NAME = "Gumply";
-export const CORE_VERSION = "0.5.0";
+export const CORE_VERSION = "0.6.0";
 
 export type {
   ApiError,
@@ -69,6 +69,7 @@ export {
   makeSnippet,
   maskCode,
   resolveWikilink,
+  rewriteWikilinkFolder,
   rewriteWikilinkTargets,
   type RewriteResult,
   type WikiLink,

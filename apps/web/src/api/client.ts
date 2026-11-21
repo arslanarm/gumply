@@ -163,8 +163,6 @@ export const api = {
   health: (): Promise<HealthResponse> => request("/health"),
 
   /** Desktop app only (v1.8): save the interface language; "system" follows the OS. */
-  setUiLanguage: (language: string): Promise<{ uiLanguage: string | null }> =>
-    mutate(() => request("/ui/language", { method: "PUT", body: JSON.stringify({ language }) })),
 
   listPages: (): Promise<PageMeta[]> => request("/pages"),
 

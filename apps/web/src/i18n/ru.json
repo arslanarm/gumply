@@ -104,7 +104,11 @@
     "moveTo": "Переместить в…",
     "addBoardInside": "Добавить доску внутрь",
     "deleteBoard": "Удалить доску",
-    "deletePage": "Удалить страницу"
+    "deletePage": "Удалить страницу",
+    "collapseFolder": "Свернуть папку",
+    "expandFolder": "Развернуть папку",
+    "newPageInside": "Новая страница внутри",
+    "deleteFolder": "Удалить папку"
   },
   "delete": {
     "boardDeleted": "Доска удалена",

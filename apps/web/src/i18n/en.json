@@ -94,7 +94,11 @@
     "moveTo": "Move to…",
     "addBoardInside": "Add whiteboard inside",
     "deleteBoard": "Delete whiteboard",
-    "deletePage": "Delete page"
+    "deletePage": "Delete page",
+    "collapseFolder": "Collapse folder",
+    "expandFolder": "Expand folder",
+    "newPageInside": "New page inside",
+    "deleteFolder": "Delete folder"
   },
   "delete": {
     "boardDeleted": "Whiteboard deleted",

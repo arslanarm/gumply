@@ -1,12 +1,10 @@
 /**
- * Where the language preference lives (#7h5utv23):
- * - browser: `localStorage` (`gumply:language`; absent = follow the browser);
- * - desktop app: the desktop settings, read from `/api/health` (`uiLanguage`)
- *   and written with `PUT /api/ui/language`. The desktop window loads from a
- *   new random port on every start, so its `localStorage` doesn't last; the
- *   desktop app also rebuilds its menu in the chosen language.
+ * Where the language preference lives (#7h5utv23): `localStorage`
+ * (`gumply:language`; absent = follow the system). In the desktop app that
+ * key is mirrored to the desktop settings like every `gumply:*` preference
+ * (#c7fzzxk8, `lib/ui-state.ts`): it's restored before `initLanguage` runs,
+ * and the desktop app rebuilds its menu when it changes.
  */
-import { api } from "../api/client.js";
 import {
   LANGUAGE_STORAGE_KEY,
   parseLanguagePreference,
@@ -14,10 +12,6 @@ import {
   setLanguage,
   type LanguagePreference,
 } from "./index.js";
-
-function isDesktop(): boolean {
-  return typeof navigator !== "undefined" && /\bElectron\//.test(navigator.userAgent);
-}
 
 function preferredLanguages(): readonly string[] {
   if (typeof navigator === "undefined") return [];
@@ -40,15 +34,7 @@ function readStored(): LanguagePreference {
 
 /** Before first paint: load the saved (or system) language. Never throws. */
 export async function initLanguage(): Promise<void> {
-  if (isDesktop()) {
-    try {
-      preference = parseLanguagePreference((await api.health()).uiLanguage);
-    } catch {
-      preference = "system";
-    }
-  } else {
-    preference = readStored();
-  }
+  preference = readStored();
   try {
     await setLanguage(resolveLanguage(preference, preferredLanguages()));
   } catch (error) {
@@ -61,10 +47,6 @@ export async function initLanguage(): Promise<void> {
 export async function chooseLanguage(next: LanguagePreference): Promise<void> {
   preference = next;
   await setLanguage(resolveLanguage(next, preferredLanguages()));
-  if (isDesktop()) {
-    await api.setUiLanguage(next).catch((error) => console.error("[gumply] couldn't save the language:", error));
-    return;
-  }
   try {
     if (next === "system") window.localStorage.removeItem(LANGUAGE_STORAGE_KEY);
     else window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next);

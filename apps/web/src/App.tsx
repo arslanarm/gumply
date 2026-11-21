@@ -16,6 +16,7 @@ import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
+import { FolderView } from "./components/FolderView.js";
 import { TrashedPageView } from "./components/TrashedPageView.js";
 import { TrashView } from "./components/TrashView.js";
 import { Editor, type EditorControls } from "./components/Editor.js";
@@ -32,7 +33,7 @@ import type { SaveState } from "./editor/autosave.js";
 import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, TemplateGallery, preloadWhenIdle } from "./lazy-parts.js";
 import type { BoardTemplateId } from "./board/templates.js";
 import { idFromVaultPath, isBoard, isBoardId, newBoardTitle, vaultPathOf } from "./lib/boards.js";
-import { focusAfterDelete } from "./lib/delete.js";
+import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, serverDownMessage } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
@@ -59,6 +60,8 @@ type PageStatus = "idle" | "loading" | "ready" | "error";
 interface PendingDelete {
   page: PageMeta;
   subPages: number;
+  /** D33: a folder's own confirm line ("Its 3 pages and 2 other files …"). */
+  body?: string;
 }
 
 interface ToastState {
@@ -123,11 +126,20 @@ export function App() {
   // Re-render on a language switch (#7h5utv23).
   useT();
   const [pages, setPages] = useState<PageMeta[]>([]);
+  // D33: plain folders are tree items only. Everything that means "documents"
+  // (links, search, the board picker, the editor) uses this list.
+  const documentPages = useMemo(() => pages.filter((item) => item.kind !== "folder"), [pages]);
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
   const [listError, setListError] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<PageId | null>(() =>
     pageIdFromHash(window.location.hash),
+  );
+  const selectedFolder = useMemo(
+    () => (selectedId ? (pages.find((item) => item.id === selectedId && item.kind === "folder") ?? null) : null),
+    [pages, selectedId],
   );
   const [page, setPage] = useState<Page | null>(null);
   // The open board's document as loaded (BoardView starts from it).
@@ -247,7 +259,7 @@ export function App() {
       .then((health) => setVaultPath(health.vaultPath))
       .catch(() => undefined);
   }, []);
-  const shownTitle = graphOpen ? t("graph.title") : (page?.title ?? null);
+  const shownTitle = graphOpen ? t("graph.title") : (page?.title ?? selectedFolder?.title ?? null);
   useEffect(() => {
     document.title = windowTitle({ page: shownTitle, vaultPath });
   }, [shownTitle, vaultPath]);
@@ -662,6 +674,12 @@ export function App() {
       setPageStatus("idle");
       return;
     }
+    // D33: a plain folder has no file to load; FolderView is built from the tree.
+    if (pagesRef.current.some((item) => item.id === selectedId && item.kind === "folder")) {
+      setPage(null);
+      setPageStatus("idle");
+      return;
+    }
 
     let cancelled = false;
     setPageStatus("loading");
@@ -870,7 +888,7 @@ export function App() {
       const meta = pages.find((item) => item.id === id);
       if (!meta) return;
       // A board's link always names its file (`[[Map.canvas|Map]]`, v1.7).
-      const link = formatWikilink(meta, pages);
+      const link = formatWikilink(meta, documentPages);
       try {
         await navigator.clipboard.writeText(link);
         setToast({ message: t("sidebar.linkCopied"), icon: "link" });
@@ -878,7 +896,7 @@ export function App() {
         setActionError(t("sidebar.copyLinkBlocked"));
       }
     },
-    [pages],
+    [pages, documentPages],
   );
 
   /**
@@ -962,7 +980,7 @@ export function App() {
 
   const openWikiLink = useCallback(
     async (link: { targetTitle: string; heading: string }) => {
-      const resolved = resolveWikilink(link.targetTitle, pages);
+      const resolved = resolveWikilink(link.targetTitle, documentPages);
 
       if (!resolved) {
         try {
@@ -986,7 +1004,7 @@ export function App() {
       if (resolved.id === selectedRef.current) requestPageReload();
       else navigate(resolved.id);
     },
-    [pages, page, loadPages, navigate, requestPageReload],
+    [documentPages, page, loadPages, navigate, requestPageReload],
   );
 
   /** `Create “X”` in the `[[` menu: create but stay on the current page. */
@@ -1173,7 +1191,15 @@ export function App() {
     (id: PageId) => {
       const target = pages.find((item) => item.id === id);
       if (!target) return;
-      if (target.childCount > 0) {
+      // D33: a folder asks first when it holds anything (pages, boards or
+      // other files, at any depth); an empty one goes straight to the trash.
+      if (target.kind === "folder") {
+        const contents = folderContents(pages, id);
+        if (contents.pages + contents.boards + contents.otherFiles > 0) {
+          setPendingDelete({ page: target, subPages: 0, body: folderDeleteBody(contents) });
+          return;
+        }
+      } else if (target.childCount > 0) {
         setPendingDelete({ page: target, subPages: target.childCount });
         return;
       }
@@ -1367,7 +1393,7 @@ export function App() {
 
   const boardPageOptions = useMemo(
     () =>
-      pages
+      documentPages
         .filter((item) => item.id !== selectedId)
         .map((item) => ({
           path: vaultPathOf(item),
@@ -1376,7 +1402,7 @@ export function App() {
           updated: item.updated,
           ...(item.icon ? { icon: item.icon } : {}),
         })),
-    [pages, selectedId],
+    [documentPages, selectedId],
   );
 
   const restoreDeletedPage = useCallback(async () => {
@@ -1620,6 +1646,14 @@ export function App() {
                     {t("sidebar.newPage")}
                   </button>
                 </div>
+              ) : selectedFolder ? (
+                <FolderView
+                  folder={selectedFolder}
+                  pages={pages}
+                  onOpen={handleOpen}
+                  onNewPage={(parentId) => void handleCreate(parentId)}
+                  onNewBoard={(parentId) => void handleCreateBoard(parentId)}
+                />
               ) : showingBoard && boardDoc ? (
                 <div className="board-page" data-testid="board-page">
                   <PageHeader
@@ -1669,7 +1703,7 @@ export function App() {
                   <Editor
                     key={`${sessionKeyOf(page.id)}:${editorRevision}`}
                     page={page}
-                    pages={pages}
+                    pages={documentPages}
                     onSaveState={setSaveState}
                     onSaved={handlePageSaved}
                     onConflictBackup={handleConflictBackup}
@@ -1734,6 +1768,7 @@ export function App() {
         <DeleteDialog
           title={pendingDelete.page.title}
           subPages={pendingDelete.subPages}
+          body={pendingDelete.body}
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
         />
@@ -1789,7 +1824,7 @@ export function App() {
 
       {searchOpen ? (
         <QuickSwitcher
-          pages={pages}
+          pages={documentPages}
           initialQuery={searchQuery}
           onOpen={openSearchResult}
           onCreate={createSearchPage}

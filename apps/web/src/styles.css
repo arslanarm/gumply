@@ -4392,3 +4392,103 @@ input {
   border-radius: 3px;
   padding: 0 1px;
 }
+
+/* ---------- #mf397jyx: plain folders (D33) ---------- */
+
+.page-icon-folder {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.folder-view-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.folder-view-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.folder-view-title {
+  font-size: 2.5rem;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.folder-view-meta {
+  margin: 0.35rem 0 1.2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.folder-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.4rem;
+}
+
+.folder-view-actions .button-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.folder-view-empty {
+  color: var(--muted);
+}
+
+.folder-view-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+
+.folder-view-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.55rem 0.4rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-view-item:hover,
+.folder-view-item:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+.folder-view-item-icon {
+  display: inline-flex;
+  justify-content: center;
+  width: 1.3rem;
+  color: var(--muted);
+}
+
+.folder-view-item-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.folder-view-item-kind {
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}

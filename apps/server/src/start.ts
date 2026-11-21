@@ -6,7 +6,8 @@
 import { mkdirSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { serve, type ServerType } from "@hono/node-server";
-import { createApp, type UiLanguageStore } from "./app.js";
+import { createApp } from "./app.js";
+import type { UiStateStore } from "./ui-state.js";
 import { isLoopbackName } from "./security.js";
 import { VaultStore } from "./vault-store.js";
 
@@ -26,8 +27,8 @@ export interface StartOptions {
   version?: string;
   /** Started by the desktop app (reported by /api/health). */
   desktop?: boolean;
-  /** Desktop app only: the interface language setting (#7h5utv23). */
-  uiLanguage?: UiLanguageStore;
+  /** Desktop only (#c7fzzxk8): where the app's UI preferences live. */
+  uiState?: UiStateStore;
   log?: (message: string) => void;
 }
 
@@ -75,7 +76,7 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
     ...(options.webRoot ? { webRoot: options.webRoot } : {}),
     ...(options.version ? { version: options.version } : {}),
     ...(options.desktop ? { desktop: true } : {}),
-    ...(options.uiLanguage ? { uiLanguage: options.uiLanguage } : {}),
+    ...(options.uiState ? { uiState: options.uiState } : {}),
   });
 
   const server: ServerType = await new Promise((resolveServer, reject) => {

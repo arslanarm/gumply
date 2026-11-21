@@ -143,6 +143,8 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
                       <Icon name="arrowUp" size={16} />
                     ) : row.page?.icon ? (
                       row.page.icon
+                    ) : row.page?.kind === "folder" ? (
+                      <Icon name="folder" size={16} />
                     ) : (
                       <Icon name="file" size={16} />
                     )}

@@ -23,9 +23,12 @@ describe("desktop menus and dialogs in the interface language (#7h5utv23)", () =
     expect(desktopT("en", "menu.nope")).toBe("desktop.menu.nope");
   });
 
-  it("keeps the language in the desktop settings (only a plain code)", () => {
-    expect(normaliseSettings({ language: "ru" }).language).toBe("ru");
-    expect(normaliseSettings({ language: "../evil" }).language).toBeNull();
-    expect(normaliseSettings({}).language).toBeNull();
+  it("reads the language from the app's mirrored preferences (#c7fzzxk8)", () => {
+    const saved = normaliseSettings({ uiState: { "gumply:language": "ru" } }).uiState["gumply:language"];
+    expect(saved).toBe("ru");
+    expect(resolveDesktopLanguage(saved, "en-US")).toBe("ru");
+    // Anything but a shipped language follows the system.
+    expect(resolveDesktopLanguage("../evil", "ru-RU")).toBe("ru");
+    expect(resolveDesktopLanguage(undefined, "de-DE")).toBe("en");
   });
 });

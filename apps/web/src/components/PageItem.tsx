@@ -14,7 +14,11 @@ export interface PageItemProps {
   renamingId: PageId | null;
   renameDraft: string;
   draggingId: PageId | null;
-  collapsed: ReadonlySet<PageId>;
+  /**
+   * Rows toggled away from their default: pages with sub-pages start
+   * expanded, plain folders (D33) start collapsed, as in Obsidian.
+   */
+  toggled: ReadonlySet<PageId>;
   onOpen: (id: PageId) => void;
   onCreateChild: (id: PageId) => void;
   /** "Add whiteboard inside" (spec/whiteboard §4). */
@@ -43,13 +47,14 @@ export const PageItem = memo(PageItemRow);
 
 function PageItemRow(props: PageItemProps) {
   const t = useT();
-  const { node, depth, pages, selectedId, renamingId, draggingId, collapsed } = props;
+  const { node, depth, pages, selectedId, renamingId, draggingId, toggled } = props;
   const page = node.page;
   const board = isBoard(page);
+  const folder = page.kind === "folder";
   const hasChildren = node.children.length > 0;
   const isSelected = selectedId === page.id;
   const isRenaming = renamingId === page.id;
-  const expanded = hasChildren && !collapsed.has(page.id);
+  const expanded = hasChildren && (folder ? toggled.has(page.id) : !toggled.has(page.id));
   const [dropTarget, setDropTarget] = useState(false);
   // The ⋯ menu: under the button, or at the pointer for a right-click
   // (#ux5cukze). `focus` puts focus on the first item (keyboard opening).
@@ -121,7 +126,7 @@ function PageItemRow(props: PageItemProps) {
   return (
     <div className="tree-node">
       <div
-        className={`page-item${isSelected ? " is-selected" : ""}${dropTarget ? " is-drop-target" : ""}${menuOpen ? " has-menu" : ""}`}
+        className={`page-item${folder ? " is-folder" : ""}${isSelected ? " is-selected" : ""}${dropTarget ? " is-drop-target" : ""}${menuOpen ? " has-menu" : ""}`}
         data-testid={`page-item-${page.id}`}
         data-page-id={page.id}
         role="treeitem"
@@ -130,7 +135,11 @@ function PageItemRow(props: PageItemProps) {
         aria-expanded={hasChildren ? expanded : undefined}
         ref={rowRef}
         style={{ paddingLeft: `${6 + depth * 14}px` }}
-        onClick={() => props.onOpen(page.id)}
+        onClick={() => {
+          // D33: a folder click opens and closes it, and shows its overview.
+          if (folder && hasChildren && (isSelected || !expanded)) props.onToggle(page.id);
+          props.onOpen(page.id);
+        }}
         onContextMenu={(event) => {
           if (isRenaming) return;
           event.preventDefault();
@@ -161,7 +170,8 @@ function PageItemRow(props: PageItemProps) {
           // Move within the tree, or copy onto an open board as a card.
           event.dataTransfer.effectAllowed = "copyMove";
           event.dataTransfer.setData("text/plain", page.id);
-          event.dataTransfer.setData(BOARD_DRAG_MIME, vaultPathOf(page));
+          // A folder isn't a card: it only moves within the tree.
+          if (!folder) event.dataTransfer.setData(BOARD_DRAG_MIME, vaultPathOf(page));
           props.onDragStartItem(page.id);
         }}
         onDragEnd={() => props.onDragEndItem()}
@@ -188,7 +198,11 @@ function PageItemRow(props: PageItemProps) {
             type="button"
             className="tree-toggle"
             data-testid={`tree-toggle-${page.id}`}
-            aria-label={expanded ? t("sidebar.collapse") : t("sidebar.expand")}
+            aria-label={
+              folder
+                ? t(expanded ? "sidebar.collapseFolder" : "sidebar.expandFolder")
+                : t(expanded ? "sidebar.collapse" : "sidebar.expand")
+            }
             onClick={(event) => {
               event.stopPropagation();
               props.onToggle(page.id);
@@ -221,7 +235,11 @@ function PageItemRow(props: PageItemProps) {
           />
         ) : (
           <span className="page-item-label">
-            {page.icon ? (
+            {folder ? (
+              <span className="page-icon page-icon-folder" data-testid={`folder-icon-${page.id}`} aria-hidden="true">
+                <Icon name={expanded ? "folderOpen" : "folder"} size={15} />
+              </span>
+            ) : page.icon ? (
               <span className="page-icon">{page.icon}</span>
             ) : board ? (
               <span className="page-icon page-icon-board" data-testid={`board-icon-${page.id}`} aria-hidden="true">
@@ -239,9 +257,9 @@ function PageItemRow(props: PageItemProps) {
           <button
             type="button"
             className="tree-action"
-            data-tooltip={t("sidebar.newSubPage")}
+            data-tooltip={folder ? t("sidebar.newPageInside") : t("sidebar.newSubPage")}
             data-testid={`new-child-button-${page.id}`}
-            aria-label={t("sidebar.newSubPage")}
+            aria-label={folder ? t("sidebar.newPageInside") : t("sidebar.newSubPage")}
             onClick={(event) => {
               event.stopPropagation();
               props.onCreateChild(page.id);
@@ -290,6 +308,8 @@ function PageItemRow(props: PageItemProps) {
                 >
                   {t("sidebar.rename")}
                 </button>
+                {folder ? null : (
+                <>
                 <button
                   type="button"
                   role="menuitem"
@@ -315,6 +335,8 @@ function PageItemRow(props: PageItemProps) {
                 >
                   {t("sidebar.copyLink")}
                 </button>
+                </>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -352,7 +374,7 @@ function PageItemRow(props: PageItemProps) {
                     props.onDelete(page.id);
                   }}
                 >
-                  {board ? t("sidebar.deleteBoard") : t("sidebar.deletePage")}
+                  {board ? t("sidebar.deleteBoard") : folder ? t("sidebar.deleteFolder") : t("sidebar.deletePage")}
                 </button>
               </div>
             ) : null}

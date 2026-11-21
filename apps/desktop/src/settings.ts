@@ -5,6 +5,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { normaliseUiState, type UiState } from "../../server/src/ui-state.js";
 
 export const SETTINGS_FILE = "gumply-desktop.json";
 export const MAX_RECENT_VAULTS = 10;
@@ -21,17 +22,17 @@ export interface DesktopSettings {
   lastVault: string | null;
   recentVaults: string[];
   window: WindowState | null;
-  /** Interface language (`"en"`, `"ru"`…), or null to follow the system (#7h5utv23). */
-  language: string | null;
+  /** The web app's `gumply:*` preferences (#c7fzzxk8): theme, sidebar, board views… */
+  uiState: UiState;
 }
 
-export const DEFAULT_SETTINGS: DesktopSettings = { lastVault: null, recentVaults: [], window: null, language: null };
+export const DEFAULT_SETTINGS: DesktopSettings = { lastVault: null, recentVaults: [], window: null, uiState: {} };
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
 /** Keep only well-formed values; a damaged file never stops the app. */
 export function normaliseSettings(raw: unknown): DesktopSettings {
-  if (!raw || typeof raw !== "object") return { ...DEFAULT_SETTINGS, recentVaults: [] };
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_SETTINGS, recentVaults: [], uiState: {} };
   const data = raw as Record<string, unknown>;
   const recentVaults = Array.isArray(data.recentVaults)
     ? [...new Set(data.recentVaults.filter((item): item is string => typeof item === "string" && item.length > 0))].slice(
@@ -54,16 +55,14 @@ export function normaliseSettings(raw: unknown): DesktopSettings {
       window.y = Math.round(w.y);
     }
   }
-  // A language code only (the app checks that it ships it).
-  const language = typeof data.language === "string" && /^[a-z]{2,3}$/.test(data.language) ? data.language : null;
-  return { lastVault, recentVaults, window, language };
+  return { lastVault, recentVaults, window, uiState: normaliseUiState(data.uiState) };
 }
 
 export function loadSettings(dir: string): DesktopSettings {
   try {
     return normaliseSettings(JSON.parse(readFileSync(join(dir, SETTINGS_FILE), "utf8")));
   } catch {
-    return { ...DEFAULT_SETTINGS, recentVaults: [] };
+    return { ...DEFAULT_SETTINGS, recentVaults: [], uiState: {} };
   }
 }
 

@@ -1,6 +1,7 @@
 import { APP_NAME, CORE_VERSION, type ApiError, type HealthResponse } from "@gumply/core";
 import { Hono } from "hono";
-import { VaultError } from "./errors.js";
+import { badRequest, VaultError } from "./errors.js";
+import { parseUiStateChange, type UiStateStore } from "./ui-state.js";
 import { createApiRoutes } from "./routes.js";
 import { localOnly, type SecurityOptions } from "./security.js";
 import { serveWebApp } from "./static.js";
@@ -17,20 +18,8 @@ export interface AppOptions {
   version?: string;
   /** The desktop app's server (v1.9): /api/health says so. */
   desktop?: boolean;
-  /**
-   * Desktop app only (#7h5utv23): the interface language lives in the desktop
-   * settings. With this, `/api/health` reports it and `PUT /api/ui/language`
-   * exists; without it (the browser) the route isn't registered at all.
-   */
-  uiLanguage?: UiLanguageStore;
-}
-
-export interface UiLanguageStore {
-  /** Language codes the app ships, e.g. `["en", "ru"]`. */
-  languages: readonly string[];
-  /** The saved language, or null to follow the system. */
-  get(): string | null;
-  set(language: string | null): void;
+  /** Desktop only (#c7fzzxk8): serve `GET/PUT /api/ui/state` from this store. */
+  uiState?: UiStateStore;
 }
 
 /**
@@ -51,28 +40,21 @@ export function createApp(options: AppOptions): Hono {
       vaultPath: options.vaultPath,
       ...(options.desktop ? { desktop: true } : {}),
     };
-    if (options.uiLanguage) body.uiLanguage = options.uiLanguage.get();
     return c.json(body);
   });
 
-  const uiLanguage = options.uiLanguage;
-  if (uiLanguage) {
-    // Behind localOnly like every write: Host and Origin are checked first.
-    app.put("/api/ui/language", async (c) => {
+  // #c7fzzxk8: the desktop app's UI preferences survive its random port.
+  const uiState = options.uiState;
+  if (uiState) {
+    app.get("/api/ui/state", (c) => c.json(uiState.get()));
+    app.put("/api/ui/state", async (c) => {
       let body: unknown;
       try {
         body = await c.req.json();
       } catch {
-        return c.json<ApiError>({ error: "Expected a JSON body" }, 400);
+        throw badRequest("Expected JSON");
       }
-      const value = (body as { language?: unknown } | null)?.language;
-      // "system" (or null) follows the OS; otherwise only a shipped language.
-      const language = value === "system" || value === null ? null : value;
-      if (language !== null && (typeof language !== "string" || !uiLanguage.languages.includes(language))) {
-        return c.json<ApiError>({ error: "Unknown language" }, 400);
-      }
-      uiLanguage.set(language);
-      return c.json({ uiLanguage: language });
+      return c.json(uiState.update(parseUiStateChange(body)));
     });
   }
 

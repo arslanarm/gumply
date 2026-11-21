@@ -199,7 +199,8 @@ describe("demo seeding only in an empty folder (#pc3wvc2u)", () => {
     const store = new VaultStore(dir);
     await store.init();
     expect(await store.seedDemoIfFirstRun()).toBeNull();
-    expect(store.list()).toEqual([]);
+    // No pages; the user's folder shows as a folder item (D33).
+    expect(store.list().map((meta) => [meta.id, meta.kind])).toEqual([["photos", "folder"]]);
     expect((await readdir(dir)).sort()).toEqual(["photos", "report.pdf"]);
   });
 

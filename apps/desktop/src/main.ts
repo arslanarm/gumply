@@ -15,6 +15,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
 import { startGumplyServer, type RunningServer } from "../../server/src/start.js";
+import { applyUiStateChange, type UiState, type UiStateChange, type UiStateStore } from "../../server/src/ui-state.js";
 import {
   loadSettings,
   saveSettings,
@@ -24,7 +25,7 @@ import {
   type WindowState,
 } from "./settings.js";
 import { isAppDownload, suggestedName } from "./downloads.js";
-import { DESKTOP_LANGUAGES, desktopT, resolveDesktopLanguage } from "./i18n.js";
+import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,9 +46,14 @@ let window: BrowserWindow | null = null;
 /** Set once the pages are flushed and the app may really quit (#3t6v62cb). */
 let quitting = false;
 
-/** The menu and dialog language: the saved choice, else the system's (#7h5utv23). */
+/**
+ * The menu and dialog language (#7h5utv23): the app's `gumply:language`
+ * preference (mirrored here with its other preferences, #c7fzzxk8), else the
+ * system's.
+ */
+const LANGUAGE_KEY = "gumply:language";
 function tr(key: string, vars?: Record<string, string | number>): string {
-  return desktopT(resolveDesktopLanguage(settings?.language, app.getLocale()), key, vars);
+  return desktopT(resolveDesktopLanguage(settings?.uiState[LANGUAGE_KEY], app.getLocale()), key, vars);
 }
 
 function persist(next: DesktopSettings): void {
@@ -57,6 +63,45 @@ function persist(next: DesktopSettings): void {
   } catch (error) {
     console.error("[gumply-desktop] could not save settings:", error);
   }
+}
+
+// --- UI preferences (#c7fzzxk8) -------------------------------------------
+// The window loads the app from a random port, so its `localStorage` starts
+// empty on every launch. The app mirrors its `gumply:*` keys to the server
+// (`GET/PUT /api/ui/state`), which keeps them here, in the desktop settings.
+
+type UiStateListener = (change: UiStateChange, state: UiState) => void;
+const uiStateListeners = new Set<UiStateListener>();
+
+/** React to preference changes (e.g. rebuild the menu for `gumply:language`). */
+export function onUiStateChange(listener: UiStateListener): () => void {
+  uiStateListeners.add(listener);
+  return () => uiStateListeners.delete(listener);
+}
+
+const uiStateStore: UiStateStore = {
+  get: () => settings.uiState,
+  update: (change) => {
+    const next = applyUiStateChange(settings.uiState, change);
+    persist({ ...settings, uiState: next });
+    for (const listener of uiStateListeners) listener(change, next);
+    return next;
+  },
+};
+
+// A new interface language in the app: the menu follows it (#7h5utv23).
+onUiStateChange((change) => {
+  if (change.set?.[LANGUAGE_KEY] !== undefined || change.remove?.includes(LANGUAGE_KEY)) buildMenu();
+});
+
+/**
+ * The saved theme paints the first frame: Electron's own theme follows it
+ * while the page loads (the page's pre-paint script reads the system theme
+ * then), and goes back to "system" once the page has its preferences.
+ */
+function themeForFirstPaint(): void {
+  const saved = settings.uiState["gumply:theme"];
+  nativeTheme.themeSource = saved === "dark" || saved === "light" ? saved : "system";
 }
 
 function isDirectory(path: string): boolean {
@@ -137,24 +182,20 @@ async function openVault(path: string): Promise<void> {
     // The installer's version (set from the release tag), not the source default.
     version: app.getVersion(),
     desktop: true,
+    uiState: uiStateStore,
     log: (message) => console.log(message),
-    // The interface language lives in the desktop settings (#7h5utv23): the
-    // window's own storage changes with its random port on every start.
-    uiLanguage: {
-      languages: DESKTOP_LANGUAGES,
-      get: () => settings.language,
-      set: (language) => {
-        persist({ ...settings, language });
-        buildMenu();
-      },
-    },
   });
   vaultPath = target;
   persist(withOpenedVault(settings, target));
   buildMenu();
 
+  themeForFirstPaint();
   if (!window) createWindow();
-  await window!.loadURL(`${server.url}/`);
+  try {
+    await window!.loadURL(`${server.url}/`);
+  } finally {
+    nativeTheme.themeSource = "system";
+  }
 }
 
 /**
