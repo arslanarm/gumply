@@ -195,6 +195,17 @@ test.describe('Russian interface (#7h5utv23)', () => {
     await expectNoEnglish(page, 'a trashed page');
   });
 
+  test('the graph and its legend in Russian (#93yv3ban)', async ({ page, vault }) => {
+    await vault.seed([
+      { title: 'Заметки', content: 'Ссылка на [[Планы]] и [[Нет такой]]', icon: '🌱' },
+      { title: 'Планы', content: '#проект' },
+    ]);
+    await openInRussian(page, '#/Заметки');
+    await page.getByTestId('sidebar-graph').click();
+    await expect(page.getByTestId('graph-legend-icon')).toHaveText(/эмодзи — значок страницы/);
+    await expectNoEnglish(page, 'the graph view');
+  });
+
   test('board toolbar, menu and a template board in Russian', async ({ page, request, vault }) => {
     await vault.seed([{ title: 'Заметки', content: 'Текст' }]);
     await openInRussian(page, '#/Заметки');
