@@ -725,7 +725,6 @@
       "createTitle": "Create a new vault",
       "createMessage": "Gumply keeps your notes as Markdown files in this folder.",
       "createButton": "Create vault",
-      "defaultName": "Gumply",
       "welcomeTitle": "Welcome to Gumply",
       "welcomeMessage": "Where should Gumply keep your notes?",
       "welcomeDetail": "Your notes are plain Markdown files in a folder of your choice (a vault). You can open an existing folder, for example an Obsidian vault, or create a new one.",
