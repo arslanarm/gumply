@@ -38,3 +38,4 @@ export {
   type BaseViewResult,
   type RunBaseOptions,
 } from "./evaluate.js";
+export { frontmatterValues } from "./values.js";

@@ -38,6 +38,11 @@ import {
   serializeCanvas,
   withCanvasMeta,
   CanvasParseError,
+  BaseParseError,
+  newBaseSource,
+  parseBase,
+  updateBaseSource,
+  type BaseConfig,
   type CanvasBoard,
   type BoardDocument,
   type PageKind,
@@ -101,6 +106,40 @@ export interface UpdateBoardInput {
   writer?: string;
 }
 
+/** D34 (spec/api-bases): a new database view, optionally sourced from a folder or tag. */
+export interface CreateBaseInput {
+  title: string;
+  parentId?: string | null;
+  source?: { folder?: PageId | null; tag?: string };
+}
+
+export interface UpdateBaseInput {
+  config?: unknown;
+  title?: string;
+  expectedUpdated?: string;
+  force?: boolean;
+  writer?: string;
+}
+
+/** A base file as the API returns it. `error`: the YAML couldn't be read (never written then). */
+export interface BaseDocument {
+  meta: PageMeta;
+  config: BaseConfig;
+  error?: string;
+}
+
+/** What a base view's expressions may know about one page (spec/api-bases). */
+export interface BaseIndexEntry {
+  meta: PageMeta;
+  /** Vault-relative file path with extension. */
+  path: string;
+  /** Absolute path (the server reads frontmatter from it). */
+  filePath: string;
+  fileMtimeMs: number;
+  /** Vault-relative paths of the pages and boards it links to. */
+  links: string[];
+}
+
 export interface GraphOptions {
   center?: PageId;
   /** BFS radius around `center`; defaults to 1 when `center` is set. */
@@ -143,6 +182,11 @@ interface PageRecord extends Omit<Page, "childCount"> {
    * ids, edges to missing nodes). The first save backs up the original.
    */
   boardRepaired?: boolean;
+  /**
+   * Database views only (D34, spec/api-bases): the `.base` file as it is on
+   * disk; it is parsed per request and written only through `updateBaseSource`.
+   */
+  baseSource?: string;
 }
 
 /** D33: a directory with no `<Folder>.md` beside it (a typical Obsidian folder). */
@@ -195,13 +239,44 @@ export function isBoardId(id: string): boolean {
   return id.toLowerCase().endsWith(BOARD_EXTENSION);
 }
 
+const BASE_EXTENSION = ".base";
+
+/** D34 (spec/api-bases): database view ids keep their `.base` extension. */
+export function isBaseId(id: string): boolean {
+  return id.toLowerCase().endsWith(BASE_EXTENSION);
+}
+
+/** Boards and bases keep their extension in the id; pages don't. */
+function keepsExtension(id: string): boolean {
+  return isBoardId(id) || isBaseId(id);
+}
+
+/** The extension a kind's id keeps (`""` for pages). */
+function idExtension(kind: PageKind): string {
+  return kind === "whiteboard" ? BOARD_EXTENSION : kind === "base" ? BASE_EXTENSION : "";
+}
+
+/** The kind a vault file is, by its extension. */
+function kindOfFile(path: string): PageKind {
+  return isBoardId(path) ? "whiteboard" : isBaseId(path) ? "base" : "page";
+}
+
+/** Files that are tree items: pages, boards and bases. */
+const ITEM_FILE = /\.(md|canvas|base)$/i;
+
 /**
- * The name used for collisions across both kinds (D20 + v1.7): a page "Map"
- * and a board "Map.canvas" compete for the same title in a folder.
+ * The name used for collisions across kinds (D20 + v1.7 + D34): a page "Map",
+ * a board "Map.canvas" and a base "Map.base" compete for the same title.
  */
 function collisionKey(id: string): string {
   const lower = id.toLowerCase();
-  return lower.endsWith(BOARD_EXTENSION) ? lower.slice(0, -BOARD_EXTENSION.length) : lower;
+  if (lower.endsWith(BOARD_EXTENSION)) return lower.slice(0, -BOARD_EXTENSION.length);
+  return lower.endsWith(BASE_EXTENSION) ? lower.slice(0, -BASE_EXTENSION.length) : lower;
+}
+
+/** A base's file name without folder and `.base`: `Projects/Tasks.base` → `Tasks`. */
+function baseStem(id: PageId): string {
+  return (id.split("/").pop() ?? id).slice(0, -BASE_EXTENSION.length);
 }
 
 /** A board's file name without folder and `.canvas`: `Projects/Map.canvas` → `Map`. */
@@ -425,7 +500,7 @@ export class VaultStore {
     if (name.length === 0) return this.scheduleRescan();
     if (name.startsWith(".") || name.endsWith(".tmp") || name === "node_modules") return;
     // A page/board changed, or a folder appeared or went away.
-    if (/\.(md|canvas)$/i.test(name) || !name.includes(".")) this.scheduleRescan();
+    if (ITEM_FILE.test(name) || !name.includes(".")) this.scheduleRescan();
     else if (this.directoryWatchers.has(join(dir, name))) this.scheduleRescan();
   }
 
@@ -459,10 +534,10 @@ export class VaultStore {
       absolute,
       rel: relative(this.root, absolute).split(sep).join("/"),
     }));
-    const boards = new Set(files.filter((file) => isBoardId(file.rel)).map((file) => file.rel.toLowerCase()));
+    const boards = new Set(files.filter((file) => keepsExtension(file.rel)).map((file) => file.rel.toLowerCase()));
     for (const { absolute, rel } of files) {
-      let id = isBoardId(rel) ? rel : pathToPageId(rel);
-      if (!isBoardId(rel) && boards.has(id.toLowerCase())) id = rel;
+      let id = keepsExtension(rel) ? rel : pathToPageId(rel);
+      if (!keepsExtension(rel) && boards.has(id.toLowerCase())) id = rel;
       if (!isValidPageId(id)) continue;
       const record = await this.readRecord(absolute, id);
       this.refreshTags(record);
@@ -483,7 +558,7 @@ export class VaultStore {
   ): Map<PageId, FolderRecord> {
     const folders = new Map<PageId, FolderRecord>();
     for (const id of directories.keys()) {
-      if (!isValidPageId(id) || isBoardId(id) || pages.get(id)?.kind === "page") continue;
+      if (!isValidPageId(id) || keepsExtension(id) || pages.get(id)?.kind === "page") continue;
       const title = id.slice(id.lastIndexOf("/") + 1);
       folders.set(id, { id, title, parentId: null, otherFiles: 0 });
     }
@@ -782,6 +857,7 @@ export class VaultStore {
     if (record.kind === "whiteboard") {
       throw notFound("This is a whiteboard; read it with GET /api/boards/:id");
     }
+    if (record.kind === "base") throw notFound("This is a database view; read it with GET /api/bases/:id");
     return {
       ...metaOf(record, this.directChildCount(resolved)),
       content: record.content,
@@ -1247,6 +1323,193 @@ export class VaultStore {
     return repairBackup;
   }
 
+  // --- database views (D34, spec/api-bases) ------------------------------
+
+  getBase(id: PageId): BaseDocument {
+    const record = this.requireBase(this.resolveId(id));
+    const meta = metaOf(record, 0);
+    try {
+      return { meta, config: parseBase(record.baseSource ?? "") };
+    } catch (error) {
+      return { meta, config: { views: [] }, error: error instanceof Error ? error.message : "Invalid base" };
+    }
+  }
+
+  createBase(input: CreateBaseInput): Promise<BaseDocument> {
+    return this.enqueue(() => this.createBaseNow(input));
+  }
+
+  updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
+    return this.enqueue(() => this.updateBaseNow(this.resolveId(id), patch));
+  }
+
+  /** Pages (not boards, bases or folders) with what base expressions read. */
+  baseIndex(): BaseIndexEntry[] {
+    const entries: BaseIndexEntry[] = [];
+    for (const record of this.pages.values()) {
+      if (record.kind !== "page") continue;
+      const links: string[] = [];
+      for (const edge of this.edgesBySource.get(record.id) ?? []) {
+        const target = edge.target === null ? undefined : this.pages.get(edge.target);
+        if (target) links.push(relative(this.root, target.filePath).split(sep).join("/"));
+      }
+      entries.push({
+        meta: metaOf(record, this.directChildCount(record.id)),
+        path: relative(this.root, record.filePath).split(sep).join("/"),
+        filePath: record.filePath,
+        fileMtimeMs: record.fileMtimeMs,
+        links,
+      });
+    }
+    return entries;
+  }
+
+  /** The vault path of a page or folder id, for `file.inFolder` and `this`. */
+  vaultPathOf(id: PageId): string | null {
+    const record = this.pages.get(this.resolveId(id));
+    return record ? relative(this.root, record.filePath).split(sep).join("/") : null;
+  }
+
+  private async createBaseNow(input: CreateBaseInput): Promise<BaseDocument> {
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    if (title.length === 0) throw badRequest("title must not be empty");
+    if (title.length > MAX_TITLE_LENGTH) throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
+    const parentId = input.parentId ?? null;
+    if (parentId !== null) {
+      if (typeof parentId !== "string" || !isValidPageId(parentId)) {
+        throw badRequest("parentId must be a valid page id or null");
+      }
+      this.requireParent(parentId);
+    }
+    const source = input.source && typeof input.source === "object" ? input.source : {};
+    const folder = typeof source.folder === "string" && isValidPageId(source.folder) ? source.folder : null;
+    const tag = typeof source.tag === "string" && source.tag.trim() ? source.tag.trim() : undefined;
+
+    const id = await this.freeId(childPageId(parentId, title), "base");
+    this.redirects.delete(id);
+    const filePath = this.filePathFor(id);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, newBaseSource({ folder, tag }), { encoding: "utf8", flag: "wx" });
+    const record = await this.readBaseRecord(filePath, id);
+    record.parentId = parentId;
+    this.pages.set(id, record);
+    this.reindexAll();
+    return this.getBase(id);
+  }
+
+  /**
+   * Save a base's config and/or rename it. Conditional like pages (D22): a
+   * file changed on disk is a 409 unless `force`, which backs it up first.
+   * Only what changed in the config is written (`updateBaseSource`).
+   */
+  private async updateBaseNow(
+    id: PageId,
+    patch: UpdateBaseInput,
+  ): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
+    let record = this.requireBase(id);
+    let info;
+    try {
+      info = await stat(record.filePath);
+    } catch {
+      info = null;
+    }
+    const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
+    const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
+    let conflictBackup: string | undefined;
+    if (mtimeChanged || versionChanged) {
+      if (!patch.force) throw conflict("This database view changed on disk.");
+      conflictBackup = await this.backupConflict(record);
+      record.baseSource = await readFile(record.filePath, "utf8").catch(() => record.baseSource ?? "");
+    }
+
+    if (patch.config !== undefined) {
+      const config = patch.config;
+      if (typeof config !== "object" || config === null || Array.isArray(config) || !Array.isArray((config as BaseConfig).views)) {
+        throw badRequest("config must be an object with a views list");
+      }
+      if (JSON.stringify(config).length > MAX_CONTENT_LENGTH) throw badRequest("config is too large");
+      let text: string;
+      try {
+        text = updateBaseSource(record.baseSource ?? "", config as BaseConfig);
+      } catch (error) {
+        if (error instanceof BaseParseError) throw badRequest(`This base file isn't valid YAML: ${error.message}`);
+        throw error;
+      }
+      if (text !== record.baseSource) {
+        const replaced = record.updated;
+        await this.writeBaseFile(record, text);
+        if (patch.writer) record.ownWrite = { version: record.updated, replaced, writer: patch.writer };
+        else delete record.ownWrite;
+      }
+    }
+
+    const rewrittenPages: PageId[] = [];
+    const previousTitle = record.title;
+    const nextTitle = patch.title === undefined ? record.title : String(patch.title).trim();
+    if (nextTitle.length === 0) throw badRequest("title must not be empty");
+    if (nextTitle.length > MAX_TITLE_LENGTH) throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
+    let targetId = id;
+    if (nextTitle !== previousTitle) {
+      const beforeMetas = this.pageMetas();
+      targetId = await this.renameTarget(id, record.parentId, nextTitle, "base");
+      if (targetId !== id) {
+        rewrittenPages.push(...(await this.relocateNow(id, targetId)));
+        record = this.pages.get(targetId) ?? record;
+      }
+      // A base's title is its file name (it has nowhere else to keep one).
+      record.title = baseStem(targetId);
+      rewrittenPages.push(...(await this.rewriteLinksTo(id, record, previousTitle, beforeMetas)));
+      this.reindexAll();
+    }
+    return {
+      ...this.getBase(targetId),
+      rewrittenPages: [...new Set(rewrittenPages)].sort((a, b) => a.localeCompare(b)),
+      ...(conflictBackup ? { conflictBackup } : {}),
+    };
+  }
+
+  private async writeBaseFile(record: PageRecord, text: string): Promise<void> {
+    const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      await writeFile(temporary, text, "utf8");
+      await rename(temporary, record.filePath);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    const stats = await stat(record.filePath);
+    record.baseSource = text;
+    record.fileMtimeMs = stats.mtimeMs;
+    record.updated = mtimeVersion(stats.mtimeMs);
+  }
+
+  /** A `.base` file (D34): title = file name, dates from the file, kept as text. */
+  private async readBaseRecord(absolute: string, id: PageId): Promise<PageRecord> {
+    const raw = await readFile(absolute, "utf8");
+    const stats = await stat(absolute);
+    return {
+      id,
+      title: baseStem(id),
+      tags: [],
+      parentId: null,
+      created: stats.birthtime.toISOString(),
+      updated: mtimeVersion(stats.mtimeMs),
+      content: "",
+      filePath: absolute,
+      fileMtimeMs: stats.mtimeMs,
+      fmTags: [],
+      explicitTitle: true,
+      kind: "base",
+      baseSource: raw,
+    };
+  }
+
+  private requireBase(id: PageId): PageRecord {
+    const record = this.require(id);
+    if (record.kind !== "base") throw notFound(`Database view not found: ${id}`);
+    return record;
+  }
+
   private async updateNow(
     id: PageId,
     patch: UpdatePageInput,
@@ -1256,6 +1519,7 @@ export class VaultStore {
     if (record.kind === "whiteboard") {
       throw notFound("This is a whiteboard; save it with PUT /api/boards/:id");
     }
+    if (record.kind === "base") throw notFound("This is a database view; save it with PUT /api/bases/:id");
 
     let info;
     try {
@@ -1443,7 +1707,7 @@ export class VaultStore {
   ): Promise<PageId> {
     const folder = parentOf(id) ?? parentId;
     const stem = childPageId(folder, title);
-    const desired = kind === "whiteboard" ? `${stem}${BOARD_EXTENSION}` : stem;
+    const desired = `${stem}${idExtension(kind)}`;
     if (desired === id) return id;
     // Case-only change: same file on case-insensitive file systems.
     if (desired.toLowerCase() === id.toLowerCase()) return desired;
@@ -1476,12 +1740,11 @@ export class VaultStore {
     for (let suffix = startAt; ; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base} ${suffix}`;
       if (taken.has(candidate.toLowerCase())) continue;
-      // A page id ending in `.canvas` would read as a board id.
-      if (kind === "page" && isBoardId(candidate)) continue;
-      if (await pathExists(this.filePathFor(candidate))) continue;
-      if (await pathExists(this.filePathFor(`${candidate}${BOARD_EXTENSION}`))) continue;
+      // A page id ending in `.canvas` or `.base` would read as a board or base id.
+      if (kind === "page" && keepsExtension(candidate)) continue;
+      if (await this.itemFileExists(candidate)) continue;
       if (withFolder && (await pathExists(join(this.root, candidate)))) continue;
-      return kind === "whiteboard" ? `${candidate}${BOARD_EXTENSION}` : candidate;
+      return `${candidate}${idExtension(kind)}`;
     }
   }
 
@@ -1737,7 +2000,7 @@ export class VaultStore {
   /** The trashed file of `id` within an entry (sub-pages: `<id>.md` / board id). */
   private trashedFileOf(entry: TrashEntry, id: PageId): string {
     if (id === entry.id) return entry.file;
-    return isBoardId(id) || id.toLowerCase().endsWith(".md") ? id : `${id}.md`;
+    return keepsExtension(id) || id.toLowerCase().endsWith(".md") ? id : `${id}.md`;
   }
 
   /**
@@ -1787,7 +2050,7 @@ export class VaultStore {
       }
       for (const item of entries) {
         if (item.isDirectory()) await walk(join(path, item.name));
-        else if (item.isFile() && !/\.(md|canvas)$/i.test(item.name)) count += 1;
+        else if (item.isFile() && !ITEM_FILE.test(item.name)) count += 1;
       }
     };
     await walk(dir);
@@ -1876,6 +2139,7 @@ export class VaultStore {
     if (record.kind === "whiteboard" && record.board) {
       return { item, page: { ...meta, content: "" }, board: record.board };
     }
+    if (record.kind === "base") return { item, page: { ...meta, content: "" } };
     return { item, page: { ...meta, content: record.content } };
   }
 
@@ -1892,7 +2156,7 @@ export class VaultStore {
     kind: PageKind,
   ): Promise<PageId> {
     const prefix = folder ? `${folder}/` : "";
-    const own = `${prefix}${stem}${kind === "whiteboard" ? BOARD_EXTENSION : ""}`;
+    const own = `${prefix}${stem}${idExtension(kind)}`;
     const first = await this.freeTarget(`${prefix}${stem}`, withFolder, taken, kind);
     if (first === own) return own;
     // "Sprint 12" stays a name of its own; only a D20 sibling of an
@@ -1903,8 +2167,7 @@ export class VaultStore {
       bare !== stem &&
       bare.length > 0 &&
       (taken.has(bareId.toLowerCase()) ||
-        (await pathExists(this.filePathFor(bareId))) ||
-        (await pathExists(this.filePathFor(`${bareId}${BOARD_EXTENSION}`))) ||
+        (await this.itemFileExists(bareId)) ||
         (await this.folderExists(bareId)));
     return this.freeTarget(`${prefix}${family ? bare : stem}`, withFolder, taken, kind, 2);
   }
@@ -1958,7 +2221,7 @@ export class VaultStore {
     // Only a real file comes back (never a symlink planted in `.trash/`).
     if (!(await this.readTrashedRecord(entry, entry.id))) throw notFound("Trash entry not found");
 
-    const kind: PageKind = isBoardId(entry.file) ? "whiteboard" : "page";
+    const kind: PageKind = kindOfFile(entry.file);
     // Boards (`.canvas`) have no sub-page folder; a page's must be a real one.
     const childSource = join(entry.dir, entry.id);
     const hasFolder = kind === "page" && (await lstat(childSource).then((info) => info.isDirectory(), () => false));
@@ -1968,7 +2231,7 @@ export class VaultStore {
     const parentAlive = originalParent === null || (await this.folderExists(originalParent));
     const folder = parentAlive ? originalParent : null;
     const name = entry.id.split("/").pop() ?? entry.id;
-    const stem = kind === "whiteboard" ? name.slice(0, -BOARD_EXTENSION.length) : name;
+    const stem = name.slice(0, name.length - idExtension(kind).length);
     const taken = new Set([...this.pages.keys()].map(collisionKey));
     const newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
 
@@ -2143,14 +2406,13 @@ export class VaultStore {
       if (candidate.toLowerCase() === self.toLowerCase()) return candidate;
       if (taken.has(collisionKey(candidate))) continue;
       if (await pathExists(this.folderPathFor(candidate))) continue;
-      if (await pathExists(this.filePathFor(candidate))) continue;
-      if (await pathExists(this.filePathFor(`${candidate}${BOARD_EXTENSION}`))) continue;
+      if (await this.itemFileExists(candidate)) continue;
       return candidate;
     }
   }
 
   private folderPathFor(id: PageId): string {
-    if (!isValidPageId(id) || isBoardId(id)) throw badRequest("Invalid folder id");
+    if (!isValidPageId(id) || keepsExtension(id)) throw badRequest("Invalid folder id");
     const absolute = resolve(this.root, id);
     if (!absolute.startsWith(`${this.root}${sep}`)) throw badRequest("Folder id escapes the vault");
     return absolute;
@@ -2191,8 +2453,7 @@ export class VaultStore {
     if (
       clash ||
       (await pathExists(this.folderPathFor(newId))) ||
-      (await pathExists(this.filePathFor(newId))) ||
-      (await pathExists(this.filePathFor(`${newId}${BOARD_EXTENSION}`)))
+      (await this.itemFileExists(newId))
     ) {
       throw conflict(`A page or folder already exists at ${newId}`);
     }
@@ -2306,7 +2567,7 @@ export class VaultStore {
   /** A page, or a board's meta with empty content (shared endpoints: move). */
   private getAny(id: PageId): Page {
     const record = this.require(id);
-    if (record.kind === "whiteboard") return { ...metaOf(record, 0), content: "" };
+    if (record.kind === "whiteboard" || record.kind === "base") return { ...metaOf(record, 0), content: "" };
     return this.get(id);
   }
 
@@ -2354,7 +2615,7 @@ export class VaultStore {
       if (id === record.id) continue;
       const target = id === null ? null : (this.pages.get(id) ?? null);
       const name = link.path.split("/").pop() ?? link.path;
-      const targetTitle = target?.title ?? name.replace(/\.(md|canvas)$/i, "");
+      const targetTitle = target?.title ?? name.replace(ITEM_FILE, "");
       const key = target?.id ?? `?${targetTitle.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -2366,7 +2627,7 @@ export class VaultStore {
   /** Page/board id for a vault file path on a board card (`Projects/Q1 plan.md`). */
   private idForFile(path: string): PageId | null {
     const clean = path.replace(/^\/+/, "");
-    const candidates = isBoardId(clean) ? [clean] : [clean.replace(/\.md$/i, ""), clean];
+    const candidates = keepsExtension(clean) ? [clean] : [clean.replace(/\.md$/i, ""), clean];
     for (const candidate of candidates) {
       if (this.pages.has(candidate)) return candidate;
     }
@@ -2445,6 +2706,7 @@ export class VaultStore {
 
   private async readRecord(absolute: string, id: PageId): Promise<PageRecord> {
     if (isBoardId(absolute)) return this.readBoardRecord(absolute, id);
+    if (isBaseId(absolute)) return this.readBaseRecord(absolute, id);
     const raw = await readFile(absolute, "utf8");
     const { frontmatter, content } = parseFrontmatter(raw);
     const stats = await stat(absolute);
@@ -2534,7 +2796,7 @@ export class VaultStore {
     const dir = join(this.root, ".gumply", "conflicts");
     await mkdir(dir, { recursive: true });
     const safeId = record.id.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 120);
-    const extension = record.kind === "whiteboard" ? BOARD_EXTENSION : ".md";
+    const extension = record.kind === "page" ? ".md" : idExtension(record.kind);
     const file = join(dir, `${safeId}-${Date.now()}${extension}`);
     await writeFile(file, raw, "utf8");
     const relativePath = relative(this.root, file).split(sep).join("/");
@@ -2606,7 +2868,7 @@ export class VaultStore {
 
       const absolute = join(dir, entry.name);
       if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories)));
-      else if (entry.isFile() && /\.(md|canvas)$/i.test(entry.name)) files.push(absolute);
+      else if (entry.isFile() && ITEM_FILE.test(entry.name)) files.push(absolute);
       else if (entry.isFile()) otherFiles += 1;
     }
 
@@ -2656,17 +2918,27 @@ export class VaultStore {
   /** A parent for a new or moved item: a page (its sub-page folder) or a plain folder (D33). */
   private requireParent(id: PageId): void {
     if (this.folders.has(id)) return;
-    if (this.require(id).kind !== "page") throw badRequest("Whiteboards can't have sub-pages");
+    const kind = this.require(id).kind;
+    if (kind === "base") throw badRequest("Database views can't have sub-pages");
+    if (kind !== "page") throw badRequest("Whiteboards can't have sub-pages");
   }
 
   private filePathFor(id: PageId): string {
     if (!isValidPageId(id)) throw badRequest("Invalid page id");
     // Boards keep their extension in the id (v1.7); pages add `.md`.
-    const absolute = resolve(this.root, isBoardId(id) ? id : `${id}.md`);
+    const absolute = resolve(this.root, keepsExtension(id) ? id : `${id}.md`);
     if (!absolute.startsWith(`${this.root}${sep}`)) {
       throw badRequest("Page id escapes the vault");
     }
     return absolute;
+  }
+
+  /** A page, board or base file already at `stem` (any of the three extensions). */
+  private async itemFileExists(stem: PageId): Promise<boolean> {
+    for (const extension of ["", BOARD_EXTENSION, BASE_EXTENSION]) {
+      if (await pathExists(this.filePathFor(`${stem}${extension}`))) return true;
+    }
+    return false;
   }
 
   private requireBoard(id: PageId): PageRecord {

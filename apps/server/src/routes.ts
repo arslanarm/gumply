@@ -15,6 +15,7 @@ import type {
   SearchResult,
   TrashedDocument,
   TrashItem,
+  BaseViewResult,
 } from "@gumply/core";
 import { Hono, type Context } from "hono";
 import {
@@ -28,7 +29,15 @@ import { importAllowList, importRemoteImage } from "./remote-image.js";
 
 // Tests only: host:port pairs the image import may reach on localhost.
 const importAllow = importAllowList(process.env.GUMPLY_IMPORT_ALLOW);
-import type { GraphOptions, UpdateBoardInput, UpdatePageInput, VaultStore } from "./vault-store.js";
+import type {
+  BaseDocument,
+  GraphOptions,
+  UpdateBaseInput,
+  UpdateBoardInput,
+  UpdatePageInput,
+  VaultStore,
+} from "./vault-store.js";
+import { BaseQueries } from "./bases.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -94,6 +103,7 @@ function isUploadedFile(value: unknown): value is UploadedFile {
 
 /** All `/api` routes; mounted by `createApp`. */
 export function createApiRoutes(store: VaultStore): Hono {
+  const bases = new BaseQueries(store, store.root);
   const api = new Hono();
 
   api.get("/pages", (c) => {
@@ -203,6 +213,46 @@ export function createApiRoutes(store: VaultStore): Hono {
 
     const { rewrittenPages, ...result } = await store.updateBoard(c.req.param("id"), patch);
     return c.json<BoardUpdateResult>(rewrittenPages.length > 0 ? { ...result, rewrittenPages } : result);
+  });
+
+  // --- database views (D34, spec/api-bases) ---
+  api.post("/bases", async (c) => {
+    const body = await readJson(c);
+    const source = body.source && typeof body.source === "object" && !Array.isArray(body.source) ? (body.source as JsonObject) : {};
+    const base = await store.createBase({
+      title: typeof body.title === "string" ? body.title : "",
+      parentId: parentIdValue(body) ?? null,
+      source: {
+        folder: typeof source.folder === "string" ? source.folder : null,
+        ...(typeof source.tag === "string" ? { tag: source.tag } : {}),
+      },
+    });
+    return c.json<BaseDocument>(base, 201);
+  });
+
+  api.get("/bases/:id", (c) => c.json<BaseDocument>(store.getBase(c.req.param("id"))));
+
+  api.get("/bases/:id/view", async (c) => {
+    const view = c.req.query("name");
+    const thisId = c.req.query("this");
+    return c.json<BaseViewResult>(
+      await bases.run(c.req.param("id"), { ...(view ? { view } : {}), ...(thisId ? { thisId } : {}) }),
+    );
+  });
+
+  api.put("/bases/:id", async (c) => {
+    const body = await readJson(c);
+    const patch: UpdateBaseInput = {};
+    if (body.config !== undefined) patch.config = body.config;
+    const title = optionalString(body, "title");
+    if (title !== undefined) patch.title = title;
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) patch.expectedUpdated = expectedUpdated;
+    if (body.force === true) patch.force = true;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) patch.writer = writer.slice(0, 64);
+    const { rewrittenPages, ...result } = await store.updateBase(c.req.param("id"), patch);
+    return c.json(rewrittenPages.length > 0 ? { ...result, rewrittenPages } : result);
   });
 
   api.get("/pages/:id/backlinks", (c) => c.json<Backlink[]>(store.backlinks(c.req.param("id"))));
