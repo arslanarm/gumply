@@ -28,7 +28,7 @@ import { pastedTablesToMarkdown } from "../editor/paste-table.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
-import { setWhiteboardCreator } from "../editor/whiteboard-link.js";
+import { setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { boardLinkParts } from "../lib/boards.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
@@ -105,7 +105,7 @@ export interface EditorProps {
   /** ArrowUp / Backspace at the very start of the body: go to the title. */
   onExitTop?: () => void;
   /** `/whiteboard`: create a board inside this page; resolves to it (or null). */
-  onCreateBoard?: () => Promise<PageMeta | null>;
+  onCreateBoard?: (request: WhiteboardRequest) => Promise<PageMeta | null>;
 }
 
 interface SlashMenuState {
@@ -520,12 +520,12 @@ export function Editor({
 
   // `/whiteboard`: create the board, then link it where the command was typed.
   useEffect(() => {
-    setWhiteboardCreator(() => {
+    setWhiteboardCreator((request) => {
       const instance = editorRef.current;
       const create = onCreateBoardRef.current;
       if (!instance || !create) return;
       const pos = instance.state.selection.from;
-      void create().then((board) => {
+      void create(request).then((board) => {
         const current = editorRef.current;
         if (!board || !current || current.isDestroyed) return;
         const { target, alias } = boardLinkParts(board);

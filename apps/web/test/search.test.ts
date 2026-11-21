@@ -92,7 +92,17 @@ describe("searchSections", () => {
       text: [],
       create: null,
       createBoard: null,
+      fromTemplate: null,
     });
+  });
+
+  it("offers New board from template… for template words (#yewapn9k)", () => {
+    for (const query of ["template", "templ", "new board", "Kanban", "mind map", "retro", "weekly"]) {
+      expect(searchSections([], pages, query).fromTemplate?.label).toBe("New board from template…");
+    }
+    for (const query of ["alpha", "new", "board meeting notes", "kanbanx"]) {
+      expect(searchSections([], pages, query).fromTemplate).toBeNull();
+    }
   });
 
   it("caps each section at eight rows", () => {

@@ -191,11 +191,15 @@ const shortcutsPart = lazyPart(() =>
   import("./components/ShortcutsDialog.js").then((module) => module.ShortcutsDialog),
 );
 const movePart = lazyPart(() => import("./components/MoveDialog.js").then((module) => module.MoveDialog));
+const templatePart = lazyPart(() =>
+  import("./components/TemplateGallery.js").then((module) => module.TemplateGallery),
+);
 
 type GraphViewProps = ComponentProps<typeof import("./graph/GraphView.js").GraphView>;
 type LocalGraphPanelProps = ComponentProps<typeof import("./graph/LocalGraphPanel.js").LocalGraphPanel>;
 type ShortcutsDialogProps = ComponentProps<typeof import("./components/ShortcutsDialog.js").ShortcutsDialog>;
 type MoveDialogProps = ComponentProps<typeof import("./components/MoveDialog.js").MoveDialog>;
+type TemplateGalleryProps = ComponentProps<typeof import("./components/TemplateGallery.js").TemplateGallery>;
 
 /** Start loading the graph code (both views share most of it). */
 export function preloadGraph(): void {
@@ -209,6 +213,7 @@ export function preloadWhenIdle(): () => void {
     preloadGraph();
     void shortcutsPart.preload().catch(() => undefined);
     void movePart.preload().catch(() => undefined);
+    void templatePart.preload().catch(() => undefined);
   };
   const idle = (window as Window & { requestIdleCallback?: Window["requestIdleCallback"] }).requestIdleCallback;
   let idleId: number | null = null;
@@ -390,6 +395,17 @@ export function MoveDialog(props: MoveDialogProps) {
   return (
     <Part
       part={movePart}
+      props={props}
+      fallback={null}
+      renderError={(failure) => <DialogLoadError onClose={props.onCancel} failure={failure} />}
+    />
+  );
+}
+
+export function TemplateGallery(props: TemplateGalleryProps) {
+  return (
+    <Part
+      part={templatePart}
       props={props}
       fallback={null}
       renderError={(failure) => <DialogLoadError onClose={props.onCancel} failure={failure} />}

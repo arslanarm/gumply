@@ -19,8 +19,17 @@ describe("filterSlashItems", () => {
       "image",
       "file",
       "whiteboard",
+      "board-template",
       "divider",
     ]);
+  });
+
+  it("finds Whiteboard from template by template words (#yewapn9k)", () => {
+    for (const query of ["template", "kanban", "retro", "flowchart", "mind"]) {
+      expect(keys(filterSlashItems(SLASH_ITEMS, query))).toContain("board-template");
+    }
+    // `/whiteboard` + Enter still makes a blank board right away.
+    expect(keys(filterSlashItems(SLASH_ITEMS, "whiteboard"))[0]).toBe("whiteboard");
   });
 
   it("finds /whiteboard by board words", () => {

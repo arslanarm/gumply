@@ -62,6 +62,9 @@ test.describe('whiteboards in the app (W2a)', () => {
     await vault.seed([{ title: 'Notes', content: 'Hello' }]);
     await page.goto('/');
     await page.getByTestId('new-board-button').click();
+    // The template gallery opens with Blank picked: Enter makes an empty board.
+    await expect(page.getByTestId('template-blank')).toBeFocused();
+    await page.keyboard.press('Enter');
 
     await expect(page.getByTestId('board-page')).toBeVisible();
     await expect(page).toHaveURL(/#\/Untitled%20whiteboard\.canvas$/);
@@ -98,6 +101,7 @@ test.describe('whiteboards in the app (W2a)', () => {
     await page.getByTestId('page-item-Project').hover();
     await page.getByTestId('page-menu-button-Project').click();
     await page.getByTestId('add-board-Project').click();
+    await page.getByTestId('template-blank').click();
 
     await expect(page).toHaveURL(/#\/Project\/Untitled%20whiteboard\.canvas$/);
     const board = (await api.listPages(request)).find((item) => item.id === 'Project/Untitled whiteboard.canvas');
@@ -342,6 +346,7 @@ test.describe('whiteboards in the app (W2a)', () => {
 
     // A board created just now still opens with its title selected.
     await page.getByTestId('new-board-button').click();
+    await page.getByTestId('template-blank').click();
     await expect(page.getByTestId('page-title-input')).toBeFocused();
     expect(await page.getByTestId('page-title-input').evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([0, 'Untitled whiteboard'.length]);
     await page.keyboard.press('Escape');

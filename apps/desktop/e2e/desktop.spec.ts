@@ -217,6 +217,7 @@ test('the native menu runs the in-app commands (New Page, New Whiteboard, Search
     await expect.poll(() => readdirSafe(vault)).toContain('Untitled.md');
 
     await click('new-whiteboard');
+    await window.getByTestId('template-blank').click();
     await expect(window.getByTestId('board-page')).toBeVisible();
     await expect.poll(() => readdirSafe(vault).some((name) => name.endsWith('.canvas'))).toBe(true);
 

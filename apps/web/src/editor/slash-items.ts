@@ -134,6 +134,16 @@ export const SLASH_ITEMS: SlashItem[] = [
     },
   },
   {
+    key: "board-template",
+    title: "Whiteboard from template",
+    hint: "Kanban, mind map, retro, flowchart, weekly plan",
+    keywords: ["template", "whiteboard", "board", "kanban", "mind map", "retrospective", "retro", "flowchart", "weekly", "plan"],
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      requestWhiteboard({ pickTemplate: true });
+    },
+  },
+  {
     key: "divider",
     title: "Divider",
     hint: "Horizontal rule",
