@@ -59,6 +59,7 @@ export {
   extractTags,
   extractWikilinks,
   formatBoardEmbed,
+  formatPageEmbed,
   isBoardTarget,
   hasAttachmentExtension,
   makeSnippet,
@@ -127,3 +128,16 @@ export {
   type GumplyShape,
   type InkPoint,
 } from "./canvas.js";
+export {
+  embeddedMarkdown,
+  headingKey,
+  newBlockId,
+  pageBlock,
+  pageBlockIds,
+  pageHeadings,
+  pageSection,
+  parseEmbedPart,
+  type EmbedPart,
+  type OutlineBlock,
+  type OutlineHeading,
+} from "./page-embeds.js";

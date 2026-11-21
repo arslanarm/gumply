@@ -8,7 +8,7 @@
  * link is written as file-name target + title alias: `[[Ideas Q3|Ideas: Q3?]]`.
  * Readers see the same text; both apps resolve it.
  */
-import { extractWikilinks, formatBoardEmbed, type WikiLink } from "./links.js";
+import { extractWikilinks, formatBoardEmbed, formatPageEmbed, isBoardTarget, type WikiLink } from "./links.js";
 import type { PageMeta } from "./types.js";
 
 /** A page's file name without `.md` (the last segment of its id, D20). */
@@ -71,7 +71,13 @@ export function rewriteLinksToPage(
   const { target, alias: autoAlias } = linkTargetFor(page, pages);
   let content = markdown;
   for (const link of [...links].reverse()) {
-    // D30: an embed has no alias; it keeps its `!` and height.
+    // #5dpxwac4: a page preview keeps its `!`, `#Heading`/`#^block` and alias.
+    if (link.embed && !isBoardTarget(link.targetTitle)) {
+      const replacement = formatPageEmbed(target, link.heading, link.alias);
+      content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
+      continue;
+    }
+    // D30: a board embed has no alias; it keeps its `!` and height.
     if (link.embed) {
       const replacement = formatBoardEmbed(target, link.size);
       content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);

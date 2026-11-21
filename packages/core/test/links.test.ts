@@ -78,6 +78,8 @@ describe("extractWikilinks", () => {
     );
     expect(links.map((link) => link.targetTitle)).toEqual([
       "Gumply",
+      // A note embed is a page preview, so a link (#5dpxwac4).
+      "Page",
       "v1.2",
       "notes.md",
       "Node.js",

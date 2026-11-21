@@ -17,9 +17,10 @@ export interface WikiLink {
   /** Index of the opening `[[` (or the `!` of an embed) in the source text. */
   index: number;
   /**
-   * `![[Board.canvas]]`: a board embedded in a page (D30). It counts as a link
-   * (backlinks, graph, rename); what follows `|` is the embed's height, kept
-   * as written in `size` (never an alias).
+   * `![[Board.canvas]]`: a board embedded in a page (D30); `![[Page]]`,
+   * `![[Page#Heading]]`, `![[Page#^block]]`: a page preview (#5dpxwac4). Both
+   * count as links (backlinks, graph, rename). For a board, what follows `|`
+   * is the embed's height, kept as written in `size` (never an alias).
    */
   embed?: true;
   size?: string;
@@ -34,6 +35,14 @@ export function isBoardTarget(target: string): boolean {
 export function formatBoardEmbed(target: string, size?: string | number): string {
   const height = size === undefined || size === "" ? "" : `|${size}`;
   return `![[${target}${height}]]`;
+}
+
+/**
+ * The Markdown for a page preview (#5dpxwac4): `![[Page]]`, `![[Page#Heading]]`,
+ * `![[Page#^block]]`, with an optional `|alias` as written.
+ */
+export function formatPageEmbed(target: string, subpath?: string, alias?: string): string {
+  return `![[${target}${subpath ? `#${subpath}` : ""}${alias ? `|${alias}` : ""}]]`;
 }
 
 /** Replace fenced code blocks and inline code spans with spaces. */
@@ -166,9 +175,10 @@ function isAttachmentFileTarget(title: string): boolean {
 export function extractWikilinks(markdown: string): WikiLink[] {
   const text = maskCode(markdown);
   const links: WikiLink[] = [];
-  // `![[...]]` is an attachment embed, not a page link: parseEmbeds owns it,
-  // which keeps graph/backlinks free of attachment ghosts (D19). The one
-  // exception is a board embed, `![[Map.canvas]]` (D30), which is a link.
+  // `![[file.png]]` is an attachment embed, not a page link: parseEmbeds owns
+  // it, which keeps graph/backlinks free of attachment ghosts (D19). Board
+  // embeds (`![[Map.canvas]]`, D30) and page previews (`![[Page#Heading]]`,
+  // #5dpxwac4) are links.
   const pattern = /(!?)\[\[([^[\]]*)\]\]/g;
 
   let match: RegExpExecArray | null;
@@ -178,7 +188,6 @@ export function extractWikilinks(markdown: string): WikiLink[] {
     const pipe = inner.indexOf("|");
     const targetPart = pipe === -1 ? inner : inner.slice(0, pipe);
     const aliasPart = pipe === -1 ? "" : inner.slice(pipe + 1);
-    if (embed && !isBoardTarget(targetPart.split("#")[0] ?? "")) continue;
 
     const hash = targetPart.indexOf("#");
     const title = (hash === -1 ? targetPart : targetPart.slice(0, hash)).trim().replace(/\s+/g, " ");
@@ -195,7 +204,10 @@ export function extractWikilinks(markdown: string): WikiLink[] {
     };
     if (embed) {
       link.embed = true;
-      if (alias.length > 0) link.size = alias;
+      if (alias.length > 0) {
+        if (isBoardTarget(title)) link.size = alias;
+        else link.alias = alias;
+      }
     } else if (alias.length > 0) link.alias = alias;
     if (heading.length > 0) link.heading = heading;
     links.push(link);
@@ -253,6 +265,12 @@ export function rewriteWikilinkTargets(
 
   // Replace from the end so earlier indexes stay valid.
   for (const link of [...links].reverse()) {
+    if (link.embed && !isBoardTarget(link.targetTitle)) {
+      // A page preview keeps its `!`, `#Heading`/`#^block` and alias.
+      const replacement = formatPageEmbed(title, link.heading, link.alias);
+      content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
+      continue;
+    }
     if (link.embed) {
       const replacement = formatBoardEmbed(isBoardTarget(title) ? title : `${title}.canvas`, link.size);
       content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
