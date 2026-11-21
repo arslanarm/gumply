@@ -941,7 +941,26 @@
     "linkFieldLabel": "Link to a web address or a page",
     "linkPlaceholder": "Paste a link, or search pages",
     "pagesLabel": "Pages",
-    "noPagesMatch": "No pages match. Type a web address to link it."
+    "noPagesMatch": "No pages match. Type a web address to link it.",
+    "color": "Colour",
+    "colorLabel": "Text and background colour",
+    "textColor": "Text colour",
+    "background": "Background",
+    "colorDefault": "Default",
+    "lastUsed": "Last used",
+    "textColorNamed": "{{name}} text",
+    "backgroundNamed": "{{name}} background",
+    "colors": {
+      "gray": "Gray",
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "cyan": "Cyan",
+      "blue": "Blue",
+      "purple": "Purple",
+      "pink": "Pink"
+    }
   },
   "editorMenu": {
     "label": "Editor actions",

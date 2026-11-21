@@ -2,7 +2,7 @@
  * The selection toolbar (#bg3cb83t), Notion's bubble: select text with the
  * mouse or Shift+arrows and it appears above the selection (below it near
  * the top of the window). Turn into, Bold, Italic, Strikethrough, Inline
- * code, Link and Highlight; active marks show pressed.
+ * code, Highlight, Colour (#h368c8ni) and Link; active marks show pressed.
  *
  * It never takes focus by itself, so typing goes on in the text. Alt+F10
  * moves focus into it (arrows move between buttons) and Escape gives focus
@@ -28,12 +28,14 @@ import {
 import { getWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { linkTargetFor } from "@gumply/core";
 import { Icon } from "./Icon.js";
+import { ColorPalette, ColorSample } from "./ColorPalette.js";
+import { currentColor, paletteName } from "../editor/color.js";
 
 export interface SelectionToolbarProps {
   editor: Editor;
 }
 
-type Mode = "buttons" | "link" | "turn";
+type Mode = "buttons" | "link" | "turn" | "color";
 
 interface Place {
   left: number;
@@ -48,6 +50,8 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [place, setPlace] = useState<Place | null>(null);
   const [mode, setMode] = useState<Mode>("buttons");
+  /** The colour palette was opened from the keyboard: focus its first swatch. */
+  const [paletteFocus, setPaletteFocus] = useState(false);
   const [, setVersion] = useState(0);
   const pointerDown = useRef(false);
   const dismissed = useRef<string | null>(null);
@@ -270,6 +274,23 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
           })}
           <button
             type="button"
+            className={`selection-toolbar-button selection-color-button${mode === "color" ? " is-open" : ""}`}
+            aria-label={t("format.color")}
+            aria-haspopup="true"
+            aria-expanded={mode === "color"}
+            data-tooltip={t("format.color")}
+            data-testid="format-color"
+            onClick={(event) => {
+              // detail 0: Enter or Space, not a click.
+              setPaletteFocus(event.detail === 0);
+              setMode(mode === "color" ? "buttons" : "color");
+            }}
+          >
+            <ColorSample choice={{ kind: "text", name: paletteName("text", currentColor(editor, "text")) }} />
+            <Icon name="chevronDown" size={11} />
+          </button>
+          <button
+            type="button"
             className={`selection-toolbar-button${linkActive ? " is-active" : ""}`}
             aria-label={t("format.link")}
             aria-pressed={linkActive}
@@ -298,6 +319,19 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
               {item.label}
             </button>
           ))}
+        </div>
+      ) : null}
+      {mode === "color" ? (
+        <div className="selection-color-menu">
+          <ColorPalette
+            editor={editor}
+            autoFocus={paletteFocus}
+            testId="selection-color-palette"
+            onPick={() => {
+              setMode("buttons");
+              if (paletteFocus) editor.commands.focus();
+            }}
+          />
         </div>
       ) : null}
     </div>

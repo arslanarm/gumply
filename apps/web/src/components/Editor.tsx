@@ -39,6 +39,7 @@ import { PageEmbed } from "../editor/page-embed/node.js";
 import { BlockIdChips } from "../editor/page-embed/block-ids.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import { Highlight, InnermostCode } from "../editor/highlight.js";
+import { ColorMarks } from "../editor/color.js";
 import { LinkShortcut } from "../editor/formatting.js";
 import { SelectionToolbar } from "./SelectionToolbar.js";
 import { EditorContextMenu } from "./EditorContextMenu.js";
@@ -718,6 +719,7 @@ export function Editor({
       TagChips,
       BlockIdChips,
       Highlight,
+      ...ColorMarks,
       LinkShortcut,
       InlineImage,
       FileAttachment,
