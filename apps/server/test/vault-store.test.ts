@@ -546,6 +546,7 @@ describe("D20 follow-ups (#73xpk354)", () => {
       ]);
       expect(await store.syncFilenames(true)).toEqual(dry);
       expect(store.list().map((page) => page.id).sort()).toEqual([
+        "Archive",
         "Archive/Old note",
         "Old Plan",
         "Old Plan/Child Page",

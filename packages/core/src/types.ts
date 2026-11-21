@@ -9,8 +9,8 @@
  */
 export type PageId = string;
 
-/** D25: a tree item is a Markdown page or a JSON Canvas whiteboard. */
-export type PageKind = "page" | "whiteboard";
+/** D25: a tree item is a Markdown page or a JSON Canvas whiteboard; D33: or a plain folder. */
+export type PageKind = "page" | "whiteboard" | "folder";
 
 /** Metadata stored in a note's YAML frontmatter (plus derived fields). */
 export interface PageMeta {

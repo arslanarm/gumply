@@ -64,6 +64,7 @@ export {
   makeSnippet,
   maskCode,
   resolveWikilink,
+  rewriteWikilinkFolder,
   rewriteWikilinkTargets,
   type RewriteResult,
   type WikiLink,

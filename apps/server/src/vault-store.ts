@@ -21,6 +21,7 @@ import {
   pathToPageId,
   resolveWikilink,
   rewriteLinksToPage,
+  rewriteWikilinkFolder,
   rewriteWikilinkTargets,
   titleFromId,
   pageSegment,
@@ -130,6 +131,16 @@ interface PageRecord extends Omit<Page, "childCount"> {
   boardRepaired?: boolean;
 }
 
+/** D33: a directory with no `<Folder>.md` beside it (a typical Obsidian folder). */
+interface FolderRecord {
+  id: PageId;
+  /** The directory name, as on disk. */
+  title: string;
+  parentId: PageId | null;
+  created: string;
+  updated: string;
+}
+
 /** `.trash/<trashId>/meta.json` (D11). */
 interface TrashManifest {
   id: PageId;
@@ -138,6 +149,8 @@ interface TrashManifest {
   deletedAt: string;
   /** Vault-relative file of `id` (v1.7: `.md` or `.canvas`); old manifests: `${id}.md`. */
   file?: string;
+  /** D33: `"folder"` when `file` is a plain folder (the whole directory). */
+  kind?: PageKind;
 }
 
 const BOARD_EXTENSION = ".canvas";
@@ -261,6 +274,8 @@ export class VaultStore {
   readonly root: string;
 
   private readonly pages = new Map<PageId, PageRecord>();
+  /** D33: plain folders (no `<Folder>.md`); never link targets or graph nodes. */
+  private folders = new Map<PageId, FolderRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
   private writeQueue: Promise<unknown> = Promise.resolve();
   /** Old id -> new id after a rename, for stale URLs/tabs in this session. */
@@ -381,7 +396,7 @@ export class VaultStore {
    * boards keep `.canvas`. A page whose id would equal a board's (a file
    * `Map.canvas.md` next to `Map.canvas`) keeps its `.md` so both stay.
    */
-  private async scanRecords(): Promise<Map<PageId, PageRecord>> {
+  private async scanRecords(): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
     const next = new Map<PageId, PageRecord>();
     const files = (await this.scan(this.root)).map((absolute) => ({
       absolute,
@@ -396,20 +411,74 @@ export class VaultStore {
       this.refreshTags(record);
       next.set(id, record);
     }
-    VaultStore.assignParents(next);
-    return next;
+    const folders = await this.scanFolders(next);
+    VaultStore.assignParents(next, folders);
+    return { pages: next, folders };
   }
 
-  /** Folder pages are parents; boards never have sub-pages (v0.4). */
-  private static assignParents(records: Map<PageId, PageRecord>): void {
-    for (const [key, value] of records) {
+  /**
+   * D33: every directory the index reads that isn't a page's own sub-page
+   * folder (no `<Folder>.md` beside it). Same skips as `scan`.
+   */
+  private async scanFolders(pages: ReadonlyMap<PageId, PageRecord>): Promise<Map<PageId, FolderRecord>> {
+    const folders = new Map<PageId, FolderRecord>();
+    const walk = async (dir: string): Promise<void> => {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+        if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+        if (dir === this.root && entry.name === ATTACHMENTS_DIR) continue;
+        const absolute = join(dir, entry.name);
+        const id = relative(this.root, absolute).split(sep).join("/");
+        if (isValidPageId(id) && !isBoardId(id) && pages.get(id)?.kind !== "page") {
+          try {
+            const info = await stat(absolute);
+            // Creation time: stable, so a save inside doesn't change the list.
+            const at = new Date(info.birthtimeMs || info.mtimeMs).toISOString();
+            folders.set(id, { id, title: entry.name, parentId: null, created: at, updated: at });
+          } catch {
+            continue;
+          }
+        }
+        await walk(absolute);
+      }
+    };
+    await walk(this.root);
+    return folders;
+  }
+
+  /** Folder pages and plain folders (D33) are parents; boards never have sub-pages. */
+  private static assignParents(
+    records: Map<PageId, PageRecord>,
+    folders: ReadonlyMap<PageId, FolderRecord> = new Map(),
+  ): void {
+    const parentFor = (key: PageId): PageId | null => {
       const parent = parentOf(key);
-      value.parentId = parent !== null && records.get(parent)?.kind === "page" ? parent : null;
-    }
+      if (parent === null) return null;
+      if (records.get(parent)?.kind === "page" || folders.has(parent)) return parent;
+      return null;
+    };
+    for (const [key, value] of records) value.parentId = parentFor(key);
+    for (const [key, value] of folders) value.parentId = parentFor(key);
+  }
+
+  /** Re-read the plain folders after a structural change and re-link parents. */
+  private async syncFolders(): Promise<void> {
+    this.folders = await this.scanFolders(this.pages);
+    VaultStore.assignParents(this.pages, this.folders);
+  }
+
+  private static folderSignature(folders: ReadonlyMap<PageId, FolderRecord>): string {
+    return JSON.stringify([...folders.values()].map((folder) => [folder.id, folder.parentId]).sort());
   }
 
   private async refreshFromDisk(): Promise<boolean> {
-    const next = await this.scanRecords();
+    const { pages: next, folders } = await this.scanRecords();
 
     let changed = next.size !== this.pages.size;
     if (!changed) {
@@ -421,7 +490,9 @@ export class VaultStore {
         }
       }
     }
-    if (!changed) return false;
+    const foldersChanged = VaultStore.folderSignature(folders) !== VaultStore.folderSignature(this.folders);
+    this.folders = folders;
+    if (!changed) return foldersChanged;
 
     // External renames: remember where an open page went so stale URLs follow.
     const externalMoves: Array<{ from: PageId; to: PageId }> = [];
@@ -621,19 +692,38 @@ export class VaultStore {
     return plans;
   }
 
-  /** Flat list of every page, sorted by id. */
+  /** Flat list of every tree item (pages, boards and D33 plain folders), sorted by id. */
   list(): PageMeta[] {
     const counts = new Map<PageId, number>();
-    for (const record of this.pages.values()) {
-      if (record.parentId) counts.set(record.parentId, (counts.get(record.parentId) ?? 0) + 1);
+    const count = (parentId: PageId | null) => {
+      if (parentId) counts.set(parentId, (counts.get(parentId) ?? 0) + 1);
+    };
+    for (const record of this.pages.values()) count(record.parentId);
+    for (const folder of this.folders.values()) count(folder.parentId);
+    const metas = [...this.pages.values()].map((record) => metaOf(record, counts.get(record.id) ?? 0));
+    for (const folder of this.folders.values()) {
+      metas.push({
+        id: folder.id,
+        kind: "folder",
+        title: folder.title,
+        tags: [],
+        parentId: folder.parentId,
+        childCount: counts.get(folder.id) ?? 0,
+        created: folder.created,
+        updated: folder.updated,
+      });
     }
-    return [...this.pages.values()]
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .map((record) => metaOf(record, counts.get(record.id) ?? 0));
+    return metas.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** Pages and boards only: what links, the graph and search resolve against (D33). */
+  private pageMetas(): PageMeta[] {
+    return this.list().filter((meta) => meta.kind !== "folder");
   }
 
   get(id: PageId): Page {
     const resolved = this.resolveId(id);
+    if (this.folders.has(resolved)) throw notFound("This is a folder; it has no page of its own");
     const record = this.require(resolved);
     if (record.kind === "whiteboard") {
       throw notFound("This is a whiteboard; read it with GET /api/boards/:id");
@@ -707,7 +797,7 @@ export class VaultStore {
   }
 
   graph(options: GraphOptions = {}): GraphData {
-    const allMetas = this.list();
+    const allMetas = this.pageMetas();
     const metaById = new Map(allMetas.map((meta) => [meta.id, meta]));
 
     let included = new Set<PageId>(metaById.keys());
@@ -837,7 +927,7 @@ export class VaultStore {
     let current = id;
     const seen = new Set<PageId>();
     // A real page always wins over a stale redirect for the same id.
-    while (!this.pages.has(current) && this.redirects.has(current) && !seen.has(current)) {
+    while (!this.pages.has(current) && !this.folders.has(current) && this.redirects.has(current) && !seen.has(current)) {
       seen.add(current);
       current = this.redirects.get(current) as PageId;
     }
@@ -871,7 +961,7 @@ export class VaultStore {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
         throw badRequest("parentId must be a valid page id or null");
       }
-      this.require(parentId);
+      this.requireParent(parentId);
     }
 
     const icon = typeof input.icon === "string" && input.icon.trim().length > 0
@@ -923,7 +1013,7 @@ export class VaultStore {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
         throw badRequest("parentId must be a valid page id or null");
       }
-      if (this.require(parentId).kind !== "page") throw badRequest("Whiteboards can't have sub-pages");
+      this.requireParent(parentId);
     }
     const icon = typeof input.icon === "string" && input.icon.trim().length > 0 ? input.icon.trim() : undefined;
 
@@ -1006,7 +1096,7 @@ export class VaultStore {
       throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
     }
     const titleChanged = nextTitle !== previousTitle;
-    const beforeMetas = titleChanged ? this.list() : [];
+    const beforeMetas = titleChanged ? this.pageMetas() : [];
 
     // D20: the file name follows the title; the id keeps `.canvas`. The full
     // title is (re)applied to `gumply.title` on every save, so a client that
@@ -1074,6 +1164,7 @@ export class VaultStore {
     id: PageId,
     patch: UpdatePageInput,
   ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string }> {
+    if (this.folders.has(id)) return this.renameFolderNow(id, patch);
     let record = this.require(id);
     if (record.kind === "whiteboard") {
       throw notFound("This is a whiteboard; save it with PUT /api/boards/:id");
@@ -1131,7 +1222,7 @@ export class VaultStore {
 
     const titleChanged = nextTitle !== previousTitle;
     // Snapshot before the rename so link resolution still sees the old title.
-    const beforeMetas = titleChanged ? this.list() : [];
+    const beforeMetas = titleChanged ? this.pageMetas() : [];
 
     // D20: only a title change renames the file; body/icon saves never move
     // it (old slug-named files are renamed the next time their title changes).
@@ -1206,7 +1297,7 @@ export class VaultStore {
     beforeMetas: readonly PageMeta[],
   ): Promise<PageId[]> {
     const rewritten: PageId[] = [];
-    const afterMetas = this.list();
+    const afterMetas = this.pageMetas();
     const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
     const isTarget = (link: { targetTitle: string }) =>
       resolveWikilink(link.targetTitle, beforeMetas)?.id === oldId;
@@ -1267,7 +1358,9 @@ export class VaultStore {
     if (desired === id) return id;
     // Case-only change: same file on case-insensitive file systems.
     if (desired.toLowerCase() === id.toLowerCase()) return desired;
-    const taken = new Set([...this.pages.keys()].filter((key) => key !== id).map(collisionKey));
+    const taken = new Set(
+      [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id).map(collisionKey),
+    );
     return this.freeTarget(stem, this.hasChildren(id), taken, kind);
   }
 
@@ -1349,7 +1442,7 @@ export class VaultStore {
       this.addRedirect(oldId, value.id);
     }
 
-    VaultStore.assignParents(this.pages);
+    await this.syncFolders();
 
     const moves = moved.map(({ oldId, record: value }) => ({ from: oldId, to: value.id }));
     // D23: sub-pages now live in another folder; fix their attachment links.
@@ -1422,6 +1515,7 @@ export class VaultStore {
   }
 
   private async removeNow(id: PageId): Promise<DeletePageResult> {
+    if (this.folders.has(id)) return this.removeFolderNow(id);
     const record = this.require(id);
     const deleted = this.subtreeIds(id);
     const trashId = await this.freeTrashId();
@@ -1477,6 +1571,7 @@ export class VaultStore {
     }
 
     for (const deletedId of deleted) this.pages.delete(deletedId);
+    await this.syncFolders();
     this.reindexAll();
     return { trashId, deleted };
   }
@@ -1544,13 +1639,14 @@ export class VaultStore {
   }
 
   private async moveNow(id: PageId, parentId: PageId | null): Promise<Page> {
+    if (this.folders.has(id)) return this.moveFolderNow(id, parentId);
     const record = this.require(id);
 
     if (parentId !== null) {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
         throw badRequest("parentId must be a valid page id or null");
       }
-      if (this.require(parentId).kind !== "page") throw badRequest("Whiteboards can't have sub-pages");
+      this.requireParent(parentId);
       if (parentId === id || parentId.startsWith(`${id}/`)) {
         throw badRequest("cannot move a page into itself or one of its children");
       }
@@ -1598,7 +1694,7 @@ export class VaultStore {
     const movedRoot = this.pages.get(newId);
     if (movedRoot) movedRoot.parentId = parentId;
 
-    VaultStore.assignParents(this.pages);
+    await this.syncFolders();
 
     const moves = moved.map((value) => ({ from: `${id}${value.id.slice(newId.length)}`, to: value.id }));
     // D23: the moved page and its sub-pages are in another folder now.
@@ -1608,6 +1704,183 @@ export class VaultStore {
 
     this.reindexAll();
     return this.getAny(newId);
+  }
+
+  // --- plain folders (D33) ------------------------------------------------
+
+  private folderPage(id: PageId): Page {
+    const meta = this.list().find((item) => item.id === id && item.kind === "folder");
+    if (!meta) throw notFound(`Folder not found: ${id}`);
+    return { ...meta, content: "" };
+  }
+
+  /** First of `base`, `base 2`, … free as a folder, page and board (`self` may keep its own). */
+  private async freeFolderTarget(base: PageId, self: PageId): Promise<PageId> {
+    const taken = new Set(
+      [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== self).map(collisionKey),
+    );
+    for (let suffix = 1; ; suffix += 1) {
+      const candidate = suffix === 1 ? base : `${base} ${suffix}`;
+      if (candidate.toLowerCase() === self.toLowerCase()) return candidate;
+      if (taken.has(collisionKey(candidate))) continue;
+      if (await pathExists(this.folderPathFor(candidate))) continue;
+      if (await pathExists(this.filePathFor(candidate))) continue;
+      if (await pathExists(this.filePathFor(`${candidate}${BOARD_EXTENSION}`))) continue;
+      return candidate;
+    }
+  }
+
+  private folderPathFor(id: PageId): string {
+    if (!isValidPageId(id) || isBoardId(id)) throw badRequest("Invalid folder id");
+    const absolute = resolve(this.root, id);
+    if (!absolute.startsWith(`${this.root}${sep}`)) throw badRequest("Folder id escapes the vault");
+    return absolute;
+  }
+
+  /** Rename a plain folder: the directory moves, everything inside follows. */
+  private async renameFolderNow(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
+    if (patch.content !== undefined || patch.icon !== undefined || patch.tags !== undefined) {
+      throw badRequest("A folder only has a name");
+    }
+    const title = typeof patch.title === "string" ? patch.title.trim() : "";
+    if (title.length === 0) throw badRequest("title must not be empty");
+    if (title.length > MAX_TITLE_LENGTH) throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
+    const parent = parentOf(id);
+    const base = parent ? `${parent}/${pageSegment(title)}` : pageSegment(title);
+    if (base === id) return { ...this.folderPage(id), rewrittenPages: [] };
+    const newId = await this.freeFolderTarget(base, id);
+    const rewrittenPages = await this.relocateFolderNow(id, newId);
+    return { ...this.folderPage(newId), rewrittenPages };
+  }
+
+  private async moveFolderNow(id: PageId, parentId: PageId | null): Promise<Page> {
+    if (parentId !== null) {
+      if (typeof parentId !== "string" || !isValidPageId(parentId)) {
+        throw badRequest("parentId must be a valid page id or null");
+      }
+      if (parentId === id || parentId.startsWith(`${id}/`)) {
+        throw badRequest("cannot move a folder into itself or one of its children");
+      }
+      this.requireParent(parentId);
+    }
+    const segment = id.split("/").pop() ?? id;
+    const newId = parentId ? `${parentId}/${segment}` : segment;
+    if (newId === id) return this.folderPage(id);
+    const clash = [...this.pages.keys(), ...this.folders.keys()].some(
+      (key) => key !== id && collisionKey(key) === collisionKey(newId),
+    );
+    if (
+      clash ||
+      (await pathExists(this.folderPathFor(newId))) ||
+      (await pathExists(this.filePathFor(newId))) ||
+      (await pathExists(this.filePathFor(`${newId}${BOARD_EXTENSION}`)))
+    ) {
+      throw conflict(`A page or folder already exists at ${newId}`);
+    }
+    await this.relocateFolderNow(id, newId);
+    return this.folderPage(newId);
+  }
+
+  /**
+   * Move a plain folder's directory to `newId` and remap what's inside, like
+   * `relocateNow` does for a page's sub-page folder. Path-qualified links into
+   * it (`[[Work/Ideas]]`) follow; title links still resolve unchanged.
+   */
+  private async relocateFolderNow(id: PageId, newId: PageId): Promise<PageId[]> {
+    const oldDir = this.folderPathFor(id);
+    const newDir = this.folderPathFor(newId);
+    await mkdir(dirname(newDir), { recursive: true });
+    await rename(oldDir, newDir);
+
+    const moved: Array<{ oldId: PageId; record: PageRecord }> = [];
+    for (const [key, value] of [...this.pages]) {
+      if (!key.startsWith(`${id}/`)) continue;
+      this.pages.delete(key);
+      const movedId = `${newId}${key.slice(id.length)}`;
+      moved.push({ oldId: key, record: { ...value, id: movedId, filePath: this.movedFilePath(value, movedId) } });
+    }
+    for (const { oldId, record: value } of moved) {
+      this.pages.set(value.id, value);
+      this.redirects.delete(value.id);
+      this.addRedirect(oldId, value.id);
+    }
+    await this.syncFolders();
+
+    const moves = moved.map(({ oldId, record: value }) => ({ from: oldId, to: value.id }));
+    const relinked = await this.relinkMoved(moves);
+    const boards = await this.rewriteBoardCards(moves);
+    const linked = await this.rewriteFolderLinks(id, newId);
+    this.reindexAll();
+    return [...new Set([...relinked, ...boards, ...linked])].sort((a, b) => a.localeCompare(b));
+  }
+
+  /** Rewrite `[[from/…]]` links to `[[to/…]]` in every page and board (D33). */
+  private async rewriteFolderLinks(from: PageId, to: PageId): Promise<PageId[]> {
+    const rewritten: PageId[] = [];
+    for (const other of [...this.pages.values()]) {
+      if (other.board) {
+        const result = rewriteCanvas(other.board, { text: (markdown) => rewriteWikilinkFolder(markdown, from, to).content });
+        if (result.count === 0) continue;
+        await this.saveBoardRecord(other, result.board);
+        rewritten.push(other.id);
+        continue;
+      }
+      const result = rewriteWikilinkFolder(other.content, from, to);
+      if (result.count === 0) continue;
+      const at = new Date().toISOString();
+      const written = await this.writePage(
+        other.filePath,
+        {
+          title: other.title,
+          ...(other.icon ? { icon: other.icon } : {}),
+          tags: other.fmTags,
+          created: other.created,
+          updated: at,
+        },
+        result.content,
+        ["updated"],
+        titleFromId(other.id),
+      );
+      other.content = result.content;
+      other.updated = written.frontmatter ? at : new Date(written.mtimeMs).toISOString();
+      other.fileMtimeMs = written.mtimeMs;
+      this.refreshTags(other);
+      rewritten.push(other.id);
+    }
+    return rewritten;
+  }
+
+  /** D11/D33: a plain folder goes to the trash as a whole directory. */
+  private async removeFolderNow(id: PageId): Promise<DeletePageResult> {
+    const dir = this.folderPathFor(id);
+    const deleted = [
+      id,
+      ...[...this.folders.keys(), ...this.pages.keys()].filter((key) => key.startsWith(`${id}/`)).sort((a, b) => a.localeCompare(b)),
+    ];
+    const trashId = await this.freeTrashId();
+    const trashDir = join(this.root, ".trash", trashId);
+    const inTrash = join(trashDir, id);
+    const manifest: TrashManifest = {
+      id,
+      trashId,
+      deleted,
+      deletedAt: new Date().toISOString(),
+      file: id,
+      kind: "folder",
+    };
+    try {
+      await mkdir(dirname(inTrash), { recursive: true });
+      await writeFile(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2), "utf8");
+      await rename(dir, inTrash);
+    } catch (error) {
+      await rename(inTrash, dir).catch(() => undefined);
+      await rm(trashDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+    for (const key of deleted) this.pages.delete(key);
+    await this.syncFolders();
+    this.reindexAll();
+    return { trashId, deleted };
   }
 
   /** A page, or a board's meta with empty content (shared endpoints: move). */
@@ -1620,7 +1893,8 @@ export class VaultStore {
   // --- index -------------------------------------------------------------
 
   private async rebuild(): Promise<void> {
-    const next = await this.scanRecords();
+    const { pages: next, folders } = await this.scanRecords();
+    this.folders = folders;
     this.pages.clear();
     this.edgesBySource.clear();
     for (const [id, record] of next) this.pages.set(id, record);
@@ -1628,7 +1902,7 @@ export class VaultStore {
   }
 
   private reindexAll(): void {
-    const metas = this.list();
+    const metas = this.pageMetas();
     this.edgesBySource.clear();
     for (const meta of metas) {
       const record = this.pages.get(meta.id);
@@ -1643,7 +1917,7 @@ export class VaultStore {
       this.edgesBySource.delete(id);
       return;
     }
-    this.edgesBySource.set(id, this.edgesFor(record, this.list()));
+    this.edgesBySource.set(id, this.edgesFor(record, this.pageMetas()));
   }
 
   /**
@@ -1913,7 +2187,9 @@ export class VaultStore {
   }
 
   private async freeId(baseId: string, kind: PageKind = "page"): Promise<PageId> {
-    const taken = new Set([...this.pages.keys()].map(collisionKey));
+    // D33: a new page never takes a plain folder's name (that would turn the
+    // folder into the page's sub-page folder).
+    const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
     return this.freeTarget(baseId, false, taken, kind);
   }
 
@@ -1941,7 +2217,16 @@ export class VaultStore {
     for (const record of this.pages.values()) {
       if (record.parentId === id) count += 1;
     }
+    for (const folder of this.folders.values()) {
+      if (folder.parentId === id) count += 1;
+    }
     return count;
+  }
+
+  /** A parent for a new or moved item: a page (its sub-page folder) or a plain folder (D33). */
+  private requireParent(id: PageId): void {
+    if (this.folders.has(id)) return;
+    if (this.require(id).kind !== "page") throw badRequest("Whiteboards can't have sub-pages");
   }
 
   private filePathFor(id: PageId): string {
