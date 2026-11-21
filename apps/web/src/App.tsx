@@ -1091,17 +1091,22 @@ export function App() {
   // pending text first, then a conditional PUT of just the property change.
   // One property save at a time: each sends the version the previous one made.
   const propertySaves = useRef<Promise<unknown>>(Promise.resolve());
-  const savePropertiesRef = useRef<(patch: PropertiesPatch) => Promise<boolean>>(async () => false);
-  const handlePropertiesChange = useCallback((patch: PropertiesPatch): Promise<boolean> => {
+  // A patch, or a function computing it when its turn comes (from the page as
+  // it is then; null = nothing to save).
+  type QueuedPatch = PropertiesPatch | (() => PropertiesPatch | null);
+  const savePropertiesRef = useRef<(patch: QueuedPatch) => Promise<boolean>>(async () => false);
+  const handlePropertiesChange = useCallback((patch: QueuedPatch): Promise<boolean> => {
     const run = () => savePropertiesRef.current(patch);
     const next = propertySaves.current.then(run, run);
     propertySaves.current = next;
     return next;
   }, []);
-  savePropertiesRef.current = async (patch: PropertiesPatch): Promise<boolean> => {
+  savePropertiesRef.current = async (queued: QueuedPatch): Promise<boolean> => {
     {
       const id = selectedRef.current;
       if (!id || isBoardId(id)) return false;
+      const patch = typeof queued === "function" ? queued() : queued;
+      if (!patch) return true;
       setActionError(null);
       try {
         await editorControls.current?.flush();
@@ -1112,7 +1117,10 @@ export function App() {
         });
         applySavedPage(id, updated);
         // The next queued save reads the new version from here before React re-renders.
-        pageRef.current = pageRef.current && pageRef.current.id === id ? { ...pageRef.current, updated: updated.updated } : pageRef.current;
+        pageRef.current =
+          pageRef.current && pageRef.current.id === id
+            ? { ...pageRef.current, updated: updated.updated, properties: updated.properties ?? pageRef.current.properties }
+            : pageRef.current;
         return true;
       } catch (error) {
         setActionError(errorMessage(error));
@@ -1140,8 +1148,15 @@ export function App() {
       // This page's value follows when it converts cleanly ("2" → 2, a
       // single value → a list): only that line is written. Other pages keep
       // theirs, as in Obsidian; a value that doesn't convert shows a hint.
-      const converted = before?.editable ? convertPropertyValue(type, before.value) : undefined;
-      if (converted !== undefined) await handlePropertiesChange({ set: { [key]: converted } });
+      // Decided when its turn in the save queue comes, from the value then:
+      // a value typed meanwhile (already in the new shape) is never
+      // overwritten by the old one converted.
+      await handlePropertiesChange(() => {
+        const now = (pageRef.current?.id === id ? pageRef.current?.properties : undefined)?.find((item) => item.key === key) ?? before;
+        if (!now?.editable) return null;
+        const converted = convertPropertyValue(type, now.value);
+        return converted === undefined ? null : { set: { [key]: converted } };
+      });
     } catch (error) {
       setActionError(errorMessage(error));
     }
