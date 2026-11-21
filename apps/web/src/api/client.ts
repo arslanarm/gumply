@@ -137,7 +137,7 @@ export interface SaveBoardInput {
 export interface TagRenameResult {
   renamed: number;
   rewrittenPages: PageId[];
-  /** Changed on disk by another app meanwhile: left alone. */
+  /** Left alone: changed on disk meanwhile, or the open page with unsaved edits. */
   skippedPages: PageId[];
 }
 
@@ -239,8 +239,8 @@ export const api = {
 
 
   /** #9bx3aznb: rename a tag in every page and board (`from`/`to` without `#`). */
-  renameTag: (from: string, to: string): Promise<TagRenameResult> =>
-    mutate(() => request("/tags/rename", { method: "POST", body: JSON.stringify({ from, to }) })),
+  renameTag: (from: string, to: string, skip: PageId[] = []): Promise<TagRenameResult> =>
+    mutate(() => request("/tags/rename", { method: "POST", body: JSON.stringify({ from, to, skip }) })),
 
   movePage: (id: PageId, parentId: PageId | null): Promise<Page> =>
     mutate(() =>

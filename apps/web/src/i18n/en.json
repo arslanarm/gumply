@@ -955,9 +955,9 @@
     "renamed_few": "Renamed #{{from}} to #{{to}} in {{count}} pages",
     "renamed_many": "Renamed #{{from}} to #{{to}} in {{count}} pages",
     "renamed_other": "Renamed #{{from}} to #{{to}} in {{count}} pages",
-    "skipped_one": "{{count}} page changed on disk meanwhile and was left alone. Rename again to include it.",
-    "skipped_few": "{{count}} pages changed on disk meanwhile and were left alone. Rename again to include them.",
-    "skipped_many": "{{count}} pages changed on disk meanwhile and were left alone. Rename again to include them.",
-    "skipped_other": "{{count}} pages changed on disk meanwhile and were left alone. Rename again to include them."
+    "skipped_one": "{{count}} page was left alone: it changed on disk or has unsaved edits. Rename again once it’s saved.",
+    "skipped_few": "{{count}} pages were left alone: they changed on disk or have unsaved edits. Rename again once they’re saved.",
+    "skipped_many": "{{count}} pages were left alone: they changed on disk or have unsaved edits. Rename again once they’re saved.",
+    "skipped_other": "{{count}} pages were left alone: they changed on disk or have unsaved edits. Rename again once they’re saved."
   }
 }

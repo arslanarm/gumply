@@ -83,6 +83,31 @@ test.describe('tags pane (#9bx3aznb)', () => {
     expect(await read('Home.md')).toBe(FILES['Home.md']);
   });
 
+  test('the open page with edits that cannot be saved is skipped and reported, never overwritten', async ({ page, request, vault }) => {
+    void vault;
+    await seedVault(request);
+    await page.goto('/#/Notes');
+    await expect(page.getByTestId('editor-content')).toContainText('Notes about #work');
+    // Saves of the open page fail from now on (as in a conflict).
+    await page.route('**/api/pages/Notes', (route) =>
+      route.request().method() === 'PUT' ? route.fulfill({ status: 500, body: '{"error":"nope"}' }) : route.continue(),
+    );
+    await page.getByTestId('editor-content').getByText('Notes about').click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' unsaved');
+    await page.getByTestId('tags-pane-toggle').click();
+    await page.getByTestId('tag-row-work').click({ button: 'right' });
+    await page.getByTestId('tag-rename-input').fill('job');
+    await page.getByTestId('tag-rename-confirm').click();
+
+    await expect(page.getByTestId('undo-toast')).toContainText('Renamed #work to #job in 1 page');
+    await expect(page.getByTestId('undo-toast')).toContainText('1 page was left alone');
+    expect(await read('Notes.md')).toBe(FILES['Notes.md']);
+    expect(await read('Plan.md')).toContain('#job/ideas');
+    // The typing is still there.
+    await expect(page.getByTestId('editor-content')).toContainText('unsaved');
+  });
+
   test('right-click a tag to rename; Escape cancels and nothing changes', async ({ page, request, vault }) => {
     void vault;
     await seedVault(request);

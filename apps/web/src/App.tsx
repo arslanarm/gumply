@@ -1256,11 +1256,13 @@ export function App() {
     async (from: string, to: string) => {
       setTagRename(null);
       setActionError(null);
-      await flushAllSaves();
+      // The open editor saves first. If it still can't (e.g. a conflict),
+      // its file is skipped and reported, never overwritten.
+      const saved = await flushAllSaves();
+      const open = selectedRef.current;
       try {
-        const result = await api.renameTag(from, to);
+        const result = await api.renameTag(from, to, !saved && open !== null ? [open] : []);
         await loadPages();
-        const open = selectedRef.current;
         if (open !== null && result.rewrittenPages.includes(open)) requestPageReload();
         const skipped = result.skippedPages.length;
         setToast({

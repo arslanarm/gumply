@@ -96,6 +96,18 @@ describe("renaming a tag (#9bx3aznb)", () => {
     expect((await jsonRequest(app, "POST", "/api/tags/rename", { from: "work" })).status).toBe(400);
   });
 
+  it("leaves the ids in `skip` alone (an open page with unsaved edits) and reports them", async () => {
+    const { app, dir, store } = await createTestServer();
+    await writeFile(join(dir, "Open.md"), "Open #work\n");
+    await writeFile(join(dir, "Other.md"), "Other #work\n");
+    await store.rescan();
+    const response = await jsonRequest(app, "POST", "/api/tags/rename", { from: "work", to: "job", skip: ["Open"] });
+    expect(await response.json()).toEqual({ renamed: 1, rewrittenPages: ["Other"], skippedPages: ["Open"] });
+    expect(await readFile(join(dir, "Open.md"), "utf8")).toBe("Open #work\n");
+    expect(await readFile(join(dir, "Other.md"), "utf8")).toBe("Other #job\n");
+    expect((await jsonRequest(app, "POST", "/api/tags/rename", { from: "work", to: "job", skip: "Open" })).status).toBe(400);
+  });
+
   it("is a write: refused from another origin", async () => {
     const { app } = await createTestServer();
     const response = await app.request("/api/tags/rename", {

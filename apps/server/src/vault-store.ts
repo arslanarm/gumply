@@ -73,7 +73,7 @@ export interface TagRenameResult {
   /** Pages and boards rewritten. */
   renamed: number;
   rewrittenPages: PageId[];
-  /** Changed on disk by another app since it was read: left alone. */
+  /** Left alone: changed on disk since it was read, or open with unsaved edits (`skip`). */
   skippedPages: PageId[];
 }
 
@@ -811,10 +811,11 @@ export class VaultStore {
   /**
    * Rename tag `from` everywhere (#9bx3aznb): frontmatter `tags`, inline
    * `#tags` and nested `#from/…`, in pages and boards. Trashed files are left
-   * alone; a file that changed on disk since it was read is skipped.
+   * alone; a file that changed on disk since it was read is skipped, and so
+   * are the `skip` ids (an open editor whose edits couldn't be saved).
    */
-  renameTag(from: string, to: string): Promise<TagRenameResult> {
-    return this.enqueue(() => this.renameTagNow(from, to));
+  renameTag(from: string, to: string, skip: readonly PageId[] = []): Promise<TagRenameResult> {
+    return this.enqueue(() => this.renameTagNow(from, to, skip));
   }
 
   remove(id: PageId): Promise<DeletePageResult> {
@@ -2290,7 +2291,7 @@ export class VaultStore {
     return rewritten;
   }
 
-  private async renameTagNow(fromInput: string, toInput: string): Promise<TagRenameResult> {
+  private async renameTagNow(fromInput: string, toInput: string, skip: readonly PageId[]): Promise<TagRenameResult> {
     const from = fromInput.trim().replace(/^#/, "");
     const to = toInput.trim().replace(/^#/, "");
     if (!isValidTagName(from)) throw badRequest("Unknown tag");
@@ -2307,6 +2308,11 @@ export class VaultStore {
       const body = record.board ? null : renameInlineTag(record.content, from, to);
       if (!changed && !fmTags && !(body && body.count > 0)) continue;
 
+      // An open editor with unsaved edits: its file is left alone, never overwritten.
+      if (skip.includes(record.id)) {
+        skippedPages.push(record.id);
+        continue;
+      }
       // D22: never write over a change this store hasn't seen.
       const mtime = await stat(record.filePath).then((stats) => stats.mtimeMs, () => null);
       if (mtime !== record.fileMtimeMs) {

@@ -170,7 +170,9 @@ export function createApiRoutes(store: VaultStore): Hono {
     const from = optionalString(body, "from");
     const to = optionalString(body, "to");
     if (from === undefined || to === undefined) throw badRequest("from and to are required");
-    return c.json(await store.renameTag(from, to));
+    const skip = body.skip ?? [];
+    if (!Array.isArray(skip) || skip.some((id) => typeof id !== "string")) throw badRequest("skip must be an array of ids");
+    return c.json(await store.renameTag(from, to, skip as string[]));
   });
 
   api.post("/pages/:id/move", async (c) => {
