@@ -53,6 +53,7 @@ import {
 } from "../editor/raw-markdown/markup.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
 import { MarkdownListSource } from "../editor/raw-markdown/list-source.js";
+import { MarkdownBlockJoins } from "../editor/raw-markdown/block-joins.js";
 import { Callout, CalloutTitle } from "../editor/callout/callout.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
 import {
@@ -689,6 +690,7 @@ export function Editor({
       MarkdownHorizontalRule,
       MarkdownMarkup,
       MarkdownListSource,
+      MarkdownBlockJoins,
       EmptyLineParagraph,
       MarkdownText,
       MarkdownHardBreak,
