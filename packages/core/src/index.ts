@@ -146,3 +146,15 @@ export {
   type OutlineBlock,
   type OutlineHeading,
 } from "./page-embeds.js";
+
+export {
+  findInlineTags,
+  isTagLike,
+  isValidTagName,
+  renamedTag,
+  renameInlineTag,
+  renameTagList,
+  tagMatches,
+  type InlineTag,
+  type TagRewrite,
+} from "./tags.js";

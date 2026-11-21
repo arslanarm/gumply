@@ -133,6 +133,14 @@ export interface SaveBoardInput {
   writer?: string;
 }
 
+/** `POST /api/tags/rename` (#9bx3aznb). */
+export interface TagRenameResult {
+  renamed: number;
+  rewrittenPages: PageId[];
+  /** Changed on disk by another app meanwhile: left alone. */
+  skippedPages: PageId[];
+}
+
 /** `PUT /api/boards/:id`: `rewrittenPages`, `conflictBackup`, `repairBackup` (once). */
 export type SaveBoardResult = BoardUpdateResult;
 
@@ -229,6 +237,10 @@ export const api = {
   /** v1.9: empty the trash; resolves to how many entries were deleted. */
   emptyTrash: (): Promise<{ deleted: number }> => mutate(() => request("/trash", { method: "DELETE" })),
 
+
+  /** #9bx3aznb: rename a tag in every page and board (`from`/`to` without `#`). */
+  renameTag: (from: string, to: string): Promise<TagRenameResult> =>
+    mutate(() => request("/tags/rename", { method: "POST", body: JSON.stringify({ from, to }) })),
 
   movePage: (id: PageId, parentId: PageId | null): Promise<Page> =>
     mutate(() =>

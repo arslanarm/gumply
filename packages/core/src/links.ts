@@ -6,6 +6,7 @@
  */
 import type { LinkEdge, PageMeta } from "./types.js";
 import { slugify, titleFromId } from "./ids.js";
+import { findInlineTags } from "./tags.js";
 
 export interface WikiLink {
   /** Page title the link points at (without alias/heading). */
@@ -216,23 +217,16 @@ export function extractWikilinks(markdown: string): WikiLink[] {
   return links;
 }
 
-/** Extract inline `#tags`, ignoring code and Markdown headings. */
+/** Inline `#tags`, each once (first spelling wins); rules in `tags.ts`. */
 export function extractTags(markdown: string): string[] {
-  const text = maskCode(markdown);
   const seen = new Set<string>();
   const tags: string[] = [];
-  const pattern = /(^|[\s([{>"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu;
-
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
-    const tag = (match[2] ?? "").replace(/[/-]+$/, "");
-    if (tag.length === 0) continue;
+  for (const { tag } of findInlineTags(markdown)) {
     const key = tag.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     tags.push(tag);
   }
-
   return tags;
 }
 

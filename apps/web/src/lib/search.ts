@@ -1,11 +1,18 @@
 /**
  * Pure helpers for the Cmd/Ctrl+K quick switcher (D13, spec/ux §10).
  */
-import type { PageMeta, SearchResult } from "@gumply/core";
+import { tagMatches, type PageMeta, type SearchResult } from "@gumply/core";
 import { folderPath, parseWikiLinkText } from "./wikilinks.js";
 import { relativeTime, t } from "../i18n/index.js";
 
 export const MAX_SEARCH_ROWS = 8;
+/** A `#tag` query lists every tagged page (the tags pane's filter, #9bx3aznb), up to this many. */
+export const MAX_TAG_ROWS = 200;
+
+/** `work/ideas` for the query `#work/ideas`; null for any other query. */
+export function tagQuery(query: string): string | null {
+  return /^#([\p{L}\p{N}][\p{L}\p{N}_/-]*)$/u.exec(query.trim())?.[1]?.replace(/[/-]+$/, "") ?? null;
+}
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
@@ -176,6 +183,22 @@ export function searchSections(
   const counts = titleCounts(pages);
   const pagesRows: SearchRow[] = [];
   const textRows: SearchRow[] = [];
+
+  // `#tag`: the pages with that tag (frontmatter or inline, nested included),
+  // by title; text hits of other pages below them.
+  const tag = tagQuery(query);
+  if (tag) {
+    const tagged = pages
+      .filter((page) => page.kind !== "folder" && page.tags.some((item) => tagMatches(item, tag)))
+      .sort((a, b) => a.title.localeCompare(b.title));
+    const ids = new Set(tagged.map((page) => page.id));
+    for (const page of tagged.slice(0, MAX_TAG_ROWS)) pagesRows.push(toRow(page, counts, "page"));
+    for (const result of results) {
+      if (ids.has(result.page.id) || textRows.length >= MAX_SEARCH_ROWS) continue;
+      textRows.push(toRow(result.page, counts, "text", plainTextSnippet(result.snippet)));
+    }
+    return { pages: pagesRows, text: textRows, create: null, createBoard: null, fromTemplate: null, language: null };
+  }
 
   for (const result of results) {
     const title = normalise(result.page.title);

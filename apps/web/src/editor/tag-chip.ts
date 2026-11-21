@@ -4,15 +4,14 @@
  * chip opens search (Cmd+K) with that tag; with the caret already inside the
  * tag a click just moves the caret, so it stays editable.
  *
- * Same rule as core `extractTags`: after a start, space or opening bracket,
- * a letter or digit, then letters, digits, `_`, `/`, `-`. Never in code.
+ * The same scanner as the tag index (core `findInlineTags`, Obsidian's
+ * rules): never in code or URLs, and `#2024` alone isn't a tag.
  */
+import { findInlineTags } from "@gumply/core";
 import { Extension } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-
-const TAG = /(^|[\s([{>"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu;
 
 let opener: (tag: string) => void = () => {};
 
@@ -23,14 +22,7 @@ export function setTagOpener(next: (tag: string) => void): void {
 
 /** `[from, to, tag]` for every tag in a text, offsets relative to it. */
 export function findTags(text: string): Array<[number, number, string]> {
-  const found: Array<[number, number, string]> = [];
-  for (const match of text.matchAll(TAG)) {
-    const tag = (match[2] ?? "").replace(/[/-]+$/, "");
-    if (!tag) continue;
-    const from = (match.index ?? 0) + (match[1] ?? "").length;
-    found.push([from, from + 1 + tag.length, tag]);
-  }
-  return found;
+  return findInlineTags(text).map(({ tag, index }) => [index, index + 1 + tag.length, tag]);
 }
 
 /** Chip decorations for one textblock at `pos`. */

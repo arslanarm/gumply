@@ -31,6 +31,9 @@ import {
   type RelinkOptions,
   canvasLinks,
   canvasMeta,
+  isValidTagName,
+  renameInlineTag,
+  renameTagList,
   canvasText,
   emptyCanvas,
   parseCanvas,
@@ -64,6 +67,15 @@ import {
   DEMO_FOLDER_TITLE,
   WELCOME_TITLE,
 } from "./demo.js";
+
+/** `POST /api/tags/rename` (#9bx3aznb). */
+export interface TagRenameResult {
+  /** Pages and boards rewritten. */
+  renamed: number;
+  rewrittenPages: PageId[];
+  /** Changed on disk by another app since it was read: left alone. */
+  skippedPages: PageId[];
+}
 
 export interface CreatePageInput {
   title: string;
@@ -794,6 +806,15 @@ export class VaultStore {
 
   update(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
     return this.enqueue(() => this.updateNow(this.resolveId(id), patch));
+  }
+
+  /**
+   * Rename tag `from` everywhere (#9bx3aznb): frontmatter `tags`, inline
+   * `#tags` and nested `#from/…`, in pages and boards. Trashed files are left
+   * alone; a file that changed on disk since it was read is skipped.
+   */
+  renameTag(from: string, to: string): Promise<TagRenameResult> {
+    return this.enqueue(() => this.renameTagNow(from, to));
   }
 
   remove(id: PageId): Promise<DeletePageResult> {
@@ -2267,6 +2288,80 @@ export class VaultStore {
       rewritten.push(other.id);
     }
     return rewritten;
+  }
+
+  private async renameTagNow(fromInput: string, toInput: string): Promise<TagRenameResult> {
+    const from = fromInput.trim().replace(/^#/, "");
+    const to = toInput.trim().replace(/^#/, "");
+    if (!isValidTagName(from)) throw badRequest("Unknown tag");
+    if (!isValidTagName(to)) throw badRequest("A tag is letters, digits, _, - and /, with at least one that isn't a digit");
+    if (from === to) return { renamed: 0, rewrittenPages: [], skippedPages: [] };
+    // What other apps wrote since the last scan is read first.
+    await this.refreshFromDisk();
+
+    const rewrittenPages: PageId[] = [];
+    const skippedPages: PageId[] = [];
+    for (const record of [...this.pages.values()]) {
+      const changed = record.board ? this.boardWithTagRenamed(record.board, from, to) : null;
+      const fmTags = record.board ? null : renameTagList(record.fmTags, from, to);
+      const body = record.board ? null : renameInlineTag(record.content, from, to);
+      if (!changed && !fmTags && !(body && body.count > 0)) continue;
+
+      // D22: never write over a change this store hasn't seen.
+      const mtime = await stat(record.filePath).then((stats) => stats.mtimeMs, () => null);
+      if (mtime !== record.fileMtimeMs) {
+        skippedPages.push(record.id);
+        continue;
+      }
+
+      if (changed) {
+        await this.saveBoardRecord(record, changed);
+      } else {
+        const at = new Date().toISOString();
+        const content = body?.content ?? record.content;
+        const tags = fmTags ?? record.fmTags;
+        const written = await this.writePage(
+          record.filePath,
+          { title: record.title, ...(record.icon ? { icon: record.icon } : {}), tags, created: record.created, updated: at },
+          content,
+          fmTags ? ["tags", "updated"] : ["updated"],
+          titleFromId(record.id),
+        );
+        record.content = content;
+        record.fmTags = tags;
+        record.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
+        record.fileMtimeMs = written.mtimeMs;
+        this.refreshTags(record);
+      }
+      rewrittenPages.push(record.id);
+    }
+    return { renamed: rewrittenPages.length, rewrittenPages, skippedPages };
+  }
+
+  /** The board with the tag renamed in its tags, cards, frame labels and connector labels; null if none. */
+  private boardWithTagRenamed(board: CanvasBoard, from: string, to: string): CanvasBoard | null {
+    let changed = false;
+    const text = (value: string): string => {
+      const result = renameInlineTag(value, from, to);
+      if (result.count > 0) changed = true;
+      return result.content;
+    };
+    let next = rewriteCanvas(board, { text }).board;
+    const nodes = next.nodes.map((node) =>
+      node.type === "group" && typeof node.label === "string" && text(node.label) !== node.label
+        ? { ...node, label: text(node.label) }
+        : node,
+    );
+    const edges = next.edges.map((edge) =>
+      typeof edge.label === "string" && text(edge.label) !== edge.label ? { ...edge, label: text(edge.label) } : edge,
+    );
+    if (changed) next = { ...next, nodes, edges };
+    const tags = renameTagList(canvasMeta(next).tags, from, to);
+    if (tags) {
+      next = withCanvasMeta(next, { tags });
+      changed = true;
+    }
+    return changed ? next : null;
   }
 
   /** D11/D33: a plain folder goes to the trash as a whole directory. */

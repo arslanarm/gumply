@@ -931,5 +931,33 @@
     "deleteBlock": "Delete block",
     "copyHeadingLink": "Copy link to heading",
     "pasteBlocked": "The browser blocked reading the clipboard. Use {{keys}} instead."
+  },
+  "tags": {
+    "title": "Tags",
+    "show": "Show tags",
+    "hide": "Hide tags",
+    "empty": "No tags yet. Type #tag in a page to add one.",
+    "listLabel": "All tags",
+    "showPages": "Pages tagged #{{tag}}",
+    "expand": "Show nested tags",
+    "collapse": "Hide nested tags",
+    "rename": "Rename tag…",
+    "renameTag": "Rename #{{tag}}",
+    "newName": "New name",
+    "renameCount_one": "#{{tag}} is in {{count}} page or whiteboard. It is rewritten there, nested tags too; code stays as it is.",
+    "renameCount_few": "#{{tag}} is in {{count}} pages and whiteboards. It is rewritten in all of them, nested tags too; code stays as it is.",
+    "renameCount_many": "#{{tag}} is in {{count}} pages and whiteboards. It is rewritten in all of them, nested tags too; code stays as it is.",
+    "renameCount_other": "#{{tag}} is in {{count}} pages and whiteboards. It is rewritten in all of them, nested tags too; code stays as it is.",
+    "merges": "#{{tag}} exists already: the two become one tag.",
+    "invalid": "Use letters, digits, _, - and /, with at least one character that isn’t a digit.",
+    "renameButton": "Rename",
+    "renamed_one": "Renamed #{{from}} to #{{to}} in {{count}} page",
+    "renamed_few": "Renamed #{{from}} to #{{to}} in {{count}} pages",
+    "renamed_many": "Renamed #{{from}} to #{{to}} in {{count}} pages",
+    "renamed_other": "Renamed #{{from}} to #{{to}} in {{count}} pages",
+    "skipped_one": "{{count}} page changed on disk meanwhile and was left alone. Rename again to include it.",
+    "skipped_few": "{{count}} pages changed on disk meanwhile and were left alone. Rename again to include them.",
+    "skipped_many": "{{count}} pages changed on disk meanwhile and were left alone. Rename again to include them.",
+    "skipped_other": "{{count}} pages changed on disk meanwhile and were left alone. Rename again to include them."
   }
 }

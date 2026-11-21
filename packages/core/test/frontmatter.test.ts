@@ -112,3 +112,12 @@ describe("serializeNote", () => {
     expect(file.endsWith("a\nb\n")).toBe(true);
   });
 });
+
+describe("trailing YAML comments (#9bx3aznb)", () => {
+  it("aren't part of a value, a flow list or a block list item", () => {
+    const { frontmatter } = parseFrontmatter(
+      "---\ntitle: Plan # working title\ntags: [work, other] # mine\naliases:\n  - P1 # old\nurl: \"a #b\"\n---\n\nx\n",
+    );
+    expect(frontmatter).toMatchObject({ title: "Plan", tags: ["work", "other"], aliases: ["P1"], url: "a #b" });
+  });
+});
