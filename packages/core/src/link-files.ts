@@ -39,15 +39,19 @@ export class LinkFileIndex {
   private readonly byPath = new Map<string, string>();
 
   constructor(paths: Iterable<string>) {
-    for (const path of paths) {
-      if (!isLinkableFile(path)) continue;
-      const lower = path.toLowerCase();
-      this.byPath.set(lower, path);
-      const name = lower.slice(lower.lastIndexOf("/") + 1);
-      const list = this.byName.get(name);
-      if (list) list.push(path);
-      else this.byName.set(name, [path]);
-    }
+    for (const path of paths) this.add(path);
+  }
+
+  /** Index one more file (a file saved since the last scan, #zawz963a). */
+  add(path: string): void {
+    if (!isLinkableFile(path)) return;
+    const lower = path.toLowerCase();
+    if (this.byPath.has(lower)) return;
+    this.byPath.set(lower, path);
+    const name = lower.slice(lower.lastIndexOf("/") + 1);
+    const list = this.byName.get(name);
+    if (list) list.push(path);
+    else this.byName.set(name, [path]);
   }
 
   get size(): number {

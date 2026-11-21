@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
 import { E2E_VAULT } from './support/env';
 
@@ -16,6 +16,8 @@ const PNG = Buffer.from(
 );
 
 const read = (relative: string) => fs.readFile(path.join(E2E_VAULT, relative), 'utf8');
+
+const editorImages = (page: Page, vaultPath: string) => page.getByTestId('editor-content').locator(`img[src="/api/files/${vaultPath}"]`);
 
 async function writeVault(request: APIRequestContext) {
   // Attachments first, so the scan that finds the pages indexes them too (#8k4ssrkb).
@@ -102,6 +104,47 @@ test.describe('typing Obsidian embeds by hand (#95x2fjh6)', () => {
     } finally {
       await fs.rm(path.join(E2E_VAULT, 'pic.png'), { force: true });
       await fs.rm(path.join(E2E_VAULT, 'att', 'doc.pdf'), { force: true });
+    }
+  });
+
+  test('#zawz963a: right after an upload, its bare name shows, both a link already on the page and one typed now', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request);
+    // A link to a file that doesn't exist yet: the page loads with it unresolved.
+    await fs.writeFile(path.join(E2E_VAULT, 'Typed.md'), 'Start\n\n![[later.png]]\n');
+    await expect.poll(async () => (await api.getPage(request, 'Typed')).content).toContain('![[later.png]]');
+    const uploaded = editorImages(page, 'attachments/later.png');
+    try {
+      await page.goto('/#/Typed');
+      const editor = page.getByTestId('editor-content');
+      await expect(editor).toContainText('Start');
+      await expect(uploaded).toHaveCount(0);
+      await editor.click();
+      await page.keyboard.press('Control+End');
+      await page.keyboard.press('Enter');
+      // Paste the image file: it's uploaded as attachments/later.png.
+      await editor.evaluate((element, base64) => {
+        const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+        const data = new DataTransfer();
+        data.items.add(new File([bytes], 'later.png', { type: 'image/png' }));
+        element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+      }, PNG.toString('base64'));
+      // The pasted block and the link that was already there.
+      await expect(uploaded).toHaveCount(2);
+      // Typed by its bare name straight away, before any rescan.
+      await page.keyboard.press('Control+End');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('![[later.png]]', { delay: 40 });
+      await expect(uploaded).toHaveCount(3);
+      for (const index of [0, 1, 2]) {
+        await expect.poll(() => uploaded.nth(index).evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth)).toBe(40);
+      }
+      // What was typed is kept as typed.
+      await expect.poll(async () => (await read('Typed.md')).split('![[later.png]]').length - 1, { timeout: 10_000 }).toBe(2);
+    } finally {
+      await fs.rm(path.join(E2E_VAULT, 'pic.png'), { force: true });
+      await fs.rm(path.join(E2E_VAULT, 'att', 'doc.pdf'), { force: true });
+      await fs.rm(path.join(E2E_VAULT, 'attachments', 'later.png'), { force: true });
     }
   });
 

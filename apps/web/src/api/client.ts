@@ -204,6 +204,19 @@ function mutate<T>(task: () => Promise<T>): Promise<T> {
   return result;
 }
 
+const attachmentListeners = new Set<(attachment: Attachment) => void>();
+
+/** Call `listener` after each upload or image import (#zawz963a: links that missed may resolve now). */
+export function onAttachmentSaved(listener: (attachment: Attachment) => void): () => void {
+  attachmentListeners.add(listener);
+  return () => attachmentListeners.delete(listener);
+}
+
+function attachmentSaved(attachment: Attachment): Attachment {
+  for (const listener of attachmentListeners) listener(attachment);
+  return attachment;
+}
+
 export const api = {
   /** App name, version, vault folder and (v1.9) whether it is the desktop app. */
   health: (): Promise<HealthResponse> => request("/health"),
@@ -225,12 +238,12 @@ export const api = {
   uploadAttachment: (file: File): Promise<Attachment> => {
     const body = new FormData();
     body.set("file", file);
-    return request("/attachments", { method: "POST", body });
+    return request<Attachment>("/attachments", { method: "POST", body }).then(attachmentSaved);
   },
 
   /** #w6i6e6u7: the server downloads a remote image into attachments/. */
   importAttachment: (url: string): Promise<Attachment> =>
-    request("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }),
+    request<Attachment>("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }).then(attachmentSaved),
 
   /** v0.7 C: the templates folder and its pages. */
   listTemplates: (): Promise<{ folder: string; templates: PageMeta[] }> => request("/templates"),
