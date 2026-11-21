@@ -149,7 +149,7 @@ test.describe('selection toolbar', () => {
   });
 
   test('==highlight== from the file is editable text and survives an unrelated edit byte for byte', async ({ page, request, vault }) => {
-    const body = 'Some ==highlighted== text, a == b, **==bold mark==** and `==code==`.\n\nOther';
+    const body = 'Some ==highlighted== text, a == b, **==bold mark==**, `==code==` and \\==literal==.\n\nOther';
     await vault.seed([{ title: 'Marks', content: body }]);
     await openPage(page, 'Marks');
     await expect(page.locator('.ProseMirror mark')).toHaveText(['highlighted', 'bold mark']);

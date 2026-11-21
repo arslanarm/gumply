@@ -3,6 +3,7 @@ import { Schema, type Node as PMNode } from "@tiptap/pm/model";
 import { defaultMarkdownSerializer, MarkdownParser, MarkdownSerializer } from "prosemirror-markdown";
 import { describe, expect, it } from "vitest";
 import { highlightMarkdownPlugin } from "../src/editor/highlight.js";
+import { escapeMarkdownText } from "../src/editor/raw-markdown/text.js";
 
 const md = new MarkdownIt({ html: false });
 highlightMarkdownPlugin(md);
@@ -76,5 +77,20 @@ describe("==highlight== in Markdown (#bg3cb83t)", () => {
       schema.node("paragraph", null, [schema.text("Plan "), schema.text(" key part ", [schema.marks.highlight!.create()]), schema.text("done")]),
     ]);
     expect(serializer.serialize(doc)).toBe("Plan  ==key part== done");
+  });
+});
+
+describe("escaping a literal ==x== (#bg3cb83t, @opus-editor)", () => {
+  it("escapes only a balanced run, so an escaped literal stays literal", () => {
+    expect(escapeMarkdownText("show ==x== as typed", false)).toBe("show \\==x== as typed");
+    expect(escapeMarkdownText("a == b and c==d", false)).toBe("a == b and c==d");
+    expect(escapeMarkdownText("== spaced ==", false)).toBe("== spaced ==");
+    expect(escapeMarkdownText("x = y, ===", false)).toBe("x = y, ===");
+  });
+
+  it("the escaped form reads back as the same literal text", () => {
+    expect(render(escapeMarkdownText("show ==x== as typed", false))).toBe("show ==x== as typed");
+    // And Obsidian's other escape style is read as text too.
+    expect(render("=\\=x==")).toBe("==x==");
   });
 });
