@@ -37,6 +37,17 @@ function embedStart(state: EditorState, from: number): boolean {
  */
 let pickPartAfterPage = false;
 
+/**
+ * "Embed existing board…" / "Embed existing database…" start `![[` and ask
+ * for that kind only (@opus-hunter's P3, #sg36ng2d): plain `![[` lists pages,
+ * boards and bases alike. Cleared when the menu closes.
+ */
+let embedKindOnly: "whiteboard" | "base" | null = null;
+
+export function requestEmbedPicker(kind: "whiteboard" | "base"): void {
+  embedKindOnly = kind;
+}
+
 export function requestPagePreviewPicker(): void {
   pickPartAfterPage = true;
 }
@@ -124,7 +135,12 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
               if (query.includes("#")) return partSuggestions(query);
               // No "Create" row: a new board is `/whiteboard` → New board here.
               // The open page can't preview itself.
-              const embeddable = env.pages.filter((page) => page.id !== env.pageId);
+              const embeddable = env.pages.filter(
+                (page) =>
+                  page.id !== env.pageId &&
+                  (embedKindOnly === null ||
+                    (embedKindOnly === "base" ? isBase(page) : isBoard(page))),
+              );
               return buildLinkSuggestions(embeddable, query).filter((item) => item.kind === "page");
             }
             return buildLinkSuggestions(env.pages, query, env.attachments);
@@ -216,6 +232,7 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             onUpdate: (props) => handlers.current.onUpdate(props),
             onKeyDown: (props) => handlers.current.onKeyDown(props),
             onExit: () => {
+              embedKindOnly = null;
               handlers.current.onExit();
             },
           }),

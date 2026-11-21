@@ -8,7 +8,7 @@ import { requestAttachmentPicker } from "./attachments/store.js";
 import { requestEmojiPicker } from "./emoji/store.js";
 import { requestWhiteboard } from "./whiteboard-link.js";
 import { t } from "../i18n/index.js";
-import { requestPagePreviewPicker } from "./wikilink/suggestion-extension.js";
+import { requestEmbedPicker, requestPagePreviewPicker } from "./wikilink/suggestion-extension.js";
 import { requestPageTemplate } from "./page-template.js";
 
 export interface SlashItem {
@@ -389,7 +389,10 @@ export const SLASH_ITEMS: SlashItem[] = [
       return withLocalKeywords(["whiteboard", "board", "canvas", "embed", "existing", "miro", "diagram"], t("slash.embedWhiteboard.keywords"));
     },
     // `![[` opens the link menu with boards only (D30).
-    run: (editor, range) => editor.chain().focus().deleteRange(range).insertContent("![[").run(),
+    run: (editor, range) => {
+      requestEmbedPicker("whiteboard");
+      editor.chain().focus().deleteRange(range).insertContent("![[").run();
+    },
   },
   {
     key: "database",
@@ -420,8 +423,11 @@ export const SLASH_ITEMS: SlashItem[] = [
     get keywords() {
       return withLocalKeywords(["database", "base", "embed", "existing", "table", "view"], t("slash.embedDatabase.keywords"));
     },
-    // `![[` opens the link menu; picking a database view embeds it (D34).
-    run: (editor, range) => editor.chain().focus().deleteRange(range).insertContent("![[").run(),
+    // `![[` opens the link menu with database views only (D34).
+    run: (editor, range) => {
+      requestEmbedPicker("base");
+      editor.chain().focus().deleteRange(range).insertContent("![[").run();
+    },
   },
   {
     key: "divider",
