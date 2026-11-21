@@ -265,26 +265,40 @@ test.describe('database view layouts (D34)', () => {
     });
   }
 
-  test('Kanban: a contain cover spans the card width at its own proportions (no side bars)', async ({ page, request, vault }) => {
+  test('Kanban contain covers: a wide image fills the width; a tall one is capped; a colour keeps the aspect box', async ({ page, request, vault }) => {
     void vault;
-    const tall = '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="200" viewBox="0 0 50 200"><rect width="50" height="200" fill="#2a9d8f"/></svg>';
-    // An attachment, not a page: written directly (writeVault waits for pages).
+    const svg = (w: number, h: number) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#2a9d8f"/></svg>`;
+    // Attachments, not pages: written directly (writeVault waits for pages).
     await fs.mkdir(path.join(E2E_VAULT, 'attachments'), { recursive: true });
-    await fs.writeFile(path.join(E2E_VAULT, 'attachments', 'tall.svg'), tall, 'utf8');
+    await fs.writeFile(path.join(E2E_VAULT, 'attachments', 'wide.svg'), svg(300, 100), 'utf8');
+    await fs.writeFile(path.join(E2E_VAULT, 'attachments', 'tall.svg'), svg(50, 200), 'utf8');
     await writeVault(request, {
       'Work/Board.base':
         'filters: \'file.inFolder("Work")\'\nviews:\n  - type: kanban\n    name: Board\n    groupBy:\n      property: status\n      direction: ASC\n    image: note.cover\n    imageFit: contain\n',
+      'Work/Wide.md': '---\nstatus: Todo\ncover: "[[wide.svg]]"\n---\nW\n',
       'Work/Tall.md': '---\nstatus: Todo\ncover: "[[tall.svg]]"\n---\nT\n',
+      'Work/Colour.md': '---\nstatus: Todo\ncover: "#e76f51"\n---\nC\n',
     });
     await page.goto('/#/Work/Board.base');
-    const card = page.getByTestId('base-card-Work/Tall');
-    const image = card.getByTestId('base-card-image').locator('img');
-    await expect(image).toHaveJSProperty('complete', true);
-    const [cardBox, imageBox] = [await card.boundingBox(), await image.boundingBox()];
-    expect(Math.abs(imageBox!.width - cardBox!.width)).toBeLessThanOrEqual(2);
-    // Its own 1:4 shape, not squeezed into the 0.5 aspect box.
-    expect(imageBox!.height / imageBox!.width).toBeCloseTo(4, 0);
-    // The vault reset removes pages only; don't leave the attachment for other specs.
-    await fs.rm(path.join(E2E_VAULT, 'attachments', 'tall.svg'), { force: true });
+    const boxOf = async (id: string) => {
+      const card = page.getByTestId(`base-card-Work/${id}`);
+      const cover = card.getByTestId('base-card-image');
+      const img = cover.locator('img');
+      if ((await img.count()) > 0) await expect(img).toHaveJSProperty('complete', true);
+      return { card: (await card.boundingBox())!, cover: (await cover.boundingBox())! };
+    };
+    // Wide 3:1: the card's full width at its own height (no bars, no cap).
+    const wide = await boxOf('Wide');
+    expect(Math.abs(wide.cover.width - wide.card.width)).toBeLessThanOrEqual(2);
+    expect(wide.cover.height / wide.cover.width).toBeCloseTo(1 / 3, 1);
+    // Tall 1:4: capped at width × imageAspectRatio (Kanban default 0.5), letterboxed.
+    const tall = await boxOf('Tall');
+    expect(tall.cover.height / tall.cover.width).toBeCloseTo(0.5, 1);
+    // A colour has no proportions of its own: the aspect box.
+    const colour = await boxOf('Colour');
+    expect(colour.cover.height / colour.cover.width).toBeCloseTo(0.5, 1);
+    // The vault reset removes pages only; don't leave attachments for other specs.
+    for (const name of ['wide.svg', 'tall.svg']) await fs.rm(path.join(E2E_VAULT, 'attachments', name), { force: true });
   });
 });

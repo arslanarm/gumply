@@ -4,6 +4,7 @@
  * (@opus-hunter's fixture, spec/api-bases). A setting at its default is
  * removed from the file, as Obsidian does.
  */
+import type { CSSProperties } from "react";
 import type { BaseColumn, BaseRow, BaseValue, BaseView } from "@gumply/core";
 import { fileUrl } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
@@ -80,6 +81,9 @@ export function imageOf(row: BaseRow, view: BaseView): { url?: string; color?: s
  * A card's cover. `fillWidth` (Kanban, as Obsidian 1.14.4 draws it): a
  * `contain` image spans the card's width at its own proportions instead of
  * sitting in the aspect box with bars at the sides (@opus-hunter, #armmzdrx).
+ * Its height is capped at the card's width × `imageAspectRatio`, letterboxed
+ * past that, so a very tall image can't swallow the card. Colour covers
+ * have no proportions of their own and always use the aspect box.
  */
 export function ImageBox({ row, view, ratio, fillWidth = false }: { row: BaseRow; view: BaseView; ratio: number; fillWidth?: boolean }) {
   const image = imageOf(row, view);
@@ -87,7 +91,12 @@ export function ImageBox({ row, view, ratio, fillWidth = false }: { row: BaseRow
   const fit = view.imageFit === "contain" ? "contain" : "cover";
   if (fillWidth && fit === "contain" && image.url) {
     return (
-      <div className="base-card-image is-natural" data-testid="base-card-image" aria-hidden="true">
+      <div
+        className="base-card-image is-natural"
+        data-testid="base-card-image"
+        style={{ "--cover-max": `${ratio * 100}cqw` } as CSSProperties}
+        aria-hidden="true"
+      >
         <img src={image.url} alt="" loading="lazy" />
       </div>
     );

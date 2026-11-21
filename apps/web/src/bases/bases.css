@@ -871,9 +871,16 @@ ol.base-list {
   height: 100%;
 }
 
-/* Kanban `contain`: the card's width, the image's own height (as Obsidian). */
+/* Kanban `contain`: the card's width at the image's own height (as
+   Obsidian), up to width × imageAspectRatio; letterboxed past that. */
+.base-card-image.is-natural {
+  container-type: inline-size;
+}
+
 .base-card-image.is-natural img {
   height: auto;
+  max-height: var(--cover-max, 50cqw);
+  object-fit: contain;
 }
 
 .base-card-body {
