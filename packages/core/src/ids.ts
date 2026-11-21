@@ -49,14 +49,24 @@ export function pageSegment(title: string): string {
   return cleaned.length > 0 ? cleaned : "Untitled";
 }
 
-/** Readable title for a page id: last segment, dashes to spaces, capitalised. */
+/**
+ * The title of a note without a frontmatter `title`: its file name, verbatim,
+ * as Obsidian shows it (`meeting-notes.md` → "meeting-notes", #bayuasqq).
+ * D20: the file name *is* the title, so renaming never "tidies" a user's file.
+ */
 export function titleFromId(id: string): string {
   const segment = id.split("/").filter(Boolean).pop() ?? "";
-  // D20 ids already are titles: keep them verbatim when they contain spaces.
+  return segment.trim().length > 0 ? segment : "Untitled";
+}
+
+/**
+ * The readable form Gumply showed for slug-like file names before #bayuasqq
+ * (`meeting-notes` → "Meeting notes"). Only link resolution still uses it, so
+ * links written against that title keep resolving.
+ */
+export function legacySlugTitle(id: string): string {
+  const segment = id.split("/").filter(Boolean).pop() ?? "";
   if (/\s/.test(segment)) return segment;
-  // Dates and numbers (daily notes, `2026-03-06`, `v1-2`): as written, like
-  // Obsidian, never "2026 03 06" (#5hrsrqsj).
-  if (/\d[-_.]\d/.test(segment)) return segment;
   const words = segment.replace(/[-_]+/g, " ").trim();
   if (words.length === 0) return "Untitled";
   return words.charAt(0).toUpperCase() + words.slice(1);

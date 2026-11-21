@@ -66,6 +66,17 @@ describe("buildLinkSuggestions", () => {
   });
 });
 
+describe("plain notes named like files (#bayuasqq)", () => {
+  it("\"meeting notes\" finds `meeting-notes` and `meeting_notes`; Create is still offered", () => {
+    const notes = [page("meeting-notes", "meeting-notes"), page("meeting_notes", "meeting_notes"), page("other", "other")];
+    const items = buildLinkSuggestions(notes, "meeting notes");
+    expect(items.filter((item) => item.kind === "page").map((item) => item.title)).toEqual(["meeting_notes", "meeting-notes"]);
+    // Not an exact title: a page called "meeting notes" can still be made.
+    expect(items.some((item) => item.kind === "create")).toBe(true);
+    expect(buildLinkSuggestions(notes, "meeting-no").filter((item) => item.kind === "page")).toHaveLength(2);
+  });
+});
+
 describe("buildLinkSuggestions attachments", () => {
   const attachments = [
     attachment("brief.pdf", "application/pdf"),
