@@ -8,6 +8,12 @@ export interface SnippetPart {
 
 /** What a `[[...]]` fragment reads as in a snippet (alias > title, plus #heading). */
 function wikiLinkLabel(raw: string): string {
+  // A board embed (D30): `![[Plan/Map.canvas|480]]` reads as "Map"; what
+  // follows `|` is its height, not an alias.
+  if (raw.startsWith("!")) {
+    const target = raw.slice(3, -2).split("|")[0] ?? "";
+    return (target.split("/").pop() ?? target).replace(/\.canvas$/i, "").trim() || target;
+  }
   const parsed = parseWikiLinkText(raw);
   if (!parsed) return raw;
   const label = parsed.alias.length > 0 ? parsed.alias : parsed.title;
@@ -17,7 +23,7 @@ function wikiLinkLabel(raw: string): string {
 /** Split a backlink snippet so `[[Page]]` fragments can be highlighted. */
 export function splitSnippet(snippet: string): SnippetPart[] {
   const parts: SnippetPart[] = [];
-  const pattern = /\[\[[^[\]]*\]\]/g;
+  const pattern = /!?\[\[[^[\]]*\]\]/g;
   let last = 0;
 
   for (const match of snippet.matchAll(pattern)) {

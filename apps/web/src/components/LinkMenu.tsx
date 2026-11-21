@@ -69,7 +69,7 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
               ) : item.icon ? (
                 item.icon
               ) : (
-                <Icon name="file" size={16} />
+                <Icon name={item.board ? "board" : "file"} size={16} />
               )}
             </span>
             <span className="link-menu-label">{item.label}</span>

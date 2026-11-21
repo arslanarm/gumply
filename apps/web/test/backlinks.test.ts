@@ -27,6 +27,16 @@ describe("splitSnippet", () => {
     ]);
   });
 
+  it("reads a board embed as the board's name; its |height isn't an alias (#ux5cukze)", () => {
+    expect(splitSnippet("Plan: ![[Projects/Map.canvas|480]] and ![[Map.canvas]].")).toEqual([
+      { text: "Plan: ", highlight: false },
+      { text: "Map", highlight: true },
+      { text: " and ", highlight: false },
+      { text: "Map", highlight: true },
+      { text: ".", highlight: false },
+    ]);
+  });
+
   it("leaves malformed brackets alone", () => {
     expect(splitSnippet("An empty [[]] and array[0].")).toEqual([
       { text: "An empty ", highlight: false },
