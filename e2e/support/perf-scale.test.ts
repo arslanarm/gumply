@@ -36,9 +36,10 @@ describe('e2e timing budgets (#eiyrbvgx)', () => {
     expect(budgetScale({ load1: 40, cores: 2, cpuPressure: 95 }, true)).toBe(1);
   });
 
-  it('page opens get 5 s when quiet, more under load, never over 15 s (#rqtacq4d)', () => {
+  it('page opens get 10 s when quiet, more under load, never over 15 s (#rqtacq4d, #2h4kig7s)', () => {
     expect(pageOpenTimeout(budgetScale(ci))).toBe(PAGE_OPEN_BASE_MS);
-    expect(pageOpenTimeout(budgetScale({ load1: 10, cores: 24, cpuPressure: 40 }))).toBe(10_000);
+    expect(pageOpenTimeout(budgetScale({ load1: 10, cores: 24, cpuPressure: 16 }))).toBe(12_000); // ×1.2
+    expect(pageOpenTimeout(budgetScale({ load1: 10, cores: 24, cpuPressure: 25 }))).toBe(PAGE_OPEN_MAX_MS); // ×1.5, capped
     expect(pageOpenTimeout(budgetScale({ load1: 4, cores: 24, cpuPressure: 60 }))).toBe(PAGE_OPEN_MAX_MS);
     expect(pageOpenTimeout(budgetScale({ load1: 40, cores: 2, cpuPressure: 95 }))).toBe(PAGE_OPEN_MAX_MS);
     expect(pageOpenTimeout(budgetScale({ load1: 40, cores: 2, cpuPressure: 95 }, true))).toBe(PAGE_OPEN_BASE_MS);
