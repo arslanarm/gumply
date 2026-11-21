@@ -6,6 +6,8 @@
  * Nested objects and multi-line strings are out of scope for the MVP.
  */
 
+import { splitTrailingComment } from "./note-template.js";
+
 export interface Frontmatter {
   title?: string;
   icon?: string;
@@ -111,7 +113,8 @@ export function parseFrontmatter(raw: string): ParsedNote {
     if (!match) continue;
 
     const key = match[1] ?? "";
-    const rawValue = (match[2] ?? "").trim();
+    // A trailing ` # comment` isn't part of the value (YAML, as Obsidian reads it).
+    const rawValue = splitTrailingComment(match[2] ?? "").value.trim();
 
     if (rawValue.startsWith("[") && rawValue.endsWith("]")) {
       frontmatter[key] = key === "tags" ? normalizeTags(splitInlineList(rawValue)) : splitInlineList(rawValue);
@@ -130,7 +133,7 @@ export function parseFrontmatter(raw: string): ParsedNote {
     while (cursor < yamlLines.length) {
       const item = LIST_ITEM.exec(yamlLines[cursor] ?? "");
       if (!item) break;
-      const value = parseScalar(item[1] ?? "");
+      const value = parseScalar(splitTrailingComment(item[1] ?? "").value);
       if (value !== undefined) items.push(value);
       cursor += 1;
     }

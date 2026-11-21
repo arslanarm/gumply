@@ -87,7 +87,8 @@ function formatScalar(value: string): string {
 }
 
 /** Split a `key: value # comment` line into value and its trailing comment. */
-function splitTrailingComment(rest: string): { value: string; comment: string } {
+/** A YAML value and its trailing ` # comment` (quotes respected). */
+export function splitTrailingComment(rest: string): { value: string; comment: string } {
   let quote: '"' | "'" | null = null;
   for (let i = 0; i < rest.length; i += 1) {
     const char = rest[i];

@@ -136,7 +136,10 @@ function textDecorations(state: Any): void {
       }
       const html = escapeHtml(child.content)
         .replace(/==([^=\n]+)==/g, "<mark>$1</mark>")
-        .replace(/(^|[\s([{"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu, (_m, before: string, tag: string) => `${before}<span class="tag-chip" data-tag="${tag}">#${tag}</span>`);
+        .replace(/(^|[\s([{"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu, (match: string, before: string, tag: string) =>
+          // Obsidian's rule (#9bx3aznb): `#2024` alone isn't a tag.
+          /\D/.test(tag) ? `${before}<span class="tag-chip" data-tag="${tag}">#${tag}</span>` : match,
+        );
       if (html === escapeHtml(child.content)) {
         out.push(child);
         continue;

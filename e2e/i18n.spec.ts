@@ -38,7 +38,7 @@ const leftovers = [
       .filter((piece) => /[A-Za-z]{3,}\s+[A-Za-z]{2,}/.test(piece)),
   ),
 ];
-const KEY_PATTERN = /\b(?:common|sidebar|board|slash|graph|page|search|settings|templates|blocks|save|table|emoji|delete|move|trash|folders|counts|format|editorMenu)\.[a-z][A-Za-z.]+\b/;
+const KEY_PATTERN = /\b(?:common|sidebar|board|slash|graph|page|search|settings|templates|blocks|save|table|emoji|delete|move|trash|folders|counts|format|editorMenu|tags)\.[a-z][A-Za-z.]+\b/;
 
 /** Everything a user sees or hears: text, labels, tooltips, placeholders. */
 async function visibleStrings(page: Page): Promise<string[]> {
@@ -132,6 +132,7 @@ test.describe('Russian interface (#7h5utv23)', () => {
     await vault.seed([
       { title: 'Заметки', content: 'Первая строка текста' },
       { title: 'Черновик', content: 'x' },
+      { title: 'Метки', content: 'Про #проект/альфа' },
     ]);
     // A plain folder (D33) with a page and another file.
     await fs.mkdir(path.join(E2E_VAULT, 'Архив'), { recursive: true });
@@ -165,6 +166,15 @@ test.describe('Russian interface (#7h5utv23)', () => {
     await expect(page.getByTestId('delete-confirm-dialog')).toContainText('Её содержимое (1 страница и 1 другой файл) будет перемещено в корзину.');
     await expectNoEnglish(page, 'the folder delete dialog');
     await page.getByTestId('delete-cancel').click();
+
+    // The tags pane and the rename dialog (#9bx3aznb).
+    await page.getByTestId('tags-pane-toggle').click();
+    await expect(page.getByTestId('tag-count-проект')).toHaveText('1');
+    await expectNoEnglish(page, 'the tags pane');
+    await page.getByTestId('tag-row-проект').click({ button: 'right' });
+    await expect(page.getByTestId('tag-rename-dialog')).toContainText('Переименовать #проект');
+    await expectNoEnglish(page, 'the tag rename dialog');
+    await page.keyboard.press('Escape');
 
     // The trash: list, a trashed page and the "delete forever" dialog.
     await page.getByTestId('page-item-Черновик').hover();

@@ -4,6 +4,7 @@ import { preloadGraph } from "../lazy-parts.js";
 import { buildPageTree, pageTrail } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { PageItem, TreeChunks } from "./PageItem.js";
+import { TagsPane, type TagRenameRequest } from "./TagsPane.js";
 import { useT } from "../i18n/index.js";
 
 export interface SidebarFocusTarget {
@@ -43,6 +44,9 @@ export interface SidebarProps {
   trashActive?: boolean;
   trashCount?: number;
   onTrash?: () => void;
+  /** #9bx3aznb: the Tags section. */
+  onOpenTag?: (tag: string) => void;
+  onRenameTag?: (request: TagRenameRequest) => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -352,6 +356,10 @@ export function Sidebar(props: SidebarProps) {
           />
         )}
       </div>
+
+      {props.onOpenTag && props.onRenameTag ? (
+        <TagsPane pages={pages} onOpenTag={props.onOpenTag} onRenameTag={props.onRenameTag} />
+      ) : null}
 
       <button
         type="button"

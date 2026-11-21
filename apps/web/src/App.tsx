@@ -48,7 +48,9 @@ import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, serverDownMessage } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
-import { installUnloadGuards } from "./lib/pending-saves.js";
+import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
+import { TagRenameDialog } from "./components/TagRenameDialog.js";
+import type { TagRenameRequest } from "./components/TagsPane.js";
 import {
   GRAPH_HASH,
   isGraphHash,
@@ -226,6 +228,8 @@ export function App() {
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  /** #9bx3aznb: the tag being renamed (its dialog is open). */
+  const [tagRename, setTagRename] = useState<TagRenameRequest | null>(null);
   const [focusTarget, setFocusTarget] = useState<SidebarFocusTarget | null>(null);
   // D14 §5: after a delete, focus stays on the next sibling; don't let an empty
   // next page's title steal it (walkthrough #4aepmkk4).
@@ -1503,6 +1507,35 @@ export function App() {
     [navigate],
   );
 
+  /** #9bx3aznb: rename a tag in every page and board, after the open editor has saved. */
+  const handleRenameTag = useCallback(
+    async (from: string, to: string) => {
+      setTagRename(null);
+      setActionError(null);
+      // The open editor saves first. If it still can't (e.g. a conflict),
+      // its file is skipped and reported, never overwritten.
+      const saved = await flushAllSaves();
+      const open = selectedRef.current;
+      try {
+        const result = await api.renameTag(from, to, !saved && open !== null ? [open] : []);
+        await loadPages();
+        if (open !== null && result.rewrittenPages.includes(open)) requestPageReload();
+        const skipped = result.skippedPages.length;
+        setToast({
+          message: [
+            t("tags.renamed", { from, to, count: result.renamed }),
+            ...(skipped > 0 ? [t("tags.skipped", { count: skipped })] : []),
+          ].join(". "),
+          icon: "info",
+        });
+      } catch (error) {
+        setActionError(errorMessage(error));
+        void loadPages();
+      }
+    },
+    [loadPages, requestPageReload],
+  );
+
   const handleMove = useCallback(
     async (id: PageId, parentId: PageId | null, focusAfter = false) => {
       setActionError(null);
@@ -1805,6 +1838,8 @@ export function App() {
           onRetry={handleRetry}
           onSearch={openSearch}
           onGraph={navigateGraph}
+          onOpenTag={openTagSearch}
+          onRenameTag={setTagRename}
           onToday={() => void openToday()}
           onNewFromTemplate={(parentId) => setTemplatePicker({ mode: "new", parentId })}
         />
@@ -2072,6 +2107,13 @@ export function App() {
         />
       ) : null}
 
+      {tagRename !== null ? (
+        <TagRenameDialog
+          {...tagRename}
+          onCancel={() => setTagRename(null)}
+          onRename={(to) => void handleRenameTag(tagRename.tag, to)}
+        />
+      ) : null}
       {trashConfirm ? (
         <ConfirmDialog
           heading={
