@@ -1,5 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import * as apiClient from './support/api';
+import { waitForBootOnNavigation } from './support/nav';
 
 export interface Vault {
   /** Delete every page, leaving an empty vault. */
@@ -14,6 +15,12 @@ export interface Vault {
  * through the API instead of the UI. See wiki `spec/e2e-tests`.
  */
 export const test = base.extend<{ vault: Vault }>({
+  // #rqtacq4d: `page.goto` / `page.reload` return once the app has booted, with a
+  // load-aware budget (support/nav.ts); in-page assertions keep the strict 5 s.
+  page: async ({ page }, use, testInfo) => {
+    waitForBootOnNavigation(page, testInfo);
+    await use(page);
+  },
   vault: async ({ request }, use) => {
     const vault: Vault = {
       reset: () => apiClient.resetVault(request),
