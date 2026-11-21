@@ -105,4 +105,70 @@ test.describe('soft line breaks (#iatezw4m)', () => {
     await page.reload();
     await expect(page.getByTestId('editor-content').locator('p', { hasText: 'Line one.' })).toContainText('- Line two.');
   });
+
+  // @opus-hunter's review of ea8bf9f: list continuation lines keep their own
+  // indent (Obsidian writes `- item` + `  more` on Shift+Enter), in files with
+  // and without tabs; a code span wrapped across lines stays as written.
+  const LISTS = [
+    'Target paragraph.',
+    '',
+    '- dash',
+    '  two',
+    '- nested parent',
+    '    - child',
+    '      nested continuation',
+    '',
+    '* star',
+    '  two',
+    '',
+    // Paragraphs between the lists keep them separate lists (a task item and
+    // bullets in one Markdown list is a separate, known case).
+    'Tasks:',
+    '',
+    '- [ ] task',
+    '  two',
+    '',
+    'Lazy:',
+    '',
+    '- lazy',
+    'two',
+    '',
+    'Four:',
+    '',
+    '- four',
+    '    two',
+    '',
+    '1. step',
+    '   more step',
+    '',
+    'A `code',
+    'span` wrapped.',
+    '',
+  ].join('\n');
+  const LISTS_TAB = [
+    'Target paragraph.',
+    '',
+    '- parent',
+    '\t- tab nested',
+    '\t  two',
+    '- dash',
+    '  two',
+    '',
+  ].join('\n');
+
+  for (const [name, text] of [['no tabs', LISTS], ['tabs', LISTS_TAB]] as const) {
+    test(`list continuation lines keep their indent (${name})`, async ({ page, request, vault }) => {
+      void vault;
+      await fs.writeFile(file(), text);
+      await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Soft');
+      await page.goto('/#/Soft');
+      const body = page.getByTestId('editor-content');
+      await body.getByText('Target paragraph.', { exact: true }).click();
+      await page.keyboard.press('End');
+      await page.keyboard.type(' X');
+      await saved(page);
+      expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+    });
+  }
 });
+

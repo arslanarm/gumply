@@ -23,6 +23,8 @@ interface TextSerializerState {
   inTable?: boolean;
   /** #iatezw4m: the last thing written was a soft break. */
   afterSoftBreak?: boolean;
+  /** prosemirror-markdown: the prefix written at the start of each line of a block. */
+  delim?: string;
 }
 
 /**
@@ -165,6 +167,19 @@ export const MarkdownText = Text.extend({
   },
 });
 
+/**
+ * The next write starts the line with no block prefix (a lazy continuation
+ * line, written at column 0 as in the source). One-shot: the serializer's own
+ * `write` comes back right after.
+ */
+function skipNextPrefix(state: TextSerializerState): void {
+  const target = state as unknown as { write: (content?: string) => void; out: string };
+  target.write = (content?: string) => {
+    delete (target as { write?: unknown }).write;
+    target.out += content ?? "";
+  };
+}
+
 export const MarkdownHardBreak = HardBreak.extend({
   addAttributes() {
     return {
@@ -174,13 +189,19 @@ export const MarkdownHardBreak = HardBreak.extend({
         parseHTML: (element: HTMLElement) => element.getAttribute(BREAK_STYLE_ATTR),
         renderHTML: () => ({}),
       },
-      /** #iatezw4m: `[before, after]` whitespace of a soft break, as read. */
+      /**
+       * #iatezw4m: `[before, after, lead?]` whitespace of a soft break, as
+       * read: before the newline, the next line's indent within the block,
+       * and that source line's whole leading whitespace.
+       */
       markdownSpace: {
         default: null,
         parseHTML: (element: HTMLElement) => {
           try {
             const value = JSON.parse(element.getAttribute(BREAK_SPACE_ATTR) ?? "null") as unknown;
-            return Array.isArray(value) && value.length === 2 && value.every((part) => typeof part === "string" && /^[ \t]*$/.test(part))
+            return Array.isArray(value) &&
+              (value.length === 2 || value.length === 3) &&
+              value.every((part) => typeof part === "string" && /^[ \t]*$/.test(part))
               ? value
               : null;
           } catch {
@@ -206,10 +227,18 @@ export const MarkdownHardBreak = HardBreak.extend({
             if (parent.child(i).type !== node.type) {
               if (node.attrs.markdownStyle === "soft") {
                 // #iatezw4m: a single newline, as read (with its whitespace).
-                const [before, after] = (node.attrs.markdownSpace as [string, string] | null) ?? ["", ""];
+                const [before, after, lead] = (node.attrs.markdownSpace as [string, string, string?] | null) ?? ["", ""];
+                state.afterSoftBreak = true;
+                if (lead !== undefined && /^[ \t]*$/.test(state.delim ?? "")) {
+                  // A list item's (or top-level) continuation line: its own
+                  // indent, verbatim, instead of the list's nesting indent.
+                  state.write(before);
+                  state.out += `\n${lead}`;
+                  if (lead === "") skipNextPrefix(state);
+                  return;
+                }
                 state.write(`${before}\n`);
                 if (after) state.write(after);
-                state.afterSoftBreak = true;
                 return;
               }
               state.write(node.attrs.markdownStyle === "spaces" ? "  \n" : "\\\n");

@@ -251,6 +251,8 @@ export const RawBlock = Node.create({
 export function renderRawInlinePreview(source: string, kind: string): HTMLElement {
   if (kind === "footnote-ref") return el("sup", "raw-inline-footnote", source.slice(2, -1));
   if (kind === "math") return el("code", "raw-inline-math", source.slice(1, -1));
+  // #iatezw4m: a code span wrapped across lines, kept as written.
+  if (kind === "code") return el("code", "raw-inline-code", source.replace(/^(`+)\s?([\s\S]*?)\s?\1$/, "$2").replace(/\s*\n\s*/g, " "));
   if (kind === "entity") {
     // Only `&name;` / `&#n;` reach here (see entityRule), so this is safe.
     const decoder = document.createElement("textarea");

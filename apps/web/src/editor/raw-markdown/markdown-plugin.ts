@@ -207,9 +207,10 @@ function rawInlineRule(state: any, silent: boolean): boolean {
  * so the n-th break token matches the n-th `  \n` / `\\\n` in it.
  */
 function breakStyleRule(state: any): void {
+  const sourceLines = (state.src as string).split("\n");
   for (const block of state.tokens as any[]) {
     if (block.type !== "inline" || !block.children) continue;
-    softBreakSpaces(block);
+    softBreakSpaces(block, sourceLines);
     const breaks = (block.children as any[]).filter((t) => t.type === "hardbreak");
     if (breaks.length === 0) continue;
     const styles = [...(block.content as string).matchAll(/( {2,}|\\)\n/g)].map((m) =>
@@ -223,19 +224,39 @@ function breakStyleRule(state: any): void {
 /**
  * #iatezw4m: a soft break (a single `\n` inside a paragraph) keeps the
  * whitespace around it, which markdown-it drops: one trailing space before
- * the newline, and a continuation line's indent. The n-th break token is the
- * n-th newline in the paragraph's source; when they don't line up (a code
- * span over two lines) nothing is recorded and the break is written plainly.
+ * the newline, and the next line's indent. The indent is recorded twice:
+ * relative to the block (`after`, for lines under a quote's `>`), and as the
+ * source line's whole leading whitespace (`lead`), which a list item's
+ * continuation line needs verbatim (`- item` + `  more`, Obsidian's
+ * Shift+Enter). The n-th break token is the n-th newline outside code spans;
+ * when they don't line up nothing is recorded and the break is written plainly.
  */
-function softBreakSpaces(block: any): void {
+function softBreakSpaces(block: any, sourceLines: readonly string[]): void {
   const breaks = (block.children as any[]).filter((t) => t.type === "softbreak" || t.type === "hardbreak");
   if (!breaks.some((t) => t.type === "softbreak")) return;
-  const newlines = [...(block.content as string).matchAll(/([ \t]*)\n([ \t]*)/g)];
+  const content = block.content as string;
+  // Newlines inside a code span aren't breaks (the span stays raw, see below).
+  const inCode: Array<[number, number]> = [];
+  for (const match of content.matchAll(/(`+)[\s\S]*?\1/g)) inCode.push([match.index ?? 0, (match.index ?? 0) + match[0].length]);
+  const newlines = [...content.matchAll(/([ \t]*)\n([ \t]*)/g)].filter((match) => {
+    const at = (match.index ?? 0) + match[1]!.length;
+    return !inCode.some(([from, to]) => at > from && at < to);
+  });
   if (newlines.length !== breaks.length) return;
+  // Source line of each newline's next line (paragraph lines are contiguous).
+  const allNewlines = [...content.matchAll(/\n/g)].map((match) => match.index ?? 0);
+  const firstLine = Array.isArray(block.map) ? (block.map[0] as number) : null;
   breaks.forEach((token, index) => {
     if (token.type !== "softbreak") return;
-    const [, before = "", after = ""] = newlines[index]!;
-    if (before || after) token.attrSet(BREAK_SPACE_ATTR, JSON.stringify([before, after]));
+    const match = newlines[index]!;
+    const [, before = "", after = ""] = match;
+    const at = (match.index ?? 0) + before.length;
+    const lineIndex = firstLine === null ? null : firstLine + allNewlines.indexOf(at) + 1;
+    const source = lineIndex === null ? undefined : sourceLines[lineIndex];
+    const lead = source === undefined ? undefined : (/^[ \t]*/.exec(source)?.[0] ?? "");
+    // A line under a quote starts with `>`: its prefix is the block's, not raw.
+    const usable = source !== undefined && lead !== undefined && !source.slice(lead.length).startsWith(">") && source.slice(lead.length).startsWith(content.slice(at + 1 + after.length, at + 1 + after.length + 1));
+    token.attrSet(BREAK_SPACE_ATTR, JSON.stringify(usable ? [before, after, lead] : [before, after]));
   });
 }
 
@@ -305,6 +326,33 @@ function blockedLinkEnd(state: any, isImage: boolean): number {
  * - a link/image with a refused scheme becomes an inert raw inline atom: shown
  *   as text, never live, written back verbatim.
  */
+/**
+ * #iatezw4m: a code span wrapped across lines (`` `x\ny` ``) would come back
+ * joined (CommonMark turns its newline into a space). Keep it as an inert raw
+ * atom holding its exact source; one-line spans stay normal code marks.
+ */
+function wrapCodeSpans(md: any): void {
+  const rules = md.inline.ruler.__rules__ as Array<{ name: string; fn: any }>;
+  const original = rules.find((rule) => rule.name === "backticks")?.fn;
+  if (!original) return;
+  md.inline.ruler.at("backticks", (state: any, silent: boolean) => {
+    const start = state.pos;
+    if (!original(state, silent)) return false;
+    const source = state.src.slice(start, state.pos) as string;
+    // The span is the last token (pending text before it is flushed first).
+    if (!silent && source.includes("\n")) {
+      const token = state.tokens[state.tokens.length - 1];
+      if (token?.type === "code_inline") {
+        token.type = "gumply_raw_inline";
+        token.tag = "span";
+        token.content = source;
+        token.info = "code";
+      }
+    }
+    return true;
+  });
+}
+
 function wrapLinkRules(md: any): void {
   const rules = md.inline.ruler.__rules__ as Array<{ name: string; fn: any }>;
   for (const name of ["image", "link"]) {
@@ -353,6 +401,7 @@ export function rawMarkdownPlugin(md: any): void {
   }
   md.inline.ruler.before("link", "gumply_raw_inline", rawInlineRule);
   wrapLinkRules(md);
+  wrapCodeSpans(md);
 
   const block = (source: string, kind: string) =>
     `<div ${RAW_BLOCK_ATTR}="${escapeAttr(source)}" data-raw-kind="${escapeAttr(kind)}"></div>`;

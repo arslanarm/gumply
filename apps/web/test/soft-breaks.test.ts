@@ -8,20 +8,37 @@ import { escapeParagraphInterrupt } from "../src/editor/raw-markdown/text.js";
 const md = new MarkdownIt({ html: false });
 rawMarkdownPlugin(md);
 
+const decode = (value: string) => value.replace(/&quot;/g, '"');
+/** `[before, after, lead?]` of each soft break in rendered HTML. */
+const spaces = (markdown: string) =>
+  [...md.render(markdown).matchAll(/data-md-break="soft"(?: data-md-space="([^"]*)")?/g)].map((m) =>
+    m[1] === undefined ? null : JSON.parse(decode(m[1])),
+  );
+
 describe("soft breaks: parse", () => {
-  it("a single newline is a soft line break, with the whitespace around it recorded", () => {
-    expect(md.render("Line one.\nLine two.")).toBe('<p>Line one.<br data-md-break="soft">Line two.</p>\n');
-    expect(md.render("Trailing \n    indented")).toContain('data-md-space="[&quot; &quot;,&quot;    &quot;]"');
-    // Hard breaks keep their own styles.
-    expect(md.render("a  \nb\\\nc\nd")).toBe(
-      '<p>a<br data-md-break="spaces">b<br data-md-break="backslash">c<br data-md-break="soft">d</p>\n',
+  it("a single newline is a soft line break; hard breaks keep their styles", () => {
+    expect(md.render("Line one.\nLine two.")).toMatch(/^<p>Line one\.<br data-md-break="soft"[^>]*>Line two\.<\/p>/);
+    expect(md.render("a  \nb\\\nc\nd")).toMatch(
+      /^<p>a<br data-md-break="spaces">b<br data-md-break="backslash">c<br data-md-break="soft"[^>]*>d<\/p>/,
     );
   });
 
-  it("a code span over two lines: the break is still soft, its spaces just aren't recorded", () => {
-    const html = md.render("Before `code\nspan` and\nafter");
-    expect(html).toContain('<br data-md-break="soft">');
-    expect(html).not.toContain("data-md-space");
+  it("records the whitespace around it: trailing space, indent in the block, the source line's own indent", () => {
+    expect(spaces("Trailing \n    indented")).toEqual([[" ", "    ", "    "]]);
+    // List continuations: the source line's indent verbatim (2, lazy 0, 4, tab).
+    expect(spaces("- dash\n  two")).toEqual([["", "", "  "]]);
+    expect(spaces("- lazy\ntwo")).toEqual([["", "", ""]]);
+    expect(spaces("- four\n    two")).toEqual([["", "  ", "    "]]);
+    expect(spaces("- [ ] task\n  two")).toEqual([["", "", "  "]]);
+    expect(spaces("- a\n\t- tab\n\t  two")).toEqual([["", "", "\t  "]]);
+    // Under a quote the prefix is the block's (`>`): no raw indent.
+    expect(spaces("> quote one\n> quote two")).toEqual([["", ""]]);
+  });
+
+  it("a code span wrapped across lines stays raw (exact source); other breaks still soft", () => {
+    const html = md.render("A `x\ny` b\nnext");
+    expect(html).toContain('data-raw-md-inline="`x\ny`" data-raw-kind="code"');
+    expect(spaces("A `x\ny` b\nnext")).toEqual([["", "", ""]]);
   });
 });
 
