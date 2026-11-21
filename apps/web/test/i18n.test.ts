@@ -15,6 +15,9 @@ const read = (file: string) => flattenMessages(JSON.parse(readFileSync(new URL(f
 const english = read("en.json");
 const locales = readdirSync(dir).filter((file) => file.endsWith(".json") && file !== "en.json");
 
+/** Messages that may read the same in every language (names). */
+const SAME_IN_EVERY_LANGUAGE = new Set(["app.name"]);
+
 /** A key without its plural suffix. */
 const base = (key: string) => key.replace(/_(zero|one|two|few|many|other)$/, "");
 const placeholders = (text: string) => [...text.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((match) => match[1]).sort();
@@ -60,6 +63,13 @@ describe("message files (#7h5utv23): every language has exactly the English keys
           if (source !== undefined && placeholders(source).join() !== placeholders(text).join()) wrong.push(key);
         }
         expect(wrong).toEqual([]);
+      });
+
+      it("translates everything: nothing copied from English except names and punctuation", () => {
+        const copied = [...messages].filter(
+          ([key, text]) => text.trim() !== "" && text === english.get(key) && !SAME_IN_EVERY_LANGUAGE.has(key) && /[A-Za-z]{2}/.test(text),
+        );
+        expect(copied.map(([key]) => key)).toEqual([]);
       });
 
       it("translates everything (empty only where English is empty too)", () => {
