@@ -22,7 +22,9 @@ describe("plain notes: our own saves never count as changed on disk (#d5e4mawv)"
     await store.rescan();
     expect(store.get("Plain").updated).toBe(first.updated);
     const second = await store.update("Plain", { content: "Line one. A\n\nLine two. B\n", expectedUpdated: first.updated });
-    expect(second.content).toBe("Line one. A\n\nLine two. B\n");
+    // `content` has no final newline (#5fv7c25w); the file keeps it.
+    expect(second.content).toBe("Line one. A\n\nLine two. B");
+    expect(await readFile(file, "utf8")).toBe("Line one. A\n\nLine two. B\n");
   });
 
   it("two quick saves with the returned version both succeed, with the watcher running (x50)", async () => {

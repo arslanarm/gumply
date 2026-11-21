@@ -263,6 +263,16 @@ function matchesTitleSegment(segment: string, title: string): boolean {
  * `stats.mtime` rounds it, so mixing the two made our own write look like an
  * outside change whenever the fraction was ≥ 0.5 ms.
  */
+/**
+ * A note body as the index keeps it: what `parseFrontmatter` gives on read
+ * (LF, no final newline or trailing blank lines), so `content` reads the same
+ * whether it was just written or read from disk (#5fv7c25w). The file keeps
+ * its own ending; this is only the cached body.
+ */
+function noteBody(content: string): string {
+  return content.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+}
+
 function mtimeVersion(mtimeMs: number): string {
   return new Date(Math.floor(mtimeMs)).toISOString();
 }
@@ -1071,7 +1081,7 @@ export class VaultStore {
       parentId,
       created: now,
       updated: now,
-      content,
+      content: noteBody(content),
       filePath,
       fileMtimeMs,
       fmTags: [],
@@ -1331,7 +1341,7 @@ export class VaultStore {
     // Update the record before relocating so the moved copy carries the new
     // title/content; relocate then swaps the map entries and the object.
     record.title = nextTitle;
-    record.content = nextContent;
+    record.content = noteBody(nextContent);
     // A plain note has no `updated:` key; its version is the file time.
     const replaced = record.updated;
     record.updated = written.frontmatter ? updated : mtimeVersion(fileMtimeMs);
