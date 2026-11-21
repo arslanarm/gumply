@@ -16,6 +16,9 @@ const titleCollator = new Intl.Collator(undefined, { sensitivity: "base", numeri
 const idCollator = new Intl.Collator();
 
 function comparePages(a: PageMeta, b: PageMeta): number {
+  // D33: folders first, like Obsidian and every file manager.
+  const aFolder = a.kind === "folder";
+  if (aFolder !== (b.kind === "folder")) return aFolder ? -1 : 1;
   const byTitle = titleCollator.compare(a.title, b.title);
   return byTitle !== 0 ? byTitle : idCollator.compare(a.id, b.id);
 }

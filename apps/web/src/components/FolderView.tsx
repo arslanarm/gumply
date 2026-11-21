@@ -1,0 +1,86 @@
+import type { PageId, PageMeta } from "@gumply/core";
+import { useMemo } from "react";
+import { isBoard } from "../lib/boards.js";
+import { comparePages } from "../lib/tree.js";
+import { Icon } from "./Icon.js";
+
+export interface FolderViewProps {
+  folder: PageMeta;
+  pages: readonly PageMeta[];
+  onOpen: (id: PageId) => void;
+  onNewPage: (parentId: PageId) => void;
+  onNewBoard: (parentId: PageId) => void;
+}
+
+function kindLabel(item: PageMeta): string {
+  if (item.kind === "folder") return item.childCount === 1 ? "Folder · 1 item" : `Folder · ${item.childCount} items`;
+  if (isBoard(item)) return "Whiteboard";
+  return item.childCount > 0 ? `Page · ${item.childCount} sub-page${item.childCount === 1 ? "" : "s"}` : "Page";
+}
+
+/**
+ * D33: a plain folder's overview, built from the tree only. Viewing it never
+ * reads or writes a file; there is no `<Folder>.md`.
+ */
+export function FolderView({ folder, pages, onOpen, onNewPage, onNewBoard }: FolderViewProps) {
+  const children = useMemo(
+    () => pages.filter((item) => item.parentId === folder.id).sort(comparePages),
+    [pages, folder.id],
+  );
+
+  return (
+    <div className="folder-view" data-testid="folder-view">
+      <div className="folder-view-header">
+        <span className="folder-view-icon" aria-hidden="true">
+          <Icon name="folderOpen" size={30} />
+        </span>
+        <h1 className="folder-view-title" data-testid="folder-view-title">
+          {folder.title}
+        </h1>
+      </div>
+      <p className="folder-view-meta">
+        Folder · {children.length === 1 ? "1 item" : `${children.length} items`}
+      </p>
+      <div className="folder-view-actions">
+        <button type="button" className="button-secondary" data-testid="folder-new-page" onClick={() => onNewPage(folder.id)}>
+          <Icon name="plus" size={15} />
+          New page here
+        </button>
+        <button type="button" className="button-secondary" data-testid="folder-new-board" onClick={() => onNewBoard(folder.id)}>
+          <Icon name="board" size={15} />
+          New whiteboard here
+        </button>
+      </div>
+      {children.length === 0 ? (
+        <p className="folder-view-empty" data-testid="folder-view-empty">
+          This folder is empty.
+        </p>
+      ) : (
+        <ul className="folder-view-list" aria-label={`In ${folder.title}`}>
+          {children.map((item) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                className="folder-view-item"
+                data-testid={`folder-item-${item.id}`}
+                onClick={() => onOpen(item.id)}
+              >
+                <span className="folder-view-item-icon" aria-hidden="true">
+                  {item.kind === "folder" ? (
+                    <Icon name="folder" size={17} />
+                  ) : item.icon ? (
+                    item.icon
+                  ) : (
+                    <Icon name={isBoard(item) ? "board" : "file"} size={17} />
+                  )}
+                </span>
+                <span className="folder-view-item-title">{item.title}</span>
+                <span className="folder-view-item-kind">{kindLabel(item)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

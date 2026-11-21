@@ -4,6 +4,8 @@ import {
   deleteDialogBody,
   directSubPages,
   focusAfterDelete,
+  folderContents,
+  folderDeleteBody,
   subtreePages,
 } from "../src/lib/delete.js";
 
@@ -84,5 +86,32 @@ describe("focusAfterDelete", () => {
 
   it("returns null for unknown ids", () => {
     expect(focusAfterDelete(pages, "missing")).toBeNull();
+  });
+});
+
+describe("deleting a plain folder (D33)", () => {
+  it("counts pages, boards and other files at any depth", () => {
+    const folder = (id: string, parentId: string | null = null, otherFiles = 0): PageMeta => ({
+      ...meta(id, id, parentId),
+      kind: "folder",
+      otherFiles,
+    });
+    const pages = [
+      folder("Recipes", null, 5),
+      meta("Recipes/Soup", "Soup", "Recipes"),
+      { ...meta("Recipes/Map.canvas", "Map", "Recipes"), kind: "whiteboard" as const },
+      folder("Recipes/Sweet", "Recipes"),
+      meta("Recipes/Sweet/Cake", "Cake", "Recipes/Sweet"),
+      meta("Recipes/Sweet/Pie", "Pie", "Recipes/Sweet"),
+      meta("Other", "Other"),
+    ];
+    expect(folderContents(pages, "Recipes")).toEqual({ pages: 3, boards: 1, otherFiles: 5 });
+    expect(folderDeleteBody({ pages: 3, boards: 1, otherFiles: 5 })).toBe(
+      "Its 3 pages, 1 board and 5 other files will be moved to the trash.",
+    );
+    expect(folderDeleteBody({ pages: 1, boards: 0, otherFiles: 0 })).toBe("Its 1 page will be moved to the trash.");
+    expect(folderDeleteBody({ pages: 0, boards: 2, otherFiles: 1 })).toBe(
+      "Its 2 boards and 1 other file will be moved to the trash.",
+    );
   });
 });
