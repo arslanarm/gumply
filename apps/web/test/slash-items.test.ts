@@ -19,6 +19,7 @@ describe("filterSlashItems", () => {
       "image",
       "file",
       "whiteboard",
+      "embed-whiteboard",
       "divider",
     ]);
   });

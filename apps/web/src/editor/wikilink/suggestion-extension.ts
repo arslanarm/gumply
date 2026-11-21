@@ -2,7 +2,10 @@
  * `[[` autocomplete wiring (spec/ux §8). The React menu lives in LinkMenu;
  * this extension only computes suggestions and performs the insert.
  */
-import { linkTargetFor } from "@gumply/core";
+import { linkTargetFor, type PageMeta } from "@gumply/core";
+import type { EditorState } from "@tiptap/pm/state";
+import { isBoard } from "../../lib/boards.js";
+import { boardEmbedAttrs } from "../board-embed/node.js";
 import { hrefForAttachment } from "../../lib/attachment-links.js";
 import { Extension } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
@@ -15,6 +18,18 @@ import { insertImageAttachment } from "../attachments/insert.js";
 import { getWikiLinkEnvironment } from "./link-store.js";
 
 const wikiLinkPluginKey = new PluginKey("wikiLinkSuggestion");
+
+/**
+ * `![[` (D30): the `[[` just typed is an embed. Only boards can be embedded
+ * in a page, so the menu lists boards only and picking one embeds it.
+ */
+function embedStart(state: EditorState, from: number): boolean {
+  return from > 0 && state.doc.textBetween(from - 1, from) === "!";
+}
+
+function boardsOnly(pages: readonly PageMeta[]): PageMeta[] {
+  return pages.filter((page) => isBoard(page));
+}
 
 export interface LinkMenuHandlers {
   onStart: (props: SuggestionProps<LinkSuggestion>) => void;
@@ -35,6 +50,8 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
           char: "[[",
           startOfLine: false,
           allowSpaces: true,
+          // `![[` embeds a board (D30).
+          allowedPrefixes: [" ", "!"],
           allow: ({ state, range }) => {
             const $from = state.doc.resolve(range.from);
             if ($from.parent.type.name === "codeBlock") return false;
@@ -44,13 +61,29 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             // offer Create with the brackets in the title (walkthrough #2).
             return !state.doc.textBetween(range.from, range.to).includes("]]");
           },
-          items: ({ query }) =>
-            buildLinkSuggestions(
-              getWikiLinkEnvironment().pages,
-              query,
-              getWikiLinkEnvironment().attachments,
-            ),
+          items: ({ query, editor }) => {
+            const env = getWikiLinkEnvironment();
+            const active = wikiLinkPluginKey.getState(editor.state) as { range?: { from: number } } | undefined;
+            if (active?.range && embedStart(editor.state, active.range.from)) {
+              // No "Create" row: a new board is `/whiteboard` → New board here.
+              return buildLinkSuggestions(boardsOnly(env.pages), query).filter((item) => item.kind === "page");
+            }
+            return buildLinkSuggestions(env.pages, query, env.attachments);
+          },
           command: ({ editor, range, props }) => {
+            if (embedStart(editor.state, range.from) && props.kind === "page") {
+              const env = getWikiLinkEnvironment();
+              const board = env.pages.find((item) => item.id === props.pageId);
+              if (board && isBoard(board)) {
+                editor
+                  .chain()
+                  .focus()
+                  .deleteRange({ from: range.from - 1, to: range.to })
+                  .insertContent({ type: "boardEmbed", attrs: boardEmbedAttrs(board, env.pages) })
+                  .run();
+                return;
+              }
+            }
             if (props.kind === "attachment" && props.attachment) {
               const attachment = props.attachment;
               if (attachment.mime.startsWith("image/")) {
