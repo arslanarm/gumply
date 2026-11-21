@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon.js";
+import { useT } from "../i18n/index.js";
 
 export interface UndoToastProps {
   message: string;
@@ -21,6 +22,7 @@ export function UndoToast({
   onUndo,
   onDismiss,
 }: UndoToastProps) {
+  const t = useT();
   const [paused, setPaused] = useState(false);
   const remaining = useRef(duration);
   const startedAt = useRef<number | null>(null);
@@ -67,7 +69,7 @@ export function UndoToast({
             onUndo();
           }}
         >
-          Undo
+          {t("common.undo")}
         </button>
       ) : null}
     </div>

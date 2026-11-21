@@ -3,9 +3,11 @@ import { resolveLink, urlForLink } from "../lib/attachment-links.js";
 import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { fileExtension, formatFileSize } from "../lib/files.js";
 import { Icon } from "./Icon.js";
+import { useT } from "../i18n/index.js";
 
 /** Inline file card: icon, name, size; opens the file in a new tab. */
 export function FileAttachmentView({ node, selected }: NodeViewProps) {
+  const t = useT();
   const path = String(node.attrs.path ?? "");
   const name = String(node.attrs.name ?? path.split("/").pop() ?? "file");
   const env = useWikiLinkEnvironment();
@@ -29,7 +31,7 @@ export function FileAttachmentView({ node, selected }: NodeViewProps) {
             <Icon name="file" size={16} />
           </span>
           <span className="file-card-name">{name}</span>
-          <span className="file-card-size">Uploading…</span>
+          <span className="file-card-size">{t("files.uploading")}</span>
         </span>
       </NodeViewWrapper>
     );

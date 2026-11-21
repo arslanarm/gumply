@@ -2,7 +2,9 @@
  * `[[` autocomplete wiring (spec/ux §8). The React menu lives in LinkMenu;
  * this extension only computes suggestions and performs the insert.
  */
-import { linkTargetFor, type PageMeta } from "@gumply/core";
+import { linkTargetFor, pageBlockIds, pageHeadings, resolveWikilink } from "@gumply/core";
+import { api } from "../../api/client.js";
+import { t } from "../../i18n/index.js";
 import type { EditorState } from "@tiptap/pm/state";
 import { isBoard } from "../../lib/boards.js";
 import { boardEmbedAttrs } from "../board-embed/node.js";
@@ -20,15 +22,57 @@ import { getWikiLinkEnvironment } from "./link-store.js";
 const wikiLinkPluginKey = new PluginKey("wikiLinkSuggestion");
 
 /**
- * `![[` (D30): the `[[` just typed is an embed. Only boards can be embedded
- * in a page, so the menu lists boards only and picking one embeds it.
+ * `![[` (D30, #5dpxwac4): the `[[` just typed is an embed. The menu lists
+ * pages and boards; picking one embeds it (a page preview or a live board).
+ * `![[Page#` lists the page's headings and block ids.
  */
 function embedStart(state: EditorState, from: number): boolean {
   return from > 0 && state.doc.textBetween(from - 1, from) === "!";
 }
 
-function boardsOnly(pages: readonly PageMeta[]): PageMeta[] {
-  return pages.filter((page) => isBoard(page));
+/**
+ * `/Page preview` (#5dpxwac4) starts `![[` and asks for the outline step:
+ * picking a page then lists "Whole page", its headings and its blocks.
+ */
+let pickPartAfterPage = false;
+
+export function requestPagePreviewPicker(): void {
+  pickPartAfterPage = true;
+}
+
+/** `![[Page#…` suggestions: the whole page (outline step), its headings, then its block ids. */
+async function partSuggestions(query: string): Promise<LinkSuggestion[]> {
+  const env = getWikiLinkEnvironment();
+  const hash = query.indexOf("#");
+  const page = resolveWikilink(query.slice(0, hash).trim(), env.pages);
+  if (!page || isBoard(page)) return [];
+  const needle = query.slice(hash + 1).trim().toLowerCase();
+  let content = "";
+  try {
+    content = (await api.getPage(page.id)).content;
+  } catch {
+    return [];
+  }
+  const headings = pageHeadings(content).map<LinkSuggestion>((heading) => ({
+    kind: "page",
+    key: `${page.id}#${heading.line}`,
+    label: heading.text,
+    title: page.title,
+    pageId: page.id,
+    part: heading.text,
+    level: heading.level,
+  }));
+  const blocks = pageBlockIds(content).map<LinkSuggestion>((block) => ({
+    kind: "page",
+    key: `${page.id}#^${block.id}`,
+    label: block.text || `^${block.id}`,
+    title: page.title,
+    pageId: page.id,
+    part: `^${block.id}`,
+  }));
+  const matches = [...headings, ...blocks].filter((item) => !needle || item.label.toLowerCase().includes(needle.replace(/^\^/, ""))).slice(0, 30);
+  const whole: LinkSuggestion = { kind: "page", key: `${page.id}#`, label: t("pageEmbed.wholePage"), title: page.title, pageId: page.id, part: "", icon: page.icon };
+  return needle ? matches : [whole, ...matches];
 }
 
 export interface LinkMenuHandlers {
@@ -65,8 +109,11 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             const env = getWikiLinkEnvironment();
             const active = wikiLinkPluginKey.getState(editor.state) as { range?: { from: number } } | undefined;
             if (active?.range && embedStart(editor.state, active.range.from)) {
+              if (query.includes("#")) return partSuggestions(query);
               // No "Create" row: a new board is `/whiteboard` → New board here.
-              return buildLinkSuggestions(boardsOnly(env.pages), query).filter((item) => item.kind === "page");
+              // The open page can't preview itself.
+              const embeddable = env.pages.filter((page) => page.id !== env.pageId);
+              return buildLinkSuggestions(embeddable, query).filter((item) => item.kind === "page");
             }
             return buildLinkSuggestions(env.pages, query, env.attachments);
           },
@@ -80,6 +127,25 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
                   .focus()
                   .deleteRange({ from: range.from - 1, to: range.to })
                   .insertContent({ type: "boardEmbed", attrs: boardEmbedAttrs(board, env.pages) })
+                  .run();
+                return;
+              }
+              if (board && pickPartAfterPage && props.part === undefined) {
+                // The outline step: keep the menu open on `![[Page#`.
+                editor.chain().focus().deleteRange(range).insertContent(`[[${linkTargetFor(board, env.pages).target}#`).run();
+                return;
+              }
+              if (board) {
+                pickPartAfterPage = false;
+                // A page preview (#5dpxwac4), of the whole page or one part.
+                editor
+                  .chain()
+                  .focus()
+                  .deleteRange({ from: range.from - 1, to: range.to })
+                  .insertContent({
+                    type: "pageEmbed",
+                    attrs: { target: linkTargetFor(board, env.pages).target, part: props.part ?? "", alias: "", raw: "" },
+                  })
                   .run();
                 return;
               }
@@ -124,7 +190,9 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             onStart: (props) => handlers.current.onStart(props),
             onUpdate: (props) => handlers.current.onUpdate(props),
             onKeyDown: (props) => handlers.current.onKeyDown(props),
-            onExit: () => handlers.current.onExit(),
+            onExit: () => {
+              handlers.current.onExit();
+            },
           }),
         }),
       ];

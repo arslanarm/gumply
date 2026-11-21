@@ -6,6 +6,7 @@ import type { CanvasBoard } from "@gumply/core";
 import { lazy, Suspense, useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ExportFormat, ExportRequest } from "./BoardMenu.js";
 import { frameFollowers } from "./model.js";
+import { t } from "../i18n/index.js";
 
 const loadExport = () => Promise.all([import("./export/ExportStage.js"), import("./export/download.js")]);
 const ExportStage = lazy(() => import("./export/ExportStage.js"));
@@ -50,7 +51,7 @@ export function useBoardExport({ boardId, board, selectedNodeIds, rootRef, onErr
     setJob(null);
     setBusy(null);
     const detail = error instanceof Error ? error.message : String(error);
-    latest.current.onError(`The board couldn't be exported. ${detail}`);
+    latest.current.onError(t("board.export.failed", { detail }));
   }, []);
 
   const start = useCallback(
@@ -59,7 +60,7 @@ export function useBoardExport({ boardId, board, selectedNodeIds, rootRef, onErr
       const { board: current, selectedNodeIds: selected } = latest.current;
       const subset = request.selection ? exportSubset(current, new Set(selected)) : current;
       if (subset.nodes.length === 0) {
-        latest.current.onError("There's nothing on this board to export yet.");
+        latest.current.onError(t("board.export.empty"));
         return;
       }
       const root = rootRef.current;

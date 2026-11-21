@@ -9,6 +9,7 @@ import latinItalicUrl from "./fonts/inter-latin-wght-italic.woff2?url";
 import latinUrl from "./fonts/inter-latin-wght-normal.woff2?url";
 import latinExtItalicUrl from "./fonts/inter-latin-ext-wght-italic.woff2?url";
 import latinExtUrl from "./fonts/inter-latin-ext-wght-normal.woff2?url";
+import { t } from "../../i18n/index.js";
 
 export const EXPORT_FONT_FAMILY = "Inter";
 /** What the stage sets for sans text; anything Inter lacks falls back to the system. */
@@ -40,7 +41,7 @@ function fontBytes(url: string): Promise<ArrayBuffer> {
   let pending = bytes.get(url);
   if (!pending) {
     pending = fetch(url).then((response) => {
-      if (!response.ok) throw new Error(`Couldn't load the export font (${response.status})`);
+      if (!response.ok) throw new Error(t("board.export.fontFailed", { status: response.status }));
       return response.arrayBuffer();
     });
     pending.catch(() => bytes.delete(url));

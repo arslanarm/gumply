@@ -1,6 +1,7 @@
 /** A colour swatch button for the context toolbars. */
 import type { CSSProperties } from "react";
 import { PALETTE, solidColor } from "./colors.js";
+import { useT } from "../i18n/index.js";
 
 export function Swatch({ value, label, active, onPick }: {
   value: string | undefined;
@@ -24,10 +25,11 @@ export function Swatch({ value, label, active, onPick }: {
 
 /** Default plus the six presets. */
 export function Palette({ current, onPick }: { current: string | null | undefined; onPick: (value: string | undefined) => void }) {
+  useT();
   return (
     <div className="board-context-group">
       {PALETTE.map((entry) => (
-        <Swatch key={entry.label} value={entry.value} label={entry.label} active={current === entry.value} onPick={onPick} />
+        <Swatch key={entry.value ?? "default"} value={entry.value} label={entry.label} active={current === entry.value} onPick={onPick} />
       ))}
     </div>
   );

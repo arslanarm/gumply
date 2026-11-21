@@ -31,6 +31,8 @@ import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extens
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
+import { PageEmbed } from "../editor/page-embed/node.js";
+import { BlockIdChips } from "../editor/page-embed/block-ids.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import { Highlight, InnermostCode } from "../editor/highlight.js";
 import { LinkShortcut } from "../editor/formatting.js";
@@ -63,6 +65,7 @@ import type { SlashItem } from "../editor/slash-items.js";
 import { AccessibleTaskItem } from "../editor/task-item.js";
 import { TaskShortcut } from "../editor/task-shortcut.js";
 import { setWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
+import { headingKey } from "@gumply/core";
 import { WikiLink } from "../editor/wikilink/node.js";
 import {
   createWikiLinkExtension,
@@ -73,6 +76,7 @@ import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { normalizeEditorMarkdown } from "../lib/markdown.js";
 import { taskCheckboxLabel } from "../lib/task.js";
 import { createExitTopExtension, focusStartNow } from "../editor/title-navigation.js";
+import { t } from "../i18n/index.js";
 
 export interface EditorControls {
   /** Id of the page this editor shows (controls outlive a page switch). */
@@ -675,7 +679,9 @@ export function Editor({
       }),
       ImageBlock,
       BoardEmbed,
+      PageEmbed,
       TagChips,
+      BlockIdChips,
       Highlight,
       LinkShortcut,
       InlineImage,
@@ -702,7 +708,7 @@ export function Editor({
     editorProps: {
       attributes: {
         class: "gumply-editor",
-        "aria-label": "Page content",
+        "aria-label": t("page.contentLabel"),
         "data-testid": "editor-content",
       },
       // Pasted HTML tables become a GFM table block (#y5iqswjf).
@@ -816,12 +822,27 @@ export function Editor({
   useEffect(() => {
     if (!editor || !headingToReveal) return;
 
-    const wanted = headingToReveal.trim().toLowerCase();
+    // `#^id` (#5dpxwac4): the block that ends with ` ^id`; an id alone on a
+    // line names the block above it. Headings match by their words.
+    const block = headingToReveal.trim().startsWith("^") ? headingToReveal.trim().slice(1) : null;
+    const wanted = headingKey(headingToReveal);
+    const marker = block ? new RegExp(`(?:^|\\s)\\^${block.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`) : null;
     let headingPos: number | null = null;
+    let previousBlock: number | null = null;
 
     editor.state.doc.descendants((node, pos) => {
       if (headingPos !== null) return false;
-      if (node.type.name === "heading" && node.textContent.trim().toLowerCase() === wanted) {
+      if (marker) {
+        if (!node.isTextblock) return true;
+        const text = node.textContent;
+        if (marker.test(text)) {
+          headingPos = text.trim().startsWith("^") && previousBlock !== null ? previousBlock : pos;
+          return false;
+        }
+        if (text.trim() !== "") previousBlock = pos;
+        return false;
+      }
+      if (node.type.name === "heading" && headingKey(node.textContent) === wanted) {
         headingPos = pos;
         return false;
       }
@@ -907,7 +928,7 @@ export function Editor({
           style={{ left: emojiPicker.left, top: emojiPicker.top }}
         >
           <EmojiPicker
-            label="Insert emoji"
+            label={t("emoji.insert")}
             testId="editor-emoji-picker"
             onSelect={(emoji) => {
               const pos = Math.min(emojiPicker.pos, editor.state.doc.content.size);

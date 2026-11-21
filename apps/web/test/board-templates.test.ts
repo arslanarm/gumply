@@ -13,19 +13,19 @@ const inside = (node: CanvasNode, frame: CanvasNode): boolean =>
 
 describe("board templates (#yewapn9k)", () => {
   it("offers the five templates of spec/v0-6 §D", () => {
-    expect(BOARD_TEMPLATES.map((template) => template.name)).toEqual([
+    expect(BOARD_TEMPLATES.map((template) => template.name())).toEqual([
       "Kanban",
       "Mind map",
       "Retrospective",
       "Flowchart",
       "Weekly plan",
     ]);
-    expect(boardTemplate("kanban")?.name).toBe("Kanban");
+    expect(boardTemplate("kanban")?.name()).toBe("Kanban");
     expect(boardTemplate("nope")).toBeUndefined();
   });
 
   for (const template of BOARD_TEMPLATES) {
-    describe(template.name, () => {
+    describe(template.name(), () => {
       const board = template.build();
 
       it("is a valid JSON Canvas file that round-trips byte for byte", () => {

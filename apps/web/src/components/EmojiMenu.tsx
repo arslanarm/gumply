@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
+import { useT } from "../i18n/index.js";
 
 export interface EmojiMenuProps {
   items: readonly EmojiEntry[];
@@ -13,6 +14,7 @@ export interface EmojiMenuProps {
 
 /** Floating `:roc` emoji suggestions (#6v8tyxfd). */
 export function EmojiMenu({ items, index, left, top, onSelect, onHover }: EmojiMenuProps) {
+  const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const menuRef = useRef<HTMLDivElement | null>(null);
   useActiveOptionVisible(menuRef, index, items.length);
@@ -23,7 +25,7 @@ export function EmojiMenu({ items, index, left, top, onSelect, onHover }: EmojiM
       className="slash-menu emoji-menu"
       data-testid="emoji-menu"
       role="listbox"
-      aria-label="Emoji"
+      aria-label={t("emoji.label")}
       style={{ left, top }}
     >
       {items.map((item, itemIndex) => {

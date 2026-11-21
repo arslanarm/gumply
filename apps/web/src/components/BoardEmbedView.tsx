@@ -23,6 +23,7 @@ import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { isBoard, vaultPathOf } from "../lib/boards.js";
 import { errorMessage } from "../lib/errors.js";
 import { Icon } from "./Icon.js";
+import { t, useT } from "../i18n/index.js";
 
 async function loadPagePreview(path: string): Promise<string | null> {
   try {
@@ -34,7 +35,7 @@ async function loadPagePreview(path: string): Promise<string | null> {
 
 /** The title a missing `Folder/Plan.canvas` would get: `Plan`. */
 function titleOfTarget(target: string): string {
-  return (target.split("/").pop() ?? target).replace(/\.canvas$/i, "").trim() || "Untitled whiteboard";
+  return (target.split("/").pop() ?? target).replace(/\.canvas$/i, "").trim() || t("defaults.untitledBoard");
 }
 
 /** Mount `true` once the element comes within `margin` of the viewport. */
@@ -88,6 +89,7 @@ function useBoardDocument(board: PageMeta | null, enabled: boolean): { board: Ca
 }
 
 export function BoardEmbedView({ node, updateAttributes, selected }: NodeViewProps) {
+  const t = useT();
   const target = String(node.attrs.target ?? "");
   const size = String(node.attrs.size ?? "");
   const env = useWikiLinkEnvironment();
@@ -177,7 +179,7 @@ export function BoardEmbedView({ node, updateAttributes, selected }: NodeViewPro
         style={{ height }}
         data-testid="board-embed-frame"
         role={board ? "link" : undefined}
-        aria-label={board ? `Open whiteboard “${title}”` : undefined}
+        aria-label={board ? t("embed.open", { title }) : undefined}
         onClick={(event) => {
           if ((event.target as HTMLElement).closest("button, .board-embed-resize")) return;
           open();
@@ -191,7 +193,7 @@ export function BoardEmbedView({ node, updateAttributes, selected }: NodeViewPro
               </Suspense>
             ) : (
               <div className="board-embed-loading" aria-hidden="true">
-                {error ? <span className="board-embed-error">Couldn't load the board: {error}</span> : null}
+                {error ? <span className="board-embed-error">{t("embed.loadFailed", { error })}</span> : null}
               </div>
             )}
             <div className="board-embed-bar" data-testid="board-embed-bar">
@@ -214,19 +216,19 @@ export function BoardEmbedView({ node, updateAttributes, selected }: NodeViewPro
                   open();
                 }}
               >
-                Open
+                {t("common.open")}
               </button>
             </div>
             {document && document.nodes.length === 0 ? (
-              <div className="board-embed-empty">Empty whiteboard</div>
+              <div className="board-embed-empty">{t("embed.empty")}</div>
             ) : null}
           </>
         ) : (
           <div className="board-embed-missing" data-testid="board-embed-missing">
             <Icon name="board" size={20} />
             <div className="board-embed-missing-text">
-              <strong>Board not found</strong>
-              <span>“{target}” doesn't exist in this vault.</span>
+              <strong>{t("embed.notFound")}</strong>
+              <span>{t("embed.notFoundHint", { target })}</span>
             </div>
             <button
               type="button"
@@ -238,7 +240,7 @@ export function BoardEmbedView({ node, updateAttributes, selected }: NodeViewPro
                 void create();
               }}
             >
-              {creating ? "Creating…" : "Create"}
+              {creating ? t("embed.creating") : t("embed.create")}
             </button>
           </div>
         )}
@@ -249,7 +251,7 @@ export function BoardEmbedView({ node, updateAttributes, selected }: NodeViewPro
           data-testid="board-embed-resize"
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Resize whiteboard"
+          aria-label={t("embed.resize")}
           aria-valuenow={height}
           aria-valuemin={BOARD_EMBED_MIN_HEIGHT}
           aria-valuemax={BOARD_EMBED_MAX_HEIGHT}

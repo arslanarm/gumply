@@ -9,6 +9,7 @@ import {
 import { Icon } from "./Icon.js";
 import { moveTargets, type MoveTarget } from "../lib/move.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
+import { useT } from "../i18n/index.js";
 
 export interface MoveDialogProps {
   page: PageMeta;
@@ -20,6 +21,7 @@ export interface MoveDialogProps {
 
 /** Searchable “Move to…” picker from the sidebar `⋯` menu (spec/ux §6). */
 export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps) {
+  const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
@@ -83,7 +85,7 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
         className="quick-switcher move-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`Move “${page.title}”`}
+        aria-label={t("move.dialogLabel", { title: page.title })}
         data-testid="move-dialog"
         onKeyDown={onKeyDown}
       >
@@ -93,8 +95,8 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
           data-testid="move-input"
           type="text"
           value={query}
-          placeholder={`Move “${page.title}” to…`}
-          aria-label={`Move “${page.title}” to`}
+          placeholder={t("move.placeholder", { title: page.title })}
+          aria-label={t("move.inputLabel", { title: page.title })}
           aria-controls="move-results"
           aria-activedescendant={activeIndex >= 0 ? `move-option-${activeIndex}` : undefined}
           autoComplete="off"
@@ -107,11 +109,11 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
           id="move-results"
           ref={listRef}
           role="listbox"
-          aria-label="Move to page"
+          aria-label={t("move.listLabel")}
         >
           {rows.length === 0 ? (
             <p className="quick-switcher-empty" data-testid="move-empty">
-              {trimmed.length > 0 ? `No pages match “${trimmed}”` : "No pages to move to."}
+              {trimmed.length > 0 ? t("move.noMatch", { query: trimmed }) : t("move.noTargets")}
             </p>
           ) : (
             rows.map((row, rowIndex) => {

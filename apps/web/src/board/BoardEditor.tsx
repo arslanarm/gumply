@@ -105,6 +105,7 @@ import {
 } from "./model.js";
 import { NODE_TYPES } from "./nodes.js";
 import { Palette } from "./Swatch.js";
+import { t, useT } from "../i18n/index.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -204,26 +205,27 @@ const URL_PATTERN = /^https?:\/\/\S+$/i;
 interface ToolSpec {
   tool: BoardTool;
   icon: BoardIconName;
-  label: string;
+  readonly label: string;
   keys: string;
 }
 
 const TOOLS: readonly ToolSpec[] = [
-  { tool: "select", icon: "select", label: "Select", keys: "V" },
-  { tool: "hand", icon: "hand", label: "Hand", keys: "H" },
-  { tool: "sticky", icon: "sticky", label: "Sticky note", keys: "N" },
-  { tool: "text", icon: "text", label: "Text", keys: "T" },
-  { tool: "shape", icon: "shape", label: "Shape", keys: "S" },
-  { tool: "connector", icon: "connector", label: "Connector", keys: "C" },
-  { tool: "frame", icon: "frame", label: "Frame", keys: "F" },
-  { tool: "pen", icon: "pen", label: "Pen", keys: "P" },
+  { tool: "select", icon: "select", get label() { return t("board.tools.select"); }, keys: "V" },
+  { tool: "hand", icon: "hand", get label() { return t("board.tools.hand"); }, keys: "H" },
+  { tool: "sticky", icon: "sticky", get label() { return t("board.tools.sticky"); }, keys: "N" },
+  { tool: "text", icon: "text", get label() { return t("board.tools.text"); }, keys: "T" },
+  { tool: "shape", icon: "shape", get label() { return t("board.tools.shape"); }, keys: "S" },
+  { tool: "connector", icon: "connector", get label() { return t("board.tools.connector"); }, keys: "C" },
+  { tool: "frame", icon: "frame", get label() { return t("board.tools.frame"); }, keys: "F" },
+  { tool: "pen", icon: "pen", get label() { return t("board.tools.pen"); }, keys: "P" },
 ];
 
-const SHAPES: readonly { shape: GumplyShape; label: string }[] = [
-  { shape: "rect", label: "Rectangle" },
-  { shape: "rounded", label: "Rounded rectangle" },
-  { shape: "ellipse", label: "Ellipse" },
-  { shape: "diamond", label: "Diamond" },
+// Labels are getters: read at render time, in the interface language.
+const SHAPES: readonly { shape: GumplyShape; readonly label: string }[] = [
+  { shape: "rect", get label() { return t("board.shapes.rect"); } },
+  { shape: "rounded", get label() { return t("board.shapes.rounded"); } },
+  { shape: "ellipse", get label() { return t("board.shapes.ellipse"); } },
+  { shape: "diamond", get label() { return t("board.shapes.diamond"); } },
 ];
 
 function ToolButton({ active, icon, label, keys, onClick, disabled, testId, children }: {
@@ -269,11 +271,11 @@ function PagePicker({ pages, onPick, onClose }: {
     return list.slice(0, 50);
   }, [pages, query]);
   return (
-    <div className="board-popover board-page-picker" data-testid="board-page-picker" role="dialog" aria-label="Add page">
+    <div className="board-popover board-page-picker" data-testid="board-page-picker" role="dialog" aria-label={t("board.addPage")}>
       <input
         ref={inputRef}
         className="board-picker-input"
-        placeholder="Find a page…"
+        placeholder={t("board.findPage")}
         value={query}
         data-testid="board-page-picker-input"
         onChange={(event) => {
@@ -296,7 +298,7 @@ function PagePicker({ pages, onPick, onClose }: {
         }}
       />
       <div className="board-picker-list" role="listbox">
-        {matches.length === 0 ? <div className="board-picker-empty">No pages found</div> : null}
+        {matches.length === 0 ? <div className="board-picker-empty">{t("board.noPagesFound")}</div> : null}
         {matches.map((page, at) => (
           <button
             type="button"
@@ -436,6 +438,8 @@ interface CreateDraft {
 }
 
 function BoardCanvas(props: BoardEditorProps) {
+  // Re-render on a language switch (#7h5utv23).
+  useT();
   const { boardId, onChange, pages = [], onOpenFile, onOpenUrl, uploadFile, onUploadError, renderers, loadPage, onReady } = props;
   const onUploadErrorRef = useRef(onUploadError);
   onUploadErrorRef.current = onUploadError;
@@ -563,7 +567,7 @@ function BoardCanvas(props: BoardEditorProps) {
           // Only fold into the creation step if that really was the last step.
           const created = fresh && !history.past.at(-1)?.nodes.some((candidate) => candidate.id === id);
           if (node.type === "group") {
-            const next = updateNode(current, id, { label: text.trim() || "Frame" });
+            const next = updateNode(current, id, { label: text.trim() || t("board.frame") });
             return created ? amend(history, next) : commitHistory(history, next);
           }
           // A plain text box left empty disappears, like in Miro.
@@ -580,7 +584,7 @@ function BoardCanvas(props: BoardEditorProps) {
       draftText: (id, text) => {
         const node = boardRef.current.nodes.find((candidate) => candidate.id === id);
         if (!node) return;
-        const patch = node.type === "group" ? { label: text.trim() || "Frame" } : { text };
+        const patch = node.type === "group" ? { label: text.trim() || t("board.frame") } : { text };
         onChangeRef.current(updateNode(boardRef.current, id, patch));
       },
       draftEdgeLabel: (id, label) => {
@@ -694,7 +698,7 @@ function BoardCanvas(props: BoardEditorProps) {
       };
       // Same limit as the server (D18): refuse before sending 25 MB for nothing.
       if (file.size > MAX_UPLOAD_BYTES) {
-        report(`${file.name} is too large (max 25 MB)`);
+        report(t("board.upload.tooLarge", { name: file.name }));
         return;
       }
       const at = client ? toFlow(client) : viewCentre();
@@ -710,10 +714,10 @@ function BoardCanvas(props: BoardEditorProps) {
       } catch (error) {
         // #f6v8z4ti: a failed upload is a calm notice, never an uncaught error.
         const reason = errorMessage(error);
-        if (/too large/i.test(reason)) report(`${file.name} is too large (max 25 MB)`);
+        if (/too large/i.test(reason)) report(t("board.upload.tooLarge", { name: file.name }));
         // Our server answered with an error: it is reachable, so don't say it isn't.
-        else if (error instanceof ApiRequestError && error.status >= 500) report(`Couldn't add ${file.name} (server error)`);
-        else report(`Couldn't add ${file.name}. ${reason}`);
+        else if (error instanceof ApiRequestError && error.status >= 500) report(t("board.upload.serverError", { name: file.name }));
+        else report(t("board.upload.failed", { name: file.name, reason }));
         return;
       }
       addAndSelect(createFileNode({ x: at.x - size.width / 2, y: at.y - size.height / 2, ...size }, path));
@@ -1631,13 +1635,13 @@ function BoardCanvas(props: BoardEditorProps) {
                   </div>
                 ) : null}
                 <div className="board-context-group">
-                  <button type="button" className="board-context-button" aria-label="Bring to front" data-tooltip="Bring to front · ]" data-testid="board-front" onClick={() => reorder("front")}>
+                  <button type="button" className="board-context-button" aria-label={t("board.bringToFront")} data-tooltip={`${t("board.bringToFront")} · ]`} data-testid="board-front" onClick={() => reorder("front")}>
                     <BoardIcon name="front" size={16} />
                   </button>
-                  <button type="button" className="board-context-button" aria-label="Send to back" data-tooltip="Send to back · [" data-testid="board-back" onClick={() => reorder("back")}>
+                  <button type="button" className="board-context-button" aria-label={t("board.sendToBack")} data-tooltip={`${t("board.sendToBack")} · [`} data-testid="board-back" onClick={() => reorder("back")}>
                     <BoardIcon name="back" size={16} />
                   </button>
-                  <button type="button" className="board-context-button is-danger" aria-label="Delete" data-tooltip="Delete · Del" data-testid="board-delete" onClick={deleteSelection}>
+                  <button type="button" className="board-context-button is-danger" aria-label={t("common.delete")} data-tooltip={`${t("common.delete")} · Del`} data-testid="board-delete" onClick={deleteSelection}>
                     <BoardIcon name="trash" size={16} />
                   </button>
                 </div>
@@ -1650,23 +1654,23 @@ function BoardCanvas(props: BoardEditorProps) {
             </Panel>
 
             <Panel position="bottom-right" className="board-zoom">
-              <button type="button" className="board-zoom-button" aria-label="Zoom out" data-tooltip="Zoom out" data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
+              <button type="button" className="board-zoom-button" aria-label={t("board.zoomOut")} data-tooltip={t("board.zoomOut")} data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
                 <BoardIcon name="minus" size={16} />
               </button>
-              <button type="button" className="board-zoom-value" aria-label="Reset zoom to 100%" data-tooltip="Zoom to 100%" data-testid="board-zoom-value" onClick={() => void flow.zoomTo(1, { duration: 150 })}>
+              <button type="button" className="board-zoom-value" aria-label={t("board.resetZoom")} data-tooltip={t("board.zoomTo100")} data-testid="board-zoom-value" onClick={() => void flow.zoomTo(1, { duration: 150 })}>
                 <ZoomPercent />
               </button>
-              <button type="button" className="board-zoom-button" aria-label="Zoom in" data-tooltip="Zoom in" data-testid="board-zoom-in" onClick={() => void flow.zoomIn({ duration: 150 })}>
+              <button type="button" className="board-zoom-button" aria-label={t("board.zoomIn")} data-tooltip={t("board.zoomIn")} data-testid="board-zoom-in" onClick={() => void flow.zoomIn({ duration: 150 })}>
                 <BoardIcon name="plus" size={16} />
               </button>
               <span className="board-zoom-divider" />
-              <button type="button" className="board-zoom-button" aria-label="Fit to screen" data-tooltip="Fit · Shift+1" data-testid="board-fit" onClick={fit}>
+              <button type="button" className="board-zoom-button" aria-label={t("board.fitToScreen")} data-tooltip={`${t("board.fit")} · Shift+1`} data-testid="board-fit" onClick={fit}>
                 <BoardIcon name="fit" size={16} />
               </button>
             </Panel>
           </ReactFlow>
 
-          <div className="board-toolbar" role="toolbar" aria-label="Board tools" aria-orientation="vertical" data-testid="board-toolbar">
+          <div className="board-toolbar" role="toolbar" aria-label={t("board.toolsLabel")} aria-orientation="vertical" data-testid="board-toolbar">
             <div className="board-toolbar-group">
               {TOOLS.map((spec) => (
                 <ToolButton
@@ -1684,14 +1688,14 @@ function BoardCanvas(props: BoardEditorProps) {
               ))}
               <ToolButton
                 icon="image"
-                label={uploadFile ? "Image or file" : "Image or file (unavailable)"}
+                label={uploadFile ? t("board.imageOrFile") : t("board.imageOrFileUnavailable")}
                 testId="board-tool-image"
                 disabled={!uploadFile}
                 onClick={() => fileInputRef.current?.click()}
               />
               <ToolButton
                 icon="page"
-                label="Add page…"
+                label={t("board.addPageEllipsis")}
                 testId="board-tool-page"
                 active={pagePicker}
                 onClick={() => {
@@ -1701,8 +1705,8 @@ function BoardCanvas(props: BoardEditorProps) {
               />
             </div>
             <div className="board-toolbar-group">
-              <ToolButton icon="undo" label="Undo" keys={`${modifier}Z`} testId="board-undo" disabled={!canUndo(history)} onClick={doUndo} />
-              <ToolButton icon="redo" label="Redo" keys={`${modifier}+Shift+Z`} testId="board-redo" disabled={!canRedo(history)} onClick={doRedo} />
+              <ToolButton icon="undo" label={t("common.undo")} keys={`${modifier}Z`} testId="board-undo" disabled={!canUndo(history)} onClick={doUndo} />
+              <ToolButton icon="redo" label={t("board.redo")} keys={`${modifier}+Shift+Z`} testId="board-redo" disabled={!canRedo(history)} onClick={doRedo} />
             </div>
             {shapeMenu && tool === "shape" ? (
               <div className="board-popover board-shape-menu" data-testid="board-shape-menu" role="menu">
@@ -1798,7 +1802,7 @@ function BoardCanvas(props: BoardEditorProps) {
                 : null}
               {connectorHint ? (
                 <div className="board-tool-hint" role="status" data-testid="board-connector-hint">
-                  Drag from one object to another
+                  {t("board.connectorHint")}
                 </div>
               ) : null}
             </div>
@@ -1810,8 +1814,8 @@ function BoardCanvas(props: BoardEditorProps) {
 
           {board.nodes.length === 0 ? (
             <div className="board-empty" data-testid="board-empty">
-              <strong>This board is empty</strong>
-              <span>Double-click to add a sticky note · drag pages from the sidebar</span>
+              <strong>{t("board.empty")}</strong>
+              <span>{t("board.emptyHint")}</span>
             </div>
           ) : null}
         </div>
@@ -1832,7 +1836,7 @@ function imageSize(file: File): Promise<{ width: number; height: number }> {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("Not an image"));
+      reject(new Error(t("board.upload.notImage")));
     };
     image.src = url;
   });

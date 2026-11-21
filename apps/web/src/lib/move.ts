@@ -4,6 +4,7 @@
 import type { PageId, PageMeta } from "@gumply/core";
 import { canMovePage, comparePages } from "./tree.js";
 import { folderPath } from "./wikilinks.js";
+import { t } from "../i18n/index.js";
 
 export interface MoveTarget {
   kind: "top" | "page";
@@ -45,7 +46,9 @@ export function moveTargets(
 
   const rows: MoveTarget[] = [];
   if (page.parentId !== null) {
-    rows.push({ kind: "top", key: "top-level", label: "Top level", parentId: null });
+    rows.push({ kind: "top", key: "top-level", get label() {
+      return t("move.topLevel");
+    }, parentId: null });
   }
 
   const needle = normalise(query);
@@ -79,7 +82,7 @@ export function moveToastMessage(
   pages: readonly PageMeta[],
   parentId: PageId | null,
 ): string {
-  if (parentId === null) return "Moved to top level";
+  if (parentId === null) return t("move.movedToTop");
   const parent = pages.find((page) => page.id === parentId);
-  return parent ? `Moved to “${parent.title}”` : "Page moved";
+  return parent ? t("move.movedTo", { title: parent.title }) : t("move.moved");
 }

@@ -1,0 +1,45 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderer snapshot (#5dpxwac4) > renders a page with everything people embed, matching the editor's markup 1`] = `
+"<h1>Project</h1>
+<p>Intro with <strong>bold</strong>, <em>italic</em>, <s>gone</s>, <code>code</code>, <mark>marked</mark>, <span class="tag-chip" data-tag="tag">#tag</span> and <wiki-link data-wikilink-title="Other page" data-wikilink-alias="a link">a link</wiki-link>.</p>
+<h2>Tasks</h2>
+<ul data-type="taskList">
+<li data-checked="false" data-type="taskItem"><label contenteditable="false"><input type="checkbox" disabled><span></span></label><div>Open task</div></li>
+<li data-checked="true" data-type="taskItem"><label contenteditable="false"><input type="checkbox" disabled checked><span></span></label><div>Done task
+<ul>
+<li>nested point</li>
+</ul>
+</div></li>
+</ul>
+<ol>
+<li>First</li>
+<li>Second</li>
+</ol>
+<div class="callout is-foldable is-closed" data-callout="warning" data-callout-style="warning" data-fold="-"><span class="callout-icon" data-callout-icon="warning" aria-hidden="true"></span><div class="callout-content"><div class="callout-title">Folded</div><div class="callout-body"><p>Hidden body.</p>
+</div></div><button type="button" class="callout-fold" data-callout-fold aria-expanded="false"></button></div>
+<blockquote>
+<p>A plain quote.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docs</td>
+<td>Ana</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-ts">const answer: number = 42;
+</code></pre>
+<p><img src="../attachments/diagram.png" alt="Diagram"></p>
+<div class="page-embed-board-card"><span class="page-embed-board-icon" aria-hidden="true"></span><wiki-link data-wikilink-title="Board.canvas" data-wikilink-alias="Board">Board</wiki-link></div>
+<div class="page-embed-nested" data-target="Other page" data-part="Section"></div>
+<hr>
+"
+`;

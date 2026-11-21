@@ -3,12 +3,13 @@
  */
 import type { PageMeta, SearchResult } from "@gumply/core";
 import { folderPath, parseWikiLinkText } from "./wikilinks.js";
+import { relativeTime, t } from "../i18n/index.js";
 
 export const MAX_SEARCH_ROWS = 8;
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "from-template";
+  kind: "page" | "text" | "create" | "create-board" | "from-template" | "language";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -30,10 +31,29 @@ export interface SearchSections {
   createBoard: SearchRow | null;
   /** `New board from template…` when the query asks for it (spec/v0-6 §D). */
   fromTemplate: SearchRow | null;
+  /** `Language…` (opens Settings) when the query asks for it (#7h5utv23). */
+  language: SearchRow | null;
+}
+
+/**
+ * Whether `query` asks for the language setting: it starts "language",
+ * "settings", "lang" or the interface language's own word(s).
+ */
+export function wantsLanguage(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = ["language", "languages", "settings", "lang", ...t("search.languageWords").toLowerCase().split(/\s+/).filter(Boolean)];
+  return words.some((word) => word.startsWith(needle));
 }
 
 /** Words that offer `New board from template…`: the command and the template names. */
 const TEMPLATE_WORDS = "new board from template whiteboard kanban mind map retrospective retro flowchart weekly plan".split(" ");
+
+/** English words always count; the interface language adds its own (#7h5utv23). */
+function templateWords(): string[] {
+  const local = t("search.templateWords").toLowerCase().split(/\s+/).filter(Boolean);
+  return local.length > 0 ? [...TEMPLATE_WORDS, ...local] : TEMPLATE_WORDS;
+}
 
 /**
  * Whether `query` asks for a board template: every word of it starts a word
@@ -42,11 +62,15 @@ const TEMPLATE_WORDS = "new board from template whiteboard kanban mind map retro
 export function wantsTemplate(query: string): boolean {
   const words = normalise(query).split(" ").filter((word) => word.length > 0);
   if (words.length === 0) return false;
-  const meaningful = words.some((word) => !["new", "from", "a"].includes(word));
-  return meaningful && words.every((word) => TEMPLATE_WORDS.some((known) => known.startsWith(word)));
+  const filler = ["new", "from", "a", ...t("search.templateFiller").toLowerCase().split(/\s+/).filter(Boolean)];
+  const meaningful = words.some((word) => !filler.includes(word));
+  const known = templateWords();
+  return meaningful && words.every((word) => known.some((candidate) => candidate.startsWith(word)));
 }
 
-const FROM_TEMPLATE_ROW: SearchRow = { kind: "from-template", key: "from-template", label: "New board from template…" };
+function fromTemplateRow(): SearchRow {
+  return { kind: "from-template", key: "from-template", label: t("search.fromTemplate") };
+}
 
 function normalise(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
@@ -61,17 +85,8 @@ function titleCounts(pages: readonly PageMeta[]): Map<string, number> {
   return counts;
 }
 
-/** "just now", "5 min ago", "3 h ago", then a short date. */
-export function relativeTime(iso: string, now: number = Date.now()): string {
-  const time = new Date(iso).getTime();
-  if (Number.isNaN(time)) return "recently";
-  const minutes = Math.round((now - time) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return new Date(time).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+/** "just now", "5 min ago", "3 h ago", then a short date (in the interface language). */
+export { relativeTime };
 
 function toRow(
   page: PageMeta,
@@ -81,7 +96,7 @@ function toRow(
 ): SearchRow {
   const duplicate = (counts.get(normalise(page.title)) ?? 0) > 1;
   // Same title in the same folder: the edit time is what tells them apart.
-  const path = duplicate ? folderPath(page) || `Edited ${relativeTime(page.updated)}` : "";
+  const path = duplicate ? folderPath(page) || t("search.edited", { time: relativeTime(page.updated) }) : "";
   return {
     kind,
     key: page.id,
@@ -156,7 +171,7 @@ export function searchSections(
 ): SearchSections {
   const needle = normalise(query);
   const trimmed = query.trim();
-  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null, fromTemplate: null };
+  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null };
 
   const counts = titleCounts(pages);
   const pagesRows: SearchRow[] = [];
@@ -173,16 +188,18 @@ export function searchSections(
 
   const create =
     trimmed.length > 0 && !hasExactTitle(pages, trimmed)
-      ? { kind: "create" as const, key: "create", label: `Create “${trimmed}”`, title: trimmed }
+      ? { kind: "create" as const, key: "create", label: t("search.create", { title: trimmed }), title: trimmed }
       : null;
 
   const createBoard = create
-    ? { kind: "create-board" as const, key: "create-board", label: `Create whiteboard “${trimmed}”`, title: trimmed }
+    ? { kind: "create-board" as const, key: "create-board", label: t("search.createBoard", { title: trimmed }), title: trimmed }
     : null;
 
-  const fromTemplate = wantsTemplate(query) ? FROM_TEMPLATE_ROW : null;
+  const fromTemplate = wantsTemplate(query) ? fromTemplateRow() : null;
 
-  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate };
+  const language = wantsLanguage(query) ? { kind: "language" as const, key: "language", label: t("settings.languageCommand") } : null;
+
+  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate, language };
 }
 
 export interface SnippetPart {

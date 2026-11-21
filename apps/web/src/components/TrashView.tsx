@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { PageId, TrashedPage, TrashItem } from "@gumply/core";
+import { useT } from "../i18n/index.js";
 import { relativeTime } from "../lib/search.js";
 import { filterTrash, trashDepth, trashLocation, trashedCount } from "../lib/trash.js";
 import { Icon } from "./Icon.js";
@@ -24,6 +25,7 @@ function ItemIcon({ page }: { page: TrashedPage }) {
 
 /** The trash (#ppag3ugh): deleted pages and boards, newest first. */
 export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteForever, onEmpty, onRetry }: TrashViewProps) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const shown = useMemo(() => (items ? filterTrash(items, query) : []), [items, query]);
   const total = items ? trashedCount(items) : 0;
@@ -32,7 +34,7 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
     <div className="trash-view" data-testid="trash-view">
       <header className="trash-header">
         <div className="trash-heading">
-          <h1 className="page-title">Trash</h1>
+          <h1 className="page-title">{t("trash.title")}</h1>
           <button
             type="button"
             className="button-secondary trash-empty-button"
@@ -40,20 +42,19 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
             disabled={!items || items.length === 0}
             onClick={onEmpty}
           >
-            Empty trash
+            {t("trash.empty")}
           </button>
         </div>
         <p className="trash-intro">
-          Deleted pages and whiteboards stay here until you delete them for good. Their files are in the vault's{" "}
-          <code>.trash</code> folder.
+          {t("trash.introBefore")} <code>.trash</code> {t("trash.introAfter")}
         </p>
         {items && items.length > 0 ? (
           <label className="trash-search">
             <Icon name="search" size={15} />
             <input
               type="search"
-              placeholder={`Search ${total === 1 ? "1 deleted item" : `${total} deleted items`}`}
-              aria-label="Search the trash"
+              placeholder={t("trash.searchPlaceholder", { count: total })}
+              aria-label={t("trash.searchLabel")}
               data-testid="trash-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -66,25 +67,25 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
         <div className="trash-note" role="alert">
           <p>{error}</p>
           <button type="button" className="button-secondary" onClick={onRetry}>
-            Retry
+            {t("common.retry")}
           </button>
         </div>
       ) : items === null ? (
-        <p className="trash-note">Loading the trash…</p>
+        <p className="trash-note">{t("trash.loading")}</p>
       ) : items.length === 0 ? (
         <div className="empty-state trash-empty-state" data-testid="trash-empty-state">
           <span className="empty-state-icon" aria-hidden="true">
             <Icon name="trash" size={26} />
           </span>
-          <h2>The trash is empty</h2>
-          <p>When you delete a page or a whiteboard, it waits here in case you want it back.</p>
+          <h2>{t("trash.emptyTitle")}</h2>
+          <p>{t("trash.emptyBody")}</p>
         </div>
       ) : shown.length === 0 ? (
         <p className="trash-note" data-testid="trash-no-match">
-          Nothing in the trash matches “{query.trim()}”.
+          {t("trash.noMatch", { query: query.trim() })}
         </p>
       ) : (
-        <ul className="trash-list" aria-label="Deleted pages and whiteboards">
+        <ul className="trash-list" aria-label={t("trash.listLabel")}>
           {shown.map((item) => {
             const location = trashLocation(item);
             return (
@@ -99,11 +100,11 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
                       <span className="trash-item-meta">
                         {location ? (
                           <>
-                            in {location}
-                            {item.originalParentTitle === null ? " (no longer there)" : ""} ·{" "}
+                            {t("trash.in", { location })}
+                            {item.originalParentTitle === null ? t("trash.noLongerThere") : ""} ·{" "}
                           </>
                         ) : null}
-                        deleted {relativeTime(item.deletedAt)}
+                        {t("trash.deleted", { time: relativeTime(item.deletedAt) })}
                       </span>
                     </span>
                   </button>
@@ -114,7 +115,7 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
                       data-testid="trash-restore"
                       onClick={() => onRestore(item)}
                     >
-                      Restore
+                      {t("trash.restore")}
                     </button>
                     {desktop ? (
                       <a
@@ -123,8 +124,8 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
                         target="_blank"
                         rel="noreferrer"
                         data-testid="trash-reveal"
-                        data-tooltip="Show in file manager"
-                        aria-label={`Show “${item.title}” in the file manager`}
+                        data-tooltip={t("trash.showInFileManager")}
+                        aria-label={t("trash.showItemInFileManager", { title: item.title })}
                       >
                         <Icon name="file" size={15} />
                       </a>
@@ -133,8 +134,8 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
                       type="button"
                       className="icon-button trash-delete-forever"
                       data-testid="trash-delete-forever"
-                      data-tooltip="Delete forever"
-                      aria-label={`Delete “${item.title}” forever`}
+                      data-tooltip={t("trash.deleteForever")}
+                      aria-label={t("trash.deleteItemForever", { title: item.title })}
                       onClick={() => onDeleteForever(item)}
                     >
                       <Icon name="trash" size={15} />
@@ -142,7 +143,7 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
                   </span>
                 </div>
                 {item.children.length > 0 ? (
-                  <ul className="trash-children" aria-label={`Sub-pages of ${item.title}`}>
+                  <ul className="trash-children" aria-label={t("trash.subPagesOf", { title: item.title })}>
                     {item.children.map((child) => (
                       <li key={child.id}>
                         <button

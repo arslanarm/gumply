@@ -1,6 +1,7 @@
 import type { NodeViewRendererProps } from "@tiptap/core";
 import TaskItem from "@tiptap/extension-task-item";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { t } from "../i18n/index.js";
 
 /**
  * TipTap's TaskItem node view builds the checkbox aria-label from the node it
@@ -24,7 +25,7 @@ export const AccessibleTaskItem = TaskItem.extend({
       const updateA11Y = () => {
         checkbox.ariaLabel =
           this.options.a11y?.checkboxLabel?.(currentNode, checkbox.checked) ||
-          `Task item checkbox for ${currentNode.textContent || "empty task item"}`;
+          t("tasks.checkboxFallback", { text: currentNode.textContent || t("tasks.emptyItem") });
       };
 
       checkboxWrapper.contentEditable = "false";

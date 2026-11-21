@@ -3,6 +3,7 @@ import { useState } from "react";
 import { splitSnippet, visibleBacklinks } from "../lib/backlinks.js";
 import { isBoard } from "../lib/boards.js";
 import { Icon } from "./Icon.js";
+import { useT } from "../i18n/index.js";
 
 export interface BacklinksPanelProps {
   items: readonly Backlink[];
@@ -12,21 +13,22 @@ export interface BacklinksPanelProps {
 
 /** “Linked from” panel shown under the editor. */
 export function BacklinksPanel({ items, loading, onOpen }: BacklinksPanelProps) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const visible = visibleBacklinks(items, expanded);
 
   return (
     <section className="backlinks" data-testid="backlinks-panel" aria-labelledby="backlinks-title">
       <h2 className="backlinks-title" id="backlinks-title">
-        Linked from
+        {t("backlinks.title")}
         {items.length > 0 ? <span className="backlinks-count">{items.length}</span> : null}
       </h2>
 
       {loading && items.length === 0 ? (
-        <p className="backlinks-empty">Loading links…</p>
+        <p className="backlinks-empty">{t("backlinks.loading")}</p>
       ) : items.length === 0 ? (
         <p className="backlinks-empty">
-          No pages link here yet. Type <code>[[</code> on any page to link to this one.
+          {t("backlinks.emptyBefore")}<code>[[</code>{t("backlinks.emptyAfter")}
         </p>
       ) : (
         <>
@@ -43,7 +45,7 @@ export function BacklinksPanel({ items, loading, onOpen }: BacklinksPanelProps) 
                     {page.icon ? (
                       `${page.icon} `
                     ) : isBoard(page) ? (
-                      <span className="backlink-board-icon" data-testid={`backlink-board-icon-${page.id}`} aria-label="Whiteboard">
+                      <span className="backlink-board-icon" data-testid={`backlink-board-icon-${page.id}`} aria-label={t("board.cards.whiteboard")}>
                         <Icon name="board" size={14} />
                       </span>
                     ) : null}
@@ -70,7 +72,7 @@ export function BacklinksPanel({ items, loading, onOpen }: BacklinksPanelProps) 
               data-testid="backlinks-toggle"
               onClick={() => setExpanded((value) => !value)}
             >
-              {expanded ? "Show fewer" : `Show all ${items.length}`}
+              {expanded ? t("backlinks.showFewer") : t("backlinks.showAll", { count: items.length })}
             </button>
           ) : null}
         </>

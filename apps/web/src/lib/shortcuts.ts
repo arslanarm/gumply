@@ -1,7 +1,9 @@
 /**
  * Keyboard-shortcut metadata for the `?` help overlay (ux-principles §9).
- * Only shortcuts that actually work belong here.
+ * Only shortcuts that actually work belong here. Labels are read when the
+ * dialog opens, so they follow the interface language (#7h5utv23).
  */
+import { t } from "../i18n/index.js";
 
 export interface Shortcut {
   keys: string;
@@ -32,53 +34,53 @@ export function currentModifierLabel(): string {
 export function shortcutGroups(modifier: string): ShortcutGroup[] {
   return [
     {
-      title: "Navigate",
+      title: t("shortcuts.groups.navigate"),
       items: [
-        { keys: `${modifier}K`, label: "Search pages" },
-        { keys: `${modifier}\\`, label: "Toggle sidebar" },
+        { keys: `${modifier}K`, label: t("shortcuts.labels.searchPages") },
+        { keys: `${modifier}\\`, label: t("shortcuts.labels.toggleSidebar") },
       ],
     },
     {
-      title: "Editor",
+      title: t("shortcuts.groups.editor"),
       items: [
-        { keys: "/", label: "Insert a block" },
-        { keys: "[[", label: "Link a page" },
-        { keys: "#", label: "Heading" },
-        { keys: "-", label: "Bullet list" },
-        { keys: "1.", label: "Numbered list" },
-        { keys: "- [ ]", label: "To-do" },
-        { keys: ">", label: "Quote" },
-        { keys: "```", label: "Code block" },
-        { keys: `${modifier}Z`, label: "Undo" },
-        { keys: `${modifier}S`, label: "Save now" },
-        { keys: `${modifier}+Shift+↑ / ↓`, label: "Move block up / down" },
-        { keys: `${modifier}D`, label: "Duplicate block" },
+        { keys: "/", label: t("shortcuts.labels.insertABlock") },
+        { keys: "[[", label: t("shortcuts.labels.linkAPage") },
+        { keys: "#", label: t("shortcuts.labels.heading") },
+        { keys: "-", label: t("shortcuts.labels.bulletList") },
+        { keys: "1.", label: t("shortcuts.labels.numberedList") },
+        { keys: "- [ ]", label: t("shortcuts.labels.toDo") },
+        { keys: ">", label: t("shortcuts.labels.quote") },
+        { keys: "```", label: t("shortcuts.labels.codeBlock") },
+        { keys: `${modifier}Z`, label: t("shortcuts.labels.undo") },
+        { keys: `${modifier}S`, label: t("shortcuts.labels.saveNow") },
+        { keys: `${modifier}+Shift+↑ / ↓`, label: t("shortcuts.labels.moveBlockUpDown") },
+        { keys: `${modifier}D`, label: t("shortcuts.labels.duplicateBlock") },
       ],
     },
     {
-      title: "Pages",
+      title: t("shortcuts.groups.pages"),
       items: [
-        { keys: "Enter", label: "Title → body" },
-        { keys: "F2 / double-click", label: "Rename page" },
+        { keys: "Enter", label: t("shortcuts.labels.titleBody") },
+        { keys: `F2 / ${t("keys.doubleClick")}`, label: t("shortcuts.labels.renamePage") },
       ],
     },
     {
-      title: "Whiteboard",
+      title: t("shortcuts.groups.whiteboard"),
       items: [
-        { keys: "V / H", label: "Select / Hand" },
-        { keys: "N / T / S", label: "Sticky note / Text / Shape" },
-        { keys: "C / F / P", label: "Connector / Frame / Pen" },
-        { keys: "Double-click", label: "Add a sticky note" },
-        { keys: "Enter", label: "Edit the selection" },
-        { keys: "Space + drag", label: "Pan" },
-        { keys: `${modifier}+scroll / pinch`, label: "Zoom" },
-        { keys: "Shift+1", label: "Fit to screen" },
-        { keys: "Arrows / Shift+Arrows", label: "Nudge by 1 / 10" },
-        { keys: `${modifier}D`, label: "Duplicate" },
-        { keys: `${modifier}C / ${modifier}V`, label: "Copy / paste" },
-        { keys: "] / [", label: "Bring to front / send to back" },
-        { keys: "Delete", label: "Delete" },
-        { keys: `${modifier}Z / ${modifier}+Shift+Z`, label: "Undo / redo" },
+        { keys: "V / H", label: t("shortcuts.labels.selectHand") },
+        { keys: "N / T / S", label: t("shortcuts.labels.stickyNoteTextShape") },
+        { keys: "C / F / P", label: t("shortcuts.labels.connectorFramePen") },
+        { keys: t("keys.doubleClickCap"), label: t("shortcuts.labels.addAStickyNote") },
+        { keys: "Enter", label: t("shortcuts.labels.editTheSelection") },
+        { keys: `Space + ${t("keys.drag")}`, label: t("shortcuts.labels.pan") },
+        { keys: `${modifier}+${t("keys.scroll")} / ${t("keys.pinch")}`, label: t("shortcuts.labels.zoom") },
+        { keys: "Shift+1", label: t("shortcuts.labels.fitToScreen") },
+        { keys: `${t("keys.arrows")} / Shift+${t("keys.arrows")}`, label: t("shortcuts.labels.nudgeBy110") },
+        { keys: `${modifier}D`, label: t("shortcuts.labels.duplicate") },
+        { keys: `${modifier}C / ${modifier}V`, label: t("shortcuts.labels.copyPaste") },
+        { keys: "] / [", label: t("shortcuts.labels.bringToFrontSendToBack") },
+        { keys: "Delete", label: t("shortcuts.labels.delete") },
+        { keys: `${modifier}Z / ${modifier}+Shift+Z`, label: t("shortcuts.labels.undoRedo") },
       ],
     },
   ];

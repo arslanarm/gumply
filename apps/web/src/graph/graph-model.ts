@@ -1,4 +1,5 @@
 import type { GraphData, GraphNode, PageId, PageMeta } from "@gumply/core";
+import { t } from "../i18n/index.js";
 
 /**
  * Pure graph-view model (M3, spec/ux §9). Turns the API payload into nodes,
@@ -322,9 +323,6 @@ export function graphPaletteFromStyles(styles: CSSStyleDeclaration): readonly st
   );
 }
 
-function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
-  return `${count} ${count === 1 ? singular : pluralForm}`;
-}
 
 export interface GraphCounts {
   pages: number;
@@ -350,21 +348,27 @@ export function graphCounts(
  */
 export function graphSubtitle(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
   const counts = graphCounts(graph);
-  return `${plural(counts.pages, "page")} · ${plural(counts.links, "link")}${
-    counts.missing > 0 ? ` · ${counts.missing} missing` : ""
-  }`;
+  return [
+    t("graph.pages", { count: counts.pages }),
+    t("graph.links", { count: counts.links }),
+    ...(counts.missing > 0 ? [t("graph.missing", { count: counts.missing })] : []),
+  ].join(" · ");
 }
 
 /** Canvas aria-label, e.g. "12 pages, 20 links, 2 missing" (spec/ux §9). */
 export function ariaSummary(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
   const counts = graphCounts(graph);
-  return `${plural(counts.pages, "page")}, ${plural(counts.links, "link")}, ${counts.missing} missing`;
+  return [
+    t("graph.pages", { count: counts.pages }),
+    t("graph.links", { count: counts.links }),
+    t("graph.missing", { count: counts.missing }),
+  ].join(", ");
 }
 
 /** Tooltip copy for a real page: `Title · N links · #tag` (spec/ux §9). */
 export function nodeTooltip(node: GraphNode): string {
   const tag = node.tags[0];
-  return `${node.title} · ${plural(node.linkCount, "link")}${tag ? ` · #${tag}` : ""}`;
+  return `${node.title} · ${t("graph.links", { count: node.linkCount })}${tag ? ` · #${tag}` : ""}`;
 }
 
 /**
@@ -373,16 +377,16 @@ export function nodeTooltip(node: GraphNode): string {
  */
 export function nodeDetail(node: GraphNode): string {
   const tag = node.tags[0];
-  const kind = node.kind === "whiteboard" ? "Whiteboard · " : "";
-  return `${kind}${plural(node.linkCount, "link")}${tag ? ` · #${tag}` : ""}`;
+  const kind = node.kind === "whiteboard" ? `${t("board.cards.whiteboard")} · ` : "";
+  return `${kind}${t("graph.links", { count: node.linkCount })}${tag ? ` · #${tag}` : ""}`;
 }
 
 /** Ghost tooltip details: `Not created yet · 1 link · Click to create`. */
 export function ghostDetail(ghost: GhostNode): string {
-  return `Not created yet · ${plural(ghost.refCount, "link")} · Click to create`;
+  return t("graph.ghostDetail", { links: t("graph.links", { count: ghost.refCount }) });
 }
 
 /** Tooltip copy for a ghost: `“Title” — not created yet · N links · Click to create`. */
 export function ghostTooltip(ghost: GhostNode): string {
-  return `“${ghost.title}” — not created yet · ${plural(ghost.refCount, "link")} · Click to create`;
+  return t("graph.ghostTooltip", { title: ghost.title, links: t("graph.links", { count: ghost.refCount }) });
 }

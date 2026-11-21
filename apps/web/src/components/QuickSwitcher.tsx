@@ -16,6 +16,7 @@ import {
   type SearchRow,
 } from "../lib/search.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
+import { useT } from "../i18n/index.js";
 
 export interface QuickSwitcherProps {
   pages: readonly PageMeta[];
@@ -25,13 +26,16 @@ export interface QuickSwitcherProps {
   onCreateBoard?: (title: string) => void;
   /** `New board from template…`: opens the template gallery (spec/v0-6 §D). */
   onNewFromTemplate?: () => void;
+  /** `Language…`: opens Settings (#7h5utv23). */
+  onOpenLanguage?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
 }
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
-export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onClose, initialQuery = "" }: QuickSwitcherProps) {
+export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onOpenLanguage, onClose, initialQuery = "" }: QuickSwitcherProps) {
+  const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -86,11 +90,12 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
     () =>
       needle.length > 0
         ? searchSections(visibleResults, pages, query)
-        : { pages: [], text: [], create: null, createBoard: null, fromTemplate: null },
+        : { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null },
     [visibleResults, pages, query, needle],
   );
 
   const fromTemplate = onNewFromTemplate ? sections.fromTemplate : null;
+  const languageRow = onOpenLanguage ? sections.language : null;
   const rows: SearchRow[] =
     needle.length > 0
       ? [
@@ -99,6 +104,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
           ...(sections.create ? [sections.create] : []),
           ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
           ...(fromTemplate ? [fromTemplate] : []),
+          ...(languageRow ? [languageRow] : []),
         ]
       : recents;
 
@@ -118,6 +124,10 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
     if (!row) return;
     if (row.kind === "create") {
       if (row.title) onCreate(row.title);
+      return;
+    }
+    if (row.kind === "language") {
+      onOpenLanguage?.();
       return;
     }
     if (row.kind === "from-template") {
@@ -173,7 +183,9 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
               ? "search-create-board"
               : row.kind === "from-template"
                 ? "search-from-template"
-                : "search-create"
+                : row.kind === "language"
+                  ? "search-language"
+                  : "search-create"
         }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
@@ -187,6 +199,8 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
         <span className="quick-switcher-icon" aria-hidden="true">
           {row.kind === "create" ? (
             <Icon name="plus" size={16} />
+          ) : row.kind === "language" ? (
+            <Icon name="languages" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
           ) : row.page?.icon ? (
@@ -225,7 +239,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
         className="quick-switcher"
         role="dialog"
         aria-modal="true"
-        aria-label="Search pages"
+        aria-label={t("search.label")}
         data-testid="quick-switcher"
         onKeyDown={onKeyDown}
       >
@@ -239,8 +253,8 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
             data-testid="quick-switcher-input"
             type="text"
             value={query}
-            placeholder="Search pages…"
-            aria-label="Search pages"
+            placeholder={t("search.placeholder")}
+            aria-label={t("search.label")}
             aria-controls="quick-switcher-results"
             aria-activedescendant={
               activeIndex >= 0 ? `quick-switcher-option-${activeIndex}` : undefined
@@ -256,16 +270,16 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
           id="quick-switcher-results"
           ref={listRef}
           role="listbox"
-          aria-label="Search results"
+          aria-label={t("search.results")}
         >
           {needle.length === 0 ? (
             pages.length === 0 ? (
               <p className="quick-switcher-empty" data-testid="search-empty">
-                No pages yet.
+                {t("empty.noPages")}
               </p>
             ) : (
               <>
-                <p className="quick-switcher-heading">Recent</p>
+                <p className="quick-switcher-heading">{t("search.recent")}</p>
                 {recents.map((row, rowIndex) => renderRow(row, rowIndex))}
               </>
             )
@@ -273,24 +287,24 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
             <>
               {sections.pages.length > 0 ? (
                 <>
-                  <p className="quick-switcher-heading">Pages</p>
+                  <p className="quick-switcher-heading">{t("search.pages")}</p>
                   {sections.pages.map((row, rowIndex) => renderRow(row, rowIndex))}
                 </>
               ) : null}
               {sections.text.length > 0 ? (
                 <>
-                  <p className="quick-switcher-heading">Text</p>
+                  <p className="quick-switcher-heading">{t("search.text")}</p>
                   {sections.text.map((row, rowIndex) =>
                     renderRow(row, sections.pages.length + rowIndex),
                   )}
                 </>
               ) : null}
-              {!searching && sections.pages.length === 0 && sections.text.length === 0 && !fromTemplate ? (
+              {!searching && sections.pages.length === 0 && sections.text.length === 0 && !fromTemplate && !languageRow ? (
                 <p className="quick-switcher-empty" data-testid="search-empty">
-                  {pages.length === 0 ? "No pages yet." : `No pages match “${needle}”`}
+                  {pages.length === 0 ? t("empty.noPages") : t("search.noMatch", { query: needle })}
                 </p>
               ) : null}
-              {searching ? <p className="quick-switcher-empty">Searching…</p> : null}
+              {searching ? <p className="quick-switcher-empty">{t("search.searching")}</p> : null}
               {sections.create
                 ? renderRow(sections.create, sections.pages.length + sections.text.length)
                 : null}
@@ -300,7 +314,8 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
                     sections.pages.length + sections.text.length + (sections.create ? 1 : 0),
                   )
                 : null}
-              {fromTemplate ? renderRow(fromTemplate, rows.length - 1) : null}
+              {fromTemplate ? renderRow(fromTemplate, rows.length - (languageRow ? 2 : 1)) : null}
+              {languageRow ? renderRow(languageRow, rows.length - 1) : null}
             </>
           )}
         </div>
@@ -308,13 +323,13 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
         <div className="quick-switcher-footer">
           <span>
             <kbd>↑</kbd>
-            <kbd>↓</kbd> navigate
+            <kbd>↓</kbd> {t("search.navigate")}
           </span>
           <span>
-            <kbd>Enter</kbd> open
+            <kbd>Enter</kbd> {t("search.open")}
           </span>
           <span>
-            <kbd>Esc</kbd> close
+            <kbd>Esc</kbd> {t("search.close")}
           </span>
         </div>
       </div>

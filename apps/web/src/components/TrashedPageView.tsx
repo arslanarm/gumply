@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PageId, PageMeta, TrashedDocument, TrashItem } from "@gumply/core";
 import { api } from "../api/client.js";
+import { useT } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
 import { relativeTime } from "../lib/search.js";
 import { Editor } from "./Editor.js";
@@ -23,6 +24,7 @@ export interface TrashedPageViewProps {
 const noop = () => undefined;
 
 function RevealLink({ item, testId, desktop }: { item: TrashItem; testId: string; desktop: boolean }) {
+  const t = useT();
   if (!desktop) return null;
   return (
     <a
@@ -32,22 +34,23 @@ function RevealLink({ item, testId, desktop }: { item: TrashItem; testId: string
       rel="noreferrer"
       data-testid={testId}
     >
-      Show in file manager
+      {t("trash.showInFileManager")}
     </a>
   );
 }
 
 /** A plain folder in the trash (D33): what was in it, read-only. */
 function TrashedFolder(props: TrashedPageViewProps & { item: TrashItem }) {
+  const t = useT();
   const { item } = props;
   const others = item.otherFiles ?? 0;
   return (
     <div className="trashed-page" data-testid="trashed-page">
       <div className="banner banner-trash" role="status" data-testid="trashed-banner">
         <Icon name="trash" size={15} />
-        <span>This folder is in the trash.</span>
+        <span>{t("trash.folderInTrash")}</span>
         <button type="button" className="link-button" data-testid="trashed-restore" onClick={() => props.onRestore(item, item.id)}>
-          Restore
+          {t("trash.restore")}
         </button>
         <button
           type="button"
@@ -55,7 +58,7 @@ function TrashedFolder(props: TrashedPageViewProps & { item: TrashItem }) {
           data-testid="trashed-delete-forever"
           onClick={() => props.onDeleteForever(item)}
         >
-          Delete forever
+          {t("trash.deleteForever")}
         </button>
         <RevealLink item={item} testId="trashed-reveal" desktop={props.desktop} />
       </div>
@@ -69,7 +72,7 @@ function TrashedFolder(props: TrashedPageViewProps & { item: TrashItem }) {
               {item.title}
             </h1>
           </div>
-          <p className="page-meta">Deleted {relativeTime(item.deletedAt)}</p>
+          <p className="page-meta">{t("trash.deletedAt", { time: relativeTime(item.deletedAt) })}</p>
         </header>
         {item.children.length > 0 ? (
           <ul className="trash-children trashed-folder-list">
@@ -89,11 +92,11 @@ function TrashedFolder(props: TrashedPageViewProps & { item: TrashItem }) {
             ))}
           </ul>
         ) : (
-          <p className="trash-note">No pages or whiteboards in it.</p>
+          <p className="trash-note">{t("trash.folderEmpty")}</p>
         )}
         {others > 0 ? (
           <p className="trash-note" data-testid="trashed-folder-files">
-            And {others === 1 ? "1 other file" : `${others} other files`} (images, PDFs…), restored with it.
+            {t("trash.folderOtherFiles", { count: others })}
           </p>
         ) : null}
       </div>
@@ -104,6 +107,7 @@ function TrashedFolder(props: TrashedPageViewProps & { item: TrashItem }) {
 /** A page or board in the trash, read-only, with a Restore banner (#ppag3ugh). */
 export function TrashedPageView(props: TrashedPageViewProps) {
   const { trashId, id } = props;
+  const t = useT();
   const [doc, setDoc] = useState<TrashedDocument | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -130,33 +134,29 @@ export function TrashedPageView(props: TrashedPageViewProps) {
         <span className="empty-state-icon" aria-hidden="true">
           <Icon name="trash" size={26} />
         </span>
-        <h2>This page is no longer in the trash</h2>
-        <p>It was restored or deleted for good.</p>
+        <h2>{t("trash.goneTitle")}</h2>
+        <p>{t("trash.goneBody")}</p>
         <button type="button" className="button-secondary" onClick={props.onOpenTrash}>
-          Open the trash
+          {t("trash.openTrash")}
         </button>
       </div>
     );
   }
-  if (!doc) return <p className="trash-note">Loading…</p>;
+  if (!doc) return <p className="trash-note">{t("trash.loadingPage")}</p>;
 
   const { item, page, board } = doc;
   if (!page) return <TrashedFolder {...props} item={item} />;
   const isTop = page.id === item.id;
-  const kindName = page.kind === "whiteboard" ? "whiteboard" : "page";
+  const isBoard = page.kind === "whiteboard";
 
   return (
     <div className="trashed-page" data-testid="trashed-page">
       <div className="banner banner-trash" role="status" data-testid="trashed-banner">
         <Icon name="trash" size={15} />
         <span>
-          {isTop ? (
-            <>This {kindName} is in the trash.</>
-          ) : (
-            <>
-              This {kindName} is in the trash with “{item.title}”.
-            </>
-          )}
+          {isTop
+            ? t(isBoard ? "trash.boardInTrash" : "trash.pageInTrash")
+            : t(isBoard ? "trash.boardInTrashWith" : "trash.pageInTrashWith", { title: item.title })}
         </span>
         <button
           type="button"
@@ -164,7 +164,7 @@ export function TrashedPageView(props: TrashedPageViewProps) {
           data-testid="trashed-restore"
           onClick={() => props.onRestore(item, page.id)}
         >
-          Restore{isTop ? "" : ` “${item.title}”`}
+          {isTop ? t("trash.restore") : t("trash.restoreTitle", { title: item.title })}
         </button>
         <button
           type="button"
@@ -172,7 +172,7 @@ export function TrashedPageView(props: TrashedPageViewProps) {
           data-testid="trashed-delete-forever"
           onClick={() => props.onDeleteForever(item)}
         >
-          Delete forever
+          {t("trash.deleteForever")}
         </button>
         <RevealLink item={item} testId="trashed-reveal" desktop={props.desktop} />
       </div>
@@ -185,17 +185,15 @@ export function TrashedPageView(props: TrashedPageViewProps) {
               {page.title}
             </h1>
           </div>
-          <p className="page-meta">Deleted {relativeTime(item.deletedAt)}</p>
+          <p className="page-meta">{t("trash.deletedAt", { time: relativeTime(item.deletedAt) })}</p>
         </header>
         {page.kind === "whiteboard" ? (
           <div className="empty-state trashed-board-note">
             <span className="empty-state-icon" aria-hidden="true">
               <Icon name="board" size={26} />
             </span>
-            <h2>Restore this whiteboard to open it</h2>
-            <p>
-              It has {board?.nodes.length ?? 0} {board?.nodes.length === 1 ? "object" : "objects"}.
-            </p>
+            <h2>{t("trash.restoreBoardToOpen")}</h2>
+            <p>{t("trash.boardObjects", { count: board?.nodes.length ?? 0 })}</p>
           </div>
         ) : (
           <Editor

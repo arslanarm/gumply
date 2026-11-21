@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import "./board-menu.css";
+import { useT } from "../i18n/index.js";
 
 export type ExportFormat = "png" | "svg";
 
@@ -61,6 +62,7 @@ export function BoardMenu({ hasSelection, busy, onExport, onOpen }: {
   /** The menu opened (the host can start loading the export code). */
   onOpen?: () => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState(hasSelection);
   const [transparent, setTransparent] = useState(loadTransparent);
@@ -114,10 +116,10 @@ export function BoardMenu({ hasSelection, busy, onExport, onOpen }: {
       <button
         type="button"
         className={`board-menu-button${open ? " is-open" : ""}`}
-        aria-label="Board menu"
+        aria-label={t("board.menu.label")}
         aria-haspopup="menu"
         aria-expanded={open}
-        data-tooltip={busy ? "Exporting…" : "More"}
+        data-tooltip={busy ? t("board.menu.exporting") : t("board.menu.more")}
         data-testid="board-menu-button"
         aria-busy={busy ? "true" : undefined}
         onClick={() => setOpen((value) => !value)}
@@ -125,14 +127,14 @@ export function BoardMenu({ hasSelection, busy, onExport, onOpen }: {
         {busy ? <span className="board-menu-spinner" aria-hidden="true" /> : <MoreIcon />}
       </button>
       {open ? (
-        <div className="board-menu-list" role="menu" aria-label="Board" data-testid="board-menu">
+        <div className="board-menu-list" role="menu" aria-label={t("board.menu.menuLabel")} data-testid="board-menu">
           <button type="button" role="menuitem" className="board-menu-item" data-testid="board-export-png" disabled={busy !== null} onClick={() => run("png")}>
             <ExportIcon />
-            <span>Export as PNG</span>
+            <span>{t("board.menu.exportPng")}</span>
           </button>
           <button type="button" role="menuitem" className="board-menu-item" data-testid="board-export-svg" disabled={busy !== null} onClick={() => run("svg")}>
             <ExportIcon />
-            <span>Export as SVG</span>
+            <span>{t("board.menu.exportSvg")}</span>
           </button>
           <div className="board-menu-separator" role="separator" />
           <label className={`board-menu-check${hasSelection ? "" : " is-disabled"}`}>
@@ -143,7 +145,7 @@ export function BoardMenu({ hasSelection, busy, onExport, onOpen }: {
               data-testid="board-export-selection"
               onChange={(event) => setSelection(event.target.checked)}
             />
-            <span>Selection only</span>
+            <span>{t("board.menu.selectionOnly")}</span>
           </label>
           <label className="board-menu-check">
             <input
@@ -155,7 +157,7 @@ export function BoardMenu({ hasSelection, busy, onExport, onOpen }: {
                 saveTransparent(event.target.checked);
               }}
             />
-            <span>Transparent background</span>
+            <span>{t("board.menu.transparent")}</span>
           </label>
         </div>
       ) : null}

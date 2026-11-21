@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.js";
 /**
  * Callout types (D29): Obsidian's names, aliases, icons and colour families.
  * Unknown types keep their name on disk and look like a note (as in Obsidian).
@@ -70,9 +71,14 @@ export function calloutStyle(type: string): CalloutStyle {
   return ALIASES[type.toLowerCase()] ?? "note";
 }
 
-/** What an untitled callout shows (Obsidian: the capitalised type). */
+/**
+ * What an untitled callout shows (Obsidian: the capitalised type). Display
+ * only, never written to the file: the standard types are named in the
+ * interface language; custom types keep their own name.
+ */
 export function defaultCalloutTitle(type: string): string {
-  if (!type) return "Note";
+  const key = (type || "note").toLowerCase();
+  if ((CALLOUT_TYPES as readonly string[]).includes(key)) return t(`callout.types.${key as (typeof CALLOUT_TYPES)[number]}`);
   return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
 }
 

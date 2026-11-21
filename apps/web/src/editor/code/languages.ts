@@ -7,6 +7,7 @@
  * on demand, so none of them weigh on the main bundle.
  */
 import type { LanguageFn } from "highlight.js";
+import { t } from "../../i18n/index.js";
 
 export interface CodeLanguage {
   /** What the picker writes on the fence. */
@@ -19,7 +20,14 @@ export interface CodeLanguage {
 }
 
 /** Shown first in the picker; an empty fence. */
-export const PLAIN_TEXT: CodeLanguage = { id: "", label: "Plain text", aliases: ["text", "plaintext", "txt", "plain"] };
+export const PLAIN_TEXT: CodeLanguage = {
+  id: "",
+  // Named in the interface language; the others are proper names.
+  get label() {
+    return t("code.plainText");
+  },
+  aliases: ["text", "plaintext", "txt", "plain"],
+};
 
 export const CODE_LANGUAGES: readonly CodeLanguage[] = [
   PLAIN_TEXT,

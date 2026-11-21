@@ -29,8 +29,9 @@ describe("board embeds (D30): syntax", () => {
     ]);
   });
 
-  it("keeps other ![[…]] embeds out of the links (attachments, notes)", () => {
-    expect(extractWikilinks("![[pic.png]] ![[Some note]] ![[doc.pdf|2]]")).toEqual([]);
+  it("keeps attachment embeds out of the links; a note embed is a page preview link (#5dpxwac4)", () => {
+    expect(extractWikilinks("![[pic.png]] ![[doc.pdf|2]]")).toEqual([]);
+    expect(extractWikilinks("![[Some note]]").map((link) => [link.targetTitle, link.embed])).toEqual([["Some note", true]]);
   });
 
   it("ignores embeds in code", () => {

@@ -12,6 +12,7 @@ import { Node } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { Editor } from "@tiptap/core";
 import { RAW_BLOCK_ATTR, RAW_INLINE_ATTR, rawMarkdownPlugin } from "./markdown-plugin.js";
+import { t } from "../../i18n/index.js";
 
 /** The bits of markdown-it the previews use. */
 export interface PreviewRenderer {
@@ -104,7 +105,7 @@ export function renderRawBlockPreview(
   }
 
   const wrap = el("div", "raw-block-source");
-  const badge = kind === "html" ? "HTML" : kind === "comment" ? "Comment" : "Markdown";
+  const badge = kind === "html" ? "HTML" : kind === "comment" ? t("raw.comment") : "Markdown";
   wrap.append(el("span", "raw-block-badge", badge));
   wrap.append(el("pre", undefined, source));
   return wrap;
@@ -133,7 +134,7 @@ function rawBlockView({
   const render = () => {
     area = null;
     dom.dataset.kind = String(current.attrs.kind);
-    dom.title = editor.isEditable ? "Click to edit the Markdown source" : "";
+    dom.title = editor.isEditable ? t("raw.clickToEdit") : "";
     dom.replaceChildren(
       renderRawBlockPreview(String(current.attrs.source), String(current.attrs.kind), previewFor(editor)),
     );
@@ -160,7 +161,7 @@ function rawBlockView({
     const textarea = el("textarea", "raw-block-editor");
     textarea.value = String(current.attrs.source);
     textarea.spellcheck = false;
-    textarea.setAttribute("aria-label", "Markdown source");
+    textarea.setAttribute("aria-label", t("raw.sourceLabel"));
     textarea.dataset.testid = "raw-block-editor";
     textarea.addEventListener("input", () => autosize(textarea));
     textarea.addEventListener("blur", () => finish(true));
@@ -174,7 +175,7 @@ function rawBlockView({
       }
     });
     area = textarea;
-    dom.replaceChildren(textarea, el("div", "raw-block-hint", "Esc to cancel · Ctrl/Cmd+Enter or click outside to save"));
+    dom.replaceChildren(textarea, el("div", "raw-block-hint", t("raw.editHint")));
     autosize(textarea);
     textarea.focus();
   };
@@ -294,7 +295,7 @@ export const RawInline = Node.create({
       const dom = el("span", "raw-inline");
       dom.contentEditable = "false";
       dom.dataset.testid = "raw-inline";
-      dom.title = `${String(node.attrs.source)} · double-click to edit`;
+      dom.title = t("raw.inlineHint", { source: String(node.attrs.source) });
       dom.append(renderRawInlinePreview(String(node.attrs.source), String(node.attrs.kind)));
       // Double-click turns the atom back into plain text to edit; it is
       // recognised again on the next load.

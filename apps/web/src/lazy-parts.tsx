@@ -22,6 +22,7 @@ import { Icon } from "./components/Icon.js";
 // The graph styles stay in the main stylesheet: the layout grid for the local
 // graph panel lives there, and the loading shells below use them too.
 import "./graph/graph.css";
+import { t } from "./i18n/index.js";
 
 export interface LazyPart<P> {
   /** The real component once its code has loaded, else a suspending stand-in. */
@@ -138,18 +139,16 @@ class PartBoundary extends ReactComponent<PartBoundaryProps, PartBoundaryState> 
   }
 }
 
-const LOAD_ERROR_HINT = "Check that Gumply is still running, then try again.";
-const UPDATED_HINT = "Reload to get the new version. Your saved pages are safe.";
 
 function reloadApp(): void {
   window.location.reload();
 }
 
 /** The message and button(s) for a failed part, shared by every error state. */
-function failureText(failure: PartFailure, what: string) {
+function failureText(failure: PartFailure, what: "graph" | "localGraph" | "dialog") {
   return failure.updated
-    ? { title: "Gumply was updated.", hint: UPDATED_HINT, action: "Reload", onAction: reloadApp }
-    : { title: `Could not load ${what}.`, hint: LOAD_ERROR_HINT, action: "Try again", onAction: failure.retry };
+    ? { title: t("parts.updated"), hint: t("parts.updatedHint"), action: t("save.reload"), onAction: reloadApp }
+    : { title: t(`parts.failed.${what}`), hint: t("parts.failedHint"), action: t("parts.tryAgain"), onAction: failure.retry };
 }
 
 /** Renders a part, with `fallback` only while its code is still loading. */
@@ -230,11 +229,11 @@ export function preloadWhenIdle(): () => void {
 
 function GraphShell({ busy, children }: { busy?: boolean; children: ReactNode }) {
   return (
-    <section className="graph-view" aria-label="Graph" aria-busy={busy ? "true" : undefined}>
+    <section className="graph-view" aria-label={t("graph.title")} aria-busy={busy ? "true" : undefined}>
       <header className="graph-header">
         <div>
-          <h2>Graph</h2>
-          <p className="graph-subtitle">How your pages connect</p>
+          <h2>{t("graph.title")}</h2>
+          <p className="graph-subtitle">{t("graph.subtitle")}</p>
         </div>
       </header>
       <div className="graph-body">{children}</div>
@@ -251,12 +250,12 @@ export function GraphView(props: GraphViewProps) {
       fallback={
         <GraphShell busy>
           <div className="graph-state graph-state-loading" data-testid="graph-loading">
-            <p>Loading graph…</p>
+            <p>{t("graph.loading")}</p>
           </div>
         </GraphShell>
       }
       renderError={(failure) => {
-        const text = failureText(failure, "the graph");
+        const text = failureText(failure, "graph");
         return (
           <GraphShell>
             <div className="empty-state" data-testid="graph-error" data-failure={failure.updated ? "updated" : "unreachable"}>
@@ -286,16 +285,16 @@ function LocalGraphShell({
   children: ReactNode;
 }) {
   return (
-    <aside className="local-graph" aria-label="Local graph" aria-busy={busy ? "true" : undefined}>
+    <aside className="local-graph" aria-label={t("graph.localTitle")} aria-busy={busy ? "true" : undefined}>
       <header className="local-graph-header">
-        <h2>Local graph</h2>
+        <h2>{t("graph.localTitle")}</h2>
         <div className="local-graph-actions">
           <button
             type="button"
             className="icon-button"
             data-testid="local-graph-close"
-            aria-label="Close local graph"
-            data-tooltip="Close local graph"
+            aria-label={t("graph.closeLocal")}
+            data-tooltip={t("graph.closeLocal")}
             onClick={onClose}
           >
             ×
@@ -315,11 +314,11 @@ export function LocalGraphPanel(props: LocalGraphPanelProps) {
       props={props}
       fallback={
         <LocalGraphShell busy onClose={props.onClose}>
-          <p className="graph-panel-note">Loading…</p>
+          <p className="graph-panel-note">{t("graph.localLoading")}</p>
         </LocalGraphShell>
       }
       renderError={(failure) => {
-        const text = failureText(failure, "the local graph");
+        const text = failureText(failure, "localGraph");
         return (
           <LocalGraphShell onClose={props.onClose}>
             <div
@@ -342,7 +341,7 @@ export function LocalGraphPanel(props: LocalGraphPanelProps) {
 
 /** Small modal shown when a dialog's code could not load. */
 function DialogLoadError({ onClose, failure }: { onClose: () => void; failure: PartFailure }) {
-  const text = failureText(failure, "this");
+  const text = failureText(failure, "dialog");
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -365,11 +364,11 @@ function DialogLoadError({ onClose, failure }: { onClose: () => void; failure: P
         data-testid="dialog-load-error"
         data-failure={failure.updated ? "updated" : "unreachable"}
       >
-        <h2 id="part-error-title">{failure.updated ? text.title : "Could not open this."}</h2>
+        <h2 id="part-error-title">{failure.updated ? text.title : t("parts.openFailed")}</h2>
         <p>{text.hint}</p>
         <div className="modal-actions">
           <button type="button" className="button-secondary" onClick={onClose}>
-            Close
+            {t("common.close")}
           </button>
           <button type="button" className="button-primary" onClick={text.onAction} autoFocus>
             {text.action}

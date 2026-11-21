@@ -5,6 +5,7 @@ import { loadEmojiData } from "../lib/emoji/data.js";
 import { preloadGraph } from "../lazy-parts.js";
 import { EmojiPicker } from "./EmojiPicker.js";
 import { Icon } from "./Icon.js";
+import { dateFormat, t, useT } from "../i18n/index.js";
 
 export interface PageHeaderProps {
   page: Page;
@@ -37,12 +38,11 @@ export interface PageHeaderProps {
   sessionKey?: string;
 }
 
-const updatedFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
-
 function formatUpdated(value: string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "just now";
-  return updatedFormat.format(date);
+  if (Number.isNaN(date.getTime())) return t("time.justNow");
+  // Cached per language (#7h5utv23).
+  return dateFormat({ dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 /** Title, rename affordance and metadata for the open page. */
@@ -59,6 +59,7 @@ export function PageHeader({
   focusTitleSignal = 0,
   sessionKey,
 }: PageHeaderProps) {
+  useT();
   const isEmpty = page.content.trim().length === 0;
   const startsEditing = editTitleOnOpen ?? isEmpty;
   const [editing, setEditing] = useState(startsEditing);
@@ -224,8 +225,8 @@ export function PageHeader({
             type="button"
             className={`page-icon-button${page.icon ? " has-icon" : ""}`}
             data-testid="page-icon-button"
-            data-tooltip={page.icon ? "Change icon" : "Add icon"}
-            aria-label={page.icon ? "Change page icon" : "Add page icon"}
+            data-tooltip={page.icon ? t("page.changeIcon") : t("page.addIcon")}
+            aria-label={page.icon ? t("page.changeIconLabel") : t("page.addIconLabel")}
             aria-expanded={iconOpen}
             aria-haspopup="dialog"
             ref={iconButtonRef}
@@ -238,14 +239,14 @@ export function PageHeader({
               <span className="page-icon-large">{page.icon}</span>
             ) : (
               <span className="page-icon-add">
-                <Icon name="plus" size={13} /> Add icon
+                <Icon name="plus" size={13} /> {t("page.addIcon")}
               </span>
             )}
           </button>
           {iconOpen ? (
             <div className="page-icon-popover">
               <EmojiPicker
-                label="Page icon"
+                label={t("page.iconLabel")}
                 testId="page-icon-picker"
                 onSelect={chooseIcon}
                 onRemove={page.icon ? () => chooseIcon(null) : undefined}
@@ -265,7 +266,7 @@ export function PageHeader({
               className="page-title-input"
               data-testid="page-title-input"
               value={draft}
-              placeholder="Untitled"
+              placeholder={t("defaults.untitledPage")}
               onFocus={(event) => {
                 if (!caretAtEnd.current) event.currentTarget.select();
               }}
@@ -290,7 +291,7 @@ export function PageHeader({
                 }
               }}
             />
-            <span className="visually-hidden">{draft.trim().length > 0 ? draft : "Untitled"}</span>
+            <span className="visually-hidden">{draft.trim().length > 0 ? draft : t("defaults.untitledPage")}</span>
           </div>
         ) : (
           <h1
@@ -324,15 +325,15 @@ export function PageHeader({
               onFocus={preloadGraph}
               onClick={onToggleLocalGraph}
             >
-              Local graph
+              {t("page.localGraph")}
             </button>
           ) : null}
           <button
             type="button"
             className="icon-button"
             data-testid="rename-page-button"
-            data-tooltip="Rename page"
-            aria-label="Rename page"
+            data-tooltip={t("page.rename")}
+            aria-label={t("page.rename")}
             onClick={startEditing}
           >
             <Icon name="pencil" size={16} />
@@ -341,8 +342,8 @@ export function PageHeader({
             type="button"
             className="icon-button icon-button-danger"
             data-testid="delete-page-button-page"
-            data-tooltip="Delete page"
-            aria-label="Delete page"
+            data-tooltip={t("sidebar.deletePage")}
+            aria-label={t("sidebar.deletePage")}
             onClick={onDelete}
           >
             <Icon name="trash" size={16} />
@@ -351,7 +352,7 @@ export function PageHeader({
       </div>
 
       <div className="page-meta">
-        <span className="page-meta-time">Updated {formatUpdated(page.updated)}</span>
+        <span className="page-meta-time">{t("page.updated", { time: formatUpdated(page.updated) })}</span>
         {page.tags.length > 0 ? (
           <span className="page-tags">
             {page.tags.map((tag) => (

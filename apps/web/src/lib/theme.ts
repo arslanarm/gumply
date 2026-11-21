@@ -4,6 +4,8 @@
  * paint is already correct (spec/ux §12).
  */
 
+import { t } from "../i18n/index.js";
+
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
@@ -35,9 +37,13 @@ export function resolveTheme(
   return preference;
 }
 
+/** The theme's name in the interface language ("System", "Light", "Dark"). */
+export function themeName(preference: ThemePreference): string {
+  return t(`settings.theme.${preference}`);
+}
+
 export function themeLabel(preference: ThemePreference): string {
-  const name = preference === "system" ? "System" : preference === "light" ? "Light" : "Dark";
-  return `Theme: ${name}`;
+  return t("settings.theme.label", { name: themeName(preference) });
 }
 
 export function loadThemePreference(

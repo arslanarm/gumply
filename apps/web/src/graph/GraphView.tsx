@@ -14,6 +14,7 @@ import {
 import { normaliseIcon } from "./emoji-sprites.js";
 import { usePrefersReducedMotion } from "./use-reduced-motion.js";
 import "./graph.css";
+import { t, useT } from "../i18n/index.js";
 
 export interface GraphViewProps {
   /** Page to highlight when arriving from a page view. */
@@ -30,13 +31,14 @@ type Status = "loading" | "ready" | "error";
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) return error.message;
   if (error instanceof Error && /fetch|network|load failed/i.test(error.message)) {
-    return "Cannot reach the Gumply server. Is it running?";
+    return t("graph.serverDown");
   }
-  return "Could not load the graph.";
+  return t("graph.loadFailed");
 }
 
 /** Global graph view at `#graph` (spec/ux §9, D16). */
 export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: GraphViewProps) {
+  const t = useT();
   const [data, setData] = useState<GraphData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -108,12 +110,12 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   const filtersActive = query.trim().length > 0 || selectedTags.length > 0;
 
   return (
-    <section className="graph-view" aria-label="Graph">
+    <section className="graph-view" aria-label={t("graph.title")}>
       <header className="graph-header">
         <div>
-          <h2>Graph</h2>
+          <h2>{t("graph.title")}</h2>
           <p className="graph-subtitle" data-testid="graph-subtitle">
-            {hasPages && data && filtered ? graphSubtitle(filtered) : "How your pages connect"}
+            {hasPages && data && filtered ? graphSubtitle(filtered) : t("graph.subtitle")}
           </p>
         </div>
         <div className="graph-toolbar">
@@ -125,8 +127,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                   className="graph-filter"
                   data-testid="graph-filter"
                   type="search"
-                  placeholder="Filter pages…"
-                  aria-label="Filter pages by title"
+                  placeholder={t("graph.filterPlaceholder")}
+                  aria-label={t("graph.filterLabel")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={(event) => {
@@ -141,8 +143,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                     type="button"
                     className="graph-filter-clear"
                     data-testid="graph-filter-clear"
-                    aria-label="Clear filter"
-                    data-tooltip="Clear filter"
+                    aria-label={t("graph.clearFilter")}
+                    data-tooltip={t("graph.clearFilter")}
                     onClick={() => setQuery("")}
                   >
                     <Icon name="x" size={14} />
@@ -156,7 +158,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                 aria-controls="graph-legend"
                 onClick={() => setLegendOpen((value) => !value)}
               >
-                Legend
+                {t("graph.legend")}
               </button>
             </>
           ) : null}
@@ -169,7 +171,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
           <button
             type="button"
             className="banner-close"
-            aria-label="Dismiss error"
+            aria-label={t("graph.dismissError")}
             onClick={() => setActionError(null)}
           >
             ×
@@ -178,7 +180,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
       ) : null}
 
       {hasPages && data ? (
-        <div className="graph-chips" aria-label="Filter by tag">
+        <div className="graph-chips" aria-label={t("graph.filterByTag")}>
           {(data.tags ?? []).map((tag) => (
             <button
               key={tag}
@@ -196,17 +198,17 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
       <div className="graph-body">
         {status === "loading" ? (
           <div className="graph-state graph-state-loading" data-testid="graph-loading">
-            <p>Loading graph…</p>
+            <p>{t("graph.loading")}</p>
           </div>
         ) : status === "error" ? (
           <div className="empty-state" data-testid="graph-error">
             <span className="empty-state-icon" aria-hidden="true">
               <Icon name="monitor" size={26} />
             </span>
-            <h2>Could not load the graph.</h2>
-            <p>{error ?? "Something went wrong."}</p>
+            <h2>{t("graph.loadFailed")}</h2>
+            <p>{error ?? t("errors.generic")}</p>
             <button type="button" className="button-primary" onClick={() => void load()}>
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         ) : !hasPages ? (
@@ -214,12 +216,12 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             <span className="empty-state-icon" aria-hidden="true">
               <Icon name="graph" size={26} />
             </span>
-            <h2>Your graph is empty.</h2>
+            <h2>{t("graph.empty")}</h2>
             <p>
-              Create a page and link it with <code>[[</code>.
+              {t("graph.emptyHintBefore")}<code>[[</code>{t("graph.emptyHintAfter")}
             </p>
             <button type="button" className="button-primary" onClick={onNewPage}>
-              New page
+              {t("sidebar.newPage")}
             </button>
           </div>
         ) : !hasVisible ? (
@@ -227,9 +229,9 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             <span className="empty-state-icon" aria-hidden="true">
               <Icon name="search" size={26} />
             </span>
-            <h2>No pages match this filter.</h2>
+            <h2>{t("graph.filterEmpty")}</h2>
             <button type="button" className="button-secondary" onClick={clearFilters}>
-              Clear filter
+              {t("graph.clearFilter")}
             </button>
           </div>
         ) : filtered ? (
@@ -250,23 +252,23 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                 if (ghost) createGhost(ghost);
               }}
             />
-            <p className="graph-hint">Scroll to zoom · drag to move · click to open</p>
+            <p className="graph-hint">{t("graph.hint")}</p>
           </>
         ) : null}
 
         {legendOpen && status === "ready" && hasPages ? (
           <aside className="graph-legend" id="graph-legend" data-testid="graph-legend">
-            <p className="graph-legend-title">Legend</p>
+            <p className="graph-legend-title">{t("graph.legend")}</p>
             <p className="graph-legend-row">
-              <span className="graph-legend-solid" aria-hidden="true" /> solid = page
+              <span className="graph-legend-solid" aria-hidden="true" /> {t("graph.legendPage")}
             </p>
             {hasBoards ? (
               <p className="graph-legend-row" data-testid="graph-legend-board">
-                <span className="graph-legend-board" aria-hidden="true" /> square = whiteboard
+                <span className="graph-legend-board" aria-hidden="true" /> {t("graph.legendBoard")}
               </p>
             ) : null}
             <p className="graph-legend-row">
-              <span className="graph-legend-dashed" aria-hidden="true" /> dashed = not created yet
+              <span className="graph-legend-dashed" aria-hidden="true" /> {t("graph.legendGhost")}
             </p>
             {sampleIcon ? (
               <p className="graph-legend-row" data-testid="graph-legend-icon">
@@ -277,7 +279,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
               </p>
             ) : null}
             {(data?.tags ?? []).length > 0 ? (
-              <p className="graph-legend-caption">Colour = first tag</p>
+              <p className="graph-legend-caption">{t("graph.legendColour")}</p>
             ) : null}
             {(data?.tags ?? []).slice(0, 8).map((tag) => (
               <p key={tag} className="graph-legend-row graph-legend-tag">

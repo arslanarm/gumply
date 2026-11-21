@@ -12,6 +12,7 @@ import {
 import { moveInGrid, type GridKey } from "../lib/emoji/grid-nav.js";
 import { getRecentEmoji, pushRecentEmoji } from "../lib/emoji/recent.js";
 import { Icon } from "./Icon.js";
+import { t, useLanguage, useT } from "../i18n/index.js";
 
 export const EMOJI_COLUMNS = 10;
 
@@ -45,9 +46,11 @@ export function EmojiPicker({
   onSelect,
   onRemove,
   onClose,
-  label = "Emoji picker",
+  label,
   testId = "emoji-picker",
 }: EmojiPickerProps) {
+  const t = useT();
+  const language = useLanguage();
   const [entries, setEntries] = useState<EmojiEntry[] | null>(() => emojiDataIfLoaded());
   const [loadFailed, setLoadFailed] = useState(false);
   const [query, setQuery] = useState("");
@@ -95,13 +98,13 @@ export function EmojiPicker({
       if (typed && typed === q && !items.some((item) => item.emoji === typed)) {
         items.unshift({ emoji: typed, name: nameOf(typed) });
       }
-      return [{ id: "results", label: "Results", items }];
+      return [{ id: "results", label: t("emoji.results"), items }];
     }
     const list: Section[] = [];
     if (recent.length > 0) {
       list.push({
         id: "recent",
-        label: "Recent",
+        label: t("emoji.recent"),
         items: recent.map((emoji) => ({ emoji, name: nameOf(emoji) })),
       });
     }
@@ -117,7 +120,9 @@ export function EmojiPicker({
       }
     }
     return list.filter((section) => section.items.length > 0);
-  }, [entries, query, recent, nameOf]);
+    // Section names follow the interface language.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, query, recent, nameOf, language]);
 
   const flat = useMemo(() => sections.flatMap((section) => section.items), [sections]);
   const sizes = useMemo(() => sections.map((section) => section.items.length), [sections]);
@@ -251,7 +256,7 @@ export function EmojiPicker({
   const filtering = query.trim().length > 0;
 
   return (
-    <div className="emoji-picker" role="dialog" aria-label={label} data-testid={testId}>
+    <div className="emoji-picker" role="dialog" aria-label={label ?? t("emoji.picker")} data-testid={testId}>
       <div className="emoji-picker-top">
         <label className="emoji-picker-search">
           <Icon name="search" size={14} />
@@ -259,8 +264,8 @@ export function EmojiPicker({
             ref={inputRef}
             type="text"
             value={query}
-            placeholder="Search emoji…"
-            aria-label="Search emoji"
+            placeholder={t("emoji.searchPlaceholder")}
+            aria-label={t("emoji.searchLabel")}
             data-testid="emoji-search"
             role="combobox"
             aria-expanded="true"
@@ -277,8 +282,8 @@ export function EmojiPicker({
           type="button"
           className="emoji-picker-action"
           data-testid="emoji-random"
-          data-tooltip="Random emoji"
-          aria-label="Random emoji"
+          data-tooltip={t("emoji.random")}
+          aria-label={t("emoji.random")}
           disabled={!entries}
           onClick={chooseRandom}
         >
@@ -291,7 +296,7 @@ export function EmojiPicker({
             data-testid="emoji-remove"
             onClick={onRemove}
           >
-            Remove
+            {t("emoji.remove")}
           </button>
         ) : null}
       </div>
@@ -301,7 +306,7 @@ export function EmojiPicker({
         className="emoji-picker-scroll"
         id={`${idPrefix}-list`}
         role="listbox"
-        aria-label={filtering ? "Search results" : "Emoji"}
+        aria-label={filtering ? t("emoji.searchResults") : t("emoji.label")}
         onScroll={onScroll}
         onMouseLeave={() => setHovered(null)}
       >
@@ -313,9 +318,9 @@ export function EmojiPicker({
           onChoose={chooseRef}
           onHover={setHovered}
         />
-        {!entries && !loadFailed ? <p className="emoji-picker-note">Loading emoji…</p> : null}
+        {!entries && !loadFailed ? <p className="emoji-picker-note">{t("emoji.loading")}</p> : null}
         {loadFailed ? (
-          <p className="emoji-picker-note">Couldn’t load the emoji list. Paste an emoji instead.</p>
+          <p className="emoji-picker-note">{t("emoji.loadFailed")}</p>
         ) : null}
         {entries && filtering && flat.length === 0 ? (
           <p className="emoji-picker-note" data-testid="emoji-empty">
@@ -331,13 +336,13 @@ export function EmojiPicker({
             <span className="emoji-picker-preview-name">{preview.name}</span>
           </div>
         ) : (
-          <nav className="emoji-picker-tabs" aria-label="Emoji categories">
+          <nav className="emoji-picker-tabs" aria-label={t("emoji.categoriesLabel")}>
             {recent.length > 0 ? (
               <button
                 type="button"
                 className={`emoji-picker-tab${activeCategory === "recent" ? " is-active" : ""}`}
-                aria-label="Recent"
-                data-tooltip="Recent"
+                aria-label={t("emoji.recent")}
+                data-tooltip={t("emoji.recent")}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => jumpTo("recent")}
               >

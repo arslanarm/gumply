@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BOARD_TEMPLATES, type BoardTemplateId } from "../board/templates.js";
 // The board palette (--board-c1…) lives with the board styles.
 import "../board/board.css";
+import { useLanguage, useT } from "../i18n/index.js";
 
 export interface TemplateGalleryProps {
   onCancel: () => void;
@@ -80,12 +81,21 @@ export function TemplatePreview({ board }: { board: CanvasBoard }) {
 }
 
 export function TemplateGallery({ onCancel, onSelect }: TemplateGalleryProps) {
+  const t = useT();
+  const language = useLanguage();
   const choices = useMemo<Choice[]>(
     () => [
-      { id: null, name: "Blank", description: "An empty board", board: null },
-      ...BOARD_TEMPLATES.map((template) => ({ ...template, board: template.build() })),
+      { id: null, name: t("templates.blank.name"), description: t("templates.blank.description"), board: null },
+      ...BOARD_TEMPLATES.map((template) => ({
+        id: template.id,
+        name: template.name(),
+        description: template.description(),
+        board: template.build(),
+      })),
     ],
-    [],
+    // Previews and names follow the language.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [language],
   );
   const [index, setIndex] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -129,8 +139,8 @@ export function TemplateGallery({ onCancel, onSelect }: TemplateGalleryProps) {
         aria-labelledby="template-gallery-title"
         data-testid="template-gallery"
       >
-        <h2 id="template-gallery-title">New whiteboard</h2>
-        <div className="template-grid" ref={listRef} role="listbox" aria-label="Templates">
+        <h2 id="template-gallery-title">{t("templates.galleryTitle")}</h2>
+        <div className="template-grid" ref={listRef} role="listbox" aria-label={t("templates.galleryLabel")}>
           {choices.map((choice, choiceIndex) => (
             <button
               key={choice.id ?? "blank"}
