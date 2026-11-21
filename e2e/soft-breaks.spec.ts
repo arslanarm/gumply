@@ -156,7 +156,11 @@ test.describe('soft line breaks (#iatezw4m)', () => {
     '',
   ].join('\n');
 
-  for (const [name, text] of [['no tabs', LISTS], ['tabs', LISTS_TAB]] as const) {
+  // @opus-polish (#h368c8ni): a colour span starting the line after a soft
+  // break stays on its own line, as written.
+  const COLOUR = 'Target paragraph.\n\nSoft\n<span style="color: var(--color-red);">red</span> after\n';
+
+  for (const [name, text] of [['no tabs', LISTS], ['tabs', LISTS_TAB], ['colour after a soft break', COLOUR]] as const) {
     test(`list continuation lines keep their indent (${name})`, async ({ page, request, vault }) => {
       void vault;
       await fs.writeFile(file(), text);
