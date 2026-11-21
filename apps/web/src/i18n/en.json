@@ -70,7 +70,8 @@
     "localLoading": "Loading…",
     "noLinks": "No links yet.",
     "noLinksBefore": "Type ",
-    "noLinksAfter": " in this page to connect it."
+    "noLinksAfter": " in this page to connect it.",
+    "legendIcon": "emoji = page icon"
   },
   "sidebar": {
     "hide": "Hide sidebar",
