@@ -298,7 +298,8 @@ test.describe('database view layouts (D34)', () => {
     await page.goto('/#/Work/Board.base');
     await expect(page.getByTestId('base-card-Work/Colour')).toBeVisible();
     // Defaults: 280 × 0.5.
-    expect(await heights()).toEqual({ Tall: 140, Wide: 140, Square: 140, Colour: 140 });
+    // Polled: covers load and the columns settle a moment after the first card shows.
+    await expect.poll(heights, { timeout: 10_000 }).toEqual({ Tall: 140, Wide: 140, Square: 140, Colour: 140 });
     // contain letterboxes inside the box (cover would crop).
     await expect(page.getByTestId('base-card-Work/Tall').locator('img')).toHaveCSS('object-fit', 'contain');
 

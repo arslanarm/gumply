@@ -237,6 +237,7 @@ export function BoardView(props: BoardViewProps) {
       <Suspense fallback={<div className="board-loading" data-testid="board-loading" />}>
       <LazyBoardEditor
         boardId={boardId}
+        fileLinks={props.initial?.fileLinks}
         board={loaded.board}
         onChange={onChange}
         pages={pages}

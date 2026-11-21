@@ -9,6 +9,7 @@ import { memo, useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
 import { highlightMarkdownPlugin } from "../../editor/highlight.js";
 import { wikilinkMarkdownPlugin } from "../../editor/wikilink/markdown-plugin.js";
 import { useBoardContent } from "./context.js";
+import { obsidianFileUrl, useFileLinkVersion } from "../../lib/file-links.js";
 import { resolveBoardLink, safeWebUrl } from "./links.js";
 
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
@@ -41,7 +42,8 @@ export function renderBoardMarkdown(text: string): string {
 }
 
 export const BoardRichText = memo(function BoardRichText({ text }: { text: string }) {
-  const { pages, openFile } = useBoardContent();
+  const { pages, openFile, boardId, fileLinks } = useBoardContent();
+  const fileLinkVersion = useFileLinkVersion();
   const ref = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderBoardMarkdown(text), [text]);
 
@@ -57,7 +59,15 @@ export const BoardRichText = memo(function BoardRichText({ text }: { text: strin
     for (const anchor of Array.from(ref.current?.querySelectorAll("a[href]") ?? [])) {
       if (!safeWebUrl(anchor.getAttribute("href") ?? "")) anchor.removeAttribute("href");
     }
-  }, [html, pages]);
+    // #8k4ssrkb: `![[x.png]]` in a sticky resolves across the vault, from the board.
+    for (const image of Array.from(ref.current?.querySelectorAll<HTMLImageElement>("img[data-obsidian]") ?? [])) {
+      const url = boardId ? obsidianFileUrl(image.getAttribute("data-obsidian"), boardId, fileLinks) : null;
+      if (url) image.src = url;
+      else image.removeAttribute("src");
+      image.loading = "lazy";
+      image.referrerPolicy = "no-referrer";
+    }
+  }, [html, pages, boardId, fileLinks, fileLinkVersion]);
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as Element;

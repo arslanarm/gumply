@@ -347,6 +347,15 @@ export const api = {
       }),
     ),
 
+  /**
+   * #8k4ssrkb: what an Obsidian-style file link typed after load resolves to,
+   * from the note holding it (null: no such file).
+   */
+  resolveFileLink: async (link: string, from: PageId): Promise<string | null> => {
+    const params = new URLSearchParams({ link, from });
+    return (await request<{ path: string | null }>(`/files/resolve?${params.toString()}`)).path;
+  },
+
   /** spec/api-bases: a database view's config. */
   getBase: (id: PageId): Promise<BaseDocument> => request(basePath(id)),
 

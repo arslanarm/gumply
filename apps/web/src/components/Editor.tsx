@@ -306,6 +306,7 @@ export function Editor({
       pageId: page.id,
       pages,
       attachments,
+      ...(page.fileLinks ? { fileLinks: page.fileLinks } : {}),
       openLink: onOpenLink,
       createLink: onCreateLink,
       reportError: (message) => onAttachmentErrorRef.current?.(message),
@@ -314,7 +315,7 @@ export function Editor({
           list.some((item) => item.path === attachment.path) ? list : [...list, attachment],
         ),
     });
-  }, [page.id, pages, attachments, onOpenLink, onCreateLink]);
+  }, [page.id, page.fileLinks, pages, attachments, onOpenLink, onCreateLink]);
 
   useEffect(() => {
     let cancelled = false;
