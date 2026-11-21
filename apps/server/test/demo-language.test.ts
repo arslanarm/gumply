@@ -94,6 +94,29 @@ describe("seeding on the first GET /pages", () => {
     expect(own.map((page) => page.title)).toContain("Добро пожаловать");
   });
 
+  it("no-cors GETs, navigations and cross-site requests never seed nor take the Welcome signal (@opus-hunter's P3)", async () => {
+    const { app, dir, store } = await createTestServer();
+    store.armDemo(() => undefined);
+    const headers = [
+      { "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors" }, // <img src> from another port
+      { "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate" }, // typed into the address bar
+      { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors" },
+    ];
+    for (const extra of headers) {
+      const response = await app.request("/api/pages", { headers: { ...extra, "Accept-Language": "en" } });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([]);
+      expect(response.headers.get("x-gumply-new-vault")).toBeNull();
+    }
+    expect(await readdir(dir)).toEqual([]);
+    // The app's own fetch still seeds, in its language, and gets the signal.
+    const own = await app.request("/api/pages", {
+      headers: { "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Accept-Language": "ru" },
+    });
+    expect(((await own.json()) as Array<{ title: string }>).map((page) => page.title)).toContain("Добро пожаловать");
+    expect(own.headers.get("x-gumply-new-vault")).toBe(encodeURIComponent("Добро пожаловать"));
+  });
+
   it("never seeds a folder that already has files (#pc3wvc2u), nor without arming", async () => {
     const { app, dir, store } = await createTestServer();
     await writeFile(join(dir, "report.pdf"), "%PDF-1.4");
