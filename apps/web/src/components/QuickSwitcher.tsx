@@ -24,6 +24,8 @@ export interface QuickSwitcherProps {
   onCreate: (title: string) => void;
   /** `Create whiteboard “X”`; without it the row isn't offered. */
   onCreateBoard?: (title: string) => void;
+  /** `Create database view “X”` (D34); without it the row isn't offered. */
+  onCreateBase?: (title: string) => void;
   /** `New board from template…`: opens the template gallery (spec/v0-6 §D). */
   onNewFromTemplate?: () => void;
   /** `Language…`: opens Settings (#7h5utv23). */
@@ -43,6 +45,7 @@ export function QuickSwitcher({
   onOpen,
   onCreate,
   onCreateBoard,
+  onCreateBase,
   onNewFromTemplate,
   onOpenLanguage,
   onOpenToday,
@@ -120,6 +123,7 @@ export function QuickSwitcher({
   const createRows = [
     ...(sections.create ? [sections.create] : []),
     ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
+    ...(sections.createBase && onCreateBase ? [sections.createBase] : []),
   ];
   const tailRows = [...commandRows, ...createRows];
   const rows: SearchRow[] = needle.length > 0 ? [...sections.pages, ...sections.text, ...tailRows] : recents;
@@ -160,6 +164,10 @@ export function QuickSwitcher({
     }
     if (row.kind === "create-board") {
       if (row.title) onCreateBoard?.(row.title);
+      return;
+    }
+    if (row.kind === "create-base") {
+      if (row.title) onCreateBase?.(row.title);
       return;
     }
     if (row.page) onOpen(row.page.id);
@@ -205,7 +213,9 @@ export function QuickSwitcher({
             ? `search-result-${row.page.id}`
             : row.kind === "create-board"
               ? "search-create-board"
-              : row.kind === "from-template"
+              : row.kind === "create-base"
+                ? "search-create-base"
+                : row.kind === "from-template"
                 ? "search-from-template"
                 : row.kind === "language"
                   ? "search-language"
@@ -235,10 +245,12 @@ export function QuickSwitcher({
             <Icon name="pageTemplate" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
+          ) : row.kind === "create-base" ? (
+            <Icon name="database" size={16} />
           ) : row.page?.icon ? (
             row.page.icon
           ) : (
-            <Icon name={isBoard(row.page) ? "board" : "file"} size={16} />
+            <Icon name={isBoard(row.page) ? "board" : row.page?.kind === "base" ? "database" : "file"} size={16} />
           )}
         </span>
         <span className="quick-switcher-text">

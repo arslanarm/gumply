@@ -31,6 +31,11 @@ export function isBoardTarget(target: string): boolean {
   return /\.canvas$/i.test(target.trim());
 }
 
+/** True for a link target naming a database view (`Tasks.base`, spec/api-bases). */
+export function isBaseTarget(target: string): boolean {
+  return /\.base$/i.test(target.trim());
+}
+
 /** The Markdown for a board embed (D30): `![[Map.canvas]]` / `![[Map.canvas|480]]`. */
 export function formatBoardEmbed(target: string, size?: string | number): string {
   const height = size === undefined || size === "" ? "" : `|${size}`;

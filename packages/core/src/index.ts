@@ -67,6 +67,7 @@ export {
   extractWikilinks,
   formatBoardEmbed,
   formatPageEmbed,
+  isBaseTarget,
   isBoardTarget,
   hasAttachmentExtension,
   makeSnippet,
@@ -149,6 +150,7 @@ export {
   type OutlineBlock,
   type OutlineHeading,
 } from "./page-embeds.js";
+export * from "./bases/index.js";
 
 export {
   coercePropertyValue,

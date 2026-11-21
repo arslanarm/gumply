@@ -17,6 +17,7 @@ export interface FolderViewProps {
 function kindLabel(item: PageMeta): string {
   if (item.kind === "folder") return folderSummary(item.childCount, item.otherFiles);
   if (isBoard(item)) return translate("folders.whiteboard");
+  if (item.kind === "base") return translate("folders.database");
   return item.childCount > 0 ? translate("folders.pageWithSubPages", { count: item.childCount }) : translate("folders.page");
 }
 
@@ -75,7 +76,7 @@ export function FolderView({ folder, pages, onOpen, onNewPage, onNewBoard }: Fol
                   ) : item.icon ? (
                     item.icon
                   ) : (
-                    <Icon name={isBoard(item) ? "board" : "file"} size={17} />
+                    <Icon name={isBoard(item) ? "board" : item.kind === "base" ? "database" : "file"} size={17} />
                   )}
                 </span>
                 <span className="folder-view-item-title">{item.title}</span>

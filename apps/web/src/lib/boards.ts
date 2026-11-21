@@ -26,14 +26,15 @@ export function isBoard(page: Pick<PageMeta, "id" | "kind"> | null | undefined):
 
 /** The vault file of a page or board (what a board card stores). */
 export function vaultPathOf(page: Pick<PageMeta, "id" | "kind">): string {
-  return isBoard(page) ? page.id : `${page.id}.md`;
+  // Boards and database views (D34) keep their extension in the id.
+  return isBoard(page) || page.kind === "base" ? page.id : `${page.id}.md`;
 }
 
 /** The page/board id a vault path points at, or null for other files. */
 export function idFromVaultPath(path: string): PageId | null {
   const clean = path.replace(/\\/g, "/").replace(/^\/+/, "");
   if (/\.md$/i.test(clean)) return clean.slice(0, -3);
-  if (isBoardId(clean)) return clean;
+  if (isBoardId(clean) || /\.base$/i.test(clean)) return clean;
   return null;
 }
 
