@@ -53,4 +53,44 @@ describe("the final newline (#5fv7c25w)", () => {
     await createPage(app, { title: "Fresh", content: "Hello" });
     expect(await readFile(join(dir, "Fresh.md"), "utf8")).toMatch(/\n\nHello\n$/);
   });
+
+  it("`content` has no final newline after a create, a save sent with one, and a rename's link rewrite (@opus-graph)", async () => {
+    const { app, dir } = await createTestServer();
+    await createPage(app, { title: "Roadmap", content: "Goals" });
+    await createPage(app, { title: "Notes", content: "![[Roadmap#Goals]]\n\n[[Roadmap]]\n" });
+    const notes = await getJson<{ content: string; updated: string }>(app, `/api/pages/${encodeId("Notes")}`);
+    expect(notes.content).toBe("![[Roadmap#Goals]]\n\n[[Roadmap]]");
+
+    const roadmap = await getJson<{ updated: string }>(app, `/api/pages/${encodeId("Roadmap")}`);
+    const renamed = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Roadmap")}`, { title: "Plan", expectedUpdated: roadmap.updated });
+    expect(((await renamed.json()) as { rewrittenPages?: string[] }).rewrittenPages).toEqual(["Notes"]);
+    const after = await getJson<{ content: string; updated: string }>(app, `/api/pages/${encodeId("Notes")}`);
+    // The page embed (#5dpxwac4) and the link both follow the rename.
+    expect(after.content).toBe("![[Plan#Goals]]\n\n[[Plan]]");
+    // The file itself keeps its final newline.
+    expect(await readFile(join(dir, "Notes.md"), "utf8")).toMatch(/\[\[Plan\]\]\n$/);
+
+    const saved = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Notes")}`, { content: "Edited\n\n", expectedUpdated: after.updated });
+    expect(((await saved.json()) as { content: string }).content).toBe("Edited");
+    expect((await getJson<{ content: string }>(app, `/api/pages/${encodeId("Notes")}`)).content).toBe("Edited");
+  });
+
+  it("`content` has no final newline after a move's attachment relink and a trash restore", async () => {
+    const { app, dir } = await createTestServer();
+    await createPage(app, { title: "Box" });
+    const pic = "![pic](attachments/pic.png)\n";
+    await createPage(app, { title: "Pic", content: pic });
+    // D23 relink: moving the page one level deeper rewrites its attachment link.
+    const moved = await jsonRequest(app, "POST", `/api/pages/${encodeId("Pic")}/move`, { parentId: "Box" });
+    expect(moved.status).toBe(200);
+    const relinked = await getJson<{ content: string }>(app, `/api/pages/${encodeId("Box/Pic")}`);
+    expect(relinked.content).toBe("![pic](../attachments/pic.png)");
+    expect(await readFile(join(dir, "Box/Pic.md"), "utf8")).toMatch(/\.\.\/attachments\/pic\.png\)\n$/);
+
+    // Trash and restore: read back from disk.
+    const deleted = (await (await jsonRequest(app, "DELETE", `/api/pages/${encodeId("Box")}`)).json()) as { trashId: string };
+    await jsonRequest(app, "POST", `/api/trash/${deleted.trashId}/restore`);
+    expect((await getJson<{ content: string }>(app, `/api/pages/${encodeId("Box/Pic")}`)).content).toBe("![pic](../attachments/pic.png)");
+  });
 });
+
