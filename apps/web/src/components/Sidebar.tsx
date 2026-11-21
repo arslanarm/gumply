@@ -21,6 +21,8 @@ export interface SidebarProps {
   onCreate: (parentId: PageId | null) => void;
   /** New whiteboard at the top level or inside a page (spec/whiteboard §4). */
   onCreateBoard: (parentId: PageId | null) => void;
+  /** New database view at the top level or inside a page or folder (D34). */
+  onCreateBase?: (parentId: PageId | null) => void;
   onRename: (id: PageId, title: string) => Promise<void>;
   onDelete: (id: PageId) => void;
   onMove: (id: PageId, parentId: PageId | null) => void;
@@ -141,6 +143,7 @@ export function Sidebar(props: SidebarProps) {
     onCopyLink: props.onCopyLink,
     onMove: props.onMove,
     onCreateBoard: props.onCreateBoard,
+    onCreateBase: props.onCreateBase,
     onNewFromTemplate: props.onNewFromTemplate,
     createChild,
     expand,
@@ -151,6 +154,7 @@ export function Sidebar(props: SidebarProps) {
   });
   latest.current = {
     onCreateBoard: props.onCreateBoard,
+    onCreateBase: props.onCreateBase,
     onOpen: props.onOpen,
     onDelete: props.onDelete,
     onStartMove: props.onStartMove,
@@ -172,6 +176,10 @@ export function Sidebar(props: SidebarProps) {
       onCreateBoardChild: (id: PageId) => {
         latest.current.expand(id);
         latest.current.onCreateBoard(id);
+      },
+      onCreateBaseChild: (id: PageId) => {
+        latest.current.expand(id);
+        latest.current.onCreateBase?.(id);
       },
       onDelete: (id: PageId) => latest.current.onDelete(id),
       onToggle: (id: PageId) => latest.current.toggle(id),
@@ -222,6 +230,21 @@ export function Sidebar(props: SidebarProps) {
         </span>
         {t("sidebar.newBoard")}
       </button>
+
+      {props.onCreateBase ? (
+        <button
+          type="button"
+          className="sidebar-row sidebar-new-base"
+          data-testid="new-base-button"
+          aria-label={t("bases.newBase")}
+          onClick={() => props.onCreateBase?.(null)}
+        >
+          <span className="sidebar-row-icon" aria-hidden="true">
+            <Icon name="database" size={16} />
+          </span>
+          {t("bases.newBase")}
+        </button>
+      ) : null}
 
       <button
         type="button"

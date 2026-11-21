@@ -102,8 +102,8 @@ export function canMovePage(
   if (newParentId === id || isSelfOrDescendant(id, newParentId)) return false;
   const parent = pages.find((page) => page.id === newParentId);
   if (!parent) return false;
-  // Boards have no sub-pages (spec/whiteboard §2).
-  if (isBoard(parent)) return false;
+  // Boards and database views have no sub-pages (spec/whiteboard §2, D34).
+  if (isBoard(parent) || parent.kind === "base") return false;
 
   // Ids normally nest by path, but walk parentId links as well so imported
   // vaults with irregular ids still cannot create a cycle.

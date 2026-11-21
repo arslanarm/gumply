@@ -48,7 +48,7 @@ export function emptyTrashBody(items: readonly TrashItem[]): string {
 /** The toast after a restore: where it went, and why if it isn't where it was. */
 export function restoredMessage(item: TrashItem, result: RestoreResult): string {
   const name = result.id.split("/").pop() ?? result.id;
-  const shown = item.kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : name;
+  const shown = item.kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : item.kind === "base" ? name.replace(/\.base$/i, "") : name;
   const vars = { title: item.title, name: shown, location: trashLocation(item) };
   if (result.movedToTopLevel && result.renamed) return t("trash.restored.toTopAs", vars);
   if (result.movedToTopLevel) return t("trash.restored.toTop", vars);

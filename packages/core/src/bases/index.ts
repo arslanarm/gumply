@@ -1,0 +1,40 @@
+/** Obsidian Bases (`.base` database views, spec/api-bases, #sg36ng2d). */
+export {
+  BaseParseError,
+  GUMPLY_VIEW_TYPES,
+  newBaseSource,
+  parseBase,
+  updateBaseSource,
+  type BaseConfig,
+  type BaseFilter,
+  type BaseView,
+  type BaseViewType,
+  type SortDirection,
+} from "./format.js";
+export {
+  UnsupportedError,
+  compileExpression,
+  evaluateExpression,
+  formatDate,
+  parseDate,
+  parseExpression,
+  valueToString,
+  type EvalContext,
+  type Expr,
+  type FileInfo,
+  type Value,
+} from "./expr.js";
+export {
+  noteKey,
+  propertyId,
+  runBaseView,
+  toBaseValue,
+  typedProperties,
+  type BaseColumn,
+  type BaseGroup,
+  type BaseRow,
+  type BaseSourceRow,
+  type BaseValue,
+  type BaseViewResult,
+  type RunBaseOptions,
+} from "./evaluate.js";

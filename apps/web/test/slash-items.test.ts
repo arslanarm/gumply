@@ -28,6 +28,8 @@ describe("filterSlashItems", () => {
       "page-template",
       "page-preview",
       "embed-whiteboard",
+      "database",
+      "embed-database",
       "divider",
     ]);
   });

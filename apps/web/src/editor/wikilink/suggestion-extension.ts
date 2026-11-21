@@ -7,6 +7,7 @@ import { api } from "../../api/client.js";
 import { t } from "../../i18n/index.js";
 import type { EditorState } from "@tiptap/pm/state";
 import { isBoard } from "../../lib/boards.js";
+import { isBase } from "../../lib/bases.js";
 import { boardEmbedAttrs } from "../board-embed/node.js";
 import { hrefForAttachment } from "../../lib/attachment-links.js";
 import { Extension } from "@tiptap/core";
@@ -47,6 +48,17 @@ async function partSuggestions(query: string): Promise<LinkSuggestion[]> {
   const page = resolveWikilink(query.slice(0, hash).trim(), env.pages);
   if (!page || isBoard(page)) return [];
   const needle = query.slice(hash + 1).trim().toLowerCase();
+  if (isBase(page)) {
+    // `![[Tasks.base#` lists the base's views (D34).
+    try {
+      const { config } = await api.getBase(page.id);
+      return config.views
+        .filter((view) => !needle || view.name.toLowerCase().includes(needle))
+        .map<LinkSuggestion>((view) => ({ kind: "page", key: `${page.id}#${view.name}`, label: view.name, title: page.title, pageId: page.id, part: view.name }));
+    } catch {
+      return [];
+    }
+  }
   let content = "";
   try {
     content = (await api.getPage(page.id)).content;
@@ -127,6 +139,19 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
                   .focus()
                   .deleteRange({ from: range.from - 1, to: range.to })
                   .insertContent({ type: "boardEmbed", attrs: boardEmbedAttrs(board, env.pages) })
+                  .run();
+                return;
+              }
+              if (board && isBase(board)) {
+                // A database view, live (D34); `#View` picks one of its views.
+                editor
+                  .chain()
+                  .focus()
+                  .deleteRange({ from: range.from - 1, to: range.to })
+                  .insertContent({
+                    type: "baseEmbed",
+                    attrs: { target: linkTargetFor(board, env.pages).target, view: props.part ?? "", raw: "" },
+                  })
                   .run();
                 return;
               }
