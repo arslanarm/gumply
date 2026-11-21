@@ -101,13 +101,15 @@ export function BoardView(props: BoardViewProps) {
         },
         // Leaving the page (#3t6v62cb): a keepalive PUT (null over 64 KB).
         exitSave: (value, afterInFlight) => {
-          const request = api.saveBoardOnExit(idRef.current, {
+          const savedId = idRef.current;
+          const request = api.saveBoardOnExit(savedId, {
             board: JSON.parse(value) as CanvasBoard,
             ...(!afterInFlight && versionRef.current ? { expectedUpdated: versionRef.current } : {}),
           });
           return (
             request?.then((result) => {
               versionRef.current = result.meta.updated;
+              latest.current.onSaved?.(result.meta, savedId);
             }) ?? null
           );
         },

@@ -231,13 +231,18 @@ export function Editor({
       // `expectedUpdated`; the server's own mtime check still catches an
       // outside edit.
       exitSave: (content, afterInFlight) => {
-        const request = api.updatePageOnExit(pageIdRef.current, {
+        const savedId = pageIdRef.current;
+        const request = api.updatePageOnExit(savedId, {
           content,
           ...(afterInFlight ? {} : { expectedUpdated: versionRef.current }),
         });
+        // If the page stays after all (a `mailto:` link fires beforeunload),
+        // the app learns the new version like after any save, so the disk
+        // poll never mistakes our own write for an outside change.
         return (
           request?.then((updated) => {
             versionRef.current = updated.updated;
+            onSavedRef.current?.(updated, savedId);
           }) ?? null
         );
       },
