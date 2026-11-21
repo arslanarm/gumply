@@ -13,7 +13,7 @@
  * - Whitespace collapses to single spaces, so phrases match across soft line
  *   breaks.
  */
-const WIKILINK = /\[\[([^[\]|#]*)(#[^[\]|]*)?(?:\|([^[\]]*))?\]\]/g;
+const WIKILINK = /\[\[([^[\]|#\r\n]*)(#[^[\]|\r\n]*)?(?:\|([^[\]\r\n]*))?\]\]/g;
 
 // Backslash-escaped punctuation is literal text: hide it from the markup
 // rules (private-use characters) and restore it at the end.
@@ -26,7 +26,7 @@ const restoreEscapes = (text: string) =>
 /** Links first (their `|` is not a table pipe), then marks. */
 function links(text: string): string {
   return text
-    .replace(/!\[\[([^\]|]*)(?:\|[^\]]*)?\]\]/g, (_match, target: string) => target.split("/").pop() ?? target)
+    .replace(/!\[\[([^\]|\r\n]*)(?:\|[^\]\r\n]*)?\]\]/g, (_match, target: string) => target.split("/").pop() ?? target)
     .replace(WIKILINK, (_match, target: string, heading = "", alias?: string) =>
       alias !== undefined && alias.trim().length > 0 ? alias : `${target}${heading}`,
     )
@@ -147,7 +147,7 @@ export function markdownLinks(markdown: string): MarkdownLink[] {
   for (const match of text.matchAll(/!?\[([^\]]*)\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+"[^"]*")?\s*\)/g)) {
     links.push({ target: match[2]!.replace(/^<|>$/g, ""), text: plainText(match[1]!) });
   }
-  for (const match of text.matchAll(/!?\[\[([^[\]|#]*)(#[^[\]|]*)?\|([^[\]]+)\]\]/g)) {
+  for (const match of text.matchAll(/!?\[\[([^[\]|#\r\n]*)(#[^[\]|\r\n]*)?\|([^[\]\r\n]+)\]\]/g)) {
     links.push({ target: `${match[1]}${match[2] ?? ""}`, text: match[3]!.trim() });
   }
   return links;

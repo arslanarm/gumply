@@ -188,7 +188,7 @@ export function extractWikilinks(markdown: string): WikiLink[] {
   // it, which keeps graph/backlinks free of attachment ghosts (D19). Board
   // embeds (`![[Map.canvas]]`, D30) and page previews (`![[Page#Heading]]`,
   // #5dpxwac4) are links.
-  const pattern = /(!?)\[\[([^[\]]*)\]\]/g;
+  const pattern = /(!?)\[\[([^[\]\r\n]*)\]\]/g;
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {

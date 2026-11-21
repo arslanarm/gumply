@@ -170,8 +170,8 @@ export function recentRows(pages: readonly PageMeta[]): SearchRow[] {
  */
 export function plainTextSnippet(snippet: string): string {
   return snippet
-    .replace(/!\[\[([^\]]*)\]\]/g, (_m, inner: string) => inner.split("|")[0] ?? inner)
-    .replace(/\[\[([^[\]]*)\]\]/g, (match, inner: string) => {
+    .replace(/!\[\[([^\]\r\n]*)\]\]/g, (_m, inner: string) => inner.split("|")[0] ?? inner)
+    .replace(/\[\[([^[\]\r\n]*)\]\]/g, (match, inner: string) => {
       const parsed = parseWikiLinkText(match);
       if (!parsed) return inner;
       const label = parsed.alias.length > 0 ? parsed.alias : parsed.title;
