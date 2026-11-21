@@ -92,6 +92,35 @@ test.describe('typing Obsidian embeds by hand (#95x2fjh6)', () => {
       await page.keyboard.type(' see ![[pic.png]] here', { delay: 40 });
       await expect.poll(() => read('Typed.md'), { timeout: 10_000 }).toBe('Start see ![[pic.png]] here\n');
       await expect(editor.locator('img[src="/api/files/pic.png"]')).toHaveCount(1);
+      // Inline, inside the same paragraph as the text around it (not a block that splits it).
+      const image = editor.getByTestId('inline-image');
+      await expect(image).toHaveCount(1);
+      const sentence = editor.locator('p:has([data-testid="inline-image"])');
+      await expect(sentence).toHaveCount(1);
+      await expect(sentence).toContainText('Start see');
+      await expect(sentence).toContainText('here');
+    } finally {
+      await fs.rm(path.join(E2E_VAULT, 'pic.png'), { force: true });
+      await fs.rm(path.join(E2E_VAULT, 'att', 'doc.pdf'), { force: true });
+    }
+  });
+
+  test('Ctrl+Z right after the rule fires gives back the typed text', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request);
+    try {
+      await page.goto('/#/Typed');
+      const editor = page.getByTestId('editor-content');
+      await expect(editor).toContainText('Start');
+      await editor.click();
+      await page.keyboard.press('Control+End');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('![[pic.png]]', { delay: 40 });
+      await expect(editor.locator('img[src="/api/files/pic.png"]')).toHaveCount(1);
+      await page.keyboard.press('ControlOrMeta+z');
+      await expect(editor.locator('img[src^="/api/files/"]')).toHaveCount(0);
+      await expect(editor).toContainText('![[pic.png]]');
+      await expect.poll(() => read('Typed.md'), { timeout: 10_000 }).toBe('Start\n\n![[pic.png]]\n');
     } finally {
       await fs.rm(path.join(E2E_VAULT, 'pic.png'), { force: true });
       await fs.rm(path.join(E2E_VAULT, 'att', 'doc.pdf'), { force: true });
