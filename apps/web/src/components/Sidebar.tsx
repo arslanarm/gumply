@@ -33,6 +33,10 @@ export interface SidebarProps {
   onRetry: () => void;
   onSearch: () => void;
   onGraph: () => void;
+  /** v0.7 C: open (or make) today's daily note. */
+  onToday?: () => void;
+  /** v0.7 C: ⋯ → New page from template… inside a page or folder. */
+  onNewFromTemplate?: (parentId: PageId | null) => void;
   /** The global graph view is open (sidebar active state). */
   graphActive?: boolean;
   /** #ppag3ugh: the Trash row (with how many pages and boards are in it). */
@@ -140,6 +144,7 @@ export function Sidebar(props: SidebarProps) {
     onMove: props.onMove,
     onCreateBoard: props.onCreateBoard,
     onCreateBase: props.onCreateBase,
+    onNewFromTemplate: props.onNewFromTemplate,
     createChild,
     expand,
     toggle,
@@ -156,6 +161,7 @@ export function Sidebar(props: SidebarProps) {
     onDuplicate: props.onDuplicate,
     onCopyLink: props.onCopyLink,
     onMove: props.onMove,
+    onNewFromTemplate: props.onNewFromTemplate,
     createChild,
     expand,
     toggle,
@@ -180,6 +186,10 @@ export function Sidebar(props: SidebarProps) {
       onStartMove: (id: PageId) => latest.current.onStartMove(id),
       onDuplicate: (id: PageId) => latest.current.onDuplicate(id),
       onCopyLink: (id: PageId) => latest.current.onCopyLink(id),
+      onNewFromTemplate: (id: PageId) => {
+        latest.current.expand(id);
+        latest.current.onNewFromTemplate?.(id);
+      },
       onStartRename: (id: PageId, title: string) => latest.current.startRename(id, title),
       onCommitRename: () => latest.current.commitRename(),
       onCancelRename: () => latest.current.cancelRename(),
@@ -247,6 +257,20 @@ export function Sidebar(props: SidebarProps) {
         </span>
         {t("sidebar.search")}
       </button>
+
+      {props.onToday ? (
+        <button
+          type="button"
+          className="sidebar-row sidebar-today"
+          data-testid="sidebar-today"
+          onClick={props.onToday}
+        >
+          <span className="sidebar-row-icon" aria-hidden="true">
+            <Icon name="calendar" size={16} />
+          </span>
+          {t("sidebar.today")}
+        </button>
+      ) : null}
 
       <div
         className="page-tree"

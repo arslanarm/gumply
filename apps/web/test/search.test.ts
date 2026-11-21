@@ -4,6 +4,8 @@ import {
   highlightSegments,
   recentPages,
   searchSections,
+  wantsPageTemplate,
+  wantsToday,
 } from "../src/lib/search.js";
 
 function page(
@@ -94,6 +96,8 @@ describe("searchSections", () => {
       createBoard: null,
       fromTemplate: null,
       language: null,
+      today: null,
+      pageTemplate: null,
     });
   });
 
@@ -171,4 +175,17 @@ describe("duplicate titles in the same folder (#smwaixfp)", () => {
     expect(sections.createBoard).toMatchObject({ kind: "create-board", label: "Create whiteboard “Roadmap 2027”", title: "Roadmap 2027" });
     expect(searchSections([], pages, pages[0]!.title).createBoard).toBeNull();
   });
+
+  it("offers Today and New page from template when asked (#5hrsrqsj)", () => {
+    expect(wantsToday("tod")).toBe(true);
+    expect(wantsToday("daily")).toBe(true);
+    expect(wantsToday("to")).toBe(false);
+    expect(wantsPageTemplate("template")).toBe(true);
+    expect(wantsPageTemplate("new page from templ")).toBe(true);
+    // "new page" alone is the create row, not a template.
+    expect(wantsPageTemplate("new page")).toBe(false);
+    expect(searchSections([], [], "today").today?.kind).toBe("today");
+    expect(searchSections([], [], "template").pageTemplate?.kind).toBe("page-template");
+  });
 });
+

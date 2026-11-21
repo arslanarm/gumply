@@ -55,6 +55,7 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
       'Move to…',
       'Add whiteboard inside',
       'Add database view inside',
+      'New page from template…',
       'Delete page',
     ]);
     // Right-click didn't open the page.

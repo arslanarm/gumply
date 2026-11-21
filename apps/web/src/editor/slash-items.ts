@@ -3,12 +3,13 @@
  * values (UI contract in wiki `spec/e2e-tests`).
  */
 import { requestDatabase } from "./base-embed/actions.js";
-import type { Editor, Range } from "@tiptap/core";
+import { createNodeFromContent, type Editor, type Range } from "@tiptap/core";
 import { requestAttachmentPicker } from "./attachments/store.js";
 import { requestEmojiPicker } from "./emoji/store.js";
 import { requestWhiteboard } from "./whiteboard-link.js";
 import { t } from "../i18n/index.js";
 import { requestPagePreviewPicker } from "./wikilink/suggestion-extension.js";
+import { requestPageTemplate } from "./page-template.js";
 
 export interface SlashItem {
   key: string;
@@ -327,6 +328,34 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
       requestWhiteboard({ pickTemplate: true });
+    },
+  },
+  {
+    key: "page-template",
+    get title() {
+      return t("slash.pageTemplate.title");
+    },
+    get hint() {
+      return t("slash.pageTemplate.hint");
+    },
+    // "template" finds both this and "Board from template…" (#5hrsrqsj).
+    get keywords() {
+      return withLocalKeywords(["template", "templates", "page", "insert"], t("slash.pageTemplate.keywords"));
+    },
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      const at = editor.state.selection.from;
+      requestPageTemplate({
+        empty: editor.isEmpty,
+        // As blocks: tiptap-markdown's insertContentAt would parse a string
+        // inline (one paragraph with line breaks). An empty line is replaced.
+        insert: (markdown) => {
+          const storage = editor.storage as unknown as { markdown?: { parser?: { parse(text: string): string } } };
+          const html = storage.markdown?.parser?.parse(markdown) ?? markdown;
+          const fragment = createNodeFromContent(html, editor.schema, { parseOptions: editor.options.parseOptions });
+          editor.chain().focus().insertContentAt(at, fragment).run();
+        },
+      });
     },
   },
   {
