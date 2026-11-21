@@ -76,6 +76,8 @@ export interface UpdatePageInput {
   expectedUpdated?: string;
   /** User chose "Keep mine" after a conflict. */
   force?: boolean;
+  /** Opaque id of the editor sending this (see `ownWrite`). */
+  writer?: string;
 }
 
 export interface CreateBoardInput {
@@ -91,6 +93,7 @@ export interface UpdateBoardInput {
   tags?: string[];
   expectedUpdated?: string;
   force?: boolean;
+  writer?: string;
 }
 
 export interface GraphOptions {
@@ -107,6 +110,13 @@ const MAX_TAGS = 200;
 /** Page plus the bits of on-disk state the index needs. */
 interface PageRecord extends Omit<Page, "childCount"> {
   filePath: string;
+  /**
+   * Our last write of this file (#3t6v62cb, #d5e4mawv): its version, the
+   * version it replaced, and which editor sent it. That editor may still send
+   * the replaced version (its save that went out while this one was in
+   * flight, e.g. on page exit); nobody else may.
+   */
+  ownWrite?: { version: string; replaced: string; writer: string };
   /** File mtime at the last read/write, for conditional saves. */
   fileMtimeMs: number;
   /** Frontmatter tags only; `tags` is this plus inline tags. */
@@ -207,6 +217,27 @@ function matchesTitleSegment(segment: string, title: string): boolean {
   if (a === b) return true;
   if (!a.startsWith(`${b} `)) return false;
   return /^[2-9]\d*$|^1\d+$/.test(a.slice(b.length + 1));
+}
+
+/**
+ * A file's version string from its mtime (#d5e4mawv). One rule everywhere:
+ * `new Date(ms)` truncates the sub-millisecond part, while Node's
+ * `stats.mtime` rounds it, so mixing the two made our own write look like an
+ * outside change whenever the fraction was ≥ 0.5 ms.
+ */
+function mtimeVersion(mtimeMs: number): string {
+  return new Date(Math.floor(mtimeMs)).toISOString();
+}
+
+/**
+ * Does a save's `expectedUpdated` match the file as it is? The current
+ * version, or — for the editor that made our last write, while the file is
+ * still exactly that write — the version that write replaced.
+ */
+function versionMatches(record: { updated: string; ownWrite?: { version: string; replaced: string; writer: string } }, expected: string | undefined, writer: string | undefined): boolean {
+  if (expected === undefined || expected === record.updated) return true;
+  const own = record.ownWrite;
+  return own !== undefined && writer !== undefined && own.writer === writer && own.version === record.updated && own.replaced === expected;
 }
 
 function toIso(value: unknown): string | undefined {
@@ -445,6 +476,11 @@ export class VaultStore {
       if (moved.content === oldRecord.content) externalMoves.push({ from: oldId, to: moved.id });
     }
     for (const id of next.keys()) this.redirects.delete(id);
+    // A re-read of our own last write (unchanged on disk) keeps knowing it.
+    for (const [id, record] of next) {
+      const own = this.pages.get(id)?.ownWrite;
+      if (own && own.version === record.updated) record.ownWrite = own;
+    }
 
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
@@ -968,7 +1004,7 @@ export class VaultStore {
       info = null;
     }
     const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
-    const versionChanged = patch.expectedUpdated !== undefined && patch.expectedUpdated !== record.updated;
+    const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     let conflictBackup: string | undefined;
     if (mtimeChanged || versionChanged) {
       if (!patch.force) throw conflict("This whiteboard changed on disk.");
@@ -1014,7 +1050,10 @@ export class VaultStore {
     const targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle, "whiteboard") : id;
     board = withBoardTitle(board, nextTitle, boardStem(targetId));
 
+    const replaced = record.updated;
     const repairBackup = await this.saveBoardRecord(record, board);
+    if (patch.writer) record.ownWrite = { version: record.updated, replaced, writer: patch.writer };
+    else delete record.ownWrite;
 
     const rewrittenPages: PageId[] = [];
     if (titleChanged) {
@@ -1062,7 +1101,7 @@ export class VaultStore {
     record.board = board;
     record.content = canvasText(board);
     record.fileMtimeMs = stats.mtimeMs;
-    record.updated = stats.mtime.toISOString();
+    record.updated = mtimeVersion(stats.mtimeMs);
     record.fmTags = normalizeTags(meta.tags);
     if (meta.icon) record.icon = meta.icon;
     else delete record.icon;
@@ -1086,8 +1125,7 @@ export class VaultStore {
       info = null;
     }
     const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
-    const versionChanged =
-      patch.expectedUpdated !== undefined && patch.expectedUpdated !== record.updated;
+    const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     const changedOnDisk = mtimeChanged || versionChanged;
 
     let conflictBackup: string | undefined;
@@ -1156,8 +1194,11 @@ export class VaultStore {
     record.title = nextTitle;
     record.content = nextContent;
     // A plain note has no `updated:` key; its version is the file time.
-    record.updated = written.frontmatter ? updated : new Date(fileMtimeMs).toISOString();
+    const replaced = record.updated;
+    record.updated = written.frontmatter ? updated : mtimeVersion(fileMtimeMs);
     record.fileMtimeMs = fileMtimeMs;
+    if (patch.writer) record.ownWrite = { version: record.updated, replaced, writer: patch.writer };
+    else delete record.ownWrite;
     record.explicitTitle = record.explicitTitle || written.titleKey;
     record.fmTags = fmTags;
     if (nextIcon) record.icon = nextIcon;
@@ -1246,7 +1287,7 @@ export class VaultStore {
       other.content = result.content;
       other.updated = otherWritten.frontmatter
         ? rewrittenAt
-        : new Date(otherWritten.mtimeMs).toISOString();
+        : mtimeVersion(otherWritten.mtimeMs);
       other.fileMtimeMs = otherWritten.mtimeMs;
       this.refreshTags(other);
       rewritten.push(other.id);
@@ -1393,7 +1434,7 @@ export class VaultStore {
         titleFromId(record.id),
       );
       record.content = next;
-      record.updated = written.frontmatter ? at : new Date(written.mtimeMs).toISOString();
+      record.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
       record.fileMtimeMs = written.mtimeMs;
       changed.push(record.id);
     }
@@ -1756,7 +1797,7 @@ export class VaultStore {
     const stats = await stat(absolute);
 
     const created = toIso(frontmatter.created) ?? stats.birthtime.toISOString();
-    const mtime = stats.mtime.toISOString();
+    const mtime = mtimeVersion(stats.mtimeMs);
     const fmUpdated = toIso(frontmatter.updated);
     // External editors don't rewrite frontmatter. The newer of frontmatter and
     // file mtime is the version clients use for conditional saves.
@@ -1816,7 +1857,7 @@ export class VaultStore {
       tags: [],
       parentId: null,
       created: stats.birthtime.toISOString(),
-      updated: stats.mtime.toISOString(),
+      updated: mtimeVersion(stats.mtimeMs),
       content: canvasText(board),
       filePath: absolute,
       fileMtimeMs: stats.mtimeMs,
