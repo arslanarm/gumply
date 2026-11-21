@@ -903,7 +903,8 @@
     "newPageHere": "Новая страница здесь",
     "newBoardHere": "Новая доска здесь",
     "empty": "Эта папка пуста.",
-    "contentsOf": "В папке «{{title}}»"
+    "contentsOf": "В папке «{{title}}»",
+    "noPagesYet": "Здесь пока нет страниц."
   },
   "format": {
     "bold": "Жирный",

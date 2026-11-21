@@ -1629,11 +1629,11 @@ export function App() {
               ) : selectedId === null ? (
                 <div className="empty-state" data-testid="empty-state">
                   <span className="empty-state-icon" aria-hidden="true">
-                    <Icon name={pages.length === 0 ? "file" : "search"} size={26} />
+                    <Icon name={documentPages.length === 0 ? "file" : "search"} size={26} />
                   </span>
-                  <h2>{pages.length === 0 ? t("empty.noPages") : t("empty.noSelection")}</h2>
+                  <h2>{documentPages.length === 0 ? t("empty.noPages") : t("empty.noSelection")}</h2>
                   <p>
-                    {pages.length === 0
+                    {documentPages.length === 0
                       ? t("empty.noPagesHint")
                       : t("empty.noSelectionHint")}
                   </p>

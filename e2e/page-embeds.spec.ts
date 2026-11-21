@@ -1,11 +1,19 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
+import { E2E_VAULT } from './support/env';
 
 /**
  * Page previews (#5dpxwac4): `![[Page]]`, `![[Page#Heading]]`, `![[Page#^id]]`
  * as live, read-only blocks. Insert, live update, Open, block links, missing
  * parts, loops and byte-for-byte files.
  */
+
+/** A note's body on disk, after its frontmatter: the exact bytes (#5fv7c25w). */
+async function bodyOnDisk(file: string): Promise<string> {
+  return (await readFile(path.join(E2E_VAULT, file), 'utf8')).replace(/^---\n[\s\S]*?\n---\n\n/, '');
+}
 
 const ROADMAP = [
   '# Roadmap',
@@ -58,7 +66,7 @@ test.describe('page previews (#5dpxwac4)', () => {
     await expect(embed.getByTestId('page-embed-body')).not.toContainText('Time is short');
     await expect(embed.locator('input[type="checkbox"]')).toHaveCount(2);
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
-    expect((await api.getPage(request, 'Notes')).content.trimEnd()).toBe('Weekly notes.\n\n![[Roadmap#Goals]]');
+    expect((await api.getPage(request, 'Notes')).content).toBe('Weekly notes.\n\n![[Roadmap#Goals]]');
   });
 
   test('typing ![[Page#^ offers the blocks of the page; the preview is live', async ({ page, request, vault }) => {
@@ -169,14 +177,14 @@ test.describe('page previews (#5dpxwac4)', () => {
     await page.keyboard.press('End');
     await page.keyboard.type(' More.');
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
-    // (The final newline isn't kept by any page save today: not this feature.)
-    expect((await api.getPage(request, 'Notes')).content.trimEnd()).toBe(source.replace('Intro.', 'Intro. More.').trimEnd());
+    // The file on disk, byte for byte (its final newline included, #5fv7c25w).
+    expect(await bodyOnDisk('Notes.md')).toBe(source.replace('Intro.', 'Intro. More.'));
   });
 
   test('renaming the source keeps every embed working', async ({ page, request, vault }) => {
     await vault.seed([{ title: 'Roadmap', content: ROADMAP }, { title: 'Notes', content: '![[Roadmap#Goals]]\n\n![[Roadmap#^risk]]\n' }]);
     await api.updatePage(request, 'Roadmap', { title: 'Plan' });
-    expect((await api.getPage(request, 'Notes')).content).toBe('![[Plan#Goals]]\n\n![[Plan#^risk]]\n');
+    expect(await bodyOnDisk('Notes.md')).toBe('![[Plan#Goals]]\n\n![[Plan#^risk]]\n');
     await openPage(page, 'Notes');
     await expect(page.getByTestId('page-embed-body')).toHaveCount(2);
   });

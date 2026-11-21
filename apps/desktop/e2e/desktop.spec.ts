@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import type { ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +30,40 @@ test.beforeEach(() => {
   vault = join(scratch, 'vault');
   userData = join(scratch, 'user-data');
 });
-test.afterEach(() => rmSync(scratch, { recursive: true, force: true }));
+test.afterEach(() => {
+  // A test that failed or timed out never leaves its app running (#qq2snvfh):
+  // stop exactly the Electron processes this file started.
+  for (const child of launched.values()) stopProcess(child);
+  launched.clear();
+  rmSync(scratch, { recursive: true, force: true });
+});
+
+/** Every app `launch` started, with its own child process (taken while it runs). */
+const launched = new Map<ElectronApplication, ChildProcess>();
+
+function stopProcess(child: ChildProcess): void {
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+}
+
+/**
+ * Quit the app (or close its window) and wait for it to exit (#qq2snvfh).
+ * A loaded machine gets a full minute; if it still doesn't exit, it is
+ * stopped before the error is reported.
+ */
+async function quitAndWait(app: ElectronApplication, how: 'quit' | 'close-window'): Promise<void> {
+  const closed = app.waitForEvent('close', { timeout: 60_000 });
+  if (how === 'quit') await app.evaluate(({ app: electronApp }) => electronApp.quit());
+  else await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
+  try {
+    await closed;
+  } catch (error) {
+    const child = launched.get(app);
+    if (child) stopProcess(child);
+    throw error;
+  } finally {
+    launched.delete(app);
+  }
+}
 
 /** Variables that would let the app reach the user's real session or files. */
 // Every XDG_* variable is dropped (and the dirs replaced below), plus these.
@@ -80,6 +114,7 @@ async function launch(env: Record<string, string> = {}): Promise<{ app: Electron
       ...env,
     },
   });
+  launched.set(app, app.process());
   const window = await app.firstWindow();
   return { app, window };
 }
@@ -401,18 +436,21 @@ test('reports the installed app version, not the source default (#2d683n79)', as
 });
 
 test('quitting right after typing keeps the words, in a page and in a sticky (#3t6v62cb)', async () => {
+  // Two launches and two quits: room for a loaded machine (#qq2snvfh).
+  test.setTimeout(180_000);
   const first = await launch({ GUMPLY_DESKTOP_VAULT: vault });
   {
     const { app, window } = first;
     await expectPageTitle(window, 'Welcome');
     const body = window.getByTestId('editor').locator('.ProseMirror');
+    // The editor is ready for keys before we type (a slow start loses none).
+    await expect(body).toHaveAttribute('contenteditable', 'true');
     await body.click();
     await window.keyboard.press('Control+End');
     await window.keyboard.type(' Typed right before quitting.');
+    await expect(body).toContainText('Typed right before quitting.');
     // Ctrl+Q at once: well within the 600 ms autosave debounce.
-    const closed = app.waitForEvent('close');
-    await app.evaluate(({ app: electronApp }) => electronApp.quit());
-    await closed;
+    await quitAndWait(app, 'quit');
   }
   expect(readFileSync(join(vault, 'Welcome.md'), 'utf8')).toContain('Typed right before quitting.');
 
@@ -430,9 +468,8 @@ test('quitting right after typing keeps the words, in a page and in a sticky (#3
     if (!box) throw new Error('no board');
     await window.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
     await window.keyboard.type('Book flights');
-    const closed = app.waitForEvent('close');
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
-    await closed;
+    await expect(window.getByTestId('board-text-editor')).toHaveValue('Book flights');
+    await quitAndWait(app, 'close-window');
   }
   const saved = JSON.parse(readFileSync(join(vault, 'Trip.canvas'), 'utf8')) as { nodes: Array<{ text?: string }> };
   expect(saved.nodes.map((node) => node.text)).toEqual(['Book flights']);
@@ -488,6 +525,7 @@ test('trash: "Show in file manager" reveals the trashed file and never opens it 
 });
 
 test('UI preferences survive a relaunch on another port: theme, sidebar, a board view (#c7fzzxk8)', async () => {
+  test.setTimeout(180_000); // two launches and a quit (#qq2snvfh)
   let savedView = '';
   {
     const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
@@ -513,9 +551,7 @@ test('UI preferences survive a relaunch on another port: theme, sidebar, a board
       .poll(() => window.evaluate(() => localStorage.getItem('gumply:board-view:Trip.canvas')))
       .not.toBeNull();
     savedView = (await window.evaluate(() => localStorage.getItem('gumply:board-view:Trip.canvas')))!;
-    const closed = app.waitForEvent('close');
-    await app.evaluate(({ app: electronApp }) => electronApp.quit());
-    await closed;
+    await quitAndWait(app, 'quit');
   }
   const settings = JSON.parse(readFileSync(join(userData, 'gumply-desktop.json'), 'utf8')) as { uiState: Record<string, string> };
   expect(settings.uiState).toMatchObject({ 'gumply:theme': 'dark', 'gumply:sidebar': 'closed', 'gumply:board-view:Trip.canvas': savedView });

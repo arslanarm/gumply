@@ -889,7 +889,8 @@
     "newPageHere": "New page here",
     "newBoardHere": "New whiteboard here",
     "empty": "This folder is empty.",
-    "contentsOf": "In {{title}}"
+    "contentsOf": "In {{title}}",
+    "noPagesYet": "No pages here yet."
   },
   "format": {
     "bold": "Bold",
