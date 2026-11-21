@@ -76,14 +76,19 @@ export function normalizeTags(value: unknown): string[] {
 
 /**
  * Parse a note file into frontmatter + Markdown body.
- * Files without a complete frontmatter block are returned unchanged.
+ * Files without a complete frontmatter block are the body as a whole.
+ *
+ * The body never carries the file's final line terminator or trailing blank
+ * lines (#5fv7c25w): every note, with or without frontmatter, reads the same
+ * way, and what the editor saves compares equal. The file's own ending (LF,
+ * CRLF, or none) is kept on write by `serializeNoteLike`.
  */
 export function parseFrontmatter(raw: string): ParsedNote {
   const text = raw.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
   const lines = text.split("\n");
 
   if (lines.length === 0 || !FRONTMATTER_FENCE.test(lines[0] ?? "")) {
-    return { frontmatter: {}, content: text };
+    return { frontmatter: {}, content: text.replace(/\s+$/, "") };
   }
 
   let end = -1;
@@ -93,7 +98,7 @@ export function parseFrontmatter(raw: string): ParsedNote {
       break;
     }
   }
-  if (end === -1) return { frontmatter: {}, content: text };
+  if (end === -1) return { frontmatter: {}, content: text.replace(/\s+$/, "") };
 
   const frontmatter: Frontmatter = {};
   const yamlLines = lines.slice(1, end);

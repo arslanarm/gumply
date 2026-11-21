@@ -1,4 +1,4 @@
-import { stat, utimes, writeFile } from "node:fs/promises";
+import { readFile, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanupVaults, createTestServer } from "./helpers";
@@ -81,7 +81,9 @@ describe("a save sent while our previous one was in flight (#3t6v62cb exit save)
     await writeFile(join(dir, "Plain.md"), "outside edit\n");
     await store.rescan();
     await expect(store.update("Plain", { content: "exit save\n", expectedUpdated: v0.updated, writer: "tab-a" })).rejects.toMatchObject({ status: 409 });
-    expect(store.get("Plain").content).toBe("outside edit\n");
+    // `content` never carries the final newline (#5fv7c25w); the file keeps it.
+    expect(store.get("Plain").content).toBe("outside edit");
+    expect(await readFile(join(dir, "Plain.md"), "utf8")).toBe("outside edit\n");
   });
 
   it("boards follow the same rule", async () => {
