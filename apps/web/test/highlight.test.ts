@@ -94,3 +94,18 @@ describe("escaping a literal ==x== (#bg3cb83t, @opus-editor)", () => {
     expect(render("=\\=x==")).toBe("==x==");
   });
 });
+
+describe("@opus-hunter's bisect lines read the same as Obsidian (#bg3cb83t)", () => {
+  it.each([
+    ["a == b", "a == b"],
+    // `c==` pairs with the closing `==`; `\\=` is a literal `=` before the next one.
+    ["c==d and \\==literal== here.", "c<mark>d and ==literal</mark> here."],
+    ["c==d, `==code==` and \\==literal== here.", "c<mark>d, <code>==code==</code> and ==literal</mark> here."],
+    ["\\==literal== alone", "==literal== alone"],
+    ["c==d plus `code`", "c==d plus <code>code</code>"],
+    ["x==y and ==real==", "x==y and <mark>real</mark>"],
+    ["price==10 and later price==20", "price<mark>10 and later price</mark>20"],
+  ])("%s", (source, html) => {
+    expect(render(source)).toBe(html);
+  });
+});

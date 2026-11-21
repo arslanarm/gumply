@@ -155,6 +155,12 @@ test.describe('selection toolbar', () => {
       'Some ==highlighted== text, a == b, **==bold mark==**, `==code==` and \\==literal==.',
       'c==d and \\==literal== here.',
       'c==d, `==code==` and \\==literal== here.',
+      // @opus-hunter's other bisect lines (all byte-exact before the fix too).
+      'a == b',
+      '\\==literal== alone',
+      'c==d plus `code`',
+      'x==y and ==real==',
+      'price==10 and later price==20',
       // Code inside an outer mark keeps it (TipTap's code mark used to drop it).
       '**bold with `code` inside** and ==mark with `code`==.',
       'Other',
