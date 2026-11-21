@@ -37,15 +37,15 @@ function appBooted(): boolean {
   return tree !== null && tree.querySelector(':scope > .tree-note') === null;
 }
 
-/** The app itself: same origin as the suite's web server, at `/` (any hash). */
-export function isAppUrl(url: string): boolean {
+/** The app itself: same origin as `base` (the suite's web server), at `/` (any hash). */
+export function isAppUrl(url: string, base: string = BASE_URL): boolean {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return false;
   }
-  return parsed.origin === new URL(BASE_URL).origin && (parsed.pathname === '/' || parsed.pathname === '/index.html');
+  return parsed.origin === new URL(base).origin && (parsed.pathname === '/' || parsed.pathname === '/index.html');
 }
 
 /** Wait until the app has booted, within the load-aware page-open budget. */
@@ -70,18 +70,21 @@ export async function waitForAppBoot(page: Page, testInfo: TestInfo, what: strin
   }
 }
 
-/** Make `page.goto` / `page.reload` wait for the app to boot (see above). */
-export function waitForBootOnNavigation(page: Page, testInfo: TestInfo): void {
+/**
+ * Make `page.goto` / `page.reload` wait for the app to boot (see above).
+ * `base` is the app's URL: the suite's web server, or e.g. the demo spec's own app.
+ */
+export function waitForBootOnNavigation(page: Page, testInfo: TestInfo, base: string = BASE_URL): void {
   const goto = page.goto.bind(page);
   page.goto = async (url, options) => {
     const response = await goto(url, options);
-    if (options?.waitUntil === undefined && isAppUrl(page.url())) await waitForAppBoot(page, testInfo, `goto ${url}`);
+    if (options?.waitUntil === undefined && isAppUrl(page.url(), base)) await waitForAppBoot(page, testInfo, `goto ${url}`);
     return response;
   };
   const reload = page.reload.bind(page);
   page.reload = async (options) => {
     const response = await reload(options);
-    if (options?.waitUntil === undefined && isAppUrl(page.url())) await waitForAppBoot(page, testInfo, 'reload');
+    if (options?.waitUntil === undefined && isAppUrl(page.url(), base)) await waitForAppBoot(page, testInfo, 'reload');
     return response;
   };
 }
