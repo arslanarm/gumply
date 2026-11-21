@@ -7,6 +7,7 @@ import {
   parentOf,
   pathToPageId,
   slugify,
+  legacySlugTitle,
   titleFromId,
   uniqueId,
 } from "../src/index";
@@ -35,14 +36,18 @@ describe("slugify", () => {
 });
 
 describe("titleFromId", () => {
-  it("uses the last path segment and makes it readable", () => {
-    expect(titleFromId("projects/gumply-notes")).toBe("Gumply notes");
-    expect(titleFromId("my_page")).toBe("My page");
-    expect(titleFromId("notes")).toBe("Notes");
-    // Daily notes and other date-like names keep their hyphens (#5hrsrqsj).
+  it("is the file name verbatim, as Obsidian shows it (#bayuasqq)", () => {
+    expect(titleFromId("projects/gumply-notes")).toBe("gumply-notes");
+    expect(titleFromId("my_page")).toBe("my_page");
+    expect(titleFromId("notes")).toBe("notes");
+    expect(titleFromId("README")).toBe("README");
     expect(titleFromId("Daily/2026-03-06")).toBe("2026-03-06");
-    expect(titleFromId("2026_03")).toBe("2026_03");
     expect(titleFromId("projects/Q1 plan")).toBe("Q1 plan");
+  });
+
+  it("keeps the old readable form only for link resolution", () => {
+    expect(legacySlugTitle("projects/gumply-notes")).toBe("Gumply notes");
+    expect(legacySlugTitle("my_page")).toBe("My page");
   });
 
   it("falls back to Untitled", () => {

@@ -36,6 +36,7 @@ export {
   parentOf,
   pathToPageId,
   slugify,
+  legacySlugTitle,
   titleFromId,
   uniqueId,
 } from "./ids.js";
