@@ -49,6 +49,13 @@ export function hasUnsavedChanges(): boolean {
 }
 
 /** Flush everything and wait (at most `timeout`). True when all is saved. */
+/**
+ * How long close, quit and a vault switch wait for saves to be confirmed
+ * (#8zc7xkgq): a slow-but-fine save on a busy machine must not look like a
+ * failure ("couldn't be saved"); a really stuck one still does.
+ */
+export const EXIT_FLUSH_TIMEOUT = 10_000;
+
 export async function flushAllSaves(timeout = 3000): Promise<boolean> {
   const all = Promise.all([...savers].map((saver) => saver.flush().catch(() => undefined)));
   await Promise.race([all, new Promise((resolve) => setTimeout(resolve, timeout))]);
@@ -88,7 +95,7 @@ export function installUnloadGuards(): () => void {
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("beforeunload", onBeforeUnload);
   window.addEventListener("pagehide", onPageHide);
-  window.__gumplyFlush = () => flushAllSaves();
+  window.__gumplyFlush = () => flushAllSaves(EXIT_FLUSH_TIMEOUT);
   return () => {
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("beforeunload", onBeforeUnload);
