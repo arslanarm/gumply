@@ -3,7 +3,7 @@
  * Every change is a new config, saved by BaseView; what the builder can't
  * show as a rule is listed as an expression and kept as written.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BaseConfig, BaseView, BaseViewResult, PageMeta } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
@@ -700,16 +700,32 @@ function PropertiesPanel(props: {
   const order = Array.isArray(props.view.order) && props.view.order.length ? props.view.order.map(String) : ["file.name"];
   const normalised = order.map((id) => propertyId(id));
   const all = pickerProperties(props.config, props.result);
-  const shown = (id: string) => normalised.includes(id);
-  const visible = all.filter((id) => propertyLabel(id, props.config, t).toLowerCase().includes(query.trim().toLowerCase()));
+  const matches = (id: string) => propertyLabel(id, props.config, t).toLowerCase().includes(query.trim().toLowerCase());
+  // As in Notion: what the view shows (in its order), then the rest.
+  const shownIds = normalised.filter((id, index) => normalised.indexOf(id) === index && matches(id));
+  const hiddenIds = all.filter((id) => !normalised.includes(id) && matches(id));
   const toggle = (id: string) => {
     const index = normalised.indexOf(id);
     // Keep the ids as written in the file (`status` stays `status`).
     const next = index >= 0 ? order.filter((_, i) => i !== index) : [...order, writtenId(id)];
     props.onChange({ ...props.view, order: next });
   };
+  // A fade at the bottom while there's more to scroll to.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [more, setMore] = useState(false);
+  const measure = useCallback(() => {
+    const list = listRef.current;
+    setMore(!!list && list.scrollTop + list.clientHeight < list.scrollHeight - 2);
+  }, []);
+  useLayoutEffect(measure, [measure, shownIds.length, hiddenIds.length]);
+  const row = (id: string, checked: boolean) => (
+    <label className="base-check" key={id}>
+      <input type="checkbox" checked={checked} data-testid={`base-property-${id}`} onChange={() => toggle(id)} />
+      <span>{propertyLabel(id, props.config, t)}</span>
+    </label>
+  );
   return (
-    <Popover anchor={props.anchor} onClose={props.onClose} label={t("bases.properties")} testId="base-properties-panel">
+    <Popover anchor={props.anchor} onClose={props.onClose} label={t("bases.properties")} testId="base-properties-panel" className="is-properties">
       <input
         className="base-input"
         placeholder={t("bases.searchProperties")}
@@ -717,14 +733,19 @@ function PropertiesPanel(props: {
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      <div className="base-panel-title">{t("bases.shownProperties")}</div>
-      <div className="base-property-list">
-        {visible.map((id) => (
-          <label className="base-check" key={id}>
-            <input type="checkbox" checked={shown(id)} data-testid={`base-property-${id}`} onChange={() => toggle(id)} />
-            <span>{propertyLabel(id, props.config, t)}</span>
-          </label>
-        ))}
+      <div ref={listRef} className={`base-property-list${more ? " has-more" : ""}`} onScroll={measure} data-testid="base-property-list">
+        {shownIds.length ? (
+          <section className="base-property-section" data-testid="base-properties-shown">
+            <div className="base-panel-title">{t("bases.shownProperties")}</div>
+            {shownIds.map((id) => row(id, true))}
+          </section>
+        ) : null}
+        {hiddenIds.length ? (
+          <section className="base-property-section" data-testid="base-properties-hidden">
+            <div className="base-panel-title">{t("bases.hiddenProperties")}</div>
+            {hiddenIds.map((id) => row(id, false))}
+          </section>
+        ) : null}
       </div>
     </Popover>
   );
