@@ -35,6 +35,8 @@ const CASES: Record<string, string> = {
   'start number': 'Target paragraph.\n\n5. five\n6. six\n',
   'padded numbers': 'Target paragraph.\n\n 9. nine\n10. ten\n\nText\n\n9. nine\n10. ten\n',
   'star and plus bullets': 'Target paragraph.\n\n* star\n* two\n\nText\n\n+ plus\n+ two\n',
+  'plus bullets mixed': 'Target paragraph.\n\n+ item\n+ [ ] task\n+ more\n',
+  'different bullets are two lists': 'Target paragraph.\n\n- a\n\n* [ ] b\n\n+ c\n\n- [ ] d\n',
   'upper-case X': 'Target paragraph.\n\n- [X] done\n- [ ] open\n',
   'tab nesting': 'Target paragraph.\n\n- parent\n\t- tab nested\n\t- second\n- next\n',
   'lists separated by blank lines': 'Target paragraph.\n\n- a\n- b\n\nText\n\n- parent\n\t- tab nested\n\nMore\n\n- c\n',
