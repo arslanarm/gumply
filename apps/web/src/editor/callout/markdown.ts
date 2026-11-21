@@ -134,7 +134,10 @@ export function installCalloutRenderer(md: any): void {
   md.renderer.rules.gumply_callout_open = (tokens: any[], index: number) => {
     const meta = tokens[index].meta as CalloutHead & { source: string | null };
     const source = meta.source === null ? "" : ` ${CALLOUT_SOURCE_ATTR}="${escapeAttr(meta.source)}"`;
-    return `<div ${CALLOUT_ATTR}="${escapeAttr(meta.type)}" data-fold="${meta.fold}"${source}>\n`;
+    // #54prcupx: a callout written right under its previous sibling.
+    const join = tokens[index].attrGet?.("data-md-join");
+    const joined = join ? ` data-md-join="${escapeAttr(join)}"` : "";
+    return `<div ${CALLOUT_ATTR}="${escapeAttr(meta.type)}" data-fold="${meta.fold}"${source}${joined}>\n`;
   };
   md.renderer.rules.gumply_callout_close = () => "</div>\n";
   md.renderer.rules.gumply_callout_title_open = () => `<div ${CALLOUT_TITLE_ATTR}="">`;

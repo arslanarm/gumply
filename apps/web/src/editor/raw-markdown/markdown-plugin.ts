@@ -28,6 +28,7 @@
 import { calloutRule, installCalloutRenderer } from "../callout/markdown.js";
 import { markupRule } from "./markup.js";
 import { listSourceRule } from "./list-source.js";
+import { blockJoinRule, JOIN_ATTR } from "./block-joins.js";
 import { inlineImageRule } from "../attachments/inline-image.js";
 
 export const RAW_BLOCK_ATTR = "data-raw-md";
@@ -396,6 +397,7 @@ export function rawMarkdownPlugin(md: any): void {
   md.core.ruler.after("gumply_callouts", "gumply_raw_blocks", rawBlocksRule);
   md.core.ruler.after("gumply_raw_blocks", "gumply_markup", markupRule);
   md.core.ruler.after("gumply_markup", "gumply_list_source", listSourceRule);
+  md.core.ruler.after("gumply_list_source", "gumply_block_joins", blockJoinRule);
   md.core.ruler.after("inline", "gumply_break_style", breakStyleRule);
   md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
   if (md.core.ruler.__find__("text_join") !== -1) {
@@ -405,18 +407,23 @@ export function rawMarkdownPlugin(md: any): void {
   wrapLinkRules(md);
   wrapCodeSpans(md);
 
-  const block = (source: string, kind: string) =>
-    `<div ${RAW_BLOCK_ATTR}="${escapeAttr(source)}" data-raw-kind="${escapeAttr(kind)}"></div>`;
+  // #54prcupx: a raw block written right under its previous sibling.
+  const joinOf = (token: any) => {
+    const join = token.attrGet?.(JOIN_ATTR);
+    return join ? ` ${JOIN_ATTR}="${escapeAttr(join)}"` : "";
+  };
+  const block = (source: string, kind: string, token?: any) =>
+    `<div ${RAW_BLOCK_ATTR}="${escapeAttr(source)}" data-raw-kind="${escapeAttr(kind)}"${token ? joinOf(token) : ""}></div>`;
   const inline = (source: string, kind: string) =>
     `<span ${RAW_INLINE_ATTR}="${escapeAttr(source)}" data-raw-kind="${escapeAttr(kind)}"></span>`;
 
   installCalloutRenderer(md);
   md.renderer.rules.gumply_raw_block = (tokens: any[], index: number) =>
-    block(tokens[index].content, tokens[index].info);
+    block(tokens[index].content, tokens[index].info, tokens[index]);
   md.renderer.rules.gumply_raw_inline = (tokens: any[], index: number) =>
     inline(tokens[index].content, tokens[index].info);
   md.renderer.rules.html_block = (tokens: any[], index: number) =>
-    block(String(tokens[index].content).replace(/\n+$/, ""), "html");
+    block(String(tokens[index].content).replace(/\n+$/, ""), "html", tokens[index]);
   md.renderer.rules.html_inline = (tokens: any[], index: number) => {
     const content = String(tokens[index].content);
     // markdown-it-task-lists injects its checkbox as an html_inline token;

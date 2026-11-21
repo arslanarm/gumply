@@ -68,7 +68,15 @@ export function listSourceRule(state: any): void {
     }
 
     const inline = tokens[index + 2];
-    if (tokens[index + 1]?.type === "paragraph_open" && inline?.type === "inline" && /^\[X\][ \t]/.test(inline.content)) {
+    const paragraph = tokens[index + 1]?.type === "paragraph_open" && inline?.type === "inline";
+    // An empty task: `- [ ] ` with its trailing space is a task in Obsidian
+    // (without the space it's a bullet reading "[ ]"). markdown-it trims the
+    // line, so markdown-it-task-lists would miss it: give the space back
+    // (#54prcupx).
+    if (paragraph && /^\[[ xX]\]$/.test(inline.content) && /\[[ xX]\][ \t]+$/.test(line)) {
+      inline.content = `${inline.content} `;
+    }
+    if (paragraph && /^\[X\][ \t]/.test(inline.content)) {
       token.attrSet(CHECK_ATTR, "X");
     }
   });
