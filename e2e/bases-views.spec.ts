@@ -92,6 +92,10 @@ test.describe('database view layouts (D34)', () => {
     await expect(kanban.locator('.base-kanban-title > span:first-child')).toHaveText(['Todo', 'Doing', 'Done']);
     await expect(page.getByTestId('base-column-Todo').locator('.base-title-text')).toHaveText(['Alpha', 'Delta']);
     await expect(page.getByTestId('base-column-Done').locator('.base-title-text')).toHaveText(['Gamma']);
+    // As in Obsidian: each property's name, small, above its value.
+    const due = page.getByTestId('base-column-Done').getByTestId('base-card-prop-note.due');
+    await expect(due.locator('.base-card-prop-name')).toHaveText('due');
+    await expect(due.locator('.base-card-prop-value')).not.toBeEmpty();
     expect(await read('Work/Tasks.base')).toBe(BASE);
   });
 
@@ -115,6 +119,9 @@ test.describe('database view layouts (D34)', () => {
     const alpha = page.getByTestId('base-card-Work/Alpha');
     await expect(alpha.locator('.base-card-image')).toHaveCSS('background-color', 'rgb(42, 157, 143)');
     await expect(page.getByTestId('base-card-Work/Beta').locator('.base-card-image')).toHaveCount(0);
+    const status = alpha.getByTestId('base-card-prop-note.status');
+    await expect(status.locator('.base-card-prop-name')).toHaveText('status');
+    await expect(status.locator('.base-card-prop-value')).toHaveText('Todo');
 
     await page.getByTestId('base-settings-button').click();
     const size = page.getByTestId('base-setting-cardSize');
@@ -133,6 +140,11 @@ test.describe('database view layouts (D34)', () => {
     await page.getByTestId('base-setting-markers').selectOption('number');
     await expect(page.getByTestId('base-list')).toHaveJSProperty('tagName', 'OL');
     await expect.poll(() => read('Work/Tasks.base')).toContain('      - due\n    markers: number\n');
+    // Indented properties: a bullet with the value only, as in Obsidian.
+    await page.getByTestId('base-setting-indentProperties').check();
+    const item = page.getByTestId('base-item-Work/Alpha');
+    await expect(item.getByTestId('base-list-prop-note.status')).toHaveText('Todo');
+    await expect(item.locator('.base-list-props')).not.toContainText('status');
   });
 
   test('Calendar: pages on their day, two on one day, month navigation; undated ones counted', async ({ page, request, vault }) => {
@@ -210,4 +222,36 @@ test.describe('database view layouts (D34)', () => {
     await page.getByTestId(`base-new-on-${thisMonth}-20`).click();
     await expect.poll(() => read('Work/Untitled.md').catch(() => '')).toContain(`due: ${thisMonth}-20\n`);
   });
+
+  test('loading the app requests nothing that 404s (the favicon is served)', async ({ page, request, vault }) => {
+    void vault;
+    const missing: string[] = [];
+    page.on('response', (response) => {
+      if (response.status() === 404) missing.push(response.url());
+    });
+    await open(page, request, 'Table');
+    await expect(page.getByTestId('base-table')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    expect(missing).toEqual([]);
+    expect((await page.request.get('/favicon.svg')).headers()['content-type']).toContain('image/svg+xml');
+  });
+
+  for (const [kind, file, body, ready] of [
+    ['a database view', 'All.base', 'views:\n  - type: table\n    name: Table\n', 'base-page'],
+    ['a whiteboard', 'Map.canvas', '{"nodes":[],"edges":[]}', 'board-page'],
+  ] as const) {
+    test(`a vault that opens on ${kind} loads with no 404 (the page prefetch skips it)`, async ({ page, request, vault }) => {
+      void vault;
+      // Its only other item is a folder, so the first item is the one opened.
+      await writeVault(request, { [file]: body, 'Notes/Inside.md': 'Inside\n' });
+      const missing: string[] = [];
+      page.on('response', (response) => {
+        if (response.status() === 404) missing.push(response.url());
+      });
+      await page.goto('/');
+      await expect(page.getByTestId(ready)).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(missing).toEqual([]);
+    });
+  }
 });

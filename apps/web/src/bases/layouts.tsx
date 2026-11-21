@@ -72,8 +72,8 @@ export function ListView(props: LayoutProps) {
         <ul className="base-list-props">
           {columns.map((column) =>
             row.values[column.id] === null || row.values[column.id] === undefined ? null : (
-              <li key={column.id}>
-                <span className="base-prop-name">{propertyLabel(column.id, props.config, t)}</span>
+              // As in Obsidian: an indented bullet with the value only.
+              <li key={column.id} data-testid={`base-list-prop-${column.id}`}>
                 <ValueText value={row.values[column.id] ?? null} column={column} />
               </li>
             ),
@@ -136,8 +136,12 @@ function Card({ row, props, ratio }: { row: BaseRow; props: LayoutProps; ratio: 
           const value = row.values[column.id] ?? null;
           if (value === null || value === "" || (Array.isArray(value) && !value.length)) return null;
           return (
-            <div className="base-card-prop" key={column.id} title={propertyLabel(column.id, props.config, t)}>
-              <ValueText value={value} column={column} />
+            // As in Obsidian: the property's name, small, above its value.
+            <div className="base-card-prop" key={column.id} data-testid={`base-card-prop-${column.id}`}>
+              <span className="base-card-prop-name">{propertyLabel(column.id, props.config, t)}</span>
+              <span className="base-card-prop-value">
+                <ValueText value={value} column={column} />
+              </span>
             </div>
           );
         })}

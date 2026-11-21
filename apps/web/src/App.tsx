@@ -637,10 +637,14 @@ export function App() {
 
       const target = chooseLandingPage(list, newVaultPage);
       if (!target) return;
-      const request = api.getPage(target);
-      // A failure is handled where the request is used (the load effect).
-      request.catch(() => undefined);
-      landingPageRequest.current = { id: target, request };
+      // Only a page is prefetched: a board or a database view loads through
+      // its own endpoint, and `GET /pages/<id>` would 404 (#39mbij4a).
+      if (!isBoardId(target) && !isBaseId(target)) {
+        const request = api.getPage(target);
+        // A failure is handled where the request is used (the load effect).
+        request.catch(() => undefined);
+        landingPageRequest.current = { id: target, request };
+      }
       focusBodyAfterOpen.current = target === newVaultPage;
       navigate(target, true);
     })();
