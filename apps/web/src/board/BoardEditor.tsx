@@ -44,6 +44,8 @@ import {
 } from "react";
 import { currentModifierLabel, isTypingTarget } from "../lib/shortcuts.js";
 import { EDGE_TYPES } from "./BoardEdge.js";
+import { useBoardExport } from "./BoardExport.js";
+import { BoardMenu } from "./BoardMenu.js";
 import { ConnectorToolbar } from "./ConnectorToolbar.js";
 import { BOARD_DRAG_MIME } from "./constants.js";
 import { BoardActionsContext, BoardRenderersContext, type BoardActions, type BoardRenderers } from "./context.js";
@@ -517,6 +519,14 @@ function BoardCanvas(props: BoardEditorProps) {
     () => board.edges.filter((edge) => selection.edges.has(edge.id)).map((edge) => edge.id),
     [board, selection],
   );
+  // Export as PNG/SVG from the ⋯ menu (spec/v0-6 §D); errors use the board notice.
+  const exporter = useBoardExport({
+    boardId,
+    board,
+    selectedNodeIds,
+    rootRef,
+    onError: (message) => onUploadErrorRef.current?.(message),
+  });
   const selectedRef = useRef({ nodes: selectedNodeIds, edges: selectedEdgeIds });
   selectedRef.current = { nodes: selectedNodeIds, edges: selectedEdgeIds };
 
@@ -1635,6 +1645,10 @@ function BoardCanvas(props: BoardEditorProps) {
             </NodeToolbar>
             ) : null}
 
+            <Panel position="top-right">
+              <BoardMenu hasSelection={selectedNodeIds.length > 0} busy={exporter.busy} onExport={exporter.start} onOpen={exporter.preload} />
+            </Panel>
+
             <Panel position="bottom-right" className="board-zoom">
               <button type="button" className="board-zoom-button" aria-label="Zoom out" data-tooltip="Zoom out" data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
                 <BoardIcon name="minus" size={16} />
@@ -1791,6 +1805,8 @@ function BoardCanvas(props: BoardEditorProps) {
           ) : null}
 
           {toolbarEdge ? <ConnectorToolbar edge={toolbarEdge} rootRef={rootRef} layoutKey={board} /> : null}
+
+          {exporter.stage}
 
           {board.nodes.length === 0 ? (
             <div className="board-empty" data-testid="board-empty">

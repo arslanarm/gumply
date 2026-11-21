@@ -221,11 +221,45 @@ test('the native menu runs the in-app commands (New Page, New Whiteboard, Search
     await expect.poll(() => readdirSafe(vault)).toContain('Untitled.md');
 
     await click('new-whiteboard');
+    await window.getByTestId('template-blank').click();
     await expect(window.getByTestId('board-page')).toBeVisible();
     await expect.poll(() => readdirSafe(vault).some((name) => name.endsWith('.canvas'))).toBe(true);
 
     await click('search');
     await expect(window.getByRole('dialog')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+test('board export saves through the download handler; other downloads are refused (#yewapn9k)', async () => {
+  const downloads = join(scratch, 'downloads');
+  mkdirSync(downloads, { recursive: true });
+  // The test path skips the native Save dialog (it would wait for a click).
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault, GUMPLY_DESKTOP_DOWNLOAD_DIR: downloads });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    await window.getByTestId('new-board-button').click();
+    await window.getByTestId('template-kanban').click();
+    await expect(window.getByTestId('board-frame')).toHaveCount(3);
+    await window.keyboard.press('Escape');
+    await window.getByTestId('board-menu-button').click();
+    await window.getByTestId('board-export-png').click();
+    await expect.poll(() => readdirSafe(downloads)).toContain('Kanban.png');
+    await expect.poll(() => readFileSync(join(downloads, 'Kanban.png')).length).toBeGreaterThan(1000);
+    expect(readFileSync(join(downloads, 'Kanban.png')).subarray(1, 4).toString()).toBe('PNG');
+
+    // A download the app didn't make itself (here a data: URL) is refused.
+    await window.evaluate(() => {
+      const link = document.createElement('a');
+      link.href = 'data:text/plain,not-an-export';
+      link.download = 'other.txt';
+      document.body.append(link);
+      link.click();
+      link.remove();
+    });
+    await window.waitForTimeout(500);
+    expect(readdirSafe(downloads)).toEqual(['Kanban.png']);
   } finally {
     await app.close();
   }

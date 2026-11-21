@@ -29,7 +29,7 @@ import { pastedTablesToMarkdown } from "../editor/paste-table.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
-import { setBoardEmbedActions, setWhiteboardCreator } from "../editor/whiteboard-link.js";
+import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
@@ -108,10 +108,11 @@ export interface EditorProps {
   /** ArrowUp / Backspace at the very start of the body: go to the title. */
   onExitTop?: () => void;
   /**
-   * `/whiteboard` (and Create on a missing embed): create a board inside this
-   * page; resolves to it (or null).
+   * `/whiteboard`, `/template` and Create on a missing embed: create a board
+   * inside this page (from a template picked in the gallery with
+   * `pickTemplate`); resolves to it (or null).
    */
-  onCreateBoard?: (title?: string) => Promise<PageMeta | null>;
+  onCreateBoard?: (request: WhiteboardRequest) => Promise<PageMeta | null>;
   /** A click on an inline `#tag` chip (#ux5cukze). */
   onOpenTag?: (tag: string) => void;
   /** Show only (a page in the trash, #ppag3ugh): not editable, never saved. */
@@ -561,15 +562,15 @@ export function Editor({
   );
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
 
-  // `/whiteboard` → New board here: create the board, then embed it where
-  // the command was typed (D30).
+  // `/whiteboard` → New board here (and `/template`): create the board, then
+  // embed it where the command was typed (D30).
   useEffect(() => {
-    setWhiteboardCreator(() => {
+    setWhiteboardCreator((request) => {
       const instance = editorRef.current;
       const create = onCreateBoardRef.current;
       if (!instance || !create) return;
       const pos = instance.state.selection.from;
-      void create().then((board) => {
+      void create(request).then((board) => {
         const current = editorRef.current;
         if (!board || !current || current.isDestroyed) return;
         const pages = pagesRef.current.some((item) => item.id === board.id)
@@ -584,7 +585,7 @@ export function Editor({
       });
     });
     setBoardEmbedActions({
-      createBoard: async (title) => (await onCreateBoardRef.current?.(title)) ?? null,
+      createBoard: async (title) => (await onCreateBoardRef.current?.({ title })) ?? null,
     });
   }, []);
 

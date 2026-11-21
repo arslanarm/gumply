@@ -161,13 +161,20 @@ Miro-style boards that live in the page tree next to your pages (D25, spec in th
 
 **Create one** with **New whiteboard** in the sidebar, **Add whiteboard inside** in a page's ⋯ menu,
 `/whiteboard` in the editor (creates it inside the current page and links to it), or Cmd/Ctrl+K →
-**Create whiteboard “X”**. Boards can be renamed, moved, deleted and restored like pages; they have
+**Create whiteboard “X”**. New whiteboard opens a gallery: **Blank** or a template (Kanban, Mind
+map, Retrospective, Flowchart, Weekly plan), also reachable with `/template` and Cmd/Ctrl+K →
+**New board from template…**. A board made from a template is an ordinary `.canvas` file. Boards can be renamed, moved, deleted and restored like pages; they have
 no sub-pages.
 
 **On the board:** stickies, text, shapes, frames, connectors with labels, the pen, images and files,
 and page cards (drag a page from the sidebar onto the board). Shortcuts: V select, H hand, N sticky,
 T text, S shape, C/L connector, F frame, P pen, Shift+1 fit; `?` lists them all. Everything autosaves,
 and undo/redo covers every change.
+
+**Export:** the board's ⋯ menu exports the whole board or the selection as **PNG** (2×) or **SVG**,
+on the theme background or transparent. SVGs are plain vector files (shapes, connectors and real
+text, with the Inter font embedded), so they open the same in browsers and design tools. In the
+desktop app, export asks where to save the file.
 
 **Your files:** a board is a plain `<Title>.canvas` file in the open
 [JSON Canvas](https://jsoncanvas.org) format, written exactly as Obsidian writes it, so boards open
@@ -207,3 +214,6 @@ See the team wiki (`plan`, `decisions`, `spec/api`) for the API contract and roa
 ## License
 
 [MIT](LICENSE) © 2026 Arslan Armanuly
+
+Third-party fonts: board exports embed [Inter](https://github.com/rsms/inter) (© The Inter Project
+Authors), under the SIL Open Font License 1.1: see `apps/web/src/board/export/fonts/OFL.txt`.

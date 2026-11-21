@@ -23,13 +23,15 @@ export interface QuickSwitcherProps {
   onCreate: (title: string) => void;
   /** `Create whiteboard “X”`; without it the row isn't offered. */
   onCreateBoard?: (title: string) => void;
+  /** `New board from template…`: opens the template gallery (spec/v0-6 §D). */
+  onNewFromTemplate?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
 }
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
-export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose, initialQuery = "" }: QuickSwitcherProps) {
+export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onClose, initialQuery = "" }: QuickSwitcherProps) {
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -84,10 +86,11 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose,
     () =>
       needle.length > 0
         ? searchSections(visibleResults, pages, query)
-        : { pages: [], text: [], create: null, createBoard: null },
+        : { pages: [], text: [], create: null, createBoard: null, fromTemplate: null },
     [visibleResults, pages, query, needle],
   );
 
+  const fromTemplate = onNewFromTemplate ? sections.fromTemplate : null;
   const rows: SearchRow[] =
     needle.length > 0
       ? [
@@ -95,6 +98,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose,
           ...sections.text,
           ...(sections.create ? [sections.create] : []),
           ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
+          ...(fromTemplate ? [fromTemplate] : []),
         ]
       : recents;
 
@@ -114,6 +118,10 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose,
     if (!row) return;
     if (row.kind === "create") {
       if (row.title) onCreate(row.title);
+      return;
+    }
+    if (row.kind === "from-template") {
+      onNewFromTemplate?.();
       return;
     }
     if (row.kind === "create-board") {
@@ -159,7 +167,13 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose,
         aria-selected={active}
         className={`quick-switcher-option${active ? " is-active" : ""}`}
         data-testid={
-          row.page ? `search-result-${row.page.id}` : row.kind === "create-board" ? "search-create-board" : "search-create"
+          row.page
+            ? `search-result-${row.page.id}`
+            : row.kind === "create-board"
+              ? "search-create-board"
+              : row.kind === "from-template"
+                ? "search-from-template"
+                : "search-create"
         }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
@@ -173,7 +187,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose,
         <span className="quick-switcher-icon" aria-hidden="true">
           {row.kind === "create" ? (
             <Icon name="plus" size={16} />
-          ) : row.kind === "create-board" ? (
+          ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
           ) : row.page?.icon ? (
             row.page.icon
@@ -271,7 +285,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose,
                   )}
                 </>
               ) : null}
-              {!searching && sections.pages.length === 0 && sections.text.length === 0 ? (
+              {!searching && sections.pages.length === 0 && sections.text.length === 0 && !fromTemplate ? (
                 <p className="quick-switcher-empty" data-testid="search-empty">
                   {pages.length === 0 ? "No pages yet." : `No pages match “${needle}”`}
                 </p>
@@ -286,6 +300,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onClose,
                     sections.pages.length + sections.text.length + (sections.create ? 1 : 0),
                   )
                 : null}
+              {fromTemplate ? renderRow(fromTemplate, rows.length - 1) : null}
             </>
           )}
         </div>
