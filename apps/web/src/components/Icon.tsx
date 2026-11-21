@@ -56,12 +56,49 @@ export type IconName =
   | "externalLink"
   | "unlink"
   | "text"
+  // Database views (D34, #sg36ng2d).
+  | "database"
+  | "filter"
+  | "sort"
+  | "kanban"
+  | "cards"
   // Property types (v0.7 A); "calendar" is shared with daily notes.
   | "hash"
   | "clock"
   | "tag";
 
 const ICONS: Record<IconName, ReactNode> = {
+  // A database view: a table of pages (spec/api-bases).
+  database: (
+    <>
+      <ellipse cx="12" cy="5" rx="8" ry="3" />
+      <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+      <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
+    </>
+  ),
+  filter: <path d="M3 5h18l-7 8.5V19l-4 2v-7.5z" />,
+  sort: (
+    <>
+      <path d="m3 8 4-4 4 4" />
+      <path d="M7 4v16" />
+      <path d="m21 16-4 4-4-4" />
+      <path d="M17 20V4" />
+    </>
+  ),
+  kanban: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M8 7v7M12 7v4M16 7v9" />
+    </>
+  ),
+  cards: (
+    <>
+      <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
+    </>
+  ),
   bold: <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />,
   italic: (
     <>

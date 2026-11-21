@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { BOARD_DRAG_MIME } from "../board/constants.js";
 import { isBoard, vaultPathOf } from "../lib/boards.js";
+import { isBase } from "../lib/bases.js";
 import { canMovePage, type PageTreeNode } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { useT } from "../i18n/index.js";
@@ -23,6 +24,8 @@ export interface PageItemProps {
   onCreateChild: (id: PageId) => void;
   /** "Add whiteboard inside" (spec/whiteboard §4). */
   onCreateBoardChild: (id: PageId) => void;
+  /** "Add database view inside" (D34). */
+  onCreateBaseChild?: (id: PageId) => void;
   onDelete: (id: PageId) => void;
   onToggle: (id: PageId) => void;
   onStartMove: (id: PageId) => void;
@@ -51,6 +54,9 @@ function PageItemRow(props: PageItemProps) {
   const t = useT();
   const { node, depth, pages, selectedId, renamingId, draggingId, toggled } = props;
   const page = node.page;
+  const base = isBase(page);
+  // Boards and database views have no sub-pages (D25, D34).
+  const leaf = isBoard(page) || base;
   const board = isBoard(page);
   const folder = page.kind === "folder";
   const hasChildren = node.children.length > 0;
@@ -247,6 +253,10 @@ function PageItemRow(props: PageItemProps) {
               <span className="page-icon page-icon-board" data-testid={`board-icon-${page.id}`} aria-hidden="true">
                 <Icon name="board" size={15} />
               </span>
+            ) : base ? (
+              <span className="page-icon page-icon-board" data-testid={`base-icon-${page.id}`} aria-hidden="true">
+                <Icon name="database" size={15} />
+              </span>
             ) : null}
             <span className="page-item-title" title={page.title}>
               {page.title}
@@ -255,7 +265,7 @@ function PageItemRow(props: PageItemProps) {
         )}
 
         <span className="page-actions">
-          {board ? null : (
+          {leaf ? null : (
           <button
             type="button"
             className="tree-action"
@@ -316,7 +326,7 @@ function PageItemRow(props: PageItemProps) {
                   type="button"
                   role="menuitem"
                   data-testid={`duplicate-page-${page.id}`}
-                  title={!board && hasChildren ? t("sidebar.subPagesNotCopied") : undefined}
+                  title={!leaf && hasChildren ? t("sidebar.subPagesNotCopied") : undefined}
                   onClick={(event) => {
                     event.stopPropagation();
                     setMenuOpen(false);
@@ -351,7 +361,7 @@ function PageItemRow(props: PageItemProps) {
                 >
                   {t("sidebar.moveTo")}
                 </button>
-                {board ? null : (
+                {leaf ? null : (
                   <button
                     type="button"
                     role="menuitem"
@@ -363,6 +373,20 @@ function PageItemRow(props: PageItemProps) {
                     }}
                   >
                     {t("sidebar.addBoardInside")}
+                  </button>
+                )}
+                {leaf || !props.onCreateBaseChild ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid={`add-base-${page.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      props.onCreateBaseChild?.(page.id);
+                    }}
+                  >
+                    {t("bases.addBaseInside")}
                   </button>
                 )}
                 {board ? null : (
@@ -390,7 +414,13 @@ function PageItemRow(props: PageItemProps) {
                     props.onDelete(page.id);
                   }}
                 >
-                  {board ? t("sidebar.deleteBoard") : folder ? t("sidebar.deleteFolder") : t("sidebar.deletePage")}
+                  {board
+                    ? t("sidebar.deleteBoard")
+                    : base
+                      ? t("bases.deleteBase")
+                      : folder
+                        ? t("sidebar.deleteFolder")
+                        : t("sidebar.deletePage")}
                 </button>
               </div>
             ) : null}

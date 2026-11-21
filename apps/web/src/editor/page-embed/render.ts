@@ -68,7 +68,8 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
   const text = state.src.slice(state.bMarks[startLine] + state.tShift[startLine], state.eMarks[startLine]).trim();
   if (!text.startsWith("![[")) return false;
   const page = parsePageEmbed(text);
-  const board = /^!\[\[([^[\]|#]+?\.canvas)(?:\|[^[\]]*)?\]\]$/i.exec(text);
+  // A board or a database view (D34) inside a preview: a card linking to it.
+  const board = /^!\[\[([^[\]|#]+?\.(?:canvas|base))(?:#[^[\]|]*)?(?:\|[^[\]]*)?\]\]$/i.exec(text);
   if (!page && !board) return false;
   if (silent) return true;
   const token = state.push("html_block", "", 0);
@@ -77,7 +78,7 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
     token.content = `<div class="page-embed-nested" data-target="${escapeHtml(page.target)}" data-part="${escapeHtml(page.part)}"></div>\n`;
   } else {
     const target = (board![1] ?? "").trim();
-    const name = (target.split("/").pop() ?? target).replace(/\.canvas$/i, "");
+    const name = (target.split("/").pop() ?? target).replace(/\.(?:canvas|base)$/i, "");
     token.content = `<div class="page-embed-board-card"><span class="page-embed-board-icon" aria-hidden="true"></span><wiki-link data-wikilink-title="${escapeHtml(target)}" data-wikilink-alias="${escapeHtml(name)}">${escapeHtml(name)}</wiki-link></div>\n`;
   }
   state.line = startLine + 1;

@@ -1,0 +1,64 @@
+gumply:
+  version: 1
+  note: unknown top-level key
+filters:
+  and:
+    - file.inFolder("Projects")
+views:
+  - type: calendar
+    name: Calendar
+    order:
+      - file.name
+    dateProperty: note.due
+    endDateProperty: note.end
+    gumplyWeekStart: monday
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - status
+      - due
+      - priority
+    sort:
+      - property: due
+        direction: DESC
+    limit: 50
+    summaries:
+      priority: Average
+    rowHeight: medium
+    columnSize:
+      note.status: 160
+      file.name: 240
+  - type: cards
+    name: Cards
+    order:
+      - file.name
+      - status
+    cardSize: 260
+    image: note.cover
+    imageFit: contain
+    imageAspectRatio: 0.75
+  - type: list
+    name: List
+    order:
+      - file.name
+      - due
+    markers: number
+    indentProperties: true
+    separator: " | "
+  - type: kanban
+    name: Kanban
+    groupBy:
+      property: status
+      direction: ASC
+    groupOrder:
+      - todo
+      - doing
+      - done
+    order:
+      - file.name
+      - due
+    columnWidth: 320
+    image: note.cover
+    imageFit: contain
+    imageAspectRatio: 0.6

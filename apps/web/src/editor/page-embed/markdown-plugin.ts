@@ -9,7 +9,7 @@
  *
  * markdown-it's types are an optional peer dep of tiptap-markdown, hence `any`.
  */
-import { formatPageEmbed, hasAttachmentExtension, isBoardTarget } from "@gumply/core";
+import { formatPageEmbed, hasAttachmentExtension, isBaseTarget, isBoardTarget } from "@gumply/core";
 
 const EMBED = /^!\[\[([^[\]|#]+?)(?:#([^[\]|]*))?(?:\|([^[\]]*))?\]\]$/;
 
@@ -29,7 +29,8 @@ export function parsePageEmbed(text: string): PageEmbedMarkup | null {
   const match = EMBED.exec(trimmed);
   if (!match) return null;
   const target = (match[1] ?? "").trim();
-  if (!target || isBoardTarget(target) || hasAttachmentExtension(target)) return null;
+  // Boards (D30) and database views (D34) have their own embeds.
+  if (!target || isBoardTarget(target) || isBaseTarget(target) || hasAttachmentExtension(target)) return null;
   return { target, part: (match[2] ?? "").trim(), alias: (match[3] ?? "").trim(), raw: trimmed };
 }
 
