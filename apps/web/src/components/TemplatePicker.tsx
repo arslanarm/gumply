@@ -85,7 +85,11 @@ export function TemplatePicker({ mode, onCancel, onPick }: TemplatePickerProps) 
         onKeyDown={onKeyDown}
       >
         <p className="template-picker-title">{title}</p>
-        <input
+        <div className="quick-switcher-input-row">
+          <span className="quick-switcher-input-icon" aria-hidden="true">
+            <Icon name="search" size={16} />
+          </span>
+          <input
           ref={inputRef}
           className="quick-switcher-input"
           data-testid="template-search"
@@ -98,7 +102,8 @@ export function TemplatePicker({ mode, onCancel, onPick }: TemplatePickerProps) 
           autoComplete="off"
           spellCheck={false}
           onChange={(event) => setQuery(event.target.value)}
-        />
+          />
+        </div>
         <div className="quick-switcher-results" id="template-results" ref={listRef} role="listbox" aria-label={title}>
           {state === null ? null : "error" in state ? (
             <p className="quick-switcher-empty" role="alert">

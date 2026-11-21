@@ -1724,7 +1724,8 @@ input {
 
 .sidebar-new-page,
 .sidebar-new-board,
-.sidebar-search {
+.sidebar-search,
+.sidebar-today {
   color: var(--text);
   font-weight: 500;
 }
@@ -1742,7 +1743,8 @@ input {
   bottom: auto;
 }
 
-.sidebar-search .sidebar-row-icon {
+.sidebar-search .sidebar-row-icon,
+.sidebar-today .sidebar-row-icon {
   color: var(--muted);
 }
 
