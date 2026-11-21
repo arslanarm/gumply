@@ -82,8 +82,8 @@ test.describe('tags pane (#9bx3aznb)', () => {
     // The open page shows the new tag (it was reloaded).
     await expect(page.getByTestId('editor-content')).toContainText('Notes about #job');
 
-    // Only `tags` changes, plus the `updated` stamp every Gumply save writes.
-    expect(await read('Plan.md')).toMatch(/^---\ntags: \[job\]\nstatus: draft\nupdated: [^\n]+\n---\n\nThe plan\. #job\/ideas\n$/);
+    // Only the `tags` line changes: an Obsidian note never gains `updated:`.
+    expect(await read('Plan.md')).toBe('---\ntags: [job]\nstatus: draft\n---\n\nThe plan. #job/ideas\n');
     expect(await read('Notes.md')).toBe('Notes about #job and `#work` in code, [a link](#work).\n\n```\n#work\n```\n');
     expect(await read('Home.md')).toBe(FILES['Home.md']);
   });

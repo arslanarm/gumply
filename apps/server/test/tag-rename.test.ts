@@ -44,6 +44,62 @@ describe("GET /tags counts like Obsidian's tags pane (#9bx3aznb)", () => {
   });
 });
 
+describe("renaming changes only the tag bytes (#9bx3aznb, @opus-hunter's P2)", () => {
+  async function vault() {
+    const server = await createTestServer();
+    for (const [name, text] of Object.entries(OBSIDIAN_FIXTURE)) await writeFile(join(server.dir, name), text);
+    await server.store.rescan();
+    const rename = async (from: string, to: string) =>
+      (await (await jsonRequest(server.app, "POST", "/api/tags/rename", { from, to })).json()) as { rewrittenPages: string[] };
+    const read = (name: string) => readFile(join(server.dir, name), "utf8");
+    const counts = async () =>
+      Object.fromEntries(
+        (await getJson<Array<{ tag: string; count: number }>>(server.app, "/api/tags")).map((entry) => [entry.tag, entry.count]),
+      );
+    return { rename, read, counts };
+  }
+
+  it("#proj → #work: exact bytes in every file; C's frontmatter gains no updated:", async () => {
+    const { rename, read, counts } = await vault();
+    expect((await rename("proj", "work")).rewrittenPages.sort()).toEqual(["A", "B", "C", "D", "E"]);
+    expect(await read("A.md")).toBe("#work #work #work/alpha\n");
+    expect(await read("B.md")).toBe("#work/alpha #work/beta\n");
+    expect(await read("C.md")).toBe("---\ntags: [work, work/Alpha]\n---\n\nNo inline tags.\n");
+    expect(await read("D.md")).toBe("#work #2024 #y2024 [link](#anchor) `#incode` #a-b_c\n");
+    expect(await read("E.md")).toBe("```#infence``` plus https://x.com/#frag plus #work\n");
+    expect(await counts()).toEqual({ work: 5, "work/alpha": 3, "work/beta": 1, y2024: 1, "a-b_c": 1 });
+  });
+
+  it("a nested tag alone merging into its sibling: #proj/alpha → #proj/beta", async () => {
+    const { rename, read, counts } = await vault();
+    expect((await rename("proj/alpha", "proj/beta")).rewrittenPages.sort()).toEqual(["A", "B", "C"]);
+    expect(await read("A.md")).toBe("#proj #proj #proj/beta\n");
+    expect(await read("B.md")).toBe("#proj/beta #proj/beta\n");
+    expect(await read("C.md")).toBe("---\ntags: [proj, proj/beta]\n---\n\nNo inline tags.\n");
+    expect(await read("D.md")).toBe(OBSIDIAN_FIXTURE["D.md"]);
+    expect(await counts()).toEqual({ proj: 5, "proj/beta": 4, y2024: 1, "a-b_c": 1 });
+  });
+
+  it("a top-level merge: #y2024 → #a-b_c", async () => {
+    const { rename, read, counts } = await vault();
+    expect((await rename("y2024", "a-b_c")).rewrittenPages).toEqual(["D"]);
+    expect(await read("D.md")).toBe("#PROJ #2024 #a-b_c [link](#anchor) `#incode` #a-b_c\n");
+    expect(await counts()).toMatchObject({ "a-b_c": 2 });
+    expect(await counts()).not.toHaveProperty("y2024");
+  });
+
+  it("a note that has updated: keeps it current; inline-only changes leave frontmatter alone", async () => {
+    const { app, dir, store } = await createTestServer();
+    await writeFile(join(dir, "G.md"), "---\ntitle: G\nupdated: 2026-01-01T00:00:00.000Z\n---\n\n#proj\n");
+    await writeFile(join(dir, "H.md"), "---\nstatus: draft\n---\n\n#proj\n");
+    await store.rescan();
+    await jsonRequest(app, "POST", "/api/tags/rename", { from: "proj", to: "work" });
+    const g = await readFile(join(dir, "G.md"), "utf8");
+    expect(g).toMatch(/^---\ntitle: G\nupdated: (?!2026-01-01)[^\n]+\n---\n\n#work\n$/);
+    expect(await readFile(join(dir, "H.md"), "utf8")).toBe("---\nstatus: draft\n---\n\n#work\n");
+  });
+});
+
 describe("renaming a tag (#9bx3aznb)", () => {
   it("rewrites frontmatter and inline tags, byte for byte elsewhere", async () => {
     const { app, dir, store } = await createTestServer();

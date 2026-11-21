@@ -2728,16 +2728,22 @@ export class VaultStore {
         const at = new Date().toISOString();
         const content = body?.content ?? record.content;
         const tags = fmTags ?? record.fmTags;
+        // Only what the rename changes: the `tags` line when the list
+        // changed, and `updated:` only in a file that already has it. An
+        // Obsidian note never gains Gumply's keys; a plain note changes only
+        // its body bytes (#9bx3aznb, @opus-hunter's P2).
+        const raw = await readFile(record.filePath, "utf8").catch(() => null);
+        const hasUpdated = raw !== null && frontmatterKeys(parseNoteTemplate(raw).yaml).includes("updated");
         const written = await this.writePage(
           record.filePath,
           { title: record.title, ...(record.icon ? { icon: record.icon } : {}), tags, created: record.created, updated: at },
           content,
-          fmTags ? ["tags", "updated"] : ["updated"],
+          [...(fmTags ? ["tags"] : []), ...(hasUpdated ? ["updated"] : [])],
           titleFromId(record.id),
         );
         record.content = content;
         record.fmTags = tags;
-        record.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
+        record.updated = hasUpdated && written.frontmatter ? at : mtimeVersion(written.mtimeMs);
         record.fileMtimeMs = written.mtimeMs;
         this.refreshTags(record);
       }
