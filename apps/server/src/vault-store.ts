@@ -2010,7 +2010,8 @@ export class VaultStore {
     }
     const restoredIds = new Set(entry.deleted.map(remap));
     return {
-      restored: this.list().filter((meta) => restoredIds.has(meta.id)),
+      // Pages and boards (v1.9); a restored folder itself is in the tree list (D33).
+      restored: this.pageMetas().filter((meta) => restoredIds.has(meta.id)),
       id: newId,
       movedToTopLevel: !parentAlive,
       renamed,
@@ -2048,7 +2049,8 @@ export class VaultStore {
     }
     const restoredIds = new Set(entry.deleted.map(remap));
     return {
-      restored: this.list().filter((meta) => restoredIds.has(meta.id)),
+      // Pages and boards (v1.9); a restored folder itself is in the tree list (D33).
+      restored: this.pageMetas().filter((meta) => restoredIds.has(meta.id)),
       id: newId,
       movedToTopLevel: !parentAlive,
       renamed: (newId.split("/").pop() ?? newId) !== name,

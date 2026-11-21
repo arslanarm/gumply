@@ -136,6 +136,37 @@ test.describe('plain folders in the sidebar (D33)', () => {
     expect(await exists('Recipes/Soup.md')).toBe(true);
   });
 
+  test('a folder deleted in the sidebar is in the Trash and restores as a folder with everything inside (#ppag3ugh)', async ({
+    page,
+    request,
+    vault,
+  }) => {
+    void vault; // resets the vault before and after
+    await obsidianVault(request);
+    await page.goto('/#/Index');
+    await row(page, 'Recipes').hover();
+    await page.getByTestId('page-menu-button-Recipes').click();
+    await page.getByTestId('delete-page-Recipes').click();
+    await page.getByTestId('delete-confirm').click();
+    await expect(row(page, 'Recipes')).toHaveCount(0);
+
+    await page.getByTestId('sidebar-trash').click();
+    const entry = page.getByTestId('trash-item-Recipes');
+    await expect(entry).toBeVisible();
+    await expect(entry.getByTestId('trash-child-Soup')).toBeVisible();
+    await expect(entry.getByTestId('trash-child-Pancakes')).toBeVisible();
+    await entry.getByTestId('trash-restore').click();
+    await expect(entry).toHaveCount(0);
+
+    // Back as a plain folder (no Recipes.md written), with its pages and other files.
+    await expect(page.getByTestId('folder-icon-Recipes')).toBeVisible();
+    expect(await exists('Recipes.md')).toBe(false);
+    expect(await exists('Recipes/menu.pdf')).toBe(true);
+    const meta = (await api.listPages(request)).find((item) => item.id === 'Recipes/Soup');
+    expect(meta?.parentId).toBe('Recipes');
+    expect(await api.listTrash(request)).toEqual([]);
+  });
+
   test('drag a page onto a folder moves it there', async ({ page, request, vault }) => {
     void vault; // resets the vault before and after
     await obsidianVault(request);
