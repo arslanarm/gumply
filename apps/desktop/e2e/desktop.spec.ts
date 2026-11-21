@@ -57,8 +57,14 @@ async function quitAndWait(app: ElectronApplication, how: 'quit' | 'close-window
   try {
     await closed;
   } catch (error) {
+    // Say why it didn't quit (#8zc7xkgq): the save flush didn't finish and
+    // the "couldn't be saved" dialog is waiting (invisible under xvfb).
+    const dialogOpen = await app
+      .evaluate(() => (globalThis as { __gumplyUnsavedDialog?: { open: boolean } }).__gumplyUnsavedDialog?.open === true)
+      .catch(() => false);
     const child = launched.get(app);
     if (child) stopProcess(child);
+    if (dialogOpen) throw new Error(`The app didn't ${how === 'quit' ? 'quit' : 'close'}: the save flush didn't finish, and the "couldn't be saved" dialog is shown.`);
     throw error;
   } finally {
     launched.delete(app);
@@ -583,3 +589,31 @@ test('UI preferences survive a relaunch on another port: theme, sidebar, a board
     await app.close();
   }
 });
+
+test('a save that never confirms asks before quitting; Cancel keeps the app, "Quit anyway" quits (#8zc7xkgq)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  await expectPageTitle(window, 'Welcome');
+  // The page reports its saves as not done (a stuck disk), and the dialog's answer is scripted.
+  await window.evaluate(() => {
+    window.__gumplyFlush = async () => false;
+  });
+  const answer = async (response: number) =>
+    app.evaluate(({ dialog }, choice) => {
+      const shown = ((globalThis as { __shown?: string[] }).__shown ??= []);
+      dialog.showMessageBox = (async (...args: unknown[]) => {
+        const options = args.at(-1) as { message?: string };
+        shown.push(options.message ?? '');
+        return { response: choice, checkboxChecked: false };
+      }) as typeof dialog.showMessageBox;
+    }, response);
+
+  await answer(1); // Cancel
+  await app.evaluate(({ app: electronApp }) => electronApp.quit());
+  await expect.poll(() => app.evaluate(() => (globalThis as { __shown?: string[] }).__shown?.length ?? 0)).toBe(1);
+  // Still running and usable.
+  await expectPageTitle(window, 'Welcome');
+
+  await answer(0); // Quit anyway
+  await quitAndWait(app, 'quit');
+});
+
