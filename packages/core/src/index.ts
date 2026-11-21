@@ -58,6 +58,8 @@ export {
   extractPageLinks,
   extractTags,
   extractWikilinks,
+  formatBoardEmbed,
+  isBoardTarget,
   hasAttachmentExtension,
   makeSnippet,
   maskCode,

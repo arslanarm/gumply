@@ -659,11 +659,11 @@ export function App() {
     return () => window.removeEventListener("gumply:command", onCommand);
   }, [handleCreate, handleCreateBoard, openSearch]);
 
-  /** `/whiteboard`: a board inside the open page; the editor links to it. */
-  const createBoardForLink = useCallback(async (): Promise<PageMeta | null> => {
+  /** `/whiteboard` and a missing embed's Create: a board inside the open page; the editor embeds it (D30). */
+  const createBoardForLink = useCallback(async (title: string = NEW_BOARD_TITLE): Promise<PageMeta | null> => {
     const parentId = selectedRef.current;
     try {
-      const created = await api.createBoard({ title: NEW_BOARD_TITLE, parentId });
+      const created = await api.createBoard({ title, parentId });
       await loadPages();
       return created.meta;
     } catch (error) {
