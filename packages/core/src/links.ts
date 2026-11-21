@@ -5,7 +5,7 @@
  * inside code spans/blocks are ignored, matching the team spec.
  */
 import type { LinkEdge, PageMeta } from "./types.js";
-import { slugify, titleFromId } from "./ids.js";
+import { legacySlugTitle, slugify } from "./ids.js";
 import { findInlineTags } from "./tags.js";
 
 export interface WikiLink {
@@ -338,7 +338,9 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[])
     (page) => lastSegment(page) === slugify(targetTitle),
     (page) => lastSegment(page) === target,
     (page) => byId(page).endsWith(`/${slugify(targetTitle)}`),
-    (page) => normalise(titleFromId(page.id)) === target,
+    // A link written against the readable title Gumply used to show for a
+    // slug-like file name (`[[Meeting notes]]` → meeting-notes.md, #bayuasqq).
+    (page) => normalise(legacySlugTitle(page.id)) === target,
   ];
 
   for (const check of checks) {
