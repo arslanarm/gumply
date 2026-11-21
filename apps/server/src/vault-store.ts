@@ -2188,6 +2188,12 @@ export class VaultStore {
     return readDailySettings(this.root).then(({ source: _source, ...settings }) => settings);
   }
 
+  /** A template's body with its variables filled, to insert at the caret (`/template` in a page with text). */
+  async renderTemplateBody(template: string, title: string): Promise<{ content: string }> {
+    const seed = await this.renderTemplateFile(template, title, new Date());
+    return { content: parseFrontmatter(seed).content };
+  }
+
   applyTemplate(id: PageId, template: string): Promise<Page> {
     return this.enqueue(() => this.applyTemplateNow(this.resolveId(id), template));
   }

@@ -176,6 +176,12 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<Page>(await store.applyTemplate(c.req.param("id"), template));
   });
 
+  api.get("/templates/render", async (c) => {
+    const template = c.req.query("template");
+    if (!template) throw badRequest("template is required");
+    return c.json(await store.renderTemplateBody(template, c.req.query("title") ?? ""));
+  });
+
   api.get("/daily/settings", async (c) => c.json(await store.dailySettings()));
 
   api.post("/daily", async (c) => {
