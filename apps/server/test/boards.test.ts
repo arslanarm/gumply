@@ -264,7 +264,7 @@ describe("saving, renaming and deleting boards", () => {
     expect(removed.deleted).toEqual(["Projects/Map.canvas"]);
     expect(await readdir(join(dir, "Projects")).catch(() => [])).not.toContain("Map.canvas");
     const restored = await store.restore(removed.trashId);
-    expect(restored.map((meta) => [meta.id, meta.kind])).toEqual([["Projects/Map.canvas", "whiteboard"]]);
+    expect(restored.restored.map((meta) => [meta.id, meta.kind])).toEqual([["Projects/Map.canvas", "whiteboard"]]);
     const moved = await store.move("Projects/Map.canvas", null);
     expect(moved).toMatchObject({ id: "Map.canvas", kind: "whiteboard", content: "" });
     expect(await readdir(dir)).toContain("Map.canvas");

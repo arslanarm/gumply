@@ -11,7 +11,10 @@ import type {
   PageId,
   PageMeta,
   PageUpdateResult,
+  RestoreResult,
   SearchResult,
+  TrashedDocument,
+  TrashItem,
 } from "@gumply/core";
 import { Hono, type Context } from "hono";
 import {
@@ -142,10 +145,24 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<DeletePageResult>(result);
   });
 
-  api.post("/trash/:trashId/restore", async (c) => {
-    const restored = await store.restore(c.req.param("trashId"));
-    return c.json<PageMeta[]>(restored);
+  // --- trash (D11; spec/api v1.9, #ppag3ugh) ---
+  api.get("/trash", async (c) => c.json<TrashItem[]>(await store.listTrash()));
+
+  api.get("/trash/:trashId", async (c) => {
+    const id = c.req.query("id");
+    return c.json<TrashedDocument>(await store.getTrashed(c.req.param("trashId"), id || undefined));
   });
+
+  api.post("/trash/:trashId/restore", async (c) => {
+    return c.json<RestoreResult>(await store.restore(c.req.param("trashId")));
+  });
+
+  api.delete("/trash/:trashId", async (c) => {
+    await store.deleteTrashed(c.req.param("trashId"));
+    return c.json({ deleted: 1 });
+  });
+
+  api.delete("/trash", async (c) => c.json({ deleted: await store.emptyTrash() }));
 
   api.post("/pages/:id/move", async (c) => {
     const body = await readJson(c);

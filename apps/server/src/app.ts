@@ -15,6 +15,8 @@ export interface AppOptions {
   webRoot?: string;
   /** Reported by /api/health; the desktop app passes its own (e.g. `0.5.0-rc.3`). */
   version?: string;
+  /** The desktop app's server (v1.9): /api/health says so. */
+  desktop?: boolean;
 }
 
 /**
@@ -33,6 +35,7 @@ export function createApp(options: AppOptions): Hono {
       name: APP_NAME,
       version: options.version ?? CORE_VERSION,
       vaultPath: options.vaultPath,
+      ...(options.desktop ? { desktop: true } : {}),
     };
     return c.json(body);
   });
