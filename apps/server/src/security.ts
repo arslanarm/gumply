@@ -105,7 +105,8 @@ export function localOnly(options: SecurityOptions): MiddlewareHandler {
       }
     }
 
-    if (UNSAFE_METHODS.has(c.req.method)) {
+    // #93yv3ban: the first GET /api/pages seeds the demo, so it is a write too.
+    if (UNSAFE_METHODS.has(c.req.method) || (c.req.method === "GET" && c.req.path === "/api/pages")) {
       const origin = c.req.header("origin");
       // "null" is what sandboxed frames and file:// pages send: refuse too.
       if (origin !== undefined && !isAllowedOrigin(origin, options) && !isSameOrigin(origin, host)) {

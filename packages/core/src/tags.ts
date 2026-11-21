@@ -4,7 +4,9 @@
  * - after the start of a line, a space or an opening bracket or quote;
  * - a letter or digit, then letters, digits, `_`, `/` and `-`;
  * - at least one character that isn't a digit (`#2024` is not a tag);
- * - never in code, URLs, Markdown link targets (`](#anchor)`) or `[[wikilinks]]`.
+ * - never in code, URLs, Markdown link targets (`](#anchor)`), `[[wikilinks]]`
+ *   or inside an HTML tag (a `#hex` colour like Highlightr's
+ *   `<mark style="background: #FF5582A6;">`, #h368c8ni).
  */
 import { maskCode } from "./links.js";
 
@@ -20,13 +22,14 @@ const TAG_PATTERN = /(^|[\s([{>"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu;
 /** Blank a match out, keeping offsets and line breaks. */
 const blank = (match: string) => match.replace(/[^\n]/g, " ");
 
-/** Code, URLs, link targets and wikilinks blanked out (same length as `markdown`). */
+/** Code, URLs, link targets, wikilinks and HTML tags blanked out (same length as `markdown`). */
 function maskNonTags(markdown: string): string {
   return maskCode(markdown)
     .replace(/\[\[[^\]\n]*\]\]/g, blank)
     .replace(/\]\([^)\n]*\)/g, (match) => `]${blank(match.slice(1))}`)
     .replace(/<[a-z][a-z0-9+.-]*:[^>\s]*>/gi, blank)
-    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]*/gi, blank);
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]*/gi, blank)
+    .replace(/<\/?[a-z][\w-]*(?:\s[^<>\n]*)?>/gi, blank);
 }
 
 /** Obsidian's rule: a tag needs at least one character that isn't a digit. */

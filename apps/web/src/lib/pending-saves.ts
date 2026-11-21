@@ -48,7 +48,6 @@ export function hasUnsavedChanges(): boolean {
   return false;
 }
 
-/** Flush everything and wait (at most `timeout`). True when all is saved. */
 /**
  * How long close, quit and a vault switch wait for saves to be confirmed
  * (#8zc7xkgq): a slow-but-fine save on a busy machine must not look like a
@@ -56,6 +55,7 @@ export function hasUnsavedChanges(): boolean {
  */
 export const EXIT_FLUSH_TIMEOUT = 10_000;
 
+/** Flush everything and wait (at most `timeout`). True when all is saved. */
 export async function flushAllSaves(timeout = 3000): Promise<boolean> {
   const all = Promise.all([...savers].map((saver) => saver.flush().catch(() => undefined)));
   await Promise.race([all, new Promise((resolve) => setTimeout(resolve, timeout))]);

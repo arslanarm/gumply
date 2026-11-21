@@ -49,15 +49,8 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
   const store = new VaultStore(options.vaultPath);
   await store.init();
 
-  if (options.seedDemo ?? true) {
-    try {
-      const welcomeId = await store.seedDemoIfFirstRun();
-      if (welcomeId) log(`[gumply] demo vault seeded (open ${welcomeId})`);
-    } catch (error) {
-      // A failed seed must not stop the app; the next start retries on an empty vault.
-      console.error("[gumply] demo seeding failed:", error);
-    }
-  }
+  // #93yv3ban: seeded on the first GET /pages, in the language it asks for.
+  if (options.seedDemo ?? true) store.armDemo(log);
 
   if (options.watch ?? true) store.startWatching();
   const loopback = isLoopbackName(host);

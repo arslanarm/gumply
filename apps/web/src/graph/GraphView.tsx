@@ -275,7 +275,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                 <span className="graph-legend-emoji" aria-hidden="true">
                   {sampleIcon}
                 </span>{" "}
-                emoji = page icon
+                {t("graph.legendIcon")}
               </p>
             ) : null}
             {(data?.tags ?? []).length > 0 ? (

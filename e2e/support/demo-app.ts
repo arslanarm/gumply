@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +50,15 @@ export class DemoApp {
   async restartServer(): Promise<void> {
     await this.stopChild(this.server);
     this.server = null;
+    await this.startServer();
+  }
+
+  /** Restart the API on an emptied vault: a second first run (#93yv3ban). */
+  async freshVault(): Promise<void> {
+    await this.stopChild(this.server);
+    this.server = null;
+    rmSync(this.vault, { recursive: true, force: true });
+    mkdirSync(this.vault, { recursive: true });
     await this.startServer();
   }
 

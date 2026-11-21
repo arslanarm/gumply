@@ -3023,6 +3023,170 @@ input {
   background: color-mix(in srgb, #d8b600 38%, transparent);
 }
 
+/*
+ * Text and background colour (#h368c8ni). Files use Obsidian's palette
+ * variables (`var(--color-red)`, `rgba(var(--color-red-rgb), 0.2)`), with
+ * Obsidian's values here, so a colour follows the theme in both apps.
+ * Foreign colours (`#FF5582A6`) render as written.
+ */
+:root {
+  --color-red-rgb: 233, 49, 71;
+  --color-orange-rgb: 236, 117, 0;
+  --color-yellow-rgb: 224, 172, 0;
+  --color-green-rgb: 8, 185, 78;
+  --color-cyan-rgb: 0, 191, 188;
+  --color-blue-rgb: 8, 109, 221;
+  --color-purple-rgb: 120, 82, 238;
+  --color-pink-rgb: 213, 57, 132;
+  --mono-rgb-100: 0, 0, 0;
+  --text-muted: var(--muted);
+  --color-red: rgb(var(--color-red-rgb));
+  --color-orange: rgb(var(--color-orange-rgb));
+  --color-yellow: rgb(var(--color-yellow-rgb));
+  --color-green: rgb(var(--color-green-rgb));
+  --color-cyan: rgb(var(--color-cyan-rgb));
+  --color-blue: rgb(var(--color-blue-rgb));
+  --color-purple: rgb(var(--color-purple-rgb));
+  --color-pink: rgb(var(--color-pink-rgb));
+}
+
+:root[data-theme="dark"] {
+  --color-red-rgb: 251, 70, 76;
+  --color-orange-rgb: 233, 151, 63;
+  --color-yellow-rgb: 224, 222, 113;
+  --color-green-rgb: 68, 207, 110;
+  --color-cyan-rgb: 83, 223, 221;
+  --color-blue-rgb: 2, 122, 255;
+  --color-purple-rgb: 168, 130, 255;
+  --color-pink-rgb: 250, 153, 205;
+  --mono-rgb-100: 255, 255, 255;
+}
+
+.ProseMirror .md-bg-color {
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* The palette: "A" samples coloured like the text they make. */
+.color-sample {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+}
+
+.color-sample.is-background {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.color-sample.is-text[data-palette="gray"] { color: var(--text-muted); }
+.color-sample.is-text[data-palette="red"] { color: var(--color-red); }
+.color-sample.is-text[data-palette="orange"] { color: var(--color-orange); }
+.color-sample.is-text[data-palette="yellow"] { color: var(--color-yellow); }
+.color-sample.is-text[data-palette="green"] { color: var(--color-green); }
+.color-sample.is-text[data-palette="cyan"] { color: var(--color-cyan); }
+.color-sample.is-text[data-palette="blue"] { color: var(--color-blue); }
+.color-sample.is-text[data-palette="purple"] { color: var(--color-purple); }
+.color-sample.is-text[data-palette="pink"] { color: var(--color-pink); }
+.color-sample.is-background[data-palette="gray"] { background: rgba(var(--mono-rgb-100), 0.12); }
+.color-sample.is-background[data-palette="red"] { background: rgba(var(--color-red-rgb), 0.2); }
+.color-sample.is-background[data-palette="orange"] { background: rgba(var(--color-orange-rgb), 0.2); }
+/* Yellow background is the `==highlight==` mark: show its colour. */
+.color-sample.is-background[data-palette="yellow"] { background: color-mix(in srgb, #f5d90a 45%, transparent); }
+.color-sample.is-background[data-palette="green"] { background: rgba(var(--color-green-rgb), 0.2); }
+.color-sample.is-background[data-palette="cyan"] { background: rgba(var(--color-cyan-rgb), 0.2); }
+.color-sample.is-background[data-palette="blue"] { background: rgba(var(--color-blue-rgb), 0.2); }
+.color-sample.is-background[data-palette="purple"] { background: rgba(var(--color-purple-rgb), 0.2); }
+.color-sample.is-background[data-palette="pink"] { background: rgba(var(--color-pink-rgb), 0.2); }
+:root[data-theme="dark"] .color-sample.is-background[data-palette="yellow"] {
+  background: color-mix(in srgb, #d8b600 38%, transparent);
+}
+
+.color-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px 2px;
+}
+
+.color-palette-title {
+  padding: 0 4px 3px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+.color-palette-row {
+  display: flex;
+  gap: 2px;
+}
+
+.color-swatch,
+.color-last {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.color-last {
+  padding-right: 8px;
+}
+
+.color-swatch:hover,
+.color-last:hover {
+  background: var(--hover);
+}
+
+.color-swatch.is-selected {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.color-swatch:focus-visible,
+.color-last:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.selection-color-button {
+  gap: 2px;
+}
+
+.selection-color-button .color-sample {
+  width: 18px;
+  height: 18px;
+}
+
+.selection-color-button.is-open {
+  background: var(--hover);
+}
+
+.selection-color-menu {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+}
+
+.context-submenu.context-color {
+  min-width: 0;
+}
+
 .raw-inline-math,
 .raw-inline-source {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

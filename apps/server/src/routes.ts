@@ -41,6 +41,7 @@ import type {
   VaultStore,
 } from "./vault-store.js";
 import { BaseQueries } from "./bases.js";
+import { demoLanguageFor } from "./demo.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -110,8 +111,18 @@ export function createApiRoutes(store: VaultStore): Hono {
   const api = new Hono();
 
   api.get("/pages", async (c) => {
-    const firstPage = store.consumeNewVaultPage();
-    if (firstPage) c.header("X-Gumply-New-Vault", firstPage);
+    // #93yv3ban: a first run seeds the demo in the app's language first,
+    // but only for the app's own fetch. A no-cors GET (`<img src>`, a
+    // no-cors fetch) or a navigation carries no Origin, and a page elsewhere
+    // could send one; Fetch Metadata tells them apart. Tools without
+    // Sec-Fetch-* headers (curl, tests) count as the app.
+    const site = c.req.header("sec-fetch-site");
+    const mode = c.req.header("sec-fetch-mode");
+    const appRequest = site !== "cross-site" && mode !== "no-cors" && mode !== "navigate";
+    if (appRequest) await store.seedDemoOnFirstList(demoLanguageFor(c.req.header("accept-language")));
+    const firstPage = appRequest ? store.consumeNewVaultPage() : null;
+    // Percent-encoded: a header carries bytes, an id may be "Добро пожаловать".
+    if (firstPage) c.header("X-Gumply-New-Vault", encodeURIComponent(firstPage));
     // v1.12: opt-in properties per page (database views); the default stays light.
     if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());

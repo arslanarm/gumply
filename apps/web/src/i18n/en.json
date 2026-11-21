@@ -70,7 +70,8 @@
     "localLoading": "Loading…",
     "noLinks": "No links yet.",
     "noLinksBefore": "Type ",
-    "noLinksAfter": " in this page to connect it."
+    "noLinksAfter": " in this page to connect it.",
+    "legendIcon": "emoji = page icon"
   },
   "sidebar": {
     "hide": "Hide sidebar",
@@ -940,7 +941,26 @@
     "linkFieldLabel": "Link to a web address or a page",
     "linkPlaceholder": "Paste a link, or search pages",
     "pagesLabel": "Pages",
-    "noPagesMatch": "No pages match. Type a web address to link it."
+    "noPagesMatch": "No pages match. Type a web address to link it.",
+    "color": "Colour",
+    "colorLabel": "Text and background colour",
+    "textColor": "Text colour",
+    "background": "Background",
+    "colorDefault": "Default",
+    "lastUsed": "Last used",
+    "textColorNamed": "{{name}} text",
+    "backgroundNamed": "{{name}} background",
+    "colors": {
+      "gray": "Gray",
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "cyan": "Cyan",
+      "blue": "Blue",
+      "purple": "Purple",
+      "pink": "Pink"
+    }
   },
   "editorMenu": {
     "label": "Editor actions",
@@ -1025,7 +1045,6 @@
     "deleteView": "Delete view",
     "viewCopy": "{{name}} copy",
     "unsupportedView": "Gumply can't show “{{type}}” views yet. The view is kept as it is in the file; open the base in Obsidian to see it.",
-    "notYet": "This layout arrives in the next update. The view is kept as it is in the file.",
     "calendarFirst": "Obsidian opens a base on its first view and can't show Calendar. Put another view first so the base opens there too.",
     "filter": "Filter",
     "sort": "Sort",
@@ -1124,7 +1143,50 @@
     "embedMore_many": "{{count}} more pages",
     "embedMore_other": "{{count}} more pages",
     "trueValue": "Yes",
-    "falseValue": "No"
+    "falseValue": "No",
+    "group": "Group",
+    "groupBy": "Group by",
+    "noGroup": "None",
+    "kanbanNeedsGroup": "A board needs a property to make its columns, such as status.",
+    "layout": "Layout",
+    "setting": {
+      "image": "Image property",
+      "imageFit": "Image fit",
+      "cover": "Cover",
+      "contain": "Contain",
+      "imageAspectRatio": "Image aspect ratio",
+      "rowHeight": "Row height",
+      "height": {
+        "short": "Short",
+        "medium": "Medium",
+        "tall": "Tall",
+        "extra": "Extra tall"
+      },
+      "cardSize": "Card size",
+      "columnWidth": "Column width",
+      "markers": "Markers",
+      "marker": {
+        "bullet": "Bullets",
+        "number": "Numbers",
+        "none": "None"
+      },
+      "indentProperties": "Indent properties",
+      "separator": "Separator",
+      "dateProperty": "Date",
+      "endDateProperty": "End date"
+    },
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "today": "Today",
+    "newOn": "New page on {{date}}",
+    "moreOnDay_one": "{{count}} more",
+    "moreOnDay_few": "{{count}} more",
+    "moreOnDay_many": "{{count}} more",
+    "moreOnDay_other": "{{count}} more",
+    "undated_one": "{{count}} page has no date and isn't shown.",
+    "undated_few": "{{count}} pages have no date and aren't shown.",
+    "undated_many": "{{count}} pages have no date and aren't shown.",
+    "undated_other": "{{count}} pages have no date and aren't shown."
   },
   "tags": {
     "title": "Tags",

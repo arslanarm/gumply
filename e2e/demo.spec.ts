@@ -119,3 +119,26 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
 
   expect(consoleErrors).toEqual([]);
 });
+
+test('a Russian first run seeds the demo in Russian (#93yv3ban)', async ({ page, request }) => {
+  test.setTimeout(60_000);
+  await app.freshVault();
+  // The interface language is Russian before the first list of pages.
+  await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+  await page.goto('/');
+  // Right after a server restart the first load also seeds and fetches the
+  // Russian chunk; under a full suite's load that can take more than 5 s.
+  await expect(page.getByTestId('page-title').or(page.getByTestId('page-title-input')).first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectPageTitle(page, 'Добро пожаловать');
+  await expect(page.getByTestId('editor-content')).toContainText('Gumply — спокойное место для заметок');
+  await expect(page.getByTestId('page-item-Демо Gumply')).toBeVisible();
+  const pages = (await (await request.get(`${DEMO_API_URL}/api/pages`)).json()) as { title: string }[];
+  expect(pages.map((item) => item.title).sort()).toEqual(
+    ['Граф связей', 'Демо Gumply', 'Добро пожаловать', 'Карта проекта', 'Начало работы'].sort(),
+  );
+  // Its links resolve: the cheat sheet's link opens the Russian page.
+  await page.getByTestId('editor-content').getByText('Начало работы').first().click();
+  await expectPageTitle(page, 'Начало работы');
+});

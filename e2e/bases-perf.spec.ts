@@ -70,10 +70,11 @@ test.describe('database view performance', () => {
 
     /**
      * The table's own cost: scrolling frames minus standing-still frames,
-     * measured back to back. A busy machine slows both (the load/PSI scaling
-     * in e2e/support/perf.ts misses short bursts, #sg36ng2d); a slower
-     * scroll path only the first. Budgets as on a quiet machine: 60 fps
-     * (16.7 ms) plus 3.3 ms on average, at most one dropped frame at p95.
+     * measured back to back. On a quiet machine this is the old `avg < 20`,
+     * `p95 < 34`. Not load compensation: an idle frame loop stays at 16.7 ms
+     * even under load (the compositor keeps vsync pacing, @opus-hunter's
+     * #eiyrbvgx measurements). Load is absorbed by `measure()`'s PSI/load
+     * scaling and its second try.
      */
     const measured = async () => {
       const idle = await frameLoop(false);

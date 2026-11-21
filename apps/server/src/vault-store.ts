@@ -87,9 +87,8 @@ import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import {
   buildDemoBoard,
   buildDemoPages,
-  DEMO_BOARD_TITLE,
-  DEMO_FOLDER_TITLE,
-  WELCOME_TITLE,
+  DEMO_LANGUAGES,
+  demoCopy,
 } from "./demo.js";
 
 /** `POST /api/tags/rename` (#9bx3aznb). */
@@ -729,7 +728,10 @@ export class VaultStore {
    * every page) never brings it back. Returns the Welcome page id when this
    * call did the seeding.
    */
-  async seedDemoIfFirstRun(): Promise<PageId | null> {
+  async seedDemoIfFirstRun(language = "en"): Promise<PageId | null> {
+    const copy = demoCopy(language);
+    // Any language's Welcome counts for a vault seeded before (#93yv3ban).
+    const welcomeTitles = new Set(DEMO_LANGUAGES.map((code) => demoCopy(code).welcome.toLowerCase()));
     const marker = join(this.root, ".gumply", "demo-seeded.json");
     if (await pathExists(marker)) return null;
 
@@ -744,7 +746,7 @@ export class VaultStore {
         .filter(
           (record) =>
             record.parentId === null &&
-            record.title.trim().toLowerCase() === WELCOME_TITLE.toLowerCase(),
+            welcomeTitles.has(record.title.trim().toLowerCase()),
         )
         .sort((a, b) => a.id.localeCompare(b.id))[0];
       if (welcome) this.newVaultPage = welcome.id;
@@ -758,18 +760,18 @@ export class VaultStore {
     if (await this.hasVisibleEntries()) return null;
 
     let welcomeId: PageId | null = null;
-    for (const demo of buildDemoPages()) {
+    for (const demo of buildDemoPages(language)) {
       const created = await this.create(demo);
-      if (demo.title === WELCOME_TITLE) welcomeId = created.id;
+      if (demo.title === copy.welcome) welcomeId = created.id;
     }
     // D25: one example whiteboard linking the demo pages (#dvnb8n2n).
     const board = await this.createBoard({
-      title: DEMO_BOARD_TITLE,
-      parentId: childPageId(null, DEMO_FOLDER_TITLE),
+      title: copy.board,
+      parentId: childPageId(null, copy.folder),
       icon: "🗺️",
     });
     await this.updateBoard(board.meta.id, {
-      board: { ...buildDemoBoard(), gumply: board.board.gumply },
+      board: { ...buildDemoBoard(language), gumply: board.board.gumply },
     });
     await this.writeDemoMarker();
     this.newVaultPage = welcomeId;
@@ -783,6 +785,33 @@ export class VaultStore {
       return false;
     }
   }
+
+  /**
+   * #93yv3ban: the demo is seeded on the first `GET /pages`, not at start,
+   * so it can be in the interface language that request asks for. `arm`
+   * at start; every list waits for a seeding in progress.
+   */
+  armDemo(log: (message: string) => void = console.log): void {
+    this.demoArmed = log;
+  }
+
+  async seedDemoOnFirstList(language: string): Promise<void> {
+    const log = this.demoArmed;
+    if (log) {
+      this.demoArmed = null;
+      this.demoSeeding = this.seedDemoIfFirstRun(language).then(
+        (welcomeId) => {
+          if (welcomeId) log(`[gumply] demo vault seeded in "${language}" (open ${welcomeId})`);
+        },
+        // A failed seed must not break the list; the next start retries on an empty vault.
+        (error: unknown) => console.error("[gumply] demo seeding failed:", error),
+      );
+    }
+    await this.demoSeeding;
+  }
+
+  private demoArmed: ((message: string) => void) | null = null;
+  private demoSeeding: Promise<void> | null = null;
 
   /** One-shot signal for the first browser: which page to open. */
   consumeNewVaultPage(): PageId | null {
