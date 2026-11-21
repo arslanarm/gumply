@@ -23,6 +23,10 @@ import {
   rewriteLinksToPage,
   rewriteWikilinkFolder,
   rewriteWikilinkTargets,
+  renderTemplate,
+  dailyNoteId,
+  dateFromDay,
+  type DailyNoteSettings,
   titleFromId,
   pageSegment,
   ATTACHMENTS_DIR,
@@ -57,6 +61,7 @@ import {
   type TrashItem,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
+import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -70,6 +75,14 @@ export interface CreatePageInput {
   parentId?: string | null;
   content?: string;
   icon?: string;
+  /** v0.7 C: a template page to start from (variables filled, properties copied). */
+  template?: string;
+}
+
+/** `POST /daily`: today's (or any day's) note, opened or made. */
+export interface DailyNoteResult {
+  page: PageMeta;
+  created: boolean;
 }
 
 export interface UpdatePageInput {
@@ -1067,6 +1080,30 @@ export class VaultStore {
     this.redirects.delete(id);
     const now = new Date().toISOString();
     const filePath = this.filePathFor(id);
+
+    if (input.template !== undefined) {
+      if (typeof input.template !== "string") throw badRequest("template must be a page id");
+      // v0.7 C: the template's own frontmatter keys, order and comments stay as
+      // the template wrote them (e.g. `created: {{date}}`); Gumply only adds
+      // the title, and tags/created/updated when the template has none.
+      const seed = await this.renderTemplateFile(input.template, title, new Date());
+      const parsed = parseFrontmatter(seed);
+      const changes = ["title", ...(icon ? ["icon"] : []), ...["tags", "created", "updated"].filter((key) => !(key in parsed.frontmatter))];
+      await this.writePage(
+        filePath,
+        { title, ...(icon ? { icon } : {}), tags: [], created: now, updated: now },
+        parsed.content,
+        changes,
+        undefined,
+        seed,
+      );
+      const fromTemplate = await this.readRecord(filePath, id);
+      fromTemplate.parentId = parentId;
+      this.pages.set(id, fromTemplate);
+      this.refreshTags(fromTemplate);
+      this.reindexAll();
+      return this.get(id);
+    }
 
     const { mtimeMs: fileMtimeMs } = await this.writePage(
       filePath,
@@ -2135,6 +2172,126 @@ export class VaultStore {
     return this.getAny(newId);
   }
 
+  // --- templates and daily notes (v0.7 C, #5hrsrqsj) ------------------------
+
+  /** The templates folder and the pages in it (Obsidian's Templates plugin settings). */
+  async listTemplates(): Promise<{ folder: string; templates: PageMeta[] }> {
+    const { folder } = await readTemplateSettings(this.root);
+    const prefix = `${folder}/`.toLowerCase();
+    const templates = this.pageMetas()
+      .filter((meta) => meta.kind !== "whiteboard" && meta.id.toLowerCase().startsWith(prefix))
+      .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+    return { folder, templates };
+  }
+
+  dailySettings(): Promise<DailyNoteSettings> {
+    return readDailySettings(this.root).then(({ source: _source, ...settings }) => settings);
+  }
+
+  /** A template's body with its variables filled, to insert at the caret (`/template` in a page with text). */
+  async renderTemplateBody(template: string, title: string): Promise<{ content: string }> {
+    const seed = await this.renderTemplateFile(template, title, new Date());
+    return { content: parseFrontmatter(seed).content };
+  }
+
+  applyTemplate(id: PageId, template: string): Promise<Page> {
+    return this.enqueue(() => this.applyTemplateNow(this.resolveId(id), template));
+  }
+
+  dailyNote(day: string): Promise<DailyNoteResult> {
+    return this.enqueue(() => this.dailyNoteNow(day));
+  }
+
+  /**
+   * A template page's file with its variables filled (whole file, frontmatter
+   * included). `dateFormat` overrides the Templates setting: Obsidian's Daily
+   * notes plugin fills a bare `{{date}}` with the daily-note format.
+   */
+  private async renderTemplateFile(templateId: string, title: string, now: Date, dateFormat?: string): Promise<string> {
+    const record = this.pages.get(this.resolveId(templateId));
+    if (!record || record.kind !== "page") throw notFound(`Template not found: ${templateId}`);
+    const settings = await readTemplateSettings(this.root);
+    const raw = (await readFile(record.filePath, "utf8")).replace(/^\uFEFF/, "");
+    return renderTemplate(raw, { title, now, dateFormat: dateFormat ?? settings.dateFormat, timeFormat: settings.timeFormat });
+  }
+
+  /**
+   * `/template` in an empty page: the body becomes the template's, and the
+   * template's frontmatter keys the page doesn't have yet are added (tags are
+   * merged). Keys the page already has are never changed.
+   */
+  private async applyTemplateNow(id: PageId, templateId: string): Promise<Page> {
+    const record = this.require(id);
+    if (record.kind !== "page") throw badRequest("Templates apply to pages");
+    if (record.content.trim().length > 0) throw conflict("Templates fill empty pages only.");
+    const seed = await this.renderTemplateFile(templateId, record.title, new Date());
+    const parsed = parseFrontmatter(seed);
+    const existing = parseFrontmatter(await readFile(record.filePath, "utf8")).frontmatter;
+    const added: Frontmatter = {};
+    for (const [key, value] of Object.entries(parsed.frontmatter)) {
+      if (key === "title" || key === "tags" || key in existing) continue;
+      added[key] = value;
+    }
+    const changes = Object.keys(added);
+    const templateTags = Array.isArray(parsed.frontmatter.tags) ? (parsed.frontmatter.tags as string[]) : [];
+    const tags = normalizeTags([...record.fmTags, ...templateTags]);
+    if (JSON.stringify(tags) !== JSON.stringify(record.fmTags)) {
+      added.tags = tags;
+      changes.push("tags");
+    }
+    await this.writePage(record.filePath, added, parsed.content, changes);
+    const fresh = await this.readRecord(record.filePath, id);
+    fresh.parentId = record.parentId;
+    this.pages.set(id, fresh);
+    this.refreshTags(fresh);
+    this.reindexAll();
+    return this.get(id);
+  }
+
+  /**
+   * Open or make a day's note (Obsidian's Daily notes plugin settings). A new
+   * note is a plain file, like Obsidian's, filled from the daily template if
+   * one is set. Asking again for the same day returns the same note.
+   */
+  private async dailyNoteNow(day: string): Promise<DailyNoteResult> {
+    const date = typeof day === "string" ? dateFromDay(day) : null;
+    if (!date) throw badRequest("date must be YYYY-MM-DD");
+    const settings = await readDailySettings(this.root);
+    const id = dailyNoteId(date, settings);
+    if (!isValidPageId(id) || isBoardId(id)) throw badRequest("The daily note format doesn't give a valid file name");
+    const key = id.toLowerCase();
+    const existing = [...this.pages.values()].find((record) => record.kind === "page" && record.id.toLowerCase() === key);
+    if (existing) return { page: this.pageMetas().find((meta) => meta.id === existing.id)!, created: false };
+
+    const now = new Date();
+    const at = new Date(date.getFullYear(), date.getMonth(), date.getDate(), now.getHours(), now.getMinutes(), now.getSeconds());
+    const name = id.slice(id.lastIndexOf("/") + 1);
+    let text = "";
+    if (settings.template) {
+      try {
+        // As Obsidian's Daily notes plugin: a bare {{date}} uses the daily-note format.
+        text = await this.renderTemplateFile(settings.template, name, at, settings.format);
+      } catch {
+        // A missing daily template makes an empty note, as in Obsidian.
+      }
+    }
+    const filePath = this.filePathFor(id);
+    await mkdir(dirname(filePath), { recursive: true });
+    try {
+      await writeFile(filePath, text, { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      // Made outside Gumply a moment ago: index it and open it.
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+    }
+    const record = await this.readRecord(filePath, id);
+    this.pages.set(id, record);
+    this.redirects.delete(id);
+    await this.syncFolders();
+    this.refreshTags(record);
+    this.reindexAll();
+    return { page: this.pageMetas().find((meta) => meta.id === id)!, created: true };
+  }
+
   // --- plain folders (D33) ------------------------------------------------
 
   private folderPage(id: PageId): Page {
@@ -2559,6 +2716,8 @@ export class VaultStore {
     changes?: readonly string[],
     /** Title the file name gives (after any rename); enables plain-note mode. */
     implicitTitle?: string,
+    /** v0.7 C: a new file's byte template (a rendered page template). */
+    seed?: string,
   ): Promise<{ mtimeMs: number; frontmatter: boolean; titleKey: boolean }> {
     await mkdir(dirname(filePath), { recursive: true });
     // Use the current file as the byte template so unknown frontmatter keys,
@@ -2568,7 +2727,8 @@ export class VaultStore {
     try {
       template = parseNoteTemplate(await readFile(filePath, "utf8"));
     } catch {
-      // New file: write canonical frontmatter.
+      // New file: write canonical frontmatter, or keep a template's layout.
+      if (seed !== undefined) template = parseNoteTemplate(seed);
     }
     // A note without frontmatter (the Obsidian default) stays without it
     // unless it now needs a key: an icon, tags, or a title the file name

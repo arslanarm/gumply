@@ -39,6 +39,9 @@ describe("titleFromId", () => {
     expect(titleFromId("projects/gumply-notes")).toBe("Gumply notes");
     expect(titleFromId("my_page")).toBe("My page");
     expect(titleFromId("notes")).toBe("Notes");
+    // Daily notes and other date-like names keep their hyphens (#5hrsrqsj).
+    expect(titleFromId("Daily/2026-03-06")).toBe("2026-03-06");
+    expect(titleFromId("2026_03")).toBe("2026_03");
     expect(titleFromId("projects/Q1 plan")).toBe("Q1 plan");
   });
 

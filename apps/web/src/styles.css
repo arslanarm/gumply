@@ -1724,7 +1724,8 @@ input {
 
 .sidebar-new-page,
 .sidebar-new-board,
-.sidebar-search {
+.sidebar-search,
+.sidebar-today {
   color: var(--text);
   font-weight: 500;
 }
@@ -1742,7 +1743,8 @@ input {
   bottom: auto;
 }
 
-.sidebar-search .sidebar-row-icon {
+.sidebar-search .sidebar-row-icon,
+.sidebar-today .sidebar-row-icon {
   color: var(--muted);
 }
 
@@ -4491,4 +4493,45 @@ input {
   color: var(--muted);
   font-size: 0.82rem;
   white-space: nowrap;
+}
+
+/* ---------- #5hrsrqsj: daily notes and page templates (v0.7 C) ---------- */
+
+.daily-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 0.5rem;
+}
+
+.daily-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.daily-nav-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.daily-nav-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.template-picker-title {
+  margin: 0;
+  padding: 0.7rem 1rem 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
 }

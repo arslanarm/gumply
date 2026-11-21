@@ -25,6 +25,7 @@ describe("filterSlashItems", () => {
       "file",
       "whiteboard",
       "board-template",
+      "page-template",
       "page-preview",
       "embed-whiteboard",
       "divider",
@@ -69,4 +70,9 @@ describe("filterSlashItems", () => {
   it("returns nothing for unknown queries", () => {
     expect(filterSlashItems(SLASH_ITEMS, "zzz")).toEqual([]);
   });
+
+  it("\"template\" finds both the board and the page template (#5hrsrqsj)", () => {
+    expect(keys(filterSlashItems(SLASH_ITEMS, "template"))).toEqual(["board-template", "page-template"]);
+  });
 });
+

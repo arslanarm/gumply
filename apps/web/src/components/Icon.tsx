@@ -8,6 +8,9 @@ export type IconName =
   | "board"
   | "brand"
   | "callout"
+  | "calendar"
+  | "chevronLeft"
+  | "pageTemplate"
   | "checkSquare"
   | "chevronDown"
   | "chevronRight"
@@ -187,6 +190,22 @@ const ICONS: Record<IconName, ReactNode> = {
   ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
   chevronRight: <path d="m9 18 6-6-6-6" />,
+  chevronLeft: <path d="m15 18-6-6 6-6" />,
+  calendar: (
+    <>
+      <rect width="18" height="18" x="3" y="4" rx="2" />
+      <path d="M16 2v4" />
+      <path d="M8 2v4" />
+      <path d="M3 10h18" />
+    </>
+  ),
+  pageTemplate: (
+    <>
+      <rect width="18" height="7" x="3" y="3" rx="1" />
+      <rect width="9" height="7" x="3" y="14" rx="1" />
+      <rect width="5" height="7" x="16" y="14" rx="1" />
+    </>
+  ),
   code: (
     <>
       <path d="m16 18 6-6-6-6" />
