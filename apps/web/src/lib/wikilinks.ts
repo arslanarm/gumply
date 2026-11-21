@@ -2,6 +2,7 @@
  * Pure helpers for the `[[` autocomplete (D4, spec/ux §8).
  */
 import type { Attachment, PageId, PageMeta } from "@gumply/core";
+import { isBoard } from "./boards.js";
 
 export interface LinkSuggestion {
   kind: "page" | "attachment" | "create";
@@ -14,6 +15,8 @@ export interface LinkSuggestion {
   /** Title written into the `[[...]]` node. */
   title: string;
   pageId?: PageId;
+  /** The page is a whiteboard (shown with the board icon). */
+  board?: boolean;
   /** File/image row from `vault/attachments/`. */
   attachment?: Attachment;
 }
@@ -74,6 +77,7 @@ export function buildLinkSuggestions(
     icon: page.icon,
     title: page.title,
     pageId: page.id,
+    ...(isBoard(page) ? { board: true } : {}),
   }));
 
   const fileMatches = [...attachments]

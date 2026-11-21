@@ -930,7 +930,16 @@ export class VaultStore {
     const id = await this.freeId(childPageId(parentId, title), "whiteboard");
     this.redirects.delete(id);
     const filePath = this.filePathFor(id);
-    const board = withBoardTitle(emptyCanvas(icon ? { icon } : undefined), title, boardStem(id));
+    // #ux5cukze: a collision suffix belongs to the title too, so three new
+    // boards read "Untitled whiteboard", "… 2", "… 3" in the tree, not the
+    // same label three times.
+    const stem = boardStem(id);
+    const segment = pageSegment(title);
+    const suffix =
+      stem.toLowerCase().startsWith(segment.toLowerCase()) && / \d+$/.test(stem.slice(segment.length))
+        ? stem.slice(segment.length)
+        : "";
+    const board = withBoardTitle(emptyCanvas(icon ? { icon } : undefined), `${title}${suffix}`, stem);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, serializeCanvas(board), { encoding: "utf8", flag: "wx" });
     const record = await this.readBoardRecord(filePath, id);

@@ -30,6 +30,7 @@ import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extens
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
+import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
 import {
@@ -109,6 +110,8 @@ export interface EditorProps {
    * page; resolves to it (or null).
    */
   onCreateBoard?: (title?: string) => Promise<PageMeta | null>;
+  /** A click on an inline `#tag` chip (#ux5cukze). */
+  onOpenTag?: (tag: string) => void;
 }
 
 interface SlashMenuState {
@@ -164,6 +167,7 @@ export function Editor({
   onAttachmentError,
   onExitTop,
   onCreateBoard,
+  onOpenTag,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -189,6 +193,9 @@ export function Editor({
   onCreateBoardRef.current = onCreateBoard;
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
+  const onOpenTagRef = useRef(onOpenTag);
+  onOpenTagRef.current = onOpenTag;
+  useEffect(() => setTagOpener((tag) => onOpenTagRef.current?.(tag)), []);
   const onExitTopRef = useRef(onExitTop);
   onExitTopRef.current = onExitTop;
   const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
@@ -626,6 +633,7 @@ export function Editor({
       }),
       ImageBlock,
       BoardEmbed,
+      TagChips,
       InlineImage,
       FileAttachment,
       Markdown.configure({
