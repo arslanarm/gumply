@@ -204,4 +204,32 @@ test.describe('plain folders in the sidebar (D33)', () => {
     await expect(page.getByTestId('link-menu')).toContainText('Create “Wor”');
     await expect(page.getByTestId('link-menu').getByRole('option').filter({ hasText: /^\s*Work\s*$/ })).toHaveCount(0);
   });
+
+  test('a vault whose first item is a folder of files opens on the first page, not a folder (#z9b6zg47)', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault({
+      'files/a.pdf': '%PDF',
+      'files/b.pdf': '%PDF',
+      'Work/Plan.md': 'The plan',
+      'Zeta.md': 'Last',
+    });
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Work/Plan');
+    await page.goto('/');
+    await expect(page).toHaveURL(/#\/Work\/Plan$/);
+    await expect(page.getByTestId('editor-content')).toContainText('The plan');
+    // Its folder opened to show where it is; the files folder says it has no pages.
+    await expect(row(page, 'Work/Plan')).toHaveClass(/is-selected/);
+    await row(page, 'files').click();
+    await expect(page.getByTestId('folder-view-meta')).toHaveText('Folder · 2 other files');
+    await expect(page.getByTestId('folder-view-empty')).toHaveText('No pages here yet.');
+  });
+
+  test('a vault of files only says "No pages yet"', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault({ 'photos/beach.jpg': 'jpg' });
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('photos');
+    await page.goto('/');
+    await expect(page.getByTestId('empty-state')).toContainText('No pages yet.');
+    await expect(page.getByTestId('folder-view')).toHaveCount(0);
+  });
 });

@@ -54,7 +54,8 @@ export function FolderView({ folder, pages, onOpen, onNewPage, onNewBoard }: Fol
       </div>
       {children.length === 0 ? (
         <p className="folder-view-empty" data-testid="folder-view-empty">
-          This folder is empty.
+          {/* Other files (PDFs, images) aren't tree items, but the folder isn't empty. */}
+          {(folder.otherFiles ?? 0) > 0 ? "No pages here yet." : "This folder is empty."}
         </p>
       ) : (
         <ul className="folder-view-list" aria-label={`In ${folder.title}`}>
