@@ -13,6 +13,7 @@ export type {
   Embed,
   EmbedKind,
   GraphData,
+  TagCount,
   GraphNode,
   HealthResponse,
   LinkEdge,
@@ -151,6 +152,18 @@ export {
   type OutlineHeading,
 } from "./page-embeds.js";
 export * from "./bases/index.js";
+
+export {
+  findInlineTags,
+  isTagLike,
+  isValidTagName,
+  renamedTag,
+  renameInlineTag,
+  renameTagList,
+  tagMatches,
+  type InlineTag,
+  type TagRewrite,
+} from "./tags.js";
 
 export {
   coercePropertyValue,

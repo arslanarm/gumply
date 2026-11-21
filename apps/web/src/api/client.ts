@@ -21,6 +21,7 @@ import type {
   RestoreResult,
   SearchResult,
   TrashedDocument,
+  TagCount,
   TrashItem,
   BaseConfig,
   BaseViewResult,
@@ -161,6 +162,14 @@ export interface SaveBoardInput {
   writer?: string;
 }
 
+/** `POST /api/tags/rename` (#9bx3aznb). */
+export interface TagRenameResult {
+  renamed: number;
+  rewrittenPages: PageId[];
+  /** Left alone: changed on disk meanwhile, or the open page with unsaved edits. */
+  skippedPages: PageId[];
+}
+
 /** `PUT /api/boards/:id`: `rewrittenPages`, `conflictBackup`, `repairBackup` (once). */
 export type SaveBoardResult = BoardUpdateResult;
 
@@ -189,8 +198,6 @@ function mutate<T>(task: () => Promise<T>): Promise<T> {
 export const api = {
   /** App name, version, vault folder and (v1.9) whether it is the desktop app. */
   health: (): Promise<HealthResponse> => request("/health"),
-
-  /** Desktop app only (v1.8): save the interface language; "system" follows the OS. */
 
   listPages: (): Promise<PageMeta[]> => request("/pages"),
 
@@ -284,6 +291,13 @@ export const api = {
   /** v1.9: empty the trash; resolves to how many entries were deleted. */
   emptyTrash: (): Promise<{ deleted: number }> => mutate(() => request("/trash", { method: "DELETE" })),
 
+
+  /** #9bx3aznb: every tag with its occurrences and pages (the tags pane). */
+  listTags: (): Promise<TagCount[]> => request("/tags"),
+
+  /** #9bx3aznb: rename a tag in every page and board (`from`/`to` without `#`). */
+  renameTag: (from: string, to: string, skip: PageId[] = []): Promise<TagRenameResult> =>
+    mutate(() => request("/tags/rename", { method: "POST", body: JSON.stringify({ from, to, skip }) })),
 
   movePage: (id: PageId, parentId: PageId | null): Promise<Page> =>
     mutate(() =>

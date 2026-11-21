@@ -95,6 +95,8 @@ describe("page templates", () => {
     const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     expect(text).toMatch(new RegExp(`^---\\n# kept comment\\nstatus: draft\\ncreated: ${ymd}\\ntags: \\[meeting\\]\\n`));
     expect(text).toContain("title: Weekly sync");
+    // A page Gumply makes gets its header (the template had created:, so only updated: is added).
+    expect(text).toMatch(/\nupdated: \d{4}-\d{2}-\d{2}T/);
     expect(text).toMatch(/\n\n# Weekly sync\n\nAt \d{2}h\n\n- \[ \] Agenda\n$/);
     expect((page as { content: string }).content).toMatch(/^# Weekly sync\n\nAt \d{2}h\n\n- \[ \] Agenda$/);
   });

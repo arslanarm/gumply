@@ -17,6 +17,7 @@ import {
   childPageId,
   collectLinkEdges,
   extractTags,
+  findInlineTags,
   extractWikilinks,
   isValidPageId,
   makeSnippet,
@@ -46,6 +47,9 @@ import {
   type RelinkOptions,
   canvasLinks,
   canvasMeta,
+  isValidTagName,
+  renameInlineTag,
+  renameTagList,
   canvasText,
   emptyCanvas,
   parseCanvas,
@@ -59,6 +63,7 @@ import {
   updateBaseSource,
   type BaseConfig,
   type CanvasBoard,
+  type TagCount,
   type BoardDocument,
   type PageKind,
   type Backlink,
@@ -86,6 +91,15 @@ import {
   DEMO_FOLDER_TITLE,
   WELCOME_TITLE,
 } from "./demo.js";
+
+/** `POST /api/tags/rename` (#9bx3aznb). */
+export interface TagRenameResult {
+  /** Pages and boards rewritten. */
+  renamed: number;
+  rewrittenPages: PageId[];
+  /** Left alone: changed on disk since it was read, or open with unsaved edits (`skip`). */
+  skippedPages: PageId[];
+}
 
 export interface CreatePageInput {
   title: string;
@@ -1079,6 +1093,16 @@ export class VaultStore {
     return this.enqueue(() => this.updateNow(this.resolveId(id), patch));
   }
 
+  /**
+   * Rename tag `from` everywhere (#9bx3aznb): frontmatter `tags`, inline
+   * `#tags` and nested `#from/…`, in pages and boards. Trashed files are left
+   * alone; a file that changed on disk since it was read is skipped, and so
+   * are the `skip` ids (an open editor whose edits couldn't be saved).
+   */
+  renameTag(from: string, to: string, skip: readonly PageId[] = []): Promise<TagRenameResult> {
+    return this.enqueue(() => this.renameTagNow(from, to, skip));
+  }
+
   remove(id: PageId): Promise<DeletePageResult> {
     return this.enqueue(() => this.removeNow(this.resolveId(id)));
   }
@@ -1161,6 +1185,43 @@ export class VaultStore {
     return out.sort(
       (a, b) => a.page.title.localeCompare(b.page.title) || a.page.id.localeCompare(b.page.id),
     );
+  }
+
+  /**
+   * Every tag with its occurrences and pages (#9bx3aznb), like Obsidian's
+   * tags pane: inline repeats count, each frontmatter entry once, case
+   * folded, first spelling (in id order) kept. Nested tags are their own
+   * entries; the web app adds them up under their parents.
+   */
+  tags(): TagCount[] {
+    const byKey = new Map<string, { tag: string; count: number; pages: Set<PageId> }>();
+    const records = [...this.pages.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (const record of records) {
+      for (const tag of [...record.fmTags, ...this.inlineTags(record)]) {
+        const key = tag.toLowerCase();
+        let entry = byKey.get(key);
+        if (!entry) {
+          entry = { tag, count: 0, pages: new Set() };
+          byKey.set(key, entry);
+        }
+        entry.count += 1;
+        entry.pages.add(record.id);
+      }
+    }
+    return [...byKey.values()].map((entry) => ({ tag: entry.tag, count: entry.count, pages: [...entry.pages] }));
+  }
+
+  /** Inline tags of a page or board text, repeats included; cached until its content changes. */
+  private readonly inlineTagCache = new Map<PageId, { content: string; tags: string[] }>();
+  private inlineTags(record: PageRecord): string[] {
+    const cached = this.inlineTagCache.get(record.id);
+    if (cached && cached.content === record.content) return cached.tags;
+    const tags = findInlineTags(record.content).map((hit) => hit.tag);
+    this.inlineTagCache.set(record.id, { content: record.content, tags });
+    if (this.inlineTagCache.size > this.pages.size * 2 + 100) {
+      for (const id of this.inlineTagCache.keys()) if (!this.pages.has(id)) this.inlineTagCache.delete(id);
+    }
+    return tags;
   }
 
   graph(options: GraphOptions = {}): GraphData {
@@ -2702,7 +2763,13 @@ export class VaultStore {
       added.tags = tags;
       changes.push("tags");
     }
-    await this.writePage(record.filePath, added, parsed.content, changes);
+    // The template's keys are properties the user asked for (e.g. its own
+    // `created:`), not Gumply's header: written as given (#vi74zw3s).
+    await this.writePage(record.filePath, added, parsed.content, [], undefined, undefined, {
+      values: added,
+      changed: changes,
+      renames: [],
+    });
     const fresh = await this.readRecord(record.filePath, id);
     fresh.parentId = record.parentId;
     this.pages.set(id, fresh);
@@ -2895,6 +2962,91 @@ export class VaultStore {
       rewritten.push(other.id);
     }
     return rewritten;
+  }
+
+  private async renameTagNow(fromInput: string, toInput: string, skip: readonly PageId[]): Promise<TagRenameResult> {
+    const from = fromInput.trim().replace(/^#/, "");
+    const to = toInput.trim().replace(/^#/, "");
+    if (!isValidTagName(from)) throw badRequest("Unknown tag");
+    if (!isValidTagName(to)) throw badRequest("A tag is letters, digits, _, - and /, with at least one that isn't a digit");
+    if (from === to) return { renamed: 0, rewrittenPages: [], skippedPages: [] };
+    // What other apps wrote since the last scan is read first.
+    await this.refreshFromDisk();
+
+    const rewrittenPages: PageId[] = [];
+    const skippedPages: PageId[] = [];
+    for (const record of [...this.pages.values()]) {
+      const changed = record.board ? this.boardWithTagRenamed(record.board, from, to) : null;
+      const fmTags = record.board ? null : renameTagList(record.fmTags, from, to);
+      const body = record.board ? null : renameInlineTag(record.content, from, to);
+      if (!changed && !fmTags && !(body && body.count > 0)) continue;
+
+      // An open editor with unsaved edits: its file is left alone, never overwritten.
+      if (skip.includes(record.id)) {
+        skippedPages.push(record.id);
+        continue;
+      }
+      // D22: never write over a change this store hasn't seen.
+      const mtime = await stat(record.filePath).then((stats) => stats.mtimeMs, () => null);
+      if (mtime !== record.fileMtimeMs) {
+        skippedPages.push(record.id);
+        continue;
+      }
+
+      if (changed) {
+        await this.saveBoardRecord(record, changed);
+      } else {
+        const at = new Date().toISOString();
+        const content = body?.content ?? record.content;
+        const tags = fmTags ?? record.fmTags;
+        // Only what the rename changes: the `tags` line when the list
+        // changed, and `updated:` only in a file that already has it. An
+        // Obsidian note never gains Gumply's keys; a plain note changes only
+        // its body bytes (#9bx3aznb, @opus-hunter's P2).
+        const raw = await readFile(record.filePath, "utf8").catch(() => null);
+        const hasUpdated = raw !== null && frontmatterKeys(parseNoteTemplate(raw).yaml).includes("updated");
+        const written = await this.writePage(
+          record.filePath,
+          { title: record.title, ...(record.icon ? { icon: record.icon } : {}), tags, created: record.created, updated: at },
+          content,
+          [...(fmTags ? ["tags"] : []), ...(hasUpdated ? ["updated"] : [])],
+          titleFromId(record.id),
+        );
+        record.content = content;
+        record.fmTags = tags;
+        record.updated = hasUpdated && written.frontmatter ? at : mtimeVersion(written.mtimeMs);
+        record.fileMtimeMs = written.mtimeMs;
+        this.refreshTags(record);
+      }
+      rewrittenPages.push(record.id);
+    }
+    return { renamed: rewrittenPages.length, rewrittenPages, skippedPages };
+  }
+
+  /** The board with the tag renamed in its tags, cards, frame labels and connector labels; null if none. */
+  private boardWithTagRenamed(board: CanvasBoard, from: string, to: string): CanvasBoard | null {
+    let changed = false;
+    const text = (value: string): string => {
+      const result = renameInlineTag(value, from, to);
+      if (result.count > 0) changed = true;
+      return result.content;
+    };
+    let next = rewriteCanvas(board, { text }).board;
+    const nodes = next.nodes.map((node) =>
+      node.type === "group" && typeof node.label === "string" && text(node.label) !== node.label
+        ? { ...node, label: text(node.label) }
+        : node,
+    );
+    const edges = next.edges.map((edge) =>
+      typeof edge.label === "string" && text(edge.label) !== edge.label ? { ...edge, label: text(edge.label) } : edge,
+    );
+    if (changed) next = { ...next, nodes, edges };
+    const tags = renameTagList(canvasMeta(next).tags, from, to);
+    if (tags) {
+      next = withCanvasMeta(next, { tags });
+      changed = true;
+    }
+    return changed ? next : null;
   }
 
   /** D11/D33: a plain folder goes to the trash as a whole directory. */
@@ -3188,8 +3340,11 @@ export class VaultStore {
     // comments, key order, flow style, CRLF and the trailing newline survive
     // (#tterskg4). Only the keys in `changes` are touched.
     let template = null;
+    // The file is already on disk (not a new page, not a template's seed).
+    let existing = false;
     try {
       template = parseNoteTemplate(await readFile(filePath, "utf8"));
+      existing = true;
     } catch {
       // New file: write canonical frontmatter, or keep a template's layout.
       if (seed !== undefined) template = parseNoteTemplate(seed);
@@ -3215,6 +3370,10 @@ export class VaultStore {
       !frontmatter.icon &&
       frontmatter.title === implicitTitle;
     let text: string;
+    // Whether the file now carries Gumply's version in `updated:` (else the
+    // version is the file time, D22/v1.8).
+    let versionKey = false;
+    let titleWritten = false;
     if (bare) {
       const keys = new Set(properties.changed);
       if ((changes ?? []).includes("tags")) keys.add("tags");
@@ -3226,7 +3385,36 @@ export class VaultStore {
     } else if (plain) {
       text = serializeNoteLike(template, {}, content, []);
     } else {
-      text = serializeNoteLike(template, frontmatter, content, [...(changes ?? []), ...(properties?.changed ?? [])], properties?.renames ?? []);
+      // Only the header keys a caller manages are filtered; property writes
+      // (a user's or a template's `created:`) are written as asked.
+      let managed = [...(changes ?? [])];
+      const asked = properties?.changed ?? [];
+      if (existing && template !== null && template.yaml !== null) {
+        // #vi74zw3s: Gumply's header keys are never added to an existing note
+        // that lacks them (an Obsidian note with `status:`/`tags:`): a body
+        // save, a link rewrite or a tag rename changes only what it changes.
+        // `title:` is written when the file has it, or when the title is
+        // something the file name can't hold.
+        const present = new Set(frontmatterKeys(template.yaml));
+        managed = managed.filter((key) => {
+          if (key === "updated" || key === "created") return present.has(key);
+          if (key === "title") {
+            return present.has("title") || implicitTitle === undefined || frontmatter.title !== implicitTitle;
+          }
+          return true;
+        });
+        versionKey = managed.includes("updated") || asked.includes("updated");
+        titleWritten = managed.includes("title") || asked.includes("title");
+      } else if (template !== null && template.yaml !== null) {
+        // A new page from a template: its keys plus Gumply's, as asked.
+        versionKey = managed.includes("updated") || asked.includes("updated");
+        titleWritten = managed.includes("title") || asked.includes("title");
+      } else {
+        // A new file or a new block: canonical frontmatter with every key given.
+        versionKey = frontmatter.updated !== undefined && frontmatter.updated !== null;
+        titleWritten = true;
+      }
+      text = serializeNoteLike(template, frontmatter, content, [...managed, ...asked], properties?.renames ?? []);
     }
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
@@ -3234,10 +3422,11 @@ export class VaultStore {
       await rename(temporary, filePath);
       return {
         mtimeMs: (await stat(filePath)).mtimeMs,
-        frontmatter: !plain,
-        // A new block always has `title:`; an edited one only if it changed.
-        titleKey:
-          !plain && (template === null || template.yaml === null || (changes ?? []).includes("title")),
+        // True when the version is the `updated:` just written; otherwise the
+        // caller uses the file time (`mtimeVersion`), as for plain notes.
+        frontmatter: !plain && versionKey,
+        // A new block always has `title:`; an edited one only if it was written.
+        titleKey: !plain && titleWritten,
       };
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);

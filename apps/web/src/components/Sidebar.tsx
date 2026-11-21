@@ -4,6 +4,7 @@ import { preloadGraph } from "../lazy-parts.js";
 import { buildPageTree, pageTrail } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { PageItem, TreeChunks } from "./PageItem.js";
+import { TagsPane, type TagRenameRequest } from "./TagsPane.js";
 import { useT } from "../i18n/index.js";
 
 export interface SidebarFocusTarget {
@@ -43,6 +44,9 @@ export interface SidebarProps {
   trashActive?: boolean;
   trashCount?: number;
   onTrash?: () => void;
+  /** #9bx3aznb: the Tags section. */
+  onOpenTag?: (tag: string) => void;
+  onRenameTag?: (request: TagRenameRequest) => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -82,8 +86,32 @@ export function Sidebar(props: SidebarProps) {
     revealedFor.current = selectedId;
     const ancestors = trail.slice(0, -1).map((page) => page.id);
     if (ancestors.length > 0) expand(...ancestors);
+    scrollPending.current = selectedId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, pages]);
+
+  // #ecnncm86: once per opened page (URL, search, a link, Today, back and
+  // forward), bring its row into the sidebar's view, after the reveal has
+  // rendered it. Only when it is outside the visible part, so a click on a
+  // row (already visible) never moves the list.
+  const treeRef = useRef<HTMLDivElement | null>(null);
+  const scrollPending = useRef<PageId | null>(null);
+  useEffect(() => {
+    const id = scrollPending.current;
+    if (!id || id !== selectedId) return;
+    const frame = requestAnimationFrame(() => {
+      const tree = treeRef.current;
+      if (!tree) return;
+      const row = [...tree.querySelectorAll<HTMLElement>("[data-page-id]")].find((item) => item.dataset.pageId === id);
+      if (!row) return; // not rendered yet: the next render tries again
+      scrollPending.current = null;
+      const view = tree.getBoundingClientRect();
+      const box = row.getBoundingClientRect();
+      if (box.top >= view.top && box.bottom <= view.bottom) return;
+      row.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  });
 
   // D11: focus the next sibling after a delete, else the New page button.
   useEffect(() => {
@@ -273,6 +301,7 @@ export function Sidebar(props: SidebarProps) {
       ) : null}
 
       <div
+        ref={treeRef}
         className="page-tree"
         data-testid="page-tree"
         role="tree"
@@ -327,6 +356,10 @@ export function Sidebar(props: SidebarProps) {
           />
         )}
       </div>
+
+      {props.onOpenTag && props.onRenameTag ? (
+        <TagsPane pages={pages} onOpenTag={props.onOpenTag} onRenameTag={props.onRenameTag} />
+      ) : null}
 
       <button
         type="button"
