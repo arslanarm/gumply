@@ -456,3 +456,49 @@ test('trash: "Show in file manager" reveals the trashed file and never opens it 
     await app.close();
   }
 });
+
+test('UI preferences survive a relaunch on another port: theme, sidebar, a board view (#c7fzzxk8)', async () => {
+  let savedView = '';
+  {
+    const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+    await expectPageTitle(window, 'Welcome');
+    writeFileSync(join(vault, 'Trip.canvas'), '{"nodes":[{"id":"a1","type":"text","text":"Hi","x":0,"y":0,"width":200,"height":80}],"edges":[]}\n');
+    await expect(window.getByTestId('page-item-Trip.canvas')).toBeVisible({ timeout: 6_000 });
+    // System → Light → Dark.
+    await window.getByTestId('theme-toggle').click();
+    await window.getByTestId('theme-toggle').click();
+    await expect(window.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await window.getByTestId('sidebar-toggle').click();
+    await expect.poll(() => window.evaluate(() => localStorage.getItem('gumply:sidebar'))).toBe('closed');
+    // Pan the board (scrolling pans); its view is remembered per board.
+    await window.evaluate(() => {
+      window.location.hash = '#/Trip.canvas';
+    });
+    const board = window.getByTestId('board');
+    await expect(board).toBeVisible();
+    const box = (await board.boundingBox())!;
+    await window.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await window.mouse.wheel(0, 240);
+    await expect
+      .poll(() => window.evaluate(() => localStorage.getItem('gumply:board-view:Trip.canvas')))
+      .not.toBeNull();
+    savedView = (await window.evaluate(() => localStorage.getItem('gumply:board-view:Trip.canvas')))!;
+    const closed = app.waitForEvent('close');
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    await closed;
+  }
+  const settings = JSON.parse(readFileSync(join(userData, 'gumply-desktop.json'), 'utf8')) as { uiState: Record<string, string> };
+  expect(settings.uiState).toMatchObject({ 'gumply:theme': 'dark', 'gumply:sidebar': 'closed', 'gumply:board-view:Trip.canvas': savedView });
+
+  // A new port is a new origin: its localStorage starts empty, as in every real launch.
+  const { app, window } = await launch({ GUMPLY_DESKTOP_PORT: String(port + 1) });
+  try {
+    await expect(window).toHaveURL(new RegExp(`^http://127\\.0\\.0\\.1:${port + 1}/`));
+    await expect(window.locator('html')).toHaveAttribute('data-theme', 'dark');
+    expect(await window.evaluate(() => localStorage.getItem('gumply:sidebar'))).toBe('closed');
+    await expect(window.getByTestId('sidebar')).toBeHidden();
+    expect(await window.evaluate(() => localStorage.getItem('gumply:board-view:Trip.canvas'))).toBe(savedView);
+  } finally {
+    await app.close();
+  }
+});

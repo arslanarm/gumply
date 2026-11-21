@@ -1,6 +1,7 @@
 import { APP_NAME, CORE_VERSION, type ApiError, type HealthResponse } from "@gumply/core";
 import { Hono } from "hono";
-import { VaultError } from "./errors.js";
+import { badRequest, VaultError } from "./errors.js";
+import { parseUiStateChange, type UiStateStore } from "./ui-state.js";
 import { createApiRoutes } from "./routes.js";
 import { localOnly, type SecurityOptions } from "./security.js";
 import { serveWebApp } from "./static.js";
@@ -17,6 +18,8 @@ export interface AppOptions {
   version?: string;
   /** The desktop app's server (v1.9): /api/health says so. */
   desktop?: boolean;
+  /** Desktop only (#c7fzzxk8): serve `GET/PUT /api/ui/state` from this store. */
+  uiState?: UiStateStore;
 }
 
 /**
@@ -39,6 +42,21 @@ export function createApp(options: AppOptions): Hono {
     };
     return c.json(body);
   });
+
+  // #c7fzzxk8: the desktop app's UI preferences survive its random port.
+  const uiState = options.uiState;
+  if (uiState) {
+    app.get("/api/ui/state", (c) => c.json(uiState.get()));
+    app.put("/api/ui/state", async (c) => {
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        throw badRequest("Expected JSON");
+      }
+      return c.json(uiState.update(parseUiStateChange(body)));
+    });
+  }
 
   app.route("/api", createApiRoutes(options.store));
 
