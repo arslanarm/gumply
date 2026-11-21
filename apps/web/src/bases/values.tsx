@@ -78,31 +78,19 @@ export function imageOf(row: BaseRow, view: BaseView): { url?: string; color?: s
 }
 
 /**
- * A card's cover. `fillWidth` (Kanban, as Obsidian 1.14.4 draws it): a
- * `contain` image spans the card's width at its own proportions instead of
- * sitting in the aspect box with bars at the sides (@opus-hunter, #armmzdrx).
- * Its height is capped at the card's width × `imageAspectRatio`, letterboxed
- * past that, so a very tall image can't swallow the card. Colour covers
- * have no proportions of their own and always use the aspect box.
+ * A card's cover. Cards: a box of the card's width at `imageAspectRatio`.
+ * Kanban (`height`): a fixed box, the card's width × `columnWidth ×
+ * imageAspectRatio` tall, as Obsidian 1.14.4 draws it (@opus-hunter's
+ * measurement, #armmzdrx). `contain` letterboxes inside the box on a muted
+ * fill, `cover` fills it, a colour fills it.
  */
-export function ImageBox({ row, view, ratio, fillWidth = false }: { row: BaseRow; view: BaseView; ratio: number; fillWidth?: boolean }) {
+export function ImageBox({ row, view, ratio, height }: { row: BaseRow; view: BaseView; ratio: number; height?: number }) {
   const image = imageOf(row, view);
   if (!image) return null;
   const fit = view.imageFit === "contain" ? "contain" : "cover";
-  if (fillWidth && fit === "contain" && image.url) {
-    return (
-      <div
-        className="base-card-image is-natural"
-        data-testid="base-card-image"
-        style={{ "--cover-max": `${ratio * 100}cqw` } as CSSProperties}
-        aria-hidden="true"
-      >
-        <img src={image.url} alt="" loading="lazy" />
-      </div>
-    );
-  }
+  const size: CSSProperties = height !== undefined ? { height } : { aspectRatio: `${1 / ratio}` };
   return (
-    <div className="base-card-image" data-testid="base-card-image" style={{ aspectRatio: `${1 / ratio}`, background: image.color }} aria-hidden="true">
+    <div className="base-card-image" data-testid="base-card-image" style={{ ...size, background: image.color }} aria-hidden="true">
       {image.url ? <img src={image.url} alt="" loading="lazy" style={{ objectFit: fit }} /> : null}
     </div>
   );

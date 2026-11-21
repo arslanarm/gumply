@@ -109,6 +109,17 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(result.rows.map((row) => row.title)).toContain("Gamma");
   });
 
+  it("picks up a base edited outside Gumply (Obsidian) on the next rescan", async () => {
+    const { app, store, dir } = await vault(files);
+    const before = await getJson<{ meta: PageMeta }>(app, `/api/bases/${encodeId("Projects/Tasks.base")}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(join(dir, "Projects/Tasks.base"), TASKS_BASE.replace("name: Open", "name: Still open"), "utf8");
+    await store.rescan();
+    const after = await getJson<{ meta: PageMeta; config: ReturnType<typeof parseBase> }>(app, `/api/bases/${encodeId("Projects/Tasks.base")}`);
+    expect(after.config.views[0]!.name).toBe("Still open");
+    expect(after.meta.updated > before.meta.updated).toBe(true);
+  });
+
   it("knows this: the page a base is embedded in", async () => {
     const { app } = await vault({
       ...files,
