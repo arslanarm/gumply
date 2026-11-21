@@ -5,9 +5,12 @@
  * window has no preload API by design, D26).
  */
 
-/** Canvas limits browsers enforce (Chrome: 32767 px a side, ~268 M px). */
+/**
+ * Under the canvas limits browsers enforce (Chrome: 32767 px a side, ~268 M
+ * px), and small enough to encode quickly: 64 M px is 8000×8000.
+ */
 const MAX_SIDE = 16_384;
-const MAX_AREA = 120_000_000;
+const MAX_AREA = 64_000_000;
 
 /** The scale for a PNG: 2× unless that would exceed the canvas limits. */
 export function pngScale(width: number, height: number, wanted = 2): number {

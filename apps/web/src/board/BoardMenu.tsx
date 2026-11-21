@@ -53,11 +53,13 @@ function ExportIcon() {
   );
 }
 
-export function BoardMenu({ hasSelection, busy, onExport }: {
+export function BoardMenu({ hasSelection, busy, onExport, onOpen }: {
   hasSelection: boolean;
   /** An export is running: its items show progress and can't start another. */
   busy: ExportFormat | null;
   onExport: (request: ExportRequest) => void;
+  /** The menu opened (the host can start loading the export code). */
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState(hasSelection);
@@ -68,6 +70,12 @@ export function BoardMenu({ hasSelection, busy, onExport }: {
   useEffect(() => {
     if (open) setSelection(hasSelection);
   }, [open, hasSelection]);
+
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+  useEffect(() => {
+    if (open) onOpenRef.current?.();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

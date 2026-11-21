@@ -13,6 +13,7 @@ import { BoardIcon } from "./icons.js";
 import { inkExtent, inkPath } from "./ink.js";
 import { useBoardContent } from "./content/context.js";
 import { useLinkAutocomplete } from "./content/LinkAutocomplete.js";
+import type { FitBatch } from "./fit-batch.js";
 import { textBucket } from "./lod.js";
 import { safeExternalUrl } from "./model.js";
 
@@ -152,10 +153,10 @@ function TextEditor({ node, className, placeholder, onHeight }: {
 const fitCache = new Map<string, number>();
 
 /**
- * Fitted sizes depend on the font: the export stage sets text in its own font
- * (spec/v0-6 §D) and scopes its sizes so the two never mix.
+ * The export stage (spec/v0-6 §D) fits all its text in one batch, and in its
+ * own font, so its sizes are remembered apart from the screen's.
  */
-export const FitScopeContext = createContext("");
+export const FitBatchContext = createContext<FitBatch | null>(null);
 const FIT_CACHE_LIMIT = 4000;
 
 function rememberFit(key: string, size: number): void {
@@ -175,8 +176,8 @@ function useFitText(
   cacheKey: string | null = null,
 ) {
   const ref = useRef<HTMLDivElement>(null);
-  const scope = useContext(FitScopeContext);
-  const key = cacheKey === null ? null : `${scope}|${max}|${cacheKey}`;
+  const batch = useContext(FitBatchContext);
+  const key = cacheKey === null ? null : `${batch ? "export" : ""}|${max}|${cacheKey}`;
   const [size, setSize] = useState(() => (key !== null ? fitCache.get(key) : undefined) ?? max);
   useLayoutEffect(() => {
     const element = ref.current;
@@ -184,6 +185,18 @@ function useFitText(
     const known = key !== null ? fitCache.get(key) : undefined;
     if (known !== undefined) {
       setSize(known);
+      return;
+    }
+    if (batch) {
+      batch.add({
+        element,
+        max,
+        min,
+        done: (fitted) => {
+          if (key !== null) rememberFit(key, fitted);
+          setSize(fitted);
+        },
+      });
       return;
     }
     let low = min;

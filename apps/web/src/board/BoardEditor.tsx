@@ -1632,7 +1632,7 @@ function BoardCanvas(props: BoardEditorProps) {
             ) : null}
 
             <Panel position="top-right">
-              <BoardMenu hasSelection={selectedNodeIds.length > 0} busy={exporter.busy} onExport={exporter.start} />
+              <BoardMenu hasSelection={selectedNodeIds.length > 0} busy={exporter.busy} onExport={exporter.start} onOpen={exporter.preload} />
             </Panel>
 
             <Panel position="bottom-right" className="board-zoom">

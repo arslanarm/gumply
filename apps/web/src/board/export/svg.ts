@@ -34,7 +34,6 @@ interface Output {
   body: string[];
   nextId: number;
   images: Array<Promise<void>>;
-  shadows: Map<string, string>;
   /** Text actually drawn, to pick the font subsets to embed. */
   text: string[];
   italic: boolean;
@@ -109,30 +108,24 @@ export function parseBoxShadow(value: string): Shadow[] {
   return shadows;
 }
 
-function shadowFilter(out: Output, value: string): string | null {
-  const known = out.shadows.get(value);
-  if (known !== undefined) return known;
-  const shadows = parseBoxShadow(value);
-  if (shadows.length === 0) {
-    out.shadows.set(value, "");
-    return null;
+/**
+ * Soft shadows as a few translucent rects, each a little larger than the
+ * last (an approximation of the blur). Blur filters looked the same at these
+ * sizes but made PNGs of big boards several times slower to rasterise, and
+ * some design tools ignore them.
+ */
+function emitShadows(out: Output, value: string, x: number, y: number, width: number, height: number, rx: number, ry: number): void {
+  const LAYERS = 2;
+  for (const shadow of parseBoxShadow(value)) {
+    for (let layer = 0; layer < LAYERS; layer += 1) {
+      const grow = shadow.blur <= 0 ? 0 : (shadow.blur / 2) * ((layer + 1) / LAYERS) - shadow.blur / 4;
+      const corner = rx > 0 || grow > 0 ? ` rx="${num(Math.max(0, rx + grow))}" ry="${num(Math.max(0, ry + grow))}"` : "";
+      out.body.push(
+        `<rect x="${num(x + shadow.x - grow)}" y="${num(y + shadow.y - grow)}" width="${num(width + grow * 2)}" height="${num(height + grow * 2)}"${corner} fill="${shadow.color}" fill-opacity="${num(shadow.blur <= 0 ? 1 : 1 / LAYERS + 0.15)}"/>`,
+      );
+      if (shadow.blur <= 0) break;
+    }
   }
-  const id = `s${out.nextId++}`;
-  const steps: string[] = [];
-  shadows.forEach((shadow, index) => {
-    steps.push(
-      `<feGaussianBlur in="SourceAlpha" stdDeviation="${num(shadow.blur / 2)}"/>`,
-      `<feOffset dx="${num(shadow.x)}" dy="${num(shadow.y)}" result="o${index}"/>`,
-      `<feFlood flood-color="${shadow.color}"/>`,
-      `<feComposite in2="o${index}" operator="in" result="d${index}"/>`,
-    );
-  });
-  const merge = shadows.map((_, index) => `<feMergeNode in="d${index}"/>`).join("");
-  out.defs.push(
-    `<filter id="${id}" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">${steps.join("")}<feMerge>${merge}<feMergeNode in="SourceGraphic"/></feMerge></filter>`,
-  );
-  out.shadows.set(value, id);
-  return id;
 }
 
 function emitBox(out: Output, style: CSSStyleDeclaration, box: DOMRect, origin: SvgOptions["origin"]): void {
@@ -144,10 +137,8 @@ function emitBox(out: Output, style: CSSStyleDeclaration, box: DOMRect, origin: 
   const corners = rx > 0 ? ` rx="${num(rx)}" ry="${num(ry)}"` : "";
   const background = style.backgroundColor;
   if (visibleColor(background)) {
-    const filter = shadowFilter(out, style.boxShadow);
-    out.body.push(
-      `<rect x="${num(x)}" y="${num(y)}" width="${num(box.width)}" height="${num(box.height)}"${corners} fill="${background}"${filter ? ` filter="url(#${filter})"` : ""}/>`,
-    );
+    if (style.boxShadow && style.boxShadow !== "none") emitShadows(out, style.boxShadow, x, y, box.width, box.height, rx, ry);
+    out.body.push(`<rect x="${num(x)}" y="${num(y)}" width="${num(box.width)}" height="${num(box.height)}"${corners} fill="${background}"/>`);
   }
   const sides = [
     [style.borderTopWidth, style.borderTopColor, style.borderTopStyle],
@@ -481,7 +472,7 @@ export async function elementToSvg(
   root: Element,
   options: Omit<SvgOptions, "fontCss"> & { fontCss: string | ((used: { text: string; italic: boolean }) => Promise<string>) },
 ): Promise<SvgResult> {
-  const out: Output = { defs: [], body: [], nextId: 0, images: [], shadows: new Map(), text: [], italic: false };
+  const out: Output = { defs: [], body: [], nextId: 0, images: [], text: [], italic: false };
   const resolved: SvgOptions = { ...options, fontCss: "" };
   for (const child of Array.from(root.children)) visit(out, child, resolved);
   await Promise.all(out.images);

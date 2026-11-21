@@ -14,7 +14,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { EDGE_TYPES } from "../BoardEdge.js";
 import { syncEdges, syncNodes } from "../flow.js";
-import { FitScopeContext, NODE_TYPES } from "../nodes.js";
+import { FitBatch } from "../fit-batch.js";
+import { FitBatchContext, NODE_TYPES } from "../nodes.js";
 import { EXPORT_FONT_STACK, embeddedFontCss, loadExportFonts } from "./fonts.js";
 import { elementToSvg } from "./svg.js";
 
@@ -35,6 +36,7 @@ export interface ExportStageProps {
 
 const STAGE_CSS = `
 .board-export-stage { position: fixed; left: -200000px; top: 0; pointer-events: none; contain: layout style; }
+.board-export-stage .react-flow__node { contain: layout style; }
 .board-export-stage :where(*:not(code, pre, kbd, samp, .board-card-emoji)) { font-family: ${EXPORT_FONT_STACK}; }
 `;
 
@@ -73,7 +75,7 @@ function frame(): Promise<void> {
 }
 
 /** Wait until the stage shows every object and stops changing (page previews, images). */
-async function settle(root: HTMLElement, nodes: number, edges: number): Promise<void> {
+async function settle(root: HTMLElement, nodes: number, edges: number, fitBatch: FitBatch): Promise<void> {
   const started = performance.now();
   let lastChange = performance.now();
   const observer = new MutationObserver(() => {
@@ -89,7 +91,7 @@ async function settle(root: HTMLElement, nodes: number, edges: number): Promise<
       const shownEdges = root.querySelectorAll(".react-flow__edge").length;
       const images = Array.from(root.querySelectorAll("img"));
       const loading = images.some((image) => !image.complete);
-      if (shownNodes < nodes || shownEdges < edges || loading) continue;
+      if (shownNodes < nodes || shownEdges < edges || loading || fitBatch.busy) continue;
       if (now - lastChange >= QUIET_MS) return;
     }
   } finally {
@@ -104,6 +106,7 @@ export default function ExportStage({ board, background, onDone, onError }: Expo
   const height = Math.ceil(bounds.height + EXPORT_PADDING * 2);
   const nodes = useMemo(() => syncNodes([], board, null, new Set()), [board]);
   const edges = useMemo(() => syncEdges([], board, null, new Set()), [board]);
+  const fitBatch = useMemo(() => new FitBatch(), []);
   const latest = useRef({ onDone, onError });
   latest.current = { onDone, onError };
 
@@ -113,7 +116,7 @@ export default function ExportStage({ board, background, onDone, onError }: Expo
       try {
         const root = ref.current;
         if (!root) throw new Error("The export stage isn't mounted");
-        await settle(root, nodes.length, edges.length);
+        await settle(root, nodes.length, edges.length, fitBatch);
         await document.fonts.ready;
         if (cancelled) return;
         const viewport = root.querySelector(".react-flow__viewport") ?? root;
@@ -147,7 +150,7 @@ export default function ExportStage({ board, background, onDone, onError }: Expo
       data-testid="board-export-stage"
     >
       <style>{STAGE_CSS}</style>
-      <FitScopeContext.Provider value="export">
+      <FitBatchContext.Provider value={fitBatch}>
       <ReactFlowProvider>
         <ReactFlow
           nodes={nodes}
@@ -172,7 +175,7 @@ export default function ExportStage({ board, background, onDone, onError }: Expo
           connectionMode={ConnectionMode.Loose}
         />
       </ReactFlowProvider>
-      </FitScopeContext.Provider>
+      </FitBatchContext.Provider>
     </div>,
     document.body,
   );

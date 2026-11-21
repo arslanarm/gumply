@@ -39,7 +39,7 @@ export function useBoardExport({ boardId, board, selectedNodeIds, rootRef, onErr
   selectedNodeIds: readonly string[];
   rootRef: RefObject<HTMLElement | null>;
   onError: (message: string) => void;
-}): { busy: ExportFormat | null; start: (request: ExportRequest) => void; stage: ReactNode } {
+}): { busy: ExportFormat | null; start: (request: ExportRequest) => void; preload: () => void; stage: ReactNode } {
   const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState<ExportFormat | null>(null);
   const latest = useRef({ board, selectedNodeIds, boardId, onError });
@@ -90,7 +90,8 @@ export function useBoardExport({ boardId, board, selectedNodeIds, rootRef, onErr
             download.downloadBlob(new Blob([result.svg], { type: "image/svg+xml" }), name);
           } else {
             const scale = download.pngScale(result.width, result.height);
-            download.downloadBlob(await download.svgToPng(result.svg, result.width, result.height, scale), name);
+            const blob = await download.svgToPng(result.svg, result.width, result.height, scale);
+            download.downloadBlob(blob, name);
           }
           setBusy(null);
         } catch (error) {
@@ -101,11 +102,18 @@ export function useBoardExport({ boardId, board, selectedNodeIds, rootRef, onErr
     [fail, job],
   );
 
+  /** Opening the menu starts loading the export code and font. */
+  const preload = useCallback(() => {
+    void loadExport()
+      .then(([stageModule]) => stageModule.prepareExport())
+      .catch(() => undefined);
+  }, []);
+
   const stage = job ? (
     <Suspense fallback={null}>
       <ExportStage key={job.id} board={job.board} background={job.background} onDone={onDone} onError={fail} />
     </Suspense>
   ) : null;
 
-  return { busy, start, stage };
+  return { busy, start, preload, stage };
 }
