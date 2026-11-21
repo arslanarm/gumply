@@ -1433,7 +1433,7 @@ export class VaultStore {
         ["updated"],
         titleFromId(other.id),
       );
-      other.content = result.content;
+      other.content = noteBody(result.content);
       other.updated = otherWritten.frontmatter
         ? rewrittenAt
         : mtimeVersion(otherWritten.mtimeMs);
@@ -1586,7 +1586,7 @@ export class VaultStore {
         ["updated"],
         titleFromId(record.id),
       );
-      record.content = next;
+      record.content = noteBody(next);
       record.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
       record.fileMtimeMs = written.mtimeMs;
       changed.push(record.id);
@@ -2270,7 +2270,7 @@ export class VaultStore {
         ["updated"],
         titleFromId(other.id),
       );
-      other.content = result.content;
+      other.content = noteBody(result.content);
       other.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
       other.fileMtimeMs = written.mtimeMs;
       this.refreshTags(other);

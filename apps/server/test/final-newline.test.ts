@@ -73,5 +73,23 @@ describe("the final newline (#5fv7c25w)", () => {
     expect(((await saved.json()) as { content: string }).content).toBe("Edited");
     expect((await getJson<{ content: string }>(app, `/api/pages/${encodeId("Notes")}`)).content).toBe("Edited");
   });
+
+  it("`content` has no final newline after a move's attachment relink and a trash restore", async () => {
+    const { app, dir } = await createTestServer();
+    await createPage(app, { title: "Box" });
+    const pic = "![pic](attachments/pic.png)\n";
+    await createPage(app, { title: "Pic", content: pic });
+    // D23 relink: moving the page one level deeper rewrites its attachment link.
+    const moved = await jsonRequest(app, "POST", `/api/pages/${encodeId("Pic")}/move`, { parentId: "Box" });
+    expect(moved.status).toBe(200);
+    const relinked = await getJson<{ content: string }>(app, `/api/pages/${encodeId("Box/Pic")}`);
+    expect(relinked.content).toBe("![pic](../attachments/pic.png)");
+    expect(await readFile(join(dir, "Box/Pic.md"), "utf8")).toMatch(/\.\.\/attachments\/pic\.png\)\n$/);
+
+    // Trash and restore: read back from disk.
+    const deleted = (await (await jsonRequest(app, "DELETE", `/api/pages/${encodeId("Box")}`)).json()) as { trashId: string };
+    await jsonRequest(app, "POST", `/api/trash/${deleted.trashId}/restore`);
+    expect((await getJson<{ content: string }>(app, `/api/pages/${encodeId("Box/Pic")}`)).content).toBe("![pic](../attachments/pic.png)");
+  });
 });
 
