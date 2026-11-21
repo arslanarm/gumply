@@ -68,7 +68,7 @@ export {
 } from "./links.js";
 
 export { parseEmbeds } from "./embeds.js";
-export { markdownLinks, plainText, type MarkdownLink } from "./plain-text.js";
+export { linkSnippet, markdownLinks, plainText, type MarkdownLink } from "./plain-text.js";
 export {
   formatWikilink,
   linkTargetFor,

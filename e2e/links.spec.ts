@@ -69,6 +69,25 @@ test.describe('wikilinks and backlinks', () => {
     await expectPageTitle(page, 'Source');
   });
 
+  test('“Linked from” snippets read as plain text, with the link highlighted (#zrxjbn6e)', async ({
+    page,
+    vault,
+  }) => {
+    const [budget] = await vault.seed([{ title: 'Budget', content: 'Costs.' }]);
+    const [trip] = await vault.seed([
+      {
+        title: 'Trip',
+        content: '# Packing\n\n- passport\n- [ ] book the hotel\n\nSee [[Budget|the budget]] for **costs**. #travel\n',
+      },
+    ]);
+
+    await page.goto(`/#/${encodeURIComponent(budget!.id)}`);
+    await expectPageTitle(page, 'Budget');
+    const snippet = page.getByTestId(`backlink-${trip!.id}`).locator('.backlink-snippet');
+    await expect(snippet).toHaveText('Packing passport book the hotel See the budget for costs. #travel');
+    await expect(snippet.locator('mark')).toHaveText('the budget');
+  });
+
   test('clicking an unresolved link creates that page, opens it and focuses the body', async ({
     page,
     vault,

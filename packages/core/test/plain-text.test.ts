@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markdownLinks, plainText } from "../src/plain-text";
+import { linkSnippet, markdownLinks, plainText } from "../src/plain-text";
 
 describe("plainText (#6zifz7da)", () => {
   it("drops inline formatting so phrases read as on screen", () => {
@@ -63,5 +63,46 @@ describe("markdownLinks (#6zifz7da review)", () => {
     // Bare URLs and autolinks are visible text already.
     expect(plainText(md)).toContain("https://github.com/foo");
     expect(plainText(md)).toContain("Mail mailto:me@example.com or see https://figma.com/file/1.");
+  });
+});
+
+describe("linkSnippet (#zrxjbn6e)", () => {
+  const at = (md: string, raw: string) => linkSnippet(md, md.indexOf(raw), raw.length, 60);
+
+  it("shows the text around a link as on screen, with the link itself raw", () => {
+    const md = [
+      "Flights and hotels for the spring trip.",
+      "",
+      "# Packing",
+      "",
+      "- passport",
+      "- **charger**",
+      "",
+      "- [ ] book the hotel",
+      "",
+      "See [[Budget]] for costs, and `npm run` in [the docs](https://x.example). #travel",
+    ].join("\n");
+    const snippet = at(md, "[[Budget]]");
+    expect(snippet).toBe("…spring trip. Packing passport charger book the hotel See [[Budget]] for costs, and npm run in the docs. #travel");
+    expect(snippet).not.toMatch(/(^|\s)(#|-|\[ \])\s|\*\*|\]\(/);
+  });
+
+  it("keeps the alias form, spacing and punctuation next to the link", () => {
+    expect(at("See [[Target|the target]].", "[[Target|the target]]")).toBe("See [[Target|the target]].");
+    expect(at("[[Target]]s are plural", "[[Target]]")).toBe("[[Target]]s are plural");
+    expect(at("[[Target]] - a dash after", "[[Target]]")).toBe("[[Target]] - a dash after");
+    expect(at("> [!note] Read [[Target]]", "[[Target]]")).toBe("Read [[Target]]");
+    expect(at("| a | [[Target]] | b |", "[[Target]]")).toBe("a [[Target]] b");
+    expect(at("**bold [[Target]] still bold**", "[[Target]]")).toBe("bold [[Target]] still bold");
+  });
+
+  it("flattens other links and cuts long context at word boundaries", () => {
+    const long = `${"word ".repeat(40)}see [[Other|another page]] and [[Target]] then ${"tail ".repeat(40)}`;
+    const snippet = at(long, "[[Target]]");
+    expect(snippet.startsWith("…word ")).toBe(true);
+    expect(snippet).toContain("another page and [[Target]] then tail");
+    expect(snippet.endsWith("tail…")).toBe(true);
+    expect(snippet).not.toContain("[[Other");
+    expect(snippet.length).toBeLessThan(140);
   });
 });
