@@ -124,6 +124,15 @@ test.describe('page previews (#5dpxwac4)', () => {
     await expect(page.getByTestId('editor-content')).toContainText(`Second block. ^${id!.slice(0, 5)}`);
     await page.keyboard.press('Control+z');
     await expect(page.getByTestId('block-id-chip')).toHaveText(`^${id}`);
+
+    // The editor's right-click menu offers the same, here for the first block.
+    await page.getByTestId('editor-content').getByText('First block.').click({ button: 'right' });
+    await page.getByTestId('context-copy-block-embed').click();
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+    const firstId = /First block\. \^([a-z0-9]{6})/.exec((await api.getPage(request, 'Roadmap')).content)?.[1];
+    expect(firstId).toBeTruthy();
+    expect(firstId).not.toBe(id);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`![[Roadmap#^${firstId}]]`);
   });
 
   test('missing page, heading and block read calmly; Create makes the page', async ({ page, request, vault }) => {
