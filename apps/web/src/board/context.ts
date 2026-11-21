@@ -13,6 +13,13 @@ export interface BoardActions {
   commitText: (id: string, text: string, size?: { height?: number }) => void;
   /** Leave edit mode without saving. */
   cancelEditing: () => void;
+  /**
+   * Text typed so far, before the edit is committed (#3t6v62cb): it goes to
+   * the autosave as a draft so a reload or quit mid-typing keeps it. Undo
+   * history still gets one step, on commit.
+   */
+  draftText: (id: string, text: string) => void;
+  draftEdgeLabel: (id: string, label: string) => void;
   startEditingEdge: (id: string) => void;
   commitEdgeLabel: (id: string, label: string) => void;
   /** Change a connector (colour, ends); `undefined` removes a key. */

@@ -13,6 +13,7 @@ import { LinkMenu } from "./LinkMenu.js";
 import { SlashMenu } from "./SlashMenu.js";
 import { TableControls } from "./TableControls.js";
 import { Autosave, type SaveState } from "../editor/autosave.js";
+import { registerSaver } from "../lib/pending-saves.js";
 import {
   findUploadNode,
   finishUpload,
@@ -231,6 +232,26 @@ export function Editor({
           if (!force) forceRef.current = false;
           throw error;
         }
+      },
+      // Leaving the page (#3t6v62cb): a keepalive PUT. After a write still in
+      // flight its new version isn't known yet, so this one goes without
+      // `expectedUpdated`; the server's own mtime check still catches an
+      // outside edit.
+      exitSave: (content, afterInFlight) => {
+        const savedId = pageIdRef.current;
+        const request = api.updatePageOnExit(savedId, {
+          content,
+          ...(afterInFlight ? {} : { expectedUpdated: versionRef.current }),
+        });
+        // If the page stays after all (a `mailto:` link fires beforeunload),
+        // the app learns the new version like after any save, so the disk
+        // poll never mistakes our own write for an outside change.
+        return (
+          request?.then((updated) => {
+            versionRef.current = updated.updated;
+            onSavedRef.current?.(updated, savedId);
+          }) ?? null
+        );
       },
       isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
       onState: (state) => onSaveStateRef.current(state),
@@ -711,7 +732,15 @@ export function Editor({
   editorRef.current = editor;
 
   useEffect(() => {
+    // Reload, close and quit flush this page too (#3t6v62cb).
+    const unregister = registerSaver({
+      isDirty: () => autosave.isDirty(),
+      hasFailed: () => autosave.hasFailed(),
+      flush: () => autosave.flush(),
+      flushOnExit: () => autosave.flushOnExit(),
+    });
     return () => {
+      unregister();
       autosave.dispose();
     };
   }, [autosave]);

@@ -65,6 +65,9 @@ function LabelEditor({ id, initial }: { id: string; initial: string }) {
       aria-label="Connector label"
       placeholder="Label"
       data-testid="board-edge-input"
+      onInput={() => {
+        if (ref.current) actions.draftEdgeLabel(id, ref.current.value);
+      }}
       onBlur={finish}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {

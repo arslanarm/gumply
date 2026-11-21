@@ -32,6 +32,7 @@ import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { GRAPH_HASH, isGraphHash, pageHash, pageIdFromHash } from "./lib/routing.js";
+import { installUnloadGuards } from "./lib/pending-saves.js";
 import { isTypingTarget } from "./lib/shortcuts.js";
 import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
@@ -598,16 +599,10 @@ export function App() {
     };
   }, [selectedId, pageReload, navigate]);
 
-  // beforeunload guard while edits are pending or a save has failed (D14 §7).
-  useEffect(() => {
-    if (saveState !== "saving" && saveState !== "error") return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [saveState]);
+  // Reload, close and quit never lose the last edits (D14 §7, #3t6v62cb):
+  // pending saves go out as keepalive requests; the browser only asks
+  // "Leave site?" when they can't (too big, a conflict, a failed save).
+  useEffect(() => installUnloadGuards(), []);
 
   // backlinks follow the open page and refresh after a successful save.
   useEffect(() => {

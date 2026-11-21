@@ -93,7 +93,11 @@ test('opens a new vault with the demo, saves typing to disk, opens a board', asy
     expect(await window.title()).toContain('Gumply');
     // Settings live in ~/.config/Gumply in dev and packaged builds alike.
     expect(await app.evaluate(({ app: electronApp }) => electronApp.getName())).toBe('Gumply');
-    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getTitle())).toBe('Gumply — vault');
+    // The window shows the web app's own title (#ux5cukze sets page and vault).
+    const title = await window.title();
+    await expect
+      .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getTitle()))
+      .toBe(title);
 
     // Type in a page: the Markdown file on disk changes.
     const editor = window.getByTestId('editor-content');
@@ -330,4 +334,42 @@ test('reports the installed app version, not the source default (#2d683n79)', as
   } finally {
     await app.close();
   }
+});
+
+test('quitting right after typing keeps the words, in a page and in a sticky (#3t6v62cb)', async () => {
+  const first = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  {
+    const { app, window } = first;
+    await expectPageTitle(window, 'Welcome');
+    const body = window.getByTestId('editor').locator('.ProseMirror');
+    await body.click();
+    await window.keyboard.press('Control+End');
+    await window.keyboard.type(' Typed right before quitting.');
+    // Ctrl+Q at once: well within the 600 ms autosave debounce.
+    const closed = app.waitForEvent('close');
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    await closed;
+  }
+  expect(readFileSync(join(vault, 'Welcome.md'), 'utf8')).toContain('Typed right before quitting.');
+
+  // A sticky still in edit mode, then closing the window.
+  writeFileSync(join(vault, 'Trip.canvas'), '{"nodes":[],"edges":[]}\n');
+  const second = await launch();
+  {
+    const { app, window } = second;
+    await window.evaluate(() => {
+      window.location.hash = '#/Trip.canvas';
+    });
+    const board = window.getByTestId('board');
+    await expect(board).toBeVisible();
+    const box = await board.boundingBox();
+    if (!box) throw new Error('no board');
+    await window.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+    await window.keyboard.type('Book flights');
+    const closed = app.waitForEvent('close');
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
+    await closed;
+  }
+  const saved = JSON.parse(readFileSync(join(vault, 'Trip.canvas'), 'utf8')) as { nodes: Array<{ text?: string }> };
+  expect(saved.nodes.map((node) => node.text)).toEqual(['Book flights']);
 });

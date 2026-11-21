@@ -95,6 +95,20 @@ export interface DeletePageResult {
 }
 
 const pagePath = (id: PageId): string => `/pages/${encodeURIComponent(id)}`;
+
+/** Browsers cap all keepalive request bodies in flight at 64 KB. */
+export const KEEPALIVE_LIMIT = 60_000;
+
+/**
+ * A PUT that outlives the page (#3t6v62cb): sent synchronously with
+ * `keepalive`, outside the mutation chain (the page may be gone before the
+ * chain gets to it). Null when the body is too big for keepalive.
+ */
+function exitPut<T>(path: string, body: unknown): Promise<T> | null {
+  const json = JSON.stringify(body);
+  if (new Blob([json]).size > KEEPALIVE_LIMIT) return null;
+  return request<T>(path, { method: "PUT", body: json, keepalive: true });
+}
 const boardPath = (id: PageId): string => `/boards/${encodeURIComponent(id)}`;
 
 /** spec/api v1.7: a board and its tree metadata (`meta.kind === "whiteboard"`). */
@@ -173,6 +187,10 @@ export const api = {
       request(pagePath(id), { method: "PUT", body: JSON.stringify(patch) }),
     ),
 
+  /** Save on the way out (reload, close): keepalive; null when too big. */
+  updatePageOnExit: (id: PageId, patch: UpdatePageInput): Promise<UpdatePageResult> | null =>
+    exitPut(pagePath(id), patch),
+
   deletePage: (id: PageId): Promise<DeletePageResult> =>
     mutate(async () => {
       const result = await request<{ trashId?: string; deleted?: PageId[] } | undefined>(
@@ -201,6 +219,10 @@ export const api = {
   /** spec/whiteboard §2: save a board (409 on conflict, like pages). */
   saveBoard: (id: PageId, input: SaveBoardInput): Promise<SaveBoardResult> =>
     mutate(() => request(boardPath(id), { method: "PUT", body: JSON.stringify(input) })),
+
+  /** Save a board on the way out: keepalive; null when too big. */
+  saveBoardOnExit: (id: PageId, input: SaveBoardInput): Promise<SaveBoardResult> | null =>
+    exitPut(boardPath(id), input),
 
   createBoard: (input: { title: string; parentId?: PageId | null; icon?: string }): Promise<BoardResponse> =>
     mutate(() => request("/boards", { method: "POST", body: JSON.stringify(input) })),
