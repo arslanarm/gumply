@@ -2,8 +2,8 @@
  * Desktop UI preferences that survive a relaunch (#c7fzzxk8).
  *
  * The desktop window loads the app from a random port, so its origin and its
- * `localStorage` are new on every launch. In the desktop app (only there the
- * server answers `GET /api/ui/state`), the saved `gumply:*` entries are put
+ * `localStorage` are new on every launch. In the desktop app (`/api/health`
+ * says `desktop`; only there `GET /api/ui/state` exists), the saved `gumply:*` entries are put
  * into `localStorage` before the app renders, and every later change to a
  * `gumply:*` key is mirrored back (debounced). Call sites keep using
  * `localStorage` as before; the browser is unchanged.
@@ -19,8 +19,12 @@ type Fetch = typeof fetch;
 export async function restoreUiState(storage: Storage = window.localStorage, fetchImpl: Fetch = fetch): Promise<boolean> {
   let state: Record<string, unknown>;
   try {
+    // Ask first: in the browser app the route doesn't exist, and a 404 would
+    // show up as a console error on every start.
+    const health = await fetchImpl("/api/health", { headers: { Accept: "application/json" } });
+    if (!health.ok || ((await health.json()) as { desktop?: unknown }).desktop !== true) return false;
     const response = await fetchImpl("/api/ui/state", { headers: { Accept: "application/json" } });
-    if (!response.ok) return false; // the browser app: no such route
+    if (!response.ok) return false;
     state = (await response.json()) as Record<string, unknown>;
   } catch {
     return false;

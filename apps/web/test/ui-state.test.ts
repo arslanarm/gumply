@@ -39,7 +39,9 @@ function storage(entries: Record<string, string> = {}): Storage {
 
 function fakeFetch(state: Record<string, string> | null) {
   const calls: Array<{ method: string; body?: unknown; keepalive?: boolean }> = [];
-  const impl = vi.fn(async (_url: string, init?: RequestInit) => {
+  const impl = vi.fn(async (url: string, init?: RequestInit) => {
+    // The browser app's server says it isn't the desktop app (no ui/state route).
+    if (url === "/api/health") return new Response(JSON.stringify({ ok: true, ...(state ? { desktop: true } : {}) }), { status: 200 });
     calls.push({ method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined, keepalive: init?.keepalive });
     if (state === null) return new Response('{"error":"Not found"}', { status: 404 });
     return new Response(JSON.stringify(state), { status: 200 });
@@ -55,7 +57,8 @@ describe("desktop UI preferences mirror (#c7fzzxk8)", () => {
     expect(await restoreUiState(local, impl)).toBe(false);
     local.setItem("gumply:theme", "dark");
     await vi.advanceTimersByTimeAsync(1000);
-    expect(calls.map((call) => call.method)).toEqual(["GET"]);
+    // It never even asks for the state (no 404 in the console).
+    expect(calls).toEqual([]);
     expect(local.getItem("gumply:theme")).toBe("dark");
   });
 
