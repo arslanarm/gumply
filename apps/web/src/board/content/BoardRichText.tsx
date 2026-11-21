@@ -6,12 +6,15 @@
  */
 import MarkdownIt from "markdown-it";
 import { memo, useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
+import { highlightMarkdownPlugin } from "../../editor/highlight.js";
 import { wikilinkMarkdownPlugin } from "../../editor/wikilink/markdown-plugin.js";
 import { useBoardContent } from "./context.js";
 import { resolveBoardLink, safeWebUrl } from "./links.js";
 
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
 wikilinkMarkdownPlugin(markdown);
+// `==highlight==` on stickies too, as in pages (#bg3cb83t).
+highlightMarkdownPlugin(markdown);
 
 /**
  * `![[Loop.canvas]]` on a board (#ux5cukze): a board can't show a live board
