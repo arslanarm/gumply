@@ -224,7 +224,9 @@ describe("nested pages", () => {
       `/api/trash/${encodeURIComponent(result.trashId)}/restore`,
     );
     expect(restored.status).toBe(200);
-    const metas = (await restored.json()) as Array<Record<string, unknown>>;
+    const body = (await restored.json()) as { restored: Array<Record<string, unknown>>; id: string };
+    expect(body).toMatchObject({ id: "A", movedToTopLevel: false, renamed: false });
+    const metas = body.restored;
     expect(metas.map((meta) => meta.id).sort()).toEqual(["A", "A/B", "A/B/C"]);
     expect(metas.find((meta) => meta.id === "A")?.childCount).toBe(1);
 
@@ -241,7 +243,7 @@ describe("nested pages", () => {
     ).toBe(404);
   });
 
-  it("keeps .trash out of the page tree and refuses to restore over a live page", async () => {
+  it("keeps .trash out of the page tree; restoring onto a taken name adds ` 2` (D20)", async () => {
     const { app } = await createTestServer();
     const a = await createPage(app, { title: "A" });
     await createPage(app, { title: "Keep" });
@@ -250,7 +252,7 @@ describe("nested pages", () => {
       await jsonRequest(app, "DELETE", `/api/pages/${encodeURIComponent(a.id)}`)
     ).json()) as { trashId: string };
 
-    // Re-create the same title, then undo: the original path is taken → 409.
+    // Re-create the same title, then undo: the original name is taken.
     await createPage(app, { title: "A" });
     const list = await getJson<Array<Record<string, unknown>>>(app, "/api/pages");
     expect(list.map((page) => page.id).sort()).toEqual(["A", "Keep"]);
@@ -260,8 +262,10 @@ describe("nested pages", () => {
       "POST",
       `/api/trash/${encodeURIComponent(deleted.trashId)}/restore`,
     );
-    expect(restore.status).toBe(409);
-    expect(await restore.json()).toEqual({ error: "A page already exists at A" });
+    expect(restore.status).toBe(200);
+    expect(await restore.json()).toMatchObject({ id: "A 2", movedToTopLevel: false, renamed: true });
+    const after = await getJson<Array<Record<string, unknown>>>(app, "/api/pages");
+    expect(after.map((page) => page.id).sort()).toEqual(["A", "A 2", "Keep"]);
   });
 
   it("restores a nested subtree under its original parent", async () => {

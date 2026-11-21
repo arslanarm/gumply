@@ -81,11 +81,14 @@ export async function deletePage(
   return body ? (JSON.parse(body) as { trashId: string; deleted: string[] }) : { trashId: '', deleted: [id] };
 }
 
-/** Undo for D11. Throws on 409 — the original path was taken again. */
+/**
+ * Undo for D11. v1.9 (#ppag3ugh): back where it was, or at the top level when
+ * its folder page is gone; a taken name gets ` 2`.
+ */
 export async function restoreTrash(
   request: APIRequestContext,
   trashId: string,
-): Promise<PageMeta[]> {
+): Promise<{ restored: PageMeta[]; id: string; movedToTopLevel: boolean; renamed: boolean }> {
   const res = await request.post(api(`/trash/${encodeURIComponent(trashId)}/restore`));
   assertOk(res, `POST /trash/${trashId}/restore`);
   return res.json();
@@ -131,4 +134,20 @@ export async function resetVault(request: APIRequestContext): Promise<void> {
       `resetVault left ${leftovers.length} page(s): ${leftovers.map((p) => p.id).join(', ')}`,
     );
   }
+  await emptyTrash(request);
+}
+
+/** v1.9 (#ppag3ugh): the trash, newest first. */
+export async function listTrash(request: APIRequestContext) {
+  const res = await request.get(api('/trash'));
+  assertOk(res, 'GET /trash');
+  return res.json() as Promise<
+    Array<{ trashId: string; id: string; title: string; kind: string; children: Array<{ id: string; title: string }> }>
+  >;
+}
+
+/** v1.9: delete every trash entry for good, so each test starts with an empty trash. */
+export async function emptyTrash(request: APIRequestContext): Promise<void> {
+  const res = await request.delete(api('/trash'));
+  assertOk(res, 'DELETE /trash');
 }

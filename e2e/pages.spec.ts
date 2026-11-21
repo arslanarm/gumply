@@ -345,7 +345,7 @@ test.describe('pages and sidebar', () => {
     await expect(page.getByTestId(`page-item-${parent.id}`)).toBeVisible();
   });
 
-  test('DELETE trashes the subtree, hides .trash from the list and 409s restore on a taken path', async ({
+  test('DELETE trashes the subtree, hides .trash from the list, and restore onto a taken name adds ` 2` (v1.9)', async ({
     vault,
     request,
   }) => {
@@ -364,13 +364,17 @@ test.describe('pages and sidebar', () => {
     const listed = (await (await request.get(`${API_URL}/api/pages`)).json()) as unknown[];
     expect(listed).toHaveLength(0);
 
-    // Re-create the original path, then restoring the trash must conflict.
+    // Re-create the original path: the restore lands next to it as "Folder 2",
+    // with its sub-pages (v1.9, #ppag3ugh; was a 409).
     const recreated = await request.post(`${API_URL}/api/pages`, { data: { title: 'Folder' } });
     expect(recreated.status()).toBe(201);
     const restore = await request.post(
       `${API_URL}/api/trash/${encodeURIComponent(body.trashId)}/restore`,
     );
-    expect(restore.status()).toBe(409);
+    expect(restore.status()).toBe(200);
+    const restored = (await restore.json()) as { id: string; renamed: boolean; restored: Array<{ id: string }> };
+    expect(restored).toMatchObject({ id: 'Folder 2', renamed: true });
+    expect(restored.restored.map((meta) => meta.id).sort()).toEqual(['Folder 2', 'Folder 2/A', 'Folder 2/B']);
   });
 
   test('opening a non-existent id shows the not-found state, not a blank screen', async ({

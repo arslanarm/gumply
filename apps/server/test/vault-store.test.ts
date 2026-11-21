@@ -184,7 +184,7 @@ describe("VaultStore index on start", () => {
 
     // …but its entries remain restorable from disk.
     const restored = await reopened.restore(result.trashId);
-    expect(restored.map((meta) => meta.id)).toEqual(["A", "A/Child"]);
+    expect(restored.restored.map((meta) => meta.id)).toEqual(["A", "A/Child"]);
     expect(reopened.get("A").content).toBe("keep me");
     expect(reopened.get("A").childCount).toBe(1);
   });

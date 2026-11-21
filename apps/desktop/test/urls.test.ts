@@ -36,6 +36,21 @@ describe("desktop navigation policy (D26)", () => {
   });
 });
 
+describe("trash: Show in file manager (#ppag3ugh)", () => {
+  it("is a reveal action for a plain trash id, and nothing else", () => {
+    expect(classifyNavigation(`${origin}/api/trash/0b1c-2d3e/reveal`, origin)).toEqual({
+      kind: "trash-reveal",
+      trashId: "0b1c-2d3e",
+    });
+    for (const bad of ["/api/trash/..%2F..%2Fx/reveal", "/api/trash/a.b/reveal", "/api/trash/%2E%2E/reveal", "/api/trash//reveal"]) {
+      // (`%2E%2E` is resolved by the URL parser into another, harmless app path.)
+      expect(classifyNavigation(`${origin}${bad}`, origin).kind, bad).not.toBe("trash-reveal");
+    }
+    // Another site can't ask for it.
+    expect(classifyNavigation("http://127.0.0.1:9999/api/trash/abc/reveal", origin).kind).toBe("external");
+  });
+});
+
 describe("vault files: open documents, only reveal anything that could run", () => {
   it("opens documents, media and archives with the default app", () => {
     for (const path of ["attachments/report.pdf", "a/b/Photo.JPG", "notes.md", "data.csv", "deck.pptx", "clip.mp4", "song.flac", "backup.tar.gz", "x.zip"]) {

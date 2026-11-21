@@ -2,6 +2,9 @@ import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect, type Vault } from './fixtures';
+import { API_URL } from './support/env';
+
+const API_BASE = `${API_URL}/api`;
 
 /**
  * Screenshot capture for review notes (not assertions and not pixel diffs).
@@ -165,5 +168,42 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByTestId("undo-toast")).toBeVisible();
     await page.waitForTimeout(180);
     await shot(page, `${theme}-09-toast.png`);
+  });
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`Trash (#ppag3ugh) — ${theme}`, async ({ page, vault, request }) => {
+    test.setTimeout(60_000);
+    const [projects] = await vault.seed([{ title: 'Projects', icon: '📁' }]);
+    const [plan] = await vault.seed([
+      {
+        title: 'Q1 plan',
+        icon: '🗺️',
+        parentId: projects.id,
+        content: ['# Goals', '', 'Ship the **Trash view** and keep every file as plain Markdown.', '', '- [x] List deleted pages', '- [ ] Restore them where they were'].join('\n'),
+      },
+    ]);
+    await vault.seed([{ title: 'Week 1', parentId: plan.id }, { title: 'Retro notes', parentId: plan.id }]);
+    const [old] = await vault.seed([{ title: 'Old ideas', icon: '💡' }, { title: 'Welcome' }]);
+    const board = await request.post(`${API_BASE}/boards`, { data: { title: 'Brainstorm' } });
+    const boardId = ((await board.json()) as { meta: { id: string } }).meta.id;
+    for (const id of [old.id, boardId, plan.id]) await request.delete(`${API_BASE}/pages/${encodeURIComponent(id)}`);
+
+    await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), { key: THEME_KEY, value: theme });
+    await page.goto('/#trash');
+    await expect(page.getByTestId('trash-item-Q1 plan')).toBeVisible();
+    await page.getByTestId('trash-item-Q1 plan').locator('.trash-row').hover();
+    await page.waitForTimeout(300);
+    await shot(page, `${theme}-30-trash.png`);
+
+    await page.getByTestId('trash-item-Q1 plan').getByRole('button', { name: /Q1 plan/ }).first().click();
+    await expect(page.getByTestId('trashed-banner')).toBeVisible();
+    await shot(page, `${theme}-31-trashed-page.png`);
+
+    await page.getByTestId('sidebar-trash').click();
+    await page.getByTestId('trash-empty').click();
+    await expect(page.getByTestId('trash-confirm-dialog')).toBeVisible();
+    await page.waitForTimeout(400);
+    await shot(page, `${theme}-32-empty-trash-confirm.png`);
   });
 }
