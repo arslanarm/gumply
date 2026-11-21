@@ -64,8 +64,8 @@ function scanLines(markdown: string): Array<{ text: string; code: boolean }> {
 /** Heading text as Obsidian compares it: inline Markdown and links reduced to their words. */
 export function headingKey(text: string): string {
   return text
-    .replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2")
-    .replace(/\[\[([^\]]*)\]\]/g, "$1")
+    .replace(/\[\[([^\]|\r\n]*)\|([^\]\r\n]*)\]\]/g, "$2")
+    .replace(/\[\[([^\]\r\n]*)\]\]/g, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/[*_`~=]/g, "")
     .replace(/\s+/g, " ")

@@ -4,6 +4,8 @@ import {
   extractTags,
   extractWikilinks,
   makeSnippet,
+  parseEmbeds,
+  plainText,
   resolveWikilink,
   rewriteWikilinkTargets,
   type PageMeta,
@@ -218,5 +220,25 @@ describe("makeSnippet", () => {
 
   it("returns an empty string for empty content", () => {
     expect(makeSnippet("   ", "x")).toBe("");
+  });
+});
+
+describe("a [[link]] never spans a line break, as in Obsidian (#pvrx7t6r)", () => {
+  const split = "See [[Alpha|b\nc]] and ![[Beta\n]] and [[Gam\r\nma]].\n\nBut [[Alpha]] and ![[Beta#Part]] are links.";
+
+  it("extractWikilinks and collectLinkEdges skip split links, wikilinks and embeds alike", () => {
+    expect(extractWikilinks(split).map((link) => link.raw)).toEqual(["[[Alpha]]", "![[Beta#Part]]"]);
+    expect(extractWikilinks("[[A\nB]]")).toEqual([]);
+  });
+
+  it("a rename never rewrites a split link", () => {
+    const result = rewriteWikilinkTargets(split, (link) => link.targetTitle === "Alpha", "Omega");
+    expect(result.count).toBe(1);
+    expect(result.content).toBe(split.replace("But [[Alpha]]", "But [[Omega]]"));
+  });
+
+  it("embeds and plain text agree", () => {
+    expect(parseEmbeds("![[pic.png\n]] ![[pic.png]]").map((embed) => embed.raw)).toEqual(["![[pic.png]]"]);
+    expect(plainText("[[A|b\nc]]")).toContain("[[A|b");
   });
 });

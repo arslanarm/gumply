@@ -1,5 +1,8 @@
 import type { Page } from '@playwright/test';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { api, expect, test } from './fixtures';
+import { E2E_VAULT } from './support/env';
 
 /**
  * #mp8eadhk: a page whose title differs from its file name (`Ideas: Q3?` is
@@ -54,4 +57,27 @@ test('[[ menu and typed links use file name + title alias, and renames rewrite t
   await expect
     .poll(async () => (await api.getPage(request, note!.id)).content)
     .toBe('Intro see [[Roadmap v2|Roadmap: v2?]] and [[Roadmap v2|Roadmap: v2?]] and [[Notes]]');
+});
+
+test('a [[link]] split across a line break stays plain text, and an unrelated edit keeps its bytes (#pvrx7t6r)', async ({
+  page,
+  request,
+  vault,
+}) => {
+  void vault;
+  const source = 'See [[Alpha|b\nc]] here.\n\nA real [[Alpha]].\n';
+  await writeFile(path.join(E2E_VAULT, 'Alpha.md'), 'Alpha page.\n', 'utf8');
+  await writeFile(path.join(E2E_VAULT, 'Notes.md'), source, 'utf8');
+  await expect.poll(async () => (await api.listPages(request)).map((item) => item.id).sort(), { timeout: 10_000 }).toEqual(['Alpha', 'Notes']);
+  await page.goto('/#/Notes');
+  const editor = page.getByTestId('editor-content');
+  await expect(editor).toContainText('A real');
+  // Only the real link is a link; the split one is text.
+  await expect(editor.locator('wiki-link, .wiki-link')).toHaveCount(1);
+  await expect(editor).toContainText('[[Alpha|b');
+  await editor.getByText('A real').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' More.');
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+  expect(await readFile(path.join(E2E_VAULT, 'Notes.md'), 'utf8')).toBe(source.replace('[[Alpha]].', '[[Alpha]]. More.'));
 });

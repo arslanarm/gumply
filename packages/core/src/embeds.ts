@@ -84,7 +84,7 @@ export function parseEmbeds(markdown: string): Embed[] {
 
   // Obsidian: ![[x.png]] (embed) and [[x.pdf]] (link). Only names with an
   // extension are attachments; ordinary [[Page]] links stay page links.
-  const obsidianPattern = /(!?)\[\[([^[\]]+)\]\]/g;
+  const obsidianPattern = /(!?)\[\[([^[\]\r\n]+)\]\]/g;
   while ((match = obsidianPattern.exec(text)) !== null) {
     const embedded = match[1] === "!";
     const inner = (match[2] ?? "").split("|")[0]?.trim() ?? "";

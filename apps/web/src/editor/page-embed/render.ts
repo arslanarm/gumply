@@ -69,7 +69,7 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
   if (!text.startsWith("![[")) return false;
   const page = parsePageEmbed(text);
   // A board or a database view (D34) inside a preview: a card linking to it.
-  const board = /^!\[\[([^[\]|#]+?\.(?:canvas|base))(?:#[^[\]|]*)?(?:\|[^[\]]*)?\]\]$/i.exec(text);
+  const board = /^!\[\[([^[\]|#\r\n]+?\.(?:canvas|base))(?:#[^[\]|\r\n]*)?(?:\|[^[\]\r\n]*)?\]\]$/i.exec(text);
   if (!page && !board) return false;
   if (silent) return true;
   const token = state.push("html_block", "", 0);
