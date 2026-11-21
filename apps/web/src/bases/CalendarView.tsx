@@ -18,6 +18,11 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
+/** "ноябрь 2026 г." → "Ноябрь 2026 г." (only the first letter: CSS capitalize would make it "Г."). */
+function firstUpper(text: string): string {
+  return text.charAt(0).toLocaleUpperCase() + text.slice(1);
+}
+
 function dayKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -92,7 +97,7 @@ export function CalendarView(props: LayoutProps & { today?: Date }) {
     <div className="base-layout base-calendar" data-testid="base-calendar">
       <div className="base-calendar-head">
         <h4 className="base-calendar-month" data-testid="base-calendar-month">
-          {dateFormat({ month: "long", year: "numeric" }).format(month)}
+          {firstUpper(dateFormat({ month: "long", year: "numeric" }).format(month))}
         </h4>
         <div className="base-calendar-nav">
           <button
