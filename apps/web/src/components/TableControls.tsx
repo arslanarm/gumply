@@ -14,6 +14,7 @@ import {
   toggleHeaderRowAt,
   type CellTarget,
 } from "../editor/table/commands.js";
+import { useT } from "../i18n/index.js";
 
 interface Hover {
   table: HTMLTableElement;
@@ -44,6 +45,8 @@ function inRect(rect: DOMRect, x: number, y: number, pad = 0): boolean {
 
 /** Notion-style table affordances: row/column handles with menus, + bars (#7witbbun). */
 export function TableControls({ editor }: { editor: TipTapEditor }) {
+  // `msg`, not `t`: the menu callbacks below take the table as `t`.
+  const msg = useT();
   const [hover, setHover] = useState<Hover | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const hoverRef = useRef<Hover | null>(null);
@@ -192,8 +195,8 @@ export function TableControls({ editor }: { editor: TipTapEditor }) {
             type="button"
             className="table-handle table-row-handle"
             data-testid="table-row-handle"
-            aria-label="Row actions"
-            title="Row actions"
+            aria-label={msg("table.rowActions")}
+            title={msg("table.rowActions")}
             style={{ left: hover.tableRect.left - 6, top: hover.rowRect.top + hover.rowRect.height / 2 - 11 }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={(event) => {
@@ -207,8 +210,8 @@ export function TableControls({ editor }: { editor: TipTapEditor }) {
             type="button"
             className="table-handle table-col-handle"
             data-testid="table-col-handle"
-            aria-label="Column actions"
-            title="Column actions"
+            aria-label={msg("table.columnActions")}
+            title={msg("table.columnActions")}
             style={{ left: hover.cellRect.left + hover.cellRect.width / 2 - 11, top: hover.tableRect.top - 6 }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={(event) => {
@@ -222,8 +225,8 @@ export function TableControls({ editor }: { editor: TipTapEditor }) {
             type="button"
             className="table-add table-add-row"
             data-testid="table-add-row"
-            aria-label="Add a row"
-            title="Add a row"
+            aria-label={msg("table.addRow")}
+            title={msg("table.addRow")}
             style={{ left: hover.tableRect.left, top: hover.tableRect.bottom + 2, width: hover.tableRect.width }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => addAtEnd("row")}
@@ -234,8 +237,8 @@ export function TableControls({ editor }: { editor: TipTapEditor }) {
             type="button"
             className="table-add table-add-col"
             data-testid="table-add-col"
-            aria-label="Add a column"
-            title="Add a column"
+            aria-label={msg("table.addColumn")}
+            title={msg("table.addColumn")}
             style={{ left: hover.tableRect.right + 2, top: hover.tableRect.top, height: hover.tableRect.height }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => addAtEnd("column")}
@@ -250,35 +253,35 @@ export function TableControls({ editor }: { editor: TipTapEditor }) {
           ref={menuElementRef}
           className="block-menu table-menu"
           role="menu"
-          aria-label={menu.kind === "row" ? "Row actions" : "Column actions"}
+          aria-label={menu.kind === "row" ? msg("table.rowActions") : msg("table.columnActions")}
           data-testid="table-menu"
           style={{ left: menu.left, top: menu.top, visibility: menu.placed ? "visible" : "hidden" }}
         >
           {menu.kind === "row"
             ? [
-                item("insert-above", "Insert row above", (t) => addRowBefore(editor, t)),
-                item("insert-below", "Insert row below", (t) => addRowAfter(editor, t)),
-                item("move-up", "Move row up", (t) => moveRow(editor, t, -1)),
-                item("move-down", "Move row down", (t) => moveRow(editor, t, 1)),
+                item("insert-above", msg("table.insertRowAbove"), (t) => addRowBefore(editor, t)),
+                item("insert-below", msg("table.insertRowBelow"), (t) => addRowAfter(editor, t)),
+                item("move-up", msg("table.moveRowUp"), (t) => moveRow(editor, t, -1)),
+                item("move-down", msg("table.moveRowDown"), (t) => moveRow(editor, t, 1)),
                 ...(menu.target.row === 0
-                  ? [item("toggle-header", "Toggle header row", (t) => toggleHeaderRowAt(editor, t))]
+                  ? [item("toggle-header", msg("table.toggleHeaderRow"), (t) => toggleHeaderRowAt(editor, t))]
                   : []),
                 <div key="sep" className="block-menu-separator" />,
-                item("delete-row", "Delete row", (t) => deleteRowAt(editor, t), true),
-                item("delete-table", "Delete table", (t) => deleteTableAt(editor, t), true),
+                item("delete-row", msg("table.deleteRow"), (t) => deleteRowAt(editor, t), true),
+                item("delete-table", msg("table.deleteTable"), (t) => deleteTableAt(editor, t), true),
               ]
             : [
-                item("insert-left", "Insert column left", (t) => addColumnBefore(editor, t)),
-                item("insert-right", "Insert column right", (t) => addColumnAfter(editor, t)),
-                item("move-left", "Move column left", (t) => moveColumn(editor, t, -1)),
-                item("move-right", "Move column right", (t) => moveColumn(editor, t, 1)),
+                item("insert-left", msg("table.insertColumnLeft"), (t) => addColumnBefore(editor, t)),
+                item("insert-right", msg("table.insertColumnRight"), (t) => addColumnAfter(editor, t)),
+                item("move-left", msg("table.moveColumnLeft"), (t) => moveColumn(editor, t, -1)),
+                item("move-right", msg("table.moveColumnRight"), (t) => moveColumn(editor, t, 1)),
                 <div key="sep-a" className="block-menu-separator" />,
-                item("align-left", "Align left", (t) => alignColumn(editor, t, "left")),
-                item("align-center", "Align center", (t) => alignColumn(editor, t, "center")),
-                item("align-right", "Align right", (t) => alignColumn(editor, t, "right")),
+                item("align-left", msg("table.alignLeft"), (t) => alignColumn(editor, t, "left")),
+                item("align-center", msg("table.alignCenter"), (t) => alignColumn(editor, t, "center")),
+                item("align-right", msg("table.alignRight"), (t) => alignColumn(editor, t, "right")),
                 <div key="sep-b" className="block-menu-separator" />,
-                item("delete-column", "Delete column", (t) => deleteColumnAt(editor, t), true),
-                item("delete-table", "Delete table", (t) => deleteTableAt(editor, t), true),
+                item("delete-column", msg("table.deleteColumn"), (t) => deleteColumnAt(editor, t), true),
+                item("delete-table", msg("table.deleteTable"), (t) => deleteTableAt(editor, t), true),
               ]}
         </div>
       ) : null}

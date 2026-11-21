@@ -239,7 +239,7 @@ export function PageHeader({
               <span className="page-icon-large">{page.icon}</span>
             ) : (
               <span className="page-icon-add">
-                <Icon name="plus" size={13} /> Add icon
+                <Icon name="plus" size={13} /> {t("page.addIcon")}
               </span>
             )}
           </button>

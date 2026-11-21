@@ -176,15 +176,14 @@ export function dateFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeFo
   return format;
 }
 
-/** "just now", "5 minutes ago", "3 hours ago", then a short date, in the current language. */
+/** "just now", "5 min ago", "3 h ago", then a short date, in the current language. */
 export function relativeTime(iso: string, now: number = Date.now()): string {
   const time = new Date(iso).getTime();
   if (Number.isNaN(time)) return t("time.recently");
   const minutes = Math.round((now - time) / 60_000);
   if (minutes < 1) return t("time.justNow");
-  const relative = new Intl.RelativeTimeFormat(language, { numeric: "auto", style: "short" });
-  if (minutes < 60) return relative.format(-minutes, "minute");
+  if (minutes < 60) return t("time.minutesAgo", { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return relative.format(-hours, "hour");
+  if (hours < 24) return t("time.hoursAgo", { count: hours });
   return dateFormat({ month: "short", day: "numeric" }).format(time);
 }

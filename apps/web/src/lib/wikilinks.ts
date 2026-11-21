@@ -3,6 +3,7 @@
  */
 import type { Attachment, PageId, PageMeta } from "@gumply/core";
 import { isBoard } from "./boards.js";
+import { t } from "../i18n/index.js";
 
 export interface LinkSuggestion {
   kind: "page" | "attachment" | "create";
@@ -99,7 +100,7 @@ export function buildLinkSuggestions(
     items.push({
       kind: "create",
       key: "create",
-      label: `Create “${typed}”`,
+      label: t("search.create", { title: typed }),
       title: typed,
     });
   }

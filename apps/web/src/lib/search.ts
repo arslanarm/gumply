@@ -3,6 +3,7 @@
  */
 import type { PageMeta, SearchResult } from "@gumply/core";
 import { folderPath, parseWikiLinkText } from "./wikilinks.js";
+import { relativeTime, t } from "../i18n/index.js";
 
 export const MAX_SEARCH_ROWS = 8;
 export const RECENT_LIMIT = 5;
@@ -35,6 +36,12 @@ export interface SearchSections {
 /** Words that offer `New board from template…`: the command and the template names. */
 const TEMPLATE_WORDS = "new board from template whiteboard kanban mind map retrospective retro flowchart weekly plan".split(" ");
 
+/** English words always count; the interface language adds its own (#7h5utv23). */
+function templateWords(): string[] {
+  const local = t("search.templateWords").toLowerCase().split(/\s+/).filter(Boolean);
+  return local.length > 0 ? [...TEMPLATE_WORDS, ...local] : TEMPLATE_WORDS;
+}
+
 /**
  * Whether `query` asks for a board template: every word of it starts a word
  * of the command or of a template name ("templ", "new board", "kanban"…).
@@ -42,11 +49,15 @@ const TEMPLATE_WORDS = "new board from template whiteboard kanban mind map retro
 export function wantsTemplate(query: string): boolean {
   const words = normalise(query).split(" ").filter((word) => word.length > 0);
   if (words.length === 0) return false;
-  const meaningful = words.some((word) => !["new", "from", "a"].includes(word));
-  return meaningful && words.every((word) => TEMPLATE_WORDS.some((known) => known.startsWith(word)));
+  const filler = ["new", "from", "a", ...t("search.templateFiller").toLowerCase().split(/\s+/).filter(Boolean)];
+  const meaningful = words.some((word) => !filler.includes(word));
+  const known = templateWords();
+  return meaningful && words.every((word) => known.some((candidate) => candidate.startsWith(word)));
 }
 
-const FROM_TEMPLATE_ROW: SearchRow = { kind: "from-template", key: "from-template", label: "New board from template…" };
+function fromTemplateRow(): SearchRow {
+  return { kind: "from-template", key: "from-template", label: t("search.fromTemplate") };
+}
 
 function normalise(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
@@ -61,17 +72,8 @@ function titleCounts(pages: readonly PageMeta[]): Map<string, number> {
   return counts;
 }
 
-/** "just now", "5 min ago", "3 h ago", then a short date. */
-export function relativeTime(iso: string, now: number = Date.now()): string {
-  const time = new Date(iso).getTime();
-  if (Number.isNaN(time)) return "recently";
-  const minutes = Math.round((now - time) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return new Date(time).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+/** "just now", "5 min ago", "3 h ago", then a short date (in the interface language). */
+export { relativeTime };
 
 function toRow(
   page: PageMeta,
@@ -81,7 +83,7 @@ function toRow(
 ): SearchRow {
   const duplicate = (counts.get(normalise(page.title)) ?? 0) > 1;
   // Same title in the same folder: the edit time is what tells them apart.
-  const path = duplicate ? folderPath(page) || `Edited ${relativeTime(page.updated)}` : "";
+  const path = duplicate ? folderPath(page) || t("search.edited", { time: relativeTime(page.updated) }) : "";
   return {
     kind,
     key: page.id,
@@ -173,14 +175,14 @@ export function searchSections(
 
   const create =
     trimmed.length > 0 && !hasExactTitle(pages, trimmed)
-      ? { kind: "create" as const, key: "create", label: `Create “${trimmed}”`, title: trimmed }
+      ? { kind: "create" as const, key: "create", label: t("search.create", { title: trimmed }), title: trimmed }
       : null;
 
   const createBoard = create
-    ? { kind: "create-board" as const, key: "create-board", label: `Create whiteboard “${trimmed}”`, title: trimmed }
+    ? { kind: "create-board" as const, key: "create-board", label: t("search.createBoard", { title: trimmed }), title: trimmed }
     : null;
 
-  const fromTemplate = wantsTemplate(query) ? FROM_TEMPLATE_ROW : null;
+  const fromTemplate = wantsTemplate(query) ? fromTemplateRow() : null;
 
   return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate };
 }

@@ -4,7 +4,11 @@
   },
   "time": {
     "justNow": "just now",
-    "recently": "recently"
+    "recently": "recently",
+    "minutesAgo_one": "{{count}} min ago",
+    "minutesAgo_other": "{{count}} min ago",
+    "hoursAgo_one": "{{count}} h ago",
+    "hoursAgo_other": "{{count}} h ago"
   },
   "errors": {
     "serverDown": "Can't reach Gumply's local server.",
@@ -521,5 +525,95 @@
     "save": "Save to vault",
     "captionPlaceholder": "Add a caption",
     "captionLabel": "Image caption"
+  },
+  "table": {
+    "insertRowAbove": "Insert row above",
+    "insertRowBelow": "Insert row below",
+    "moveRowUp": "Move row up",
+    "moveRowDown": "Move row down",
+    "toggleHeaderRow": "Toggle header row",
+    "deleteRow": "Delete row",
+    "deleteTable": "Delete table",
+    "insertColumnLeft": "Insert column left",
+    "insertColumnRight": "Insert column right",
+    "moveColumnLeft": "Move column left",
+    "moveColumnRight": "Move column right",
+    "alignLeft": "Align left",
+    "alignCenter": "Align center",
+    "alignRight": "Align right",
+    "deleteColumn": "Delete column",
+    "rowActions": "Row actions",
+    "columnActions": "Column actions",
+    "addRow": "Add a row",
+    "addColumn": "Add a column"
+  },
+  "save": {
+    "savingTitle": "Saving changes…",
+    "savedTitle": "All changes saved",
+    "errorTitle": "Your edits are kept in this tab — retry saving",
+    "conflictTitle": "This page changed on disk — choose Reload or Keep mine",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "errorLong": "Couldn't save —",
+    "errorShort": "Not saved",
+    "conflictLong": "This page changed on disk.",
+    "conflictShort": "Changed on disk",
+    "reload": "Reload",
+    "keepMine": "Keep mine"
+  },
+  "search": {
+    "label": "Search pages",
+    "placeholder": "Search pages…",
+    "results": "Search results",
+    "recent": "Recent",
+    "pages": "Pages",
+    "text": "Text",
+    "noMatch": "No pages match “{{query}}”",
+    "searching": "Searching…",
+    "navigate": "navigate",
+    "open": "open",
+    "close": "close",
+    "create": "Create “{{title}}”",
+    "createBoard": "Create whiteboard “{{title}}”",
+    "fromTemplate": "New board from template…",
+    "edited": "Edited {{time}}",
+    "templateWords": "",
+    "templateFiller": ""
+  },
+  "callout": {
+    "types": {
+      "note": "Note",
+      "tip": "Tip",
+      "info": "Info",
+      "success": "Success",
+      "question": "Question",
+      "warning": "Warning",
+      "danger": "Danger",
+      "bug": "Bug",
+      "example": "Example",
+      "quote": "Quote"
+    },
+    "changeType": "Change callout type",
+    "typeLabel": "Callout type: {{type}}",
+    "closeToggle": "Close toggle",
+    "openToggle": "Open toggle",
+    "closeHint": "Close ({{keys}})",
+    "openHint": "Open ({{keys}})",
+    "typePicker": "Callout type"
+  },
+  "raw": {
+    "comment": "Comment",
+    "clickToEdit": "Click to edit the Markdown source",
+    "sourceLabel": "Markdown source",
+    "editHint": "Esc to cancel · Ctrl/Cmd+Enter or click outside to save",
+    "inlineHint": "{{source}} · double-click to edit"
+  },
+  "tasks": {
+    "checkboxFallback": "Task item checkbox for {{text}}",
+    "emptyItem": "empty task item",
+    "markDone": "Mark to-do as done",
+    "markNotDone": "Mark to-do as not done",
+    "markTitleDone": "Mark “{{title}}” as done",
+    "markTitleNotDone": "Mark “{{title}}” as not done"
   }
 }

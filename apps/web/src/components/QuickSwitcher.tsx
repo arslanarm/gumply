@@ -16,6 +16,7 @@ import {
   type SearchRow,
 } from "../lib/search.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
+import { useT } from "../i18n/index.js";
 
 export interface QuickSwitcherProps {
   pages: readonly PageMeta[];
@@ -32,6 +33,7 @@ export interface QuickSwitcherProps {
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
 export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onClose, initialQuery = "" }: QuickSwitcherProps) {
+  const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -225,7 +227,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
         className="quick-switcher"
         role="dialog"
         aria-modal="true"
-        aria-label="Search pages"
+        aria-label={t("search.label")}
         data-testid="quick-switcher"
         onKeyDown={onKeyDown}
       >
@@ -239,8 +241,8 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
             data-testid="quick-switcher-input"
             type="text"
             value={query}
-            placeholder="Search pages…"
-            aria-label="Search pages"
+            placeholder={t("search.placeholder")}
+            aria-label={t("search.label")}
             aria-controls="quick-switcher-results"
             aria-activedescendant={
               activeIndex >= 0 ? `quick-switcher-option-${activeIndex}` : undefined
@@ -256,16 +258,16 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
           id="quick-switcher-results"
           ref={listRef}
           role="listbox"
-          aria-label="Search results"
+          aria-label={t("search.results")}
         >
           {needle.length === 0 ? (
             pages.length === 0 ? (
               <p className="quick-switcher-empty" data-testid="search-empty">
-                No pages yet.
+                {t("empty.noPages")}
               </p>
             ) : (
               <>
-                <p className="quick-switcher-heading">Recent</p>
+                <p className="quick-switcher-heading">{t("search.recent")}</p>
                 {recents.map((row, rowIndex) => renderRow(row, rowIndex))}
               </>
             )
@@ -273,13 +275,13 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
             <>
               {sections.pages.length > 0 ? (
                 <>
-                  <p className="quick-switcher-heading">Pages</p>
+                  <p className="quick-switcher-heading">{t("search.pages")}</p>
                   {sections.pages.map((row, rowIndex) => renderRow(row, rowIndex))}
                 </>
               ) : null}
               {sections.text.length > 0 ? (
                 <>
-                  <p className="quick-switcher-heading">Text</p>
+                  <p className="quick-switcher-heading">{t("search.text")}</p>
                   {sections.text.map((row, rowIndex) =>
                     renderRow(row, sections.pages.length + rowIndex),
                   )}
@@ -287,10 +289,10 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
               ) : null}
               {!searching && sections.pages.length === 0 && sections.text.length === 0 && !fromTemplate ? (
                 <p className="quick-switcher-empty" data-testid="search-empty">
-                  {pages.length === 0 ? "No pages yet." : `No pages match “${needle}”`}
+                  {pages.length === 0 ? t("empty.noPages") : t("search.noMatch", { query: needle })}
                 </p>
               ) : null}
-              {searching ? <p className="quick-switcher-empty">Searching…</p> : null}
+              {searching ? <p className="quick-switcher-empty">{t("search.searching")}</p> : null}
               {sections.create
                 ? renderRow(sections.create, sections.pages.length + sections.text.length)
                 : null}
@@ -308,13 +310,13 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
         <div className="quick-switcher-footer">
           <span>
             <kbd>↑</kbd>
-            <kbd>↓</kbd> navigate
+            <kbd>↓</kbd> {t("search.navigate")}
           </span>
           <span>
-            <kbd>Enter</kbd> open
+            <kbd>Enter</kbd> {t("search.open")}
           </span>
           <span>
-            <kbd>Esc</kbd> close
+            <kbd>Esc</kbd> {t("search.close")}
           </span>
         </div>
       </div>

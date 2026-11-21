@@ -1,4 +1,5 @@
 import type { SaveState } from "../editor/autosave.js";
+import { useT } from "../i18n/index.js";
 
 export interface SaveStatusProps {
   state: SaveState;
@@ -12,6 +13,7 @@ export interface SaveStatusProps {
  * header never shifts; `data-state` is the e2e contract.
  */
 export function SaveStatus({ state, onRetry, onReload, onKeepMine }: SaveStatusProps) {
+  const t = useT();
   return (
     <span
       className={`save-status save-status-${state}`}
@@ -20,34 +22,34 @@ export function SaveStatus({ state, onRetry, onReload, onKeepMine }: SaveStatusP
       aria-live="polite"
       title={
         state === "saving"
-          ? "Saving changes…"
+          ? t("save.savingTitle")
           : state === "saved"
-            ? "All changes saved"
+            ? t("save.savedTitle")
             : state === "error"
-              ? "Your edits are kept in this tab — retry saving"
+              ? t("save.errorTitle")
               : state === "conflict"
-                ? "This page changed on disk — choose Reload or Keep mine"
+                ? t("save.conflictTitle")
                 : undefined
       }
     >
-      {state === "saving" ? "Saving…" : null}
-      {state === "saved" ? "Saved" : null}
+      {state === "saving" ? t("save.saving") : null}
+      {state === "saved" ? t("save.saved") : null}
       {state === "error" ? (
         <>
-          <span className="save-status-long">Couldn't save —</span>
+          <span className="save-status-long">{t("save.errorLong")}</span>
           <span className="save-status-short">
-            Not saved
+            {t("save.errorShort")}
           </span>{" "}
           <button type="button" className="link-button" onClick={onRetry} data-testid="save-retry">
-            Retry
+            {t("common.retry")}
           </button>
         </>
       ) : null}
       {state === "conflict" ? (
         <>
-          <span className="save-status-long">This page changed on disk.</span>
+          <span className="save-status-long">{t("save.conflictLong")}</span>
           <span className="save-status-short">
-            Changed on disk
+            {t("save.conflictShort")}
           </span>{" "}
           <button
             type="button"
@@ -55,7 +57,7 @@ export function SaveStatus({ state, onRetry, onReload, onKeepMine }: SaveStatusP
             onClick={onReload}
             data-testid="conflict-reload"
           >
-            Reload
+            {t("save.reload")}
           </button>{" "}
           <button
             type="button"
@@ -63,7 +65,7 @@ export function SaveStatus({ state, onRetry, onReload, onKeepMine }: SaveStatusP
             onClick={onKeepMine}
             data-testid="conflict-keep-mine"
           >
-            Keep mine
+            {t("save.keepMine")}
           </button>
         </>
       ) : null}
