@@ -12,10 +12,28 @@ export interface WikiLink {
   targetTitle: string;
   alias?: string;
   heading?: string;
-  /** Original `[[...]]` text. */
+  /** Original `[[...]]` (or `![[...]]`) text. */
   raw: string;
-  /** Index of the opening `[[` in the source text. */
+  /** Index of the opening `[[` (or the `!` of an embed) in the source text. */
   index: number;
+  /**
+   * `![[Board.canvas]]`: a board embedded in a page (D30). It counts as a link
+   * (backlinks, graph, rename); what follows `|` is the embed's height, kept
+   * as written in `size` (never an alias).
+   */
+  embed?: true;
+  size?: string;
+}
+
+/** True for a link target naming a board file (`Map.canvas`, `Projects/Map.canvas`). */
+export function isBoardTarget(target: string): boolean {
+  return /\.canvas$/i.test(target.trim());
+}
+
+/** The Markdown for a board embed (D30): `![[Map.canvas]]` / `![[Map.canvas|480]]`. */
+export function formatBoardEmbed(target: string, size?: string | number): string {
+  const height = size === undefined || size === "" ? "" : `|${size}`;
+  return `![[${target}${height}]]`;
 }
 
 /** Replace fenced code blocks and inline code spans with spaces. */
@@ -148,16 +166,19 @@ function isAttachmentFileTarget(title: string): boolean {
 export function extractWikilinks(markdown: string): WikiLink[] {
   const text = maskCode(markdown);
   const links: WikiLink[] = [];
-  // `![[...]]` is an attachment embed, not a page link. `(?<!!)` leaves it to
-  // parseEmbeds and keeps graph/backlinks free of attachment ghosts (D19).
-  const pattern = /(?<!!)\[\[([^[\]]*)\]\]/g;
+  // `![[...]]` is an attachment embed, not a page link: parseEmbeds owns it,
+  // which keeps graph/backlinks free of attachment ghosts (D19). The one
+  // exception is a board embed, `![[Map.canvas]]` (D30), which is a link.
+  const pattern = /(!?)\[\[([^[\]]*)\]\]/g;
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    const inner = match[1] ?? "";
+    const embed = match[1] === "!";
+    const inner = match[2] ?? "";
     const pipe = inner.indexOf("|");
     const targetPart = pipe === -1 ? inner : inner.slice(0, pipe);
     const aliasPart = pipe === -1 ? "" : inner.slice(pipe + 1);
+    if (embed && !isBoardTarget(targetPart.split("#")[0] ?? "")) continue;
 
     const hash = targetPart.indexOf("#");
     const title = (hash === -1 ? targetPart : targetPart.slice(0, hash)).trim().replace(/\s+/g, " ");
@@ -172,7 +193,10 @@ export function extractWikilinks(markdown: string): WikiLink[] {
       raw: match[0],
       index: match.index,
     };
-    if (alias.length > 0) link.alias = alias;
+    if (embed) {
+      link.embed = true;
+      if (alias.length > 0) link.size = alias;
+    } else if (alias.length > 0) link.alias = alias;
     if (heading.length > 0) link.heading = heading;
     links.push(link);
   }
@@ -229,6 +253,11 @@ export function rewriteWikilinkTargets(
 
   // Replace from the end so earlier indexes stay valid.
   for (const link of [...links].reverse()) {
+    if (link.embed) {
+      const replacement = formatBoardEmbed(isBoardTarget(title) ? title : `${title}.canvas`, link.size);
+      content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
+      continue;
+    }
     const inner = link.raw.slice(2, -2);
     const pipe = inner.indexOf("|");
     const alias = pipe === -1 ? undefined : inner.slice(pipe + 1);

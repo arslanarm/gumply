@@ -3286,4 +3286,191 @@ input {
 /* A title-only callout: no empty body line unless the caret is in it. */
 .callout.is-body-empty:not(.is-foldable):not(.has-caret) .callout-content > p:nth-child(2) {
   display: none;
+
+/* ---------- Boards embedded in pages (spec/v0-6 B, D30) ---------- */
+
+.board-embed {
+  position: relative;
+  margin: 0.75em 0 1em;
+}
+
+.board-embed-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--board-surface, var(--surface-canvas));
+  cursor: pointer;
+  /* A big board is painted once; page scrolling never re-lays it out. */
+  contain: strict;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.board-embed-frame:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.board-embed.is-selected .board-embed-frame {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.board-embed-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background-image: radial-gradient(var(--border) 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+}
+
+.board-embed-error {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Title and Open: shown on hover or keyboard focus (Notion-style). */
+.board-embed-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.board-embed-frame:hover .board-embed-bar,
+.board-embed-frame:focus-within .board-embed-bar,
+.board-embed.is-selected .board-embed-bar {
+  opacity: 1;
+}
+
+.board-embed-title,
+.board-embed-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.85rem;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.board-embed-title {
+  min-width: 0;
+  max-width: 70%;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.board-embed-title > span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-embed-title svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.board-embed-open {
+  pointer-events: auto;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.board-embed-open:hover {
+  background: var(--hover);
+}
+
+.board-embed-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.board-embed-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+/* The bottom edge drags to set the height. */
+.board-embed-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 12px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.board-embed-resize::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 44px;
+  height: 4px;
+  margin-left: -22px;
+  border-radius: 2px;
+  background: var(--muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.board-embed:hover .board-embed-resize::after,
+.board-embed.is-resizing .board-embed-resize::after {
+  opacity: 0.55;
+}
+
+.board-embed.is-resizing .board-embed-frame {
+  border-color: var(--accent);
+}
+
+/* A missing board: a calm notice, not an error. */
+.board-embed.is-missing .board-embed-frame {
+  height: auto !important;
+  contain: none;
+  cursor: default;
+  border-style: dashed;
+  background: transparent;
+}
+
+.board-embed-missing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--muted);
+}
+
+.board-embed-missing-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+
+.board-embed-missing-text strong {
+  color: var(--text);
+  font-weight: 600;
 }

@@ -28,8 +28,8 @@ import { pastedTablesToMarkdown } from "../editor/paste-table.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
 import { createEmojiExtension, type EmojiHandlers } from "../editor/emoji/extension.js";
 import { setEmojiPickerOpener } from "../editor/emoji/store.js";
-import { setWhiteboardCreator } from "../editor/whiteboard-link.js";
-import { boardLinkParts } from "../lib/boards.js";
+import { setBoardEmbedActions, setWhiteboardCreator } from "../editor/whiteboard-link.js";
+import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
 import {
@@ -105,8 +105,11 @@ export interface EditorProps {
   onAttachmentError?: (message: string) => void;
   /** ArrowUp / Backspace at the very start of the body: go to the title. */
   onExitTop?: () => void;
-  /** `/whiteboard`: create a board inside this page; resolves to it (or null). */
-  onCreateBoard?: () => Promise<PageMeta | null>;
+  /**
+   * `/whiteboard` (and Create on a missing embed): create a board inside this
+   * page; resolves to it (or null).
+   */
+  onCreateBoard?: (title?: string) => Promise<PageMeta | null>;
 }
 
 interface SlashMenuState {
@@ -185,6 +188,8 @@ export function Editor({
   onAttachmentErrorRef.current = onAttachmentError;
   const onCreateBoardRef = useRef(onCreateBoard);
   onCreateBoardRef.current = onCreateBoard;
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   const onExitTopRef = useRef(onExitTop);
   onExitTopRef.current = onExitTop;
   const exitTopExtension = useMemo(() => createExitTopExtension(onExitTopRef), []);
@@ -519,7 +524,8 @@ export function Editor({
   );
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
 
-  // `/whiteboard`: create the board, then link it where the command was typed.
+  // `/whiteboard` → New board here: create the board, then embed it where
+  // the command was typed (D30).
   useEffect(() => {
     setWhiteboardCreator(() => {
       const instance = editorRef.current;
@@ -529,17 +535,19 @@ export function Editor({
       void create().then((board) => {
         const current = editorRef.current;
         if (!board || !current || current.isDestroyed) return;
-        const { target, alias } = boardLinkParts(board);
+        const pages = pagesRef.current.some((item) => item.id === board.id)
+          ? pagesRef.current
+          : [...pagesRef.current, board];
         const at = Math.min(pos, current.state.doc.content.size);
         current
           .chain()
           .focus()
-          .insertContentAt(at, [
-            { type: "wikiLink", attrs: { targetTitle: target, alias, heading: "" } },
-            { type: "text", text: " " },
-          ])
+          .insertContentAt(at, { type: "boardEmbed", attrs: boardEmbedAttrs(board, pages) })
           .run();
       });
+    });
+    setBoardEmbedActions({
+      createBoard: async (title) => (await onCreateBoardRef.current?.(title)) ?? null,
     });
   }, []);
 
@@ -620,6 +628,7 @@ export function Editor({
         },
       }),
       ImageBlock,
+      BoardEmbed,
       InlineImage,
       FileAttachment,
       Markdown.configure({

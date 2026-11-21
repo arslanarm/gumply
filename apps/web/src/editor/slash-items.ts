@@ -165,13 +165,21 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
   {
     key: "whiteboard",
-    title: "Whiteboard",
-    hint: "New whiteboard inside this page",
-    keywords: ["whiteboard", "board", "canvas", "miro", "sticky", "diagram", "draw"],
+    title: "New board here",
+    hint: "Whiteboard, shown in this page",
+    keywords: ["whiteboard", "board", "canvas", "miro", "sticky", "diagram", "draw", "new board here"],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
       requestWhiteboard();
     },
+  },
+  {
+    key: "embed-whiteboard",
+    title: "Embed existing board…",
+    hint: "Show a whiteboard in this page",
+    keywords: ["whiteboard", "board", "canvas", "embed", "existing", "miro", "diagram"],
+    // `![[` opens the link menu with boards only (D30).
+    run: (editor, range) => editor.chain().focus().deleteRange(range).insertContent("![[").run(),
   },
   {
     key: "divider",
