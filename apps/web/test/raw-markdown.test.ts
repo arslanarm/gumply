@@ -129,3 +129,38 @@ describe("list style detection", () => {
     expect(detectListStyle("```\n    - code\n```\n- a")).toEqual({ marker: "-", indent: "  " });
   });
 });
+
+describe("list source attributes (#fmmght8w)", () => {
+  it("records numbers as written, upper-case checks and blank lines before items", () => {
+    const ordered = render(" 9. nine\n10. ten");
+    expect(ordered).toContain('<li data-md-number=" 9">');
+    expect(ordered).toContain('<li data-md-number="10">');
+    expect(render("1. one\n\n10. ten")).toMatch(/<li data-md-gap="1" data-md-number="10">/);
+    expect(render("- [X] done\n- [x] low")).toMatch(/data-md-check="X"[^>]*>[^]*<li(?![^>]*data-md-check)/);
+    expect(render("> - a\n>\n> - b")).toContain('data-md-gap="1"');
+    expect(render("- a\n- b")).not.toContain("data-md-gap");
+  });
+
+  it("marks a list that starts right under a line of text", () => {
+    expect(render("- a\n\n- parent\n\t- nested")).toContain('<ul data-md-markup="-" data-md-after-text="true">');
+    expect(render("- a\n\n- parent\n\n  - nested")).not.toContain("data-md-after-text");
+    expect(render("Text\n- a")).toContain('data-md-after-text="true"');
+    expect(render("Text\n\n- a")).not.toContain("data-md-after-text");
+  });
+
+  it("writes recorded numbers only while they still rise from the start", async () => {
+    const { recordedNumbers } = await import("../src/editor/raw-markdown/list-source.js");
+    const list = (numbers: Array<string | null>) =>
+      ({
+        childCount: numbers.length,
+        forEach: (f: (child: { attrs: { markdownNumber: string | null } }) => void) =>
+          numbers.forEach((markdownNumber) => f({ attrs: { markdownNumber } })),
+      }) as never;
+    expect(recordedNumbers(list(["1", "10"]), 1)).toEqual(["1", "10"]);
+    expect(recordedNumbers(list([" 9", "10"]), 9)).toEqual([" 9", "10"]);
+    expect(recordedNumbers(list(["  1", "  2"]), 1)).toEqual(["1", "2"]);
+    expect(recordedNumbers(list(["1", null]), 1)).toBeNull();
+    expect(recordedNumbers(list(["2", "1"]), 2)).toBeNull();
+    expect(recordedNumbers(list(["1", "2"]), 3)).toBeNull();
+  });
+});

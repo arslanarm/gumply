@@ -3,6 +3,11 @@ import TaskItem from "@tiptap/extension-task-item";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { t } from "../i18n/index.js";
 
+interface TaskItemSerializerState {
+  write(content: string): void;
+  renderContent(node: ProseMirrorNode): void;
+}
+
 /**
  * TipTap's TaskItem node view builds the checkbox aria-label from the node it
  * captured when the view was created. A to-do created empty from the slash
@@ -13,6 +18,21 @@ import { t } from "../i18n/index.js";
  * and set `checkbox.checked` before computing its label.
  */
 export const AccessibleTaskItem = TaskItem.extend({
+  // An upper-case `[X]` stays as written (#fmmght8w). No `parse` key: the
+  // built-in parse setup stays (tiptap-markdown merges per top-level key).
+  addStorage() {
+    return {
+      ...this.parent?.(),
+      markdown: {
+        serialize(state: TaskItemSerializerState, node: ProseMirrorNode) {
+          const check = node.attrs.checked ? (node.attrs.markdownCheck === "X" ? "[X]" : "[x]") : "[ ]";
+          state.write(`${check} `);
+          state.renderContent(node);
+        },
+      },
+    };
+  },
+
   addNodeView() {
     return ({ node, HTMLAttributes, getPos, editor }: NodeViewRendererProps) => {
       let currentNode = node;
