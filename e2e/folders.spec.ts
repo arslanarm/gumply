@@ -79,7 +79,8 @@ test.describe('plain folders in the sidebar (D33)', () => {
     await obsidianVault(request);
     await page.goto('/#/Recipes');
     await expect(page.getByTestId('folder-view-title')).toHaveText('Recipes');
-    await expect(page.getByTestId('folder-view')).toContainText('2 items');
+    // Pages and folders are items; the PDF inside is counted as another file.
+    await expect(page.getByTestId('folder-view-meta')).toHaveText('Folder · 2 items · 1 other file');
     await page.getByTestId('folder-item-Recipes/Soup').click();
     await expect(page.getByTestId('editor-content')).toContainText('Soup');
 
