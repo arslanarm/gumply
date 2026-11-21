@@ -12,14 +12,41 @@
 import HardBreak from "@tiptap/extension-hard-break";
 import Text from "@tiptap/extension-text";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { BREAK_STYLE_ATTR } from "./markdown-plugin.js";
+import { BREAK_SPACE_ATTR, BREAK_STYLE_ATTR } from "./markdown-plugin.js";
 
 interface TextSerializerState {
   text(text: string, escape?: boolean): void;
   write(content?: string): void;
+  out: string;
   atBlockStart?: boolean;
   inAutolink?: boolean;
   inTable?: boolean;
+  /** #iatezw4m: the last thing written was a soft break. */
+  afterSoftBreak?: boolean;
+}
+
+/**
+ * #iatezw4m: escape a line that follows a soft break only where it would
+ * *interrupt the paragraph* under CommonMark (and so turn into a heading,
+ * quote, list, fence, rule or setext underline on reload). A line read from a
+ * file can never look like that, since markdown-it would have split the
+ * paragraph there, so untouched text keeps its bytes; text typed after a
+ * break gets the backslash it needs. `2. item` can't interrupt and stays.
+ */
+export function escapeParagraphInterrupt(line: string): string {
+  const indent = /^[ \t]*/.exec(line)?.[0] ?? "";
+  // Four or more columns: a lazy continuation line, never a new block.
+  if (indent.replace(/\t/g, "    ").length >= 4) return line;
+  const rest = line.slice(indent.length);
+  const escapeAt = (offset: number) => `${indent}${rest.slice(0, offset)}\\${rest.slice(offset)}`;
+  if (/^#{1,6}(\s|$)/.test(rest)) return escapeAt(0);
+  if (rest.startsWith(">")) return escapeAt(0);
+  if (/^[-+*][ \t]+\S/.test(rest)) return escapeAt(0);
+  if (/^1[.)][ \t]+\S/.test(rest)) return escapeAt(1);
+  if (/^(```|~~~)/.test(rest)) return escapeAt(0);
+  if (/^(=+|-+)[ \t]*$/.test(rest)) return escapeAt(0);
+  if (/^([-*_])([ \t]*\1){2,}[ \t]*$/.test(rest)) return escapeAt(0);
+  return line;
 }
 
 const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
@@ -115,13 +142,18 @@ export const MarkdownText = Text.extend({
             state.text(value, false);
             return;
           }
+          // Right after a soft break, at the start of the line (nothing but the
+          // block prefix and indent written yet): only paragraph interrupts.
+          const afterSoft = state.afterSoftBreak === true && /(^|\n)[ \t>]*$/.test(state.out);
+          state.afterSoftBreak = false;
           // `text(…, false)` writes line by line with the block's prefix;
           // escaping is done here, per line, with our own rules.
           const escaped = value
             .split("\n")
-            .map((line, index) =>
-              escapeMarkdownText(line, index === 0 ? Boolean(state.atBlockStart) : true),
-            )
+            .map((line, index) => {
+              if (index === 0 && afterSoft) return escapeParagraphInterrupt(escapeMarkdownText(line, false));
+              return escapeMarkdownText(line, index === 0 ? Boolean(state.atBlockStart) : true);
+            })
             .join("\n");
           state.text(escaped, false);
         },
@@ -142,6 +174,21 @@ export const MarkdownHardBreak = HardBreak.extend({
         parseHTML: (element: HTMLElement) => element.getAttribute(BREAK_STYLE_ATTR),
         renderHTML: () => ({}),
       },
+      /** #iatezw4m: `[before, after]` whitespace of a soft break, as read. */
+      markdownSpace: {
+        default: null,
+        parseHTML: (element: HTMLElement) => {
+          try {
+            const value = JSON.parse(element.getAttribute(BREAK_SPACE_ATTR) ?? "null") as unknown;
+            return Array.isArray(value) && value.length === 2 && value.every((part) => typeof part === "string" && /^[ \t]*$/.test(part))
+              ? value
+              : null;
+          } catch {
+            return null;
+          }
+        },
+        renderHTML: () => ({}),
+      },
     };
   },
 
@@ -157,6 +204,14 @@ export const MarkdownHardBreak = HardBreak.extend({
           // Like prosemirror-markdown: trailing breaks are dropped.
           for (let i = index + 1; i < parent.childCount; i += 1) {
             if (parent.child(i).type !== node.type) {
+              if (node.attrs.markdownStyle === "soft") {
+                // #iatezw4m: a single newline, as read (with its whitespace).
+                const [before, after] = (node.attrs.markdownSpace as [string, string] | null) ?? ["", ""];
+                state.write(`${before}\n`);
+                if (after) state.write(after);
+                state.afterSoftBreak = true;
+                return;
+              }
               state.write(node.attrs.markdownStyle === "spaces" ? "  \n" : "\\\n");
               return;
             }

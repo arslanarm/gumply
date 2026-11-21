@@ -32,6 +32,8 @@ import { inlineImageRule } from "../attachments/inline-image.js";
 export const RAW_BLOCK_ATTR = "data-raw-md";
 export const RAW_INLINE_ATTR = "data-raw-md-inline";
 export const BREAK_STYLE_ATTR = "data-md-break";
+/** #iatezw4m: whitespace around a soft break, `[before, after]` as JSON. */
+export const BREAK_SPACE_ATTR = "data-md-space";
 
 export function escapeAttr(value: string): string {
   return value
@@ -207,6 +209,7 @@ function rawInlineRule(state: any, silent: boolean): boolean {
 function breakStyleRule(state: any): void {
   for (const block of state.tokens as any[]) {
     if (block.type !== "inline" || !block.children) continue;
+    softBreakSpaces(block);
     const breaks = (block.children as any[]).filter((t) => t.type === "hardbreak");
     if (breaks.length === 0) continue;
     const styles = [...(block.content as string).matchAll(/( {2,}|\\)\n/g)].map((m) =>
@@ -215,6 +218,25 @@ function breakStyleRule(state: any): void {
     if (styles.length !== breaks.length) continue;
     breaks.forEach((token, index) => token.attrSet(BREAK_STYLE_ATTR, styles[index]));
   }
+}
+
+/**
+ * #iatezw4m: a soft break (a single `\n` inside a paragraph) keeps the
+ * whitespace around it, which markdown-it drops: one trailing space before
+ * the newline, and a continuation line's indent. The n-th break token is the
+ * n-th newline in the paragraph's source; when they don't line up (a code
+ * span over two lines) nothing is recorded and the break is written plainly.
+ */
+function softBreakSpaces(block: any): void {
+  const breaks = (block.children as any[]).filter((t) => t.type === "softbreak" || t.type === "hardbreak");
+  if (!breaks.some((t) => t.type === "softbreak")) return;
+  const newlines = [...(block.content as string).matchAll(/([ \t]*)\n([ \t]*)/g)];
+  if (newlines.length !== breaks.length) return;
+  breaks.forEach((token, index) => {
+    if (token.type !== "softbreak") return;
+    const [, before = "", after = ""] = newlines[index]!;
+    if (before || after) token.attrSet(BREAK_SPACE_ATTR, JSON.stringify([before, after]));
+  });
 }
 
 /**
@@ -361,6 +383,12 @@ export function rawMarkdownPlugin(md: any): void {
     return linkOpen(tokens, index, ...rest);
   };
 
+  // #iatezw4m: a single newline in a paragraph is a line break in the editor
+  // (as in Obsidian, "Strict line breaks" off) and is written back as `\n`.
+  md.renderer.rules.softbreak = (tokens: any[], index: number) => {
+    const space = tokens[index].attrGet(BREAK_SPACE_ATTR);
+    return `<br ${BREAK_STYLE_ATTR}="soft"${space ? ` ${BREAK_SPACE_ATTR}="${escapeAttr(space)}"` : ""}>`;
+  };
   md.renderer.rules.hardbreak = (tokens: any[], index: number) => {
     const style = tokens[index].attrGet(BREAK_STYLE_ATTR);
     return style ? `<br ${BREAK_STYLE_ATTR}="${style}">` : "<br>";
