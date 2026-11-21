@@ -65,3 +65,28 @@ describe("frontmatter writer for properties", () => {
     expect(out).toBe("a: 1\nb: 2\n");
   });
 });
+
+describe("type changes on a page's value (#qw4pcm2h review)", () => {
+  it("knows when a value fits its type", async () => {
+    const { propertyValueMatches } = await import("../src/properties");
+    expect(propertyValueMatches("number", 2)).toBe(true);
+    expect(propertyValueMatches("number", "2")).toBe(false);
+    expect(propertyValueMatches("multitext", "Ann")).toBe(false);
+    expect(propertyValueMatches("text", ["a"])).toBe(false);
+    expect(propertyValueMatches("date", null)).toBe(true);
+  });
+
+  it("converts only cleanly, never losing anything", async () => {
+    const { convertPropertyValue } = await import("../src/properties");
+    expect(convertPropertyValue("number", "2")).toBe(2);
+    expect(convertPropertyValue("checkbox", "true")).toBe(true);
+    expect(convertPropertyValue("checkbox", "yes")).toBeUndefined();
+    expect(convertPropertyValue("date", "2026-11-21T10:00")).toBe("2026-11-21");
+    expect(convertPropertyValue("multitext", "Ann")).toEqual(["Ann"]);
+    expect(convertPropertyValue("tags", "#launch")).toEqual(["launch"]);
+    expect(convertPropertyValue("text", 2)).toBeUndefined(); // a number reads fine as text
+    expect(convertPropertyValue("text", ["a", "b"])).toBeUndefined();
+    expect(convertPropertyValue("number", "lots")).toBeUndefined();
+    expect(convertPropertyValue("number", 2)).toBeUndefined(); // already fits
+  });
+});

@@ -4796,3 +4796,19 @@ input {
 .property-editor.is-compact .property-chips:hover {
   background: transparent;
 }
+
+.property-mismatch {
+  display: inline-flex;
+  flex: none;
+  margin-left: 0.3rem;
+  color: var(--warning);
+  cursor: help;
+}
+
+.property-mismatch {
+  display: inline-flex;
+  flex: none;
+  margin-left: 0.3rem;
+  color: var(--warning);
+  cursor: help;
+}

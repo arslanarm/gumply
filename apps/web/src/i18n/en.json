@@ -946,6 +946,7 @@
     "removeValue": "Remove “{{value}}”",
     "readOnly": "This value is nested YAML. Edit it in another editor.",
     "invalid": "That isn't a valid value for a {{type}} property.",
+    "mismatch": "This value doesn't match the {{type}} type. Edit it, or change the type.",
     "invalidName": "Property names use letters, digits, spaces, “-” and “_”.",
     "taken": "There's already a property called “{{name}}”.",
     "types": {

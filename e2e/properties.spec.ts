@@ -158,4 +158,33 @@ test.describe('properties', () => {
     await expect(page.getByTestId('property-error')).toBeVisible();
     expect(read('Nums')).toBe('---\ncount: 1\n---\nx\n');
   });
+
+  test("changing a type converts this page's value when it can, and only this page's (#qw4pcm2h review)", async ({ page, vault }) => {
+    await vault.seed([{ title: 'Anchor' }]);
+    writeFileSync(file('Scores'), '---\nrank: "2"\npeople: Ann\nnote: x\n---\nBody\n');
+    writeFileSync(file('Other'), '---\nrank: "7"\n---\nx\n');
+    writeFileSync(file('Odd'), '---\nrank: lots\n---\nx\n');
+    await page.goto('/#/Scores');
+    await expectPageTitle(page, 'Scores');
+
+    // Text → Number: "2" becomes 2 on this page, written as one line.
+    await page.getByTestId('property-key-rank').click();
+    await page.getByTestId('property-type-number').click();
+    await waitForFile('Scores', (text) => text === '---\nrank: 2\npeople: Ann\nnote: x\n---\nBody\n');
+    await expect(page.getByTestId('property-row-rank').getByTestId('property-mismatch')).toHaveCount(0);
+    // Other pages keep their values (as in Obsidian).
+    expect(read('Other')).toBe('---\nrank: "7"\n---\nx\n');
+
+    // A single value → List: a one-item list.
+    await page.getByTestId('property-key-people').click();
+    await page.getByTestId('property-type-multitext').click();
+    await waitForFile('Scores', (text) => text.includes('people:\n  - Ann\n'));
+    await expect(page.getByTestId('property-chip-Ann')).toBeVisible();
+
+    // A value that doesn't convert stays as it is, with a hint.
+    await page.goto('/#/Odd');
+    await expectPageTitle(page, 'Odd');
+    await expect(page.getByTestId('property-row-rank').getByTestId('property-mismatch')).toBeVisible();
+    expect(read('Odd')).toBe('---\nrank: lots\n---\nx\n');
+  });
 });

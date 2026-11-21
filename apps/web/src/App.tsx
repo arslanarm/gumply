@@ -1,5 +1,6 @@
 import { flushSync } from "react-dom";
 import {
+  convertPropertyValue,
   formatWikilink,
   resolveWikilink,
   type Backlink,
@@ -1130,15 +1131,21 @@ export function App() {
         : previous,
     );
     try {
+      const before = pageRef.current?.properties?.find((item) => item.key === key);
       await api.setPropertyType(key, type);
       if (!id) return;
       // Types are vault-wide: refresh just this page's properties.
       const fresh = await api.getPage(id);
       setPage((previous) => (previous && previous.id === fresh.id ? { ...previous, properties: fresh.properties ?? [] } : previous));
+      // This page's value follows when it converts cleanly ("2" → 2, a
+      // single value → a list): only that line is written. Other pages keep
+      // theirs, as in Obsidian; a value that doesn't convert shows a hint.
+      const converted = before?.editable ? convertPropertyValue(type, before.value) : undefined;
+      if (converted !== undefined) await handlePropertiesChange({ set: { [key]: converted } });
     } catch (error) {
       setActionError(errorMessage(error));
     }
-  }, []);
+  }, [handlePropertiesChange]);
 
   const handleSetIcon = useCallback(async (icon: string | null) => {
     const id = selectedRef.current;

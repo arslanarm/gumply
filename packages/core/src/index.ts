@@ -151,11 +151,13 @@ export {
 
 export {
   coercePropertyValue,
+  convertPropertyValue,
   HEADER_KEYS,
   inferPropertyType,
   isPropertyType,
   isValidPropertyKey,
   PROPERTY_TYPES,
+  propertyValueMatches,
   type PropertiesPatch,
   type Property,
   type PropertyInfo,

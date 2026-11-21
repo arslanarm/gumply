@@ -137,3 +137,42 @@ export function coercePropertyValue(type: PropertyType, value: unknown): Propert
       return Array.isArray(value) ? value.join(", ") : String(value);
   }
 }
+
+/**
+ * Whether a value already has its type's shape (what Obsidian checks before
+ * showing a type mismatch). Empty always fits.
+ */
+export function propertyValueMatches(type: PropertyType, value: PropertyValue): boolean {
+  if (value === null || value === "") return true;
+  switch (type) {
+    case "number":
+      return typeof value === "number";
+    case "checkbox":
+      return typeof value === "boolean";
+    case "date":
+      return typeof value === "string" && DATE.test(value);
+    case "datetime":
+      return typeof value === "string" && DATETIME.test(value);
+    case "multitext":
+    case "tags":
+    case "aliases":
+      return Array.isArray(value);
+    default:
+      return !Array.isArray(value);
+  }
+}
+
+/**
+ * The value converted to a new type, when that is clean (#qw4pcm2h review):
+ * `"2"` → 2, `"true"` → true, a date string → a date, a single value → a
+ * one-item list, a number → text. Undefined when it doesn't convert, or
+ * would lose something (a list never becomes text).
+ */
+export function convertPropertyValue(type: PropertyType, value: PropertyValue): PropertyValue | undefined {
+  if (propertyValueMatches(type, value)) return undefined;
+  if (Array.isArray(value) && (type === "text" || type === "number" || type === "checkbox" || type === "date" || type === "datetime")) {
+    return undefined;
+  }
+  const converted = coercePropertyValue(type, value);
+  return converted === undefined || converted === null || !propertyValueMatches(type, converted) ? undefined : converted;
+}

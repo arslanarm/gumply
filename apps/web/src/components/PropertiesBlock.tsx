@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   isValidPropertyKey,
+  propertyValueMatches,
   PROPERTY_TYPES,
   type PropertiesPatch,
   type Property,
@@ -223,6 +224,17 @@ function PropertyRow(props: PropertyRowProps) {
       </div>
       <div className="property-value" data-testid={`property-value-${property.key}`}>
         <PropertyValueEditor property={property} autoFocus={props.autoFocus} onSave={props.onSave} onInvalid={props.onInvalid} />
+        {property.editable && !propertyValueMatches(property.type, property.value) ? (
+          <span
+            className="property-mismatch"
+            role="img"
+            data-testid="property-mismatch"
+            title={t("properties.mismatch", { type: t(`properties.types.${property.type}`) })}
+            aria-label={t("properties.mismatch", { type: t(`properties.types.${property.type}`) })}
+          >
+            <Icon name="alert" size={14} />
+          </span>
+        ) : null}
       </div>
     </div>
   );
