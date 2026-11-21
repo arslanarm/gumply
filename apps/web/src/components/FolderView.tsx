@@ -1,6 +1,7 @@
 import type { PageId, PageMeta } from "@gumply/core";
 import { useMemo } from "react";
 import { isBoard } from "../lib/boards.js";
+import { folderSummary } from "../lib/folders.js";
 import { comparePages } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 
@@ -13,7 +14,7 @@ export interface FolderViewProps {
 }
 
 function kindLabel(item: PageMeta): string {
-  if (item.kind === "folder") return item.childCount === 1 ? "Folder · 1 item" : `Folder · ${item.childCount} items`;
+  if (item.kind === "folder") return folderSummary(item.childCount, item.otherFiles);
   if (isBoard(item)) return "Whiteboard";
   return item.childCount > 0 ? `Page · ${item.childCount} sub-page${item.childCount === 1 ? "" : "s"}` : "Page";
 }
@@ -38,8 +39,8 @@ export function FolderView({ folder, pages, onOpen, onNewPage, onNewBoard }: Fol
           {folder.title}
         </h1>
       </div>
-      <p className="folder-view-meta">
-        Folder · {children.length === 1 ? "1 item" : `${children.length} items`}
+      <p className="folder-view-meta" data-testid="folder-view-meta">
+        {folderSummary(children.length, folder.otherFiles)}
       </p>
       <div className="folder-view-actions">
         <button type="button" className="button-secondary" data-testid="folder-new-page" onClick={() => onNewPage(folder.id)}>

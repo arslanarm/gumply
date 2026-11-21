@@ -2261,7 +2261,7 @@ export class VaultStore {
         titleFromId(other.id),
       );
       other.content = result.content;
-      other.updated = written.frontmatter ? at : new Date(written.mtimeMs).toISOString();
+      other.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
       other.fileMtimeMs = written.mtimeMs;
       this.refreshTags(other);
       rewritten.push(other.id);
