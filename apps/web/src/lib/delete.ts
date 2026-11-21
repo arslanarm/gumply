@@ -34,8 +34,16 @@ export function subtreePages(pages: readonly PageMeta[], id: PageId): PageMeta[]
   return out;
 }
 
-/** D15 copy. */
-export function deleteDialogBody(subPages: number): string {
+/** D33: what deleting a folder also deletes (pages and boards inside, at any depth). */
+export function pagesInside(pages: readonly PageMeta[], id: PageId): number {
+  return subtreePages(pages, id).filter((page) => page.id !== id && page.kind !== "folder").length;
+}
+
+/** D15 copy; a folder (D33) counts the pages inside instead of sub-pages. */
+export function deleteDialogBody(subPages: number, folder = false): string {
+  if (folder) {
+    return subPages === 1 ? "The 1 page inside will be deleted too." : `The ${subPages} pages inside will be deleted too.`;
+  }
   return subPages === 1
     ? "Its 1 sub-page will be deleted too."
     : `Its ${subPages} sub-pages will be deleted too.`;

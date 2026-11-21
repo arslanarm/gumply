@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { preloadGraph } from "../lazy-parts.js";
-import { buildPageTree } from "../lib/tree.js";
+import { buildPageTree, pageTrail } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { PageItem } from "./PageItem.js";
 
@@ -41,7 +41,37 @@ export function Sidebar(props: SidebarProps) {
   const [renamingId, setRenamingId] = useState<PageId | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [draggingId, setDraggingId] = useState<PageId | null>(null);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<PageId>>(() => new Set());
+  // Rows toggled away from their default (pages expanded, D33 folders collapsed).
+  const [toggled, setToggled] = useState<ReadonlySet<PageId>>(() => new Set());
+  const isFolderId = (id: PageId) => pages.some((page) => page.id === id && page.kind === "folder");
+
+  /** Show `ids`' children: a folder is open when toggled, a page when not. */
+  const expand = (...ids: PageId[]) => {
+    setToggled((previous) => {
+      let next: Set<PageId> | null = null;
+      for (const id of ids) {
+        const open = isFolderId(id);
+        if (previous.has(id) === open) continue;
+        next ??= new Set(previous);
+        if (open) next.add(id);
+        else next.delete(id);
+      }
+      return next ?? previous;
+    });
+  };
+
+  // D33: opening a page inside closed folders (search, a link) reveals it.
+  // Once per opened page, so collapsing that folder again sticks.
+  const revealedFor = useRef<PageId | null>(null);
+  useEffect(() => {
+    if (!selectedId || revealedFor.current === selectedId) return;
+    const trail = pageTrail(pages, selectedId);
+    if (trail.length === 0) return;
+    revealedFor.current = selectedId;
+    const ancestors = trail.slice(0, -1).map((page) => page.id);
+    if (ancestors.length > 0) expand(...ancestors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, pages]);
 
   // D11: focus the next sibling after a delete, else the New page button.
   useEffect(() => {
@@ -78,7 +108,7 @@ export function Sidebar(props: SidebarProps) {
   };
 
   const toggle = (id: PageId) => {
-    setCollapsed((previous) => {
+    setToggled((previous) => {
       const next = new Set(previous);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -87,12 +117,7 @@ export function Sidebar(props: SidebarProps) {
   };
 
   const createChild = (parentId: PageId) => {
-    setCollapsed((previous) => {
-      if (!previous.has(parentId)) return previous;
-      const next = new Set(previous);
-      next.delete(parentId);
-      return next;
-    });
+    expand(parentId);
     props.onCreate(parentId);
   };
 
@@ -107,6 +132,7 @@ export function Sidebar(props: SidebarProps) {
     onMove: props.onMove,
     onCreateBoard: props.onCreateBoard,
     createChild,
+    expand,
     toggle,
     startRename,
     commitRename,
@@ -121,6 +147,7 @@ export function Sidebar(props: SidebarProps) {
     onCopyLink: props.onCopyLink,
     onMove: props.onMove,
     createChild,
+    expand,
     toggle,
     startRename,
     commitRename,
@@ -131,12 +158,7 @@ export function Sidebar(props: SidebarProps) {
       onOpen: (id: PageId) => latest.current.onOpen(id),
       onCreateChild: (id: PageId) => latest.current.createChild(id),
       onCreateBoardChild: (id: PageId) => {
-        setCollapsed((previous) => {
-          if (!previous.has(id)) return previous;
-          const next = new Set(previous);
-          next.delete(id);
-          return next;
-        });
+        latest.current.expand(id);
         latest.current.onCreateBoard(id);
       },
       onDelete: (id: PageId) => latest.current.onDelete(id),
@@ -241,7 +263,7 @@ export function Sidebar(props: SidebarProps) {
               renamingId={renamingId}
               renameDraft={renameDraft}
               draggingId={draggingId}
-              collapsed={collapsed}
+              toggled={toggled}
               {...rowHandlers}
               onRenameDraft={setRenameDraft}
               onDragStartItem={setDraggingId}

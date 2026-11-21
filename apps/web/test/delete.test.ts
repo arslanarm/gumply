@@ -4,6 +4,7 @@ import {
   deleteDialogBody,
   directSubPages,
   focusAfterDelete,
+  pagesInside,
   subtreePages,
 } from "../src/lib/delete.js";
 
@@ -84,5 +85,23 @@ describe("focusAfterDelete", () => {
 
   it("returns null for unknown ids", () => {
     expect(focusAfterDelete(pages, "missing")).toBeNull();
+  });
+});
+
+describe("deleting a plain folder (D33)", () => {
+  it("counts the pages inside at any depth, not the sub-folders", () => {
+    const folder = (id: string, parentId: string | null = null): PageMeta => ({ ...meta(id, id, parentId), kind: "folder" });
+    const pages = [
+      folder("Recipes"),
+      meta("Recipes/Soup", "Soup", "Recipes"),
+      folder("Recipes/Sweet", "Recipes"),
+      meta("Recipes/Sweet/Cake", "Cake", "Recipes/Sweet"),
+      meta("Other", "Other"),
+    ];
+    expect(pagesInside(pages, "Recipes")).toBe(2);
+    expect(pagesInside(pages, "Recipes/Sweet")).toBe(1);
+    expect(deleteDialogBody(2, true)).toBe("The 2 pages inside will be deleted too.");
+    expect(deleteDialogBody(1, true)).toBe("The 1 page inside will be deleted too.");
+    expect(deleteDialogBody(1)).toBe("Its 1 sub-page will be deleted too.");
   });
 });

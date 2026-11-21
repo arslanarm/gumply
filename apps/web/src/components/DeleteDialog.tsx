@@ -4,12 +4,14 @@ import { deleteDialogBody } from "../lib/delete.js";
 export interface DeleteDialogProps {
   title: string;
   subPages: number;
+  /** D33: deleting a plain folder (counts the pages inside). */
+  folder?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
 /** In-app delete confirmation (D15). Cancel is focused by default. */
-export function DeleteDialog({ title, subPages, onCancel, onConfirm }: DeleteDialogProps) {
+export function DeleteDialog({ title, subPages, folder = false, onCancel, onConfirm }: DeleteDialogProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
 
@@ -61,8 +63,8 @@ export function DeleteDialog({ title, subPages, onCancel, onConfirm }: DeleteDia
         data-testid="delete-confirm-dialog"
         ref={dialogRef}
       >
-        <h2 id="delete-dialog-title">Delete “{title}”?</h2>
-        <p id="delete-dialog-body">{deleteDialogBody(subPages)}</p>
+        <h2 id="delete-dialog-title">{folder ? "Delete folder" : "Delete"} “{title}”?</h2>
+        <p id="delete-dialog-body">{deleteDialogBody(subPages, folder)}</p>
         <div className="modal-actions">
           <button
             type="button"
