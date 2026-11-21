@@ -28,6 +28,17 @@ import { isAppDownload, suggestedName } from "./downloads.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
 
+/**
+ * Launch phases with the process's age in ms (#tcw8r7vc), kept for the
+ * desktop tests: a slow first launch then says which phase was slow.
+ */
+const launchPhases: Array<[string, number]> = [];
+(globalThis as { __gumplyLaunchPhases?: Array<[string, number]> }).__gumplyLaunchPhases = launchPhases;
+function launchPhase(phase: string): void {
+  launchPhases.push([phase, Math.round(process.uptime() * 1000)]);
+}
+launchPhase("main-loaded");
+
 const here = dirname(fileURLToPath(import.meta.url));
 /** The built web app, copied next to this bundle by scripts/build.mjs. */
 const WEB_ROOT = join(here, "web");
@@ -172,6 +183,7 @@ async function openVault(path: string): Promise<void> {
     await previous.close();
   }
 
+  launchPhase("server-starting");
   server = await startGumplyServer({
     vaultPath: target,
     // A random free port; GUMPLY_DESKTOP_PORT pins one (tests, debugging).
@@ -185,14 +197,19 @@ async function openVault(path: string): Promise<void> {
     uiState: uiStateStore,
     log: (message) => console.log(message),
   });
+  launchPhase("server-started");
   vaultPath = target;
   persist(withOpenedVault(settings, target));
   buildMenu();
 
   themeForFirstPaint();
-  if (!window) createWindow();
+  if (!window) {
+    createWindow();
+    launchPhase("window-created");
+  }
   try {
     await window!.loadURL(`${server.url}/`);
+    launchPhase("page-loaded");
   } finally {
     nativeTheme.themeSource = "system";
   }
@@ -541,6 +558,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    launchPhase("app-ready");
     // Only clipboard writes (Copy buttons) are allowed; no camera, location…
     session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
       callback(permission === "clipboard-sanitized-write"),
