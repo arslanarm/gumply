@@ -7,7 +7,7 @@
  * file; only "Start closed / Start open" in the block menu changes the marker.
  */
 import { createDocument, InputRule, Node, wrappingInputRule, type Editor } from "@tiptap/core";
-import { Fragment, type Node as PMNode, type ResolvedPos } from "@tiptap/pm/model";
+import { Fragment, type Node as PMNode, type ResolvedPos, type Schema } from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import {
@@ -259,13 +259,23 @@ function backspaceIntoTitle(editor: Editor): boolean {
 
 // ---------- byte-for-byte ----------
 
-const parsedSources = new Map<string, PMNode | null>();
+/**
+ * Parsed callout sources, per schema: every editor (a page switch, a reload
+ * after an outside change) builds its own schema, and nodes of another
+ * schema never compare equal.
+ */
+const parsedSources = new WeakMap<Schema, Map<string, PMNode | null>>();
 
 /** The callout's original source when it is unchanged since it was read. */
 function keptSource(editor: Editor | undefined, node: PMNode): string | null {
   const source = node.attrs.source as string | null;
   if (!source || !editor) return null;
-  let parsed = parsedSources.get(source);
+  let cache = parsedSources.get(node.type.schema);
+  if (!cache) {
+    cache = new Map();
+    parsedSources.set(node.type.schema, cache);
+  }
+  let parsed = cache.get(source);
   if (parsed === undefined) {
     parsed = null;
     try {
@@ -278,8 +288,8 @@ function keptSource(editor: Editor | undefined, node: PMNode): string | null {
     } catch {
       parsed = null;
     }
-    if (parsedSources.size > 500) parsedSources.clear();
-    parsedSources.set(source, parsed);
+    if (cache.size > 500) cache.clear();
+    cache.set(source, parsed);
   }
   return parsed && parsed.eq(node) ? source : null;
 }

@@ -1,6 +1,6 @@
 /**
  * Callout types (D29): Obsidian's names, aliases, icons and colour families.
- * Unknown types keep their name on disk and get a neutral style.
+ * Unknown types keep their name on disk and look like a note (as in Obsidian).
  */
 
 export type CalloutFold = "" | "+" | "-";
@@ -19,8 +19,7 @@ export type CalloutStyle =
   | "danger"
   | "bug"
   | "example"
-  | "quote"
-  | "custom";
+  | "quote";
 
 /** Obsidian's built-in types and their aliases. */
 const ALIASES: Record<string, CalloutStyle> = {
@@ -68,7 +67,7 @@ export const CALLOUT_TYPES = [
 ] as const;
 
 export function calloutStyle(type: string): CalloutStyle {
-  return ALIASES[type.toLowerCase()] ?? "custom";
+  return ALIASES[type.toLowerCase()] ?? "note";
 }
 
 /** What an untitled callout shows (Obsidian: the capitalised type). */
@@ -97,7 +96,6 @@ const ICONS: Record<CalloutStyle, string> = {
     '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
   quote:
     '<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/>',
-  custom: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
 };
 
 export const CHEVRON_ICON = '<path d="m9 18 6-6-6-6"/>';

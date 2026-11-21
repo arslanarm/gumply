@@ -78,7 +78,7 @@ test.describe('callouts and toggles (D29)', () => {
     const callouts = body.getByTestId('callout');
     await expect(callouts).toHaveCount(19);
     await expect(callouts.first()).toHaveAttribute('data-callout-style', 'note');
-    await expect(body.locator('[data-callout="my-custom"]')).toHaveAttribute('data-callout-style', 'custom');
+    await expect(body.locator('[data-callout="my-custom"]')).toHaveAttribute('data-callout-style', 'note');
     // Closed by default: the body is hidden; open by default: shown.
     const closed = body.locator('[data-fold="-"]').first();
     await expect(closed).toHaveClass(/is-closed/);
@@ -91,6 +91,38 @@ test.describe('callouts and toggles (D29)', () => {
     await page.keyboard.type(' Edited.');
     await waitSaved(page);
     expect(await fileOf(request, created!.id)).toBe(ALL_CALLOUTS.replace('Intro paragraph.', 'Intro paragraph. Edited.'));
+  });
+
+  test('after leaving the page and coming back, untouched callouts stay byte-for-byte', async ({
+    page,
+    vault,
+    request,
+  }) => {
+    // A remounted editor has a new schema; the kept-source check must not
+    // compare against nodes parsed for the old one (hand-check of 8e36844).
+    // Tables and fences have their own kept sources: check them on the same path.
+    const content = `${ALL_CALLOUTS}\n\n| Left | Right |\n|:-----|------:|\n|  a   |   1   |\n\n~~~python\nprint("x")\n~~~`;
+    const [created, other] = await vault.seed([
+      { title: 'Two edits', content },
+      { title: 'Elsewhere', content: 'Other page' },
+    ]);
+    await page.goto('/');
+    const body = page.getByTestId('editor-content');
+    await page.getByTestId(`page-item-${created!.id}`).click();
+    await body.getByText('Intro paragraph.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Edited.');
+    await waitSaved(page);
+    await page.getByTestId(`page-item-${other!.id}`).click();
+    await expect(body.getByText('Other page')).toBeVisible();
+    await page.getByTestId(`page-item-${created!.id}`).click();
+    await body.getByText('Outro paragraph.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Y');
+    await waitSaved(page);
+    expect(await fileOf(request, created!.id)).toBe(
+      content.replace('Intro paragraph.', 'Intro paragraph. Edited.').replace('Outro paragraph.', 'Outro paragraph. Y'),
+    );
   });
 
   test('editing inside one callout rewrites only that callout', async ({ page, vault, request }) => {

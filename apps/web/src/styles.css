@@ -3116,8 +3116,7 @@ input {
 .callout[data-callout-style="danger"],
 .callout[data-callout-style="bug"] { --callout-rgb: 221, 44, 66; }
 .callout[data-callout-style="example"] { --callout-rgb: 120, 82, 238; }
-.callout[data-callout-style="quote"],
-.callout[data-callout-style="custom"] { --callout-rgb: 120, 119, 116; }
+.callout[data-callout-style="quote"] { --callout-rgb: 120, 119, 116; }
 
 :root[data-theme="dark"] .callout { --callout-rgb: 2, 122, 255; }
 :root[data-theme="dark"] .callout[data-callout-style="abstract"],
@@ -3129,8 +3128,7 @@ input {
 :root[data-theme="dark"] .callout[data-callout-style="danger"],
 :root[data-theme="dark"] .callout[data-callout-style="bug"] { --callout-rgb: 251, 70, 76; }
 :root[data-theme="dark"] .callout[data-callout-style="example"] { --callout-rgb: 168, 130, 255; }
-:root[data-theme="dark"] .callout[data-callout-style="quote"],
-:root[data-theme="dark"] .callout[data-callout-style="custom"] { --callout-rgb: 158, 158, 158; }
+:root[data-theme="dark"] .callout[data-callout-style="quote"] { --callout-rgb: 158, 158, 158; }
 
 .callout-content > * + * {
   margin-top: 0.3em;
@@ -3272,8 +3270,7 @@ input {
 .callout-picker-item[data-callout-style="danger"],
 .callout-picker-item[data-callout-style="bug"] { --callout-rgb: 221, 44, 66; }
 .callout-picker-item[data-callout-style="example"] { --callout-rgb: 120, 82, 238; }
-.callout-picker-item[data-callout-style="quote"],
-.callout-picker-item[data-callout-style="custom"] { --callout-rgb: 120, 119, 116; }
+.callout-picker-item[data-callout-style="quote"] { --callout-rgb: 120, 119, 116; }
 :root[data-theme="dark"] .callout-picker-item { --callout-rgb: 2, 122, 255; }
 :root[data-theme="dark"] .callout-picker-item[data-callout-style="abstract"],
 :root[data-theme="dark"] .callout-picker-item[data-callout-style="tip"] { --callout-rgb: 83, 223, 221; }
@@ -3284,8 +3281,7 @@ input {
 :root[data-theme="dark"] .callout-picker-item[data-callout-style="danger"],
 :root[data-theme="dark"] .callout-picker-item[data-callout-style="bug"] { --callout-rgb: 251, 70, 76; }
 :root[data-theme="dark"] .callout-picker-item[data-callout-style="example"] { --callout-rgb: 168, 130, 255; }
-:root[data-theme="dark"] .callout-picker-item[data-callout-style="quote"],
-:root[data-theme="dark"] .callout-picker-item[data-callout-style="custom"] { --callout-rgb: 158, 158, 158; }
+:root[data-theme="dark"] .callout-picker-item[data-callout-style="quote"] { --callout-rgb: 158, 158, 158; }
 
 /* A title-only callout: no empty body line unless the caret is in it. */
 .callout.is-body-empty:not(.is-foldable):not(.has-caret) .callout-content > p:nth-child(2) {

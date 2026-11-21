@@ -57,7 +57,7 @@ describe("callout Markdown → editor HTML (D29)", () => {
 
   it("keeps custom types by name", () => {
     expect(callouts("> [!my-type] Custom")).toEqual([{ type: "my-type", fold: "", source: "> [!my-type] Custom" }]);
-    expect(calloutStyle("my-type")).toBe("custom");
+    expect(calloutStyle("my-type")).toBe("note"); // Obsidian's fallback
     expect(calloutStyle("FAQ")).toBe("question");
     expect(defaultCalloutTitle("my-type")).toBe("My-type");
   });
