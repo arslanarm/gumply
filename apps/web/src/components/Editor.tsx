@@ -115,6 +115,8 @@ export interface EditorProps {
   onCreateBoard?: (request: WhiteboardRequest) => Promise<PageMeta | null>;
   /** A click on an inline `#tag` chip (#ux5cukze). */
   onOpenTag?: (tag: string) => void;
+  /** Show only (a page in the trash, #ppag3ugh): not editable, never saved. */
+  readOnly?: boolean;
 }
 
 interface SlashMenuState {
@@ -171,6 +173,7 @@ export function Editor({
   onExitTop,
   onCreateBoard,
   onOpenTag,
+  readOnly = false,
 }: EditorProps) {
   const [menu, setMenu] = useState<SlashMenuState | null>(null);
   const menuRef = useRef<SlashMenuState | null>(null);
@@ -615,6 +618,7 @@ export function Editor({
 
   const editor = useEditor({
     immediatelyRender: false,
+    editable: !readOnly,
     extensions: [
       StarterKit.configure({
         heading: false,
@@ -735,6 +739,7 @@ export function Editor({
       registerTableSources(instance.state.doc, lastParsedTableSources());
     },
     onUpdate: ({ editor: instance }) => {
+      if (readOnly) return;
       autosave.schedule(readMarkdown(instance));
     },
   });
@@ -756,6 +761,7 @@ export function Editor({
   }, [autosave]);
 
   useEffect(() => {
+    if (readOnly) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -764,10 +770,10 @@ export function Editor({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [autosave]);
+  }, [autosave, readOnly]);
 
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || readOnly) return;
     onReady?.({
       flush: () => autosave.flush(),
       pageId: page.id,
@@ -795,7 +801,7 @@ export function Editor({
         await autosave.retry();
       },
     });
-  }, [editor, autosave, onReady, page.id]);
+  }, [editor, autosave, onReady, page.id, readOnly]);
 
   // `[[Page#Heading]]`: scroll to the heading, or report it missing.
   useEffect(() => {
@@ -826,7 +832,7 @@ export function Editor({
   }, [editor, headingToReveal]);
 
   return (
-    <div className="editor-host">
+    <div className={`editor-host${readOnly ? " is-read-only" : ""}`}>
       <input
         ref={fileInputRef}
         type="file"
@@ -841,8 +847,8 @@ export function Editor({
         }}
       />
       <EditorContent editor={editor} />
-      {editor ? <BlockGutter editor={editor} /> : null}
-      {editor ? <TableControls editor={editor} /> : null}
+      {editor && !readOnly ? <BlockGutter editor={editor} /> : null}
+      {editor && !readOnly ? <TableControls editor={editor} /> : null}
       {menu ? (
         <SlashMenu
           items={menu.items}

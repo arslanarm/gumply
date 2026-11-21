@@ -6,6 +6,8 @@
  *   system browser / mail client.
  * - A vault file the app links to (`/api/files/<path>`, e.g. a PDF card) opens
  *   in the system's default app for that file.
+ * - "Show in file manager" for a trash entry (`/api/trash/<id>/reveal`,
+ *   #ppag3ugh) only ever reveals the trashed file, never opens it.
  * - Everything else (`file:`, `javascript:`, `data:`, custom schemes) is
  *   ignored.
  */
@@ -13,6 +15,7 @@ export type NavigationAction =
   | { kind: "app" }
   | { kind: "external"; url: string }
   | { kind: "vault-file"; path: string }
+  | { kind: "trash-reveal"; trashId: string }
   | { kind: "ignore" };
 
 export function classifyNavigation(target: string, appOrigin: string): NavigationAction {
@@ -37,6 +40,9 @@ export function classifyNavigation(target: string, appOrigin: string): Navigatio
       }
       return { kind: "vault-file", path };
     }
+    const reveal = /^\/api\/trash\/([A-Za-z0-9-]+)\/reveal$/.exec(url.pathname);
+    if (reveal) return { kind: "trash-reveal", trashId: reveal[1]! };
+    if (url.pathname.startsWith("/api/trash/") && url.pathname.endsWith("/reveal")) return { kind: "ignore" };
     return { kind: "app" };
   }
   if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") {

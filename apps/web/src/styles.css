@@ -1760,8 +1760,31 @@ input {
 
 .sidebar-row-bottom {
   margin-top: 0.35rem;
+  flex: none;
+}
+
+/* #ppag3ugh: Trash, the last row. */
+.sidebar-row-trash {
   margin-bottom: 0.6rem;
   flex: none;
+}
+
+.sidebar-row-count {
+  margin-left: auto;
+  min-width: 1.4em;
+  padding: 0 0.4em;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-row-active .sidebar-row-count {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 
 .sidebar-row-icon {
@@ -3499,6 +3522,282 @@ input {
 
 .ProseMirror .tag-chip:hover {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ---------- Trash (#ppag3ugh) ---------- */
+
+.trash-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.trash-heading {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.trash-heading .page-title {
+  cursor: default;
+}
+
+.trash-empty-button {
+  margin-left: auto;
+}
+
+.trash-empty-button:not(:disabled):hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.trash-empty-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.trash-intro {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.trash-intro code {
+  font-size: 0.82em;
+}
+
+.trash-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0 0.65rem;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.trash-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.trash-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.trash-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.trash-empty-state {
+  margin-top: 3rem;
+}
+
+.trash-list,
+.trash-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trash-list {
+  border-top: 1px solid var(--border);
+}
+
+.trash-entry {
+  border-bottom: 1px solid var(--border);
+  padding: 0.3rem 0;
+}
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 6px;
+}
+
+.trash-row:hover,
+.trash-row:focus-within {
+  background: var(--hover);
+}
+
+.trash-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.trash-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  flex: none;
+  color: var(--muted);
+}
+
+.trash-item-emoji {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.trash-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trash-item-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.trash-item-meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.trash-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding-right: 0.4rem;
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.trash-row:hover .trash-row-actions,
+.trash-row:focus-within .trash-row-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .trash-row-actions {
+    opacity: 1;
+  }
+}
+
+.trash-restore {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: var(--surface-page);
+  color: var(--text);
+}
+
+.trash-restore:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-page);
+}
+
+.trash-delete-forever:hover {
+  color: var(--danger);
+}
+
+.trash-child {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trash-child .trash-item-title {
+  font-size: 0.86rem;
+  font-weight: 400;
+}
+
+.trash-child:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.banner-trash {
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-page));
+  color: var(--text);
+}
+
+.banner-trash > svg {
+  color: var(--warning);
+  flex: none;
+}
+
+.trashed-delete-forever {
+  color: var(--danger);
+}
+
+.trashed-page-icon {
+  font-size: 2.3rem;
+  line-height: 1;
+}
+
+.trashed-title {
+  cursor: default;
+}
+
+.trashed-page-body .page-header {
+  margin-bottom: 1.4rem;
+}
+
+.editor-host.is-read-only .ProseMirror {
+  cursor: default;
+  caret-color: transparent;
+}
+
+/* Checkboxes, the code language picker and other controls do nothing here. */
+.editor-host.is-read-only .ProseMirror :is(input, select, button) {
+  pointer-events: none;
+}
+
+.trashed-board-note {
+  margin-top: 2rem;
+}
+
+.trashed-folder-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.trashed-folder-list {
+  margin-top: 0.5rem;
 }
 
 /* ---------- New whiteboard: template gallery (spec/v0-6 §D) ---------- */

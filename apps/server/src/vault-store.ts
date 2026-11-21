@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync, watch, type FSWatcher } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
   childPageId,
@@ -50,7 +50,11 @@ import {
   type Page,
   type PageId,
   type PageMeta,
+  type RestoreResult,
   type SearchResult,
+  type TrashedDocument,
+  type TrashedPage,
+  type TrashItem,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
 import {
@@ -157,6 +161,21 @@ type DirectoryScan = Map<PageId, number>;
 /** Folders have no timestamps of their own (no file, no extra stat per folder). */
 const FOLDER_TIME = new Date(0).toISOString();
 
+/** A validated `.trash/<trashId>/` entry. */
+interface TrashEntry {
+  trashId: string;
+  dir: string;
+  /** The deleted page or board (its id before the delete). */
+  id: PageId;
+  /** Its file inside the entry, vault-relative as it was. */
+  file: string;
+  /** It and its sub-pages. */
+  deleted: PageId[];
+  deletedAt: string;
+  /** A plain folder (D33): `file` is its directory. */
+  folder: boolean;
+}
+
 /** `.trash/<trashId>/meta.json` (D11). */
 interface TrashManifest {
   id: PageId;
@@ -165,8 +184,8 @@ interface TrashManifest {
   deletedAt: string;
   /** Vault-relative file of `id` (v1.7: `.md` or `.canvas`); old manifests: `${id}.md`. */
   file?: string;
-  /** D33: `"folder"` when `file` is a plain folder (the whole directory). */
-  kind?: PageKind;
+  /** "folder" for a plain folder (D33); `file` is then the directory. */
+  kind?: string;
 }
 
 const BOARD_EXTENSION = ".canvas";
@@ -781,8 +800,38 @@ export class VaultStore {
     return this.enqueue(() => this.removeNow(this.resolveId(id)));
   }
 
-  restore(trashId: string): Promise<PageMeta[]> {
+  restore(trashId: string): Promise<RestoreResult> {
     return this.enqueue(() => this.restoreNow(trashId));
+  }
+
+  /** Every trash entry Gumply made (D11), newest first (#ppag3ugh). */
+  listTrash(): Promise<TrashItem[]> {
+    return this.enqueue(() => this.listTrashNow());
+  }
+
+  /** A trashed page or board (the entry's top one, or sub-page `id`), read-only. */
+  getTrashed(trashId: string, id?: PageId): Promise<TrashedDocument> {
+    return this.enqueue(() => this.getTrashedNow(trashId, id));
+  }
+
+  /** Delete one trash entry for good. */
+  deleteTrashed(trashId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const entry = await this.openTrashEntry(trashId);
+      await rm(entry.dir, { recursive: true, force: true });
+    });
+  }
+
+  /**
+   * Empty the trash: every entry Gumply made. Anything else in `.trash/`
+   * (e.g. Obsidian's own trashed files) is left alone. Returns the count.
+   */
+  emptyTrash(): Promise<number> {
+    return this.enqueue(async () => {
+      const entries = await this.trashEntries();
+      for (const entry of entries) await rm(entry.dir, { recursive: true, force: true });
+      return entries.length;
+    });
   }
 
   move(id: PageId, parentId: PageId | null): Promise<Page> {
@@ -1421,8 +1470,10 @@ export class VaultStore {
     withFolder: boolean,
     taken: ReadonlySet<string>,
     kind: PageKind = "page",
+    /** First suffix to try: 1 = the bare `base`, 2 = `base 2`. */
+    startAt = 1,
   ): Promise<PageId> {
-    for (let suffix = 1; ; suffix += 1) {
+    for (let suffix = startAt; ; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base} ${suffix}`;
       if (taken.has(candidate.toLowerCase())) continue;
       // A page id ending in `.canvas` would read as a board id.
@@ -1616,52 +1667,320 @@ export class VaultStore {
     return { trashId, deleted };
   }
 
-  private async restoreNow(trashId: string): Promise<PageMeta[]> {
-    if (!/^[A-Za-z0-9-]+$/.test(trashId)) throw badRequest("Invalid trash id");
+  // --- trash (D11, #ppag3ugh) ---------------------------------------------
 
-    const trashRoot = resolve(this.root, ".trash");
-    const trashDir = resolve(trashRoot, trashId);
-    if (!trashDir.startsWith(`${trashRoot}${sep}`)) throw badRequest("Invalid trash id");
+  private get trashRoot(): string {
+    return join(this.root, ".trash");
+  }
 
-    let manifest: TrashManifest;
+  /**
+   * A Gumply trash entry, validated: a plain `[A-Za-z0-9-]` id, a real
+   * directory directly in `.trash/` (no symlink), and a manifest whose ids are
+   * valid and whose file stays inside the entry. Anything else is "not found".
+   */
+  private async openTrashEntry(trashId: string): Promise<TrashEntry> {
+    if (typeof trashId !== "string" || !/^[A-Za-z0-9-]+$/.test(trashId)) throw badRequest("Invalid trash id");
+    const entry = await this.readTrashEntry(trashId);
+    if (!entry) throw notFound("Trash entry not found");
+    return entry;
+  }
+
+  private async readTrashEntry(trashId: string): Promise<TrashEntry | null> {
+    const dir = join(this.trashRoot, trashId);
     try {
-      const raw = await readFile(join(trashDir, "meta.json"), "utf8");
-      manifest = JSON.parse(raw) as TrashManifest;
+      // Neither `.trash` nor the entry may be a symlink (to somewhere else).
+      if (!(await lstat(this.trashRoot)).isDirectory() || !(await lstat(dir)).isDirectory()) return null;
+      const manifest = JSON.parse(await readFile(join(dir, "meta.json"), "utf8")) as Partial<TrashManifest>;
+      if (!manifest || typeof manifest.id !== "string" || !isValidPageId(manifest.id)) return null;
+      const top = manifest.id;
+      const deleted = Array.isArray(manifest.deleted)
+        ? manifest.deleted.filter(
+            (id): id is PageId =>
+              typeof id === "string" && isValidPageId(id) && (id === top || id.startsWith(`${top}/`)),
+          )
+        : [];
+      if (!deleted.includes(top)) deleted.unshift(top);
+      const folder = manifest.kind === "folder";
+      // v1.7 manifests name the file (`.md` or `.canvas`); older ones mean `.md`.
+      const file =
+        typeof manifest.file === "string" && manifest.file.length > 0 ? manifest.file : folder ? top : `${top}.md`;
+      if (!this.insideTrashEntry(dir, file)) return null;
+      const deletedAt = typeof manifest.deletedAt === "string" ? manifest.deletedAt : (await stat(dir)).mtime.toISOString();
+      return { trashId, dir, id: top, file, deleted, deletedAt, folder };
     } catch {
-      throw notFound("Trash entry not found");
+      return null;
     }
+  }
 
-    if (
-      !manifest ||
-      typeof manifest.id !== "string" ||
-      !isValidPageId(manifest.id) ||
-      !Array.isArray(manifest.deleted)
-    ) {
-      throw notFound("Trash entry not found");
+  /** Every valid Gumply entry in `.trash/` (other files there are ignored). */
+  private async trashEntries(): Promise<TrashEntry[]> {
+    let names: string[];
+    try {
+      names = await readdir(this.trashRoot);
+    } catch {
+      return [];
     }
-
-    // v1.7 manifests name the file (`.md` or `.canvas`); older ones mean `.md`.
-    const file =
-      typeof manifest.file === "string" && manifest.file.length > 0 ? manifest.file : `${manifest.id}.md`;
-    const pageSource = resolve(trashDir, file);
-    const pageTarget = resolve(this.root, file);
-    if (!pageSource.startsWith(`${trashDir}${sep}`) || !pageTarget.startsWith(`${this.root}${sep}`)) {
-      throw notFound("Trash entry not found");
+    const entries: TrashEntry[] = [];
+    for (const name of names) {
+      if (!/^[A-Za-z0-9-]+$/.test(name)) continue;
+      const entry = await this.readTrashEntry(name);
+      if (entry) entries.push(entry);
     }
-    // Boards (`.canvas`) have no sub-page folder.
-    const hasFolder = !isBoardId(file);
-    const childSource = join(trashDir, manifest.id);
-    const childTarget = join(this.root, manifest.id);
+    return entries;
+  }
 
-    if (!(await pathExists(pageSource))) throw notFound("Trash entry not found");
-    if ((await pathExists(pageTarget)) || (hasFolder && (await pathExists(childTarget)))) {
-      throw conflict(`A page already exists at ${manifest.id}`);
+  private insideTrashEntry(dir: string, file: string): boolean {
+    const absolute = resolve(dir, file);
+    return absolute.startsWith(`${resolve(dir)}${sep}`);
+  }
+
+  /** The trashed file of `id` within an entry (sub-pages: `<id>.md` / board id). */
+  private trashedFileOf(entry: TrashEntry, id: PageId): string {
+    if (id === entry.id) return entry.file;
+    return isBoardId(id) || id.toLowerCase().endsWith(".md") ? id : `${id}.md`;
+  }
+
+  /**
+   * Read a trashed file as a record, only if it is a regular file whose real
+   * path is inside the entry (a symlink planted in `.trash/` can't expose
+   * anything outside it).
+   */
+  private async readTrashedRecord(entry: TrashEntry, id: PageId): Promise<PageRecord | null> {
+    const rel = this.trashedFileOf(entry, id);
+    if (!this.insideTrashEntry(entry.dir, rel)) return null;
+    const absolute = resolve(entry.dir, rel);
+    try {
+      if (!(await lstat(absolute)).isFile()) return null;
+      const [real, realDir] = await Promise.all([realpath(absolute), realpath(entry.dir)]);
+      if (!real.startsWith(`${realDir}${sep}`)) return null;
+      return await this.readRecord(absolute, id);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A trashed plain folder (D33): a real directory whose real path is inside
+   * the entry. Returns it, or null.
+   */
+  private async trashedFolderPath(entry: TrashEntry): Promise<string | null> {
+    if (!entry.folder || !this.insideTrashEntry(entry.dir, entry.file)) return null;
+    const absolute = resolve(entry.dir, entry.file);
+    try {
+      if (!(await lstat(absolute)).isDirectory()) return null;
+      const [real, realDir] = await Promise.all([realpath(absolute), realpath(entry.dir)]);
+      return real.startsWith(`${realDir}${sep}`) ? absolute : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Files in a trashed folder that aren't pages or boards (never follows links). */
+  private async countOtherFiles(dir: string): Promise<number> {
+    let count = 0;
+    const walk = async (path: string) => {
+      let entries;
+      try {
+        entries = await readdir(path, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const item of entries) {
+        if (item.isDirectory()) await walk(join(path, item.name));
+        else if (item.isFile() && !/\.(md|canvas)$/i.test(item.name)) count += 1;
+      }
+    };
+    await walk(dir);
+    return count;
+  }
+
+  /** A folder page or a plain folder still at `id` (restore targets). */
+  private async folderExists(id: PageId): Promise<boolean> {
+    if (this.pages.get(id)?.kind === "page") return true;
+    const absolute = resolve(this.root, id);
+    if (!absolute.startsWith(`${this.root}${sep}`)) return false;
+    return lstat(absolute).then((info) => info.isDirectory(), () => false);
+  }
+
+  private async trashItemFor(entry: TrashEntry): Promise<TrashItem | null> {
+    const folderPath = entry.folder ? await this.trashedFolderPath(entry) : null;
+    if (entry.folder && !folderPath) return null;
+    const name = entry.id.split("/").pop() ?? entry.id;
+    const top: { kind: TrashItem["kind"]; title: string; icon?: string } | null = folderPath
+      ? { kind: "folder", title: name }
+      : await this.readTrashedRecord(entry, entry.id);
+    if (!top) return null;
+    const children: TrashedPage[] = [];
+    const ids = entry.deleted.filter((id) => id !== entry.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const present = new Set([entry.id]);
+    for (const id of ids) {
+      const record = await this.readTrashedRecord(entry, id);
+      if (!record) continue;
+      present.add(id);
+      const parent = parentOf(id);
+      children.push({
+        id,
+        kind: record.kind,
+        title: record.title,
+        ...(record.icon ? { icon: record.icon } : {}),
+        parentId: parent !== null && present.has(parent) ? parent : entry.id,
+      });
+    }
+    const originalParentId = parentOf(entry.id);
+    const parent = originalParentId === null ? undefined : this.pages.get(originalParentId);
+    // The folder it was in: a folder page by its title, a plain folder (D33) by its name.
+    const originalParentTitle =
+      originalParentId === null
+        ? null
+        : parent && parent.kind === "page"
+          ? parent.title
+          : (await this.folderExists(originalParentId))
+            ? (originalParentId.split("/").pop() ?? originalParentId)
+            : null;
+    return {
+      trashId: entry.trashId,
+      id: entry.id,
+      kind: top.kind,
+      title: top.title,
+      ...(top.icon ? { icon: top.icon } : {}),
+      parentId: null,
+      deletedAt: entry.deletedAt,
+      originalParentId,
+      originalParentTitle,
+      children,
+      ...(folderPath ? { otherFiles: await this.countOtherFiles(folderPath) } : {}),
+    };
+  }
+
+  private async listTrashNow(): Promise<TrashItem[]> {
+    const items: TrashItem[] = [];
+    for (const entry of await this.trashEntries()) {
+      const item = await this.trashItemFor(entry);
+      if (item) items.push(item);
+    }
+    return items.sort((a, b) => (a.deletedAt < b.deletedAt ? 1 : a.deletedAt > b.deletedAt ? -1 : 0));
+  }
+
+  private async getTrashedNow(trashId: string, id?: PageId): Promise<TrashedDocument> {
+    const entry = await this.openTrashEntry(trashId);
+    const item = await this.trashItemFor(entry);
+    if (!item) throw notFound("Trash entry not found");
+    const target = id ?? entry.id;
+    if (typeof target !== "string" || !entry.deleted.includes(target)) throw notFound("Page not found in this trash entry");
+    // A folder has no document of its own: the client shows its children.
+    if (entry.folder && target === entry.id) return { item, page: null };
+    const record = await this.readTrashedRecord(entry, target);
+    if (!record) throw notFound("Page not found in this trash entry");
+    const childCount = entry.deleted.filter((other) => parentOf(other) === target).length;
+    const meta = metaOf({ ...record, parentId: parentOf(target) }, childCount);
+    if (record.kind === "whiteboard" && record.board) {
+      return { item, page: { ...meta, content: "" }, board: record.board };
+    }
+    return { item, page: { ...meta, content: record.content } };
+  }
+
+  /**
+   * Where a restored item goes (#ppag3ugh): its own name when free, else the
+   * next free ` N` of that name without any ` N` it already had ("Alpha 2"
+   * taken → "Alpha 3", never "Alpha 2 2"). Compared like D20 collisions.
+   */
+  private async restoreTarget(
+    folder: PageId | null,
+    stem: string,
+    withFolder: boolean,
+    taken: ReadonlySet<string>,
+    kind: PageKind,
+  ): Promise<PageId> {
+    const prefix = folder ? `${folder}/` : "";
+    const own = `${prefix}${stem}${kind === "whiteboard" ? BOARD_EXTENSION : ""}`;
+    const first = await this.freeTarget(`${prefix}${stem}`, withFolder, taken, kind);
+    if (first === own) return own;
+    // "Sprint 12" stays a name of its own; only a D20 sibling of an
+    // existing "Alpha" counts as "Alpha" + a number.
+    const bare = stem.replace(/ \d+$/, "");
+    const bareId = `${prefix}${bare}`;
+    const family =
+      bare !== stem &&
+      bare.length > 0 &&
+      (taken.has(bareId.toLowerCase()) ||
+        (await pathExists(this.filePathFor(bareId))) ||
+        (await pathExists(this.filePathFor(`${bareId}${BOARD_EXTENSION}`))) ||
+        (await this.folderExists(bareId)));
+    return this.freeTarget(`${prefix}${family ? bare : stem}`, withFolder, taken, kind, 2);
+  }
+
+  /**
+   * A restored page or board that got a new name: its title follows it
+   * (D20), so the tree, search and links can tell the two apart. A page only
+   * changes a `title:` it already had (a plain note's title is its file name);
+   * a board drops a `gumply.title` the new name replaces.
+   */
+  private async retitleRestored(id: PageId): Promise<void> {
+    const record = this.pages.get(id);
+    if (!record) return;
+    if (record.kind === "whiteboard" && record.board) {
+      const stem = boardStem(id);
+      if (record.title === stem) return;
+      await this.saveBoardRecord(record, withBoardTitle(record.board, stem, stem));
+      record.title = stem;
+      return;
+    }
+    const name = titleFromId(id);
+    if (!record.explicitTitle || record.title === name) return;
+    const written = await this.writePage(
+      record.filePath,
+      {
+        title: name,
+        ...(record.icon ? { icon: record.icon } : {}),
+        tags: record.fmTags,
+        created: record.created,
+        updated: record.updated,
+      },
+      record.content,
+      ["title"],
+      name,
+    );
+    record.title = name;
+    record.fileMtimeMs = written.mtimeMs;
+    if (!written.frontmatter) record.updated = mtimeVersion(written.mtimeMs);
+  }
+
+  /**
+   * Put an entry back (#ppag3ugh): where it was when its folder page still
+   * exists, otherwise at the top level; a taken name gets ` 2`, ` 3`, … (D20).
+   * Sub-pages come back inside it. Attachment links and board cards follow a
+   * changed location (D23, D25).
+   */
+  private async restoreNow(trashId: string): Promise<RestoreResult> {
+    const entry = await this.openTrashEntry(trashId);
+    if (entry.folder) return this.restoreFolderNow(entry);
+    const pageSource = resolve(entry.dir, entry.file);
+    // Only a real file comes back (never a symlink planted in `.trash/`).
+    if (!(await this.readTrashedRecord(entry, entry.id))) throw notFound("Trash entry not found");
+
+    const kind: PageKind = isBoardId(entry.file) ? "whiteboard" : "page";
+    // Boards (`.canvas`) have no sub-page folder; a page's must be a real one.
+    const childSource = join(entry.dir, entry.id);
+    const hasFolder = kind === "page" && (await lstat(childSource).then((info) => info.isDirectory(), () => false));
+
+    const originalParent = parentOf(entry.id);
+    // Its folder: a folder page, or a plain folder (D33) that still exists.
+    const parentAlive = originalParent === null || (await this.folderExists(originalParent));
+    const folder = parentAlive ? originalParent : null;
+    const name = entry.id.split("/").pop() ?? entry.id;
+    const stem = kind === "whiteboard" ? name.slice(0, -BOARD_EXTENSION.length) : name;
+    const taken = new Set([...this.pages.keys()].map(collisionKey));
+    const newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
+
+    const pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
+    const childTarget = join(this.root, newId);
+    if (!pageTarget.startsWith(`${this.root}${sep}`) || !childTarget.startsWith(`${this.root}${sep}`)) {
+      throw notFound("Trash entry not found");
     }
 
     await mkdir(dirname(pageTarget), { recursive: true });
     await rename(pageSource, pageTarget);
-
-    if (hasFolder && (await pathExists(childSource))) {
+    if (hasFolder) {
       await mkdir(dirname(childTarget), { recursive: true });
       try {
         await rename(childSource, childTarget);
@@ -1670,12 +1989,70 @@ export class VaultStore {
         throw error;
       }
     }
-
-    await rm(trashDir, { recursive: true, force: true });
+    await rm(entry.dir, { recursive: true, force: true });
     await this.rebuild();
 
-    const restored = new Set(manifest.deleted);
-    return this.list().filter((meta) => restored.has(meta.id));
+    const remap = (id: PageId) => (id === entry.id || id.startsWith(`${entry.id}/`) ? `${newId}${id.slice(entry.id.length)}` : id);
+    if (newId !== entry.id) {
+      const moves = entry.deleted.map((id) => ({ from: id, to: remap(id) })).filter(({ to }) => this.pages.has(to));
+      // D23: in another folder now, so attachment links are rewritten.
+      await this.relinkMoved(moves);
+      // D25: board cards that pointed at its old place follow it, unless
+      // another page lives there now.
+      await this.rewriteBoardCards(moves.filter(({ from }) => !this.pages.has(from)));
+      this.reindexAll();
+    }
+
+    const renamed = (newId.split("/").pop() ?? newId) !== name;
+    if (renamed) {
+      await this.retitleRestored(newId);
+      this.reindexAll();
+    }
+    const restoredIds = new Set(entry.deleted.map(remap));
+    return {
+      restored: this.list().filter((meta) => restoredIds.has(meta.id)),
+      id: newId,
+      movedToTopLevel: !parentAlive,
+      renamed,
+    };
+  }
+
+  /**
+   * Put a plain folder (D33) back: the directory with everything in it, where
+   * it was if its parent folder still exists (else at the top level), with
+   * ` 2` when the name is taken by a page, board or folder.
+   */
+  private async restoreFolderNow(entry: TrashEntry): Promise<RestoreResult> {
+    const source = await this.trashedFolderPath(entry);
+    if (!source) throw notFound("Trash entry not found");
+    const originalParent = parentOf(entry.id);
+    const parentAlive = originalParent === null || (await this.folderExists(originalParent));
+    const folder = parentAlive ? originalParent : null;
+    const name = entry.id.split("/").pop() ?? entry.id;
+    const taken = new Set([...this.pages.keys()].map(collisionKey));
+    const newId = await this.restoreTarget(folder, name, true, taken, "page");
+    const target = join(this.root, newId);
+    if (!target.startsWith(`${this.root}${sep}`)) throw notFound("Trash entry not found");
+
+    await mkdir(dirname(target), { recursive: true });
+    await rename(source, target);
+    await rm(entry.dir, { recursive: true, force: true });
+    await this.rebuild();
+
+    const remap = (id: PageId) => (id === entry.id || id.startsWith(`${entry.id}/`) ? `${newId}${id.slice(entry.id.length)}` : id);
+    if (newId !== entry.id) {
+      const moves = entry.deleted.map((id) => ({ from: id, to: remap(id) })).filter(({ to }) => this.pages.has(to));
+      await this.relinkMoved(moves);
+      await this.rewriteBoardCards(moves.filter(({ from }) => !this.pages.has(from)));
+      this.reindexAll();
+    }
+    const restoredIds = new Set(entry.deleted.map(remap));
+    return {
+      restored: this.list().filter((meta) => restoredIds.has(meta.id)),
+      id: newId,
+      movedToTopLevel: !parentAlive,
+      renamed: (newId.split("/").pop() ?? newId) !== name,
+    };
   }
 
   private async moveNow(id: PageId, parentId: PageId | null): Promise<Page> {
