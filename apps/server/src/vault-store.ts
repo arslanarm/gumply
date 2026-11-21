@@ -137,9 +137,15 @@ interface FolderRecord {
   /** The directory name, as on disk. */
   title: string;
   parentId: PageId | null;
-  created: string;
-  updated: string;
+  /** Files inside (any depth) that aren't pages or boards: PDFs, images, … */
+  otherFiles: number;
 }
+
+/** Directories met while scanning, with the non-page files directly in each. */
+type DirectoryScan = Map<PageId, number>;
+
+/** Folders have no timestamps of their own (no file, no extra stat per folder). */
+const FOLDER_TIME = new Date(0).toISOString();
 
 /** `.trash/<trashId>/meta.json` (D11). */
 interface TrashManifest {
@@ -398,7 +404,8 @@ export class VaultStore {
    */
   private async scanRecords(): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
     const next = new Map<PageId, PageRecord>();
-    const files = (await this.scan(this.root)).map((absolute) => ({
+    const directories: DirectoryScan = new Map();
+    const files = (await this.scan(this.root, directories)).map((absolute) => ({
       absolute,
       rel: relative(this.root, absolute).split(sep).join("/"),
     }));
@@ -411,44 +418,33 @@ export class VaultStore {
       this.refreshTags(record);
       next.set(id, record);
     }
-    const folders = await this.scanFolders(next);
+    const folders = VaultStore.foldersFrom(directories, next);
     VaultStore.assignParents(next, folders);
     return { pages: next, folders };
   }
 
   /**
-   * D33: every directory the index reads that isn't a page's own sub-page
-   * folder (no `<Folder>.md` beside it). Same skips as `scan`.
+   * D33: every scanned directory that isn't a page's own sub-page folder (no
+   * `<Folder>.md` beside it), from the same walk that finds the pages.
    */
-  private async scanFolders(pages: ReadonlyMap<PageId, PageRecord>): Promise<Map<PageId, FolderRecord>> {
+  private static foldersFrom(
+    directories: DirectoryScan,
+    pages: ReadonlyMap<PageId, PageRecord>,
+  ): Map<PageId, FolderRecord> {
     const folders = new Map<PageId, FolderRecord>();
-    const walk = async (dir: string): Promise<void> => {
-      let entries;
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
+    for (const id of directories.keys()) {
+      if (!isValidPageId(id) || isBoardId(id) || pages.get(id)?.kind === "page") continue;
+      const title = id.slice(id.lastIndexOf("/") + 1);
+      folders.set(id, { id, title, parentId: null, otherFiles: 0 });
+    }
+    // Other files count toward every plain folder above them.
+    for (const [dir, count] of directories) {
+      if (count === 0) continue;
+      for (let at: PageId | null = dir; at !== null; at = parentOf(at)) {
+        const folder = folders.get(at);
+        if (folder) folder.otherFiles += count;
       }
-      for (const entry of entries) {
-        if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-        if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-        if (dir === this.root && entry.name === ATTACHMENTS_DIR) continue;
-        const absolute = join(dir, entry.name);
-        const id = relative(this.root, absolute).split(sep).join("/");
-        if (isValidPageId(id) && !isBoardId(id) && pages.get(id)?.kind !== "page") {
-          try {
-            const info = await stat(absolute);
-            // Creation time: stable, so a save inside doesn't change the list.
-            const at = new Date(info.birthtimeMs || info.mtimeMs).toISOString();
-            folders.set(id, { id, title: entry.name, parentId: null, created: at, updated: at });
-          } catch {
-            continue;
-          }
-        }
-        await walk(absolute);
-      }
-    };
-    await walk(this.root);
+    }
     return folders;
   }
 
@@ -469,7 +465,9 @@ export class VaultStore {
 
   /** Re-read the plain folders after a structural change and re-link parents. */
   private async syncFolders(): Promise<void> {
-    this.folders = await this.scanFolders(this.pages);
+    const directories: DirectoryScan = new Map();
+    await this.scan(this.root, directories);
+    this.folders = VaultStore.foldersFrom(directories, this.pages);
     VaultStore.assignParents(this.pages, this.folders);
   }
 
@@ -709,8 +707,9 @@ export class VaultStore {
         tags: [],
         parentId: folder.parentId,
         childCount: counts.get(folder.id) ?? 0,
-        created: folder.created,
-        updated: folder.updated,
+        created: FOLDER_TIME,
+        updated: FOLDER_TIME,
+        otherFiles: folder.otherFiles,
       });
     }
     return metas.sort((a, b) => a.id.localeCompare(b.id));
@@ -1853,9 +1852,10 @@ export class VaultStore {
   /** D11/D33: a plain folder goes to the trash as a whole directory. */
   private async removeFolderNow(id: PageId): Promise<DeletePageResult> {
     const dir = this.folderPathFor(id);
+    // Trash view (v1.9): the folder, then the pages and boards inside.
     const deleted = [
       id,
-      ...[...this.folders.keys(), ...this.pages.keys()].filter((key) => key.startsWith(`${id}/`)).sort((a, b) => a.localeCompare(b)),
+      ...[...this.pages.keys()].filter((key) => key.startsWith(`${id}/`)).sort((a, b) => a.localeCompare(b)),
     ];
     const trashId = await this.freeTrashId();
     const trashDir = join(this.root, ".trash", trashId);
@@ -2168,9 +2168,15 @@ export class VaultStore {
     }
   }
 
-  private async scan(dir: string): Promise<string[]> {
+  /**
+   * Every page and board file under `dir`. With `directories`, also records
+   * each directory walked (vault path → non-page files directly in it), so
+   * D33 folders come from the same single walk.
+   */
+  private async scan(dir: string, directories?: DirectoryScan): Promise<string[]> {
     const entries = await readdir(dir, { withFileTypes: true });
     const files: string[] = [];
+    let otherFiles = 0;
 
     for (const entry of entries) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
@@ -2179,10 +2185,14 @@ export class VaultStore {
       if (entry.isSymbolicLink()) continue;
 
       const absolute = join(dir, entry.name);
-      if (entry.isDirectory()) files.push(...(await this.scan(absolute)));
+      if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories)));
       else if (entry.isFile() && /\.(md|canvas)$/i.test(entry.name)) files.push(absolute);
+      else if (entry.isFile()) otherFiles += 1;
     }
 
+    if (directories && dir !== this.root) {
+      directories.set(relative(this.root, dir).split(sep).join("/"), otherFiles);
+    }
     return files;
   }
 

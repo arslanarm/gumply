@@ -4,7 +4,8 @@ import {
   deleteDialogBody,
   directSubPages,
   focusAfterDelete,
-  pagesInside,
+  folderContents,
+  folderDeleteBody,
   subtreePages,
 } from "../src/lib/delete.js";
 
@@ -89,19 +90,28 @@ describe("focusAfterDelete", () => {
 });
 
 describe("deleting a plain folder (D33)", () => {
-  it("counts the pages inside at any depth, not the sub-folders", () => {
-    const folder = (id: string, parentId: string | null = null): PageMeta => ({ ...meta(id, id, parentId), kind: "folder" });
+  it("counts pages, boards and other files at any depth", () => {
+    const folder = (id: string, parentId: string | null = null, otherFiles = 0): PageMeta => ({
+      ...meta(id, id, parentId),
+      kind: "folder",
+      otherFiles,
+    });
     const pages = [
-      folder("Recipes"),
+      folder("Recipes", null, 5),
       meta("Recipes/Soup", "Soup", "Recipes"),
+      { ...meta("Recipes/Map.canvas", "Map", "Recipes"), kind: "whiteboard" as const },
       folder("Recipes/Sweet", "Recipes"),
       meta("Recipes/Sweet/Cake", "Cake", "Recipes/Sweet"),
+      meta("Recipes/Sweet/Pie", "Pie", "Recipes/Sweet"),
       meta("Other", "Other"),
     ];
-    expect(pagesInside(pages, "Recipes")).toBe(2);
-    expect(pagesInside(pages, "Recipes/Sweet")).toBe(1);
-    expect(deleteDialogBody(2, true)).toBe("The 2 pages inside will be deleted too.");
-    expect(deleteDialogBody(1, true)).toBe("The 1 page inside will be deleted too.");
-    expect(deleteDialogBody(1)).toBe("Its 1 sub-page will be deleted too.");
+    expect(folderContents(pages, "Recipes")).toEqual({ pages: 3, boards: 1, otherFiles: 5 });
+    expect(folderDeleteBody({ pages: 3, boards: 1, otherFiles: 5 })).toBe(
+      "Its 3 pages, 1 board and 5 other files will be moved to the trash.",
+    );
+    expect(folderDeleteBody({ pages: 1, boards: 0, otherFiles: 0 })).toBe("Its 1 page will be moved to the trash.");
+    expect(folderDeleteBody({ pages: 0, boards: 2, otherFiles: 1 })).toBe(
+      "Its 2 boards and 1 other file will be moved to the trash.",
+    );
   });
 });

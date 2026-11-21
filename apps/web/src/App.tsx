@@ -27,7 +27,7 @@ import type { SaveState } from "./editor/autosave.js";
 // Graph and dialogs load on demand (#evh35bn7).
 import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, preloadWhenIdle } from "./lazy-parts.js";
 import { idFromVaultPath, isBoard, isBoardId, NEW_BOARD_TITLE, vaultPathOf } from "./lib/boards.js";
-import { focusAfterDelete, pagesInside } from "./lib/delete.js";
+import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, SERVER_DOWN_MESSAGE } from "./lib/errors.js";
 import { moveToastMessage } from "./lib/move.js";
@@ -44,6 +44,8 @@ type PageStatus = "idle" | "loading" | "ready" | "error";
 interface PendingDelete {
   page: PageMeta;
   subPages: number;
+  /** D33: a folder's own confirm line ("Its 3 pages and 2 other files …"). */
+  body?: string;
 }
 
 interface ToastState {
@@ -984,10 +986,16 @@ export function App() {
     (id: PageId) => {
       const target = pages.find((item) => item.id === id);
       if (!target) return;
-      // D33: a folder asks first when it holds pages (counted at any depth).
-      const count = target.kind === "folder" ? pagesInside(pages, id) : target.childCount;
-      if (count > 0) {
-        setPendingDelete({ page: target, subPages: count });
+      // D33: a folder asks first when it holds anything (pages, boards or
+      // other files, at any depth); an empty one goes straight to the trash.
+      if (target.kind === "folder") {
+        const contents = folderContents(pages, id);
+        if (contents.pages + contents.boards + contents.otherFiles > 0) {
+          setPendingDelete({ page: target, subPages: 0, body: folderDeleteBody(contents) });
+          return;
+        }
+      } else if (target.childCount > 0) {
+        setPendingDelete({ page: target, subPages: target.childCount });
         return;
       }
       void performDelete(id);
@@ -1526,7 +1534,7 @@ export function App() {
         <DeleteDialog
           title={pendingDelete.page.title}
           subPages={pendingDelete.subPages}
-          folder={pendingDelete.page.kind === "folder"}
+          body={pendingDelete.body}
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
         />

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GraphData, PageMeta } from "@gumply/core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -128,7 +128,8 @@ describe("plain folders (D33)", () => {
     const { app, dir } = await obsidianVault();
     const response = await jsonRequest(app, "DELETE", `/api/pages/${encodeId("Recipes")}`);
     const result = (await response.json()) as { trashId: string; deleted: string[] };
-    expect(result.deleted).toEqual(["Recipes", "Recipes/Pancakes", "Recipes/Soups", "Recipes/Soups/Tomato"]);
+    // The folder, then the pages and boards inside (the Trash view lists them).
+    expect(result.deleted).toEqual(["Recipes", "Recipes/Pancakes", "Recipes/Soups/Tomato"]);
     const meta = JSON.parse(await readFile(join(dir, ".trash", result.trashId, "meta.json"), "utf8")) as Record<string, unknown>;
     expect(meta).toMatchObject({ id: "Recipes", file: "Recipes", kind: "folder" });
     expect(byId(await getJson<PageMeta[]>(app, "/api/pages")).has("Recipes/Pancakes")).toBe(false);
@@ -147,4 +148,68 @@ describe("plain folders (D33)", () => {
     const list = byId(await getJson<PageMeta[]>(app, "/api/pages"));
     expect(list.get("Later/Inner")).toMatchObject({ kind: "folder", parentId: "Later" });
   });
+
+  it("counts the other files inside a folder (PDFs, images) for the delete confirm", async () => {
+    const { app, dir, store } = await obsidianVault();
+    await writeFile(join(dir, "Recipes/menu.pdf"), "%PDF");
+    await writeFile(join(dir, "Recipes/Soups/photo.png"), "png");
+    await store.rescan();
+    const list = byId(await getJson<PageMeta[]>(app, "/api/pages"));
+    expect(list.get("Recipes")?.otherFiles).toBe(2);
+    expect(list.get("Recipes/Soups")?.otherFiles).toBe(1);
+    expect(list.get("Work")?.otherFiles).toBe(0);
+    // Folders have no file, so no timestamps of their own.
+    expect(list.get("Work")?.updated).toBe(new Date(0).toISOString());
+  });
+
+  it("follows folders made, renamed and removed outside Gumply (watcher)", async () => {
+    const { app, dir, store } = await obsidianVault();
+    const ids = async () => (await getJson<PageMeta[]>(app, "/api/pages")).filter((m) => m.kind === "folder").map((m) => m.id);
+    store.startWatching();
+    try {
+      await mkdir(join(dir, "Inbox"));
+      await expect.poll(ids, { timeout: 5000 }).toContain("Inbox");
+      await rename(join(dir, "Inbox"), join(dir, "Later"));
+      await expect.poll(ids, { timeout: 5000 }).toContain("Later");
+      expect(await ids()).not.toContain("Inbox");
+      await rm(join(dir, "Later"), { recursive: true });
+      await expect.poll(ids, { timeout: 5000 }).not.toContain("Later");
+    } finally {
+      store.stopWatching();
+    }
+  });
+
+  it("a folder becomes a page when `<Folder>.md` appears beside it; its children keep their ids", async () => {
+    const { app, dir, store } = await obsidianVault();
+    await writeFile(join(dir, "Work.md"), "Now a page");
+    await store.rescan();
+    const list = byId(await getJson<PageMeta[]>(app, "/api/pages"));
+    expect(list.get("Work")).toMatchObject({ kind: "page", title: "Work", childCount: 3 });
+    expect(list.get("Work/Ideas")?.parentId).toBe("Work");
+    expect(list.get("Work/Board.canvas")?.parentId).toBe("Work");
+    // And back: without the page, the folder returns.
+    await rm(join(dir, "Work.md"));
+    await store.rescan();
+    expect(byId(await getJson<PageMeta[]>(app, "/api/pages")).get("Work")?.kind).toBe("folder");
+  });
+
+  it("lists a 5,000-file vault with deep folders in one walk", async () => {
+    const { dir, store } = await createTestServer();
+    for (let a = 0; a < 10; a += 1) {
+      for (let b = 0; b < 10; b += 1) {
+        const folder = join(dir, `Area ${a}`, `Topic ${b}`, "Notes");
+        await mkdir(folder, { recursive: true });
+        await Promise.all(
+          Array.from({ length: 50 }, (_, n) => writeFile(join(folder, `Note ${n}.md`), `Note ${n}`)),
+        );
+      }
+    }
+    const started = performance.now();
+    await store.rescan();
+    const elapsed = performance.now() - started;
+    const list = store.list();
+    expect(list.filter((m) => m.kind !== "folder")).toHaveLength(5000);
+    expect(list.filter((m) => m.kind === "folder")).toHaveLength(210);
+    console.log(`[D33] rescan of 5,000 pages in 210 folders: ${Math.round(elapsed)} ms`);
+  }, 60_000);
 });

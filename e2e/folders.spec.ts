@@ -30,6 +30,7 @@ async function obsidianVault(request: Parameters<typeof api.listPages>[0]) {
     'Home/Ideas.md': 'Home ideas',
     'Recipes/Pancakes.md': 'Pancakes',
     'Recipes/Soup.md': 'Soup',
+    'Recipes/menu.pdf': '%PDF-1.4',
     'Index.md': 'See [[Work/Ideas]] and [[Home/Ideas|home]].',
   });
   // The vault watcher picks the files up.
@@ -124,8 +125,8 @@ test.describe('plain folders in the sidebar (D33)', () => {
     await expect(page.getByTestId('duplicate-page-Recipes')).toHaveCount(0);
     await page.getByTestId('delete-page-Recipes').click();
     const dialog = page.getByTestId('delete-confirm-dialog');
-    await expect(dialog).toContainText('Delete folder “Recipes”?');
-    await expect(dialog).toContainText('The 2 pages inside will be deleted too.');
+    await expect(dialog).toContainText('Delete “Recipes”?');
+    await expect(dialog).toContainText('Its 2 pages and 1 other file will be moved to the trash.');
     await page.getByTestId('delete-confirm').click();
     await expect(row(page, 'Recipes')).toHaveCount(0);
     expect(await exists('Recipes')).toBe(false);
