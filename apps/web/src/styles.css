@@ -3764,9 +3764,13 @@ input {
   background: var(--hover);
 }
 
-/* The rendered part: the editor's typography, a touch tighter. */
-.page-embed-body {
+/* The rendered part: the editor's typography, a touch tighter, none of the
+   editor's own box (min-height, padding, focus ring). */
+.page-embed-body.gumply-editor {
+  min-height: 0;
+  padding: 0;
   font-size: 0.97em;
+  outline: none;
 }
 
 .page-embed-body > :first-child {
