@@ -124,12 +124,12 @@ export function ListView(props: LayoutProps) {
 
 /* -------------------------------------------------------------- cards */
 
-function Card({ row, props, ratio }: { row: BaseRow; props: LayoutProps; ratio: number }) {
+function Card({ row, props, ratio, fillWidth = false }: { row: BaseRow; props: LayoutProps; ratio: number; fillWidth?: boolean }) {
   const t = useT();
   const columns = detailColumns(props.result.columns);
   return (
     <article className="base-card" data-testid={`base-card-${row.id}`}>
-      <ImageBox row={row} view={props.view} ratio={ratio} />
+      <ImageBox row={row} view={props.view} ratio={ratio} fillWidth={fillWidth} />
       <div className="base-card-body">
         <TitleButton row={row} onOpen={props.onOpen} />
         {columns.map((column) => {
@@ -264,7 +264,7 @@ export function KanbanView(props: LayoutProps & { onPickGroup: () => void }) {
                     event.dataTransfer.effectAllowed = "move";
                   }}
                 >
-                  <Card row={row} props={props} ratio={ratio} />
+                  <Card row={row} props={props} ratio={ratio} fillWidth />
                 </div>
               );
             })}

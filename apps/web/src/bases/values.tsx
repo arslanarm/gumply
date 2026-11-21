@@ -76,12 +76,24 @@ export function imageOf(row: BaseRow, view: BaseView): { url?: string; color?: s
   return { url: fileUrl(path.includes("/") ? path : `attachments/${path}`) };
 }
 
-export function ImageBox({ row, view, ratio }: { row: BaseRow; view: BaseView; ratio: number }) {
+/**
+ * A card's cover. `fillWidth` (Kanban, as Obsidian 1.14.4 draws it): a
+ * `contain` image spans the card's width at its own proportions instead of
+ * sitting in the aspect box with bars at the sides (@opus-hunter, #armmzdrx).
+ */
+export function ImageBox({ row, view, ratio, fillWidth = false }: { row: BaseRow; view: BaseView; ratio: number; fillWidth?: boolean }) {
   const image = imageOf(row, view);
   if (!image) return null;
   const fit = view.imageFit === "contain" ? "contain" : "cover";
+  if (fillWidth && fit === "contain" && image.url) {
+    return (
+      <div className="base-card-image is-natural" data-testid="base-card-image" aria-hidden="true">
+        <img src={image.url} alt="" loading="lazy" />
+      </div>
+    );
+  }
   return (
-    <div className="base-card-image" style={{ aspectRatio: `${1 / ratio}`, background: image.color }} aria-hidden="true">
+    <div className="base-card-image" data-testid="base-card-image" style={{ aspectRatio: `${1 / ratio}`, background: image.color }} aria-hidden="true">
       {image.url ? <img src={image.url} alt="" loading="lazy" style={{ objectFit: fit }} /> : null}
     </div>
   );

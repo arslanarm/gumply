@@ -145,6 +145,16 @@ test.describe('database view layouts (D34)', () => {
     const item = page.getByTestId('base-item-Work/Alpha');
     await expect(item.getByTestId('base-list-prop-note.status')).toHaveText('Todo');
     await expect(item.locator('.base-list-props')).not.toContainText('status');
+    // Obsidian's look: a thin guide line on the left and a small filled dot per value.
+    const props = item.locator('.base-list-props');
+    await expect(props).toHaveCSS('border-left-width', '1px');
+    await expect(props).toHaveCSS('list-style-type', 'none');
+    const dot = await item.getByTestId('base-list-prop-note.status').evaluate((li) => {
+      const style = getComputedStyle(li, '::before');
+      return { width: style.width, radius: style.borderRadius, background: style.backgroundColor };
+    });
+    expect(dot).toMatchObject({ width: '4px', radius: '50%' });
+    expect(dot.background).not.toBe('rgba(0, 0, 0, 0)');
   });
 
   test('Calendar: pages on their day, two on one day, month navigation; undated ones counted', async ({ page, request, vault }) => {
@@ -254,4 +264,27 @@ test.describe('database view layouts (D34)', () => {
       expect(missing).toEqual([]);
     });
   }
+
+  test('Kanban: a contain cover spans the card width at its own proportions (no side bars)', async ({ page, request, vault }) => {
+    void vault;
+    const tall = '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="200" viewBox="0 0 50 200"><rect width="50" height="200" fill="#2a9d8f"/></svg>';
+    // An attachment, not a page: written directly (writeVault waits for pages).
+    await fs.mkdir(path.join(E2E_VAULT, 'attachments'), { recursive: true });
+    await fs.writeFile(path.join(E2E_VAULT, 'attachments', 'tall.svg'), tall, 'utf8');
+    await writeVault(request, {
+      'Work/Board.base':
+        'filters: \'file.inFolder("Work")\'\nviews:\n  - type: kanban\n    name: Board\n    groupBy:\n      property: status\n      direction: ASC\n    image: note.cover\n    imageFit: contain\n',
+      'Work/Tall.md': '---\nstatus: Todo\ncover: "[[tall.svg]]"\n---\nT\n',
+    });
+    await page.goto('/#/Work/Board.base');
+    const card = page.getByTestId('base-card-Work/Tall');
+    const image = card.getByTestId('base-card-image').locator('img');
+    await expect(image).toHaveJSProperty('complete', true);
+    const [cardBox, imageBox] = [await card.boundingBox(), await image.boundingBox()];
+    expect(Math.abs(imageBox!.width - cardBox!.width)).toBeLessThanOrEqual(2);
+    // Its own 1:4 shape, not squeezed into the 0.5 aspect box.
+    expect(imageBox!.height / imageBox!.width).toBeCloseTo(4, 0);
+    // The vault reset removes pages only; don't leave the attachment for other specs.
+    await fs.rm(path.join(E2E_VAULT, 'attachments', 'tall.svg'), { force: true });
+  });
 });
