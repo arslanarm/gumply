@@ -66,6 +66,19 @@ interface ToastState {
   undo?: () => Promise<void>;
 }
 
+const toastKeys = new WeakMap<object, number>();
+let lastToastKey = 0;
+/** One key per toast shown (each `setToast` makes a new object). */
+function toastKey(toast: object): number {
+  let key = toastKeys.get(toast);
+  if (key === undefined) {
+    lastToastKey += 1;
+    key = lastToastKey;
+    toastKeys.set(toast, key);
+  }
+  return key;
+}
+
 /** A board shown through the page UI (header, tree): metadata, no body. */
 function boardAsPage(meta: PageMeta): Page {
   return { ...meta, content: "" };
@@ -1745,6 +1758,9 @@ export function App() {
 
       {toast ? (
         <UndoToast
+          // A new toast starts its own timer (one replacing another mustn't
+          // inherit what was left of the first one's 8 s).
+          key={toastKey(toast)}
           message={toast.message}
           icon={toast.icon}
           onUndo={toast.undo ? () => void toast.undo?.() : undefined}

@@ -1380,8 +1380,10 @@ export class VaultStore {
     withFolder: boolean,
     taken: ReadonlySet<string>,
     kind: PageKind = "page",
+    /** First suffix to try: 1 = the bare `base`, 2 = `base 2`. */
+    startAt = 1,
   ): Promise<PageId> {
-    for (let suffix = 1; ; suffix += 1) {
+    for (let suffix = startAt; ; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base} ${suffix}`;
       if (taken.has(candidate.toLowerCase())) continue;
       // A page id ending in `.canvas` would read as a board id.
@@ -1786,6 +1788,72 @@ export class VaultStore {
   }
 
   /**
+   * Where a restored item goes (#ppag3ugh): its own name when free, else the
+   * next free ` N` of that name without any ` N` it already had ("Alpha 2"
+   * taken → "Alpha 3", never "Alpha 2 2"). Compared like D20 collisions.
+   */
+  private async restoreTarget(
+    folder: PageId | null,
+    stem: string,
+    withFolder: boolean,
+    taken: ReadonlySet<string>,
+    kind: PageKind,
+  ): Promise<PageId> {
+    const prefix = folder ? `${folder}/` : "";
+    const own = `${prefix}${stem}${kind === "whiteboard" ? BOARD_EXTENSION : ""}`;
+    const first = await this.freeTarget(`${prefix}${stem}`, withFolder, taken, kind);
+    if (first === own) return own;
+    // "Sprint 12" stays a name of its own; only a D20 sibling of an
+    // existing "Alpha" counts as "Alpha" + a number.
+    const bare = stem.replace(/ \d+$/, "");
+    const bareId = `${prefix}${bare}`;
+    const family =
+      bare !== stem &&
+      bare.length > 0 &&
+      (taken.has(bareId.toLowerCase()) ||
+        (await pathExists(this.filePathFor(bareId))) ||
+        (await pathExists(this.filePathFor(`${bareId}${BOARD_EXTENSION}`))) ||
+        (await this.folderExists(bareId)));
+    return this.freeTarget(`${prefix}${family ? bare : stem}`, withFolder, taken, kind, 2);
+  }
+
+  /**
+   * A restored page or board that got a new name: its title follows it
+   * (D20), so the tree, search and links can tell the two apart. A page only
+   * changes a `title:` it already had (a plain note's title is its file name);
+   * a board drops a `gumply.title` the new name replaces.
+   */
+  private async retitleRestored(id: PageId): Promise<void> {
+    const record = this.pages.get(id);
+    if (!record) return;
+    if (record.kind === "whiteboard" && record.board) {
+      const stem = boardStem(id);
+      if (record.title === stem) return;
+      await this.saveBoardRecord(record, withBoardTitle(record.board, stem, stem));
+      record.title = stem;
+      return;
+    }
+    const name = titleFromId(id);
+    if (!record.explicitTitle || record.title === name) return;
+    const written = await this.writePage(
+      record.filePath,
+      {
+        title: name,
+        ...(record.icon ? { icon: record.icon } : {}),
+        tags: record.fmTags,
+        created: record.created,
+        updated: record.updated,
+      },
+      record.content,
+      ["title"],
+      name,
+    );
+    record.title = name;
+    record.fileMtimeMs = written.mtimeMs;
+    if (!written.frontmatter) record.updated = mtimeVersion(written.mtimeMs);
+  }
+
+  /**
    * Put an entry back (#ppag3ugh): where it was when its folder page still
    * exists, otherwise at the top level; a taken name gets ` 2`, ` 3`, … (D20).
    * Sub-pages come back inside it. Attachment links and board cards follow a
@@ -1810,7 +1878,7 @@ export class VaultStore {
     const name = entry.id.split("/").pop() ?? entry.id;
     const stem = kind === "whiteboard" ? name.slice(0, -BOARD_EXTENSION.length) : name;
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = await this.freeTarget(folder ? `${folder}/${stem}` : stem, hasFolder, taken, kind);
+    const newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
 
     const pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
     const childTarget = join(this.root, newId);
@@ -1843,12 +1911,17 @@ export class VaultStore {
       this.reindexAll();
     }
 
+    const renamed = (newId.split("/").pop() ?? newId) !== name;
+    if (renamed) {
+      await this.retitleRestored(newId);
+      this.reindexAll();
+    }
     const restoredIds = new Set(entry.deleted.map(remap));
     return {
       restored: this.list().filter((meta) => restoredIds.has(meta.id)),
       id: newId,
       movedToTopLevel: !parentAlive,
-      renamed: (newId.split("/").pop() ?? newId) !== name,
+      renamed,
     };
   }
 
@@ -1865,7 +1938,7 @@ export class VaultStore {
     const folder = parentAlive ? originalParent : null;
     const name = entry.id.split("/").pop() ?? entry.id;
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = await this.freeTarget(folder ? `${folder}/${name}` : name, true, taken, "page");
+    const newId = await this.restoreTarget(folder, name, true, taken, "page");
     const target = join(this.root, newId);
     if (!target.startsWith(`${this.root}${sep}`)) throw notFound("Trash entry not found");
 

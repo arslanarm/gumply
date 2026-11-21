@@ -100,11 +100,14 @@ describe("trash helpers", () => {
       "Restored “Plan” to the top level: “Projects” is no longer there.",
     );
     expect(restoredMessage(item(), result({ id: "Projects/Plan 2", renamed: true }))).toBe(
-      "Restored “Plan”. It's named “Plan 2” because that name was taken.",
+      "Restored “Plan” as “Plan 2”: that name was taken.",
     );
     expect(
+      restoredMessage(item({ originalParentTitle: null }), result({ id: "Plan 2", movedToTopLevel: true, renamed: true })),
+    ).toBe("Restored “Plan” to the top level as “Plan 2”: “Projects” is no longer there and that name was taken.");
+    expect(
       restoredMessage(item({ kind: "whiteboard", id: "Map.canvas", title: "Map" }), result({ id: "Map 2.canvas", renamed: true })),
-    ).toBe("Restored “Map”. It's named “Map 2” because that name was taken.");
+    ).toBe("Restored “Map” as “Map 2”: that name was taken.");
   });
 
   it("maps a sub-page to where it is after the restore, and knows its depth", () => {

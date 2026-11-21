@@ -55,6 +55,7 @@ test.describe('trash', () => {
     await page.getByTestId('trashed-restore').click();
     await expectPageTitle(page, 'Plan');
     await expect(page.getByTestId('undo-toast')).toContainText('Restored “Plan”.');
+
     await expect(page.getByTestId(`page-item-${plan.id}`)).toBeVisible();
     expect((await vault.pages()).map((meta) => meta.id).sort()).toEqual([
       'Projects',
@@ -83,10 +84,16 @@ test.describe('trash', () => {
     await entry.hover();
     await entry.getByTestId('trash-restore').click();
 
-    await expect(page.getByTestId('undo-toast')).toContainText(
-      'Restored “Notes” to the top level: “Area” is no longer there. It\'s named “Notes 2” because that name was taken.',
+    const toast = page.getByTestId('undo-toast');
+    await expect(toast).toContainText(
+      'Restored “Notes” to the top level as “Notes 2”: “Area” is no longer there and that name was taken.',
     );
-    await expect(page.getByTestId('page-item-Notes 2')).toBeVisible();
+    // Two rows you can tell apart (D20): the restored page is titled by its new name.
+    await expect(page.getByTestId('page-item-Notes 2')).toContainText('Notes 2');
+    await expect(page.getByTestId('page-item-Notes')).toContainText('Notes');
+    // The toast stays readable (it isn't cut short by an earlier toast's timer).
+    await page.waitForTimeout(5_000);
+    await expect(toast).toBeVisible();
     await expect(entry).toHaveCount(0);
     await expect(page.getByTestId('trash-item-Area')).toBeVisible();
   });
@@ -153,4 +160,21 @@ test('a deleted plain folder (D33) is listed, opens as an overview and restores 
   await expectPageTitle(page, 'Plan');
   expect(readFileSync(path.join(E2E_VAULT, 'Work', 'report.pdf'), 'utf8')).toBe('%PDF');
   expect(await api.listTrash(request)).toEqual([]);
+});
+
+test('a toast that replaces another gets its own 8 s (restore right after a delete)', async ({ page, vault }) => {
+  const [seeded] = await vault.seed([{ title: 'Quick' }, { title: 'Other' }]);
+  await page.goto(`/#/${seeded.id}`);
+  await expectPageTitle(page, 'Quick');
+  await page.getByTestId('delete-page-button-page').click();
+  await expect(page.getByTestId('undo-toast')).toContainText('Page deleted');
+  await page.getByTestId('sidebar-trash').click();
+  const entry = page.getByTestId('trash-item-Quick');
+  await entry.locator('.trash-row').hover();
+  await entry.getByTestId('trash-restore').click();
+  const toast = page.getByTestId('undo-toast');
+  await expect(toast).toContainText('Restored “Quick”.');
+  // Past the delete toast's own 8 s, which a reused timer used to end this one at.
+  await page.waitForTimeout(7_000);
+  await expect(toast).toContainText('Restored “Quick”.');
 });

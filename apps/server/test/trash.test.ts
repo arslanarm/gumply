@@ -418,3 +418,80 @@ describe("plain-folder entries (D33, the shape #mf397jyx writes)", () => {
     expect(await readdir(join(dir, ".trash"))).toEqual([]);
   });
 });
+
+describe("restoring into a taken name: the title follows the new name (D20, #ppag3ugh review)", () => {
+  it("a page with a title gets the new name as its title; its sub-pages keep theirs", async () => {
+    const { app, store } = await createTestServer();
+    const alpha = await createPage(app, { title: "Alpha", content: "old" });
+    await createPage(app, { title: "Notes", parentId: alpha.id as string });
+    const trashId = await remove(app, alpha.id as string);
+    await createPage(app, { title: "Alpha" });
+
+    const result = await restore(app, trashId);
+    expect(result).toMatchObject({ id: "Alpha 2", renamed: true });
+    expect(store.get("Alpha 2")).toMatchObject({ title: "Alpha 2", content: "old" });
+    expect(store.get("Alpha 2/Notes").title).toBe("Notes");
+    const titles = (await getJson<Array<{ title: string }>>(app, "/api/pages")).map((page) => page.title).sort();
+    expect(titles).toEqual(["Alpha", "Alpha 2", "Notes"]);
+  });
+
+  it("a plain note stays plain (its file name is its title)", async () => {
+    const { app, dir, store } = await createTestServer();
+    await writeFile(join(dir, "Plain.md"), "plain body\n");
+    await store.rescan();
+    const trashId = await remove(app, "Plain");
+    await writeFile(join(dir, "Plain.md"), "another\n");
+    await store.rescan();
+    expect(await restore(app, trashId)).toMatchObject({ id: "Plain 2", renamed: true });
+    expect(await readFile(join(dir, "Plain 2.md"), "utf8")).toBe("plain body\n");
+    expect(store.get("Plain 2").title).toBe("Plain 2");
+  });
+
+  it("a board's stored title gives way to its new name", async () => {
+    const { app, store, dir } = await createTestServer();
+    const board = await store.createBoard({ title: "Map" });
+    const trashId = await remove(app, board.meta.id);
+    await store.createBoard({ title: "Map" });
+    expect(await restore(app, trashId)).toMatchObject({ id: "Map 2.canvas", renamed: true });
+    expect(store.getBoard("Map 2.canvas").meta.title).toBe("Map 2");
+    expect(JSON.parse(await readFile(join(dir, "Map 2.canvas"), "utf8")).gumply?.title).toBeUndefined();
+  });
+
+  it("never stacks suffixes: a trashed \"Alpha 2\" comes back as \"Alpha 3\"", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "Alpha" });
+    const second = await createPage(app, { title: "Alpha" });
+    expect(second.id).toBe("Alpha 2");
+    const trashId = await remove(app, "Alpha 2");
+    await createPage(app, { title: "Alpha" }); // takes "Alpha 2" again
+    const result = await restore(app, trashId);
+    expect(result).toMatchObject({ id: "Alpha 3", renamed: true });
+    expect(result.restored[0]?.title).toBe("Alpha 3");
+  });
+
+  it("a name that just ends in a number keeps it (\"Sprint 12\" → \"Sprint 12 2\", not \"Sprint 2\")", async () => {
+    const { app } = await createTestServer();
+    await createPage(app, { title: "Sprint 12" });
+    const trashId = await remove(app, "Sprint 12");
+    await createPage(app, { title: "Sprint 12" });
+    expect(await restore(app, trashId)).toMatchObject({ id: "Sprint 12 2", renamed: true });
+  });
+
+  it("a folder entry follows the same rules; what's inside keeps its names", async () => {
+    const { app, dir, store } = await createTestServer();
+    await mkdir(join(dir, "Work"), { recursive: true });
+    await mkdir(join(dir, "Work 2"), { recursive: true });
+    await writeFile(join(dir, "Work 2", "x.md"), "x\n");
+    await store.rescan();
+    const entry = join(dir, ".trash", "fold2");
+    await mkdir(join(entry, "Work 2"), { recursive: true });
+    await writeFile(join(entry, "Work 2", "Plan.md"), "plan\n");
+    await writeFile(
+      join(entry, "meta.json"),
+      JSON.stringify({ id: "Work 2", kind: "folder", file: "Work 2", deleted: ["Work 2", "Work 2/Plan"] }),
+    );
+    const result = await restore(app, "fold2");
+    expect(result).toMatchObject({ id: "Work 3", renamed: true });
+    expect(result.restored.map((meta) => [meta.id, meta.title])).toEqual([["Work 3/Plan", "Plan"]]);
+  });
+});

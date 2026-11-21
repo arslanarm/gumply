@@ -50,14 +50,14 @@ export function emptyTrashBody(items: readonly TrashItem[]): string {
 export function restoredMessage(item: TrashItem, result: RestoreResult): string {
   const name = result.id.split("/").pop() ?? result.id;
   const shown = item.kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : name;
-  const parts: string[] = [];
-  if (result.movedToTopLevel) {
-    parts.push(`Restored “${item.title}” to the top level: “${trashLocation(item)}” is no longer there.`);
-  } else {
-    parts.push(`Restored “${item.title}”.`);
-  }
-  if (result.renamed) parts.push(`It's named “${shown}” because that name was taken.`);
-  return parts.join(" ");
+  const where = result.movedToTopLevel ? " to the top level" : "";
+  const as = result.renamed ? ` as “${shown}”` : "";
+  const reasons: string[] = [];
+  if (result.movedToTopLevel) reasons.push(`“${trashLocation(item)}” is no longer there`);
+  if (result.renamed) reasons.push("that name was taken");
+  return reasons.length === 0
+    ? `Restored “${item.title}”.`
+    : `Restored “${item.title}”${where}${as}: ${reasons.join(" and ")}.`;
 }
 
 /** Where a page of a restored entry is now (`id` as it was in the trash). */
