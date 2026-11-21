@@ -159,6 +159,17 @@ test.describe('page cover and background (#385sexd6)', () => {
     await expect.poll(() => read('Banner note.md')).toBe(original.replace('banner_icon: 🏔️\n', 'banner_icon: 🏔️\ncover: none\n'));
   });
 
+  test('a bare [[name.png]] cover resolves wherever the image lives, as in Obsidian (#8k4ssrkb)', async ({ page, request, vault }) => {
+    void vault;
+    const original = '---\ncover: "[[deep.png]]"\n---\n\nText\n';
+    await write({ 'Notes/Deep.md': original, 'Images/deep.png': PNG });
+    await open(page, request, 'Notes/Deep');
+    const image = page.getByTestId('page-cover-image');
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(16);
+    expect(await read('Notes/Deep.md')).toBe(original);
+  });
+
   test('a cover from a web address is saved into the vault first', async ({ page, request, vault }) => {
     void vault;
     const original = '---\ncover: https://example.invalid/remote.png\n---\nText\n';

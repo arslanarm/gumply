@@ -2024,6 +2024,8 @@ export function App() {
                   <PageCover
                     key={sessionKeyOf(page.id)}
                     look={look}
+                    pageId={page.id}
+                    fileLinks={page.fileLinks}
                     pickerSignal={coverPickerSignal}
                     onChange={handlePropertiesChange}
                   />

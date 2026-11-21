@@ -21,6 +21,7 @@ import {
 } from "@gumply/core";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api, fileUrl } from "../api/client.js";
+import { obsidianFileUrl, useFileLinkVersion } from "../lib/file-links.js";
 import { t, useT } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
 
@@ -45,16 +46,22 @@ function coverStyle(cover: Cover, position: number): CSSProperties {
 
 export interface PageCoverProps {
   look: PageLook;
+  /** The open page: a cover link resolves from its folder, like any Obsidian link (#8k4ssrkb). */
+  pageId: string;
+  fileLinks?: Record<string, string | null> | null;
   /** The picker opens by itself right after "Add cover". */
   pickerSignal: number;
   onChange: (patch: PropertiesPatch) => Promise<boolean>;
 }
 
-export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
+export function PageCover({ look, pageId, fileLinks, pickerSignal, onChange }: PageCoverProps) {
   useT();
+  // Re-render when a cover link typed after load has been resolved.
+  useFileLinkVersion();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [reposition, setReposition] = useState<number | null>(null);
-  const [failed, setFailed] = useState(false);
+  // 0: first try; 1: the exact path failed, resolver tried; 2: nothing loads.
+  const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const drag = useRef<{ y: number; start: number; height: number } | null>(null);
@@ -66,7 +73,7 @@ export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
     handled.current = pickerSignal;
     setPickerOpen(true);
   }, [pickerSignal]);
-  useEffect(() => setFailed(false), [cover && coverValue(cover)]);
+  useEffect(() => setAttempt(0), [cover && coverValue(cover)]);
 
   if (!cover && !pickerOpen) return null;
 
@@ -95,7 +102,16 @@ export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
     }
   };
 
-  const image = cover?.kind === "image" ? fileUrl(cover.link) : cover?.kind === "url" ? cover.url : null;
+  // A vault image resolves like Obsidian does. A path (what Gumply writes)
+  // is tried exactly first, which also covers an image uploaded a moment
+  // ago that the server's file index hasn't seen yet; a bare name, or a path
+  // that isn't there, goes through the resolver (#8k4ssrkb). undefined while
+  // the resolver is asked.
+  const exactFirst = cover?.kind === "image" && cover.link.includes("/") && attempt === 0;
+  const resolved =
+    cover?.kind !== "image" ? null : exactFirst ? fileUrl(cover.link) : obsidianFileUrl(`[[${cover.link}]]`, pageId, fileLinks);
+  const image = cover?.kind === "image" ? (resolved === undefined ? null : (resolved ?? "")) : cover?.kind === "url" ? cover.url : null;
+  const loading = cover?.kind === "image" && resolved === undefined;
   const position = reposition ?? look.position;
 
   return (
@@ -104,8 +120,8 @@ export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
       data-testid="page-cover"
       data-cover-kind={cover?.kind ?? "none"}
     >
-      {cover ? (
-        image && !failed ? (
+      {loading ? null : cover ? (
+        image && attempt < 2 ? (
           <img
             className="page-cover-image"
             data-testid="page-cover-image"
@@ -113,7 +129,7 @@ export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
             alt=""
             draggable={false}
             style={coverStyle(cover, position)}
-            onError={() => setFailed(true)}
+            onError={() => setAttempt((value) => (exactFirst ? 1 : 2))}
             onPointerDown={(event) => {
               if (reposition === null) return;
               event.preventDefault();
@@ -131,7 +147,7 @@ export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
               drag.current = null;
             }}
           />
-        ) : image ? (
+        ) : image !== null ? (
           <div className="page-cover-missing" data-testid="page-cover-missing">
             {t("cover.missing")}
           </div>
@@ -184,7 +200,7 @@ export function PageCover({ look, pickerSignal, onChange }: PageCoverProps) {
           >
             {t("cover.change")}
           </button>
-          {image && !failed && look.coverSource === "cover" ? (
+          {image && attempt < 2 && look.coverSource === "cover" ? (
             <button type="button" className="page-cover-button" data-testid="cover-reposition" onClick={() => setReposition(look.position)}>
               {t("cover.reposition")}
             </button>
