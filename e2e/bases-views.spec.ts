@@ -235,4 +235,23 @@ test.describe('database view layouts (D34)', () => {
     expect(missing).toEqual([]);
     expect((await page.request.get('/favicon.svg')).headers()['content-type']).toContain('image/svg+xml');
   });
+
+  for (const [kind, file, body, ready] of [
+    ['a database view', 'All.base', 'views:\n  - type: table\n    name: Table\n', 'base-page'],
+    ['a whiteboard', 'Map.canvas', '{"nodes":[],"edges":[]}', 'board-page'],
+  ] as const) {
+    test(`a vault that opens on ${kind} loads with no 404 (the page prefetch skips it)`, async ({ page, request, vault }) => {
+      void vault;
+      // Its only other item is a folder, so the first item is the one opened.
+      await writeVault(request, { [file]: body, 'Notes/Inside.md': 'Inside\n' });
+      const missing: string[] = [];
+      page.on('response', (response) => {
+        if (response.status() === 404) missing.push(response.url());
+      });
+      await page.goto('/');
+      await expect(page.getByTestId(ready)).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(missing).toEqual([]);
+    });
+  }
 });
