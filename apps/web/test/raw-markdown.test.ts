@@ -141,6 +141,13 @@ describe("list source attributes (#fmmght8w)", () => {
     expect(render("- a\n- b")).not.toContain("data-md-gap");
   });
 
+  it("marks a list that starts right under a line of text", () => {
+    expect(render("- a\n\n- parent\n\t- nested")).toContain('<ul data-md-markup="-" data-md-after-text="true">');
+    expect(render("- a\n\n- parent\n\n  - nested")).not.toContain("data-md-after-text");
+    expect(render("Text\n- a")).toContain('data-md-after-text="true"');
+    expect(render("Text\n\n- a")).not.toContain("data-md-after-text");
+  });
+
   it("writes recorded numbers only while they still rise from the start", async () => {
     const { recordedNumbers } = await import("../src/editor/raw-markdown/list-source.js");
     const list = (numbers: Array<string | null>) =>

@@ -11,7 +11,7 @@
  * built-in taskList/taskItem `updateDOM` (lower extension priority).
  */
 import { Extension } from "@tiptap/core";
-import { GAP_ATTR, LOOSE_JOIN_ATTR } from "./raw-markdown/list-source.js";
+import { AFTER_TEXT_ATTR, GAP_ATTR, LOOSE_JOIN_ATTR } from "./raw-markdown/list-source.js";
 
 function isTaskItem(item: Element): boolean {
   return item.getAttribute("data-type") === "taskItem";
@@ -50,6 +50,8 @@ function splitList(list: Element): void {
     else clone.removeAttribute("data-tight");
     if (group !== groups[0] && group.items[0]!.hasAttribute(GAP_ATTR)) clone.setAttribute(LOOSE_JOIN_ATTR, "loose");
     else clone.removeAttribute(LOOSE_JOIN_ATTR);
+    // Only the first half can sit right under a line of text.
+    if (group !== groups[0]) clone.removeAttribute(AFTER_TEXT_ATTR);
     fragment.appendChild(clone);
   }
   list.replaceWith(fragment);

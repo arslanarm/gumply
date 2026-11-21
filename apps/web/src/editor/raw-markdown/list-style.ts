@@ -82,6 +82,14 @@ const HALVES = new Set(["bulletList", "taskList"]);
 export function separateFromPreviousList(state: ListSerializerState, node: PMNode, sameMarker = false): void {
   const closed = state.closed as PMNode | null | undefined;
   if (!closed) return;
+  if (closed.type.name === "paragraph") {
+    // A list right under a line of text, as written (a nested list under its
+    // item's text in a loose list, or `Text` ⏎ `- a`). An ordered list can
+    // only follow text directly when it starts at 1.
+    const start = node.type.name === "orderedList" ? Number(node.attrs.start ?? 1) : 1;
+    if (node.attrs.markdownAfterText && start === 1) state.flushClose(1);
+    return;
+  }
   if (closed.type === node.type) state.flushClose(2);
   else if (
     sameMarker &&

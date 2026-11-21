@@ -19,6 +19,10 @@
  * - `data-md-check`: `X` for an upper-case check;
  * - `data-md-gap`: blank lines before the item, used when splitting a mixed
  *   list (see markdown-task-list-fix).
+ *
+ * And on a list: `data-md-after-text` when it starts right under a line of
+ * text with no blank line (a nested list under its item's text, even in a
+ * loose list).
  */
 import { Extension } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -28,6 +32,9 @@ export const CHECK_ATTR = "data-md-check";
 export const GAP_ATTR = "data-md-gap";
 /** On the second half of a split list: a blank line separated the halves. */
 export const LOOSE_JOIN_ATTR = "data-md-join";
+export const AFTER_TEXT_ATTR = "data-md-after-text";
+
+const LIST_OPEN = new Set(["bullet_list_open", "ordered_list_open"]);
 
 /* markdown-it is untyped here (see wikilink plugin). */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -39,6 +46,10 @@ export function listSourceRule(state: any): void {
   const lines = String(state.src).split("\n");
   const tokens = state.tokens as any[];
   tokens.forEach((token, index) => {
+    if (LIST_OPEN.has(token.type) && token.map && tokens[index - 1]?.type === "paragraph_close") {
+      if (!isBlank(lines[(token.map[0] as number) - 1])) token.attrSet(AFTER_TEXT_ATTR, "true");
+      return;
+    }
     if (token.type !== "list_item_open" || !token.map) return;
     const first = token.map[0] as number;
     let gap = 0;
@@ -86,6 +97,17 @@ export const MarkdownListSource = Extension.create({
             default: null,
             keepOnSplit: false,
             parseHTML: (element: HTMLElement) => (element.getAttribute(CHECK_ATTR) === "X" ? "X" : null),
+            renderHTML: () => ({}),
+          },
+        },
+      },
+      {
+        types: ["bulletList", "taskList", "orderedList"],
+        attributes: {
+          markdownAfterText: {
+            default: false,
+            keepOnSplit: false,
+            parseHTML: (element: HTMLElement) => element.getAttribute(AFTER_TEXT_ATTR) === "true",
             renderHTML: () => ({}),
           },
         },
