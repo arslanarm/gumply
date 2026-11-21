@@ -39,8 +39,8 @@ describe("parseFrontmatter", () => {
   });
 
   it("keeps unknown keys", () => {
-    const { frontmatter } = parseFrontmatter("---\ntitle: x\nauthor: plony\n---\n");
-    expect(frontmatter.author).toBe("plony");
+    const { frontmatter } = parseFrontmatter("---\ntitle: x\nauthor: someone\n---\n");
+    expect(frontmatter.author).toBe("someone");
   });
 
   it("returns the file unchanged when there is no complete block", () => {
