@@ -52,6 +52,8 @@ export interface BaseRow {
   icon?: string;
   updated: string;
   values: Record<string, BaseValue>;
+  /** #8k4ssrkb: the view's `image` link (`[[cover.png]]`) resolved from this row's page, by link text. */
+  files?: Record<string, string | null>;
 }
 
 export interface BaseGroup {

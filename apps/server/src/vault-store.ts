@@ -58,6 +58,10 @@ import {
   withCanvasMeta,
   CanvasParseError,
   BaseParseError,
+  LinkFileIndex,
+  hasAttachmentExtension,
+  maskCode,
+  obsidianFileLinks,
   newBaseSource,
   parseBase,
   updateBaseSource,
@@ -455,6 +459,12 @@ export class VaultStore {
   readonly root: string;
 
   private readonly pages = new Map<PageId, PageRecord>();
+  /**
+   * #8k4ssrkb: every linkable non-page file (images, PDFs… outside dot
+   * folders, root `attachments/` included), for Obsidian-style `![[x.png]]`
+   * links. Rebuilt from the names each scan already reads (no stat per file).
+   */
+  private linkIndex = new LinkFileIndex([]);
   /** D33: plain folders (no `<Folder>.md`); never link targets or graph nodes. */
   private folders = new Map<PageId, FolderRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
@@ -519,7 +529,7 @@ export class VaultStore {
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-      if (dir === this.root && entry.name === "attachments") continue;
+      // `attachments/` holds no pages, but its files are link targets (#8k4ssrkb).
       found.push(...this.vaultDirectories(join(dir, entry.name)));
     }
     return found;
@@ -556,7 +566,8 @@ export class VaultStore {
     if (name.length === 0) return this.scheduleRescan();
     if (name.startsWith(".") || name.endsWith(".tmp") || name === "node_modules") return;
     // A page/board changed, or a folder appeared or went away.
-    if (ITEM_FILE.test(name) || !name.includes(".")) this.scheduleRescan();
+    // #8k4ssrkb: an attachment added, renamed or removed changes what links resolve to.
+    if (ITEM_FILE.test(name) || hasAttachmentExtension(name) || !name.includes(".")) this.scheduleRescan();
     else if (this.directoryWatchers.has(join(dir, name))) this.scheduleRescan();
   }
 
@@ -586,7 +597,8 @@ export class VaultStore {
   private async scanRecords(): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
     const next = new Map<PageId, PageRecord>();
     const directories: DirectoryScan = new Map();
-    const files = (await this.scan(this.root, directories)).map((absolute) => ({
+    const others: string[] = [];
+    const files = (await this.scan(this.root, directories, others)).map((absolute) => ({
       absolute,
       rel: relative(this.root, absolute).split(sep).join("/"),
     }));
@@ -601,6 +613,7 @@ export class VaultStore {
     }
     const folders = VaultStore.foldersFrom(directories, next);
     VaultStore.assignParents(next, folders);
+    this.linkIndex = new LinkFileIndex([...others, ...(await this.attachmentFiles())]);
     return { pages: next, folders };
   }
 
@@ -1110,10 +1123,43 @@ export class VaultStore {
       throw notFound("This is a whiteboard; read it with GET /api/boards/:id");
     }
     if (record.kind === "base") throw notFound("This is a database view; read it with GET /api/bases/:id");
+    const fileLinks = this.fileLinksOf(record);
     return {
       ...metaOf(record, this.directChildCount(resolved)),
       content: record.content,
+      ...(fileLinks ? { fileLinks } : {}),
     };
+  }
+
+  /**
+   * #8k4ssrkb: what each Obsidian-style file link in a page or board resolves
+   * to, from that note (`![[photo.png]]` → `assets/photo.png`, or null).
+   */
+  private fileLinksOf(record: PageRecord): Record<string, string | null> | undefined {
+    const links = obsidianFileLinks(record.content, maskCode);
+    if (!links.length) return undefined;
+    const from = relative(this.root, record.filePath).split(sep).join("/");
+    const out: Record<string, string | null> = {};
+    for (const link of links) out[link] = this.linkIndex.resolve(link, from);
+    return out;
+  }
+
+  /** One Obsidian-style file link from a page or board (`from`; unknown: the vault root). */
+  resolveFileLink(link: string, from: PageId | null): string | null {
+    const record = from ? this.pages.get(this.resolveId(from)) : undefined;
+    const fromPath = record ? relative(this.root, record.filePath).split(sep).join("/") : null;
+    return this.linkIndex.resolve(link, fromPath);
+  }
+
+  /** The vault path of a page's file, for resolving links from it (null: unknown). */
+  filePathOf(id: PageId): string | null {
+    const record = this.pages.get(id);
+    return record ? relative(this.root, record.filePath).split(sep).join("/") : null;
+  }
+
+  /** The shared index (database views resolve cover links with it). */
+  get fileIndex(): LinkFileIndex {
+    return this.linkIndex;
   }
 
   create(input: CreatePageInput): Promise<Page> {
@@ -1181,7 +1227,8 @@ export class VaultStore {
   getBoard(id: PageId): BoardDocument {
     const resolved = this.resolveId(id);
     const record = this.requireBoard(resolved);
-    return { meta: metaOf(record, 0), board: record.board as CanvasBoard };
+    const fileLinks = this.fileLinksOf(record);
+    return { meta: metaOf(record, 0), board: record.board as CanvasBoard, ...(fileLinks ? { fileLinks } : {}) };
   }
 
   createBoard(input: CreateBoardInput): Promise<BoardDocument> {
@@ -3470,7 +3517,7 @@ export class VaultStore {
    * each directory walked (vault path → non-page files directly in it), so
    * D33 folders come from the same single walk.
    */
-  private async scan(dir: string, directories?: DirectoryScan): Promise<string[]> {
+  private async scan(dir: string, directories?: DirectoryScan, others?: string[]): Promise<string[]> {
     const entries = await readdir(dir, { withFileTypes: true });
     const files: string[] = [];
     let otherFiles = 0;
@@ -3482,9 +3529,13 @@ export class VaultStore {
       if (entry.isSymbolicLink()) continue;
 
       const absolute = join(dir, entry.name);
-      if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories)));
+      if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories, others)));
       else if (entry.isFile() && ITEM_FILE.test(entry.name)) files.push(absolute);
-      else if (entry.isFile()) otherFiles += 1;
+      else if (entry.isFile()) {
+        otherFiles += 1;
+        // The name from the dirent only: no stat (a scan runs after every save).
+        others?.push(relative(this.root, absolute).split(sep).join("/"));
+      }
     }
 
     if (directories && dir !== this.root) {
