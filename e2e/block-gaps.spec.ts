@@ -54,6 +54,15 @@ const SHAPES: Record<string, string> = {
   'inside a quote': '> ## Heading\n> Text under it\n> - item',
   'inside a callout': '> [!tip] Tips\n> ## Heading\n> Text under it',
   'html block → heading': '<div>html</div>\n\n## After html',
+  // @lead's review: setext headings stay setext, with text right under them.
+  'setext = → text': 'Title\n===\nText under it.',
+  'setext - → text': 'Sub\n---\nText under it.',
+  'long setext underline → text': 'Title\n=========\nText under it.',
+  // D21: extra empty lines between blocks are kept exactly.
+  'two blank lines between blocks': '## Heading\n\n\nText after two blank lines.',
+  'two blank lines, then touching blocks': 'First\n\n\n## Heading\nText',
+  // Not a table in the source (a table can't interrupt a paragraph): raw text.
+  'table-like lines right under a paragraph': 'Text\n| a | b |\n| - | - |\n| 1 | 2 |',
 };
 
 test.describe('touching blocks stay touching (#54prcupx)', () => {
