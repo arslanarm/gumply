@@ -178,4 +178,36 @@ test.describe('database view layouts (D34)', () => {
     await page.keyboard.type('![[');
     await expect(page.getByTestId('link-suggestion-Work/Alpha')).toBeVisible();
   });
+
+  test('Kanban: dragging a card to another column writes only that page\'s status line', async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Board');
+    const card = page.getByTestId('base-column-Todo').locator('.base-kanban-card').filter({ hasText: 'Alpha' });
+    await card.dragTo(page.getByTestId('base-column-Done'));
+    await expect(page.getByTestId('base-column-Done').locator('.base-title-text')).toHaveText(['Alpha', 'Gamma']);
+    await expect.poll(() => read('Work/Alpha.md')).toBe(FILES['Work/Alpha.md'].replace('status: Todo', 'status: Done'));
+    // The base file is untouched; Obsidian reads the same column.
+    expect(await read('Work/Tasks.base')).toBe(BASE);
+
+    // + New in a column: a page with that column's value.
+    await page.getByTestId('base-new-in-Doing').click();
+    await expect(page.getByTestId('page-title-input').or(page.getByTestId('page-title'))).toBeVisible();
+    await expect
+      .poll(async () => (await api.listPages(request)).filter((meta) => meta.parentId === 'Work' && meta.title === 'Untitled').length)
+      .toBe(1);
+    await expect.poll(() => read('Work/Untitled.md')).toContain('status: Doing\n');
+  });
+
+  test('Calendar: dragging a page to another day writes its date; + on a day makes a page dated that day', async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Calendar');
+    await page.getByTestId('base-event-Work/Alpha').dragTo(page.getByTestId(`base-day-${thisMonth}-12`));
+    await expect(page.getByTestId(`base-day-${thisMonth}-12`).locator('.base-calendar-item')).toHaveText(['Alpha']);
+    await expect.poll(() => read('Work/Alpha.md')).toBe(FILES['Work/Alpha.md'].replace(`due: ${thisMonth}-03`, `due: ${thisMonth}-12`));
+    expect(await read('Work/Tasks.base')).toBe(BASE);
+
+    await page.getByTestId(`base-day-${thisMonth}-20`).hover();
+    await page.getByTestId(`base-new-on-${thisMonth}-20`).click();
+    await expect.poll(() => read('Work/Untitled.md').catch(() => '')).toContain(`due: ${thisMonth}-20\n`);
+  });
 });
