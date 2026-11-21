@@ -83,6 +83,17 @@ describe("seeding on the first GET /pages", () => {
     }
   });
 
+  it("only the app's own request seeds: a GET from another origin is refused and seeds nothing", async () => {
+    const { app, dir, store } = await createTestServer();
+    store.armDemo(() => undefined);
+    const foreign = await app.request("/api/pages", { headers: { Origin: "https://evil.example", "Accept-Language": "ru" } });
+    expect(foreign.status).toBe(403);
+    expect(await readdir(dir)).toEqual([]);
+    // The app's own request still seeds, in its language.
+    const own = (await (await list(app, "ru")).json()) as Array<{ title: string }>;
+    expect(own.map((page) => page.title)).toContain("Добро пожаловать");
+  });
+
   it("never seeds a folder that already has files (#pc3wvc2u), nor without arming", async () => {
     const { app, dir, store } = await createTestServer();
     await writeFile(join(dir, "report.pdf"), "%PDF-1.4");
