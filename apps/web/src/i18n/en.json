@@ -31,7 +31,44 @@
     "untitledBoard": "Untitled whiteboard"
   },
   "graph": {
-    "title": "Graph"
+    "title": "Graph",
+    "pages_one": "{{count}} page",
+    "pages_other": "{{count}} pages",
+    "links_one": "{{count}} link",
+    "links_other": "{{count}} links",
+    "missing_one": "{{count}} missing",
+    "missing_other": "{{count}} missing",
+    "ghostDetail": "Not created yet · {{links}} · Click to create",
+    "ghostTooltip": "“{{title}}” — not created yet · {{links}} · Click to create",
+    "serverDown": "Cannot reach the Gumply server. Is it running?",
+    "loadFailed": "Could not load the graph.",
+    "subtitle": "How your pages connect",
+    "filterPlaceholder": "Filter pages…",
+    "filterLabel": "Filter pages by title",
+    "clearFilter": "Clear filter",
+    "legend": "Legend",
+    "dismissError": "Dismiss error",
+    "filterByTag": "Filter by tag",
+    "loading": "Loading graph…",
+    "empty": "Your graph is empty.",
+    "emptyHintBefore": "Create a page and link it with ",
+    "emptyHintAfter": ".",
+    "filterEmpty": "No pages match this filter.",
+    "hint": "Scroll to zoom · drag to move · click to open",
+    "legendPage": "solid = page",
+    "legendBoard": "square = whiteboard",
+    "legendGhost": "dashed = not created yet",
+    "legendColour": "Colour = first tag",
+    "controls": "Graph view controls",
+    "fitLabel": "Fit graph to view",
+    "localTitle": "Local graph",
+    "linkDepth": "Link depth",
+    "closeLocal": "Close local graph",
+    "localLoadFailed": "Could not load the local graph.",
+    "localLoading": "Loading…",
+    "noLinks": "No links yet.",
+    "noLinksBefore": "Type ",
+    "noLinksAfter": " in this page to connect it."
   },
   "sidebar": {
     "hide": "Hide sidebar",
@@ -578,7 +615,8 @@
     "fromTemplate": "New board from template…",
     "edited": "Edited {{time}}",
     "templateWords": "",
-    "templateFiller": ""
+    "templateFiller": "",
+    "languageWords": ""
   },
   "callout": {
     "types": {
@@ -615,5 +653,30 @@
     "markNotDone": "Mark to-do as not done",
     "markTitleDone": "Mark “{{title}}” as done",
     "markTitleNotDone": "Mark “{{title}}” as not done"
+  },
+  "parts": {
+    "updated": "Gumply was updated.",
+    "updatedHint": "Reload to get the new version. Your saved pages are safe.",
+    "failedHint": "Check that Gumply is still running, then try again.",
+    "tryAgain": "Try again",
+    "openFailed": "Could not open this.",
+    "failed": {
+      "graph": "Could not load the graph.",
+      "localGraph": "Could not load the local graph.",
+      "dialog": "Could not load this."
+    }
+  },
+  "settings": {
+    "theme": {
+      "label": "Theme: {{name}}",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark",
+      "title": "Theme"
+    },
+    "title": "Settings",
+    "language": "Language",
+    "languageSystem": "Same as system",
+    "languageCommand": "Language…"
   }
 }

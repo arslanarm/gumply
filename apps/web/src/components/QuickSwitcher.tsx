@@ -26,13 +26,15 @@ export interface QuickSwitcherProps {
   onCreateBoard?: (title: string) => void;
   /** `New board from template…`: opens the template gallery (spec/v0-6 §D). */
   onNewFromTemplate?: () => void;
+  /** `Language…`: opens Settings (#7h5utv23). */
+  onOpenLanguage?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
 }
 
 /** Cmd/Ctrl+K quick switcher (D13, spec/ux §10): one 560px overlay. */
-export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onClose, initialQuery = "" }: QuickSwitcherProps) {
+export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFromTemplate, onOpenLanguage, onClose, initialQuery = "" }: QuickSwitcherProps) {
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState(initialQuery);
@@ -88,11 +90,12 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
     () =>
       needle.length > 0
         ? searchSections(visibleResults, pages, query)
-        : { pages: [], text: [], create: null, createBoard: null, fromTemplate: null },
+        : { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null },
     [visibleResults, pages, query, needle],
   );
 
   const fromTemplate = onNewFromTemplate ? sections.fromTemplate : null;
+  const languageRow = onOpenLanguage ? sections.language : null;
   const rows: SearchRow[] =
     needle.length > 0
       ? [
@@ -101,6 +104,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
           ...(sections.create ? [sections.create] : []),
           ...(sections.createBoard && onCreateBoard ? [sections.createBoard] : []),
           ...(fromTemplate ? [fromTemplate] : []),
+          ...(languageRow ? [languageRow] : []),
         ]
       : recents;
 
@@ -120,6 +124,10 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
     if (!row) return;
     if (row.kind === "create") {
       if (row.title) onCreate(row.title);
+      return;
+    }
+    if (row.kind === "language") {
+      onOpenLanguage?.();
       return;
     }
     if (row.kind === "from-template") {
@@ -175,7 +183,9 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
               ? "search-create-board"
               : row.kind === "from-template"
                 ? "search-from-template"
-                : "search-create"
+                : row.kind === "language"
+                  ? "search-language"
+                  : "search-create"
         }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
@@ -189,6 +199,8 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
         <span className="quick-switcher-icon" aria-hidden="true">
           {row.kind === "create" ? (
             <Icon name="plus" size={16} />
+          ) : row.kind === "language" ? (
+            <Icon name="languages" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
           ) : row.page?.icon ? (
@@ -287,7 +299,7 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
                   )}
                 </>
               ) : null}
-              {!searching && sections.pages.length === 0 && sections.text.length === 0 && !fromTemplate ? (
+              {!searching && sections.pages.length === 0 && sections.text.length === 0 && !fromTemplate && !languageRow ? (
                 <p className="quick-switcher-empty" data-testid="search-empty">
                   {pages.length === 0 ? t("empty.noPages") : t("search.noMatch", { query: needle })}
                 </p>
@@ -302,7 +314,8 @@ export function QuickSwitcher({ pages, onOpen, onCreate, onCreateBoard, onNewFro
                     sections.pages.length + sections.text.length + (sections.create ? 1 : 0),
                   )
                 : null}
-              {fromTemplate ? renderRow(fromTemplate, rows.length - 1) : null}
+              {fromTemplate ? renderRow(fromTemplate, rows.length - (languageRow ? 2 : 1)) : null}
+              {languageRow ? renderRow(languageRow, rows.length - 1) : null}
             </>
           )}
         </div>

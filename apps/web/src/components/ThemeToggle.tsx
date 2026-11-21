@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useT } from "../i18n/index.js";
 import { Icon, type IconName } from "./Icon.js";
 import {
   applyThemePreference,
@@ -22,6 +23,14 @@ export function ThemeToggle() {
   const [preference, setPreference] = useState<ThemePreference>(() =>
     loadThemePreference(browserStorage()),
   );
+  useT();
+
+  // The Settings popover can change the theme too (#7h5utv23).
+  useEffect(() => {
+    const sync = () => setPreference(loadThemePreference(browserStorage()));
+    window.addEventListener("gumply:theme-changed", sync);
+    return () => window.removeEventListener("gumply:theme-changed", sync);
+  }, []);
 
   // Keep the document in sync with the saved preference and, in System mode,
   // with live OS theme changes.

@@ -30,6 +30,7 @@ import {
   type FitItem,
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
+import { t, useT } from "../i18n/index.js";
 
 export type CanvasNode = GraphNode | GhostNode;
 
@@ -300,6 +301,7 @@ export function GraphCanvas({
   onOpenPage,
   onCreatePage,
 }: GraphCanvasProps) {
+  useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphMethods<CanvasNode, GraphLink> | undefined>(undefined);
@@ -1132,12 +1134,12 @@ export function GraphCanvas({
   return (
     <div className="graph-canvas-wrap">
       {showControls ? (
-        <div className="graph-controls" role="group" aria-label="Graph view controls">
+        <div className="graph-controls" role="group" aria-label={t("graph.controls")}>
           <button
             type="button"
             className="graph-control"
             data-testid="graph-zoom-out"
-            aria-label="Zoom out"
+            aria-label={t("board.zoomOut")}
             onClick={() => {
               const graph = graphRef.current;
               userViewRef.current = true;
@@ -1151,16 +1153,16 @@ export function GraphCanvas({
             type="button"
             className="graph-control"
             data-testid="graph-fit"
-            aria-label="Fit graph to view"
+            aria-label={t("graph.fitLabel")}
             onClick={() => fitView(300, "button")}
           >
-            Fit
+            {t("board.fit")}
           </button>
           <button
             type="button"
             className="graph-control"
             data-testid="graph-zoom-in"
-            aria-label="Zoom in"
+            aria-label={t("board.zoomIn")}
             onClick={() => {
               const graph = graphRef.current;
               userViewRef.current = true;

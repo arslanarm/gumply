@@ -9,7 +9,7 @@ export const MAX_SEARCH_ROWS = 8;
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "from-template";
+  kind: "page" | "text" | "create" | "create-board" | "from-template" | "language";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -31,6 +31,19 @@ export interface SearchSections {
   createBoard: SearchRow | null;
   /** `New board from template…` when the query asks for it (spec/v0-6 §D). */
   fromTemplate: SearchRow | null;
+  /** `Language…` (opens Settings) when the query asks for it (#7h5utv23). */
+  language: SearchRow | null;
+}
+
+/**
+ * Whether `query` asks for the language setting: it starts "language",
+ * "settings", "lang" or the interface language's own word(s).
+ */
+export function wantsLanguage(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = ["language", "languages", "settings", "lang", ...t("search.languageWords").toLowerCase().split(/\s+/).filter(Boolean)];
+  return words.some((word) => word.startsWith(needle));
 }
 
 /** Words that offer `New board from template…`: the command and the template names. */
@@ -158,7 +171,7 @@ export function searchSections(
 ): SearchSections {
   const needle = normalise(query);
   const trimmed = query.trim();
-  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null, fromTemplate: null };
+  if (needle.length === 0) return { pages: [], text: [], create: null, createBoard: null, fromTemplate: null, language: null };
 
   const counts = titleCounts(pages);
   const pagesRows: SearchRow[] = [];
@@ -184,7 +197,9 @@ export function searchSections(
 
   const fromTemplate = wantsTemplate(query) ? fromTemplateRow() : null;
 
-  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate };
+  const language = wantsLanguage(query) ? { kind: "language" as const, key: "language", label: t("settings.languageCommand") } : null;
+
+  return { pages: pagesRows, text: textRows, create, createBoard, fromTemplate, language };
 }
 
 export interface SnippetPart {

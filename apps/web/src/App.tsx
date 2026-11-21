@@ -21,6 +21,7 @@ import { QuickSwitcher } from "./components/QuickSwitcher.js";
 import { SaveStatus } from "./components/SaveStatus.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
+import { SettingsMenu } from "./components/SettingsMenu.js";
 import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 // Graph and dialogs load on demand (#evh35bn7).
@@ -113,6 +114,8 @@ export function App() {
    * §D). With `resolve`, the pick goes back to the caller (`/template`;
    * `undefined` is Cancel) instead of creating and opening the board here.
    */
+  /** The Settings popover (language, theme; #7h5utv23). */
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [galleryParent, setGalleryParent] = useState<{
     parentId: PageId | null;
     resolve?: (template: BoardTemplateId | null | undefined) => void;
@@ -1338,6 +1341,7 @@ export function App() {
           onKeepMine={handleConflictKeepMine}
         />
         <ThemeToggle />
+        <SettingsMenu open={settingsOpen} onOpenChange={setSettingsOpen} />
         <button
           type="button"
           className="icon-button"
@@ -1610,6 +1614,10 @@ export function App() {
           onNewFromTemplate={() => {
             dismissSearch();
             setGalleryParent({ parentId: null });
+          }}
+          onOpenLanguage={() => {
+            dismissSearch();
+            setSettingsOpen(true);
           }}
           onClose={closeSearch}
         />

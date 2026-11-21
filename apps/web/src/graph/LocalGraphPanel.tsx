@@ -4,6 +4,7 @@ import { api, ApiRequestError } from "../api/client.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import { ariaSummary, buildGraphModel } from "./graph-model.js";
 import { usePrefersReducedMotion } from "./use-reduced-motion.js";
+import { t, useT } from "../i18n/index.js";
 
 export interface LocalGraphPanelProps {
   pageId: PageId;
@@ -27,11 +28,12 @@ function readDepth(): Depth {
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) return error.message;
-  return "Could not load the local graph.";
+  return t("graph.localLoadFailed");
 }
 
 /** Collapsible right-hand graph for the current page (spec/ux §9). */
 export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: LocalGraphPanelProps) {
+  const t = useT();
   const [depth, setDepth] = useState<Depth>(readDepth);
   const [data, setData] = useState<GraphData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
@@ -77,11 +79,11 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
     data.unresolved.length === 0;
 
   return (
-    <aside className="local-graph" data-testid="local-graph" aria-label="Local graph">
+    <aside className="local-graph" data-testid="local-graph" aria-label={t("graph.localTitle")}>
       <header className="local-graph-header">
-        <h2>Local graph</h2>
+        <h2>{t("graph.localTitle")}</h2>
         <div className="local-graph-actions">
-          <div className="local-graph-depth" role="group" aria-label="Link depth">
+          <div className="local-graph-depth" role="group" aria-label={t("graph.linkDepth")}>
             <button
               type="button"
               className={`graph-chip${depth === 1 ? " is-active" : ""}`}
@@ -105,8 +107,8 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
             type="button"
             className="icon-button"
             data-testid="local-graph-close"
-            aria-label="Close local graph"
-            data-tooltip="Close local graph"
+            aria-label={t("graph.closeLocal")}
+            data-tooltip={t("graph.closeLocal")}
             onClick={onClose}
           >
             ×
@@ -116,19 +118,19 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
 
       <div className="local-graph-body">
         {status === "loading" ? (
-          <p className="graph-panel-note">Loading…</p>
+          <p className="graph-panel-note">{t("graph.localLoading")}</p>
         ) : status === "error" ? (
           <div className="graph-panel-state">
-            <p>{error ?? "Could not load the local graph."}</p>
+            <p>{error ?? t("graph.localLoadFailed")}</p>
             <button type="button" className="button-secondary" onClick={() => void load()}>
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         ) : empty || !model || !data ? (
           <div className="graph-panel-state" data-testid="local-graph-empty">
-            <h3>No links yet.</h3>
+            <h3>{t("graph.noLinks")}</h3>
             <p>
-              Type <code>[[</code> in this page to connect it.
+              {t("graph.noLinksBefore")}<code>[[</code>{t("graph.noLinksAfter")}
             </p>
           </div>
         ) : (

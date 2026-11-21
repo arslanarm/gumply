@@ -93,6 +93,7 @@ describe("searchSections", () => {
       create: null,
       createBoard: null,
       fromTemplate: null,
+      language: null,
     });
   });
 

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 /** One coherent line-icon set for UI chrome (Lucide-style, 24px grid). */
 export type IconName =
   | "arrowUp"
+  | "languages"
   | "alert"
   | "board"
   | "brand"
@@ -194,6 +195,17 @@ const ICONS: Record<IconName, ReactNode> = {
     <>
       <rect width="18" height="16" x="3" y="4" rx="2" />
       <path d="M3 10h18M3 15h18M10 4v16" />
+    </>
+  ),
+  // Settings → Language (#7h5utv23): Lucide "languages".
+  languages: (
+    <>
+      <path d="m5 8 6 6" />
+      <path d="m4 14 6-6 2-3" />
+      <path d="M2 5h12" />
+      <path d="M7 2h1" />
+      <path d="m22 22-5-10-5 10" />
+      <path d="M14 18h6" />
     </>
   ),
   monitor: (
