@@ -57,15 +57,16 @@ describe("the final newline (#5fv7c25w)", () => {
   it("`content` has no final newline after a create, a save sent with one, and a rename's link rewrite (@opus-graph)", async () => {
     const { app, dir } = await createTestServer();
     await createPage(app, { title: "Roadmap", content: "Goals" });
-    await createPage(app, { title: "Notes", content: "[[Roadmap#Goals]]\n\n[[Roadmap]]\n" });
+    await createPage(app, { title: "Notes", content: "![[Roadmap#Goals]]\n\n[[Roadmap]]\n" });
     const notes = await getJson<{ content: string; updated: string }>(app, `/api/pages/${encodeId("Notes")}`);
-    expect(notes.content).toBe("[[Roadmap#Goals]]\n\n[[Roadmap]]");
+    expect(notes.content).toBe("![[Roadmap#Goals]]\n\n[[Roadmap]]");
 
     const roadmap = await getJson<{ updated: string }>(app, `/api/pages/${encodeId("Roadmap")}`);
     const renamed = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Roadmap")}`, { title: "Plan", expectedUpdated: roadmap.updated });
     expect(((await renamed.json()) as { rewrittenPages?: string[] }).rewrittenPages).toEqual(["Notes"]);
     const after = await getJson<{ content: string; updated: string }>(app, `/api/pages/${encodeId("Notes")}`);
-    expect(after.content).toBe("[[Plan#Goals]]\n\n[[Plan]]");
+    // The page embed (#5dpxwac4) and the link both follow the rename.
+    expect(after.content).toBe("![[Plan#Goals]]\n\n[[Plan]]");
     // The file itself keeps its final newline.
     expect(await readFile(join(dir, "Notes.md"), "utf8")).toMatch(/\[\[Plan\]\]\n$/);
 
