@@ -803,6 +803,7 @@ export function Editor({
   useEffect(() => {
     // Reload, close and quit flush this page too (#3t6v62cb).
     const unregister = registerSaver({
+      kind: "page",
       isDirty: () => autosave.isDirty(),
       hasFailed: () => autosave.hasFailed(),
       flush: () => autosave.flush(),
