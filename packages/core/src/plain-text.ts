@@ -80,6 +80,55 @@ export function plainText(markdown: string): string {
   return out.join("\n").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The "Linked from" snippet (#zrxjbn6e): the link itself stays raw
+ * (`[[Target|alias]]`, so the panel can highlight it) and the text around it
+ * reads as on screen, like Cmd+K snippets: no heading, list or to-do markers,
+ * other links as their text. About `radius` visible characters each side, cut
+ * at word boundaries, with "…" where text was left out.
+ *
+ * Context is taken from whole lines (before) and with a guard character
+ * (after), so line-start markers are recognised and text right after the link
+ * is never mistaken for one.
+ */
+export function linkSnippet(markdown: string, index: number, length: number, radius = 60): string {
+  const raw = markdown.slice(index, index + length);
+  // Enough raw text for `radius` visible characters even under heavy markup.
+  const span = radius * 6;
+  const lineStart = markdown.lastIndexOf("\n", Math.max(0, index - span)) + 1;
+  const rawBefore = markdown.slice(index - span > 0 ? lineStart : 0, index);
+  const afterEnd = Math.min(markdown.length, index + length + span);
+  const rawAfter = markdown.slice(index + length, afterEnd);
+
+  // Emphasis that opens before the link and closes after it has no pair on
+  // either side; drop the orphaned markers.
+  const orphans = (text: string) => text.replace(/\*\*|__|~~|==/g, "");
+  let before = orphans(plainText(rawBefore));
+  // A table row keeps its pipe guard so its cells still split; elsewhere a
+  // letter guard stops "- text" after the link from reading as a list item.
+  const inTable = /^\s*\|/.test(markdown.slice(markdown.lastIndexOf("\n", index - 1) + 1, index));
+  const guarded = plainText(`${inTable ? "|" : "x"}${rawAfter}`);
+  let after = orphans(inTable ? guarded : guarded.slice(1)).trimStart();
+  const cutBefore = before.length > radius;
+  if (cutBefore) {
+    before = before.slice(-radius);
+    const space = before.indexOf(" ");
+    if (space >= 0 && space < before.length - 1) before = before.slice(space + 1);
+  }
+  const cutAfter = after.length > radius || afterEnd < markdown.length;
+  if (after.length > radius) {
+    after = after.slice(0, radius);
+    const space = after.lastIndexOf(" ");
+    if (space > 0) after = after.slice(0, space);
+  }
+
+  // Keep the spacing the reader sees around the link ("See [[X]]." vs "[[X]]s").
+  const gapBefore = before.length > 0 && /\s$/.test(rawBefore) ? " " : "";
+  const gapAfter = after.length > 0 && /^\s/.test(rawAfter) ? " " : "";
+  const startsMid = cutBefore || (before.length > 0 && rawBefore.length < index);
+  return `${startsMid ? "…" : ""}${before}${gapBefore}${raw}${gapAfter}${after}${cutAfter && after.length > 0 ? "…" : ""}`;
+}
+
 export interface MarkdownLink {
   /** Where it points: a URL, file path or `[[page]]` target. */
   target: string;
