@@ -58,6 +58,9 @@ const SHAPES: Record<string, string> = {
   'setext = → text': 'Title\n===\nText under it.',
   'setext - → text': 'Sub\n---\nText under it.',
   'long setext underline → text': 'Title\n=========\nText under it.',
+  // @opus-hunter: a one-character underline is kept too.
+  'one-character setext - → text': 'Sub heading\n-\nText under.',
+  'one-character setext = → text': 'Main heading\n=\nText under.',
   // D21: extra empty lines between blocks are kept exactly.
   'two blank lines between blocks': '## Heading\n\n\nText after two blank lines.',
   'two blank lines, then touching blocks': 'First\n\n\n## Heading\nText',
