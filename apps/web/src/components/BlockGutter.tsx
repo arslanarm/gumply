@@ -12,6 +12,9 @@ import {
 import { insertBlockBelow, turnInto, type TurnIntoKind } from "../editor/block-editing.js";
 import { setCalloutFold } from "../editor/callout/callout.js";
 import { t, useT } from "../i18n/index.js";
+import { linkTargetFor } from "@gumply/core";
+import { ensureBlockId } from "../editor/page-embed/block-ids.js";
+import { getWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 
 interface HoverState {
   block: BlockRef;
@@ -332,6 +335,23 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     editor.view.focus();
   };
 
+  /**
+   * Copy link to block / Copy block embed (#5dpxwac4): add a `^id` if the
+   * block has none, then copy `[[Page#^id]]` or `![[Page#^id]]`.
+   */
+  const copyBlockLink = (block: BlockRef, embed: boolean) => {
+    const env = getWikiLinkEnvironment();
+    const page = env.pages.find((item) => item.id === env.pageId);
+    const id = ensureBlockId(editor, block);
+    if (!page || !id) return;
+    const target = linkTargetFor(page, env.pages).target;
+    const link = `${embed ? "!" : ""}[[${target}#^${id}]]`;
+    void navigator.clipboard.writeText(link).then(
+      () => window.dispatchEvent(new CustomEvent("gumply:toast", { detail: { message: t("sidebar.linkCopied"), icon: "link" } })),
+      () => env.reportError?.(t("sidebar.copyLinkBlocked")),
+    );
+  };
+
   const move = (block: BlockRef, direction: "up" | "down") => {
     const tr = moveBlock(editor.state, block, direction);
     if (tr) editor.view.dispatch(tr);
@@ -437,6 +457,24 @@ export function BlockGutter({ editor }: BlockGutterProps) {
             visibility: menu.placed ? "visible" : "hidden",
           }}
         >
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item"
+            data-testid="block-menu-item-copy-block-link"
+            onClick={() => run((block) => copyBlockLink(block, false))}
+          >
+            {t("blocks.copyLink")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="block-menu-item"
+            data-testid="block-menu-item-copy-block-embed"
+            onClick={() => run((block) => copyBlockLink(block, true))}
+          >
+            {t("blocks.copyEmbed")}
+          </button>
           <button
             type="button"
             role="menuitem"

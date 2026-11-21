@@ -20,6 +20,10 @@ export interface LinkSuggestion {
   board?: boolean;
   /** File/image row from `vault/attachments/`. */
   attachment?: Attachment;
+  /** `![[Page#…]]` (#5dpxwac4): a heading's text or `^blockid`. */
+  part?: string;
+  /** Indent of a heading row in the `![[Page#` menu (its level). */
+  level?: number;
 }
 
 const MAX_PAGES = 8;

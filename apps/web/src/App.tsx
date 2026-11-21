@@ -726,7 +726,16 @@ export function App() {
       else if (command === "search") openSearch();
     };
     window.addEventListener("gumply:command", onCommand);
-    return () => window.removeEventListener("gumply:command", onCommand);
+    // Toasts from parts of the editor that don't see the app (#5dpxwac4).
+    const onToast = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: unknown; icon?: unknown }>).detail;
+      if (typeof detail?.message === "string") setToast({ message: detail.message, icon: detail.icon === "link" ? "link" : "info" });
+    };
+    window.addEventListener("gumply:toast", onToast);
+    return () => {
+      window.removeEventListener("gumply:command", onCommand);
+      window.removeEventListener("gumply:toast", onToast);
+    };
   }, [handleCreate, openSearch]);
 
   /**

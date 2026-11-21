@@ -3843,3 +3843,11 @@ input {
   color: var(--text);
   font-weight: 600;
 }
+
+/* Obsidian block ids (` ^abc123`): kept as text, drawn faintly (#5dpxwac4). */
+.gumply-editor .block-id-chip {
+  color: var(--muted);
+  font-size: 0.78em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.6;
+}

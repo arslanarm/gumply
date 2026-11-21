@@ -332,6 +332,11 @@
       "hint": "Kanban, mind map, retro, flowchart, weekly plan",
       "keywords": ""
     },
+    "pagePreview": {
+      "title": "Page preview",
+      "hint": "Show a page, a section or a block",
+      "keywords": ""
+    },
     "embedWhiteboard": {
       "title": "Embed existing board…",
       "hint": "Show a whiteboard in this page",
@@ -531,7 +536,9 @@
     "startOpen": "Start open",
     "startClosed": "Start closed",
     "alwaysShow": "Always show contents",
-    "makeFoldable": "Make foldable"
+    "makeFoldable": "Make foldable",
+    "copyLink": "Copy link to block",
+    "copyEmbed": "Copy block embed"
   },
   "embed": {
     "open": "Open whiteboard “{{title}}”",
@@ -758,6 +765,7 @@
     "partMissingHint": "“{{part}}” isn't in “{{title}}” any more.",
     "alreadyHere": "“{{title}}” is embedded here already.",
     "loadFailed": "Couldn't load the page: {{error}}",
-    "empty": "Nothing here yet."
+    "empty": "Nothing here yet.",
+    "wholePage": "Whole page"
   }
 }

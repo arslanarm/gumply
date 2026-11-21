@@ -68,13 +68,17 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
                   name={item.attachment?.mime.startsWith("image/") ? "image" : "file"}
                   size={16}
                 />
+              ) : item.part ? (
+                <Icon name={item.part.startsWith("^") ? "grip" : "heading"} size={16} />
               ) : item.icon ? (
                 item.icon
               ) : (
                 <Icon name={item.board ? "board" : "file"} size={16} />
               )}
             </span>
-            <span className="link-menu-label">{item.label}</span>
+            <span className="link-menu-label" style={item.level ? { paddingLeft: `${(item.level - 1) * 12}px` } : undefined}>
+              {item.label}
+            </span>
           </button>
         ))
       )}

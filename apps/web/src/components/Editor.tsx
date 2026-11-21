@@ -32,6 +32,7 @@ import { setEmojiPickerOpener } from "../editor/emoji/store.js";
 import { setBoardEmbedActions, setWhiteboardCreator, type WhiteboardRequest } from "../editor/whiteboard-link.js";
 import { BoardEmbed, boardEmbedAttrs } from "../editor/board-embed/node.js";
 import { PageEmbed } from "../editor/page-embed/node.js";
+import { BlockIdChips } from "../editor/page-embed/block-ids.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { MarkdownLink } from "../editor/link.js";
@@ -669,6 +670,7 @@ export function Editor({
       BoardEmbed,
       PageEmbed,
       TagChips,
+      BlockIdChips,
       InlineImage,
       FileAttachment,
       Markdown.configure({

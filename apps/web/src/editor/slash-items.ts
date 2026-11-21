@@ -7,6 +7,7 @@ import { requestAttachmentPicker } from "./attachments/store.js";
 import { requestEmojiPicker } from "./emoji/store.js";
 import { requestWhiteboard } from "./whiteboard-link.js";
 import { t } from "../i18n/index.js";
+import { requestPagePreviewPicker } from "./wikilink/suggestion-extension.js";
 
 export interface SlashItem {
   key: string;
@@ -325,6 +326,24 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
       requestWhiteboard({ pickTemplate: true });
+    },
+  },
+  {
+    key: "page-preview",
+    get title() {
+      return t("slash.pagePreview.title");
+    },
+    get hint() {
+      return t("slash.pagePreview.hint");
+    },
+    // English words always match; the current language adds its own.
+    get keywords() {
+      return withLocalKeywords(["embed", "page", "preview", "transclude", "synced", "include", "section", "block"], t("slash.pagePreview.keywords"));
+    },
+    run: (editor, range) => {
+      // `![[` opens the page menu; picking a page then offers its outline.
+      requestPagePreviewPicker();
+      editor.chain().focus().deleteRange(range).insertContent("![[").run();
     },
   },
   {
