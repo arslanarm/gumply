@@ -21,9 +21,11 @@ export interface DesktopSettings {
   lastVault: string | null;
   recentVaults: string[];
   window: WindowState | null;
+  /** Interface language (`"en"`, `"ru"`…), or null to follow the system (#7h5utv23). */
+  language: string | null;
 }
 
-export const DEFAULT_SETTINGS: DesktopSettings = { lastVault: null, recentVaults: [], window: null };
+export const DEFAULT_SETTINGS: DesktopSettings = { lastVault: null, recentVaults: [], window: null, language: null };
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
@@ -52,7 +54,9 @@ export function normaliseSettings(raw: unknown): DesktopSettings {
       window.y = Math.round(w.y);
     }
   }
-  return { lastVault, recentVaults, window };
+  // A language code only (the app checks that it ships it).
+  const language = typeof data.language === "string" && /^[a-z]{2,3}$/.test(data.language) ? data.language : null;
+  return { lastVault, recentVaults, window, language };
 }
 
 export function loadSettings(dir: string): DesktopSettings {

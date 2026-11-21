@@ -24,6 +24,7 @@ import {
   type WindowState,
 } from "./settings.js";
 import { isAppDownload, suggestedName } from "./downloads.js";
+import { DESKTOP_LANGUAGES, desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,11 @@ let vaultPath: string | null = null;
 let window: BrowserWindow | null = null;
 /** Set once the pages are flushed and the app may really quit (#3t6v62cb). */
 let quitting = false;
+
+/** The menu and dialog language: the saved choice, else the system's (#7h5utv23). */
+function tr(key: string, vars?: Record<string, string | number>): string {
+  return desktopT(resolveDesktopLanguage(settings?.language, app.getLocale()), key, vars);
+}
 
 function persist(next: DesktopSettings): void {
   settings = next;
@@ -65,9 +71,9 @@ function isDirectory(path: string): boolean {
 
 async function pickExistingVault(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
-    title: "Open a vault",
-    message: "Choose the folder with your notes. Any Obsidian vault works.",
-    buttonLabel: "Open vault",
+    title: tr("vault.openTitle"),
+    message: tr("vault.openMessage"),
+    buttonLabel: tr("vault.openButton"),
     properties: ["openDirectory", "createDirectory"],
   });
   return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!;
@@ -75,9 +81,9 @@ async function pickExistingVault(): Promise<string | null> {
 
 async function pickNewVault(): Promise<string | null> {
   const result = await dialog.showSaveDialog({
-    title: "Create a new vault",
-    message: "Gumply keeps your notes as Markdown files in this folder.",
-    buttonLabel: "Create vault",
+    title: tr("vault.createTitle"),
+    message: tr("vault.createMessage"),
+    buttonLabel: tr("vault.createButton"),
     defaultPath: join(app.getPath("documents"), "Gumply"),
     properties: ["createDirectory", "showOverwriteConfirmation"],
   });
@@ -91,11 +97,10 @@ async function chooseFirstVault(): Promise<string | null> {
   for (;;) {
     const { response } = await dialog.showMessageBox({
       type: "question",
-      title: "Welcome to Gumply",
-      message: "Where should Gumply keep your notes?",
-      detail:
-        "Your notes are plain Markdown files in a folder of your choice (a vault). You can open an existing folder, for example an Obsidian vault, or create a new one.",
-      buttons: ["Open a folder…", "Create a new vault…", "Quit"],
+      title: tr("vault.welcomeTitle"),
+      message: tr("vault.welcomeMessage"),
+      detail: tr("vault.welcomeDetail"),
+      buttons: [tr("vault.welcomeOpen"), tr("vault.welcomeCreate"), tr("vault.welcomeQuit")],
       defaultId: 0,
       cancelId: 2,
       noLink: true,
@@ -109,7 +114,7 @@ async function chooseFirstVault(): Promise<string | null> {
 async function openVault(path: string): Promise<void> {
   const target = resolve(path);
   if (!isDirectory(target)) {
-    await dialog.showMessageBox({ type: "warning", message: "That folder doesn't exist anymore.", detail: target });
+    await dialog.showMessageBox({ type: "warning", message: tr("vault.missing"), detail: target });
     persist(withoutRecentVault(settings, target));
     buildMenu();
     return;
@@ -117,7 +122,7 @@ async function openVault(path: string): Promise<void> {
   const previous = server;
   if (previous) {
     // Save what the page still holds before switching (#3t6v62cb).
-    if (!(await flushRenderer()) && !(await confirmUnsaved("Switch vaults"))) return;
+    if (!(await flushRenderer()) && !(await confirmUnsaved("switchVaults"))) return;
     server = null;
     await previous.close();
   }
@@ -132,6 +137,16 @@ async function openVault(path: string): Promise<void> {
     // The installer's version (set from the release tag), not the source default.
     version: app.getVersion(),
     log: (message) => console.log(message),
+    // The interface language lives in the desktop settings (#7h5utv23): the
+    // window's own storage changes with its random port on every start.
+    uiLanguage: {
+      languages: DESKTOP_LANGUAGES,
+      get: () => settings.language,
+      set: (language) => {
+        persist({ ...settings, language });
+        buildMenu();
+      },
+    },
   });
   vaultPath = target;
   persist(withOpenedVault(settings, target));
@@ -162,14 +177,14 @@ async function flushRenderer(): Promise<boolean> {
 }
 
 /** The flush failed: ask before losing those edits. */
-async function confirmUnsaved(action: string): Promise<boolean> {
+async function confirmUnsaved(action: "switchVaults" | "close" | "quit"): Promise<boolean> {
   const options = {
     type: "warning" as const,
-    buttons: [`${action} anyway`, "Cancel"],
+    buttons: [tr(`unsaved.${action}`), tr("unsaved.cancel")],
     defaultId: 1,
     cancelId: 1,
-    message: "Some changes couldn't be saved.",
-    detail: "The last edits aren't on disk yet. If you continue, they're lost.",
+    message: tr("unsaved.message"),
+    detail: tr("unsaved.detail"),
   };
   const { response } =
     window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
@@ -260,7 +275,7 @@ function createWindow(): void {
     if (closeReady || quitting) return;
     event.preventDefault();
     void (async () => {
-      if (!(await flushRenderer()) && !(await confirmUnsaved("Close"))) return;
+      if (!(await flushRenderer()) && !(await confirmUnsaved("close"))) return;
       closeReady = true;
       window?.close();
     })();
@@ -271,11 +286,11 @@ function createWindow(): void {
     const target = window && !window.isDestroyed() ? window : null;
     const options = {
       type: "warning" as const,
-      buttons: ["Leave anyway", "Stay"],
+      buttons: [tr("unsaved.leave"), tr("unsaved.stay")],
       defaultId: 1,
       cancelId: 1,
-      message: "Unsaved changes",
-      detail: "Some changes couldn't be saved. If you leave, they're lost.",
+      message: tr("unsaved.leaveMessage"),
+      detail: tr("unsaved.leaveDetail"),
     };
     const choice = target ? dialog.showMessageBoxSync(target, options) : dialog.showMessageBoxSync(options);
     if (choice === 0) event.preventDefault();
@@ -325,22 +340,23 @@ function buildMenu(): void {
     label: path,
     click: () => void openVault(path),
   }));
+  const mac = process.platform === "darwin";
   const template: MenuItemConstructorOptions[] = [
     {
-      label: "&File",
+      label: tr("menu.file"),
       submenu: [
-        { id: "new-page", label: "New Page", accelerator: "CmdOrCtrl+N", click: () => sendCommand("new-page") },
-        { id: "new-whiteboard", label: "New Whiteboard", accelerator: "CmdOrCtrl+Shift+N", click: () => sendCommand("new-whiteboard") },
+        { id: "new-page", label: tr("menu.newPage"), accelerator: "CmdOrCtrl+N", click: () => sendCommand("new-page") },
+        { id: "new-whiteboard", label: tr("menu.newBoard"), accelerator: "CmdOrCtrl+Shift+N", click: () => sendCommand("new-whiteboard") },
         { type: "separator" },
-        { label: "Open Vault…", accelerator: "CmdOrCtrl+O", click: () => void openVaultFromMenu("open") },
-        { label: "Create New Vault…", click: () => void openVaultFromMenu("create") },
+        { id: "open-vault", label: tr("menu.openVault"), accelerator: "CmdOrCtrl+O", click: () => void openVaultFromMenu("open") },
+        { label: tr("menu.createVault"), click: () => void openVaultFromMenu("create") },
         {
-          label: "Open Recent",
+          label: tr("menu.openRecent"),
           submenu: [
-            ...(recent.length > 0 ? recent : [{ label: "No recent vaults", enabled: false }]),
+            ...(recent.length > 0 ? recent : [{ label: tr("menu.noRecent"), enabled: false }]),
             { type: "separator" },
             {
-              label: "Clear Recent",
+              label: tr("menu.clearRecent"),
               enabled: recent.length > 0,
               click: () => {
                 persist(withoutRecentVault(settings));
@@ -350,33 +366,66 @@ function buildMenu(): void {
           ],
         },
         {
-          label: "Reveal Vault in File Manager",
+          label: tr("menu.revealVault"),
           enabled: vaultPath !== null,
           click: () => vaultPath && void shell.openPath(vaultPath),
         },
         { type: "separator" },
-        { role: "quit" },
+        { role: "quit", label: tr("menu.quit") },
       ],
     },
-    { role: "editMenu" },
+    // Roles get explicit labels: Electron's own are English-only.
     {
-      label: "&View",
+      label: tr("menu.edit"),
       submenu: [
-        { id: "search", label: "Search", accelerator: "CmdOrCtrl+K", click: () => sendCommand("search") },
+        { role: "undo", label: tr("menu.undo") },
+        { role: "redo", label: tr("menu.redo") },
         { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        { role: "cut", label: tr("menu.cut") },
+        { role: "copy", label: tr("menu.copy") },
+        { role: "paste", label: tr("menu.paste") },
+        ...(mac ? ([{ role: "pasteAndMatchStyle", label: tr("menu.pasteAndMatchStyle") }] as MenuItemConstructorOptions[]) : []),
+        { role: "delete", label: tr("menu.delete") },
         { type: "separator" },
-        { role: "togglefullscreen" },
-        ...(isDev ? ([{ type: "separator" }, { role: "reload" }, { role: "toggleDevTools" }] as MenuItemConstructorOptions[]) : []),
+        { role: "selectAll", label: tr("menu.selectAll") },
       ],
     },
-    { role: "windowMenu" },
+    {
+      label: tr("menu.view"),
+      submenu: [
+        { id: "search", label: tr("menu.search"), accelerator: "CmdOrCtrl+K", click: () => sendCommand("search") },
+        { type: "separator" },
+        { role: "resetZoom", label: tr("menu.resetZoom") },
+        { role: "zoomIn", label: tr("menu.zoomIn") },
+        { role: "zoomOut", label: tr("menu.zoomOut") },
+        { type: "separator" },
+        { role: "togglefullscreen", label: tr("menu.fullScreen") },
+        ...(isDev
+          ? ([
+              { type: "separator" },
+              { role: "reload", label: tr("menu.reload") },
+              { role: "toggleDevTools", label: tr("menu.devTools") },
+            ] as MenuItemConstructorOptions[])
+          : []),
+      ],
+    },
+    {
+      label: tr("menu.window"),
+      submenu: [
+        { role: "minimize", label: tr("menu.minimize") },
+        ...(mac ? ([{ role: "zoom", label: tr("menu.zoom") }] as MenuItemConstructorOptions[]) : []),
+        { role: "close", label: tr("menu.close") },
+      ],
+    },
     {
       role: "help",
+      label: tr("menu.help"),
       submenu: [
-        { label: "About Gumply", click: () => void dialog.showMessageBox({ message: `Gumply ${app.getVersion()}`, detail: "Notes as plain Markdown, with links, a graph and whiteboards." }) },
+        {
+          id: "about",
+          label: tr("menu.about"),
+          click: () => void dialog.showMessageBox({ message: `Gumply ${app.getVersion()}`, detail: tr("about.detail") }),
+        },
       ],
     },
   ];
@@ -418,7 +467,7 @@ if (!app.requestSingleInstanceLock()) {
       // Tests save without the dialog (it would wait for a click).
       const testDir = process.env.GUMPLY_DESKTOP_DOWNLOAD_DIR;
       if (testDir) item.setSavePath(join(resolve(testDir), name));
-      else item.setSaveDialogOptions({ title: "Export board", defaultPath: join(app.getPath("downloads"), name) });
+      else item.setSaveDialogOptions({ title: tr("export.saveTitle"), defaultPath: join(app.getPath("downloads"), name) });
     });
 
     settings = loadSettings(app.getPath("userData"));
@@ -448,7 +497,7 @@ if (!app.requestSingleInstanceLock()) {
     closing = true;
     void (async () => {
       // Save the last edits while the server still runs (#3t6v62cb).
-      if (!(await flushRenderer()) && !(await confirmUnsaved("Quit"))) {
+      if (!(await flushRenderer()) && !(await confirmUnsaved("quit"))) {
         closing = false;
         return;
       }

@@ -678,5 +678,76 @@
     "language": "Language",
     "languageSystem": "Same as system",
     "languageCommand": "Language…"
+  },
+  "desktop": {
+    "menu": {
+      "file": "&File",
+      "newPage": "New Page",
+      "newBoard": "New Whiteboard",
+      "openVault": "Open Vault…",
+      "createVault": "Create New Vault…",
+      "openRecent": "Open Recent",
+      "noRecent": "No recent vaults",
+      "clearRecent": "Clear Recent",
+      "revealVault": "Reveal Vault in File Manager",
+      "quit": "Quit Gumply",
+      "edit": "&Edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste",
+      "pasteAndMatchStyle": "Paste and Match Style",
+      "delete": "Delete",
+      "selectAll": "Select All",
+      "view": "&View",
+      "search": "Search",
+      "resetZoom": "Actual Size",
+      "zoomIn": "Zoom In",
+      "zoomOut": "Zoom Out",
+      "fullScreen": "Toggle Full Screen",
+      "reload": "Reload",
+      "devTools": "Toggle Developer Tools",
+      "window": "&Window",
+      "minimize": "Minimize",
+      "zoom": "Zoom",
+      "close": "Close Window",
+      "help": "&Help",
+      "about": "About Gumply"
+    },
+    "about": {
+      "detail": "Notes as plain Markdown, with links, a graph and whiteboards."
+    },
+    "vault": {
+      "openTitle": "Open a vault",
+      "openMessage": "Choose the folder with your notes. Any Obsidian vault works.",
+      "openButton": "Open vault",
+      "createTitle": "Create a new vault",
+      "createMessage": "Gumply keeps your notes as Markdown files in this folder.",
+      "createButton": "Create vault",
+      "defaultName": "Gumply",
+      "welcomeTitle": "Welcome to Gumply",
+      "welcomeMessage": "Where should Gumply keep your notes?",
+      "welcomeDetail": "Your notes are plain Markdown files in a folder of your choice (a vault). You can open an existing folder, for example an Obsidian vault, or create a new one.",
+      "welcomeOpen": "Open a folder…",
+      "welcomeCreate": "Create a new vault…",
+      "welcomeQuit": "Quit",
+      "missing": "That folder doesn't exist anymore."
+    },
+    "unsaved": {
+      "switchVaults": "Switch vaults anyway",
+      "close": "Close anyway",
+      "quit": "Quit anyway",
+      "cancel": "Cancel",
+      "message": "Some changes couldn't be saved.",
+      "detail": "The last edits aren't on disk yet. If you continue, they're lost.",
+      "leave": "Leave anyway",
+      "stay": "Stay",
+      "leaveMessage": "Unsaved changes",
+      "leaveDetail": "Some changes couldn't be saved. If you leave, they're lost."
+    },
+    "export": {
+      "saveTitle": "Export board"
+    }
   }
 }

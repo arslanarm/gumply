@@ -25,13 +25,14 @@ afterEach(() => {
 describe("desktop settings (D26)", () => {
   it("starts empty and round-trips through the settings file", () => {
     const dir = temp();
-    expect(loadSettings(dir)).toEqual({ lastVault: null, recentVaults: [], window: null });
+    expect(loadSettings(dir)).toEqual({ lastVault: null, recentVaults: [], window: null, language: null });
     const next = withOpenedVault(loadSettings(dir), "/home/me/Notes");
     saveSettings(dir, { ...next, window: { x: 10, y: 20, width: 1000, height: 700, maximized: false } });
     expect(loadSettings(dir)).toEqual({
       lastVault: "/home/me/Notes",
       recentVaults: ["/home/me/Notes"],
       window: { x: 10, y: 20, width: 1000, height: 700, maximized: false },
+      language: null,
     });
     expect(readFileSync(join(dir, SETTINGS_FILE), "utf8").endsWith("\n")).toBe(true);
   });
@@ -56,14 +57,14 @@ describe("desktop settings (D26)", () => {
   it("survives a damaged or hand-edited file", () => {
     const dir = temp();
     writeFileSync(join(dir, SETTINGS_FILE), "{ not json");
-    expect(loadSettings(dir)).toEqual({ lastVault: null, recentVaults: [], window: null });
+    expect(loadSettings(dir)).toEqual({ lastVault: null, recentVaults: [], window: null, language: null });
     expect(
       normaliseSettings({
         lastVault: 42,
         recentVaults: ["/a", 7, "", "/a", "/b"],
         window: { width: 100, height: "x" },
       }),
-    ).toEqual({ lastVault: null, recentVaults: ["/a", "/b"], window: null });
+    ).toEqual({ lastVault: null, recentVaults: ["/a", "/b"], window: null, language: null });
     expect(normaliseSettings({ window: { width: 50.6, height: 80, x: 1.2 } }).window).toEqual({
       width: 400,
       height: 300,
