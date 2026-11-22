@@ -367,7 +367,8 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
     const timer = setTimeout(finish, 30_000);
     child.stdout!.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
-      if (stdout.includes('\n')) finish();
+      // Not the first newline: Electron on Windows writes a blank line at startup.
+      if (stdout.includes('"serverInfo"') && stdout.trimEnd().endsWith('}')) finish();
     });
     child.stderr!.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
     child.stdin!.on('error', () => undefined);
@@ -375,8 +376,9 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
     const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'probe', version: '1' } } };
     child.stdin!.write(`${JSON.stringify(initialize)}\n`);
   });
-  keepLog('packaged-mcp-probe.log', `stdout:\n${probe.stdout}\n\nstderr:\n${probe.stderr}\n\nexit: ${probe.code}`);
-  record('MCP raw initialize', `stdout ${probe.stdout ? probe.stdout.slice(0, 120) : '(nothing)'}; stderr ${probe.stderr.trim().slice(0, 200) || '(nothing)'}`);
+  keepLog('packaged-mcp-probe.log', `stdout (JSON):\n${JSON.stringify(probe.stdout)}\n\nstderr (JSON):\n${JSON.stringify(probe.stderr)}\n\nexit: ${probe.code}`);
+  // JSON-quoted, so a stray \n or \r\n before the answer shows.
+  record('MCP raw initialize', `stdout ${JSON.stringify(probe.stdout.slice(0, 200))}; stderr ${JSON.stringify(probe.stderr.slice(0, 200))}; exit ${probe.code ?? 'still running'}`);
   expect(probe.stdout, `no answer on stdout; stderr: ${probe.stderr}`).toContain('"serverInfo"');
 
   const client = new Client({ name: 'claude-desktop-smoke', version: '1.0.0' });
