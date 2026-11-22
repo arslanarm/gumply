@@ -37,6 +37,13 @@ export default defineConfig({
       },
       // One markdown-it in the bundle (#evh35bn7).
       markdownItAlias,
+      // #u562uvmf: one KaTeX. Mermaid's own `import("katex")` would load its
+      // nested 0.18 copy (a second ~256 kB chunk); it gets the app's KaTeX.
+      // Only the bare name: `katex/dist/…` (our CSS) resolves as usual.
+      {
+        find: /^katex$/,
+        replacement: fileURLToPath(new URL("../../node_modules/katex/dist/katex.mjs", import.meta.url)),
+      },
       // F2: Mermaid's optional ELK layout pulls in elkjs (EPL-2.0 / GPL-3.0),
       // which Gumply doesn't ship: a stub that refuses takes its place.
       {

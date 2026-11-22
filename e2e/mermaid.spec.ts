@@ -172,6 +172,20 @@ test('CSS loads nothing: a diagram\'s @import/url() never reaches the page, and 
   expect(outside).toEqual([]);
 });
 
+test('a $$…$$ label draws as text under the strict config, with one KaTeX for the app (#u562uvmf)', async ({ page, vault }) => {
+  // Mermaid typesets $$…$$ labels only with HTML labels (foreignObject), which
+  // strict mode turns off: the label shows its source. Same before and after
+  // Mermaid was pointed at the app's KaTeX.
+  const outside = watchNetwork(page);
+  await vault.seed([{ title: 'Math label', content: '```mermaid\nflowchart LR\n  A["$$x^2 + y$$"] --> B[plain]\n```' }]);
+  await open(page, 'Math label');
+  const diagram = page.getByTestId('mermaid-diagram');
+  await expect(diagram.locator('svg')).toBeVisible();
+  await expect(diagram).toContainText('$$x^2 + y$$');
+  await expect(diagram.locator('foreignObject, math')).toHaveCount(0);
+  expect(outside).toEqual([]);
+});
+
 test('/mermaid inserts a starter diagram; errors show inline; previews draw diagrams', async ({ page, vault }) => {
   await vault.seed([
     { title: 'Broken', content: '```mermaid\nflowchart LR\n  A --> \n  ((( nope\n```' },
