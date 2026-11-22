@@ -75,7 +75,7 @@ export function ListView(props: LayoutProps) {
             row.values[column.id] === null || row.values[column.id] === undefined ? null : (
               // As in Obsidian: an indented bullet with the value only.
               <li key={column.id} data-testid={`base-list-prop-${column.id}`}>
-                <ValueText value={row.values[column.id] ?? null} column={column} />
+                <ValueText value={row.values[column.id] ?? null} column={column} rowId={row.id} />
               </li>
             ),
           )}
@@ -90,7 +90,7 @@ export function ListView(props: LayoutProps) {
             .map((column, index) => (
               <span key={column.id} className="base-list-value">
                 {index > 0 ? <span className="base-list-sep">{separator}</span> : null}
-                <ValueText value={row.values[column.id] ?? null} column={column} />
+                <ValueText value={row.values[column.id] ?? null} column={column} rowId={row.id} />
               </span>
             ))}
         </span>
@@ -153,7 +153,7 @@ function Card({
             <div className="base-card-prop" key={column.id} data-testid={`base-card-prop-${column.id}`}>
               <span className="base-card-prop-name">{propertyLabel(column.id, props.config, t)}</span>
               <span className="base-card-prop-value">
-                <ValueText value={value} column={column} />
+                <ValueText value={value} column={column} rowId={row.id} />
               </span>
             </div>
           );

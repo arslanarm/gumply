@@ -988,6 +988,7 @@
     "label": "Daily note"
   },
   "properties": {
+    "editValue": "Edit {{property}}",
     "label": "Properties",
     "add": "Add property",
     "namePlaceholder": "Property name",

@@ -14,6 +14,7 @@ import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
+import { BaseText } from "./values.js";
 
 export const ROW_HEIGHT = 34;
 
@@ -417,12 +418,14 @@ function ValueCell(props: {
       <span className="base-chips">
         {value.map((item, index) => (
           <span className="base-chip" key={`${item}-${index}`}>
-            {column.type === "tags" ? `#${item.replace(/^#/, "")}` : display(item, "text")}
+            {column.type === "tags" ? `#${item.replace(/^#/, "")}` : <BaseText text={item} rowId={row.id} />}
           </span>
         ))}
       </span>
     ) : (
-      <span className={`base-value${column.type === "number" ? " is-number" : ""}`}>{display(value, column.type)}</span>
+      <span className={`base-value${column.type === "number" ? " is-number" : ""}`}>
+        {typeof value === "string" && column.type === "text" ? <BaseText text={value} rowId={row.id} /> : display(value, column.type)}
+      </span>
     );
 
   return (

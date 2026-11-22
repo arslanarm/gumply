@@ -4,16 +4,40 @@
  * (@opus-hunter's fixture, spec/api-bases). A setting at its default is
  * removed from the file, as Obsidian does.
  */
-import type { CSSProperties } from "react";
-import type { BaseColumn, BaseRow, BaseValue, BaseView } from "@gumply/core";
+import { createContext, useContext, type CSSProperties } from "react";
+import { resolveWikilink, type BaseColumn, type BaseRow, type BaseValue, type BaseView, type PageId, type PageMeta } from "@gumply/core";
 import { fileUrl } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
+import { hasWikilink, LinkedText } from "../components/PropertyLinks.js";
 import { useT } from "../i18n/index.js";
 import { isTitleColumn } from "./labels.js";
 import { display } from "./TableView.js";
 
+/** What `[[links]]` in values need: the vault's pages and how to open one (#vc4hivrr). */
+export const BaseLinks = createContext<{ pages: readonly PageMeta[]; onOpen: (id: PageId) => void } | null>(null);
+
+/**
+ * A text value with its `[[links]]` as links (a page opens; an attachment
+ * opens the file, resolved from the row's page). Other text as `display`.
+ */
+export function BaseText({ text, rowId }: { text: string; rowId: string }) {
+  const links = useContext(BaseLinks);
+  if (!links || !hasWikilink(text)) return <>{display(text, "text")}</>;
+  return (
+    <LinkedText
+      text={text}
+      pages={links.pages}
+      from={rowId}
+      onOpen={(link) => {
+        const page = resolveWikilink(link.targetTitle, links.pages);
+        if (page) links.onOpen(page.id);
+      }}
+    />
+  );
+}
+
 /** One value, compact: chips for lists, a tick for checkboxes, dates in the interface language. */
-export function ValueText({ value, column }: { value: BaseValue; column: BaseColumn }) {
+export function ValueText({ value, column, rowId }: { value: BaseValue; column: BaseColumn; rowId: string }) {
   const t = useT();
   if (value === null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
   if (typeof value === "boolean") {
@@ -28,13 +52,13 @@ export function ValueText({ value, column }: { value: BaseValue; column: BaseCol
       <span className="base-chips">
         {value.map((item, index) => (
           <span className="base-chip" key={`${item}-${index}`}>
-            {column.type === "tags" ? `#${item.replace(/^#/, "")}` : display(item, "text")}
+            {column.type === "tags" ? `#${item.replace(/^#/, "")}` : <BaseText text={item} rowId={rowId} />}
           </span>
         ))}
       </span>
     );
   }
-  return <span className="base-value">{display(value, column.type)}</span>;
+  return <span className="base-value">{typeof value === "string" && column.type === "text" ? <BaseText text={value} rowId={rowId} /> : display(value, column.type)}</span>;
 }
 
 /** The columns a card or list item shows under its title. */

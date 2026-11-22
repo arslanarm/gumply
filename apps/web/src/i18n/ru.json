@@ -1002,6 +1002,7 @@
     "label": "Ежедневная заметка"
   },
   "properties": {
+    "editValue": "Изменить «{{property}}»",
     "label": "Свойства",
     "add": "Добавить свойство",
     "namePlaceholder": "Название свойства",
