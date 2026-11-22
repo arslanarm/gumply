@@ -205,6 +205,7 @@ export {
   type TemplateContext,
   type TemplateSettings,
 } from "./templates.js";
+export { patchCanvasFile } from "./canvas-patch.js";
 export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
 export { linkSourceFolder, pickLinkTarget, preferredLinkPath } from "./link-order.js";
 export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";

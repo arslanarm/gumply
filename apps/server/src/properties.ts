@@ -166,3 +166,91 @@ export class PropertyTypesStore {
     this.cache = null;
   }
 }
+
+/** A plain YAML scalar that would read back as something else, or not as one string, needs quotes. */
+function plainNeedsQuotes(value: string): boolean {
+  return (
+    value.length === 0 ||
+    value !== value.trim() ||
+    /^[\[\]{}#&*!|>'"%@`,?:-]/.test(value) ||
+    /: | #|[\n\t]/.test(value) ||
+    /:$/.test(value) ||
+    /^(true|false|yes|no|on|off|null|~|[-+]?(\d[\d_]*(\.\d*)?|\.\d+)([eE][-+]?\d+)?|0x[0-9a-f]+|0o[0-7]+|\.inf|\.nan)$/i.test(value)
+  );
+}
+
+/**
+ * #3c86ify2: rewrite `[[links]]` inside frontmatter values (a rename, a folder
+ * move, a heading rename), changing only the values that hold a matching link
+ * (D37). Top-level text values and items of lists of text values are
+ * rewritten, in their own quoting style:
+ * - `"double"`: re-quoted as JSON (`"` and `\` escaped);
+ * - `'single'`: `'` doubled;
+ * - plain: kept plain unless the new text needs quotes, then double-quoted.
+ * Gumply's header keys, `tags`, block scalars (`|`, `>`) and anything with
+ * anchors or tags are left alone. Returns the YAML unchanged when nothing
+ * matched, or when the result wouldn't read back as exactly the new values.
+ */
+export function rewritePropertyLinks(
+  yaml: string,
+  rewrite: (text: string) => { content: string; count: number },
+): { yaml: string; count: number } {
+  const unchanged = { yaml, count: 0 };
+  if (!yaml.includes("[[")) return unchanged;
+  const document = parseDocument(yaml, { uniqueKeys: false, prettyErrors: false });
+  if (document.errors.length > 0 || !isMap(document.contents)) return unchanged;
+
+  const edits: Array<{ start: number; end: number; text: string; value: string }> = [];
+  let count = 0;
+  const visit = (node: Node | null | undefined) => {
+    if (!simpleScalar(node) || typeof node.value !== "string" || !node.value.includes("[[")) return;
+    const range = (node as { range?: [number, number, number] }).range;
+    if (!range) return;
+    const result = rewrite(node.value);
+    if (result.count === 0 || result.content === node.value) return;
+    const value = result.content;
+    const type = (node as { type?: string }).type;
+    let text: string;
+    if (type === "QUOTE_SINGLE") text = `'${value.replace(/'/g, "''")}'`;
+    else if (type === "PLAIN" && !plainNeedsQuotes(value)) text = value;
+    else text = JSON.stringify(value);
+    edits.push({ start: range[0], end: range[1], text, value });
+    count += result.count;
+  };
+  const seen = new Set<string>();
+  for (const pair of document.contents.items) {
+    const keyNode = pair.key as Node | null;
+    if (!isScalar(keyNode) || typeof keyNode.value !== "string") continue;
+    const key = keyNode.value;
+    if (HEADER_KEYS.includes(key) || key === "tags" || seen.has(key)) continue;
+    seen.add(key);
+    const value = pair.value as Node | null;
+    if (isSeq(value)) {
+      if (value.anchor || value.tag) continue;
+      for (const item of value.items) visit(item as Node);
+    } else {
+      visit(value);
+    }
+  }
+  if (edits.length === 0) return unchanged;
+
+  let out = yaml;
+  for (const edit of [...edits].sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+  // The result must read back as the same keys with only those values changed.
+  const before = readRawProperties(yaml);
+  const after = readRawProperties(out);
+  const expected = new Map(edits.map((edit) => [edit.value, true]));
+  if (before.length !== after.length) return unchanged;
+  for (let index = 0; index < before.length; index += 1) {
+    const a = before[index]!;
+    const b = after[index]!;
+    if (a.key !== b.key || a.editable !== b.editable) return unchanged;
+    const left = Array.isArray(a.value) ? a.value : [a.value];
+    const right = Array.isArray(b.value) ? b.value : [b.value];
+    if (Array.isArray(a.value) !== Array.isArray(b.value) || left.length !== right.length) return unchanged;
+    for (let at = 0; at < left.length; at += 1) {
+      if (left[at] !== right[at] && !(typeof right[at] === "string" && expected.has(right[at] as string))) return unchanged;
+    }
+  }
+  return { yaml: out, count };
+}

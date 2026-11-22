@@ -223,7 +223,8 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       await snapshot(meta.id, doc.meta.updated, "add_to_board", client);
       try {
         // A new board object: the store's copy is never mutated in place. Unknown keys stay (D25).
-        const saved = await vault.store.updateBoard(meta.id, { board: { ...doc.board, nodes: [...nodes, node] }, expectedUpdated: doc.meta.updated, writer });
+        // `minimal` (#3c86ify2): only the new node is added; the rest of the file keeps its bytes.
+        const saved = await vault.store.updateBoard(meta.id, { board: { ...doc.board, nodes: [...nodes, node] }, expectedUpdated: doc.meta.updated, writer, minimal: true });
         await audit(root, { tool: "add_to_board", id: saved.meta.id, before: doc.meta.updated, after: saved.meta.updated, client }, ctx.logMaxBytes);
         return ok({ boardId: saved.meta.id, nodeId, updated: saved.meta.updated }, `Added a ${item.type} card to "${saved.meta.title}" (node ${nodeId}).`);
       } catch (error) {
