@@ -10,6 +10,7 @@ import type {
   CanvasBoard,
   DailyNoteSettings,
   Attachment,
+  VaultImage,
   Backlink,
   GraphData,
   Page,
@@ -233,6 +234,9 @@ export const api = {
 
   /** D18: files in `vault/attachments/`, sorted by name. */
   listAttachments: (): Promise<Attachment[]> => request("/attachments"),
+
+  /** #3ht5gh6q: every image in the vault, newest first. */
+  listImages: (): Promise<VaultImage[]> => request("/files/images"),
 
   /** D18: multipart upload; the server dedupes the name and writes the file. */
   uploadAttachment: (file: File): Promise<Attachment> => {

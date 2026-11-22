@@ -95,7 +95,7 @@ test.describe('page cover and background (#385sexd6)', () => {
 
     await addCover(page);
     await page.getByTestId('cover-tab-vault').click();
-    await page.getByTestId('cover-vault-wide.png').click();
+    await page.getByTestId('cover-vault-attachments/wide.png').click();
     await expect(page.getByTestId('page-cover-image')).toBeVisible();
     await expect.poll(() => read('Plan.md')).toBe(original.replace('aliases: [Plan]\n', 'aliases: [Plan]\ncover: "[[attachments/wide.png]]"\n'));
 
@@ -157,6 +157,25 @@ test.describe('page cover and background (#385sexd6)', () => {
     await page.getByTestId('cover-remove').click();
     await expect(page.getByTestId('page-cover')).toHaveCount(0);
     await expect.poll(() => read('Banner note.md')).toBe(original.replace('banner_icon: 🏔️\n', 'banner_icon: 🏔️\ncover: none\n'));
+  });
+
+  test('Vault images lists images anywhere in the vault, with a search once there are many (#3ht5gh6q)', async ({ page, request, vault }) => {
+    void vault;
+    const original = 'Body.\n';
+    const many: Record<string, Buffer | string> = { 'Pick.md': original, 'att/mountain.png': PNG, '.trash/x/gone.png': PNG };
+    for (let index = 0; index < 32; index += 1) many[`assets/shot-${String(index).padStart(2, '0')}.png`] = PNG;
+    await write(many);
+    await open(page, request, 'Pick');
+    await addCover(page);
+    await page.getByTestId('cover-tab-vault').click();
+    await expect(page.getByTestId('cover-vault-att/mountain.png')).toBeVisible();
+    await expect(page.locator('[data-testid^="cover-vault-.trash"]')).toHaveCount(0);
+    // 33 images: the search box appears and filters by name or folder.
+    await page.getByTestId('cover-vault-search').fill('mount');
+    await expect(page.locator('.cover-vault-item')).toHaveCount(1);
+    await page.getByTestId('cover-vault-att/mountain.png').click();
+    await expect(page.getByTestId('page-cover-image')).toBeVisible();
+    await expect.poll(() => read('Pick.md')).toBe(`---\ncover: "[[att/mountain.png]]"\n---\n\n${original}`);
   });
 
   test('a bare [[name.png]] cover resolves wherever the image lives, as in Obsidian (#8k4ssrkb)', async ({ page, request, vault }) => {

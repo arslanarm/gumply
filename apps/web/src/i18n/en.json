@@ -1252,11 +1252,12 @@
     "chooseImage": "Choose an image",
     "uploading": "Uploading…",
     "uploadHint": "Saved in the vault's attachments folder.",
-    "noImages": "No images in the attachments folder yet.",
+    "noImages": "No images in the vault yet.",
     "linkPlaceholder": "Paste an image link…",
     "saveLink": "Save to vault",
     "saving": "Saving…",
-    "linkHint": "The image is downloaded into the vault, so the page works offline."
+    "linkHint": "The image is downloaded into the vault, so the page works offline.",
+    "searchImages": "Search images…"
   },
   "background": {
     "button": "Background",
