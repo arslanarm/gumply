@@ -469,8 +469,16 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
 function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProps, "onInvalid">) {
   const t = useT();
   const saved = useMemo(
-    () => (Array.isArray(property.value) ? property.value : property.value ? [String(property.value)] : []),
-    [property.value],
+    () =>
+      // #6imze6ux: a tags string with spaces or commas shows the tags Gumply reads from it (one chip each).
+      property.issue?.kind === "tags-string"
+        ? property.issue.tags
+        : Array.isArray(property.value)
+          ? property.value
+          : property.value
+            ? [String(property.value)]
+            : [],
+    [property.value, property.issue],
   );
   // Chips change at once (typing the next one before the save lands keeps both).
   const [items, change] = useOptimistic(saved);

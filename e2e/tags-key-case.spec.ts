@@ -53,6 +53,11 @@ test('#6imze6ux: a tags string Obsidian won\'t read is flagged; "Make it a list"
   await page.goto('/#/Str');
   const flag = page.getByTestId('property-issue-tags-string');
   await expect(flag).toBeVisible();
+  // The row shows the two tags Gumply reads (not one "five, six" chip), and the header doesn't repeat them.
+  const row = page.getByTestId('property-value-tags');
+  await expect(row.locator('.property-chip')).toHaveText(['#five', '#six']);
+  await expect(page.locator('.page-tag', { hasText: '#five' })).toHaveCount(0);
+  await expect(page.locator('.page-tag', { hasText: '#six' })).toHaveCount(0);
   await expect(flag.locator('.property-mismatch')).toHaveAttribute('title', "Obsidian won't read these as tags. Make it a list");
   // The specific flag replaces the generic "doesn't match the type" one.
   await expect(page.getByTestId('property-mismatch')).toHaveCount(0);

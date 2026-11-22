@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { frontmatterKey, PAGE_COLORS, type Page, type PageColor, type PageId } from "@gumply/core";
+import { frontmatterKey, normalizeTags, PAGE_COLORS, type Page, type PageColor, type PageId } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
 import { loadEmojiData } from "../lib/emoji/data.js";
 import { preloadGraph } from "../lazy-parts.js";
@@ -268,7 +268,8 @@ export function PageHeader({
   // `tags` in any case, the first in file order (#ippqkgus).
   const tagsKey = frontmatterKey((page.properties ?? []).map((property) => property.key), "tags");
   const propertyTags = page.properties?.find((property) => property.key === tagsKey)?.value;
-  const shownAsProperty = new Set(Array.isArray(propertyTags) ? propertyTags.map((tag) => tag.toLowerCase()) : []);
+  // The tags the property shows: a list, or what Gumply reads from a string (`five, six` → five, six; #6imze6ux).
+  const shownAsProperty = new Set(normalizeTags(propertyTags ?? null).map((tag) => tag.toLowerCase()));
   const headerTags = page.tags.filter((tag) => !shownAsProperty.has(tag.toLowerCase()));
 
   return (
