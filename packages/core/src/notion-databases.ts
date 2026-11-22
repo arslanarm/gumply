@@ -208,12 +208,15 @@ const YAML_OUT = { lineWidth: 0, minContentWidth: 0, flowCollectionPadding: fals
 export function notionBaseSource(spec: NotionBaseSpec): string {
   const views: Record<string, unknown>[] = [{ type: "table", name: "Table", order: ["file.name", ...spec.columns] }];
   if (spec.kanban) {
+    // Obsidian's own key order (#hmg9zbd9): it rewrites a .base whose Kanban view
+    // has `order` before `groupBy`/`groupOrder` on first open. Checked against
+    // fixtures/bases/all-settings.obsidian-1.14.4.base, which Obsidian wrote.
     views.push({
       type: "kanban",
       name: "Board",
-      order: ["file.name", ...spec.kanban.columns],
       groupBy: { property: spec.kanban.key, direction: "ASC" },
       groupOrder: spec.kanban.groups,
+      order: ["file.name", ...spec.kanban.columns],
     });
   }
   const doc = new Document({ filters: { and: [`file.folder == ${JSON.stringify(spec.rowsFolder)}`] }, views });

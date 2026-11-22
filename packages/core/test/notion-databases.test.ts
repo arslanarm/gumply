@@ -85,6 +85,19 @@ describe("inferNotionColumn", () => {
   });
 });
 
+describe("the .base is written in Obsidian's own key order (#hmg9zbd9)", () => {
+  it("a Kanban view's keys come in the order Obsidian 1.14.4 writes them, so it doesn't rewrite the file on first open", () => {
+    const keysOf = (source: string, type: string) => {
+      const view = (parseYaml(source) as { views: Array<Record<string, unknown>> }).views.find((item) => item.type === type)!;
+      return Object.keys(view);
+    };
+    const obsidian = keysOf(readFileSync(join(here, "fixtures/bases/all-settings.obsidian-1.14.4.base"), "utf8"), "kanban");
+    const ours = keysOf(notionBaseSource({ rowsFolder: "R", columns: ["a"], kanban: { key: "s", groups: ["x"], columns: ["a"] } }), "kanban");
+    expect(ours).toEqual(obsidian.filter((key) => ours.includes(key)));
+    expect(ours).toEqual(["type", "name", "groupBy", "groupOrder", "order"]);
+  });
+});
+
 describe("the generated files read back", () => {
   it("each .base parses, filters the rows folder and keeps the column order", () => {
     const tasks = parseBase(readFileSync(join(EXPECTED, "Tasks.base"), "utf8"));
