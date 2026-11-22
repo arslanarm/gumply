@@ -15,6 +15,7 @@
     "@gumply/core": "*",
     "@tanstack/react-virtual": "^3.14.26",
     "@tiptap/core": "^2.27.3",
+    "@tiptap/extension-blockquote": "^2.27.3",
     "@tiptap/extension-bullet-list": "^2.27.3",
     "@tiptap/extension-code": "^2.27.3",
     "@tiptap/extension-code-block": "^2.27.3",

@@ -6150,6 +6150,12 @@ input {
   cursor: help;
 }
 
+/* A tab inside text (#ftx3awn7): keeps its width. */
+.raw-inline-tab {
+  white-space: pre;
+  tab-size: 4;
+}
+
 /* ---------- v0.8 C1: unlinked mentions under "Linked from" ---------- */
 .mentions {
   margin-top: 1rem;

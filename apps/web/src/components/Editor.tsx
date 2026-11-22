@@ -56,7 +56,7 @@ import {
 } from "../editor/raw-markdown/markup.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
 import { MarkdownListSource } from "../editor/raw-markdown/list-source.js";
-import { MarkdownBlockJoins } from "../editor/raw-markdown/block-joins.js";
+import { MarkdownBlockJoins, MarkdownBlockquote } from "../editor/raw-markdown/block-joins.js";
 import { Callout, CalloutTitle } from "../editor/callout/callout.js";
 import { Column, Columns } from "../editor/columns/columns.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
@@ -67,7 +67,7 @@ import {
   GumplyTableRow,
   registerTableSources,
 } from "../editor/table/table.js";
-import { MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
+import { BreakAwareEnter, MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
 import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/raw-markdown/list-style.js";
 import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
@@ -76,6 +76,7 @@ import type { SlashItem } from "../editor/slash-items.js";
 import { AccessibleTaskItem } from "../editor/task-item.js";
 import { TaskShortcut } from "../editor/task-shortcut.js";
 import { setWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
+import { loadLinkableFiles } from "../lib/linkable-files.js";
 import { headingKey } from "@gumply/core";
 import { WikiLink } from "../editor/wikilink/node.js";
 import {
@@ -324,12 +325,18 @@ export function Editor({
       openLink: onOpenLink,
       createLink: onCreateLink,
       reportError: (message) => onAttachmentErrorRef.current?.(message),
-      addAttachment: (attachment) =>
+      addAttachment: (attachment) => {
         setAttachments((list) =>
           list.some((item) => item.path === attachment.path) ? list : [...list, attachment],
-        ),
+        );
+        // #4usgpjh8: the `![[` menu offers the new file too.
+        loadLinkableFiles(page.id, true);
+      },
     });
   }, [page.id, page.fileLinks, pages, attachments, onOpenLink, onCreateLink]);
+
+  // #4usgpjh8: the vault's files for the `![[` menu, with links from this page.
+  useEffect(() => loadLinkableFiles(page.id), [page.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -687,6 +694,8 @@ export function Editor({
         hardBreak: false,
         bulletList: false,
         codeBlock: false,
+        // Registered below: nested `>>` markers kept as written (#ftx3awn7).
+        blockquote: false,
         // Registered below as the innermost mark (editor/highlight.ts).
         code: false,
       }),
@@ -705,9 +714,11 @@ export function Editor({
       MarkdownMarkup,
       MarkdownListSource,
       MarkdownBlockJoins,
+      MarkdownBlockquote,
       EmptyLineParagraph,
       MarkdownText,
       MarkdownHardBreak,
+      BreakAwareEnter,
       RawBlock,
       RawInline,
       Callout,

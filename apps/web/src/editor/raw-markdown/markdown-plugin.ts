@@ -273,9 +273,17 @@ function softBreakSpaces(block: any, sourceLines: readonly string[]): void {
     const lineIndex = firstLine === null ? null : firstLine + allNewlines.indexOf(at) + 1;
     const source = lineIndex === null ? undefined : sourceLines[lineIndex];
     const lead = source === undefined ? undefined : (/^[ \t]*/.exec(source)?.[0] ?? "");
+    const next = content.slice(at + 1 + after.length, at + 1 + after.length + 1);
     // A line under a quote starts with `>`: its prefix is the block's, not raw.
-    const usable = source !== undefined && lead !== undefined && !source.slice(lead.length).startsWith(">") && source.slice(lead.length).startsWith(content.slice(at + 1 + after.length, at + 1 + after.length + 1));
-    token.attrSet(BREAK_SPACE_ATTR, JSON.stringify(usable ? [before, after, lead] : [before, after]));
+    const usable = source !== undefined && lead !== undefined && !source.slice(lead.length).startsWith(">") && source.slice(lead.length).startsWith(next);
+    // #ftx3awn7: a quote line's own prefix as written (`>> `, `> ` for a lazy
+    // line of a nested quote), so markers are written back as read.
+    const prefix = source !== undefined && source.slice(lead?.length ?? 0).startsWith(">") ? (/^[ \t>]*/.exec(source)?.[0] ?? "") : null;
+    const quoted = prefix !== null && source!.slice(prefix.length).startsWith(next) ? prefix : null;
+    token.attrSet(
+      BREAK_SPACE_ATTR,
+      JSON.stringify(usable ? [before, after, lead] : quoted !== null ? [before, after, "", quoted] : [before, after]),
+    );
   });
 }
 
@@ -308,6 +316,40 @@ function entityRule(state: any): void {
         token.info = "escape";
       }
     }
+  }
+}
+
+/**
+ * Tabs inside text (#ftx3awn7, D37): the editor's HTML parse collapses
+ * whitespace, so `two⇥⇥tabs` came back as `two tabs`. Each tab becomes a raw
+ * `tab` atom, written back as is and shown at a tab's width. Indentation is
+ * structure, not text, so it never reaches here.
+ */
+function tabRule(state: any): void {
+  for (const block of state.tokens as any[]) {
+    if (block.type !== "inline" || !block.children) continue;
+    if (!(block.children as any[]).some((token) => token.type === "text" && token.content.includes("\t"))) continue;
+    const out: any[] = [];
+    for (const token of block.children as any[]) {
+      if (token.type !== "text" || !token.content.includes("\t")) {
+        out.push(token);
+        continue;
+      }
+      token.content.split(/(\t)/).forEach((part: string) => {
+        if (part === "") return;
+        if (part === "\t") {
+          const tab = new state.Token("gumply_raw_inline", "", 0);
+          tab.content = "\t";
+          tab.info = "tab";
+          out.push(tab);
+        } else {
+          const text = new state.Token("text", "", 0);
+          text.content = part;
+          out.push(text);
+        }
+      });
+    }
+    block.children = out;
   }
 }
 
@@ -425,6 +467,9 @@ export function rawMarkdownPlugin(md: any): void {
   md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
   if (md.core.ruler.__find__("text_join") !== -1) {
     md.core.ruler.before("text_join", "gumply_entities", entityRule);
+    md.core.ruler.after("text_join", "gumply_tabs", tabRule);
+  } else {
+    md.core.ruler.after("gumply_inline_images", "gumply_tabs", tabRule);
   }
   md.inline.ruler.before("link", "gumply_raw_inline", rawInlineRule);
   wrapLinkRules(md);
