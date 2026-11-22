@@ -215,16 +215,15 @@ test.describe('wikilinks and backlinks', () => {
     await expect(missing).toHaveAttribute('data-resolved', 'false');
     await expect(page.getByTestId('link-menu')).toHaveCount(0);
 
-    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', {
-      timeout: 10_000,
-    });
-    const saved = await (
-      await request.get(`${API_URL}/api/pages/${encodeURIComponent(note.id)}`)
-    ).json();
+    // #9jrdufrh: poll the file until the last link is written. Right after typing,
+    // save-status can still show the previous save's "saved" for a moment.
+    const content = async () =>
+      ((await (await request.get(`${API_URL}/api/pages/${encodeURIComponent(note.id)}`)).json()) as { content: string }).content;
+    await expect.poll(content, { timeout: 10_000 }).toContain('[[Missing Page]]');
+    const saved = { content: await content() };
     expect(saved.content).toContain('[[Target]]');
     expect(saved.content).toContain('[[Target|home]]');
     expect(saved.content).toContain('[[Target#Section]]');
-    expect(saved.content).toContain('[[Missing Page]]');
 
     // The nodes survive a reload (no suggestion text left behind).
     await page.reload();
