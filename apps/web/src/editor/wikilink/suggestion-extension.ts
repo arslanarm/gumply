@@ -127,6 +127,14 @@ function linkPartSuggestions(query: string): Promise<LinkSuggestion[]> | null {
   return resolveWikilink(name, env.pages, env.pageId) ? partSuggestions(query, { link: true }) : null;
 }
 
+/** The suggestion these props were made for is still the open one. */
+function isCurrent(props: SuggestionProps<LinkSuggestion>): boolean {
+  const state = wikiLinkPluginKey.getState(props.editor.state) as
+    | { active: boolean; range: { from: number }; query: string | null }
+    | undefined;
+  return !!state?.active && state.range.from === props.range.from && state.query === props.query;
+}
+
 export interface LinkMenuHandlers {
   onStart: (props: SuggestionProps<LinkSuggestion>) => void;
   onUpdate: (props: SuggestionProps<LinkSuggestion>) => void;
@@ -322,9 +330,17 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
 
             if (props.kind === "create") getWikiLinkEnvironment().createLink(props.title);
           },
+          // TipTap awaits `items` before onStart/onUpdate. `[[Page#…` fetches
+          // the page's headings, so a late answer could reopen the menu after
+          // `]]` already closed it (#cafeydb8): only show it for a suggestion
+          // that is still active with the same query.
           render: () => ({
-            onStart: (props) => handlers.current.onStart(props),
-            onUpdate: (props) => handlers.current.onUpdate(props),
+            onStart: (props) => {
+              if (isCurrent(props)) handlers.current.onStart(props);
+            },
+            onUpdate: (props) => {
+              if (isCurrent(props)) handlers.current.onUpdate(props);
+            },
             onKeyDown: (props) => handlers.current.onKeyDown(props),
             onExit: () => {
               embedKindOnly = null;
