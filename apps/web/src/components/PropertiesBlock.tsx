@@ -259,6 +259,9 @@ function PropertyRow(props: PropertyRowProps) {
                   className="property-issue-fix"
                   data-testid="property-make-list"
                   data-tooltip={t("properties.tagsString")}
+                  // Its own name: without it, Chrome adds the tooltip's ::after text to the name, so a
+                  // screen reader would read the hint twice (name, then the description).
+                  aria-label={t("properties.makeList")}
                   aria-describedby={issueId}
                   onClick={() => void props.onSave(property.issue!.tags)}
                 >
