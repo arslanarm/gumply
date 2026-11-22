@@ -136,25 +136,46 @@ test.describe('database view layouts (D34)', () => {
     await expect.poll(() => read('Work/Tasks.base')).toBe(BASE);
   });
 
-  test('Cards: with no cover anywhere, no empty covers; a long title wraps left-aligned next to its icon', async ({ page, request, vault }) => {
+  test('Cards: a view without `image` draws no cover boxes', async ({ page, request, vault }) => {
     void vault;
-    const long = 'A rather long page title that has to wrap onto a second line';
-    await writeVault(request, {
-      'Work/Tasks.base': BASE.replace('    image: note.cover\n', ''),
-      [`Work/${long}.md`]: '---\nstatus: Doing\n---\nL\n',
-      'Work/Beta.md': '---\nstatus: Doing\n---\nB\n',
-    });
+    await writeVault(request, { ...FILES, 'Work/Tasks.base': BASE.replace('    image: note.cover\n', '') });
     await page.goto('/#/Work/Tasks.base');
     await page.getByTestId('base-tab-Gallery').click();
     await expect(page.getByTestId('base-card-Work/Beta')).toBeVisible();
-    await expect(page.getByTestId('base-card-image-empty')).toHaveCount(0);
+    // Alpha has a cover value, but the view doesn't show covers.
+    await expect(page.locator('.base-card-image')).toHaveCount(0);
+  });
+
+  test('Cards: with `image` set and no cover anywhere, every card gets a 1:1 empty box; a long title is one line with an ellipsis', async ({ page, request, vault }) => {
+    void vault;
+    // As Obsidian 1.14.4 draws it (#2su9ikg4): boxes follow the view's `image` key, not whether any card has a cover.
+    const long = 'A rather long page title that cannot possibly fit on one line of a card';
+    await writeVault(request, {
+      'Work/Tasks.base': BASE,
+      'Work/Alpha.md': '---\nstatus: Todo\n---\nA\n',
+      'Work/Beta.md': '---\nstatus: Doing\n---\nB\n',
+      [`Work/${long}.md`]: '---\nstatus: Doing\n---\nL\n',
+    });
+    await page.goto('/#/Work/Tasks.base');
+    await page.getByTestId('base-tab-Gallery').click();
+    const beta = page.getByTestId('base-card-Work/Beta');
     const card = page.getByTestId(`base-card-Work/${long}`);
+    await expect(beta).toBeVisible();
+    await expect(page.getByTestId('base-card-image')).toHaveCount(0);
+    for (const one of [beta, card]) {
+      const empty = (await one.getByTestId('base-card-image-empty').boundingBox())!;
+      expect(Math.abs(empty.width - empty.height)).toBeLessThanOrEqual(1);
+    }
     const title = card.locator('.base-title-text');
-    expect((await title.boundingBox())!.height).toBeGreaterThan(30);
+    const betaTitle = beta.locator('.base-title-text');
+    // One line, cut with an ellipsis, left-aligned; the card is as tall as its neighbour.
+    expect(Math.abs((await title.boundingBox())!.height - (await betaTitle.boundingBox())!.height)).toBeLessThanOrEqual(1);
+    expect(await title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect(title).toHaveCSS('text-overflow', 'ellipsis');
     await expect(card.locator('.base-title-link')).toHaveCSS('text-align', 'left');
-    // The icon sits by the first line, not in the middle of the wrapped title.
-    const icon = (await card.locator('.base-title-icon').boundingBox())!;
-    expect(icon.y - (await title.boundingBox())!.y).toBeLessThan(8);
+    await expect(card.locator('.base-title-link')).toHaveAttribute('title', long);
+    expect(Math.abs((await card.boundingBox())!.height - (await beta.boundingBox())!.height)).toBeLessThanOrEqual(1);
+    expect((await title.boundingBox())!.y).toBeCloseTo((await betaTitle.boundingBox())!.y, 0);
   });
 
   test('Properties panel: Shown (in view order), then Hidden; a click moves a property and writes order as before', async ({ page, request, vault }) => {

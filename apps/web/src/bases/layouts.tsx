@@ -7,12 +7,12 @@
  * Many items: cards and list items use `content-visibility: auto`, so only
  * what's on screen is laid out and painted.
  */
-import { useMemo, useState, type DragEvent } from "react";
+import { useState, type DragEvent } from "react";
 import { noteKey, propertyId, type BaseConfig, type BaseGroup, type BaseRow, type BaseValue, type BaseView, type BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
 import { propertyLabel } from "./labels.js";
-import { detailColumns, ImageBox, imageOf, numberSetting, ValueText } from "./values.js";
+import { detailColumns, ImageBox, numberSetting, ValueText } from "./values.js";
 
 export interface LayoutProps {
   config: BaseConfig;
@@ -26,7 +26,7 @@ export interface LayoutProps {
   onNewRow?: (values?: Record<string, BaseValue>) => void;
 }
 
-function TitleButton({ row, onOpen }: { row: BaseRow; onOpen: (id: string) => void }) {
+function TitleButton({ row, onOpen, tooltip }: { row: BaseRow; onOpen: (id: string) => void; tooltip?: boolean }) {
   const t = useT();
   return (
     <button
@@ -34,6 +34,7 @@ function TitleButton({ row, onOpen }: { row: BaseRow; onOpen: (id: string) => vo
       className="base-title-link"
       data-testid={`base-open-${row.id}`}
       aria-label={t("bases.openPage", { title: row.title })}
+      title={tooltip ? row.title : undefined}
       onClick={() => onOpen(row.id)}
     >
       <span className="base-title-icon" aria-hidden="true">
@@ -143,7 +144,7 @@ function Card({
     <article className="base-card" data-testid={`base-card-${row.id}`}>
       <ImageBox row={row} view={props.view} ratio={ratio} height={coverHeight} placeholder={placeholder} />
       <div className="base-card-body">
-        <TitleButton row={row} onOpen={props.onOpen} />
+        <TitleButton row={row} onOpen={props.onOpen} tooltip />
         {columns.map((column) => {
           const value = row.values[column.id] ?? null;
           if (value === null || value === "" || (Array.isArray(value) && !value.length)) return null;
@@ -167,12 +168,12 @@ export function CardsView(props: LayoutProps) {
   const { view, result } = props;
   const size = numberSetting(view, "cardSize", 200, 50, 800);
   const ratio = numberSetting(view, "imageAspectRatio", 1, 0.25, 2.5);
-  // As in Notion: once any card has a cover, the others get an empty one, so every title sits at the same height.
-  const anyCover = useMemo(() => result.rows.some((row) => imageOf(row, view) !== null), [result.rows, view]);
+  // As in Obsidian 1.14.4: a view that sets `image` gives every card a cover box (empty without a cover), so every title sits at the same height (#2su9ikg4).
+  const covers = typeof view.image === "string" && view.image.trim() !== "";
   const grid = (rows: BaseRow[]) => (
     <div className="base-cards" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${size}px, 1fr))` }} data-testid="base-cards">
       {rows.map((row) => (
-        <Card key={row.id} row={row} props={props} ratio={ratio} placeholder={anyCover} />
+        <Card key={row.id} row={row} props={props} ratio={ratio} placeholder={covers} />
       ))}
     </div>
   );

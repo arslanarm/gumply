@@ -963,14 +963,16 @@ ol.base-list {
 
 .base-card-body > .base-title-link {
   align-self: flex-start;
-  align-items: flex-start;
   max-width: 100%;
   text-align: left;
 }
 
-/* A long title wraps, its icon stays by the first line. */
-.base-card-body > .base-title-link .base-title-icon {
-  margin-top: 0.15em;
+/* A long title stays on one line with an ellipsis, as in Obsidian; the full title is the tooltip (#2su9ikg4). */
+.base-card-body > .base-title-link .base-title-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* A card with no cover in a view with covers (#2su9ikg4). */
