@@ -51,6 +51,8 @@ describe("propertyLinkSpans", () => {
     const keys = propertyLinkSpans(YAML)!.map((span) => span.key);
     for (const key of ["block", "tags", "title", "anchored", "count"]) expect(keys).not.toContain(key);
     expect(keys.filter((key) => key === "related")).toHaveLength(1);
+    // `tags` in any case is never a link span (#ippqkgus).
+    expect(propertyLinkSpans('Tags: ["[[X]]"]\nTAGS: "[[Y]]"\nrel: "[[Z]]"\n')!.map((span) => span.key)).toEqual(["rel"]);
     expect(propertyLinkSpans("plain: [[Alpha]] then text\n")).toBeNull();
     expect(propertyLinkSpans("- a list\n- not a mapping\n")).toBeNull();
     expect(propertyLinkSpans("")).toBeNull();

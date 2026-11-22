@@ -6,7 +6,7 @@
  *
  * A span is a top-level text value, an item of a list of text values, or an
  * unquoted `[[Target]]` (YAML reads that as a list in a list; Obsidian and its
- * users read it as a link). Gumply's header keys, `tags`, block scalars
+ * users read it as a link). Gumply's header keys, `tags` (any case), block scalars
  * (`|`, `>`), anchors, YAML tags and multi-line values are never spans.
  */
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
@@ -72,7 +72,8 @@ export function propertyLinkSpans(yaml: string): PropertyLinkSpan[] | null {
     if (!isScalar(keyNode) || typeof keyNode.value !== "string") continue;
     const key = keyNode.value;
     // The first of a repeated key, as everywhere else Gumply reads frontmatter.
-    if (HEADER_KEYS.includes(key) || key === "tags" || seen.has(key)) continue;
+    // `tags` in any case (Obsidian reads `Tags:` as tags too, #ippqkgus); Gumply's header keys as it writes them.
+    if (HEADER_KEYS.includes(key) || key.toLowerCase() === "tags" || seen.has(key)) continue;
     seen.add(key);
     const value = pair.value as Node | null;
     if (isSeq(value) && flowLink(value, yaml) === null) {
