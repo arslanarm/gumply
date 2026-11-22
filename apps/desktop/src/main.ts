@@ -470,7 +470,7 @@ function revealTrashed(trashId: string): void {
   shell.showItemInFolder(target);
 }
 
-function sendCommand(command: "new-page" | "new-whiteboard" | "search"): void {
+function sendCommand(command: "new-page" | "new-whiteboard" | "search" | "import-notion"): void {
   if (!window || window.isDestroyed()) return;
   void window.webContents.executeJavaScript(
     `window.dispatchEvent(new CustomEvent("gumply:command", { detail: ${JSON.stringify(command)} }))`,
@@ -496,6 +496,9 @@ function buildMenu(): void {
       submenu: [
         { id: "new-page", label: tr("menu.newPage"), accelerator: "CmdOrCtrl+N", click: () => sendCommand("new-page") },
         { id: "new-whiteboard", label: tr("menu.newBoard"), accelerator: "CmdOrCtrl+Shift+N", click: () => sendCommand("new-whiteboard") },
+        { type: "separator" },
+        // B4: the in-app "Import from Notion…" dialog.
+        { id: "import-notion", label: tr("menu.importNotion"), click: () => sendCommand("import-notion") },
         { type: "separator" },
         { id: "open-vault", label: tr("menu.openVault"), accelerator: "CmdOrCtrl+O", click: () => void openVaultFromMenu("open") },
         { label: tr("menu.createVault"), click: () => void openVaultFromMenu("create") },

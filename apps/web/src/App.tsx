@@ -69,6 +69,7 @@ import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 import { t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
 import { McpSettingsDialog } from "./components/McpSettingsDialog.js";
+import { NotionImportDialog } from "./components/NotionImportDialog.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
@@ -183,6 +184,10 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** A3: Settings → AI apps (MCP). */
   const [mcpOpen, setMcpOpen] = useState(false);
+  /** B4: "Import from Notion…" is open, importing into this page or folder by default (null: the top level). */
+  const [notionImport, setNotionImport] = useState<{ target: PageMeta | null } | null>(null);
+  /** The default target, for the desktop File menu's command (set each render). */
+  const importTargetRef = useRef<PageMeta | null>(null);
   /** G1: the page "Export as HTML…" was picked for. */
   const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
   const [galleryParent, setGalleryParent] = useState<{
@@ -930,6 +935,7 @@ export function App() {
       if (command === "new-page") void handleCreate(null);
       else if (command === "new-whiteboard") setGalleryParent({ parentId: null });
       else if (command === "search") openSearch();
+      else if (command === "import-notion") setNotionImport({ target: importTargetRef.current });
     };
     window.addEventListener("gumply:command", onCommand);
     // Toasts from parts of the editor that don't see the app (#5dpxwac4).
@@ -1781,6 +1787,10 @@ export function App() {
   const serverError = listStatus === "error" && pages.length === 0;
   const breadcrumb = selectedId ? pageTrail(pages, selectedId) : [];
 
+  // B4: Cmd+K / File menu → Import from Notion: into the open folder, or the open page's folder.
+  const importDefaultTarget =
+    selectedFolder ?? (page?.parentId ? (pages.find((item) => item.id === page.parentId) ?? null) : null);
+  importTargetRef.current = importDefaultTarget;
   // G1: Cmd+K → Export page as HTML, for the open page (not a board or a database view).
   const openPageMeta =
     page && page.id === selectedId ? (pages.find((item) => item.id === page.id && (item.kind ?? "page") === "page") ?? null) : null;
@@ -1877,6 +1887,7 @@ export function App() {
           onToday={() => void openToday()}
           onNewFromTemplate={closingSidebar((parentId: PageId | null) => setTemplatePicker({ mode: "new", parentId }))}
           onExportHtml={closingSidebar((id: PageId) => setExportTarget(pages.find((item) => item.id === id) ?? null))}
+          onImportNotion={closingSidebar((id: PageId) => setNotionImport({ target: pages.find((item) => item.id === id) ?? null }))}
         />
         {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
         <div
@@ -2257,6 +2268,10 @@ export function App() {
             dismissSearch();
             setTemplatePicker({ mode: "new", parentId: null });
           }}
+          onImportNotion={() => {
+            dismissSearch();
+            setNotionImport({ target: importDefaultTarget });
+          }}
           onExportHtml={
             openPageMeta
               ? () => {
@@ -2284,6 +2299,17 @@ export function App() {
               setActionError(t("export.failed", { error: errorMessage(error) }));
             }
             setExportTarget(null);
+          }}
+        />
+      ) : null}
+
+      {notionImport ? (
+        <NotionImportDialog
+          target={notionImport.target}
+          onClose={() => setNotionImport(null)}
+          onImported={() => void loadPages()}
+          onOpenFolder={(id) => {
+            void loadPages().then(() => navigate(id));
           }}
         />
       ) : null}

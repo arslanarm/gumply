@@ -35,6 +35,8 @@ export interface PageItemProps {
   onNewFromTemplate: (id: PageId) => void;
   /** G1: ⋯ → Export as HTML… (pages only). */
   onExportHtml?: (id: PageId) => void;
+  /** B4: ⋯ → Import from Notion… into this page or folder. */
+  onImportNotion?: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
   onStartRename: (id: PageId, title: string) => void;
   onCommitRename: () => void;
@@ -127,9 +129,9 @@ function PageItemRow(props: PageItemProps) {
 
   /** Right-click or Shift+F10 / the context-menu key: the same menu as ⋯. */
   const openMenuAt = (x: number, y: number, focus: boolean) => {
-    // Keep the menu on screen (it's about 200 × 270 px).
+    // Keep the menu on screen (it's about 200 × 300 px).
     const left = Math.max(8, Math.min(x, window.innerWidth - 216));
-    const top = Math.max(8, Math.min(y, window.innerHeight - 280));
+    const top = Math.max(8, Math.min(y, window.innerHeight - 312));
     setMenu({ at: { x: left, y: top }, focus });
   };
 
@@ -403,6 +405,20 @@ function PageItemRow(props: PageItemProps) {
                     }}
                   >
                     {t("sidebar.newFromTemplate")}
+                  </button>
+                )}
+                {leaf || !props.onImportNotion ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid={`import-notion-${page.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      props.onImportNotion?.(page.id);
+                    }}
+                  >
+                    {t("notionImport.menuItem")}
                   </button>
                 )}
                 {leaf || folder || !props.onExportHtml ? null : (

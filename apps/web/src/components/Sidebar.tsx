@@ -40,6 +40,8 @@ export interface SidebarProps {
   onNewFromTemplate?: (parentId: PageId | null) => void;
   /** G1: a page row's ⋯ → Export as HTML…. */
   onExportHtml?: (id: PageId) => void;
+  /** B4: a row's ⋯ → Import from Notion… into it. */
+  onImportNotion?: (id: PageId) => void;
   /** The global graph view is open (sidebar active state). */
   graphActive?: boolean;
   /** #ppag3ugh: the Trash row (with how many pages and boards are in it). */
@@ -176,6 +178,7 @@ export function Sidebar(props: SidebarProps) {
     onCreateBase: props.onCreateBase,
     onNewFromTemplate: props.onNewFromTemplate,
     onExportHtml: props.onExportHtml,
+    onImportNotion: props.onImportNotion,
     createChild,
     expand,
     toggle,
@@ -194,6 +197,7 @@ export function Sidebar(props: SidebarProps) {
     onMove: props.onMove,
     onNewFromTemplate: props.onNewFromTemplate,
     onExportHtml: props.onExportHtml,
+    onImportNotion: props.onImportNotion,
     createChild,
     expand,
     toggle,
@@ -223,6 +227,7 @@ export function Sidebar(props: SidebarProps) {
         latest.current.onNewFromTemplate?.(id);
       },
       onExportHtml: (id: PageId) => latest.current.onExportHtml?.(id),
+      onImportNotion: (id: PageId) => latest.current.onImportNotion?.(id),
       onStartRename: (id: PageId, title: string) => latest.current.startRename(id, title),
       onCommitRename: () => latest.current.commitRename(),
       onCancelRename: () => latest.current.cancelRename(),

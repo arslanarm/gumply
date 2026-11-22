@@ -683,7 +683,8 @@
     "todayWords": "",
     "pageTemplate": "New page from template…",
     "pageTemplateWords": "",
-    "exportWords": ""
+    "exportWords": "",
+    "importWords": ""
   },
   "callout": {
     "types": {
@@ -812,7 +813,8 @@
       "zoom": "Zoom",
       "close": "Close Window",
       "help": "&Help",
-      "about": "About Gumply"
+      "about": "About Gumply",
+      "importNotion": "Import from Notion…"
     },
     "about": {
       "detail": "Notes as plain Markdown, with links, a graph and whiteboards."
@@ -1357,5 +1359,80 @@
     "rows_one": "{{count}} row",
     "rows_other": "{{count}} rows",
     "exportedFrom": "Exported from Gumply"
+  },
+  "notionImport": {
+    "menuItem": "Import from Notion…",
+    "command": "Import from Notion…",
+    "title": "Import from Notion",
+    "howTo": "In Notion, open ⋯ → Export, choose “Markdown & CSV” with “Include subpages” on, and download the zip. Then pick it here.",
+    "drop": "Drop the Notion export zip here, or click to choose it",
+    "chosen": "{{name}} · {{size}}",
+    "change": "Choose another file",
+    "target": "Import into",
+    "targetRoot": "The vault's top level",
+    "targetHint": "A new “Notion import” folder is made there. Nothing that's already in the vault is changed.",
+    "start": "Import",
+    "cancel": "Cancel",
+    "close": "Close",
+    "open": "Open the folder",
+    "tryAgain": "Try again",
+    "notZip": "That isn't a zip file. Pick the .zip Notion downloaded.",
+    "step": {
+      "reading": "Reading the zip…",
+      "planning": "Working out pages and links…",
+      "writing": "Writing files…",
+      "done": "Done",
+      "failed": "Import failed"
+    },
+    "progress": "{{done}} of {{total}} files",
+    "doneTitle": "Imported into “{{folder}}”",
+    "reimportNote": "Your earlier import is unchanged.",
+    "pages_one": "{{count}} page",
+    "pages_other": "{{count}} pages",
+    "databases_one": "{{count}} database",
+    "databases_other": "{{count}} databases",
+    "rows_one": "{{count}} row",
+    "rows_other": "{{count}} rows",
+    "attachments_one": "{{count}} image or file",
+    "attachments_other": "{{count}} images and files",
+    "convertedTitle": "Converted",
+    "converted": {
+      "pageLinks": "Links between pages → [[links]]: {{count}}",
+      "mentions": "@-mentions → [[links]]: {{count}}",
+      "databaseEmbeds": "Inline databases → database views: {{count}}",
+      "databaseLinks": "Database links → links: {{count}}",
+      "attachmentLinks": "Image and file links: {{count}}",
+      "callouts": "Callouts (their icons aren't kept): {{count}}"
+    },
+    "skippedTitle_one": "Left out: {{count}} file",
+    "skippedTitle_other": "Left out: {{count}} files",
+    "missingTitle_one": "Links to a file missing from the zip: {{count}}",
+    "missingTitle_other": "Links to files missing from the zip: {{count}}",
+    "outsideTitle_one": "Links to a page that wasn't exported: {{count}}",
+    "outsideTitle_other": "Links to pages that weren't exported: {{count}}",
+    "inPage": "in {{page}}",
+    "lostTitle": "Not in Notion's export",
+    "lostHint": "Notion's Markdown & CSV export leaves these out, so they couldn't be imported:",
+    "lost": {
+      "views": "Database views: filters, sorts and layouts (Gumply added a table view)",
+      "optionColours": "Colours of select options",
+      "textColours": "Text and background colours",
+      "toggles": "Toggles (they arrive as lists)",
+      "comments": "Comments",
+      "synced": "Synced blocks (they arrive as copies)",
+      "permissions": "Sharing and permissions",
+      "people": "Who people properties point to",
+      "embeds": "Embeds of other apps (they arrive as links)"
+    },
+    "reportFile": "The full report is saved as “Import report.md” in the new folder.",
+    "errors": {
+      "running": "An import is already running in this vault. Wait for it to finish, then try again.",
+      "tooLarge": "That file is too large to import (over 1 GB).",
+      "notExport": "This doesn't look like a Notion “Markdown & CSV” export.",
+      "missingTarget": "The folder to import into no longer exists.",
+      "offline": "Couldn't reach Gumply. Check that it's still running.",
+      "other": "The import didn't work."
+    },
+    "details": "Details: {{error}}"
   }
 }

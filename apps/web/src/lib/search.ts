@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html";
+  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -48,10 +48,12 @@ export interface SearchSections {
   pageTemplate: SearchRow | null;
   /** G1: `Export page as HTML` ("export", "html"…). */
   exportHtml?: SearchRow | null;
+  /** B4: `Import from Notion…` ("notion", "import"…). */
+  importNotion?: SearchRow | null;
 }
 
 /** Words for this language's command (English always counts), from a message. */
-function localWords(key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords"): string[] {
+function localWords(key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords"): string[] {
   return t(key).toLowerCase().split(/\s+/).filter(Boolean);
 }
 
@@ -62,6 +64,15 @@ export function wantsExportHtml(query: string): boolean {
   const known = ["export", "as", "html", "page", "save", ...localWords("search.exportWords")];
   const key = ["export", "html", ...localWords("search.exportWords").filter((word) => word.startsWith("экспорт"))];
   return words.every((word) => known.some((candidate) => candidate.startsWith(word))) && words.some((word) => key.some((candidate) => candidate.startsWith(word)));
+}
+
+/** Whether `query` asks to import from Notion: "notion", "import", "import from notion"… (B4). */
+export function wantsImportNotion(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = needle.split(" ").filter((word) => word.length > 0);
+  const known = ["import", "from", "notion", ...localWords("search.importWords")];
+  return words.every((word) => known.some((candidate) => candidate.startsWith(word)));
 }
 
 /** Whether `query` asks for today's daily note: "today", "daily", "journal"… (v0.7 C). */
@@ -279,7 +290,8 @@ export function searchSections(
     ? { kind: "page-template" as const, key: "page-template", label: t("search.pageTemplate") }
     : null;
   const exportHtml = wantsExportHtml(query) ? { kind: "export-html" as const, key: "export-html", label: t("export.command") } : null;
-  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml };
+  const importNotion = wantsImportNotion(query) ? { kind: "import-notion" as const, key: "import-notion", label: t("notionImport.command") } : null;
+  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion };
 }
 
 export interface SnippetPart {
