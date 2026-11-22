@@ -66,6 +66,26 @@ describe("buildLinkSuggestions", () => {
   });
 });
 
+describe("a query with # (#5r8k77fe)", () => {
+  it("offers Create for the name before #, never a title with #, and keeps the part", () => {
+    const items = buildLinkSuggestions(pages, "Nope#Some heading", [attachment("Nope.txt")]);
+    expect(items).toEqual([expect.objectContaining({ kind: "create", title: "Nope", part: "Some heading" })]);
+    expect(items[0]!.label).toContain("Nope");
+    expect(items[0]!.label).not.toContain("#");
+  });
+
+  it("no part after # gives a Create row without one", () => {
+    const [row] = buildLinkSuggestions(pages, "Nope#");
+    expect(row).toMatchObject({ kind: "create", title: "Nope" });
+    expect(row).not.toHaveProperty("part");
+  });
+
+  it("an empty name before # offers nothing (the open page's headings come from the menu)", () => {
+    expect(buildLinkSuggestions(pages, "#Intro")).toEqual([]);
+    expect(buildLinkSuggestions(pages, " #")).toEqual([]);
+  });
+});
+
 describe("plain notes named like files (#bayuasqq)", () => {
   it("\"meeting notes\" finds `meeting-notes` and `meeting_notes`; Create is still offered", () => {
     const notes = [page("meeting-notes", "meeting-notes"), page("meeting_notes", "meeting_notes"), page("other", "other")];

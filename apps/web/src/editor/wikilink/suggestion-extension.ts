@@ -2,7 +2,7 @@
  * `[[` autocomplete wiring (spec/ux §8). The React menu lives in LinkMenu;
  * this extension only computes suggestions and performs the insert.
  */
-import { linkTargetFor, pageBlockIds, pageHeadings, resolveWikilink } from "@gumply/core";
+import { linkTargetFor, pageBlockIds, pageHeadings, resolveWikilink, type PageMeta } from "@gumply/core";
 import { api } from "../../api/client.js";
 import { t } from "../../i18n/index.js";
 import type { EditorState } from "@tiptap/pm/state";
@@ -55,13 +55,19 @@ export function requestPagePreviewPicker(): void {
   pickPartAfterPage = true;
 }
 
-/** `![[Page#…` suggestions: the whole page (outline step), its headings, then its block ids. */
-async function partSuggestions(query: string): Promise<LinkSuggestion[]> {
+/**
+ * `![[Page#…` suggestions: the whole page (outline step), its headings, then
+ * its block ids. For a plain `[[Page#…` link (#5r8k77fe, `link: true`) the
+ * same rows without "Whole page" (Obsidian has none; `]]` links the page) and
+ * without base views; `page` is the open note itself for `[[#…`.
+ */
+async function partSuggestions(query: string, options: { link?: boolean; page?: PageMeta } = {}): Promise<LinkSuggestion[]> {
   const env = getWikiLinkEnvironment();
   const hash = query.indexOf("#");
-  const page = resolveWikilink(query.slice(0, hash).trim(), env.pages, env.pageId);
+  const page = options.page ?? resolveWikilink(query.slice(0, hash).trim(), env.pages, env.pageId);
   if (!page || isBoard(page)) return [];
   const needle = query.slice(hash + 1).trim().toLowerCase();
+  if (isBase(page) && options.link) return [];
   if (isBase(page)) {
     // `![[Tasks.base#` lists the base's views (D34).
     try {
@@ -97,8 +103,28 @@ async function partSuggestions(query: string): Promise<LinkSuggestion[]> {
     part: `^${block.id}`,
   }));
   const matches = [...headings, ...blocks].filter((item) => !needle || item.label.toLowerCase().includes(needle.replace(/^\^/, ""))).slice(0, 30);
+  if (options.link) return matches;
   const whole: LinkSuggestion = { kind: "page", key: `${page.id}#`, label: t("pageEmbed.wholePage"), title: page.title, pageId: page.id, part: "", icon: page.icon };
   return needle ? matches : [whole, ...matches];
+}
+
+/**
+ * Plain `[[…#` (#5r8k77fe): the headings and block ids of the page named
+ * before `#` (from the open note, D40), or of the open note itself for
+ * `[[#`; null when the text before `#` names no page (the caller then offers
+ * Create for that name).
+ */
+function linkPartSuggestions(query: string): Promise<LinkSuggestion[]> | null {
+  const env = getWikiLinkEnvironment();
+  const hash = query.indexOf("#");
+  if (hash === -1) return null;
+  const name = query.slice(0, hash).trim();
+  if (name.length === 0) {
+    const self = env.pages.find((item) => item.id === env.pageId);
+    // Rows for the open note carry an empty title: they're written as text (`[[#Heading]]`).
+    return self ? partSuggestions(query, { link: true, page: self }).then((rows) => rows.map((row) => ({ ...row, title: "" }))) : Promise.resolve([]);
+  }
+  return resolveWikilink(name, env.pages, env.pageId) ? partSuggestions(query, { link: true }) : null;
 }
 
 export interface LinkMenuHandlers {
@@ -154,7 +180,7 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
               if (embedKindOnly !== null || pickPartAfterPage) return pageRows;
               return [...pageRows, ...buildFileSuggestions(linkableFiles(env.pageId), query)];
             }
-            return buildLinkSuggestions(env.pages, query, env.attachments);
+            return linkPartSuggestions(query) ?? buildLinkSuggestions(env.pages, query, env.attachments);
           },
           command: ({ editor, range, props }) => {
             if (embedStart(editor.state, range.from) && props.kind === "file" && props.file) {
@@ -281,9 +307,16 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             // (`Ideas: Q3?` → `Ideas Q3.md`), become `[[file name|Title]]` so
             // the link resolves in Obsidian (by file name) too (#mp8eadhk).
             const env = getWikiLinkEnvironment();
+            // `[[#Heading` in the open note (#5r8k77fe): written as the text
+            // `[[#Heading]]`, as typing it would (the link node needs a page).
+            if (props.kind === "page" && props.part !== undefined && props.title === "") {
+              editor.chain().focus().deleteRange(range).insertContent(`[[#${props.part}]]`).run();
+              return;
+            }
             const page = props.kind === "page" ? env.pages.find((item) => item.id === props.pageId) : undefined;
             const link = page ? linkTargetFor(page, env.pages) : { target: props.title, alias: "" };
-            const attrs = { targetTitle: link.target, alias: link.alias, heading: "" };
+            // `[[Page#Heading` (#5r8k77fe): the chosen heading or `^block` is the link's part.
+            const attrs = { targetTitle: link.target, alias: link.alias, heading: props.part ?? "" };
 
             editor.chain().focus().deleteRange(range).insertContent({ type: "wikiLink", attrs }).run();
 
