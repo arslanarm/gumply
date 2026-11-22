@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
+import { exitMcp, hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
 
 describe("desktop MCP mode arguments (A3)", () => {
   it("is off without --mcp", () => {
@@ -114,5 +114,50 @@ describe("restricted user namespaces and FUSE (#4ckqijua)", () => {
     expect(hasFusermount(has(["/usr/bin/fusermount3"]))).toBe(true);
     expect(hasFusermount(has(["/bin/fusermount"]))).toBe(true);
     expect(hasFusermount(has([]))).toBe(false);
+  });
+});
+
+/** #429bvzwr / #wfn2pdcx: how --mcp ends when the AI app closes stdin. */
+describe("exitMcp", () => {
+  const recorder = () => {
+    const events: string[] = [];
+    return {
+      events,
+      steps: (cleanupThrows = false) => ({
+        cleanup: () => {
+          events.push("cleanup");
+          if (cleanupThrows) throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+        },
+        graceful: (code: number) => events.push(`graceful ${code}`),
+        reallyExit: (code: number) => events.push(`reallyExit ${code}`),
+        killTree: () => events.push("killTree"),
+      }),
+    };
+  };
+
+  it("Windows: no graceful exit at all; Node's own exit with the code, then the process tree is killed if that returns", () => {
+    const { events, steps } = recorder();
+    exitMcp("win32", steps(), 0);
+    expect(events).toEqual(["cleanup", "reallyExit 0", "killTree"]);
+  });
+
+  it("Windows: a cleanup that throws (EPERM, ENOTEMPTY: our own children hold files) never stops the exit", () => {
+    const { events, steps } = recorder();
+    exitMcp("win32", steps(true), 0);
+    expect(events).toEqual(["cleanup", "reallyExit 0", "killTree"]);
+  });
+
+  it("Windows without process.reallyExit: straight to killing the tree", () => {
+    const { events, steps } = recorder();
+    exitMcp("win32", { ...steps(), reallyExit: undefined }, 2);
+    expect(events).toEqual(["cleanup", "killTree"]);
+  });
+
+  it("Linux and macOS: unchanged, the graceful exit only", () => {
+    for (const platform of ["linux", "darwin"]) {
+      const { events, steps } = recorder();
+      exitMcp(platform, steps(true), 1);
+      expect(events, platform).toEqual(["cleanup", "graceful 1"]);
+    }
   });
 });
