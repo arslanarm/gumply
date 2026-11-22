@@ -58,6 +58,10 @@ export {
 } from "./note-template.js";
 
 export {
+  frontmatterKey,
+  frontmatterValue,
+  isAliasesKey,
+  isTagsKey,
   normalizeTags,
   parseFrontmatter,
   serializeFrontmatter,

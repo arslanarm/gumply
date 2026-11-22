@@ -6,7 +6,10 @@
  * Nested objects and multi-line strings are out of scope for the MVP.
  */
 
+import { frontmatterKey, isTagsKey } from "./frontmatter-keys.js";
 import { splitTrailingComment } from "./note-template.js";
+
+export { frontmatterKey, isAliasesKey, isTagsKey } from "./frontmatter-keys.js";
 
 export interface Frontmatter {
   title?: string;
@@ -53,6 +56,12 @@ function splitInlineList(value: string): string[] {
     .split(",")
     .map((item) => parseScalar(item) ?? "")
     .filter((item) => item.length > 0);
+}
+
+/** The value of `tags` / `aliases` in a parsed frontmatter, under whichever spelling the note uses. */
+export function frontmatterValue(frontmatter: Readonly<Record<string, unknown>>, name: "tags" | "aliases"): unknown {
+  const key = frontmatterKey(Object.keys(frontmatter), name);
+  return key === undefined ? undefined : frontmatter[key];
 }
 
 /** Normalise tags from frontmatter (string, comma list or array). */
@@ -117,7 +126,7 @@ export function parseFrontmatter(raw: string): ParsedNote {
     const rawValue = splitTrailingComment(match[2] ?? "").value.trim();
 
     if (rawValue.startsWith("[") && rawValue.endsWith("]")) {
-      frontmatter[key] = key === "tags" ? normalizeTags(splitInlineList(rawValue)) : splitInlineList(rawValue);
+      frontmatter[key] = isTagsKey(key) ? normalizeTags(splitInlineList(rawValue)) : splitInlineList(rawValue);
       continue;
     }
 
@@ -139,13 +148,14 @@ export function parseFrontmatter(raw: string): ParsedNote {
     }
 
     if (items.length > 0) {
-      frontmatter[key] = key === "tags" ? normalizeTags(items) : items;
+      frontmatter[key] = isTagsKey(key) ? normalizeTags(items) : items;
       i = cursor - 1;
     }
   }
 
-  if (frontmatter.tags !== undefined) {
-    frontmatter.tags = normalizeTags(frontmatter.tags);
+  // Tags under any spelling of the key (`Tags:`), each kept under its own key; readers take the first (frontmatterValue).
+  for (const key of Object.keys(frontmatter)) {
+    if (isTagsKey(key)) frontmatter[key] = normalizeTags(frontmatter[key]);
   }
 
   const content = lines
