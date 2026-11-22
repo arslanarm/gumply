@@ -4,6 +4,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 import { api, expect, test } from './fixtures';
 import { E2E_VAULT } from './support/env';
 import { expectPageTitle } from './support/ui';
+import { pickDate } from './support/date-picker';
 
 /**
  * v0.7 B (#sg36ng2d, D34, spec/api-bases): database views are Obsidian Bases
@@ -330,7 +331,7 @@ test.describe('database views (.base, D34)', () => {
 
     // Date: re-sorts the table (sorted by due).
     await page.getByTestId('base-cell-Projects/Beta-note.due').click();
-    await page.getByTestId('base-cell-editor-Projects/Beta-note.due').locator('input[type="date"]').fill('2026-12-20');
+    await pickDate(page, page.getByTestId('base-cell-editor-Projects/Beta-note.due'), '2026-12-20');
     await expect(titles(page)).toHaveText(['Alpha', 'Beta', 'Gamma']);
     await expect.poll(() => read('Projects/Beta.md')).toBe('---\nstatus: Doing\ndue: 2026-12-20\nestimate: 5\n---\nBeta\n');
     // The base file itself is untouched.

@@ -976,7 +976,6 @@ ol.base-list {
   text-overflow: ellipsis;
 }
 
-/* A card with no cover in a view with covers (#2su9ikg4). */
 /*
  * A cut-off card title shows its full text in the app's tooltip, wrapped to
  * the title's width, over the cover. The card lets it out of its box while
@@ -996,6 +995,7 @@ ol.base-list {
   text-align: left;
 }
 
+/* A card with no cover in a view that sets `image` (#2su9ikg4). */
 .base-card-image.is-empty {
   background: var(--hover);
   opacity: 0.8;
