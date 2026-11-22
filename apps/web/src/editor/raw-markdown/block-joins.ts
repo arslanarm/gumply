@@ -60,6 +60,9 @@ function tokenKind(token: any): string | null {
     case "gumply_raw_block":
     case "html_block":
       return "raw";
+    // spec/columns: a columns row (its closing fence ends it).
+    case "gumply_columns_open":
+      return "cols";
     default:
       return null;
   }
@@ -130,6 +133,7 @@ const JOIN_TYPES = [
   "table",
   "horizontalRule",
   "rawBlock",
+  "columns",
   "bulletList",
   "taskList",
   "orderedList",
@@ -159,6 +163,8 @@ export function nodeKind(node: PMNode): string | null {
       return markup === ")" || markup === "." ? `ol:${markup}` : null;
     case "rawBlock":
       return "raw";
+    case "columns":
+      return "cols";
     default:
       return null;
   }

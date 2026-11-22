@@ -33,6 +33,9 @@ import { Editor, type EditorControls } from "./components/Editor.js";
 import { PageHeader } from "./components/PageHeader.js";
 import { Icon, type IconName } from "./components/Icon.js";
 import { QuickSwitcher } from "./components/QuickSwitcher.js";
+import { framesOutline } from "./outline/headings.js";
+import { OutlinePane, type OutlineSource } from "./outline/OutlinePane.js";
+import { readRightPanel, RightPanel, writeRightPanel, type RightPanelTab } from "./outline/RightPanel.js";
 import { SaveStatus } from "./components/SaveStatus.js";
 import { Sidebar, type SidebarFocusTarget } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
@@ -238,13 +241,12 @@ export function App() {
   const [coverPickerSignal, setCoverPickerSignal] = useState(0);
   // The "Add cover" button that opened it: the picker opens under it (#i3mgwybb).
   const [coverPickerAnchor, setCoverPickerAnchor] = useState<HTMLElement | null>(null);
-  const [localGraphOpen, setLocalGraphOpen] = useState(() => {
-    try {
-      return sessionStorage.getItem("gumply:local-graph") === "open";
-    } catch {
-      return false;
-    }
-  });
+  // v0.8 D1: one right-hand column, Outline | Local graph; closed by default, remembered per device.
+  const [rightPanel, setRightPanel] = useState<RightPanelTab | null>(readRightPanel);
+  const localGraphOpen = rightPanel === "graph";
+  const toggleRightPanel = useCallback((tab: RightPanelTab) => setRightPanel((current) => (current === tab ? null : tab)), []);
+  // The Outline pane re-reads its source when the editor or board (re)mounts.
+  const [outlineTick, setOutlineTick] = useState(0);
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -706,14 +708,7 @@ export function App() {
   // Fetch the graph and dialog code in the background once startup is done.
   useEffect(() => preloadWhenIdle(), []);
 
-  // Remember the local graph panel for the session (spec/ux §9).
-  useEffect(() => {
-    try {
-      sessionStorage.setItem("gumply:local-graph", localGraphOpen ? "open" : "closed");
-    } catch {
-      // Session storage is optional.
-    }
-  }, [localGraphOpen]);
+  useEffect(() => writeRightPanel(rightPanel), [rightPanel]);
 
   useEffect(() => {
     if (selectedId) setLastPageId(selectedId);
@@ -1038,6 +1033,19 @@ export function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openToday, pendingDelete, movingId, shortcutsOpen, searchOpen, templatePicker]);
+
+  // v0.8 D1: Ctrl/Cmd+Shift+O toggles the outline (ours wins inside the app); Ctrl/Cmd+Alt+O where a browser keeps it.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.code !== "KeyO") return;
+      if (!(event.shiftKey !== event.altKey)) return;
+      if (pendingDelete || movingId || shortcutsOpen || searchOpen || templatePicker) return;
+      event.preventDefault();
+      toggleRightPanel("outline");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleRightPanel, pendingDelete, movingId, shortcutsOpen, searchOpen, templatePicker]);
 
   /** `/template` in the open page: pick, then fill (empty page) or insert at the caret. */
   const insertTemplate = useCallback((request: PageTemplateRequest) => {
@@ -1650,6 +1658,7 @@ export function App() {
 
   const handleEditorReady = useCallback((controls: EditorControls) => {
     editorControls.current = controls;
+    setOutlineTick((value) => value + 1);
     if (focusBodyAfterOpen.current) {
       focusBodyAfterOpen.current = false;
       controls.focusBody();
@@ -1707,6 +1716,7 @@ export function App() {
   editTitleRef.current = editTitleId;
   const handleBoardReady = useCallback((controls: BoardViewControls) => {
     boardControls.current = controls;
+    setOutlineTick((value) => value + 1);
     // An existing board: put focus on the canvas so its shortcuts (N, V,
     // Delete…) work right away instead of landing in the title or the tree.
     if (editTitleRef.current !== null && editTitleRef.current === selectedRef.current) return;
@@ -1783,6 +1793,39 @@ export function App() {
   const showingPage = selectedId !== null && page !== null && page.id === selectedId;
   const showingBoard = showingPage && isBoardId(page.id) && boardDoc !== null;
   const showingBase = showingPage && isBaseId(page.id) && baseDoc !== null && baseDoc.meta.id === page.id;
+  const outlineSource = useMemo<OutlineSource | null>(
+    () => {
+      void outlineTick;
+      if (!showingPage) return null;
+      if (showingBase) return { kind: "none" };
+      if (showingBoard) {
+        const controls = boardControls.current;
+        if (!controls) return null;
+        return {
+          kind: "board",
+          entries: () => framesOutline(controls.frames()),
+          subscribe: controls.subscribe,
+          reveal: (entry) => controls.zoomToFrame(entry.key),
+          focusBack: () => document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true }),
+        };
+      }
+      const controls = editorControls.current;
+      if (!controls || controls.pageId !== page.id) return null;
+      return {
+        kind: "page",
+        entries: controls.outline,
+        subscribe: controls.subscribeOutline,
+        element: (entry) => controls.headingElement(entry.pos),
+        reveal: (entry) => controls.revealHeading(entry.pos),
+        focusBack: () => {
+          const selection = controls.getSelection();
+          controls.focusAt(selection ? selection.to : 0);
+        },
+      };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [outlineTick, showingPage, showingBase, showingBoard, page?.id],
+  );
   const movingPage = movingId ? (pages.find((item) => item.id === movingId) ?? null) : null;
   // v0.7 F (#385sexd6): cover and background, Markdown pages only.
   const showingNote = showingPage && !isBoardId(page.id) && !isBaseId(page.id);
@@ -1863,7 +1906,7 @@ export function App() {
       </header>
 
       <div
-        className={`layout${!graphOpen && showingPage && localGraphOpen ? " layout-with-panel" : ""}`}
+        className={`layout${!graphOpen && showingPage && rightPanel ? " layout-with-panel" : ""}`}
       >
         <Sidebar
           onCreateBoard={closingSidebar((parentId: PageId | null) => setGalleryParent({ parentId }))}
@@ -2037,7 +2080,9 @@ export function App() {
                     page={page}
                     autoFocusTitle={autoFocusTitle}
                     localGraphOpen={localGraphOpen}
-                    onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
+                    onToggleLocalGraph={() => toggleRightPanel("graph")}
+                    outlineOpen={rightPanel === "outline"}
+                    onToggleOutline={() => toggleRightPanel("outline")}
                     onRename={(title) => handleRename(page.id, title)}
                     onSetIcon={handleSetIcon}
                     onDelete={() => requestDelete(page.id)}
@@ -2089,7 +2134,9 @@ export function App() {
                     }
                     autoFocusTitle={autoFocusTitle}
                     localGraphOpen={localGraphOpen}
-                    onToggleLocalGraph={() => setLocalGraphOpen((value) => !value)}
+                    onToggleLocalGraph={() => toggleRightPanel("graph")}
+                    outlineOpen={rightPanel === "outline"}
+                    onToggleOutline={() => toggleRightPanel("outline")}
                     onRename={(title) => handleRename(page.id, title)}
                     onSetIcon={handleSetIcon}
                     onDelete={() => requestDelete(page.id)}
@@ -2169,12 +2216,21 @@ export function App() {
           )}
         </main>
 
-        {!graphOpen && showingPage && localGraphOpen ? (
-          <LocalGraphPanel
-            pageId={page.id}
-            onOpenPage={handleOpen}
-            onCreatePage={handleGraphCreatePage}
-            onClose={() => setLocalGraphOpen(false)}
+        {!graphOpen && showingPage && rightPanel ? (
+          <RightPanel
+            tab={rightPanel}
+            onTab={setRightPanel}
+            onClose={() => setRightPanel(null)}
+            outline={<OutlinePane pageId={page.id} source={outlineSource} />}
+            graph={
+              <LocalGraphPanel
+                embedded
+                pageId={page.id}
+                onOpenPage={handleOpen}
+                onCreatePage={handleGraphCreatePage}
+                onClose={() => setRightPanel(null)}
+              />
+            }
           />
         ) : null}
       </div>
@@ -2275,6 +2331,14 @@ export function App() {
             dismissSearch();
             void openToday();
           }}
+          onToggleOutline={
+            showingPage
+              ? () => {
+                  dismissSearch();
+                  toggleRightPanel("outline");
+                }
+              : undefined
+          }
           onNewPageFromTemplate={() => {
             dismissSearch();
             setTemplatePicker({ mode: "new", parentId: null });

@@ -143,13 +143,15 @@ test.describe('touching blocks stay touching (#54prcupx)', () => {
 });
 
 test.describe('H4–H6 are headings (#6rbi25wy)', () => {
-  // @opus-hunter's rc.1 heading fixtures (h46a–h46d, h13c), byte for byte; each ends in `Target paragraph.`.
+  // @opus-hunter's rc.1 heading fixtures (h46a–h46d, h13c, sp), byte for byte; each ends in `Target paragraph.`.
   const FIXTURES: Record<string, string> = {
     h13c: "# Closed one #\n\n## Closed two ##\n\n### Closed three ###\nText.\n\nTarget paragraph.\n",
     h46a: "#### Deep heading\nText.\n\n##### Five\n###### Six\nTouching text under six.\n\nTarget paragraph.\n",
     h46b: "# One\n## Two\n### Three\n#### Four\n\nTarget paragraph.\n",
     h46c: "#### Closed ####\n\n##### Closed five #####\n\n###### Six ###\nText.\n\nSetext one\n===\n\nSetext two\n---\n\n####   Extra spaces\n\n#### \n\nTarget paragraph.\n",
     h46d: "- item\n#### Heading after list\n> quote\n\n##### Empty below\n\n######NoSpace is text\n\nTarget paragraph.\n",
+    // sp.md: spaces and a tab after the opening hashes.
+    sp: "#   Spaced one\n\n##  Spaced two\n\n###\tTabbed three\n\n#####   Spaced five ##\n\nTarget paragraph.\n",
   };
   for (const [name, text] of Object.entries(FIXTURES)) {
     test(`fixture ${name} comes back byte-exact after a far edit`, async ({ page, request, vault }) => {

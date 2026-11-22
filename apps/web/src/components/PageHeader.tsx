@@ -18,6 +18,9 @@ export interface PageHeaderProps {
   /** Local graph panel is open for this page. */
   localGraphOpen?: boolean;
   onToggleLocalGraph?: () => void;
+  /** v0.8 D1: the Outline tab of the right-hand column. */
+  outlineOpen?: boolean;
+  onToggleOutline?: () => void;
   /**
    * Focus and select the title for a new/empty page. Set false when the page
    * was opened by deleting another page: focus must stay in the sidebar.
@@ -67,6 +70,8 @@ export function PageHeader({
   onStartBody,
   localGraphOpen = false,
   onToggleLocalGraph,
+  outlineOpen = false,
+  onToggleOutline,
   autoFocusTitle = true,
   editTitleOnOpen,
   focusTitleSignal = 0,
@@ -414,6 +419,17 @@ export function PageHeader({
               : undefined
           }
         >
+          {onToggleOutline ? (
+            <button
+              type="button"
+              className={`button-secondary local-graph-toggle outline-toggle${outlineOpen ? " is-active" : ""}`}
+              data-testid="outline-toggle"
+              aria-pressed={outlineOpen}
+              onClick={onToggleOutline}
+            >
+              {t("outline.title")}
+            </button>
+          ) : null}
           {onToggleLocalGraph ? (
             <button
               type="button"

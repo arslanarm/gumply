@@ -132,6 +132,21 @@ export interface BoardEditorControls {
    * as dirty meanwhile: reloading it would silently drop that work (#x74uu7c3).
    */
   isBusy: () => boolean;
+  /** The board's frames, for the Outline pane (v0.8 D1). */
+  frames: () => BoardFrame[];
+  /** Called after every change to the document; returns the unsubscribe. */
+  subscribe: (listener: () => void) => () => void;
+  /** Zoom so a frame fills the view. */
+  zoomToFrame: (id: string) => void;
+}
+
+export interface BoardFrame {
+  id: string;
+  title: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface BoardEditorProps {
@@ -459,6 +474,11 @@ function BoardCanvas(props: BoardEditorProps) {
   const board = history.present;
   const boardRef = useRef(board);
   boardRef.current = board;
+  // The Outline pane listens for document changes (v0.8 D1).
+  const listenersRef = useRef(new Set<() => void>());
+  useEffect(() => {
+    for (const listener of listenersRef.current) listener();
+  }, [board]);
   // Drafts (text being typed) go straight to the host's autosave.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -742,8 +762,28 @@ function BoardCanvas(props: BoardEditorProps) {
         busyRef.current ||
         dragState.current !== null ||
         nodesRef.current.some((node) => node.dragging || node.resizing),
+      frames: () =>
+        boardRef.current.nodes
+          .filter((node) => node.type === "group")
+          .map((node) => ({
+            id: node.id,
+            title: (node.type === "group" ? node.label : undefined)?.trim() ?? "",
+            x: node.x,
+            y: node.y,
+            width: node.width,
+            height: node.height,
+          })),
+      subscribe: (listener) => {
+        listenersRef.current.add(listener);
+        return () => listenersRef.current.delete(listener);
+      },
+      zoomToFrame: (id) => {
+        const node = boardRef.current.nodes.find((item) => item.id === id);
+        if (!node) return;
+        void flow.fitBounds({ x: node.x, y: node.y, width: node.width, height: node.height }, { padding: 0.08, duration: 250 });
+      },
     });
-  }, [addFileCard, onReady]);
+  }, [addFileCard, onReady, flow]);
 
   /* ---------------- React Flow events ---------------- */
 

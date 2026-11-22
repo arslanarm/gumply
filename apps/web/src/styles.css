@@ -1358,6 +1358,84 @@ input {
   color: var(--muted);
 }
 
+/* spec/columns: blocks side by side; an equal share unless a width was set. */
+.gumply-editor .md-columns-wrap {
+  position: relative;
+  margin: 0.4em 0;
+}
+
+.gumply-editor .md-columns {
+  display: flex;
+  gap: 2.5rem;
+}
+
+/* The resize gutter between two columns: a hairline that shows on hover. */
+.md-column-gutters {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.md-column-gutter {
+  position: absolute;
+  width: 14px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  pointer-events: auto;
+}
+
+.md-column-gutter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.md-column-gutter:hover::after,
+.md-column-gutter.is-dragging::after {
+  opacity: 0.55;
+}
+
+.gumply-editor .md-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.gumply-editor .md-column > :first-child {
+  margin-top: 0;
+}
+
+.gumply-editor .md-column > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  /* Stacked rows keep clear of each other and of the text around them. */
+  .gumply-editor .md-columns-wrap {
+    margin: 1em 0;
+  }
+
+  .gumply-editor .md-columns {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .gumply-editor .md-column + .md-column {
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .md-column-gutters {
+    display: none;
+  }
+}
+
 .gumply-editor ul,
 .gumply-editor ol {
   padding-left: 1.5rem;
@@ -2237,6 +2315,192 @@ input {
   padding: 0.2rem 0.55rem;
   font-size: 0.78rem;
   white-space: nowrap;
+}
+
+/* v0.8 D1: the right-hand column, Outline | Local graph (spec/outline). */
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.right-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.right-panel-tabs {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.right-panel-tab {
+  padding: 0.3rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.right-panel-tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.right-panel-tab.is-active {
+  background: var(--hover);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.right-panel-close {
+  flex: none;
+}
+
+.right-panel-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.right-panel-body > .local-graph.is-embedded {
+  flex: 1;
+  border-left: 0;
+}
+
+.local-graph.is-embedded .local-graph-header {
+  justify-content: flex-end;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 0;
+}
+
+.outline-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  font-size: 0.8125rem;
+}
+
+.outline-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 0.35rem 0.5rem 0;
+  flex: none;
+}
+
+.outline-tool {
+  padding: 0.2rem 0.45rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.outline-tool:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.outline-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.35rem 0.4rem 1rem;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-height: 28px;
+  padding-right: 0.4rem;
+  border-radius: 5px;
+  color: var(--text);
+  line-height: 1.3;
+  cursor: pointer;
+  outline: none;
+}
+
+.outline-item:hover {
+  background: var(--hover);
+}
+
+.outline-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.outline-item[data-level="1"] {
+  font-weight: 600;
+}
+
+.outline-item.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.outline-item.is-empty .outline-text {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.outline-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-twisty {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.outline-twisty:not(.is-leaf):hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.outline-empty {
+  margin: 0;
+  padding: 1rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* Narrow windows: the panel takes its own column next to the page (the sidebar is an overlay). */
+@media (max-width: 900px) {
+  /* :root outranks graph.css's ≤1100 px rule, which keeps a sidebar column. */
+  :root .app .layout.layout-with-panel,
+  :root .app.sidebar-collapsed .layout.layout-with-panel {
+    grid-template-columns: 1fr 260px;
+  }
 }
 
 .sidebar-row-bottom {

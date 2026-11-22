@@ -14,6 +14,7 @@ import {
   type BlockRef,
 } from "../lib/blocks.js";
 import { t } from "../i18n/index.js";
+import { turnIntoColumns } from "./columns/commands.js";
 
 export type TurnIntoKind =
   | "text"
@@ -26,11 +27,12 @@ export type TurnIntoKind =
   | "quote"
   | "callout"
   | "toggle"
-  | "code";
+  | "code"
+  | "columns";
 
 /** "Turn into" choices, in menu order (block menu, selection toolbar, context menu). */
 export const TURN_INTO: ReadonlyArray<{ readonly kind: TurnIntoKind; readonly label: string }> = (
-  ["text", "h1", "h2", "h3", "bullet", "ordered", "todo", "quote", "callout", "toggle", "code"] as const
+  ["text", "h1", "h2", "h3", "bullet", "ordered", "todo", "quote", "callout", "toggle", "code", "columns"] as const
 ).map((kind) => ({
   kind,
   // A getter: the label follows the interface language (#7h5utv23).
@@ -77,6 +79,14 @@ export function insertBlockBelow(editor: Editor, block: BlockRef): boolean {
 
 /** Notion’s “Turn into”: normalise out of lists/quotes, then apply the type. */
 export function turnInto(editor: Editor, block: BlockRef, kind: TurnIntoKind): boolean {
+  // spec/columns: the selected top-level blocks (or this one and an empty column) side by side.
+  if (kind === "columns") {
+    const tr = turnIntoColumns(editor.state, block);
+    if (!tr) return false;
+    editor.view.dispatch(tr);
+    editor.view.focus();
+    return true;
+  }
   if (!focusBlock(editor, block)) return false;
 
   const chain = editor.chain().focus().clearNodes();

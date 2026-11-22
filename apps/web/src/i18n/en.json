@@ -203,6 +203,8 @@
       "delete": "Delete",
       "undoRedo": "Undo / redo",
       "openToday": "Open today's note",
+      "toggleOutline": "Toggle outline",
+      "toggleOutlineFallback": "Toggle outline (if the browser keeps the first)",
       "toggle": "Toggle"
     },
     "introBefore": "Press ",
@@ -322,6 +324,17 @@
       "hint": "Hide content inside",
       "keywords": ""
     },
+    "columns2": {
+      "title": "2 columns"
+    },
+    "columns3": {
+      "title": "3 columns"
+    },
+    "columns4": {
+      "title": "4 columns"
+    },
+    "columnsHint": "Blocks side by side",
+    "columnsKeywords": "",
     "note": {
       "title": "Note",
       "hint": "Note callout",
@@ -602,7 +615,8 @@
       "quote": "Quote",
       "callout": "Callout",
       "toggle": "Toggle",
-      "code": "Code"
+      "code": "Code",
+      "columns": "Columns"
     },
     "turnIntoHeading": "Turn into",
     "insertBelow": "Insert block below",
@@ -709,7 +723,8 @@
     "pageTemplateWords": "",
     "exportWords": "",
     "importWords": "",
-    "pdfWords": ""
+    "pdfWords": "",
+    "outlineWords": ""
   },
   "callout": {
     "types": {
@@ -1098,6 +1113,29 @@
       "tags": "Tags",
       "aliases": "Aliases"
     }
+  },
+  "outline": {
+    "title": "Outline",
+    "empty": "No headings yet. Type # and a space to add one.",
+    "emptyBoard": "No frames yet. Press F to add one.",
+    "noOutline": "No outline for this view.",
+    "emptyHeading": "(empty heading)",
+    "emptyHeadingLabel": "Empty heading, level {{level}}",
+    "untitledFrame": "Untitled frame",
+    "toggle": "Toggle outline",
+    "collapseAll": "Collapse all",
+    "expandAll": "Expand all",
+    "collapse": "Collapse",
+    "expand": "Expand"
+  },
+  "panel": {
+    "label": "Side panel",
+    "tabOutline": "Outline",
+    "tabGraph": "Local graph",
+    "close": "Close panel"
+  },
+  "columns": {
+    "resizeHint": "Drag to resize · double-click for equal widths"
   },
   "datePicker": {
     "empty": "Empty",

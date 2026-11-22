@@ -189,6 +189,17 @@ describe("HTML export (G1)", () => {
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
   });
 
+  it("columns (#d93qerr7): a 30/70 row exports as side-by-side columns with their shares", async () => {
+    const root = page("P", ':::: {.columns}\n::: {.column width="30%"}\n## Left\n:::\n::: {.column}\nRight **bold**\n:::\n::::\n\n::: note\nnot columns\n:::');
+    const html = await buildPageHtml(root, source({}, [root]).value, options);
+    expect(html).toContain(
+      '<div class="md-columns">\n<div class="md-column" style="flex: 30 1 0">\n<h2>Left</h2>\n</div>\n<div class="md-column" style="flex: 70 1 0">\n<p>Right <strong>bold</strong></p>\n</div>\n</div>',
+    );
+    // No fence text left over; a near miss stays text.
+    expect(html).not.toContain(":::: {.columns}");
+    expect(html).toContain("::: note");
+  });
+
   it("the page frame: icon, cover image, background tint, properties", async () => {
     const root = page("P", "Body", {
       icon: "🚀",

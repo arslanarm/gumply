@@ -149,3 +149,13 @@ describe("renderer snapshot (#5dpxwac4)", () => {
     expect(renderEmbeddedMarkdown(fixture)).toMatchSnapshot();
   });
 });
+
+describe("page previews show columns (spec/columns)", () => {
+  it("renders a row as side-by-side columns with their widths, and near misses as text", () => {
+    const html = renderEmbeddedMarkdown(':::: {.columns}\n::: {.column width="30%"}\n## Left\n:::\n::: {.column}\nRight **bold**\n:::\n::::');
+    expect(html).toBe(
+      '<div class="md-columns">\n<div class="md-column" style="flex: 30 1 0">\n<h2>Left</h2>\n</div>\n<div class="md-column" style="flex: 70 1 0">\n<p>Right <strong>bold</strong></p>\n</div>\n</div>\n',
+    );
+    expect(renderEmbeddedMarkdown("::: note\ntext\n:::")).toBe("<p>::: note\ntext\n:::</p>\n");
+  });
+});

@@ -16,6 +16,7 @@ import { hasAttachmentExtension, isBoardTarget, WIKILINK_INNER, WIKILINK_PART, W
 import MarkdownIt from "markdown-it";
 import { calloutStyle, defaultCalloutTitle } from "../callout/types.js";
 import { parseColorTag } from "../color.js";
+import { columnsMarkdownPlugin } from "../columns/markdown.js";
 import { wikilinkMarkdownPlugin } from "../wikilink/markdown-plugin.js";
 import { parsePageEmbed } from "./markdown-plugin.js";
 import { mathMarkdownPlugin } from "../../lib/math-markdown.js";
@@ -228,6 +229,15 @@ function createRenderer(): Any {
   mathMarkdownPlugin(md as Any);
   // F2: ```mermaid fences become diagram placeholders (drawn by hydrateDiagrams).
   diagramMarkdownPlugin(md as Any);
+  // spec/columns: a preview shows columns as the editor does (same classes; widths as flex shares).
+  columnsMarkdownPlugin(md as Any);
+  md.renderer.rules.gumply_columns_open = () => '<div class="md-columns">\n';
+  md.renderer.rules.gumply_column_open = (tokens: Any[], index: number) => {
+    // The column's share of the row (bare columns split what the set widths leave).
+    const width = Number(tokens[index].meta?.width);
+    const share = Math.round(Number(tokens[index].meta?.share) * 100) / 100;
+    return `<div class="md-column"${width > 0 || share > 0 ? ` style="flex: ${share > 0 ? share : width} 1 0"` : ""}>\n`;
+  };
   // Code keeps its language for the highlighter; content is escaped by markdown-it.
   return md;
 }

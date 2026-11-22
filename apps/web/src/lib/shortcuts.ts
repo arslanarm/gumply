@@ -39,6 +39,8 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: `${modifier}K`, label: t("shortcuts.labels.searchPages") },
         { keys: `${modifier}\\`, label: t("shortcuts.labels.toggleSidebar") },
         { keys: `${modifier}+Shift+D`, label: t("shortcuts.labels.openToday") },
+        { keys: `${modifier}+Shift+O`, label: t("shortcuts.labels.toggleOutline") },
+        { keys: `${modifier}+Alt+O`, label: t("shortcuts.labels.toggleOutlineFallback") },
       ],
     },
     {
