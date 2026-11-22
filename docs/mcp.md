@@ -56,7 +56,7 @@ The desktop app in MCP mode opens no window and doesn't stop you from opening Gu
 | `CONFLICT: … changed since it was read` | You (or another app) changed the page after the AI read it. Nothing was overwritten; the AI app should read it again. |
 | `RATE_LIMITED` | More than 30 changes a minute (or 1,000 a day). Wait a moment. |
 | Linux: `Missing X server or $DISPLAY` / `Failed to connect to Wayland display` | Copy the snippet again from Settings: it includes `--ozone-platform=headless`, so no display is needed. |
-| Linux AppImage: nothing happens, or a FUSE error (`fusermount: not found`, `AppImages require FUSE to run`) | Gumply 0.8+ AppImages need FUSE 3: `sudo apt install fuse3` (installed by default on Ubuntu 22.04+). Settings → AI apps shows a note when it's missing. Older AppImages needed `libfuse2t64`. Or install the `.deb`. `APPIMAGE_EXTRACT_AND_RUN=1` is only needed for AppImages before 0.8; with 0.8+ it isn't needed. (Before 0.8 it printed the extracted files into the MCP connection and broke it.) |
+| Linux AppImage: nothing happens, or a FUSE error (`fusermount: not found`, `AppImages require FUSE to run`) | Gumply 0.8+ AppImages need FUSE 3: `sudo apt install fuse3` (installed by default on Ubuntu 22.04+). Settings → AI apps shows a note when it's missing. Older AppImages needed `libfuse2t64`. Or install the `.deb`. With 0.8+ AppImages you don't need `APPIMAGE_EXTRACT_AND_RUN=1`; it also works with MCP. With older AppImages, don't use it for MCP: it printed the extracted files into the connection and broke it. |
 
 Gumply's MCP server writes its own messages to stderr: Claude Code shows them with `claude --debug`, Claude Desktop in its MCP logs (`~/Library/Logs/Claude/` on macOS, `%APPDATA%\Claude\logs\` on Windows).
 
