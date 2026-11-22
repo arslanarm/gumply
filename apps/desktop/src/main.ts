@@ -31,7 +31,7 @@ import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downlo
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
-import { exitAfterCleanup, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
+import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
 
 /**
@@ -676,26 +676,22 @@ function buildMenu(): void {
  */
 function runMcpMode(args: McpModeArgs): void {
   const exit = (code: number): never => {
-    exitAfterCleanup(
-      () => {
-        if (mcpThrowaway) rmSync(mcpThrowaway, { recursive: true, force: true });
-      },
-      (status) => {
-        app.exit(status);
-        process.exit(status);
+    exitMcp(
+      process.platform,
+      {
+        cleanup: () => {
+          if (mcpThrowaway) rmSync(mcpThrowaway, { recursive: true, force: true });
+        },
+        graceful: (status) => {
+          app.exit(status);
+          process.exit(status);
+        },
+        reallyExit: (process as unknown as { reallyExit?: (code: number) => void }).reallyExit?.bind(process),
+        killTree: () => {
+          spawnSync("taskkill", ["/F", "/T", "/PID", String(process.pid)], { stdio: "ignore", windowsHide: true });
+        },
       },
       code,
-      // #wfn2pdcx: on Windows the graceful quit above never completes in MCP mode;
-      // Node's own exit (keeps the code), then terminating the process, end it for sure.
-      process.platform === "win32"
-        ? {
-            graceMs: 2000,
-            exit: (status) => {
-              (process as unknown as { reallyExit?: (code: number) => void }).reallyExit?.(status);
-              process.kill(process.pid);
-            },
-          }
-        : undefined,
     );
     return undefined as never;
   };

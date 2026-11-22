@@ -123,30 +123,35 @@ export function mcpLaunchCommand(context: LaunchContext): {
 }
 
 /**
- * #429bvzwr: how `--mcp` ends. The cleanup (the throwaway Chromium profile) is
- * best effort: on Windows our own GPU and network-service child processes
- * still hold files in it, so removing it can throw (ENOTEMPTY), and that must
- * never stop the exit, or the process lingers after the AI app closed stdin.
- * The next MCP start sweeps leftovers older than a day.
+ * #429bvzwr / #wfn2pdcx: how `--mcp` ends when the AI app closes stdin.
+ * - The cleanup (the throwaway Chromium profile) is best effort: on Windows our
+ *   own GPU and network-service children still hold files in it (ENOTEMPTY,
+ *   EPERM). The next MCP start sweeps leftovers older than a day.
+ * - Linux and macOS: the graceful exit (`app.exit`, `process.exit`), which ends
+ *   the process.
+ * - Windows: in MCP mode Electron's graceful quit never completes, and once
+ *   `process.exit` has started Node's teardown no timer runs either (CI). So no
+ *   graceful exit at all: Node's own exit (`process.reallyExit`, keeping the
+ *   code) synchronously, and if that returns, `taskkill /F /T` on our own
+ *   process tree (its GPU and network children included).
  */
-export function exitAfterCleanup(
-  cleanup: () => void,
-  exit: (code: number) => void,
-  code: number,
-  /**
-   * #wfn2pdcx: a guaranteed end. On Windows, in MCP mode, Electron's
-   * `app.exit`/`process.exit` only schedule a quit that never completes
-   * (CI: the process lingered after "exit 0" with no error). So a hard exit is
-   * armed first and fires after `graceMs` if we're still alive.
-   */
-  hard?: { exit: (code: number) => void; graceMs: number; setTimer?: (fn: () => void, ms: number) => unknown },
-): void {
+export interface McpExitSteps {
+  cleanup: () => void;
+  graceful: (code: number) => void;
+  reallyExit?: (code: number) => void;
+  killTree: () => void;
+}
+
+export function exitMcp(platform: NodeJS.Platform | string, steps: McpExitSteps, code: number): void {
   try {
-    cleanup();
+    steps.cleanup();
   } catch {
     // Left for the next start's sweep.
   }
-  if (hard) (hard.setTimer ?? setTimeout)(() => hard.exit(code), hard.graceMs);
-  exit(code);
+  if (platform !== "win32") {
+    steps.graceful(code);
+    return;
+  }
+  steps.reallyExit?.(code);
+  steps.killTree();
 }
-

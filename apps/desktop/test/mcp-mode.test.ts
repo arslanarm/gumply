@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exitAfterCleanup, hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
+import { exitMcp, hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
 
 describe("desktop MCP mode arguments (A3)", () => {
   it("is off without --mcp", () => {
@@ -117,45 +117,47 @@ describe("restricted user namespaces and FUSE (#4ckqijua)", () => {
   });
 });
 
-/** #429bvzwr: on Windows our own Chromium children still hold files in the throwaway profile when stdin closes. */
-describe("exitAfterCleanup", () => {
-  it("exits even when the cleanup throws (ENOTEMPTY on Windows)", () => {
-    const exits: number[] = [];
-    exitAfterCleanup(
-      () => {
-        throw Object.assign(new Error("ENOTEMPTY, Directory not empty"), { code: "ENOTEMPTY" });
-      },
-      (code) => exits.push(code),
-      0,
-    );
-    expect(exits).toEqual([0]);
-  });
-
-  it("#wfn2pdcx: arms a hard exit before the graceful one, which fires after the grace period with the same code", () => {
+/** #429bvzwr / #wfn2pdcx: how --mcp ends when the AI app closes stdin. */
+describe("exitMcp", () => {
+  const recorder = () => {
     const events: string[] = [];
-    const timers: Array<{ fn: () => void; ms: number }> = [];
-    exitAfterCleanup(
-      () => events.push("cleanup"),
-      (code) => events.push(`graceful ${code}`), // on Windows this only schedules a quit that never completes
-      0,
-      { graceMs: 2000, exit: (code) => events.push(`hard ${code}`), setTimer: (fn, ms) => timers.push({ fn, ms }) },
-    );
-    expect(events).toEqual(["cleanup", "graceful 0"]);
-    expect(timers.map((timer) => timer.ms)).toEqual([2000]);
-    timers[0]!.fn();
-    expect(events).toEqual(["cleanup", "graceful 0", "hard 0"]);
+    return {
+      events,
+      steps: (cleanupThrows = false) => ({
+        cleanup: () => {
+          events.push("cleanup");
+          if (cleanupThrows) throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+        },
+        graceful: (code: number) => events.push(`graceful ${code}`),
+        reallyExit: (code: number) => events.push(`reallyExit ${code}`),
+        killTree: () => events.push("killTree"),
+      }),
+    };
+  };
+
+  it("Windows: no graceful exit at all; Node's own exit with the code, then the process tree is killed if that returns", () => {
+    const { events, steps } = recorder();
+    exitMcp("win32", steps(), 0);
+    expect(events).toEqual(["cleanup", "reallyExit 0", "killTree"]);
   });
 
-  it("without a hard exit (Linux, macOS) only the graceful exit runs", () => {
-    const events: string[] = [];
-    exitAfterCleanup(() => events.push("cleanup"), (code) => events.push(`graceful ${code}`), 1);
-    expect(events).toEqual(["cleanup", "graceful 1"]);
+  it("Windows: a cleanup that throws (EPERM, ENOTEMPTY: our own children hold files) never stops the exit", () => {
+    const { events, steps } = recorder();
+    exitMcp("win32", steps(true), 0);
+    expect(events).toEqual(["cleanup", "reallyExit 0", "killTree"]);
   });
 
-  it("runs the cleanup before exiting", () => {
-    const order: string[] = [];
-    exitAfterCleanup(() => order.push("cleanup"), (code) => order.push(`exit ${code}`), 2);
-    expect(order).toEqual(["cleanup", "exit 2"]);
+  it("Windows without process.reallyExit: straight to killing the tree", () => {
+    const { events, steps } = recorder();
+    exitMcp("win32", { ...steps(), reallyExit: undefined }, 2);
+    expect(events).toEqual(["cleanup", "killTree"]);
+  });
+
+  it("Linux and macOS: unchanged, the graceful exit only", () => {
+    for (const platform of ["linux", "darwin"]) {
+      const { events, steps } = recorder();
+      exitMcp(platform, steps(true), 1);
+      expect(events, platform).toEqual(["cleanup", "graceful 1"]);
+    }
   });
 });
-
