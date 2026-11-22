@@ -207,7 +207,16 @@ export {
   type TemplateSettings,
 } from "./templates.js";
 export { patchCanvasFile } from "./canvas-patch.js";
-export { encodePropertyValue, propertyLinkSpans, type PropertyLinkSpan, type PropertyLinkStyle } from "./property-links.js";
+export {
+  encodePropertyValue,
+  propertyLinks,
+  propertyLinkSpans,
+  type PropertyFileLink,
+  type PropertyLinks,
+  type PropertyLinkSpan,
+  type PropertyLinkStyle,
+  type PropertyPageLink,
+} from "./property-links.js";
 export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
 export { linkSourceFolder, pickLinkTarget, preferredLinkPath } from "./link-order.js";
 export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
