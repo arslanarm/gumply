@@ -44,9 +44,13 @@ test.skip(
 );
 test.describe.configure({ mode: 'serial' });
 
-const base = Number(process.env.GUMPLY_DESKTOP_PORT ?? 11010);
-const appPort = base + 5;
-const cdpPort = base + 6;
+/**
+ * Both ports are random free ones on 127.0.0.1: the app's server (no
+ * GUMPLY_DESKTOP_PORT) and Chromium's debugging port (`=0`; Chromium only
+ * listens on loopback). They're read back once the app is up.
+ */
+let cdpUrl = '';
+let appOrigin = '';
 
 /** One row of the CI job summary (and the log). */
 function record(check: string, detail: string): void {
@@ -108,7 +112,6 @@ function appEnv(): Record<string, string> {
     GUMPLY_DESKTOP_VAULT: vault,
     GUMPLY_DESKTOP_USER_DATA: join(scratch, 'user-data'),
     GUMPLY_DESKTOP_DOWNLOAD_DIR: downloads,
-    GUMPLY_DESKTOP_PORT: String(appPort),
   };
 }
 
@@ -193,30 +196,59 @@ test.beforeAll(async () => {
   writeFileSync(join(vault, 'Report.md'), REPORT);
   writeFileSync(join(vault, 'chart.png'), PNG);
 
-  const args = [`--remote-debugging-port=${cdpPort}`, ...(isLinux ? ['--ozone-platform=x11'] : [])];
+  const args = ['--remote-debugging-port=0', ...(isLinux ? ['--ozone-platform=x11'] : [])];
   const child = spawn(packaged, args, { env: appEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows });
   app = child;
   child.stdout!.on('data', (chunk: Buffer) => (appLog += chunk.toString()));
   child.stderr!.on('data', (chunk: Buffer) => (appLog += chunk.toString()));
-  await poll('The app\'s debugging port didn\'t answer', async () => ((await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok ? true : undefined), 60_000);
-  // noDefaults: Playwright leaves the app's own settings alone; without it, it
-  // takes over downloads, and the PDF export (a download main prints) never arrives.
-  browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, { noDefaults: true });
-  page = await poll(
-    "The app's window didn't open",
-    async () => browser!.contexts().flatMap((context) => context.pages()).find((candidate) => candidate.url().startsWith(`http://127.0.0.1:${appPort}/`)),
+  // The port Chromium picked: its "DevTools listening on ws://host:port/…" line,
+  // or the DevToolsActivePort file in the user-data folder (a GUI-subsystem
+  // Windows app may not write to the pipe).
+  const activePortFile = join(scratch, 'user-data', 'DevToolsActivePort');
+  const host = await poll(
+    "The app's debugging port wasn't announced",
+    async () => {
+      const announced = /DevTools listening on ws:\/\/([^/\s]+)\//.exec(appLog)?.[1];
+      if (announced) return announced;
+      const port = existsSync(activePortFile) ? Number(readFileSync(activePortFile, 'utf8').split('\n')[0]) : 0;
+      return port > 0 ? `127.0.0.1:${port}` : undefined;
+    },
     60_000,
   );
+  expect(host, 'the debugging port listens on loopback only').toMatch(/^127\.0\.0\.1:\d+$/);
+  cdpUrl = `http://${host}`;
+  await poll("The app's debugging port didn't answer", async () => ((await fetch(`${cdpUrl}/json/version`)).ok ? true : undefined), 30_000);
+  // noDefaults: Playwright leaves the app's own settings alone; without it, it
+  // takes over downloads, and the PDF export (a download main prints) never arrives.
+  browser = await chromium.connectOverCDP(cdpUrl, { noDefaults: true });
+  page = await poll(
+    "The app's window didn't open",
+    async () => browser!.contexts().flatMap((context) => context.pages()).find((candidate) => /^http:\/\/127\.0\.0\.1:\d+\//.test(candidate.url())),
+    60_000,
+  );
+  appOrigin = new URL(page.url()).origin;
 });
+
+/** Whether anything still answers at `url`. */
+async function answers(url: string): Promise<boolean> {
+  return fetch(url, { signal: AbortSignal.timeout(2_000) }).then(
+    () => true,
+    () => false,
+  );
+}
 
 test.afterAll(async () => {
   await browser?.close().catch(() => undefined);
   await stopApp();
   if (scratch) rmSync(scratch, { recursive: true, force: true });
+  // Closed for real: neither port answers any more.
+  const ports = [cdpUrl && `${cdpUrl}/json/version`, appOrigin && `${appOrigin}/api/health`].filter(Boolean);
+  for (const url of ports) await expect.poll(() => answers(url), { timeout: 15_000, message: `${url} still answers after the app was closed` }).toBe(false);
+  if (ports.length) record('app closed, ports freed', ports.map((url) => new URL(url).host).join(', '));
 });
 
 test('starts on the vault and reports the release version', async () => {
-  const health = (await (await fetch(`http://127.0.0.1:${appPort}/api/health`)).json()) as { version?: string; desktop?: boolean };
+  const health = (await (await fetch(`${appOrigin}/api/health`)).json()) as { version?: string; desktop?: boolean };
   expect(health.desktop).toBe(true);
   if (expectedVersion) expect(health.version).toBe(expectedVersion);
   await expect(page.getByTestId('page-item-Plan')).toBeVisible({ timeout: 30_000 });
