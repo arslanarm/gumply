@@ -7,12 +7,12 @@
  * Many items: cards and list items use `content-visibility: auto`, so only
  * what's on screen is laid out and painted.
  */
-import { useState, type DragEvent } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import { noteKey, propertyId, type BaseConfig, type BaseGroup, type BaseRow, type BaseValue, type BaseView, type BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
 import { propertyLabel } from "./labels.js";
-import { detailColumns, ImageBox, numberSetting, ValueText } from "./values.js";
+import { detailColumns, ImageBox, imageOf, numberSetting, ValueText } from "./values.js";
 
 export interface LayoutProps {
   config: BaseConfig;
@@ -124,12 +124,24 @@ export function ListView(props: LayoutProps) {
 
 /* -------------------------------------------------------------- cards */
 
-function Card({ row, props, ratio, coverHeight }: { row: BaseRow; props: LayoutProps; ratio: number; coverHeight?: number }) {
+function Card({
+  row,
+  props,
+  ratio,
+  coverHeight,
+  placeholder,
+}: {
+  row: BaseRow;
+  props: LayoutProps;
+  ratio: number;
+  coverHeight?: number;
+  placeholder?: boolean;
+}) {
   const t = useT();
   const columns = detailColumns(props.result.columns);
   return (
     <article className="base-card" data-testid={`base-card-${row.id}`}>
-      <ImageBox row={row} view={props.view} ratio={ratio} height={coverHeight} />
+      <ImageBox row={row} view={props.view} ratio={ratio} height={coverHeight} placeholder={placeholder} />
       <div className="base-card-body">
         <TitleButton row={row} onOpen={props.onOpen} />
         {columns.map((column) => {
@@ -155,10 +167,12 @@ export function CardsView(props: LayoutProps) {
   const { view, result } = props;
   const size = numberSetting(view, "cardSize", 200, 50, 800);
   const ratio = numberSetting(view, "imageAspectRatio", 1, 0.25, 2.5);
+  // As in Notion: once any card has a cover, the others get an empty one, so every title sits at the same height.
+  const anyCover = useMemo(() => result.rows.some((row) => imageOf(row, view) !== null), [result.rows, view]);
   const grid = (rows: BaseRow[]) => (
     <div className="base-cards" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${size}px, 1fr))` }} data-testid="base-cards">
       {rows.map((row) => (
-        <Card key={row.id} row={row} props={props} ratio={ratio} />
+        <Card key={row.id} row={row} props={props} ratio={ratio} placeholder={anyCover} />
       ))}
     </div>
   );

@@ -118,7 +118,12 @@ test.describe('database view layouts (D34)', () => {
     await open(page, request, 'Gallery');
     const alpha = page.getByTestId('base-card-Work/Alpha');
     await expect(alpha.locator('.base-card-image')).toHaveCSS('background-color', 'rgb(42, 157, 143)');
-    await expect(page.getByTestId('base-card-Work/Beta').locator('.base-card-image')).toHaveCount(0);
+    // #2su9ikg4: a card without a cover gets an empty one of the same size, so the titles line up.
+    const beta = page.getByTestId('base-card-Work/Beta');
+    await expect(beta.getByTestId('base-card-image-empty')).toBeVisible();
+    const box = async (locator: import('@playwright/test').Locator) => (await locator.boundingBox())!;
+    expect((await box(beta.getByTestId('base-card-image-empty'))).height).toBeCloseTo((await box(alpha.getByTestId('base-card-image'))).height, 0);
+    expect((await box(beta.locator('.base-title-text'))).y).toBeCloseTo((await box(alpha.locator('.base-title-text'))).y, 0);
     const status = alpha.getByTestId('base-card-prop-note.status');
     await expect(status.locator('.base-card-prop-name')).toHaveText('status');
     await expect(status.locator('.base-card-prop-value')).toHaveText('Todo');
@@ -128,6 +133,52 @@ test.describe('database view layouts (D34)', () => {
     await size.fill('300');
     await expect.poll(() => read('Work/Tasks.base')).toContain('    image: note.cover\n    cardSize: 300\n');
     await size.fill('200');
+    await expect.poll(() => read('Work/Tasks.base')).toBe(BASE);
+  });
+
+  test('Cards: with no cover anywhere, no empty covers; a long title wraps left-aligned next to its icon', async ({ page, request, vault }) => {
+    void vault;
+    const long = 'A rather long page title that has to wrap onto a second line';
+    await writeVault(request, {
+      'Work/Tasks.base': BASE.replace('    image: note.cover\n', ''),
+      [`Work/${long}.md`]: '---\nstatus: Doing\n---\nL\n',
+      'Work/Beta.md': '---\nstatus: Doing\n---\nB\n',
+    });
+    await page.goto('/#/Work/Tasks.base');
+    await page.getByTestId('base-tab-Gallery').click();
+    await expect(page.getByTestId('base-card-Work/Beta')).toBeVisible();
+    await expect(page.getByTestId('base-card-image-empty')).toHaveCount(0);
+    const card = page.getByTestId(`base-card-Work/${long}`);
+    const title = card.locator('.base-title-text');
+    expect((await title.boundingBox())!.height).toBeGreaterThan(30);
+    await expect(card.locator('.base-title-link')).toHaveCSS('text-align', 'left');
+    // The icon sits by the first line, not in the middle of the wrapped title.
+    const icon = (await card.locator('.base-title-icon').boundingBox())!;
+    expect(icon.y - (await title.boundingBox())!.y).toBeLessThan(8);
+  });
+
+  test('Properties panel: Shown (in view order), then Hidden; a click moves a property and writes order as before', async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Gallery');
+    await page.getByTestId('base-properties-button').click();
+    const shown = page.getByTestId('base-properties-shown');
+    const hidden = page.getByTestId('base-properties-hidden');
+    await expect(shown.locator('.base-check span')).toHaveText(['Name', 'status']);
+    await expect(shown.locator('.base-panel-title')).toHaveText(/shown/i);
+    await expect(hidden.locator('.base-panel-title')).toHaveText(/hidden/i);
+    await expect(hidden.getByTestId('base-property-note.due')).not.toBeChecked();
+    // The app's own checkbox, not the browser's.
+    await expect(shown.getByTestId('base-property-note.status')).toHaveCSS('appearance', 'none');
+    // The search field keeps its full height.
+    expect((await page.getByTestId('base-properties-panel').locator('input.base-input').boundingBox())!.height).toBeGreaterThanOrEqual(27);
+
+    // It moves to the other section (so click, not check()).
+    await hidden.getByTestId('base-property-note.due').click();
+    await expect(shown.locator('.base-check span')).toHaveText(['Name', 'status', 'due']);
+    await expect(shown.getByTestId('base-property-note.due')).toBeChecked();
+    await expect.poll(() => read('Work/Tasks.base')).toContain('  - type: cards\n    name: Gallery\n    order:\n      - file.name\n      - status\n      - due\n');
+    await shown.getByTestId('base-property-note.due').click();
+    await expect(hidden.getByTestId('base-property-note.due')).not.toBeChecked();
     await expect.poll(() => read('Work/Tasks.base')).toBe(BASE);
   });
 
@@ -288,9 +339,9 @@ test.describe('database view layouts (D34)', () => {
         const card = page.getByTestId(`base-card-Work/${id}`);
         const cover = card.getByTestId('base-card-image');
         const [cardBox, coverBox] = [(await card.boundingBox())!, (await cover.boundingBox())!];
-        // Card-wide, whatever the image's shape.
-        expect(Math.abs(coverBox.width - cardBox.width), id).toBeLessThanOrEqual(2);
-        out[id] = Math.round(coverBox.height);
+        // Card-wide, whatever the image's shape (part of the polled value:
+        // a throw here isn't retried, and the columns settle a moment late).
+        out[id] = Math.abs(coverBox.width - cardBox.width) <= 2 ? Math.round(coverBox.height) : -1;
       }
       return out;
     };
