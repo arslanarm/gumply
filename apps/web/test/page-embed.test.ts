@@ -89,6 +89,14 @@ describe("the read-only renderer (#5dpxwac4)", () => {
     expect(html.match(/data-type="taskItem"/g)).toHaveLength(2);
   });
 
+  it("text and background colours show; the value is re-checked, and other HTML stays text", () => {
+    const html = renderEmbeddedMarkdown('<span style="color: var(--color-red);">red</span> <mark style="background: #fff3a0">hl</mark> <span style="color: url(x)">bad</span> <b>bold?</b>');
+    expect(html).toContain('<span class="md-color" style="color: var(--color-red)">red</span>');
+    expect(html).toContain('<span class="md-bg-color" style="background-color: #fff3a0">hl</span>');
+    expect(html).toContain("&lt;span style=&quot;color: url(x)&quot;&gt;bad&lt;/span&gt;");
+    expect(html).toContain("&lt;b&gt;bold?&lt;/b&gt;");
+  });
+
   it("nested previews become placeholders; boards become link cards", () => {
     const html = renderEmbeddedMarkdown("![[Other#Sec]]\n\n![[Map.canvas|480]]");
     expect(html).toContain('<div class="page-embed-nested" data-target="Other" data-part="Sec"></div>');

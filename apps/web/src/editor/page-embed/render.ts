@@ -15,6 +15,7 @@
 import { hasAttachmentExtension, isBoardTarget } from "@gumply/core";
 import MarkdownIt from "markdown-it";
 import { calloutStyle, defaultCalloutTitle } from "../callout/types.js";
+import { parseColorTag } from "../color.js";
 import { wikilinkMarkdownPlugin } from "../wikilink/markdown-plugin.js";
 import { parsePageEmbed } from "./markdown-plugin.js";
 
@@ -136,7 +137,39 @@ function taskListRule(state: Any): void {
   }
 }
 
-/** `#tags` as chips and `==text==` as marks, in text only (never in code). */
+/** `==marks==` and `#tag` chips in escaped text. */
+function decorate(text: string): string {
+  return escapeHtml(text)
+    .replace(/==([^=\n]+)==/g, "<mark>$1</mark>")
+    .replace(/(^|[\s([{"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu, (match: string, before: string, tag: string) =>
+      // Obsidian's rule (#9bx3aznb): `#2024` alone isn't a tag.
+      /\D/.test(tag) ? `${before}<span class="tag-chip" data-tag="${tag}">#${tag}</span>` : match,
+    );
+}
+
+/** A colour tag around plain text, closed in the same run (#h368c8ni): `<span style="color: …">x</span>`. */
+const COLOR_RUN = /(<(span|mark|font)\b[^<>]*>)([^<>]*)<\/\2\s*>/gi;
+
+/**
+ * Text with its colour tags (only a colour, the editor's own rule) as
+ * coloured spans; the value is re-checked, never copied as markup. Any other
+ * HTML stays text, as before (`html: false`).
+ */
+function decorateWithColors(text: string): string {
+  let out = "";
+  let last = 0;
+  for (const match of text.matchAll(COLOR_RUN)) {
+    const color = parseColorTag(match[1]!);
+    if (!color) continue;
+    out += decorate(text.slice(last, match.index));
+    const style = color.kind === "text" ? `color: ${color.value}` : `background-color: ${color.value}`;
+    out += `<span class="${color.kind === "text" ? "md-color" : "md-bg-color"}" style="${escapeHtml(style)}">${decorate(match[3] ?? "")}</span>`;
+    last = match.index! + match[0].length;
+  }
+  return out + decorate(text.slice(last));
+}
+
+/** `#tags` as chips, `==text==` as marks and colour tags as colours, in text only (never in code). */
 function textDecorations(state: Any): void {
   for (const block of state.tokens) {
     if (block.type !== "inline" || !block.children) continue;
@@ -146,12 +179,7 @@ function textDecorations(state: Any): void {
         out.push(child);
         continue;
       }
-      const html = escapeHtml(child.content)
-        .replace(/==([^=\n]+)==/g, "<mark>$1</mark>")
-        .replace(/(^|[\s([{"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu, (match: string, before: string, tag: string) =>
-          // Obsidian's rule (#9bx3aznb): `#2024` alone isn't a tag.
-          /\D/.test(tag) ? `${before}<span class="tag-chip" data-tag="${tag}">#${tag}</span>` : match,
-        );
+      const html = decorateWithColors(child.content);
       if (html === escapeHtml(child.content)) {
         out.push(child);
         continue;
