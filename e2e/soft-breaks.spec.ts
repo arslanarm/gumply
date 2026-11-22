@@ -176,3 +176,36 @@ test.describe('soft line breaks (#iatezw4m)', () => {
   }
 });
 
+
+test.describe('Enter right before a line break (#zvdge7ai)', () => {
+  test('splits into two paragraphs and drops the break; the caret starts the second (as in Notion)', async ({ page, request, vault }) => {
+    void vault;
+    await fs.writeFile(file(), 'Intro line.\nTyped here\n\nOther.\n');
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Soft');
+    await page.goto('/#/Soft');
+    const body = page.getByTestId('editor-content');
+    await body.locator('p', { hasText: 'Intro line.' }).click();
+    // The caret goes to the end of the first line (before the break).
+    await page.keyboard.press('Home');
+    for (let i = 0; i < 'Intro line.'.length; i += 1) await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('New ');
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('Intro line.\n\nNew Typed here\n\nOther.\n');
+    await expect(body.locator('p', { hasText: 'New Typed here' }).locator('br')).toHaveCount(0);
+  });
+
+  test('in a list item, the item splits the same way', async ({ page, request, vault }) => {
+    void vault;
+    await fs.writeFile(file(), '- first\n  second\n\nOther.\n');
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Soft');
+    await page.goto('/#/Soft');
+    const body = page.getByTestId('editor-content');
+    await body.locator('li p', { hasText: 'first' }).click();
+    await page.keyboard.press('Home');
+    for (let i = 0; i < 'first'.length; i += 1) await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('- first\n- second\n\nOther.\n');
+  });
+});

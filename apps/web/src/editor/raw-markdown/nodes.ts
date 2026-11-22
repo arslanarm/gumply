@@ -275,6 +275,8 @@ export function renderRawInlinePreview(source: string, kind: string): HTMLElemen
   }
   // `\=`: shows as the `=` it stands for (#bg3cb83t).
   if (kind === "escape") return el("span", "raw-inline-escape", source.slice(1));
+  // A tab inside text (#ftx3awn7): shown at a tab's width.
+  if (kind === "tab") return el("span", "raw-inline-tab", "\t");
   return el("code", "raw-inline-source", source);
 }
 

@@ -53,7 +53,7 @@ import {
 } from "../editor/raw-markdown/markup.js";
 import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
 import { MarkdownListSource } from "../editor/raw-markdown/list-source.js";
-import { MarkdownBlockJoins } from "../editor/raw-markdown/block-joins.js";
+import { MarkdownBlockJoins, MarkdownBlockquote } from "../editor/raw-markdown/block-joins.js";
 import { Callout, CalloutTitle } from "../editor/callout/callout.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
 import {
@@ -63,7 +63,7 @@ import {
   GumplyTableRow,
   registerTableSources,
 } from "../editor/table/table.js";
-import { MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
+import { BreakAwareEnter, MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
 import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/raw-markdown/list-style.js";
 import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
@@ -682,6 +682,8 @@ export function Editor({
         hardBreak: false,
         bulletList: false,
         codeBlock: false,
+        // Registered below: nested `>>` markers kept as written (#ftx3awn7).
+        blockquote: false,
         // Registered below as the innermost mark (editor/highlight.ts).
         code: false,
       }),
@@ -700,9 +702,11 @@ export function Editor({
       MarkdownMarkup,
       MarkdownListSource,
       MarkdownBlockJoins,
+      MarkdownBlockquote,
       EmptyLineParagraph,
       MarkdownText,
       MarkdownHardBreak,
+      BreakAwareEnter,
       RawBlock,
       RawInline,
       Callout,

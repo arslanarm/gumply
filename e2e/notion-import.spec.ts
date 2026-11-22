@@ -52,3 +52,36 @@ test('a Notion export imports into "Notion import" and its pages open with their
   const file = path.join(E2E_VAULT, 'Notion import/Private & Shared/Test page.md');
   expect(await fs.readFile(file, 'utf8')).toContain('![[DB.base]]');
 });
+
+test('an imported page survives an edit elsewhere byte for byte (its `ratione.\\` line included, #6wnxxk4y)', async ({ page, request, vault }) => {
+  void vault;
+  const started = await request.post('/api/import/notion', {
+    multipart: { file: { name: 'Export.zip', mimeType: 'application/zip', buffer: await fixtureZip() } },
+  });
+  const { id } = (await started.json()) as { id: string };
+  await expect
+    .poll(async () => ((await (await request.get(`/api/import/${id}`)).json()) as { state: string }).state, { timeout: 15_000 })
+    .toBe('done');
+  // The vault may still hold an earlier import: use the folder this one made.
+  const { folder } = (await (await request.get(`/api/import/${id}`)).json()) as { folder: string };
+  const file = path.join(E2E_VAULT, folder, 'Private & Shared/Test page.md');
+  const imported = await fs.readFile(file, 'utf8');
+  expect(imported).toContain('ratione.\\\n');
+  await page.goto(`/#/${encodeURIComponent(`${folder}/Private & Shared/Test page`)}`);
+  await page.getByTestId('editor-content').getByText('Ullam rerum eos harum', { exact: false }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' X');
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+  // Only the edited paragraph changed (End goes to the end of the wrapped
+  // visual line, so where " X" lands inside it doesn't matter); every other
+  // line, the trailing-backslash one included, is byte-identical.
+  await expect.poll(async () => (await fs.readFile(file, 'utf8')).includes(' X')).toBe(true);
+  const before = imported.split('\n');
+  const after = (await fs.readFile(file, 'utf8')).split('\n');
+  expect(after).toHaveLength(before.length);
+  const edited = before.findIndex((line) => line.startsWith('Ullam rerum'));
+  after.forEach((line, index) => {
+    if (index === edited) expect(line.replace(' X', '')).toBe(before[index]);
+    else expect(line, `line ${index + 1}`).toBe(before[index]);
+  });
+});

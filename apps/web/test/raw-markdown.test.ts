@@ -110,8 +110,24 @@ describe("backslash escapes and pairing-aware * / _ (#628e927t)", () => {
     expect(escapeMarkdownText(" y*", false, { paragraph: "*x and y*", offset: 6 })).toBe(" y\\*");
     // …but a closer before an opener never pairs (CommonMark), so no escape.
     expect(escapeMarkdownText("x*", false, { paragraph: "x* and *y", offset: 0 })).toBe("x*");
+    // #6wnxxk4y: a backslash ending the block escapes nothing and stays single;
+    // before more text, a mark or a line break it's still escaped.
+    expect(escapeMarkdownText("C:\\dir\\", false, { paragraph: "C:\\dir\\", offset: 0, endsBlock: true })).toBe("C:\\dir\\");
+    expect(escapeMarkdownText("C:\\dir\\", false, { paragraph: "C:\\dir\\ more", offset: 0, endsBlock: false })).toBe("C:\\dir\\\\");
     // Without a paragraph (pasted tables): the old, stricter rules.
     expect(escapeMarkdownText("a*b", false)).toBe("a\\*b");
+  });
+});
+
+describe("tabs inside text (#ftx3awn7)", () => {
+  it("keeps each tab as an atom; indentation is structure and untouched", () => {
+    expect(rawInlines("Word\tafter and two\t\ttabs.")).toEqual([
+      ["tab", "\t"],
+      ["tab", "\t"],
+      ["tab", "\t"],
+    ]);
+    expect(rawInlines("- item\twith tab")).toEqual([["tab", "\t"]]);
+    expect(rawInlines("- parent\n\t- nested")).toEqual([]);
   });
 });
 
