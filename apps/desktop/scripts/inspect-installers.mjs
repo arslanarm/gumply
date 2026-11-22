@@ -16,10 +16,11 @@
 // ../src/inspect-installers.ts, which is unit-tested.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, chmodSync, copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inspectRuntime } from "./appimage-runtime.mjs";
 import {
   debianVersion,
   expectedInstallers,
@@ -164,6 +165,13 @@ function inspectDeb(name) {
 function inspectAppImage(name) {
   const file = join(release, name);
   chmodSync(file, 0o755);
+  // #4ckqijua: the runtime must not need libfuse.so.2 (Ubuntu 22.04+ doesn't ship it).
+  const head = Buffer.alloc(4 * 1024 * 1024);
+  const fd = openSync(file, "r");
+  const read = readSync(fd, head, 0, head.length, 0);
+  closeSync(fd);
+  const runtime = inspectRuntime(head.subarray(0, read));
+  check(name, "AppImage runtime: static type-2, no libfuse2", runtime.ok, runtime.detail);
   const dir = scratch(`${name}-x`);
   // The AppImage runtime unpacks itself; the app is not started.
   const r = run(file, ["--appimage-extract"], { cwd: dir });

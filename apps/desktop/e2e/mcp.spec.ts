@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -8,7 +8,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { CORE_VERSION } from '@gumply/core';
-import { mcpLaunchCommand } from '../src/mcp-mode.js';
+import { mcpLaunchCommand, userNamespacesWork } from '../src/mcp-mode.js';
 
 /**
  * v0.8 A3 (spec/mcp §1): `Gumply --mcp --vault <path>` is the stdio MCP
@@ -56,7 +56,23 @@ function isolatedEnv(): Record<string, string> {
   return { ...base, ...dirs, GUMPLY_DESKTOP_USER_DATA: join(scratch, 'user-data') };
 }
 
-const mcpArgs = (extra: string[] = []) => [appDir, '--ozone-platform=x11', '--mcp', '--vault', vault, ...extra];
+/**
+ * #4ckqijua: every MCP spawn starts exactly as Settings → AI apps prints the
+ * development command, including its user-namespace probe. Development Electron
+ * has no AppArmor profile, so where Ubuntu 23.10+ restricts user namespaces the
+ * command carries --no-sandbox, as AppRun decides for the AppImage; elsewhere it
+ * doesn't. No test-only flags.
+ */
+const launch = mcpLaunchCommand({
+  execPath: electronPath,
+  packaged: false,
+  appPath: appDir,
+  platform: process.platform,
+  userNamespaces: userNamespacesWork(existsSync, (command, args) => spawnSync(command, args, { stdio: 'ignore', timeout: 2000 }).status),
+});
+/** The launch args without the app folder (it comes first). */
+const flags = launch.args.slice(1);
+const mcpArgs = (extra: string[] = []) => [...launch.args, '--vault', vault, ...extra];
 
 async function connect(era: 'modern' | 'legacy') {
   const transport = new StdioClientTransport({ command: electronPath, args: mcpArgs(), env: isolatedEnv(), stderr: 'pipe' });
@@ -107,7 +123,7 @@ test('A4: `gumply mcp --vault …` (the npm form; /usr/bin/gumply from a .deb) i
   // In development `mcp` follows the app folder, as `/opt/Gumply/gumply mcp` has it first.
   const transport = new StdioClientTransport({
     command: electronPath,
-    args: [appDir, 'mcp', '--ozone-platform=x11', '--vault', vault],
+    args: [appDir, 'mcp', ...flags.filter((flag) => flag !== '--mcp'), '--vault', vault],
     env: isolatedEnv(),
     stderr: 'pipe',
   });
@@ -125,7 +141,7 @@ test('A4: the Linux snippet starts with no display at all (no DISPLAY, no WAYLAN
   test.skip(process.platform !== 'linux', 'Linux snippet');
   test.setTimeout(60_000);
   // Exactly the args Settings → AI apps prints in development (the packaged ones are pinned in the unit test).
-  const { command, args } = mcpLaunchCommand({ execPath: electronPath, packaged: false, appPath: appDir, platform: 'linux' });
+  const { command, args } = launch;
   const env = isolatedEnv();
   delete env.DISPLAY;
   delete env.WAYLAND_DISPLAY;
@@ -191,7 +207,7 @@ test('exits 0 when stdin closes; 1 for a missing vault or MCP turned off; 2 with
   expect(closed.code).toBe(0);
   expect(closed.stdout).toBe('');
 
-  expect((await runRaw([appDir, '--ozone-platform=x11', '--mcp', '--vault', join(scratch, 'nope')], true)).code).toBe(1);
+  expect((await runRaw([...launch.args, '--vault', join(scratch, 'nope')], true)).code).toBe(1);
 
   mkdirSync(join(vault, '.gumply'));
   writeFileSync(join(vault, '.gumply', 'mcp.json'), '{"enabled":false}');
@@ -199,5 +215,5 @@ test('exits 0 when stdin closes; 1 for a missing vault or MCP turned off; 2 with
   expect(off.code).toBe(1);
   expect(off.stderr).toContain('MCP is turned off for this vault');
 
-  expect((await runRaw([appDir, '--ozone-platform=x11', '--mcp'], true)).code).toBe(2);
+  expect((await runRaw([...launch.args], true)).code).toBe(2);
 });

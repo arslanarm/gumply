@@ -94,6 +94,8 @@ export interface McpLaunchCommand {
    * build's fallback `gumply mcp`, which needs `gumply` on the AI app's PATH.
    */
   hint?: "appimage" | "macos-location" | "npm";
+  /** #4ckqijua: the AppImage can't start here, since no `fusermount` (fuse3) is installed. */
+  warning?: "fuse";
 }
 
 /** `GET /api/mcp/settings` (spec/api-mcp-settings). */

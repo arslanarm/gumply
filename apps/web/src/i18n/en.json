@@ -806,6 +806,7 @@
       "claudeDesktopHint": "Add this to {{path}}, then quit Claude Desktop completely and open it again:",
       "npmHint": "AI apps don't use your terminal's PATH, so the gumply command may not be found. Build Gumply's MCP server (npm run build -w @gumply/mcp), then reopen this dialog for a snippet with full paths.",
       "appImageHint": "This is the AppImage file's own path. If you move or rename it, copy the snippet again.",
+      "fuseWarning": "This AppImage needs FUSE to start, and it isn't installed: run sudo apt install fuse3, or use the .deb.",
       "macLocationHint": "Move Gumply to the Applications folder and open it from there, then copy the snippet. A copy run from the disk image goes away when it's closed.",
       "copy": "Copy",
       "copied": "Copied",
