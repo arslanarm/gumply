@@ -960,6 +960,35 @@ export class VaultStore {
   }
 
   /**
+   * #g95wkd9y: the watcher named only files the index already has, and they
+   * all still exist (edits, the usual case): re-read just those, without
+   * walking the vault. Anything else (a new or deleted file, a name the
+   * index doesn't know) returns null, and the caller walks.
+   */
+  private async rereadKnownFiles(paths: ReadonlySet<string>): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> } | null> {
+    const reads: Array<{ absolute: string; id: PageId; key: string }> = [];
+    for (const absolute of paths) {
+      const cached = this.readCache.get(absolute);
+      if (!cached || !this.pages.has(cached.id)) return null;
+      try {
+        reads.push({ absolute, id: cached.id, key: statKey(await stat(absolute)) });
+      } catch {
+        return null; // Deleted: the walk settles ids, parents and folders.
+      }
+    }
+    const next = new Map(this.pages);
+    for (const { absolute, id, key } of reads) {
+      const record = await this.readRecord(absolute, id);
+      this.refreshTags(record);
+      // The layout didn't change, so neither did the parent.
+      record.parentId = this.pages.get(id)!.parentId;
+      next.set(id, record);
+      this.readCache.set(absolute, { key, id, record });
+    }
+    return { pages: next, folders: this.folders };
+  }
+
+  /**
    * D33: every scanned directory that isn't a page's own sub-page folder (no
    * `<Folder>.md` beside it), from the same walk that finds the pages.
    */
@@ -1013,7 +1042,9 @@ export class VaultStore {
 
   private async refreshFromDisk(scope: RefreshScope = { kind: "all" }): Promise<boolean> {
     const epochBefore = this.fileIndexEpoch;
-    const { pages: next, folders } = await this.scanRecords(scope.kind === "paths" ? scope.paths : undefined);
+    const { pages: next, folders } =
+      (scope.kind === "paths" ? await this.rereadKnownFiles(scope.paths) : null) ??
+      (await this.scanRecords(scope.kind === "paths" ? scope.paths : undefined));
 
     // #g95wkd9y: which records differ (a reused record is the same object: no compare).
     const changedIds: PageId[] = [];

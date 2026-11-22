@@ -76,6 +76,36 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
     expect(store.backlinks("Note 6").map((item) => item.page.id)).toEqual([]);
   });
 
+  it("an edit the watcher names is re-read without walking the vault", async () => {
+    const store = await vaultOf(160);
+    const file = join(dir, "Note 7.md");
+    await writeFile(file, "Now links to [[Hub]].\n");
+    const internals = store as unknown as Internals & { scan: (...args: unknown[]) => Promise<string[]> };
+    const scan = internals.scan;
+    let walks = 0;
+    internals.scan = function (this: unknown, ...args) {
+      walks += 1;
+      return scan.apply(this, args);
+    };
+    try {
+      const work = await counted(store, () => internals.refreshFromDisk({ kind: "paths", paths: new Set([file]) }));
+      expect(work).toEqual({ reads: 1, edges: 1 });
+      expect(walks).toBe(0);
+    } finally {
+      internals.scan = scan;
+    }
+    expect(store.backlinks("Hub").map((item) => item.page.id)).toEqual(["Note 7"]);
+  });
+
+  it("a path the index doesn't know (a new file) falls back to a walk", async () => {
+    const store = await vaultOf(10);
+    const file = join(dir, "Brand new.md");
+    await writeFile(file, "See [[Hub]].\n");
+    const internals = store as unknown as Internals;
+    await internals.refreshFromDisk({ kind: "paths", paths: new Set([file]) });
+    expect(store.backlinks("Hub").map((item) => item.page.id)).toEqual(["Brand new"]);
+  });
+
   it("the watcher's paths are read again even when the stat looks unchanged", async () => {
     const store = await vaultOf(20);
     const file = join(dir, "Note 3.md");
