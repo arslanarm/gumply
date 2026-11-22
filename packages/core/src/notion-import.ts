@@ -29,6 +29,18 @@ import {
   type RelationItem,
 } from "./notion-databases.js";
 import type { PropertyType } from "./properties.js";
+import {
+  notionReportStrings,
+  notionSkipReason,
+  type NotionReportLanguage,
+  type NotionSkipCode,
+  type NotionSkipParams,
+} from "./notion-report-strings.js";
+
+/** A skipped entry's code, params and English reason (#n86gnptg). */
+export function skipEntry(code: NotionSkipCode, params: NotionSkipParams = {}): { reason: string; code: NotionSkipCode; params: NotionSkipParams } {
+  return { reason: notionSkipReason(code, params, "en"), code, params };
+}
 
 /**
  * The import's limits (spec/api-import): the server enforces them, and the
@@ -129,8 +141,11 @@ export interface NotionImportReport {
   missing: Array<{ page: string; link: string }>;
   /** Mentions of pages that aren't in the export (kept as web links). */
   outside: Array<{ page: string; url: string }>;
-  /** Entries left out, with the reason (set by the server for zip checks, too). */
-  skipped: Array<{ path: string; reason: string }>;
+  /**
+   * Entries left out (set by the server for zip checks, too): `reason` in
+   * English, and the `code` + `params` the reports localise (#n86gnptg).
+   */
+  skipped: Array<{ path: string; reason: string; code?: NotionSkipCode; params?: NotionSkipParams }>;
 }
 
 export interface NotionImportPlan {
@@ -499,7 +514,7 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
       const title = (row[0] ?? "").trim();
       const page = queue.get(title)?.shift();
       if (!page) {
-        report.skipped.push({ path: csvPath, reason: `the row "${title}" has no page in the export` });
+        report.skipped.push({ path: csvPath, ...skipEntry("rowWithoutPage", { title }) });
         continue;
       }
       const entries = columns.map((column) => [column.key, columnValue(column.kind, row[column.index] ?? "", link(page))] as const);
@@ -634,87 +649,70 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
   return { files, databases: planned, report, types };
 }
 
-/** Property types in the report's words. */
-const TYPE_WORDS: Record<PropertyType, string> = {
-  text: "text",
-  multitext: "list",
-  number: "number",
-  checkbox: "checkbox",
-  date: "date",
-  datetime: "date and time",
-  tags: "tags",
-  aliases: "aliases",
-};
-
-/** `1 page`, `2 pages`. */
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 /**
- * `Import report.md` (§8), written into the import folder. Plain text only:
- * no `[[…]]` in it, so the report never links to pages by accident.
+ * `Import report.md` (§8), written into the import folder in the language
+ * the import was started in (#n86gnptg; English by default). Plain text
+ * only: no `[[…]]` in it, so the report never links to pages by accident.
  */
-export function notionReportMarkdown(report: NotionImportReport, folder: string): string {
+export function notionReportMarkdown(report: NotionImportReport, folder: string, language: NotionReportLanguage = "en"): string {
+  const words = notionReportStrings(language);
   const { converted } = report;
   const lines = [
-    `# Notion import`,
+    words.title,
     "",
-    `Imported into \`${folder}\`.`,
+    words.importedInto(folder),
     "",
-    "## Imported",
+    words.importedTitle,
     "",
-    `- ${count(report.pages, "page", "pages")}`,
-    `- ${count(report.databases, "database", "databases")} with ${count(report.rows, "row", "rows")}`,
-    `- ${count(report.attachments, "attachment", "attachments")}`,
+    `- ${words.pages(report.pages)}`,
+    `- ${words.databases(report.databases, report.rows)}`,
+    `- ${words.attachments(report.attachments)}`,
     "",
-    "## Converted",
+    words.convertedTitle,
     "",
-    `- ${count(converted.pageLinks, "link", "links")} and ${count(converted.mentions, "mention", "mentions")} to wiki links`,
-    `- ${count(converted.databaseEmbeds, "database", "databases")} embedded as live views, ${count(converted.databaseLinks, "database link", "database links")}`,
-    ...(converted.relations ? [`- ${count(converted.relations, "relation", "relations")} to wiki links`] : []),
-    `- ${count(converted.attachmentLinks, "link", "links")} to attachments`,
-    `- ${count(converted.callouts, "callout", "callouts")} (their icons are not in the export)`,
+    `- ${words.links(converted.pageLinks, converted.mentions)}`,
+    `- ${words.databaseEmbeds(converted.databaseEmbeds, converted.databaseLinks)}`,
+    ...(converted.relations ? [`- ${words.relations(converted.relations)}`] : []),
+    `- ${words.attachmentLinks(converted.attachmentLinks)}`,
+    `- ${words.callouts(converted.callouts)}`,
   ];
   if (report.databaseDetails.length) {
-    lines.push("", "## Databases", "");
+    lines.push("", words.databasesTitle, "");
     for (const database of report.databaseDetails) {
-      const properties = database.properties.map((property) => `${property.key} (${TYPE_WORDS[property.type]})`).join(", ");
-      let views = "a table view in Notion's column order";
-      if (database.kanban) views += `, and a board grouped by ${database.kanban} (Notion's exported view leaves that column out, so it was probably a board)`;
-      if (database.kanbanSkipped) {
-        views += `; no board for ${database.kanbanSkipped.key}: it has ${database.kanbanSkipped.groups} values (more than ${KANBAN_MAX_GROUPS})`;
-      }
-      lines.push(`- ${database.name}: ${views}. Properties: ${properties || "none"}.`);
+      const properties = database.properties.map((property) => `${property.key} (${words.types[property.type]})`).join(", ");
+      let views = words.tableView;
+      if (database.kanban) views += words.boardView(database.kanban);
+      if (database.kanbanSkipped) views += words.boardSkipped(database.kanbanSkipped.key, database.kanbanSkipped.groups, KANBAN_MAX_GROUPS);
+      lines.push(`- ${database.name}: ${views}. ${properties ? words.properties(properties) : words.noProperties}`);
     }
   }
   if (report.renamedKeys.length) {
-    lines.push("", "## Renamed properties", "");
+    lines.push("", words.renamedTitle, "");
     for (const item of report.renamedKeys) lines.push(`- ${item.database}: ${item.from} → ${item.to}`);
   }
   if (report.keptTypes.length) {
-    lines.push("", "## Property types kept from your vault", "");
-    for (const item of report.keptTypes) lines.push(`- ${item.key}: ${TYPE_WORDS[item.type]} (the import found ${TYPE_WORDS[item.found]})`);
+    lines.push("", words.keptTypesTitle, "");
+    for (const item of report.keptTypes) lines.push(`- ${words.keptType(item.key, words.types[item.type], words.types[item.found])}`);
   }
   if (report.notRows.length) {
-    lines.push("", "## Sub-pages of database rows", "");
-    for (const item of report.notRows) lines.push(`- ${item.page}: imported as a page, not as a row of ${item.database}`);
+    lines.push("", words.notRowsTitle, "");
+    for (const item of report.notRows) lines.push(`- ${words.notRow(item.page, item.database)}`);
   }
-  lines.push(
-    "",
-    "## Not in a Notion export",
-    "",
-    "Database views: filters, sorts and layouts (Gumply made a table, and a board where the export points to one), formula and rollup settings (their values arrive as text), option colours, text colours, toggles, comments, synced blocks, permissions, people, files in file properties (their names arrive as text), and embeds of other apps.",
-  );
+  lines.push("", words.lostTitle, "", words.lost);
   if (report.outside.length) {
-    lines.push("", "## Links to pages that weren't exported", "");
+    lines.push("", words.outsideTitle, "");
     for (const item of report.outside) lines.push(`- ${item.page}: ${item.url}`);
   }
   if (report.missing.length) {
-    lines.push("", "## Links to files missing from the export", "");
+    lines.push("", words.missingTitle, "");
     for (const item of report.missing) lines.push(`- ${item.page}: \`${item.link}\``);
   }
   if (report.skipped.length) {
-    lines.push("", "## Skipped", "");
-    for (const item of report.skipped) lines.push(`- \`${item.path}\`: ${item.reason}`);
+    lines.push("", words.skippedTitle, "");
+    for (const item of report.skipped) {
+      const reason = item.code ? notionSkipReason(item.code, item.params, language) : item.reason;
+      lines.push(`- \`${item.path}\`: ${reason}`);
+    }
   }
   return `${lines.join("\n")}\n`;
 }

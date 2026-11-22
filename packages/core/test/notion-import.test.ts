@@ -2,7 +2,15 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { notionReportMarkdown, notionUrlId, planNotionImport, stripNotionId, type NotionEntry, type NotionImportOptions } from "../src/index";
+import {
+  NOTION_REPORT_LANGUAGES,
+  notionReportMarkdown,
+  notionUrlId,
+  planNotionImport,
+  stripNotionId,
+  type NotionEntry,
+  type NotionImportOptions,
+} from "../src/index";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(here, "fixtures/notion");
@@ -42,6 +50,17 @@ function expectGolden(name: string, options: Partial<NotionImportOptions> = {}) 
   const expected = new Map(walk(expectedDir).map((path) => [relative(expectedDir, path).split("\\").join("/"), readFileSync(path)]));
   expect([...written.keys()].sort()).toEqual([...expected.keys()].sort());
   for (const [path, data] of written) expect(Buffer.from(data).equals(expected.get(path)!), path).toBe(true);
+
+  // #n86gnptg: the same report in every other language the app ships, byte for byte.
+  for (const language of NOTION_REPORT_LANGUAGES.filter((code) => code !== "en")) {
+    const report = notionReportMarkdown(plan.report, "Notion import", language);
+    const file = join(FIXTURES, "reports", `${name}.${language}.md`);
+    if (process.env.UPDATE_NOTION_GOLDEN === "1") {
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, report);
+    }
+    expect(report, file).toBe(readFileSync(file, "utf8"));
+  }
   return plan;
 }
 

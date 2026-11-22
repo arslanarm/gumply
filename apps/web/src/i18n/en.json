@@ -1532,7 +1532,18 @@
     "keptTypesTitle": "Property types kept from your vault: {{count}}",
     "keptType": "{{key}}: {{type}} (the import found {{found}})",
     "notRowsTitle": "Sub-pages of database rows: {{count}}",
-    "notRow": "{{page}}: imported as a page, not as a row of {{database}}"
+    "notRow": "{{page}}: imported as a page, not as a row of {{database}}",
+    "skip": {
+      "nul": "a NUL character in the name",
+      "absolute": "an absolute path",
+      "outside": "a path that leaves the export",
+      "symlink": "a symbolic link",
+      "tooLarge": "larger than {{limit}}",
+      "zipBomb": "compressed suspiciously well (a possible zip bomb)",
+      "sizeMismatch": "its size doesn't match the zip's header",
+      "rowWithoutPage": "the row “{{title}}” has no page in the export",
+      "typesNotRecorded": "property types not recorded: {{error}}"
+    }
   },
   "math": {
     "inlineHint": "Click to edit the formula",

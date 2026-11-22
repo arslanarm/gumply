@@ -23,10 +23,15 @@ import {
   formatImportLimit,
   notionReportMarkdown,
   planNotionImport,
+  skipEntry,
   type NotionEntry,
   type NotionImportReport,
+  type NotionReportLanguage,
+  type NotionSkipCode,
   type PageId,
 } from "@gumply/core";
+
+type Skipped = NotionImportReport["skipped"][number];
 import { conflict, notFound } from "./errors.js";
 import type { VaultStore } from "./vault-store.js";
 
@@ -52,12 +57,18 @@ export interface NotionImportJob {
   error?: string;
 }
 
-/** Why a zip entry name is refused (zip-slip), or null when it's safe. */
-export function unsafeEntryName(name: string): string | null {
-  if (name.includes("\u0000")) return "a NUL character in the name";
-  if (/^[a-zA-Z]:/.test(name) || name.startsWith("/") || name.startsWith("\\")) return "an absolute path";
-  if (name.split(/[\\/]/).some((segment) => segment === "..")) return "a path that leaves the export";
+/** Why a zip entry name is refused (zip-slip), as a skip code, or null when it's safe. */
+export function unsafeEntryCode(name: string): NotionSkipCode | null {
+  if (name.includes("\u0000")) return "nul";
+  if (/^[a-zA-Z]:/.test(name) || name.startsWith("/") || name.startsWith("\\")) return "absolute";
+  if (name.split(/[\\/]/).some((segment) => segment === "..")) return "outside";
   return null;
+}
+
+/** Why a zip entry name is refused (zip-slip), in English, or null when it's safe. */
+export function unsafeEntryName(name: string): string | null {
+  const code = unsafeEntryCode(name);
+  return code ? skipEntry(code).reason : null;
 }
 
 /**
@@ -94,8 +105,8 @@ export function zipSymlinks(zip: Uint8Array): Set<string> {
 }
 
 /** Read the export: the entries to import, and what was refused. */
-export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): { entries: NotionEntry[]; skipped: Array<{ path: string; reason: string }> } {
-  const skipped: Array<{ path: string; reason: string }> = [];
+export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): { entries: NotionEntry[]; skipped: Skipped[] } {
+  const skipped: Skipped[] = [];
   const symlinks = zipSymlinks(zip);
   let files = 0;
   let total = 0;
@@ -107,13 +118,13 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
       const name = file.name;
       if (name.endsWith("/")) return false;
       if (name.startsWith("__MACOSX/") || /(^|\/)\.DS_Store$/.test(name)) return false;
-      const unsafe = unsafeEntryName(name);
+      const unsafe = unsafeEntryCode(name);
       if (unsafe) {
-        skipped.push({ path: name, reason: unsafe });
+        skipped.push({ path: name, ...skipEntry(unsafe) });
         return false;
       }
       if (symlinks.has(name)) {
-        skipped.push({ path: name, reason: "a symbolic link" });
+        skipped.push({ path: name, ...skipEntry("symlink") });
         return false;
       }
       files += 1;
@@ -122,11 +133,11 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
         return false;
       }
       if (!/\.(md|csv)$/i.test(name) && file.originalSize > limits.attachmentBytes) {
-        skipped.push({ path: name, reason: `larger than ${formatImportLimit(limits.attachmentBytes)}` });
+        skipped.push({ path: name, ...skipEntry("tooLarge", { limit: formatImportLimit(limits.attachmentBytes) }) });
         return false;
       }
       if (file.originalSize > limits.ratioFloorBytes && file.originalSize > file.size * limits.ratio) {
-        skipped.push({ path: name, reason: "compressed suspiciously well (a possible zip bomb)" });
+        skipped.push({ path: name, ...skipEntry("zipBomb") });
         return false;
       }
       if (total + file.originalSize > limits.totalBytes) {
@@ -144,7 +155,7 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
   for (const [path, data] of Object.entries(out)) {
     // A size that doesn't match its header is a damaged or crafted entry.
     if (data.length !== declared.get(path)) {
-      skipped.push({ path, reason: "its size doesn't match the zip's header" });
+      skipped.push({ path, ...skipEntry("sizeMismatch") });
       continue;
     }
     entries.push({ path: path.replace(/\\/g, "/").normalize("NFC"), data });
@@ -197,13 +208,13 @@ export class NotionImports {
   }
 
   /** Start an import into `parentId` (a folder page or plain folder; null = the vault root). */
-  start(zip: Uint8Array, parentId: PageId | null): NotionImportJob {
+  start(zip: Uint8Array, parentId: PageId | null, language: NotionReportLanguage = "en"): NotionImportJob {
     if (this.running) throw conflict(`An import is already running (job ${this.running.id}).`);
     if (parentId !== null && !this.store.list().some((meta) => meta.id === parentId)) throw notFound("No such folder");
     const job: NotionImportJob = { id: randomUUID(), state: "reading", done: 0, total: 0 };
     this.jobs.set(job.id, job);
     this.running = job;
-    void this.run(job, zip, parentId);
+    void this.run(job, zip, parentId, language);
     return job;
   }
 
@@ -216,7 +227,7 @@ export class NotionImports {
     }
   }
 
-  private async run(job: NotionImportJob, zip: Uint8Array, parentId: PageId | null): Promise<void> {
+  private async run(job: NotionImportJob, zip: Uint8Array, parentId: PageId | null, language: NotionReportLanguage): Promise<void> {
     const root = this.store.root;
     const temp = join(root, IMPORT_TMP, job.id);
     let outcome: { state: "done" | "failed"; error?: string } = { state: "failed", error: "The import stopped." };
@@ -236,7 +247,7 @@ export class NotionImports {
           vaultTypes: await this.store.storedPropertyTypes(),
         });
         plan.report.skipped.push(...skipped);
-        plan.files.push({ path: `${folder}/Import report.md`, content: notionReportMarkdown(plan.report, folder) });
+        plan.files.push({ path: `${folder}/Import report.md`, content: notionReportMarkdown(plan.report, folder, language) });
 
         job.state = "writing";
         job.total = plan.files.length;
@@ -267,7 +278,7 @@ export class NotionImports {
         try {
           await this.store.addPropertyTypes(plan.types);
         } catch (error) {
-          plan.report.skipped.push({ path: "types.json", reason: `property types not recorded: ${error instanceof Error ? error.message : String(error)}` });
+          plan.report.skipped.push({ path: "types.json", ...skipEntry("typesNotRecorded", { error: error instanceof Error ? error.message : String(error) }) });
         }
         job.folder = folder;
         job.report = plan.report;

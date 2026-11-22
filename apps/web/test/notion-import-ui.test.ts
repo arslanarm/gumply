@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { convertedLines, databaseLine, folderName, importErrorKind, looksLikeZip, progressPercent } from "../src/lib/notion-import.js";
+import { convertedLines, databaseLine, skippedReason, folderName, importErrorKind, looksLikeZip, progressPercent } from "../src/lib/notion-import.js";
+import { notionReportStrings } from "@gumply/core";
+import en from "../src/i18n/en.json";
+import ru from "../src/i18n/ru.json";
 
 describe("Import from Notion dialog helpers (B4)", () => {
   it("maps server answers to plain-words errors", () => {
@@ -57,4 +60,21 @@ describe("Import from Notion dialog helpers (B4)", () => {
       "boardSkipped(name=Tasks,key=Group,count=13,max=12) noProperties()",
     );
   });
+
+  it("skipped reasons (#n86gnptg): by code in the app's language, else the English reason", () => {
+    const t = (key: string, vars: Record<string, string | number> = {}) => `${key}${JSON.stringify(vars)}`;
+    expect(skippedReason({ path: "a", reason: "larger than 5 bytes", code: "tooLarge", params: { limit: "5 bytes" } }, t as never)).toBe(
+      'notionImport.skip.tooLarge{"limit":"5 bytes"}',
+    );
+    expect(skippedReason({ path: "a", reason: "something old" }, t as never)).toBe("something old");
+  });
+
+  it("every skip code has a message in en and ru; the report's Russian type names are the app's", () => {
+    const codes = Object.keys(notionReportStrings("en").skip);
+    for (const messages of [en, ru]) expect(Object.keys(messages.notionImport.skip).sort()).toEqual([...codes].sort());
+    for (const [type, word] of Object.entries(notionReportStrings("ru").types)) {
+      expect(word, type).toBe(ru.properties.types[type as keyof typeof ru.properties.types].toLowerCase());
+    }
+  });
 });
+

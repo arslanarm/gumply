@@ -27,7 +27,7 @@ import type {
   VaultImage,
   LinkableFile,
 } from "@gumply/core";
-import { PAGE_LOOK_KEYS, formatImportLimit } from "@gumply/core";
+import { PAGE_LOOK_KEYS, formatImportLimit, notionReportLanguage } from "@gumply/core";
 import { Hono, type Context } from "hono";
 import {
   listAttachments,
@@ -468,7 +468,9 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (file.size > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge(`The export is too large (max ${formatImportLimit(NOTION_IMPORT_LIMITS.uploadBytes)})`);
     const parent = body["parentId"];
     const parentId = typeof parent === "string" && parent.length > 0 ? parent : null;
-    const job = imports.start(new Uint8Array(await file.arrayBuffer()), parentId);
+    // #n86gnptg: `Import report.md` in the app's language (unknown → English).
+    const language = notionReportLanguage(body["language"]);
+    const job = imports.start(new Uint8Array(await file.arrayBuffer()), parentId, language);
     return c.json<NotionImportJob>(job, 202);
   });
 

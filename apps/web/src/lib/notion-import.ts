@@ -103,3 +103,11 @@ export function databaseLine(
     : t("notionImport.database.noProperties");
   return `${views} ${properties}`;
 }
+
+/** A skipped entry's reason in the app's language (#n86gnptg); `reason` (English) for entries without a code. */
+export function skippedReason(
+  item: NotionImportReport["skipped"][number],
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+): string {
+  return item.code ? t(`notionImport.skip.${item.code}` as MessageKey, item.params) : item.reason;
+}

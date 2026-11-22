@@ -292,6 +292,8 @@ export const api = {
     const body = new FormData();
     body.set("file", file);
     if (parentId) body.set("parentId", parentId);
+    // #n86gnptg: `Import report.md` is written in the app's language.
+    body.set("language", currentLanguage());
     return request("/import/notion", { method: "POST", body });
   },
 

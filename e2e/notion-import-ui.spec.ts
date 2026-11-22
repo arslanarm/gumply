@@ -114,6 +114,23 @@ test.describe('Import from Notion (B4)', () => {
     await expect.poll(() => fs.access(path.join(E2E_VAULT, 'Work', 'Notion import', 'Import report.md')).then(() => true, () => false)).toBe(true);
   });
 
+  test('in Russian, Import report.md is written in Russian (#n86gnptg)', async ({ page, vault }) => {
+    test.setTimeout(90_000);
+    await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+    await vault.seed([{ title: 'Home', content: 'Hi' }]);
+    await fs.mkdir(path.join(E2E_VAULT, 'Work'), { recursive: true });
+    await page.goto('/#/Home');
+    await expect(page.getByTestId('page-item-Work')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('page-menu-button-Work').click();
+    await page.getByTestId('import-notion-Work').click();
+    await importZip(page);
+    await expect(page.getByTestId('notion-import-databases')).toContainText('таблица');
+    const golden = await fs.readFile(new URL('../packages/core/test/fixtures/notion/reports/basic.ru.md', import.meta.url), 'utf8');
+    await expect
+      .poll(() => fs.readFile(path.join(E2E_VAULT, 'Work', 'Notion import', 'Import report.md'), 'utf8').catch(() => ''))
+      .toBe(golden.replace('Импортировано в `Notion import`.', 'Импортировано в `Work/Notion import`.'));
+  });
+
   test('plain-words errors: not a zip, not an export, an import already running; Try again goes back', async ({ page, vault }) => {
     await vault.seed([{ title: 'Home', content: 'Hi' }]);
     await page.goto('/#/Home');

@@ -247,6 +247,7 @@ export {
   notionReportMarkdown,
   notionUrlId,
   planNotionImport,
+  skipEntry,
   stripNotionId,
   type NotionEntry,
   type NotionImportOptions,
@@ -256,6 +257,16 @@ export {
   type NotionPlannedFile,
 } from "./notion-import.js";
 export { KANBAN_MAX_GROUPS, notionBaseSource, parseCsv, parseNotionDate } from "./notion-databases.js";
+export {
+  NOTION_REPORT_LANGUAGES,
+  notionReportLanguage,
+  notionReportStrings,
+  notionSkipReason,
+  type NotionReportLanguage,
+  type NotionReportStrings,
+  type NotionSkipCode,
+  type NotionSkipParams,
+} from "./notion-report-strings.js";
 export { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type HeadingRename } from "./heading-rename.js";
 export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
 

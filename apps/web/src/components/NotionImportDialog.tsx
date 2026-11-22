@@ -17,6 +17,7 @@ import {
   looksLikeZip,
   NOT_IN_EXPORT,
   progressPercent,
+  skippedReason,
   STEP_MESSAGES,
 } from "../lib/notion-import.js";
 import { Icon } from "./Icon.js";
@@ -278,7 +279,7 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
         <List
           testId="notion-import-skipped"
           title={t("notionImport.skippedTitle", { count: report.skipped.length })}
-          items={report.skipped.map((item) => `${item.path}: ${item.reason}`)}
+          items={report.skipped.map((item) => `${item.path}: ${skippedReason(item, t)}`)}
         />
         <List
           testId="notion-import-missing"

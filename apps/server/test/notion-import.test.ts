@@ -181,7 +181,7 @@ describe("reading the export safely (spec §2)", () => {
     expect(() => readNotionZip(zipSync(files), { ...NOTION_IMPORT_LIMITS, totalBytes: 3 })).toThrow(/larger than 3 bytes once unpacked/);
     const big = zipSync({ "Root/huge.png": crypto.getRandomValues(new Uint8Array(4096)) });
     const { skipped } = readNotionZip(big, { ...NOTION_IMPORT_LIMITS, attachmentBytes: 1000 });
-    expect(skipped).toEqual([{ path: "Root/huge.png", reason: "larger than 1000 bytes" }]);
+    expect(skipped).toEqual([{ path: "Root/huge.png", reason: "larger than 1000 bytes", code: "tooLarge", params: { limit: "1000 bytes" } }]);
   });
 });
 
@@ -279,6 +279,27 @@ describe("Notion databases: property types (B3, #cwi22mc6)", () => {
     expect(job.report?.keptTypes).toContainEqual({ key: "Due", type: "text", found: "date" });
     // Within the database, the `due` column next to `Due` became its own key.
     expect(job.report?.renamedKeys).toContainEqual({ database: "Tasks", from: "due", to: "due 2" });
+  });
+});
+
+describe("Import report.md in the app's language (#n86gnptg)", () => {
+  it("an import started in Russian writes the Russian report (the per-language golden); English otherwise", async () => {
+    const { store, dir } = await createTestServer();
+    const imports = new NotionImports(store);
+    const zip = await fixtureZip();
+    const ru = await imports.settled(imports.start(zip, null, "ru").id);
+    expect(ru.state, ru.error).toBe("done");
+    expect(await readFile(join(dir, "Notion import/Import report.md"), "utf8")).toBe(await readFile(join(CORE_FIXTURES, "reports/basic.ru.md"), "utf8"));
+    const en = await imports.settled(imports.start(zip, null).id);
+    expect(await readFile(join(dir, `${en.folder}/Import report.md`), "utf8")).toMatch(/^# Notion import\n/);
+  });
+
+  it("zip refusals carry a code for the localised reports, and keep the English reason", () => {
+    expect(unsafeEntryName("../evil.md")).toBe("a path that leaves the export");
+    const { skipped } = readNotionZip(zipSync({ "a.md": new Uint8Array([1]) }), { ...NOTION_IMPORT_LIMITS, attachmentBytes: 0 });
+    expect(skipped).toEqual([]);
+    const big = readNotionZip(zipSync({ "x.png": new Uint8Array(10) }), { ...NOTION_IMPORT_LIMITS, attachmentBytes: 5 }).skipped;
+    expect(big).toEqual([{ path: "x.png", code: "tooLarge", params: { limit: "5 bytes" }, reason: "larger than 5 bytes" }]);
   });
 });
 
