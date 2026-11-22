@@ -502,6 +502,27 @@ html[data-theme="dark"] .callout[data-callout-style="quote"] { --callout-rgb: 15
   color: rgb(var(--callout-rgb));
 }
 
+/* F1/F2: math (MathML) and diagrams (inline SVG). */
+.export-body .math-block {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+
+.export-body .math-error {
+  color: var(--color-red);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.export-diagram {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+
+.export-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* ---------- Inlined previews, database views, boards, notes ---------- */
 
 .export-embed {

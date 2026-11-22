@@ -10,7 +10,9 @@ import { propertyLabel } from "../bases/labels.js";
 import { downloadBlob } from "../board/export/download.js";
 import { highlightToHtml } from "../editor/code/highlight-plugin.js";
 import { currentLanguage, t } from "../i18n/index.js";
+import { renderMermaid } from "../lib/diagram.js";
 import { resolveFileLinkAsync } from "../lib/file-links.js";
+import { mathToHtml } from "../lib/math.js";
 import exportCss from "./export.css?raw";
 import { buildPageHtml, exportFileName, type ExportFile, type ExportOptions, type ExportSource } from "./html-export.js";
 
@@ -51,6 +53,9 @@ export function exportSource(pages: readonly PageMeta[]): ExportSource {
     },
     formatValue: (value, type) => display((value ?? null) as BaseValue, type),
     highlight: highlightToHtml,
+    // MathML: no KaTeX fonts or CSS to inline, so the file stays small and offline.
+    math: (tex, display) => mathToHtml(tex, { display, output: "mathml" }),
+    diagram: (source, theme) => renderMermaid(source, { theme }),
     css: exportCss,
     t: (key, vars) => t(key, vars),
     language: currentLanguage(),

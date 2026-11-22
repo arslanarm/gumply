@@ -63,12 +63,38 @@ describe("HTML export (G1)", () => {
     const root = page("P", "```js\nconst a = 1 < 2;\n```\n\n```mermaid\ngraph TD; A-->B\n```\n\n$E = mc^2$\n\n> [!warning]- Careful\n> Body");
     const html = await buildPageHtml(root, source({}, [root]).value, options);
     expect(html).toContain('<code class="language-js"><span class="hljs-keyword">const</span> a = 1 &lt; 2;');
+    // No renderers in this source: math and diagrams keep their source.
     expect(html).toContain("graph TD; A--&gt;B");
-    expect(html).toContain("$E = mc^2$");
+    expect(html).toContain("E = mc^2");
     expect(html).toMatch(/<span class="callout-icon" aria-hidden="true"><svg viewBox="0 0 24 24"/);
     expect(html).not.toContain("callout-fold");
     expect(html).not.toContain("is-closed");
     expect(html).toContain("Careful");
+  });
+
+  it("math as MathML and diagrams as SVG through the renderers; a failed diagram keeps its source", async () => {
+    const root = page("P", "Inline $a^2$ here.\n\n$$\nE = mc^2\n$$\n\n```mermaid\ngraph TD; A-->B\n```\n\n```mermaid\nnot a diagram\n```\n\nIt costs $5 and $10.");
+    const themes: string[] = [];
+    const html = await buildPageHtml(
+      root,
+      source({}, [root], {
+        math: async (tex, display) => `<math${display ? ' display="block"' : ""}><mi>${tex}</mi></math>`,
+        diagram: async (code, theme) => {
+          themes.push(theme);
+          return code.startsWith("graph") ? { svg: '<svg data-test="diagram"></svg>' } : { error: "Parse error" };
+        },
+      }).value,
+      { theme: "dark", links: "text" },
+    );
+    expect(html).toContain("<math><mi>a^2</mi></math>");
+    expect(html).toContain('<div class="math-block"><math display="block"><mi>E = mc^2</mi></math></div>');
+    expect(html).toContain('<div class="export-diagram"><svg data-test="diagram"></svg></div>');
+    expect(html).toContain("<pre><code>not a diagram</code></pre>");
+    expect(themes).toEqual(["dark", "dark"]);
+    // Prices stay text (the editor's own detection).
+    expect(html).toContain("It costs $5 and $10.");
+    expect(html).not.toContain("data-math");
+    expect(html).not.toContain("data-mermaid");
   });
 
   it("links: plain text by default, or relative links to sibling .html files", async () => {

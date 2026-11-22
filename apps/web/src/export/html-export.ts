@@ -58,6 +58,10 @@ export interface ExportSource {
   /** A base value as the app shows it (dates in the interface language…). */
   formatValue: (value: unknown, type: string) => string;
   highlight: (language: string, code: string) => Promise<string | null>;
+  /** F1: TeX as MathML (no fonts or CSS needed); absent = the source stays as text. */
+  math?: (tex: string, display: boolean) => Promise<string>;
+  /** F2: a Mermaid diagram as a sanitised SVG (system font only); absent or an error = the source stays as code. */
+  diagram?: (source: string, theme: "light" | "dark") => Promise<{ svg: string } | { error: string }>;
   /** The stylesheet the file carries (export.css). */
   css: string;
   t: (key: ExportMessage, vars?: Record<string, string | number>) => string;
@@ -181,6 +185,31 @@ async function inlineImages(context: Context, html: string, fromId: string, file
   });
 }
 
+/** F1: `$…$` / `$$…$$` placeholders from the preview renderer, as MathML. */
+async function renderMath(context: Context, html: string): Promise<string> {
+  const math = context.source.math;
+  if (!math) return html;
+  const inline = await replaceAsync(html, /<span class="math-inline" data-math="([^"]*)">[\s\S]*?<\/span>/g, async (match) => {
+    const out = await math(unescapeHtml(match[1] ?? ""), false).catch(() => null);
+    return out ?? match[0];
+  });
+  return replaceAsync(inline, /<div class="math-block" data-math="([^"]*)" data-math-display="true">[\s\S]*?<\/div>/g, async (match) => {
+    const out = await math(unescapeHtml(match[1] ?? ""), true).catch(() => null);
+    return out ? `<div class="math-block">${out}</div>` : match[0];
+  });
+}
+
+/** F2: ```mermaid placeholders as an inline SVG; an error keeps the source as code. */
+async function renderDiagrams(context: Context, html: string): Promise<string> {
+  const diagram = context.source.diagram;
+  return replaceAsync(html, /<div class="mermaid-block" data-mermaid="([^"]*)"[^>]*>(<pre><code>[\s\S]*?<\/code><\/pre>)<\/div>/g, async (match) => {
+    // A system-theme file can't switch an SVG's colours without script: it's drawn light.
+    const result = diagram ? await diagram(unescapeHtml(match[1] ?? ""), context.options.theme === "dark" ? "dark" : "light").catch(() => null) : null;
+    if (result && "svg" in result) return `<div class="export-diagram">${result.svg}</div>`;
+    return match[2] ?? "";
+  });
+}
+
 async function highlightCode(context: Context, html: string): Promise<string> {
   return replaceAsync(html, /<pre><code class="language-([\w+#.-]+)">([\s\S]*?)<\/code><\/pre>/g, async (match) => {
     const language = match[1] ?? "";
@@ -281,6 +310,8 @@ async function renderBody(
   html = await nestedPreviews(context, html, depth, chain);
   html = await boardCards(context, html, fromId);
   html = await inlineImages(context, html, fromId, fileLinks);
+  html = await renderMath(context, html);
+  html = await renderDiagrams(context, html);
   html = await highlightCode(context, html);
   html = staticCallouts(html);
   return staticLinks(context, html);

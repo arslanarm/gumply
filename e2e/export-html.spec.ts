@@ -55,6 +55,12 @@ const TRIP = [
   '',
   '![[Map.canvas]]',
   '',
+  'Energy: $E = mc^2$.',
+  '',
+  '```mermaid',
+  'graph TD; Start-->Finish',
+  '```',
+  '',
 ].join('\n');
 
 async function writeVault(request: APIRequestContext) {
@@ -147,6 +153,10 @@ test.describe('export a page as HTML (G1)', () => {
         await expect(images.nth(index)).toHaveAttribute('src', /^data:image\/png;base64,/);
         await expect.poll(() => images.nth(index).evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth)).toBe(40);
       }
+      // F1/F2: the formula as MathML, the diagram as an inline SVG, both with no request.
+      await expect(viewer.locator('.export-body math')).toHaveCount(1);
+      await expect(viewer.locator('.export-diagram svg')).toHaveCount(1);
+      await expect(viewer.locator('.export-diagram')).toContainText('Finish');
       expect(requests).toEqual([]);
     } finally {
       await context.close();
