@@ -357,32 +357,91 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[],
   const target = normalise(targetTitle);
   if (target.length === 0) return null;
   const folder = linkSourceFolder(from);
+  const index = resolverIndex(pages);
+  const slug = slugify(targetTitle);
 
-  const byTitle = (candidate: PageMeta): string => normalise(candidate.title);
-  const byId = (candidate: PageMeta): string => normalise(candidate.id);
-  const lastSegment = (candidate: PageMeta): string => normalise(candidate.id.split("/").pop() ?? "");
-
-  const checks: Array<(page: PageMeta) => boolean> = [
+  // Each check is an exact-key lookup (#udbaghb4), in D40/D4's order:
+  const lookups: Array<[ResolverKey, string]> = [
     // 1. A whole vault path (case-insensitive), whatever another page's title says.
-    (page) => byId(page) === target,
+    ["id", target],
     // 2. Titles, case-insensitive: the case of a name never decides (measured).
-    (page) => byTitle(page) === target,
-    (page) => lastSegment(page) === slugify(targetTitle),
-    (page) => lastSegment(page) === target,
-    (page) => byId(page).endsWith(`/${slugify(targetTitle)}`),
+    ["title", target],
+    ["lastSegment", slug],
+    ["lastSegment", target],
+    // `normalise(id).endsWith("/" + slug)`: a slug never holds a `/`, so that is
+    // "the part after the id's last `/` is the slug".
+    ["afterSlash", slug],
     // A link written against the readable title Gumply used to show for a
     // slug-like file name (`[[Meeting notes]]` → meeting-notes.md, #bayuasqq).
-    (page) => normalise(legacySlugTitle(page.id)) === target,
+    ["legacy", target],
   ];
 
-  for (const check of checks) {
+  for (const [key, value] of lookups) {
+    const candidates = index.lookup(key, value);
+    if (!candidates) continue;
+    // Candidates keep `pages` order, so this is the same pick as a scan of all pages.
     let found: PageMeta | null = null;
-    for (const page of pages) {
-      if (check(page) && (found === null || preferred(page, found, folder))) found = page;
+    for (const page of candidates) {
+      if (found === null || preferred(page, found, folder)) found = page;
     }
     if (found) return found;
   }
   return null;
+}
+
+type ResolverKey = "id" | "title" | "lastSegment" | "afterSlash" | "legacy";
+
+const RESOLVER_KEYS: Record<ResolverKey, (page: PageMeta) => string | null> = {
+  id: (page) => normalise(page.id),
+  title: (page) => normalise(page.title),
+  lastSegment: (page) => normalise(page.id.split("/").pop() ?? ""),
+  afterSlash: (page) => {
+    const id = normalise(page.id);
+    const slash = id.lastIndexOf("/");
+    return slash === -1 ? null : id.slice(slash + 1);
+  },
+  legacy: (page) => normalise(legacySlugTitle(page.id)),
+};
+
+interface ResolverIndex {
+  length: number;
+  lookup(key: ResolverKey, value: string): PageMeta[] | undefined;
+}
+
+/**
+ * #udbaghb4: one index per page list, so resolving every link of a vault is
+ * linear, not links × pages. Each check's map is built the first time that
+ * check runs, then reused by every later call with the same array (a reindex
+ * passes one array to every page). Page lists are snapshots that callers
+ * never change in place; a changed length rebuilds anyway.
+ */
+const resolverIndexes = new WeakMap<readonly PageMeta[], ResolverIndex>();
+
+function resolverIndex(pages: readonly PageMeta[]): ResolverIndex {
+  const cached = resolverIndexes.get(pages);
+  if (cached && cached.length === pages.length) return cached;
+  const maps = new Map<ResolverKey, Map<string, PageMeta[]>>();
+  const index: ResolverIndex = {
+    length: pages.length,
+    lookup(key, value) {
+      let map = maps.get(key);
+      if (!map) {
+        map = new Map();
+        const keyOf = RESOLVER_KEYS[key];
+        for (const page of pages) {
+          const pageKey = keyOf(page);
+          if (pageKey === null) continue;
+          const list = map.get(pageKey);
+          if (list) list.push(page);
+          else map.set(pageKey, [page]);
+        }
+        maps.set(key, map);
+      }
+      return map.get(value);
+    },
+  };
+  resolverIndexes.set(pages, index);
+  return index;
 }
 
 /**
