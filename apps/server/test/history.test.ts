@@ -59,10 +59,13 @@ describe("versions on save (§3)", () => {
     expect(await readFile(join(historyDir(dir, "Note"), list[1]!.file), "utf8")).toBe("third\n");
   });
 
-  it("a checkpoint (page closed) keeps the current bytes as a session version, once", async () => {
+  it("a checkpoint (page closed) keeps an edited page's current bytes as a session version, once", async () => {
     const { store, dir } = await createTestServer();
     await writeFile(join(dir, "Note.md"), "one\n");
     await store.rescan();
+    // Only viewed: closing it starts no history.
+    expect(await store.checkpoint("Note")).toBe(false);
+    expect(await entries(dir, "Note")).toEqual([]);
     await store.update("Note", { content: "two" });
     expect(await store.checkpoint("Note")).toBe(true);
     expect(await store.checkpoint("Note")).toBe(false);
@@ -166,6 +169,22 @@ describe("history follows the page (D20)", () => {
     expect((await app.request(`/api/history/${enc("Gone")}`)).status).toBe(404);
     await store.restore(trashId);
     expect((await getJson<HistoryList>(app, `/api/history/${enc("Gone")}`)).items).toHaveLength(1);
+  });
+});
+
+describe("a new page never adopts an old page's history", () => {
+  it("creating a page where a deleted one had history sets that history aside as an orphan", async () => {
+    const { app, store, dir } = await createTestServer();
+    await writeFile(join(dir, "Ideas.md"), "old\n");
+    await store.rescan();
+    await store.update("Ideas", { content: "older still" });
+    await store.remove("Ideas");
+    await store.emptyTrash();
+    expect((await getJson<HistoryOrphan[]>(app, "/api/history-orphans")).map((orphan) => orphan.title)).toEqual(["Ideas"]);
+
+    await store.create({ title: "Ideas", content: "brand new" });
+    expect((await getJson<HistoryList>(app, `/api/history/${enc("Ideas")}`)).items).toEqual([]);
+    expect((await getJson<HistoryOrphan[]>(app, "/api/history-orphans")).map((orphan) => orphan.title)).toEqual(["Ideas"]);
   });
 });
 

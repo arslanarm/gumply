@@ -3,6 +3,7 @@ import type { PageId, TrashedPage, TrashItem } from "@gumply/core";
 import { useT } from "../i18n/index.js";
 import { relativeTime } from "../lib/search.js";
 import { filterTrash, trashDepth, trashLocation, trashedCount } from "../lib/trash.js";
+import { HistoryOrphans } from "./HistoryOrphans.js";
 import { Icon } from "./Icon.js";
 
 export interface TrashViewProps {
@@ -16,6 +17,8 @@ export interface TrashViewProps {
   onDeleteForever: (item: TrashItem) => void;
   onEmpty: () => void;
   onRetry: () => void;
+  /** D41: an orphaned history came back as this page. */
+  onOrphanRestored?: (id: PageId) => void;
 }
 
 function ItemIcon({ page }: { page: TrashedPage }) {
@@ -27,7 +30,7 @@ function ItemIcon({ page }: { page: TrashedPage }) {
 }
 
 /** The trash (#ppag3ugh): deleted pages and boards, newest first. */
-export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteForever, onEmpty, onRetry }: TrashViewProps) {
+export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteForever, onEmpty, onRetry, onOrphanRestored }: TrashViewProps) {
   const t = useT();
   const [query, setQuery] = useState("");
   const shown = useMemo(() => (items ? filterTrash(items, query) : []), [items, query]);
@@ -170,6 +173,7 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
           })}
         </ul>
       )}
+      {onOrphanRestored ? <HistoryOrphans onRestored={onOrphanRestored} /> : null}
     </div>
   );
 }

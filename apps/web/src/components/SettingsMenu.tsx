@@ -23,11 +23,14 @@ export function SettingsMenu({
   open,
   onOpenChange,
   onOpenMcp,
+  onOpenHistory,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** A3: Settings → AI apps (MCP)…. */
   onOpenMcp?: () => void;
+  /** D41: Settings → Version history (size, clear, the Syncthing hint). */
+  onOpenHistory?: () => void;
 }) {
   const t = useT();
   // Re-render when the language changes (the selected option moves).
@@ -137,6 +140,21 @@ export function SettingsMenu({
             >
               <Icon name="graph" size={15} />
               <span>{t("settings.mcp.open")}</span>
+              <Icon name="chevronRight" size={14} />
+            </button>
+          ) : null}
+          {onOpenHistory ? (
+            <button
+              type="button"
+              className="settings-link"
+              data-testid="settings-history"
+              onClick={() => {
+                onOpenChange(false);
+                onOpenHistory();
+              }}
+            >
+              <Icon name="clock" size={15} />
+              <span>{t("history.title")}</span>
               <Icon name="chevronRight" size={14} />
             </button>
           ) : null}

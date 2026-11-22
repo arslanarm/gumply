@@ -268,6 +268,16 @@ export async function moveHistoryDir(root: string, source: string, from: string,
   await appendFile(join(target, INDEX_FILE), `${JSON.stringify(line)}\n`);
 }
 
+/**
+ * A new page or board is being created at `id`: a history already there
+ * belongs to an earlier page of that name (deleted), so it's kept aside as an
+ * orphan `<key>~<stamp>` and the new page starts its own.
+ */
+export async function setAsideHistory(root: string, id: string, now = new Date()): Promise<void> {
+  const dir = historyDir(root, id);
+  if (existsSync(dir)) await rename(dir, `${dir}~${stamp(now)}`);
+}
+
 // --- retention (D41) -------------------------------------------------------
 
 const HOUR = 3_600_000;

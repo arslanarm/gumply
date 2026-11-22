@@ -33,7 +33,7 @@ import {
 
 type Skipped = NotionImportReport["skipped"][number];
 import { conflict, notFound } from "./errors.js";
-import { saveVersion } from "./history.js";
+import { saveVersion, setAsideHistory } from "./history.js";
 import type { VaultStore } from "./vault-store.js";
 
 /** The limits live in core so the web app's messages use the same numbers (#bswmpt63). */
@@ -293,8 +293,10 @@ export class NotionImports {
         const canvas = /\.canvas$/i.test(path);
         const bytes = await readFile(join(root, path)).catch(() => null);
         if (!bytes) continue;
+        const id = canvas ? path : path.replace(/\.md$/i, "");
+        await setAsideHistory(root, id).catch(() => undefined);
         await saveVersion(root, {
-          id: canvas ? path : path.replace(/\.md$/i, ""),
+          id,
           ext: canvas ? "canvas" : "md",
           bytes,
           version: new Date().toISOString(),

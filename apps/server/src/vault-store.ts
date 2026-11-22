@@ -126,6 +126,7 @@ import {
   pruneVault,
   readHistory,
   saveVersion,
+  setAsideHistory,
   setPinned,
   sha256,
   usage,
@@ -146,6 +147,10 @@ export interface HistoryItem {
   client?: string;
   tool?: string;
   bytes: number;
+  /** The version's sha256 (the panel marks the one equal to the current file). */
+  sha256: string;
+  /** The page's version (`updated`) these bytes had: an MCP audit row's `before` names it. */
+  version: string;
   pinned: boolean;
   restoredFrom?: string;
   /** The page's title when this version was made, when it differs from now. */
@@ -1933,6 +1938,7 @@ export class VaultStore {
       await writeFile(temporary, next, "utf8");
       const previous = await readFile(record.filePath).catch(() => null);
       if (previous !== null && !previous.equals(Buffer.from(next, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
+      if (previous === null) await this.freshHistory(record.filePath);
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
@@ -4098,6 +4104,8 @@ export class VaultStore {
       ...(entry.client ? { client: entry.client } : {}),
       ...(entry.tool ? { tool: entry.tool } : {}),
       bytes: entry.bytes,
+      sha256: entry.sha256,
+      version: entry.version,
       pinned: entry.pinned === true,
       ...(entry.restoredFrom ? { restoredFrom: entry.restoredFrom } : {}),
       ...(title !== undefined ? { title } : {}),
@@ -4165,15 +4173,19 @@ export class VaultStore {
    */
   checkpoint(id: PageId): Promise<boolean> {
     return this.enqueue(async () => {
-      const timer = this.sessionTimers.get(id);
-      if (timer) clearTimeout(timer);
-      this.sessionTimers.delete(id);
-      let record: PageRecord | undefined;
+      let resolved: PageId;
       try {
-        record = this.pages.get(this.resolveId(id));
+        resolved = this.resolveId(id);
       } catch {
         return false;
       }
+      // Only a page edited in this session: merely viewing a page never starts its history.
+      const timer = this.sessionTimers.get(resolved);
+      if (!timer) return false;
+      clearTimeout(timer);
+      this.sessionTimers.delete(resolved);
+      let record: PageRecord | undefined;
+      record = this.pages.get(resolved);
       if (!record || (record.kind !== "page" && record.kind !== "whiteboard")) return false;
       return this.snapshotRecord(record, "app", "session");
     });
@@ -4230,8 +4242,25 @@ export class VaultStore {
     }
   }
 
+  /** A new page or board file: an older history under its id (a deleted page's) is set aside. */
+  private async freshHistory(filePath: string): Promise<void> {
+    const path = relative(this.root, filePath).split(sep).join("/");
+    if (!/\.(md|canvas)$/i.test(path)) return;
+    try {
+      await setAsideHistory(this.root, path.replace(/\.md$/i, ""));
+    } catch (error) {
+      console.warn(`[gumply] history at ${path} not set aside:`, error);
+    }
+  }
+
   /** A page moved (D20): its history directory follows it. */
   private async followHistory(from: PageId, to: PageId): Promise<void> {
+    // An open editing session follows the page too.
+    const timer = this.sessionTimers.get(from);
+    if (timer) {
+      this.sessionTimers.delete(from);
+      this.sessionTimers.set(to, timer);
+    }
     try {
       await moveHistory(this.root, from, to, parentOf(from) === parentOf(to) ? "rename" : "move");
     } catch (error) {
@@ -4382,6 +4411,7 @@ export class VaultStore {
     try {
       await writeFile(temporary, text, "utf8");
       if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
+      if (previous === null) await this.freshHistory(filePath);
       await rename(temporary, filePath);
       return {
         mtimeMs: (await stat(filePath)).mtimeMs,

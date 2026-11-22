@@ -71,6 +71,8 @@ import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 import { t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
+import { HistoryDialog } from "./components/HistoryDialog.js";
+import { HistorySettingsDialog } from "./components/HistorySettingsDialog.js";
 import { McpSettingsDialog } from "./components/McpSettingsDialog.js";
 import { NotionImportDialog } from "./components/NotionImportDialog.js";
 
@@ -193,6 +195,9 @@ export function App() {
   const importTargetRef = useRef<PageMeta | null>(null);
   /** G2: the page "Export as PDF…" was picked for. */
   const [pdfTarget, setPdfTarget] = useState<PageMeta | null>(null);
+  // D41: the page or board whose History… panel is open.
+  const [historyTarget, setHistoryTarget] = useState<PageMeta | null>(null);
+  const [historySettingsOpen, setHistorySettingsOpen] = useState(false);
   const pdfTargetRef = useRef<PageMeta | null>(null);
   /** G1: the page "Export as HTML…" was picked for. */
   const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
@@ -262,6 +267,16 @@ export function App() {
 
   const selectedRef = useRef<PageId | null>(selectedId);
   selectedRef.current = selectedId;
+
+  // D41: leaving a page ends its editing session; the server keeps its last state as a version
+  // (only when it was edited). Queued after the page's own last save.
+  useEffect(() => {
+    if (!selectedId) return;
+    const closed = selectedId;
+    return () => {
+      void api.historyCheckpoint(closed).catch(() => undefined);
+    };
+  }, [selectedId]);
   const pageRef = useRef<Page | null>(page);
   pageRef.current = page;
   // D20: stable identity of an open page across renames (new id → first id).
@@ -1844,6 +1859,11 @@ export function App() {
     page && page.id === selectedId ? (pages.find((item) => item.id === page.id && (item.kind ?? "page") === "page") ?? null) : null;
   // G2: File → Export as PDF… (desktop) exports the open page.
   pdfTargetRef.current = openPageMeta;
+  // D41: Cmd+K → Show page history, for the open page or board.
+  const openHistoryMeta =
+    page && page.id === selectedId
+      ? (pages.find((item) => item.id === page.id && ((item.kind ?? "page") === "page" || item.kind === "whiteboard")) ?? null)
+      : null;
 
   return (
     <div className={`app${sidebarOpen ? "" : " sidebar-collapsed"}`}>
@@ -1893,7 +1913,12 @@ export function App() {
           onKeepMine={handleConflictKeepMine}
         />
         <ThemeToggle />
-        <SettingsMenu open={settingsOpen} onOpenChange={setSettingsOpen} onOpenMcp={() => setMcpOpen(true)} />
+        <SettingsMenu
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          onOpenMcp={() => setMcpOpen(true)}
+          onOpenHistory={() => setHistorySettingsOpen(true)}
+        />
         <button
           type="button"
           className="icon-button"
@@ -1939,6 +1964,7 @@ export function App() {
           onExportHtml={closingSidebar((id: PageId) => setExportTarget(pages.find((item) => item.id === id) ?? null))}
           onImportNotion={closingSidebar((id: PageId) => setNotionImport({ target: pages.find((item) => item.id === id) ?? null }))}
           onExportPdf={closingSidebar((id: PageId) => setPdfTarget(pages.find((item) => item.id === id) ?? null))}
+          onShowHistory={closingSidebar((id: PageId) => setHistoryTarget(pages.find((item) => item.id === id) ?? null))}
         />
         {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
         <div
@@ -1996,6 +2022,9 @@ export function App() {
                 onDeleteForever={(item) => setTrashConfirm({ kind: "forever", item })}
                 onEmpty={() => trashItems && setTrashConfirm({ kind: "empty", items: trashItems })}
                 onRetry={() => void loadTrash()}
+                onOrphanRestored={(id) => {
+                  void loadPages().then(() => navigate(id));
+                }}
               />
             </div>
           ) : graphOpen ? (
@@ -2364,6 +2393,14 @@ export function App() {
                 }
               : undefined
           }
+          onShowHistory={
+            openHistoryMeta
+              ? () => {
+                  dismissSearch();
+                  setHistoryTarget(openHistoryMeta);
+                }
+              : undefined
+          }
           onClose={closeSearch}
         />
       ) : null}
@@ -2416,7 +2453,31 @@ export function App() {
         />
       ) : null}
 
-      {mcpOpen ? <McpSettingsDialog onClose={() => setMcpOpen(false)} onOpenPage={(id) => handleOpen(id)} /> : null}
+      {historyTarget ? (
+        <HistoryDialog
+          target={historyTarget}
+          pages={pages}
+          onClose={() => setHistoryTarget(null)}
+          onRestored={(result) => {
+            void loadPages();
+            const restoredId = "meta" in result ? result.meta.id : result.id;
+            if (restoredId === selectedRef.current) requestPageReload();
+          }}
+        />
+      ) : null}
+
+      {historySettingsOpen ? <HistorySettingsDialog onClose={() => setHistorySettingsOpen(false)} /> : null}
+
+      {mcpOpen ? (
+        <McpSettingsDialog
+          onClose={() => setMcpOpen(false)}
+          onOpenPage={(id) => handleOpen(id)}
+          onRestored={(id) => {
+            void loadPages();
+            if (id === selectedRef.current) requestPageReload();
+          }}
+        />
+      ) : null}
 
       {shortcutsOpen ? <ShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}
     </div>

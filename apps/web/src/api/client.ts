@@ -480,4 +480,94 @@ export const api = {
 
   putGraphSettings: (settings: GraphSettings): Promise<GraphSettingsResponse> =>
     mutate(() => request("/graph/settings", { method: "PUT", body: JSON.stringify(settings) })),
+
+  // --- version history (spec/api v1.28, spec/api-version-history) ---
+
+  /** A page's or board's versions, newest first. */
+  history: (id: PageId): Promise<HistoryList> => request(historyPath(id)),
+
+  /** A version's exact text. */
+  historyText: async (id: PageId, file: string): Promise<string> => {
+    const response = await fetch(`/api${historyPath(id)}/${encodeURIComponent(file)}`);
+    if (!response.ok) throw new ApiRequestError(response.status, response.statusText || `HTTP ${response.status}`);
+    return response.text();
+  },
+
+  historyDiff: (id: PageId, file: string): Promise<HistoryDiff> =>
+    request(`${historyPath(id)}/${encodeURIComponent(file)}/diff`),
+
+  /** Restore a version into the current file (byte-exact, never renames); 409 when the page changed. */
+  restoreVersion: (id: PageId, file: string, expectedUpdated: string): Promise<Page | BoardDocument> =>
+    mutate(() =>
+      request(`${historyPath(id)}/${encodeURIComponent(file)}/restore`, { method: "POST", body: JSON.stringify({ expectedUpdated }) }),
+    ),
+
+  pinVersion: (id: PageId, file: string, pinned: boolean): Promise<HistoryItem> =>
+    mutate(() => request(`${historyPath(id)}/${encodeURIComponent(file)}/pin`, { method: "PUT", body: JSON.stringify({ pinned }) })),
+
+  /** The page was closed: its editing session ends now (D41). Fire and forget. */
+  historyCheckpoint: (id: PageId): Promise<{ saved: boolean }> =>
+    mutate(() => request(`${historyPath(id)}/checkpoint`, { method: "POST" })),
+
+  historyOrphans: (): Promise<HistoryOrphan[]> => request("/history-orphans"),
+
+  restoreOrphan: (key: string): Promise<Page | BoardDocument> =>
+    mutate(() => request(`/history-orphans/${encodeURIComponent(key)}/restore`, { method: "POST", body: JSON.stringify({}) })),
+
+  historyUsage: (): Promise<HistoryUsage> => request("/history-usage"),
+
+  /** "Clear history older than…": every unpinned version older than `days` (never a page's newest). */
+  clearHistory: (days: number): Promise<HistoryUsage> =>
+    mutate(() => request(`/history-usage?olderThan=${encodeURIComponent(String(days))}`, { method: "DELETE" })),
 };
+
+const historyPath = (id: PageId): string => `/history/${encodeURIComponent(id)}`;
+
+export type HistorySource = "app" | "external" | "mcp" | "import" | "restore";
+export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict";
+
+/** One version in `GET /history/:id` (spec/api-version-history). */
+export interface HistoryItem {
+  file: string;
+  at: string;
+  source: HistorySource;
+  reason?: HistoryReason;
+  client?: string;
+  tool?: string;
+  bytes: number;
+  sha256: string;
+  /** The page's version these bytes had (an MCP audit row's `before`). */
+  version: string;
+  pinned: boolean;
+  restoredFrom?: string;
+  /** The title then, when it differs from now. */
+  title?: string;
+  /** The folder then ("" = top level), when it differs. */
+  folder?: string;
+}
+
+export interface HistoryList {
+  items: HistoryItem[];
+  nextCursor?: string;
+  current: { version: string; sha256: string | null };
+  moves: Array<{ event: "rename" | "move"; from: string; id: string; at: string }>;
+}
+
+export type HistoryDiff =
+  | { kind: "page"; lines: Array<{ op: "same" | "add" | "remove"; text: string }> }
+  | { kind: "whiteboard"; added: string[]; removed: string[]; changed: string[] };
+
+export interface HistoryOrphan {
+  key: string;
+  lastId: PageId;
+  title: string;
+  lastAt: string;
+  versions: number;
+  newest: string;
+}
+
+export interface HistoryUsage {
+  bytes: number;
+  pages: number;
+  versions: number;
+}

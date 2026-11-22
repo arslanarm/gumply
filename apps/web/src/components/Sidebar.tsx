@@ -42,6 +42,8 @@ export interface SidebarProps {
   onExportHtml?: (id: PageId) => void;
   /** G2: a page row's ⋯ → Export as PDF…. */
   onExportPdf?: (id: PageId) => void;
+  /** D41: a page or board row's ⋯ → History…. */
+  onShowHistory?: (id: PageId) => void;
   /** B4: a row's ⋯ → Import from Notion… into it. */
   onImportNotion?: (id: PageId) => void;
   /** The global graph view is open (sidebar active state). */
@@ -182,6 +184,7 @@ export function Sidebar(props: SidebarProps) {
     onExportHtml: props.onExportHtml,
     onImportNotion: props.onImportNotion,
     onExportPdf: props.onExportPdf,
+    onShowHistory: props.onShowHistory,
     createChild,
     expand,
     toggle,
@@ -202,6 +205,7 @@ export function Sidebar(props: SidebarProps) {
     onExportHtml: props.onExportHtml,
     onImportNotion: props.onImportNotion,
     onExportPdf: props.onExportPdf,
+    onShowHistory: props.onShowHistory,
     createChild,
     expand,
     toggle,
@@ -233,6 +237,7 @@ export function Sidebar(props: SidebarProps) {
       onExportHtml: (id: PageId) => latest.current.onExportHtml?.(id),
       onImportNotion: (id: PageId) => latest.current.onImportNotion?.(id),
       onExportPdf: (id: PageId) => latest.current.onExportPdf?.(id),
+      onShowHistory: (id: PageId) => latest.current.onShowHistory?.(id),
       onStartRename: (id: PageId, title: string) => latest.current.startRename(id, title),
       onCommitRename: () => latest.current.commitRename(),
       onCancelRename: () => latest.current.cancelRename(),

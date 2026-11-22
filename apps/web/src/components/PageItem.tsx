@@ -39,6 +39,8 @@ export interface PageItemProps {
   onExportHtml?: (id: PageId) => void;
   /** G2: ⋯ → Export as PDF… (pages only). */
   onExportPdf?: (id: PageId) => void;
+  /** D41: History… (pages and boards). */
+  onShowHistory?: (id: PageId) => void;
   /** B4: ⋯ → Import from Notion… into this page or folder. */
   onImportNotion?: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
@@ -231,6 +233,9 @@ function PageItemRow(props: PageItemProps) {
       leaf || folder || !props.onExportPdf
         ? null
         : menuItem("export-pdf", t("export.pdf.menuItem"), () => props.onExportPdf?.(page.id)),
+      folder || base || !props.onShowHistory
+        ? null
+        : menuItem("page-history", t("history.menuItem"), () => props.onShowHistory?.(page.id)),
     ],
     [
       menuItem(
