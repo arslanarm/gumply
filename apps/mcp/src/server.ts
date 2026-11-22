@@ -28,11 +28,17 @@ export interface ServerOptions {
   /** The level at startup: decides which tools are listed. */
   access: Access;
   write: Omit<WriteContext, "vault" | "clientName">;
+  /**
+   * #6bxm6ygf: `serverInfo.version`. The desktop app passes its own version
+   * (`app.getVersion()`, stamped from the release tag, e.g. `0.8.0-rc.1`);
+   * the npm bin uses `SERVER_VERSION`.
+   */
+  version?: string;
 }
 
 export function createServer(options: ServerOptions): McpServer {
   const server = new McpServer(
-    { name: "gumply", version: SERVER_VERSION },
+    { name: "gumply", version: options.version ?? SERVER_VERSION },
     {
       capabilities: { tools: {} },
       instructions: INSTRUCTIONS,

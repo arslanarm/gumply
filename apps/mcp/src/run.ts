@@ -17,6 +17,8 @@ export interface RunMcpOptions {
   readOnly: boolean;
   /** Ends the process (tests and the desktop app pass their own). */
   exit?: (code: number) => never;
+  /** #6bxm6ygf: `serverInfo.version` (the desktop app's own); default `SERVER_VERSION`. */
+  version?: string;
 }
 
 /** Point every console method at stderr: stdout is the protocol. */
@@ -57,7 +59,7 @@ export function runMcp(options: RunMcpOptions): void {
   );
   const logMaxBytes = Number(process.env.GUMPLY_MCP_LOG_MAX_BYTES) || 5 * 1024 * 1024;
 
-  const handle = serveStdio(() => createServer({ vault, access, write: { readOnly: options.readOnly, limiter, logMaxBytes } }), {
+  const handle = serveStdio(() => createServer({ vault, access, write: { readOnly: options.readOnly, limiter, logMaxBytes }, ...(options.version ? { version: options.version } : {}) }), {
     onerror: (error) => console.error("[gumply mcp]", error.message),
   });
 

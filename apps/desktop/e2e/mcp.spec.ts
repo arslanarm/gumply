@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { _electron as electron, expect, test } from '@playwright/test';
-import { CORE_VERSION } from '@gumply/core';
 import { mcpLaunchCommand, userNamespacesWork } from '../src/mcp-mode.js';
 
 /**
@@ -150,7 +149,9 @@ test('A4: the Linux snippet starts with no display at all (no DISPLAY, no WAYLAN
   const client = new Client({ name: 'desktop-headless', version: '1.0.0' });
   await client.connect(transport);
   try {
-    expect(client.getServerVersion()).toMatchObject({ name: 'gumply', version: CORE_VERSION });
+    // #6bxm6ygf: the app's own version (app.getVersion(), stamped from the release tag), not CORE_VERSION.
+    const appVersion = (JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8')) as { version: string }).version;
+    expect(client.getServerVersion()).toMatchObject({ name: 'gumply', version: appVersion });
     const result = (await client.callTool({ name: 'read', arguments: { id: 'Plan' } })) as { structuredContent?: { content?: string } };
     expect(result.structuredContent?.content).toContain('Ship the export.');
   } finally {
