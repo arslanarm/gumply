@@ -47,12 +47,15 @@ jobs:
             artifacts: |
               apps/desktop/release/*.AppImage
               apps/desktop/release/*.deb
+              apps/desktop/release/latest-linux.yml
               apps/desktop/release/SHA256SUMS-*.txt
           - name: Windows (installer)
             os: windows-latest
             builder: --win nsis --x64
             artifacts: |
               apps/desktop/release/*.exe
+              apps/desktop/release/latest.yml
+              apps/desktop/release/*.exe.blockmap
               apps/desktop/release/SHA256SUMS-*.txt
           - name: macOS (dmg, zip; Apple silicon and Intel)
             # One arm64 runner builds both architectures (no native modules).
@@ -61,6 +64,9 @@ jobs:
             artifacts: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
+              apps/desktop/release/latest-mac.yml
+              apps/desktop/release/*.dmg.blockmap
+              apps/desktop/release/*.zip.blockmap
               apps/desktop/release/SHA256SUMS-*.txt
     steps:
       - uses: actions/checkout@v7

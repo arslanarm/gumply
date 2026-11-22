@@ -37,6 +37,87 @@ export function expectedInstallers(platform: Platform, version: string): string[
   }
 }
 
+/* ------------------------------------------------------------------------ */
+/* Update files (spec/auto-update, #a7qepp99)                                */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * The update files each platform's build must ship next to its installers:
+ * electron-updater's `latest*.yml` (versions, file names, sha512) and, for
+ * NSIS, the installer's blockmap (differential downloads; the AppImage
+ * embeds its own).
+ */
+export function expectedUpdateFiles(platform: Platform, version: string): { yml: string; blockmaps: string[] } {
+  switch (platform) {
+    case "linux":
+      // The AppImage carries its blockmap inside (`blockMapSize` in the yml).
+      return { yml: "latest-linux.yml", blockmaps: [] };
+    case "win":
+      return { yml: "latest.yml", blockmaps: [`Gumply-Setup-${version}-x64.exe.blockmap`] };
+    case "mac":
+      return { yml: "latest-mac.yml", blockmaps: [] };
+  }
+}
+
+/** A release file's digest as electron-updater lists it: sha512 in base64, size in bytes. */
+export interface AssetDigest {
+  sha512: string;
+  size: number;
+}
+
+/**
+ * A parsed `latest*.yml` against the files actually in the release: the
+ * version is the tag's, and every listed file is there with that sha512 and
+ * size (electron-updater refuses a mismatch, so this is the release working).
+ */
+export function inspectUpdateInfo(name: string, info: unknown, version: string, assets: Record<string, AssetDigest>): CheckResult[] {
+  const results: CheckResult[] = [];
+  const data = (info && typeof info === "object" ? info : {}) as Record<string, unknown>;
+  results.push({ target: name, check: "update info version", ok: data.version === version, detail: String(data.version ?? "(missing)") });
+  const files = Array.isArray(data.files) ? (data.files as Array<Record<string, unknown>>) : [];
+  results.push({ target: name, check: "update info lists files", ok: files.length > 0, detail: files.map((file) => String(file.url)).join(", ") || "none" });
+  for (const file of files) {
+    const url = String(file.url ?? "");
+    const asset = assets[url];
+    if (!asset) {
+      results.push({ target: name, check: `${url}: in the release`, ok: false, detail: "missing" });
+      continue;
+    }
+    const ok = file.sha512 === asset.sha512 && Number(file.size) === asset.size;
+    results.push({
+      target: name,
+      check: `${url}: sha512 and size`,
+      ok,
+      detail: ok ? `${asset.size} bytes` : `listed ${String(file.size)} / ${String(file.sha512).slice(0, 12)}…, file ${asset.size} / ${asset.sha512.slice(0, 12)}…`,
+    });
+  }
+  if (typeof data.path === "string") {
+    results.push({ target: name, check: "update info path in the release", ok: data.path in assets, detail: data.path });
+  }
+  return results;
+}
+
+/** The flat `key: value` lines of `app-update.yml` (electron-builder writes no nesting there). */
+export function parseFlatYaml(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^([A-Za-z][\w-]*):\s*(.*?)\s*$/.exec(line);
+    if (match) out[match[1]!] = match[2]!.replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return out;
+}
+
+/**
+ * The app's own update source (`resources/app-update.yml`): GitHub,
+ * arslanarm/gumply. A release build must never point anywhere else.
+ */
+export function inspectUpdateConfig(target: string, text: string | null): CheckResult {
+  if (text === null) return { target, check: "app-update.yml: GitHub releases", ok: false, detail: "missing" };
+  const config = parseFlatYaml(text);
+  const ok = config.provider === "github" && config.owner === "arslanarm" && config.repo === "gumply";
+  return { target, check: "app-update.yml: GitHub releases", ok, detail: `${config.provider ?? "?"} ${config.owner ?? "?"}/${config.repo ?? "?"}` };
+}
+
 /** Debian has no `-` in upstream versions: electron-builder writes 0.5.0-rc.3 as 0.5.0~rc.3. */
 export function debianVersion(version: string): string {
   return version.replace(/-/g, "~");

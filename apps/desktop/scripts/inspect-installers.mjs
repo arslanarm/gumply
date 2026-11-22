@@ -16,15 +16,19 @@
 // ../src/inspect-installers.ts, which is unit-tested.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, chmodSync, closeSync, copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
 import { inspectRuntime } from "./appimage-runtime.mjs";
 import {
   debianVersion,
   expectedInstallers,
+  expectedUpdateFiles,
   inspectAsar,
+  inspectUpdateConfig,
+  inspectUpdateInfo,
   parseDebControl,
   parseDesktopEntry,
   peVersionString,
@@ -90,6 +94,11 @@ const sha256 = (file) =>
     const hash = createHash("sha256");
     createReadStream(file).on("data", (d) => hash.update(d)).on("end", () => done(hash.digest("hex"))).on("error", fail);
   });
+const sha512 = (file) =>
+  new Promise((done, fail) => {
+    const hash = createHash("sha512");
+    createReadStream(file).on("data", (d) => hash.update(d)).on("end", () => done(hash.digest("base64"))).on("error", fail);
+  });
 const md5 = (file) => createHash("md5").update(readFileSync(file)).digest("hex");
 const work = mkdtempSync(join(tmpdir(), "gumply-inspect-"));
 const scratch = (name) => {
@@ -107,6 +116,9 @@ const asar = (target, file) => {
   const notices = join(dirname(file), "THIRD_PARTY_NOTICES.txt");
   const noticesOk = existsSync(notices) && readFileSync(notices, "utf8").startsWith("# Third-party notices");
   check(target, "THIRD_PARTY_NOTICES.txt in resources", noticesOk, noticesOk ? "present" : notices);
+  // spec/auto-update: the app checks GitHub releases, and nothing else.
+  const updateConfig = join(dirname(file), "app-update.yml");
+  results.push(inspectUpdateConfig(target, existsSync(updateConfig) ? readFileSync(updateConfig, "utf8") : null));
   if (!existsSync(file)) return check(target, "app.asar present", false, file);
   for (const r of inspectAsar(readAsar(readFileSync(file)), version, target)) results.push(r);
 };
@@ -289,6 +301,25 @@ try {
     else if (name.endsWith(".dmg")) inspectDmg(name);
     else if (name.endsWith(".zip")) inspectZip(name);
     sums.push(`${await sha256(join(release, name))}  ${name}`);
+  }
+  // spec/auto-update: electron-updater's latest*.yml and the blockmaps,
+  // uploaded with the installers and listed in the sums like them.
+  if (!flag("only-present")) {
+    const { yml, blockmaps } = expectedUpdateFiles(platform, version);
+    for (const name of blockmaps) check(name, "update blockmap", present.includes(name), present.includes(name) ? "present" : "missing");
+    if (!present.includes(yml)) check(yml, "update info file", false, "missing");
+    else {
+      const info = parseYaml(readFileSync(join(release, yml), "utf8"));
+      const assets = {};
+      for (const file of Array.isArray(info?.files) ? info.files : []) {
+        const url = String(file?.url ?? "");
+        if (present.includes(url) && !(url in assets)) assets[url] = { sha512: await sha512(join(release, url)), size: statSync(join(release, url)).size };
+      }
+      results.push(...inspectUpdateInfo(yml, info, version, assets));
+    }
+    for (const name of present.filter((n) => n === yml || (n.endsWith(".blockmap") && expected.includes(n.slice(0, -".blockmap".length))))) {
+      sums.push(`${await sha256(join(release, name))}  ${name}`);
+    }
   }
 } finally {
   rmSync(work, { recursive: true, force: true });
