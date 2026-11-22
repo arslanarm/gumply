@@ -770,14 +770,33 @@ input {
   cursor: pointer;
 }
 
-.cover-link-input {
+/* One input style for the picker's Link field and Vault images search
+   (#i3mgwybb): one focus ring, no native search chrome. */
+.cover-picker-input {
   width: 100%;
+  appearance: none;
   padding: 0.4rem 0.55rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
   color: var(--text);
   font: inherit;
+  font-size: 0.84rem;
+  outline: none;
+}
+
+.cover-picker-input::-webkit-search-cancel-button,
+.cover-picker-input::-webkit-search-decoration {
+  appearance: none;
+  display: none;
+}
+
+/* One ring: the border, not the app-wide focus outline as well. */
+.cover-picker-input:focus,
+.cover-picker-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* Stays above the image grid while it scrolls (#3ht5gh6q). */
@@ -785,7 +804,6 @@ input {
   position: sticky;
   top: -0.75rem;
   z-index: 1;
-  font-size: 0.84rem;
   background: var(--surface-elevated, var(--surface-page));
 }
 
@@ -904,18 +922,28 @@ input {
   line-height: 1;
 }
 
+/* Ghost buttons, as in Notion: no border, a fill on hover (#i3mgwybb). */
 .page-icon-add {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.22rem 0.45rem;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--muted);
   font-size: 0.76rem;
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 100ms ease;
+  transition:
+    opacity 100ms ease,
+    background-color 100ms ease;
+}
+
+.page-icon-button:hover .page-icon-add,
+.page-look-add:hover .page-icon-add,
+.page-icon-button:focus-visible .page-icon-add,
+.page-look-add:focus-visible .page-icon-add {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .page-heading:hover .page-icon-add,

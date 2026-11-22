@@ -1234,7 +1234,7 @@
     "savePosition": "Save position",
     "dragHint": "Drag the image to reposition",
     "saveToVault": "Save to vault",
-    "missing": "Cover image not found",
+    "missing": "Cover image not found: {{link}}",
     "pickerLabel": "Page cover",
     "gallery": "Gallery",
     "upload": "Upload",

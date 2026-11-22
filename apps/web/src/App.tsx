@@ -222,6 +222,8 @@ export function App() {
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   // v0.7 F (#385sexd6): bumped by "Add cover" to open the cover picker.
   const [coverPickerSignal, setCoverPickerSignal] = useState(0);
+  // The "Add cover" button that opened it: the picker opens under it (#i3mgwybb).
+  const [coverPickerAnchor, setCoverPickerAnchor] = useState<HTMLElement | null>(null);
   const [localGraphOpen, setLocalGraphOpen] = useState(() => {
     try {
       return sessionStorage.getItem("gumply:local-graph") === "open";
@@ -2038,12 +2040,20 @@ export function App() {
                     pageId={page.id}
                     fileLinks={page.fileLinks}
                     pickerSignal={coverPickerSignal}
+                    pickerAnchor={coverPickerAnchor}
                     onChange={handlePropertiesChange}
                   />
                   <PageHeader
                     page={page}
                     fallbackIcon={look.bannerIcon}
-                    onAddCover={look.cover ? undefined : () => setCoverPickerSignal((value) => value + 1)}
+                    onAddCover={
+                      look.cover
+                        ? undefined
+                        : (anchor) => {
+                            setCoverPickerAnchor(anchor);
+                            setCoverPickerSignal((value) => value + 1);
+                          }
+                    }
                     background={look.background}
                     onSetBackground={(color) =>
                       void handlePropertiesChange(color ? { set: { background: color } } : { remove: ["background"] })
