@@ -80,23 +80,50 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
     expect(obsidianFileLinks(body, maskCode)).toEqual(["photo.png", "att/pic.png", "report.pdf"]);
   });
 
-  it("resolves among 10,000 files in well under a millisecond each", () => {
-    const files: string[] = [];
-    for (let i = 0; i < 10_000; i += 1) files.push(`folder${i % 97}/sub${i % 13}/image-${i % 1500}.png`);
-    // Best of three builds: the suite runs in parallel workers, so one build can be preempted.
-    let built = Infinity;
-    let big = new LinkFileIndex([]);
-    for (let run = 0; run < 3; run += 1) {
-      const started = performance.now();
-      big = new LinkFileIndex(files);
-      built = Math.min(built, performance.now() - started);
-    }
-    const links = Array.from({ length: 1000 }, (_, i) => `image-${i}.png`);
-    const t0 = performance.now();
-    for (const link of links) expect(big.resolve(link, "folder3/sub4/note.md")).not.toBeNull();
-    const perResolve = (performance.now() - t0) / links.length;
-    expect(perResolve).toBeLessThan(1);
-    // Rebuilding the index on a rescan (after every save) stays cheap: ~5 ms quiet.
-    expect(built).toBeLessThan(50);
+  // Timing on a shared, loaded machine: compare how the cost grows with the
+  // vault instead of against wall-clock budgets (a 50 ms budget failed at
+  // 50.2 ms under load ~20). Medians of several runs, after a warm-up.
+  it("builds in linear time and resolves in time independent of the vault's size", () => {
+    const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+    const time = (task: () => void, runs = 5) => {
+      task(); // warm-up (JIT)
+      return median(
+        Array.from({ length: runs }, () => {
+          const started = performance.now();
+          task();
+          return performance.now() - started;
+        }),
+      );
+    };
+    // `n` files where every name is shared by exactly 7 paths, at any size:
+    // a resolve looks at 7 candidates whether the vault is small or large.
+    const vault = (n: number) =>
+      Array.from({ length: n }, (_, i) => `folder${i % 7}/sub${Math.floor(i / 7) % 13}/image-${Math.floor(i / 7)}.png`);
+    const small = vault(2_500);
+    const large = vault(20_000);
+
+    const buildSmall = time(() => void new LinkFileIndex(small));
+    const buildLarge = time(() => void new LinkFileIndex(large));
+
+    const resolves = (files: string[]) => {
+      const index = new LinkFileIndex(files);
+      const names = Math.floor(files.length / 7);
+      const links = Array.from({ length: 5_000 }, (_, i) => `image-${(i * 7919) % names}.png`);
+      return () => {
+        for (const link of links) if (index.resolve(link, "folder3/sub4/note.md") === null) throw new Error(link);
+      };
+    };
+    const resolveSmall = time(resolves(small));
+    const resolveLarge = time(resolves(large));
+
+    // 8x the files: a linear build is ~8x slower (6.7-13x measured under
+    // load ~25, GC included), an O(n²) one ~64x. The limit sits in between.
+    expect(buildLarge / Math.max(buildSmall, 0.05)).toBeLessThan(32);
+    // A resolve looks only at files of that name: ~1x (1.0-1.4x measured);
+    // a full scan would be ~8x (7.9-9.4x measured).
+    expect(resolveLarge / Math.max(resolveSmall, 0.05)).toBeLessThan(3);
+    // Loose sanity bounds that only a pathological slowdown trips, even under load.
+    expect(buildLarge).toBeLessThan(1_000);
+    expect(resolveLarge / 5_000).toBeLessThan(5);
   });
 });
