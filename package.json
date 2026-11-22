@@ -22,6 +22,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "notices": "node scripts/notices.mjs",
+    "notices:check": "node scripts/notices.mjs --check",
     "test:e2e:screens": "playwright test --config e2e/playwright.screens.config.ts",
     "desktop:dev": "npm run dev -w @gumply/desktop",
     "desktop:build:linux": "npm run dist:linux -w @gumply/desktop",

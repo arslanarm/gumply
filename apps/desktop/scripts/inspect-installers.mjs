@@ -102,6 +102,10 @@ const fuses = (target, binary) => {
   check(target, "Electron fuses (shipped binary)", r.status === 0, r.status === 0 ? "all 7 hardened" : bad || r.out.slice(-200));
 };
 const asar = (target, file) => {
+  // #mbim529b: the third-party notices ship next to app.asar (extraResources).
+  const notices = join(dirname(file), "THIRD_PARTY_NOTICES.txt");
+  const noticesOk = existsSync(notices) && readFileSync(notices, "utf8").startsWith("# Third-party notices");
+  check(target, "THIRD_PARTY_NOTICES.txt in resources", noticesOk, noticesOk ? "present" : notices);
   if (!existsSync(file)) return check(target, "app.asar present", false, file);
   for (const r of inspectAsar(readAsar(readFileSync(file)), version, target)) results.push(r);
 };

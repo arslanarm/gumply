@@ -39,6 +39,12 @@
       "!dist/**/*.map",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      }
+    ],
     "asar": true,
     "linux": {
       "target": [

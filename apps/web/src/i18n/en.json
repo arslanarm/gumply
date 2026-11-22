@@ -803,7 +803,8 @@
       "zoom": "Zoom",
       "close": "Close Window",
       "help": "&Help",
-      "about": "About Gumply"
+      "about": "About Gumply",
+      "licences": "Open-Source Licences"
     },
     "about": {
       "detail": "Notes as plain Markdown, with links, a graph and whiteboards."
