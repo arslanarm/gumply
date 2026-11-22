@@ -12,6 +12,8 @@ import type {
   Attachment,
   Backlink,
   GraphData,
+  GraphSettings,
+  GraphSettingsResponse,
   Page,
   PageId,
   PageMeta,
@@ -392,11 +394,18 @@ export const api = {
   }): Promise<BaseDocument> => mutate(() => request("/bases", { method: "POST", body: JSON.stringify(input) })),
 
   /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */
-  getGraph: (options: { center?: PageId; depth?: number } = {}): Promise<GraphData> => {
+  getGraph: (options: { center?: PageId; depth?: number; attachments?: boolean } = {}): Promise<GraphData> => {
     const params = new URLSearchParams();
     if (options.center !== undefined) params.set("center", options.center);
     if (options.depth !== undefined) params.set("depth", String(options.depth));
+    if (options.attachments) params.set("include", "attachments");
     const query = params.toString();
     return request(`/graph${query.length > 0 ? `?${query}` : ""}`);
   },
+
+  /** E1 (spec/api-graph-groups, v1.19): the graph's colour groups and filters. */
+  getGraphSettings: (): Promise<GraphSettingsResponse> => request("/graph/settings"),
+
+  putGraphSettings: (settings: GraphSettings): Promise<GraphSettingsResponse> =>
+    mutate(() => request("/graph/settings", { method: "PUT", body: JSON.stringify(settings) })),
 };
