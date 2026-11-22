@@ -6480,6 +6480,27 @@ input {
   background: var(--hover);
 }
 
+/*
+ * #9j9cd5x4: the tags flags sit right after the chips, mid-row, so their
+ * tooltip is centred on the flag and wraps, instead of running across the
+ * chips or off a narrow window.
+ */
+.property-chips [data-tooltip]::after {
+  left: 50%;
+  right: auto;
+  width: max-content;
+  max-width: min(260px, 70vw);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+  transform: translate(-50%, 2px);
+}
+
+.property-chips [data-tooltip]:hover::after,
+.property-chips [data-tooltip]:focus-visible::after {
+  transform: translate(-50%, 0);
+}
+
 .property-chip-remove {
   display: inline-flex;
   padding: 2px;

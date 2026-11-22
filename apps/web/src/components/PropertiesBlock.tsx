@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   isTagsKey,
   isValidPropertyKey,
@@ -232,37 +232,53 @@ function PropertyRow(props: PropertyRowProps) {
         ) : null}
       </div>
       <div className="property-value" data-testid={`property-value-${property.key}`}>
-        <PropertyValueEditor property={property} autoFocus={props.autoFocus} onSave={props.onSave} onInvalid={props.onInvalid} />
-        {property.issue?.kind === "tags-string" ? (
-          // #6imze6ux: Obsidian reads nothing from a string with spaces or commas; one click makes it the list Gumply shows.
-          // The flag itself carries the tooltip, as the digits flag does; the button (the one focusable part)
-          // shows it on keyboard focus and is described by it for screen readers.
-          <span className="property-issue" data-testid="property-issue-tags-string" title={t("properties.tagsString")}>
-            <span id={issueId} className="property-mismatch" role="img" title={t("properties.tagsString")} aria-label={t("properties.tagsString")}>
-              <Icon name="alert" size={14} />
-            </span>
-            <button
-              type="button"
-              className="property-issue-fix"
-              data-testid="property-make-list"
-              data-tooltip={t("properties.tagsString")}
-              aria-describedby={issueId}
-              onClick={() => void props.onSave(property.issue!.tags)}
-            >
-              {t("properties.makeList")}
-            </button>
-          </span>
-        ) : property.issue?.kind === "tags-digits" ? (
-          <span
-            className="property-mismatch"
-            role="img"
-            data-testid="property-issue-tags-digits"
-            title={t("properties.tagsDigits")}
-            aria-label={t("properties.tagsDigits")}
-          >
-            <Icon name="alert" size={14} />
-          </span>
-        ) : property.editable && !propertyValueMatches(property.type, property.value) ? (
+        <PropertyValueEditor
+          property={property}
+          autoFocus={props.autoFocus}
+          onSave={props.onSave}
+          onInvalid={props.onInvalid}
+          adornment={
+            // #9j9cd5x4: the tags flags sit right after the chips (not at the far end of the row), and
+            // both use the app's tooltip.
+            property.issue?.kind === "tags-string" ? (
+              // #6imze6ux: Obsidian reads nothing from a string with spaces or commas; one click makes it the list
+              // Gumply shows. The icon and the button (the one focusable part) show the tooltip, and the button is
+              // described by it for screen readers.
+              <span className="property-issue" data-testid="property-issue-tags-string">
+                <span
+                  id={issueId}
+                  className="property-mismatch"
+                  role="img"
+                  data-tooltip={t("properties.tagsString")}
+                  aria-label={t("properties.tagsString")}
+                >
+                  <Icon name="alert" size={14} />
+                </span>
+                <button
+                  type="button"
+                  className="property-issue-fix"
+                  data-testid="property-make-list"
+                  data-tooltip={t("properties.tagsString")}
+                  aria-describedby={issueId}
+                  onClick={() => void props.onSave(property.issue!.tags)}
+                >
+                  {t("properties.makeList")}
+                </button>
+              </span>
+            ) : property.issue?.kind === "tags-digits" ? (
+              <span
+                className="property-mismatch"
+                role="img"
+                data-testid="property-issue-tags-digits"
+                data-tooltip={t("properties.tagsDigits")}
+                aria-label={t("properties.tagsDigits")}
+              >
+                <Icon name="alert" size={14} />
+              </span>
+            ) : null
+          }
+        />
+        {property.issue ? null : property.editable && !propertyValueMatches(property.type, property.value) ? (
           <span
             className="property-mismatch"
             role="img"
@@ -311,6 +327,8 @@ interface ValueEditorProps {
   onInvalid: (type: PropertyType) => void;
   /** Show `[[links]]` in chips as links (the properties block; not a database cell's editor). */
   links?: boolean;
+  /** #9j9cd5x4: shown right after a list's chips (an issue flag), else after the value. */
+  adornment?: ReactNode;
 }
 
 export interface PropertyValueEditorProps {
@@ -322,38 +340,58 @@ export interface PropertyValueEditorProps {
   autoFocus?: boolean;
   /** No hover or padding chrome: fits a 32 px table cell (#sg36ng2d). */
   compact?: boolean;
+  /** #9j9cd5x4: shown right after a list's chips (the tags issue flag), else after the value. */
+  adornment?: ReactNode;
 }
 
 /** One property's value editor, by type: the header's, reusable in database views. */
-export function PropertyValueEditor({ property, onSave, onInvalid, autoFocus = false, compact = false }: PropertyValueEditorProps) {
+export function PropertyValueEditor({ property, onSave, onInvalid, autoFocus = false, compact = false, adornment }: PropertyValueEditorProps) {
   return (
     <div className={`property-editor${compact ? " is-compact" : ""}`}>
-      <ValueEditor property={property} autoFocus={autoFocus} onSave={onSave} onInvalid={onInvalid ?? (() => undefined)} links={!compact} />
+      <ValueEditor property={property} autoFocus={autoFocus} onSave={onSave} onInvalid={onInvalid ?? (() => undefined)} links={!compact} adornment={adornment} />
     </div>
   );
 }
 
-function ValueEditor({ property, autoFocus, onSave, onInvalid, links }: ValueEditorProps) {
+function ValueEditor({ property, autoFocus, onSave, onInvalid, links, adornment }: ValueEditorProps) {
   const t = useT();
   if (!property.editable) {
     return (
-      <code className="property-readonly" title={t("properties.readOnly")} data-testid="property-readonly">
-        {String(property.value ?? "")}
-      </code>
+      <>
+        <code className="property-readonly" title={t("properties.readOnly")} data-testid="property-readonly">
+          {String(property.value ?? "")}
+        </code>
+        {adornment}
+      </>
     );
   }
   switch (property.type) {
     case "checkbox":
-      return <CheckboxEditor property={property} autoFocus={autoFocus} onSave={onSave} />;
+      return (
+        <>
+          <CheckboxEditor property={property} autoFocus={autoFocus} onSave={onSave} />
+          {adornment}
+        </>
+      );
     case "date":
     case "datetime":
-      return <DateEditor property={property} autoFocus={autoFocus} onSave={onSave} />;
+      return (
+        <>
+          <DateEditor property={property} autoFocus={autoFocus} onSave={onSave} />
+          {adornment}
+        </>
+      );
     case "multitext":
     case "tags":
     case "aliases":
-      return <ListEditor property={property} autoFocus={autoFocus} onSave={onSave} links={links} />;
+      return <ListEditor property={property} autoFocus={autoFocus} onSave={onSave} links={links} adornment={adornment} />;
     default:
-      return <TextEditor property={property} autoFocus={autoFocus} onSave={onSave} onInvalid={onInvalid} />;
+      return (
+        <>
+          <TextEditor property={property} autoFocus={autoFocus} onSave={onSave} onInvalid={onInvalid} />
+          {adornment}
+        </>
+      );
   }
 }
 
@@ -471,7 +509,7 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
   );
 }
 
-function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProps, "onInvalid">) {
+function ListEditor({ property, autoFocus, onSave, links, adornment }: Omit<ValueEditorProps, "onInvalid">) {
   const t = useT();
   const saved = useMemo(
     () =>
@@ -528,6 +566,7 @@ function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProp
           </button>
         </span>
       ))}
+      {adornment}
       <input
         className="property-chip-input"
         aria-label={property.key}
