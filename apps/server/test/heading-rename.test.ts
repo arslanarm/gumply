@@ -84,4 +84,24 @@ describe("PUT /api/pages/:id renaming a heading", () => {
     expect(notes).toContain("[[Roadmap#Objectives|the goals]]");
     expect(notes).toContain("[[Roadmap#Risks]]");
   });
+
+  it("an outside edit (Obsidian renaming the heading) never sets off Gumply writes", async () => {
+    const { dir, store } = await vault(files);
+    const before = new Map<string, { text: string; mtime: number }>();
+    for (const name of ["Notes.md", "Daily.md", "Untouched.md", "Map.canvas"]) {
+      before.set(name, { text: await readFile(join(dir, name), "utf8"), mtime: (await stat(join(dir, name))).mtimeMs });
+    }
+    await writeFile(join(dir, "Projects/Plan.md"), PLAN.replace("## Goals", "## Objectives"));
+    // Both ways the store sees outside edits: an explicit rescan, and the watcher.
+    expect(await store.rescan()).toBe(true);
+    store.startWatching();
+    await writeFile(join(dir, "Projects/Plan.md"), PLAN.replace("## Goals", "## Aims"));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    store.stopWatching();
+    expect(store.get("Projects/Plan").content).toContain("## Aims");
+    for (const [name, was] of before) {
+      expect(await readFile(join(dir, name), "utf8"), name).toBe(was.text);
+      expect((await stat(join(dir, name))).mtimeMs, name).toBe(was.mtime);
+    }
+  });
 });
