@@ -8,7 +8,7 @@
  */
 import { maskCode } from "./links.js";
 import { findInlineTags } from "./tags.js";
-import { WIKILINK_INNER } from "./wikilink-syntax.js";
+import { isWholeWikilink, WIKILINK_INNER } from "./wikilink-syntax.js";
 
 export interface MentionMatch {
   /** Offset into the body. */
@@ -62,7 +62,8 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export function mentionTerms(title: string, aliases: readonly string[] = []): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const raw of [title, ...aliases]) {
+  // #7xbdttxy: an alias that is exactly one `[[link]]` is a link (Obsidian 1.14), not an alias.
+  for (const raw of [title, ...aliases.filter((alias) => !isWholeWikilink(alias.trim()))]) {
     // As written (Obsidian 1.14.4): no whitespace normalising inside the term.
     const term = raw.trim();
     // A term with no word character can't be word-bounded (e.g. "—").

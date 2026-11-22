@@ -30,3 +30,12 @@ export const WIKILINK_UNESCAPED = String.raw`(?<!(?<!\\)\\(?:\\\\)*)`;
 export function isWikilinkInner(text: string): boolean {
   return !/[[\]\r\n]/.test(text);
 }
+
+/**
+ * #7xbdttxy: a value that is exactly one `[[link]]` (`[[Alpha]]`,
+ * `[[Alpha#Sec|A]]`). In frontmatter that is a link in Obsidian 1.14, even
+ * under `tags` or `aliases`, and never a tag or an alias.
+ */
+export function isWholeWikilink(text: string): boolean {
+  return text.startsWith("[[") && text.endsWith("]]") && text.length > 4 && isWikilinkInner(text.slice(2, -2));
+}

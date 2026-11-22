@@ -8,6 +8,7 @@
 
 import { frontmatterKey, isTagsKey } from "./frontmatter-keys.js";
 import { splitTrailingComment } from "./note-template.js";
+import { isWholeWikilink } from "./wikilink-syntax.js";
 
 export { frontmatterKey, isAliasesKey, isTagsKey } from "./frontmatter-keys.js";
 
@@ -66,8 +67,11 @@ export function frontmatterValue(frontmatter: Readonly<Record<string, unknown>>,
 
 /** Normalise tags from frontmatter (string, comma list or array). */
 export function normalizeTags(value: unknown): string[] {
+  // #7xbdttxy: a whole-value `[[link]]` under `tags` is a link in Obsidian 1.14, never a tag
+  // (checked before a string is split, so `"[[Alpha Beta]]"` doesn't become two tags).
+  if (typeof value === "string" && isWholeWikilink(value.trim())) return [];
   const raw: string[] = Array.isArray(value)
-    ? value.map((item) => String(item))
+    ? value.map((item) => String(item)).filter((item) => !isWholeWikilink(item.trim()))
     : typeof value === "string"
       ? value.split(/[,\s]+/)
       : [];

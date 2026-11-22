@@ -36,6 +36,8 @@ describe("propertyLinkSpans", () => {
       ["list", "flow-link", "[[Gamma]]"],
       ["flow", "double", "[[Delta|the d]]"],
       ["flow", "plain", "other"],
+      // #7xbdttxy: tags are walked like any key (a link there is a link, never a tag).
+      ["tags", "plain", "alpha"],
       // YAML "\\[[Alpha]]" decodes to \[[Alpha]]: an escaped opener (text), as in a body.
       ["escaped", "double", "\\[[Alpha]]"],
     ]);
@@ -47,12 +49,13 @@ describe("propertyLinkSpans", () => {
     expect(YAML.slice(spans[0]!.start, spans[0]!.end)).toBe('"[[Alpha]]"');
   });
 
-  it("skips header keys, tags, block scalars, anchors, numbers and repeated keys; null for invalid YAML", () => {
+  it("skips header keys, block scalars, anchors, numbers and repeated keys; null for invalid YAML", () => {
     const keys = propertyLinkSpans(YAML)!.map((span) => span.key);
-    for (const key of ["block", "tags", "title", "anchored", "count"]) expect(keys).not.toContain(key);
+    for (const key of ["block", "title", "anchored", "count"]) expect(keys).not.toContain(key);
+    // #7xbdttxy: tags (any case), aliases and cssclasses are walked like any key; header keys aren't.
+    expect(keys).toContain("tags");
     expect(keys.filter((key) => key === "related")).toHaveLength(1);
-    // `tags` in any case is never a link span (#ippqkgus).
-    expect(propertyLinkSpans('Tags: ["[[X]]"]\nTAGS: "[[Y]]"\nrel: "[[Z]]"\n')!.map((span) => span.key)).toEqual(["rel"]);
+    expect(propertyLinkSpans('Tags: ["[[X]]"]\nTAGS: "[[Y]]"\nrel: "[[Z]]"\n')!.map((span) => span.key)).toEqual(["Tags", "TAGS", "rel"]);
     expect(propertyLinkSpans("plain: [[Alpha]] then text\n")).toBeNull();
     expect(propertyLinkSpans("- a list\n- not a mapping\n")).toBeNull();
     expect(propertyLinkSpans("")).toBeNull();
