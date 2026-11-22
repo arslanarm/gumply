@@ -23,6 +23,10 @@ export interface BoardViewControls {
   reload: () => Promise<void>;
   /** Drop a page/board card onto the board (e.g. from the sidebar). */
   addFileCard: (path: string, clientPoint?: { x: number; y: number }) => void;
+  /** The Outline pane's view of the board (v0.8 D1). */
+  frames: BoardEditorControls["frames"];
+  subscribe: BoardEditorControls["subscribe"];
+  zoomToFrame: BoardEditorControls["zoomToFrame"];
 }
 
 export interface BoardViewProps {
@@ -200,6 +204,9 @@ export function BoardView(props: BoardViewProps) {
           if (result) editorRef.current?.replaceBoard(result.board);
         },
         addFileCard: (path, point) => editorRef.current?.addFileCard(path, point),
+        frames: () => editorRef.current?.frames() ?? [],
+        subscribe: (listener) => editorRef.current?.subscribe(listener) ?? (() => undefined),
+        zoomToFrame: (id) => editorRef.current?.zoomToFrame(id),
       });
     },
     [autosave, load],

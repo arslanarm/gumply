@@ -50,7 +50,7 @@ export default defineConfig({
     // `today-shortcut` (#5hrsrqsj): Ctrl+Shift+D must beat Firefox's own binding.
     {
       name: 'firefox',
-      testMatch: /(graph-(visual|pixels|interaction)|today-shortcut)\.spec\.ts$/,
+      testMatch: /(graph-(visual|pixels|interaction)|today-shortcut|outline-shortcut)\.spec\.ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
   ],

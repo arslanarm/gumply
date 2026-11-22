@@ -11,6 +11,7 @@ import { FileAttachmentView } from "../../components/FileAttachmentView.js";
 import { ImageBlockView } from "../../components/ImageBlockView.js";
 import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
+import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
 /** Original Obsidian syntax, kept so an untouched embed is written back as-is. */
 const OBSIDIAN_ATTR = {
@@ -128,6 +129,12 @@ export const FileAttachment = Node.create({
       uploading: { default: false, parseHTML: () => false, renderHTML: () => ({}) },
       uploadId: { default: "", parseHTML: () => "", renderHTML: () => ({}) },
       obsidian: OBSIDIAN_ATTR,
+      // #he3ed9uz: `[My label](attachments/x.pdf)` as written, kept while the path is unchanged.
+      markdown: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.getAttribute("data-md-source"),
+        renderHTML: () => ({}),
+      },
     };
   },
 
@@ -151,6 +158,11 @@ export const FileAttachment = Node.create({
           if (path.length === 0) return;
           if (node.attrs.obsidian) {
             state.write(String(node.attrs.obsidian));
+            return;
+          }
+          const written = node.attrs.markdown ? String(node.attrs.markdown) : "";
+          if (written && markdownFileLinkPath(written) === path) {
+            state.write(written);
             return;
           }
           const name = String(node.attrs.name ?? path.split("/").pop() ?? path);

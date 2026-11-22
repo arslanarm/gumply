@@ -5,7 +5,10 @@ import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion
 import type { Attachment, Page, PageMeta } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
+import { TextSelection } from "@tiptap/pm/state";
 import { api, ApiRequestError } from "../api/client.js";
+import { outlineOf, type OutlineEntry } from "../outline/headings.js";
+import { revealNearTop } from "../outline/scroll.js";
 import { BlockGutter } from "./BlockGutter.js";
 import { EmojiMenu } from "./EmojiMenu.js";
 import { EmojiPicker } from "./EmojiPicker.js";
@@ -55,6 +58,7 @@ import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
 import { MarkdownListSource } from "../editor/raw-markdown/list-source.js";
 import { MarkdownBlockJoins, MarkdownBlockquote } from "../editor/raw-markdown/block-joins.js";
 import { Callout, CalloutTitle } from "../editor/callout/callout.js";
+import { Column, Columns } from "../editor/columns/columns.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
 import {
   GumplyTable,
@@ -106,6 +110,14 @@ export interface EditorControls {
    * and save anything still pending against it, without a remount.
    */
   adoptRecreatedFile: (id: string, updated: string) => Promise<void>;
+  /** The page's top-level headings, for the Outline pane (v0.8 D1). Read-only. */
+  outline: () => OutlineEntry[];
+  /** Called (at most once a frame) after the document changes; returns the unsubscribe. */
+  subscribeOutline: (listener: () => void) => () => void;
+  /** The heading's element (its top drives the Outline pane's highlight). */
+  headingElement: (pos: number) => HTMLElement | null;
+  /** Scroll a heading near the top of the page, caret at its end, focus in the editor. */
+  revealHeading: (pos: number) => void;
 }
 
 export interface EditorProps {
@@ -711,6 +723,9 @@ export function Editor({
       RawInline,
       Callout,
       CalloutTitle,
+      // spec/columns: Pandoc fenced-div columns (#d93qerr7).
+      Columns,
+      Column,
       MarkdownLink,
       MarkdownTaskList,
       AccessibleTaskItem.configure({
@@ -846,6 +861,36 @@ export function Editor({
   useEffect(() => {
     if (!editor || readOnly) return;
     onReady?.({
+      outline: () => outlineOf(editor.state.doc),
+      subscribeOutline: (listener) => {
+        let frame = 0;
+        const onUpdate = () => {
+          if (frame) return;
+          frame = requestAnimationFrame(() => {
+            frame = 0;
+            listener();
+          });
+        };
+        editor.on("update", onUpdate);
+        return () => {
+          editor.off("update", onUpdate);
+          if (frame) cancelAnimationFrame(frame);
+        };
+      },
+      headingElement: (pos) => {
+        const dom = editor.view.nodeDOM(pos);
+        return dom instanceof HTMLElement ? dom : null;
+      },
+      revealHeading: (pos) => {
+        const node = editor.state.doc.nodeAt(pos);
+        if (!node || node.type.name !== "heading") return;
+        // The caret at the heading's end, without the editor's own scroll.
+        const end = pos + node.nodeSize - 1;
+        editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, end)));
+        editor.view.focus();
+        const dom = editor.view.nodeDOM(pos);
+        if (dom instanceof HTMLElement) revealNearTop(dom);
+      },
       flush: () => autosave.flush(),
       pageId: page.id,
       // Synchronous on purpose: TipTap's focus() command waits a frame, and

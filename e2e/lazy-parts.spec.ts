@@ -34,7 +34,7 @@ test('graph and local graph work on the first open', async ({ page, vault }) => 
 
   await page.getByTestId('local-graph-toggle').click();
   await expect(page.locator('[data-testid="local-graph-canvas"] canvas')).toBeVisible();
-  await page.getByTestId('local-graph-close').click();
+  await page.getByTestId('right-panel-close').click();
 
   await page.getByTestId('sidebar-graph').click();
   await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible();
@@ -95,7 +95,7 @@ test('local graph code failing to download keeps the page usable and can be retr
   await expect(page.locator('[data-testid="local-graph-canvas"] canvas')).toBeVisible();
 
   // Close works from the loaded panel as before.
-  await page.getByTestId('local-graph-close').click();
+  await page.getByTestId('right-panel-close').click();
   await expect(page.getByTestId('local-graph')).toHaveCount(0);
 });
 

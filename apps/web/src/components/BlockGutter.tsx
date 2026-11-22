@@ -11,6 +11,7 @@ import {
 } from "../lib/blocks.js";
 import { insertBlockBelow, TURN_INTO, turnInto } from "../editor/block-editing.js";
 import { setCalloutFold } from "../editor/callout/callout.js";
+import { dropBeside } from "../editor/columns/commands.js";
 import { t, useT } from "../i18n/index.js";
 import { copyBlockLink } from "../editor/page-embed/block-ids.js";
 
@@ -38,17 +39,25 @@ interface DropState {
   top: number;
   width: number;
   targetPos: number;
+  /** spec/columns: dropped on a block's side edge, beside it (a vertical guide). */
+  side?: { target: BlockRef; side: "left" | "right"; height: number };
 }
+
+/** How close to a block's left or right edge a drop counts as "beside it" (spec/columns). */
+const SIDE_ZONE = 48;
 
 export interface BlockGutterProps {
   editor: TipTapEditor;
 }
 
+/** A block's element sits directly in the editor or in a column (spec/columns). */
+const isBlockParent = (view: EditorView, element: Element | null) =>
+  element === view.dom || (element instanceof HTMLElement && element.classList.contains("md-column"));
 
 function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
   try {
     const direct = view.nodeDOM(block.from);
-    if (direct instanceof HTMLElement && direct.parentElement === view.dom) return direct;
+    if (direct instanceof HTMLElement && isBlockParent(view, direct.parentElement)) return direct;
   } catch {
     // Fall through to the DOM-at-position walk.
   }
@@ -61,7 +70,7 @@ function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
     const item = element.closest("li");
     if (item && view.dom.contains(item)) return item as HTMLElement;
 
-    while (element.parentElement && element.parentElement !== view.dom) {
+    while (element.parentElement && !isBlockParent(view, element.parentElement)) {
       element = element.parentElement;
     }
     return element === view.dom ? null : (element as HTMLElement);
@@ -216,7 +225,9 @@ export function BlockGutter({ editor }: BlockGutterProps) {
       setDragging(null);
       setDrop(null);
       if (!target) return;
-      const tr = moveBlockTo(editor.state, source, target.targetPos);
+      const tr = target.side
+        ? dropBeside(editor.state, source, target.side.target, target.side.side)
+        : moveBlockTo(editor.state, source, target.targetPos);
       if (tr) {
         editor.view.dispatch(tr);
         editor.view.focus();
@@ -346,6 +357,19 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     const dom = domForBlock(editor.view, block);
     if (!dom) return null;
     const rect = dom.getBoundingClientRect();
+    // spec/columns: near a block's left or right edge, the drop goes beside it.
+    if (!sourceIsItem && !targetIsItem) {
+      const side = event.clientX < rect.left + 12 ? "left" : event.clientX > rect.right - SIDE_ZONE ? "right" : null;
+      if (side && dropBeside(editor.state, source, block, side)) {
+        return {
+          left: side === "left" ? rect.left - 8 : rect.right + 5,
+          top: rect.top,
+          width: 3,
+          targetPos: -1,
+          side: { target: block, side, height: rect.height },
+        };
+      }
+    }
     const before = event.clientY < rect.top + rect.height / 2;
     const targetPos = before ? block.from : block.to;
     if (targetPos === source.from || targetPos === source.to) return null;
@@ -404,9 +428,10 @@ export function BlockGutter({ editor }: BlockGutterProps) {
 
       {drop ? (
         <div
-          className="block-drop-indicator"
+          className={`block-drop-indicator${drop.side ? " is-side" : ""}`}
           data-testid="block-drop-indicator"
-          style={{ left: drop.left, top: drop.top, width: drop.width }}
+          data-side={drop.side?.side}
+          style={{ left: drop.left, top: drop.top, width: drop.width, height: drop.side ? drop.side.height : undefined }}
         />
       ) : null}
 
