@@ -210,3 +210,16 @@ export {
   type PageGradient,
   type PageLook,
 } from "./page-look.js";
+
+export {
+  notionReportMarkdown,
+  notionUrlId,
+  planNotionImport,
+  stripNotionId,
+  type NotionEntry,
+  type NotionImportOptions,
+  type NotionImportPlan,
+  type NotionImportReport,
+  type NotionPlannedDatabase,
+  type NotionPlannedFile,
+} from "./notion-import.js";

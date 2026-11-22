@@ -45,6 +45,7 @@ import type {
   VaultStore,
 } from "./vault-store.js";
 import { BaseQueries } from "./bases.js";
+import { NOTION_IMPORT_LIMITS, NotionImports, type NotionImportJob } from "./notion-import.js";
 import { demoLanguageFor } from "./demo.js";
 
 type JsonObject = Record<string, unknown>;
@@ -141,6 +142,7 @@ async function listVaultFiles(store: VaultStore, keep: (path: string) => boolean
 /** All `/api` routes; mounted by `createApp`. */
 export function createApiRoutes(store: VaultStore): Hono {
   const bases = new BaseQueries(store);
+  const imports = new NotionImports(store);
   const api = new Hono();
 
   api.get("/pages", async (c) => {
@@ -422,6 +424,31 @@ export function createApiRoutes(store: VaultStore): Hono {
     const attachment = await importRemoteImage(store.root, url.trim(), { allow: importAllow });
     store.fileSaved(attachment.path);
     return c.json<Attachment>(attachment, 201);
+  });
+
+  // v0.8 B2 (#znyztw3t, spec/api-import): import a Notion "Markdown & CSV" export.
+  api.post("/import/notion", async (c) => {
+    const length = Number(c.req.header("content-length") ?? Number.NaN);
+    if (length > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge("The export is too large (max 1 GB)");
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.parseBody();
+    } catch {
+      throw badRequest("The import must be multipart/form-data with a `file` field");
+    }
+    const file = body["file"];
+    if (!isUploadedFile(file)) throw badRequest("file is required");
+    if (file.size > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge("The export is too large (max 1 GB)");
+    const parent = body["parentId"];
+    const parentId = typeof parent === "string" && parent.length > 0 ? parent : null;
+    const job = imports.start(new Uint8Array(await file.arrayBuffer()), parentId);
+    return c.json<NotionImportJob>(job, 202);
+  });
+
+  api.get("/import/:job", (c) => {
+    const job = imports.get(c.req.param("job"));
+    if (!job) throw notFound("No such import");
+    return c.json<NotionImportJob>(job);
   });
 
   api.get("/attachments", async (c) => {

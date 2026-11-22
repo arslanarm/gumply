@@ -12,6 +12,7 @@ import type {
   Attachment,
   VaultImage,
   LinkableFile,
+  NotionImportReport,
   Backlink,
   GraphData,
   Page,
@@ -184,6 +185,17 @@ export interface TagRenameResult {
 /** `PUT /api/boards/:id`: `rewrittenPages`, `conflictBackup`, `repairBackup` (once). */
 export type SaveBoardResult = BoardUpdateResult;
 
+/** v0.8 B2 (spec/api-import): `GET /api/import/:job`. */
+export interface NotionImportJob {
+  id: string;
+  state: "reading" | "planning" | "writing" | "done" | "failed";
+  done: number;
+  total: number;
+  folder?: string;
+  report?: NotionImportReport;
+  error?: string;
+}
+
 /** Vault-relative path → the API URL that serves it (`/api/files/...`). */
 export function fileUrl(path: string): string {
   if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(path)) return path;
@@ -238,6 +250,17 @@ export const api = {
 
   /** #3ht5gh6q: every image in the vault, newest first. */
   listImages: (): Promise<VaultImage[]> => request("/files/images"),
+
+  /** v0.8 B2 (spec/api-import): start importing a Notion export zip into `parentId` (null = the vault root). */
+  startNotionImport: (file: File, parentId: string | null): Promise<NotionImportJob> => {
+    const body = new FormData();
+    body.set("file", file);
+    if (parentId) body.set("parentId", parentId);
+    return request("/import/notion", { method: "POST", body });
+  },
+
+  /** v0.8 B2: an import's progress and, when done, its report. */
+  notionImport: (job: string): Promise<NotionImportJob> => request(`/import/${encodeURIComponent(job)}`),
 
   /** #4usgpjh8: every linkable file, with the link Obsidian writes for it from note `from`. */
   listLinkableFiles: (from: string): Promise<LinkableFile[]> => request(`/files/linkable?from=${encodeURIComponent(from)}`),
