@@ -5,7 +5,7 @@
  * (colour groups, search and the four filters), read on each `GET` until the
  * first `PUT` writes `.gumply/graph.json`. Gumply never writes `.obsidian/`.
  */
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   DEFAULT_GRAPH_SETTINGS,
@@ -15,7 +15,7 @@ import {
   type GraphSettingsResponse,
 } from "@gumply/core";
 import { badRequest } from "./errors.js";
-import { tempPathBeside } from "./temp-files.js";
+import { writeAtomic } from "./temp-files.js";
 
 const GUMPLY_FILE = join(".gumply", "graph.json");
 const OBSIDIAN_FILE = join(".obsidian", "graph.json");
@@ -53,8 +53,6 @@ export async function writeGraphSettings(root: string, body: unknown): Promise<G
   const dir = join(root, ".gumply");
   await mkdir(dir, { recursive: true });
   const file = join(root, GUMPLY_FILE);
-  const temp = tempPathBeside(file);
-  await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`);
-  await rename(temp, file);
+  await writeAtomic(file, `${JSON.stringify(settings, null, 2)}\n`);
   return { ...settings, source: "gumply" };
 }

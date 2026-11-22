@@ -1,4 +1,4 @@
-import { lstat, readdir, rm } from "node:fs/promises";
+import { lstat, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 /**
@@ -24,6 +24,22 @@ let counter = 0;
 export function tempPathBeside(file: string): string {
   counter = (counter + 1) % 1_000_000;
   return join(dirname(file), `.~gumply-${process.pid}-${Date.now()}-${counter}.tmp`);
+}
+
+/**
+ * Write `data` to `file` atomically: a temp beside it, then a rename. If either
+ * step fails the temp is removed at once (not left for the sweep) and the
+ * original error is thrown.
+ */
+export async function writeAtomic(file: string, data: string | Uint8Array): Promise<void> {
+  const temp = tempPathBeside(file);
+  try {
+    await writeFile(temp, data);
+    await rename(temp, file);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 /** True for a name `tempPathBeside` makes. */
