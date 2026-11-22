@@ -300,7 +300,7 @@
   overflow: hidden;
 }
 
-.base-popover > * {
+.base-popover.is-properties > * {
   flex-shrink: 0;
 }
 
@@ -942,6 +942,7 @@ ol.base-list {
 .base-card-image {
   width: 100%;
   overflow: hidden;
+  border-radius: 7px 7px 0 0;
   background: var(--hover);
 }
 
@@ -976,6 +977,25 @@ ol.base-list {
 }
 
 /* A card with no cover in a view with covers (#2su9ikg4). */
+/*
+ * A cut-off card title shows its full text in the app's tooltip, wrapped to
+ * the title's width, over the cover. The card lets it out of its box while
+ * it shows (the cover keeps its own rounded corners).
+ */
+.base-card:has(.base-title-link[data-tooltip]:is(:hover, :focus-visible)) {
+  overflow: visible;
+  content-visibility: visible;
+}
+
+.base-card-body > .base-title-link[data-tooltip]::after {
+  left: 0;
+  right: auto;
+  width: max-content;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
 .base-card-image.is-empty {
   background: var(--hover);
   opacity: 0.8;
