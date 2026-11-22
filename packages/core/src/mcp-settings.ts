@@ -87,6 +87,13 @@ export function parseMcpAuditLog(text: string): McpAuditEntry[] {
 export interface McpLaunchCommand {
   command: string;
   args: string[];
+  /**
+   * A4: the command's location may change, so the snippet must be copied
+   * again after a move: an AppImage file, or a macOS app run from outside
+   * Applications (the disk image, App Translocation). `npm`: the browser
+   * build's fallback `gumply mcp`, which needs `gumply` on the AI app's PATH.
+   */
+  hint?: "appimage" | "macos-location" | "npm";
 }
 
 /** `GET /api/mcp/settings` (spec/api-mcp-settings). */

@@ -70,7 +70,8 @@ if (process.env.GUMPLY_DESKTOP_USER_DATA) app.setPath("userData", resolve(proces
  * window state). Chromium still keeps some state of its own (Local State,
  * GPU cache, crash reports): it goes to a throwaway folder, removed on exit.
  */
-const mcpMode = mcpModeArgs(process.argv);
+// The first user argument: after the executable when packaged, after the app folder in development.
+const mcpMode = mcpModeArgs(process.argv, app.isPackaged ? 1 : 2);
 let mcpThrowaway: string | null = null;
 if (mcpMode) {
   // A process stopped by a signal can't clean up: older leftovers go now.
@@ -244,7 +245,13 @@ async function openVault(path: string): Promise<void> {
     desktop: true,
     uiState: uiStateStore,
     // A3: Settings → MCP shows AI apps how to start this app's --mcp mode.
-    mcpCommand: mcpLaunchCommand(process.execPath, app.isPackaged, app.getAppPath()),
+    mcpCommand: mcpLaunchCommand({
+      execPath: process.execPath,
+      packaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      platform: process.platform,
+      ...(process.env.APPIMAGE ? { appImage: process.env.APPIMAGE } : {}),
+    }),
     printToken,
     log: (message) => console.log(message),
   });

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { E2E_VAULT } from './support/env';
@@ -91,13 +92,23 @@ test.describe('Settings → AI apps (MCP)', () => {
 
     const code = page.getByTestId('mcp-snippet-claude-code');
     await expect(code).toContainText('claude mcp add --transport stdio --scope user');
-    await expect(code).toContainText(`gumply mcp --vault`);
-    await expect(code).toContainText(E2E_VAULT);
+    await expect(code).toContainText(` mcp --vault ${E2E_VAULT}`);
     const desktop = JSON.parse((await page.getByTestId('mcp-snippet-claude-desktop').textContent()) ?? '{}') as {
       mcpServers: Record<string, { command: string; args: string[] }>;
     };
     const [entry] = Object.values(desktop.mcpServers);
-    expect(entry).toEqual({ command: 'gumply', args: ['mcp', '--vault', E2E_VAULT] });
+    // A4: with apps/mcp built, absolute node + the built server (AI apps have no user PATH);
+    // without it, `gumply mcp` and the note that it needs gumply on the AI app's PATH.
+    const script = fileURLToPath(new URL('../apps/mcp/dist/gumply.mjs', import.meta.url));
+    const built = await fs.stat(script).then(() => true, () => false);
+    if (built) {
+      expect(path.isAbsolute(entry!.command)).toBe(true);
+      expect(entry!.args).toEqual([script, 'mcp', '--vault', E2E_VAULT]);
+      await expect(page.getByTestId('mcp-hint')).toHaveCount(0);
+    } else {
+      expect(entry).toEqual({ command: 'gumply', args: ['mcp', '--vault', E2E_VAULT] });
+      await expect(page.getByTestId('mcp-hint')).toContainText('PATH');
+    }
 
     await page.getByTestId('mcp-copy-claude-code').click();
     await expect(page.getByTestId('mcp-copy-claude-code')).toContainText('Copied');

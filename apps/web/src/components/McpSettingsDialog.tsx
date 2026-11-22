@@ -188,7 +188,9 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
                 hint={t("settings.mcp.claudeDesktopHint", { path: claudeDesktopConfigPath(settings.platform) })}
                 text={claudeDesktopSnippet(settings.command, settings.vaultPath)}
               />
-              {settings.command.command === "gumply" ? <p className="mcp-note">{t("settings.mcp.npmHint")}</p> : null}
+              {settings.command.hint === "npm" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.npmHint")}</p> : null}
+              {settings.command.hint === "appimage" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.appImageHint")}</p> : null}
+              {settings.command.hint === "macos-location" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.macLocationHint")}</p> : null}
             </section>
 
             <section className="mcp-section">
