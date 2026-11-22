@@ -257,6 +257,8 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
             data-testid="selection-turn-into"
             aria-haspopup="menu"
             aria-expanded={mode === "turn"}
+            // #hwrv5hvk: the visible block name alone ("Text") doesn't say what the button does.
+            aria-label={t("blocks.turnIntoLabel", { block: currentBlockLabel(editor) })}
             data-tooltip={t("blocks.turnIntoHeading")}
             onClick={() => setMode(mode === "turn" ? "buttons" : "turn")}
           >

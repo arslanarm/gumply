@@ -2177,6 +2177,11 @@ input {
 
 [data-tooltip]::after {
   content: attr(data-tooltip);
+  /* #hwrv5hvk: empty alt text keeps the tooltip out of the element's accessible
+     name (Chrome, Safari 17.4+, Firefox 128+). Older browsers drop this
+     declaration as invalid and keep the one above. Names come from aria-label
+     or visible text; a tooltip that adds information is aria-describedby. */
+  content: attr(data-tooltip) / "";
   position: absolute;
   right: 0;
   bottom: calc(100% + 6px);
