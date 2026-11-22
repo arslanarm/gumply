@@ -1,10 +1,33 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { defineConfig, type Plugin } from "vite";
 import { markdownItAlias } from "./markdown-it-path";
 
+/**
+ * #mbim529b: write the list of bundled modules next to the build cache (not
+ * into dist/), so `npm run notices:check -- --from-build` can check
+ * THIRD_PARTY_NOTICES against this very build instead of building again.
+ */
+function bundledModulesManifest(): Plugin {
+  return {
+    name: "gumply-bundled-modules",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const ids = new Set<string>();
+      for (const item of Object.values(bundle)) {
+        if (item.type === "chunk") for (const id of item.moduleIds) ids.add(id);
+      }
+      const out = fileURLToPath(new URL("../../node_modules/.cache/gumply-notices/web-modules.json", import.meta.url));
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, JSON.stringify([...ids].sort()));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), bundledModulesManifest()],
   resolve: {
     alias: [
       // Consume core sources directly so UI edits don't need a core rebuild.

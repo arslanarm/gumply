@@ -10,6 +10,7 @@
 // Usage:
 //   node scripts/notices.mjs           write THIRD_PARTY_NOTICES.md
 //   node scripts/notices.mjs --check   fail if it's out of date, or a licence isn't allowed
+//   … --from-build                     use the web build that just ran (CI) instead of building again
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,8 +37,19 @@ const EXCEPTIONS = readJson(join(repo, "scripts/notices-allow.json"), {});
 const check = process.argv.includes("--check");
 const coreAlias = { "@gumply/core": join(repo, "packages/core/src/index.ts") };
 
-/** Bundled files, per product. */
-async function bundledFiles() {
+const fromBuild = process.argv.includes("--from-build");
+const WEB_MODULES = join(repo, "node_modules/.cache/gumply-notices/web-modules.json");
+
+/** The web build's modules: from the build that just ran (CI), or a fresh build. */
+async function webModules() {
+  if (fromBuild) {
+    const list = readJson(WEB_MODULES, null);
+    if (!Array.isArray(list)) {
+      console.error(`--from-build: no ${relative(repo, WEB_MODULES)}; run \`npm run build\` first.`);
+      process.exit(1);
+    }
+    return list;
+  }
   const web = await viteBuild({
     configFile: join(repo, "apps/web/vite.config.ts"),
     root: join(repo, "apps/web"),
@@ -45,7 +57,12 @@ async function bundledFiles() {
     build: { write: false, emptyOutDir: false, outDir: join(repo, "apps/web/.notices-tmp") },
   });
   const outputs = (Array.isArray(web) ? web : [web]).flatMap((result) => result.output);
-  const webFiles = outputs.filter((item) => item.type === "chunk").flatMap((chunk) => chunk.moduleIds);
+  return outputs.filter((item) => item.type === "chunk").flatMap((chunk) => chunk.moduleIds);
+}
+
+/** Bundled files, per product. */
+async function bundledFiles() {
+  const webFiles = await webModules();
 
   const node = (entry, external = []) =>
     esbuild({
