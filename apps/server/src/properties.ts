@@ -17,6 +17,7 @@ import {
   propertyLinkSpans,
 } from "@gumply/core";
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
+import { tempPathBeside } from "./temp-files.js";
 
 /** A frontmatter key and its value, before a type is attached. */
 export interface RawProperty {
@@ -242,7 +243,7 @@ export class PropertyTypesStore {
     const next = addMissingTypes(text, types);
     if (next === null) return [];
     if (file.startsWith(join(this.root, ".gumply"))) await mkdir(join(this.root, ".gumply"), { recursive: true });
-    const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+    const temporary = tempPathBeside(file);
     try {
       await writeFile(temporary, next, "utf8");
       await rename(temporary, file);
@@ -286,7 +287,7 @@ export class PropertyTypesStore {
     const next = JSON.stringify(data, null, indent) + (finalNewline ? "\n" : "");
     // `.gumply/` is ours to create; `.obsidian/` exists already (see `file()`).
     if (file.startsWith(join(this.root, ".gumply"))) await mkdir(join(this.root, ".gumply"), { recursive: true });
-    const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+    const temporary = tempPathBeside(file);
     try {
       await writeFile(temporary, next, "utf8");
       await rename(temporary, file);

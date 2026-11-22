@@ -15,6 +15,7 @@ import {
   type GraphSettingsResponse,
 } from "@gumply/core";
 import { badRequest } from "./errors.js";
+import { tempPathBeside } from "./temp-files.js";
 
 const GUMPLY_FILE = join(".gumply", "graph.json");
 const OBSIDIAN_FILE = join(".obsidian", "graph.json");
@@ -52,7 +53,7 @@ export async function writeGraphSettings(root: string, body: unknown): Promise<G
   const dir = join(root, ".gumply");
   await mkdir(dir, { recursive: true });
   const file = join(root, GUMPLY_FILE);
-  const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const temp = tempPathBeside(file);
   await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`);
   await rename(temp, file);
   return { ...settings, source: "gumply" };
