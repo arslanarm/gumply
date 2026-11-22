@@ -32,12 +32,32 @@ export function preferredLinkPath(a: string, b: string, folder: string): boolean
   return order !== 0 ? order < 0 : a < b;
 }
 
-/** The candidate Obsidian opens (rules 2–4), or null for none. */
+/**
+ * The candidate Obsidian opens (rules 2–4), or null for none. Each path is
+ * lowercased once (not per comparison): this runs for every file link a page
+ * holds, so it must not make garbage that grows with the vault.
+ */
 export function pickLinkTarget<T>(candidates: Iterable<T>, pathOf: (candidate: T) => string, from: string | null | undefined): T | null {
   const folder = linkSourceFolder(from);
   let best: T | null = null;
+  let bestPath = "";
+  let bestInside = false;
   for (const candidate of candidates) {
-    if (best === null || preferredLinkPath(pathOf(candidate), pathOf(best), folder)) best = candidate;
+    const path = pathOf(candidate);
+    const inside = folder !== "" && path.toLowerCase().startsWith(folder);
+    if (best !== null) {
+      if (inside !== bestInside) {
+        if (!inside) continue;
+      } else if (path.length !== bestPath.length) {
+        if (path.length > bestPath.length) continue;
+      } else {
+        const order = collator.compare(path, bestPath);
+        if (order > 0 || (order === 0 && path >= bestPath)) continue;
+      }
+    }
+    best = candidate;
+    bestPath = path;
+    bestInside = inside;
   }
   return best;
 }
