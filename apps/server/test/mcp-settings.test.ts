@@ -31,8 +31,8 @@ describe("GET/PUT /api/mcp/settings (A3)", () => {
   it("A4: the browser build's command is absolute (AI apps have no user PATH, no nvm node)", () => {
     const url = "file:///srv/gumply/apps/server/src/mcp-settings.ts";
     const built = "/srv/gumply/apps/mcp/dist/gumply.mjs";
-    expect(browserMcpCommand(url, "/home/me/.nvm/versions/node/v22.11.0/bin/node", (path) => path === built)).toEqual({
-      command: "/home/me/.nvm/versions/node/v22.11.0/bin/node",
+    expect(browserMcpCommand(url, "/home/you/.nvm/versions/node/v22.11.0/bin/node", (path) => path === built)).toEqual({
+      command: "/home/you/.nvm/versions/node/v22.11.0/bin/node",
       args: [built, "mcp"],
     });
     // From apps/server/dist too.

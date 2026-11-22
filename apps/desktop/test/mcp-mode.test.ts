@@ -8,7 +8,7 @@ describe("desktop MCP mode arguments (A3)", () => {
   });
 
   it("reads --vault (both forms) and --read-only, ignoring Electron's own flags", () => {
-    expect(mcpModeArgs(["/opt/Gumply/gumply", "--mcp", "--vault", "/home/me/Notes"])).toEqual({ vault: "/home/me/Notes", readOnly: false });
+    expect(mcpModeArgs(["/opt/Gumply/gumply", "--mcp", "--vault", "/home/you/Notes"])).toEqual({ vault: "/home/you/Notes", readOnly: false });
     expect(mcpModeArgs(["electron", "/app", "--no-sandbox", "--mcp", "--vault=C:\\Notes", "--read-only", "--enable-logging"])).toEqual({
       vault: "C:\\Notes",
       readOnly: true,
@@ -18,11 +18,17 @@ describe("desktop MCP mode arguments (A3)", () => {
   });
 
   it("A4: `gumply mcp --vault …` (the npm form, /usr/bin/gumply from a .deb) is MCP mode too, never a window", () => {
-    expect(mcpModeArgs(["/opt/Gumply/gumply", "mcp", "--vault", "/home/me/Notes"])).toEqual({ vault: "/home/me/Notes", readOnly: false });
-    expect(mcpModeArgs(["/repo/electron", "/repo/apps/desktop", "mcp", "--vault=/v", "--read-only"])).toEqual({ vault: "/v", readOnly: true });
-    // A vault folder or file named "mcp" opened normally is not MCP mode.
+    expect(mcpModeArgs(["/opt/Gumply/gumply", "mcp", "--vault", "/home/you/Notes"])).toEqual({ vault: "/home/you/Notes", readOnly: false });
+    expect(mcpModeArgs(["/repo/electron", "/repo/apps/desktop", "mcp", "--vault=/v", "--read-only"], 2)).toEqual({ vault: "/v", readOnly: true });
+    // Only as the first user argument: a vault, folder or file named "mcp" anywhere else opens the app.
     expect(mcpModeArgs(["/opt/Gumply/gumply", "--vault", "mcp"])).toBeNull();
-    expect(mcpModeArgs(["/repo/electron", "--inspect", "mcp"])).toBeNull();
+    expect(mcpModeArgs(["/opt/Gumply/gumply", "/home/you/Notes", "mcp"])).toBeNull();
+    expect(mcpModeArgs(["/opt/Gumply/gumply", "--no-sandbox", "mcp"])).toBeNull();
+    expect(mcpModeArgs(["/opt/Gumply/gumply", "/home/you/mcp"])).toBeNull();
+    expect(mcpModeArgs(["/opt/Gumply/gumply", "./mcp"])).toBeNull();
+    // Development: the app folder comes first; "mcp" in the app folder's place is not the subcommand.
+    expect(mcpModeArgs(["/repo/electron", "mcp", "--vault", "/v"], 2)).toBeNull();
+    expect(mcpModeArgs(["/repo/electron", "/repo/apps/desktop", "--inspect", "mcp"], 2)).toBeNull();
   });
 });
 
@@ -31,8 +37,8 @@ describe("mcpLaunchCommand", () => {
   const linux = { platform: "linux", packaged: true };
   it("AppImage: the .AppImage file itself, never the temporary mount", () => {
     expect(
-      mcpLaunchCommand({ ...linux, execPath: "/tmp/.mount_GumplyAb12/gumply", appPath: "/tmp/.mount_GumplyAb12/resources/app.asar", appImage: "/home/me/Apps/Gumply-0.8.0-x86_64.AppImage" }),
-    ).toEqual({ command: "/home/me/Apps/Gumply-0.8.0-x86_64.AppImage", args: ["--mcp", "--ozone-platform=headless"], hint: "appimage" });
+      mcpLaunchCommand({ ...linux, execPath: "/tmp/.mount_GumplyAb12/gumply", appPath: "/tmp/.mount_GumplyAb12/resources/app.asar", appImage: "/home/you/Apps/Gumply-0.8.0-x86_64.AppImage" }),
+    ).toEqual({ command: "/home/you/Apps/Gumply-0.8.0-x86_64.AppImage", args: ["--mcp", "--ozone-platform=headless"], hint: "appimage" });
   });
 
   it(".deb: the installed executable under /opt (not the /usr/bin symlink, which the npm bin shares a name with)", () => {

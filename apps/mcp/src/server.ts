@@ -3,6 +3,7 @@
  * once per connection (plus once for a discarded `server/discover` probe), so
  * the same tools serve a 2026-07-28 client and a legacy 2025 client.
  */
+import { CORE_VERSION } from "@gumply/core";
 import { McpServer, SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/server";
 import { rank, type Access } from "./settings.js";
 import { registerReadTools } from "./tools/read.js";
@@ -10,7 +11,8 @@ import { registerWriteTools, type WriteContext } from "./tools/write.js";
 import type { Vault } from "./vault.js";
 
 export const MODERN_PROTOCOL = "2026-07-28";
-export const SERVER_VERSION = "0.8.0";
+/** `serverInfo.version`: Gumply's own version (the app's, in desktop `--mcp` mode), not this package's (A4). */
+export const SERVER_VERSION = CORE_VERSION;
 
 export const INSTRUCTIONS = [
   "Gumply notes: one vault of plain Markdown pages and JSON Canvas boards.",

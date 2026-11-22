@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { _electron as electron, expect, test } from '@playwright/test';
+import { CORE_VERSION } from '@gumply/core';
+import { mcpLaunchCommand } from '../src/mcp-mode.js';
 
 /**
  * v0.8 A3 (spec/mcp §1): `Gumply --mcp --vault <path>` is the stdio MCP
@@ -112,6 +114,27 @@ test('A4: `gumply mcp --vault …` (the npm form; /usr/bin/gumply from a .deb) i
   const client = new Client({ name: 'desktop-npm-form', version: '1.0.0' });
   await client.connect(transport);
   try {
+    const result = (await client.callTool({ name: 'read', arguments: { id: 'Plan' } })) as { structuredContent?: { content?: string } };
+    expect(result.structuredContent?.content).toContain('Ship the export.');
+  } finally {
+    await client.close();
+  }
+});
+
+test('A4: the Linux snippet starts with no display at all (no DISPLAY, no WAYLAND_DISPLAY), as over SSH', async () => {
+  test.skip(process.platform !== 'linux', 'Linux snippet');
+  test.setTimeout(60_000);
+  // Exactly the args Settings → AI apps prints in development (the packaged ones are pinned in the unit test).
+  const { command, args } = mcpLaunchCommand({ execPath: electronPath, packaged: false, appPath: appDir, platform: 'linux' });
+  const env = isolatedEnv();
+  delete env.DISPLAY;
+  delete env.WAYLAND_DISPLAY;
+  env.XDG_SESSION_TYPE = 'wayland'; // a stale session variable: Chromium would pick Wayland and exit
+  const transport = new StdioClientTransport({ command, args: [...args, '--vault', vault], env, stderr: 'pipe' });
+  const client = new Client({ name: 'desktop-headless', version: '1.0.0' });
+  await client.connect(transport);
+  try {
+    expect(client.getServerVersion()).toMatchObject({ name: 'gumply', version: CORE_VERSION });
     const result = (await client.callTool({ name: 'read', arguments: { id: 'Plan' } })) as { structuredContent?: { content?: string } };
     expect(result.structuredContent?.content).toContain('Ship the export.');
   } finally {

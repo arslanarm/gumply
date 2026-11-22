@@ -70,7 +70,8 @@ if (process.env.GUMPLY_DESKTOP_USER_DATA) app.setPath("userData", resolve(proces
  * window state). Chromium still keeps some state of its own (Local State,
  * GPU cache, crash reports): it goes to a throwaway folder, removed on exit.
  */
-const mcpMode = mcpModeArgs(process.argv);
+// The first user argument: after the executable when packaged, after the app folder in development.
+const mcpMode = mcpModeArgs(process.argv, app.isPackaged ? 1 : 2);
 let mcpThrowaway: string | null = null;
 if (mcpMode) {
   // A process stopped by a signal can't clean up: older leftovers go now.

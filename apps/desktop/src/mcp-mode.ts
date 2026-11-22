@@ -16,11 +16,13 @@ export interface McpModeArgs {
  * The MCP mode's arguments, or null when this launch isn't one. Flags Electron
  * or Chromium add (`--no-sandbox`, `--enable-logging`…) are ignored.
  */
-export function mcpModeArgs(argv: readonly string[]): McpModeArgs | null {
+export function mcpModeArgs(argv: readonly string[], firstUserArg = 1): McpModeArgs | null {
   // A4: `gumply mcp --vault …` (the npm form) works too. A .deb puts the app at
   // /usr/bin/gumply, the npm bin's name, so that command must not open a window.
-  // `mcp` is the first argument (packaged) or the one after the app folder (dev).
-  const subcommand = argv[1] === "mcp" || (argv[2] === "mcp" && !argv[1]!.startsWith("-"));
+  // Only when `mcp` is exactly the first user argument (`firstUserArg`: 1 when
+  // packaged, 2 in development after the app folder): a vault or file named
+  // `mcp` anywhere else still opens the app.
+  const subcommand = argv[firstUserArg] === "mcp";
   if (!argv.includes("--mcp") && !subcommand) return null;
   let vault: string | null = null;
   let readOnly = false;
