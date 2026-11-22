@@ -6,7 +6,7 @@ import { createApp } from "../src/app";
 import { VaultStore } from "../src/vault-store";
 import { cleanupVaults, createTestServer, getJson, jsonRequest } from "./helpers";
 
-/** v0.8 E1 (spec/api-graph-groups, v1.next): graph settings and attachment edges. */
+/** v0.8 E1 (spec/api-graph-groups, v1.19): graph settings and attachment edges. */
 
 afterEach(cleanupVaults);
 

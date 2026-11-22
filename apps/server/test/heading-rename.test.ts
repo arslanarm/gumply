@@ -104,4 +104,64 @@ describe("PUT /api/pages/:id renaming a heading", () => {
       expect((await stat(join(dir, name))).mtimeMs, name).toBe(was.mtime);
     }
   });
+
+  // @opus-hunter's repro (vault-c2*): a second `Target.md` in a folder.
+  describe("a second page with the same file name (#u84ebtf3)", () => {
+    const TARGET = "# Target\n\n## Old heading\n\nText.\n";
+    const sameName = {
+      "Target.md": TARGET,
+      "Other/Target.md": "# Other\n\n## Old heading\n\nAlso here.\n",
+      "Links.md":
+        "[[Target#Old heading]] [[Target#Old heading|alias]] ![[Target#Old heading]]\n" +
+        "| t | [[Target#Old heading\\|piped]] |\n" +
+        "[[Other/Target#Old heading]] \\[[Target#Old heading]]\n",
+      "Cards.canvas": JSON.stringify({
+        nodes: [
+          { id: "f", type: "file", file: "Target.md", subpath: "#Old heading", x: 0, y: 0, width: 200, height: 100 },
+          { id: "o", type: "file", file: "Other/Target.md", subpath: "#Old heading", x: 0, y: 200, width: 200, height: 100 },
+          { id: "t", type: "text", text: "See [[Target#Old heading]]", x: 300, y: 0, width: 200, height: 100 },
+        ],
+        edges: [],
+      }),
+    };
+
+    for (const order of ["root first", "folder first"] as const) {
+      it(`rewrites every link that resolves to the renamed page, never the other file's (${order})`, async () => {
+        const files = order === "root first" ? sameName : Object.fromEntries(Object.entries(sameName).reverse());
+        const { app, dir } = await vault(files);
+        const response = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Target")}`, {
+          content: TARGET.replace("## Old heading", "## New heading"),
+        });
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as { rewrittenPages: string[] }).rewrittenPages).toEqual(["Cards.canvas", "Links"]);
+        expect(await readFile(join(dir, "Links.md"), "utf8")).toBe(
+          "[[Target#New heading]] [[Target#New heading|alias]] ![[Target#New heading]]\n" +
+            "| t | [[Target#New heading\\|piped]] |\n" +
+            // Path-qualified to the other file, and an escaped `\[[` (text): left alone.
+            "[[Other/Target#Old heading]] \\[[Target#Old heading]]\n",
+        );
+        const board = JSON.parse(await readFile(join(dir, "Cards.canvas"), "utf8")) as {
+          nodes: Array<{ id: string; subpath?: string; text?: string }>;
+        };
+        const byId = Object.fromEntries(board.nodes.map((node) => [node.id, node]));
+        expect(byId.f?.subpath).toBe("#New heading");
+        expect(byId.o?.subpath).toBe("#Old heading");
+        expect(byId.t?.text).toBe("See [[Target#New heading]]");
+        expect(await readFile(join(dir, "Other/Target.md"), "utf8")).toBe(sameName["Other/Target.md"]);
+      });
+    }
+
+    it("renaming the heading in the folder page rewrites only path-qualified links to it", async () => {
+      const { app, dir } = await vault(sameName);
+      const response = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Other/Target")}`, {
+        content: sameName["Other/Target.md"].replace("## Old heading", "## Moved"),
+      });
+      expect(((await response.json()) as { rewrittenPages: string[] }).rewrittenPages).toEqual(["Cards.canvas", "Links"]);
+      const links = await readFile(join(dir, "Links.md"), "utf8");
+      expect(links).toContain("[[Other/Target#Moved]]");
+      expect(links).toContain("[[Target#Old heading]] [[Target#Old heading|alias]]");
+      const board = JSON.parse(await readFile(join(dir, "Cards.canvas"), "utf8")) as { nodes: Array<{ id: string; subpath?: string }> };
+      expect(board.nodes.map((node) => node.subpath)).toEqual(["#Old heading", "#Moved", undefined]);
+    });
+  });
 });

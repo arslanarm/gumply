@@ -89,6 +89,18 @@ describe("POST /api/pages/:id/mentions/link", () => {
     expect(backlinks.map((item) => item.page.id)).toContain("Daily");
   });
 
+  it("Link all never touches a #tag of that name; the tag survives (#sipu2nxn)", async () => {
+    const tagged = { ...files, "Daily.md": "Tag #Alpha and #alpha/sub, then Alpha.\n" };
+    const { app, dir } = await vault(tagged);
+    const tagsBefore = await getJson<Array<{ tag: string }>>(app, "/api/tags");
+    const [daily] = await mentionsOf(app);
+    expect(daily!.mentions.map((mention) => mention.text)).toEqual(["Alpha"]);
+    const response = await link(app, { source: "Daily", expectedUpdated: daily!.updated, all: true });
+    expect(await response.json()).toEqual({ linked: 1, rewrittenPages: ["Daily"] });
+    expect(await readFile(join(dir, "Daily.md"), "utf8")).toBe("Tag #Alpha and #alpha/sub, then [[Alpha]].\n");
+    expect(await getJson<Array<{ tag: string }>>(app, "/api/tags")).toEqual(tagsBefore);
+  });
+
   it("conditional: a stale version, a changed file or a stale position is 409 and writes nothing", async () => {
     const { app, dir } = await vault(files);
     const [daily] = await mentionsOf(app);

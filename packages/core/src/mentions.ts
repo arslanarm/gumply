@@ -3,10 +3,11 @@
  *
  * A mention of a page is its title, or one of its frontmatter `aliases`,
  * written as plain text in another page: word-bounded, case-insensitive,
- * never inside code, links, wikilinks, embeds, URLs or HTML. Offsets are into
+ * never inside code, links, wikilinks, embeds, URLs, HTML or `#tags`. Offsets are into
  * the page body (frontmatter excluded), so a Link replaces exactly those bytes.
  */
 import { maskCode } from "./links.js";
+import { findInlineTags } from "./tags.js";
 import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
 export interface MentionMatch {
@@ -31,11 +32,23 @@ const URLS = /\b(?:https?|ftp|mailto|file|obsidian):[^\s<>()]+/gi;
 
 /** The body with everything that can't hold an unlinked mention blanked out (offsets kept). */
 export function mentionableText(markdown: string): string {
-  return maskCode(markdown)
+  const text = maskCode(markdown)
     .replace(WIKILINKS, blank)
     .replace(MARKDOWN_LINKS, blank)
     .replace(ANGLE, blank)
     .replace(URLS, blank);
+  // A tag is a tag, not a mention: `#Lighthouse` must never become
+  // `#[[Lighthouse]]` (#sipu2nxn). Obsidian's tag rule, as the Tags pane reads it.
+  const tags = findInlineTags(markdown);
+  if (tags.length === 0) return text;
+  let out = "";
+  let at = 0;
+  for (const { tag, index } of tags) {
+    const end = index + 1 + tag.length;
+    out += text.slice(at, index) + " ".repeat(end - index);
+    at = end;
+  }
+  return out + text.slice(at);
 }
 
 /** Lowercase words, the index's tokens (letters, digits, `_`; any script). */

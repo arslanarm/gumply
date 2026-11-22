@@ -345,6 +345,35 @@ test('the native menu runs the in-app commands (New Page, New Whiteboard, Search
   }
 });
 
+test('Help → Open-Source Licences opens THIRD_PARTY_NOTICES (#mbim529b)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    const item = await app.evaluate(({ Menu }) => {
+      const help = Menu.getApplicationMenu()!.items.find((entry) => entry.role === 'help');
+      const licences = Menu.getApplicationMenu()!.getMenuItemById('licences');
+      return { inHelp: Boolean(help?.submenu?.items.some((entry) => entry.id === 'licences')), label: licences?.label ?? null };
+    });
+    expect(item).toEqual({ inHelp: true, label: 'Open-Source Licences' });
+    // Record what it opens instead of launching a viewer on the test machine.
+    await app.evaluate(({ shell }) => {
+      (globalThis as { openedPath?: string }).openedPath = '';
+      shell.openPath = async (path: string) => {
+        (globalThis as { openedPath?: string }).openedPath = path;
+        return '';
+      };
+    });
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('licences')!.click());
+    const opened = await app.evaluate(() => (globalThis as { openedPath?: string }).openedPath ?? '');
+    // In dev the repo's notices; packaged, resources/THIRD_PARTY_NOTICES.txt.
+    expect(opened).toMatch(/THIRD_PARTY_NOTICES\.(md|txt)$/);
+    expect(existsSync(opened)).toBe(true);
+    expect(readFileSync(opened, 'utf8')).toContain('# Third-party notices');
+  } finally {
+    await app.close();
+  }
+});
+
 test('board export saves through the download handler; other downloads are refused (#yewapn9k)', async () => {
   const downloads = join(scratch, 'downloads');
   mkdirSync(downloads, { recursive: true });

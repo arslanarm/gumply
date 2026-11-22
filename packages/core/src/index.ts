@@ -200,20 +200,7 @@ export {
   type TemplateSettings,
 } from "./templates.js";
 export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
-
-export {
-  coverValue,
-  PAGE_COLORS,
-  PAGE_GRADIENTS,
-  PAGE_LOOK_KEYS,
-  pageLook,
-  parseCover,
-  type PageColor,
-  type PageCover,
-  type PageGradient,
-  type PageLook,
-} from "./page-look.js";
-export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET } from "./wikilink-syntax.js";
+export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
 export { graphItemPath, matchesGraphQuery, parseGraphQuery, type GraphQuery, type GraphQueryItem, type GraphQueryOp, type GraphQueryTerm } from "./graph-query.js";
 export {
   DEFAULT_GRAPH_FILTERS,
@@ -260,5 +247,18 @@ export {
   type NotionPlannedDatabase,
   type NotionPlannedFile,
 } from "./notion-import.js";
-export { headingRenames, rewriteHeadingLinks, type HeadingRename } from "./heading-rename.js";
+export { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type HeadingRename } from "./heading-rename.js";
 export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
+
+export {
+  coverValue,
+  PAGE_COLORS,
+  PAGE_GRADIENTS,
+  PAGE_LOOK_KEYS,
+  pageLook,
+  parseCover,
+  type PageColor,
+  type PageCover,
+  type PageGradient,
+  type PageLook,
+} from "./page-look.js";

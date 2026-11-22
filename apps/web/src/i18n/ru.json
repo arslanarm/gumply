@@ -854,7 +854,8 @@
       "help": "&Справка",
       "about": "О Gumply",
       "importNotion": "Импорт из Notion…",
-      "exportPdf": "Экспорт в PDF…"
+      "exportPdf": "Экспорт в PDF…",
+      "licences": "Лицензии открытого ПО"
     },
     "about": {
       "detail": "Заметки в обычном Markdown — со ссылками, графом и досками."

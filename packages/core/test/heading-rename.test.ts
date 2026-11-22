@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { headingRenames, rewriteHeadingLinks, type WikiLink } from "../src/index";
+import { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type WikiLink } from "../src/index";
 
 /** v0.8 C2 (#u84ebtf3): renaming a heading rewrites [[Page#Old]] across the vault. */
 
@@ -55,6 +55,16 @@ describe("rewriteHeadingLinks", () => {
     });
   });
 
+  it("a table alias `\\|` keeps its backslash (#u84ebtf3)", () => {
+    const text = "| a | [[Plan#Goals\\|piped]] |\n| b | ![[Plan#Goals\\|300]] |\n";
+    expect(rewrite(text)).toEqual({ content: "| a | [[Plan#Objectives\\|piped]] |\n| b | ![[Plan#Objectives\\|300]] |\n", count: 2 });
+  });
+
+  it("an escaped `\\[[` is text, not a link; `\\\\[[` is a link", () => {
+    expect(rewrite(String.raw`\[[Plan#Goals]] \![[Plan#Goals]]`).content).toBe(String.raw`\[[Plan#Goals]] \![[Plan#Objectives]]`);
+    expect(rewrite(String.raw`\\[[Plan#Goals]]`).content).toBe(String.raw`\\[[Plan#Objectives]]`);
+  });
+
   it("nested heading paths: only the matching segment", () => {
     expect(rewrite("[[Plan#Plan#Goals]] [[Plan#Goals#Detail]]").content).toBe("[[Plan#Plan#Objectives]] [[Plan#Objectives#Detail]]");
   });
@@ -75,5 +85,20 @@ describe("rewriteHeadingLinks", () => {
       { from: "Risks", to: "Dangers" },
     ];
     expect(rewrite("[[Plan#Goals]] [[Plan#Risks]]", renames).content).toBe("[[Plan#Risks]] [[Plan#Dangers]]");
+  });
+});
+
+describe("rewriteHeadingSubpath (JSON Canvas file nodes)", () => {
+  const rename = [{ from: "Goals", to: "Objectives" }];
+  it("rewrites the matching segment, keeps the rest", () => {
+    expect(rewriteHeadingSubpath("#Goals", rename)).toBe("#Objectives");
+    expect(rewriteHeadingSubpath("#goals#Detail", rename)).toBe("#Objectives#Detail");
+    expect(rewriteHeadingSubpath("#Plan# Goals ", rename)).toBe("#Plan# Objectives ");
+  });
+  it("null when nothing matches", () => {
+    expect(rewriteHeadingSubpath("#Risks", rename)).toBeNull();
+    expect(rewriteHeadingSubpath("#^goals", rename)).toBeNull();
+    expect(rewriteHeadingSubpath("Goals", rename)).toBeNull();
+    expect(rewriteHeadingSubpath("#Goals", [])).toBeNull();
   });
 });

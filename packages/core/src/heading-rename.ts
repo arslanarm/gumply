@@ -61,7 +61,6 @@ export function rewriteHeadingLinks(
   renames: readonly HeadingRename[],
 ): { content: string; count: number } {
   if (renames.length === 0) return { content: markdown, count: 0 };
-  const byKey = new Map(renames.map((rename) => [headingKey(rename.from), linkHeadingText(rename.to)]));
   let content = markdown;
   let count = 0;
   const links = extractWikilinks(markdown).filter((link) => link.heading && isTarget(link));
@@ -69,26 +68,43 @@ export function rewriteHeadingLinks(
     const open = link.raw.startsWith("!") ? 3 : 2;
     const inner = link.raw.slice(open, -2);
     const pipe = inner.indexOf("|");
-    const targetPart = pipe === -1 ? inner : inner.slice(0, pipe);
-    const rest = pipe === -1 ? "" : inner.slice(pipe);
+    let targetPart = pipe === -1 ? inner : inner.slice(0, pipe);
+    let rest = pipe === -1 ? "" : inner.slice(pipe);
+    // In a table the alias pipe is written `\|`: the backslash belongs to it.
+    if (pipe !== -1 && targetPart.endsWith("\\")) {
+      targetPart = targetPart.slice(0, -1);
+      rest = `\\${rest}`;
+    }
     const hash = targetPart.indexOf("#");
     if (hash === -1) continue;
-    let changed = false;
-    const segments = targetPart
-      .slice(hash + 1)
-      .split("#")
-      .map((segment) => {
-        const trimmed = segment.trim();
-        if (!trimmed || trimmed.startsWith("^")) return segment;
-        const next = byKey.get(headingKey(trimmed));
-        if (next === undefined || !next) return segment;
-        changed = true;
-        return segment.replace(trimmed, next);
-      });
-    if (!changed) continue;
-    const raw = `${link.raw.slice(0, open)}${targetPart.slice(0, hash + 1)}${segments.join("#")}${rest}]]`;
+    const subpath = rewriteHeadingSubpath(targetPart.slice(hash), renames);
+    if (subpath === null) continue;
+    const raw = `${link.raw.slice(0, open)}${targetPart.slice(0, hash)}${subpath}${rest}]]`;
     content = content.slice(0, link.index) + raw + content.slice(link.index + link.raw.length);
     count += 1;
   }
   return { content, count };
+}
+
+/**
+ * A `#Heading` / `#Parent#Old` subpath with the renamed heading segments
+ * replaced (`#^block` segments and every other byte kept), or null when none
+ * matched. Used for link targets and JSON Canvas file nodes' `subpath`.
+ */
+export function rewriteHeadingSubpath(subpath: string, renames: readonly HeadingRename[]): string | null {
+  if (!subpath.startsWith("#") || renames.length === 0) return null;
+  const byKey = new Map(renames.map((rename) => [headingKey(rename.from), linkHeadingText(rename.to)]));
+  let changed = false;
+  const segments = subpath
+    .slice(1)
+    .split("#")
+    .map((segment) => {
+      const trimmed = segment.trim();
+      if (!trimmed || trimmed.startsWith("^")) return segment;
+      const next = byKey.get(headingKey(trimmed));
+      if (next === undefined || !next) return segment;
+      changed = true;
+      return segment.replace(trimmed, next);
+    });
+  return changed ? `#${segments.join("#")}` : null;
 }

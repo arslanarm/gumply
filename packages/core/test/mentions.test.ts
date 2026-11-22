@@ -66,6 +66,23 @@ describe("findMentions", () => {
   });
 });
 
+describe("tags are never mentions (#sipu2nxn)", () => {
+  it("a match that is (part of) a #tag is skipped, by Obsidian's tag rule", () => {
+    const body = "Tag #Lighthouse, nested #Lighthouse/keeper, #lighthouse-, and Lighthouse itself. (#Lighthouse) a#Lighthouse #2024";
+    expect(texts(body, ["Lighthouse"])).toEqual(["Lighthouse", "Lighthouse"]);
+    // `a#Lighthouse` isn't a tag (no space before `#`), so it's a mention, as in Obsidian.
+    expect(findMentions(body, ["Lighthouse"]).map((m) => body.slice(m.index - 2, m.index))).toEqual(["d ", "a#"]);
+    // `#2024` isn't a tag (only digits): a page titled 2024 is mentioned there.
+    expect(texts("Year #2024 and #2024/q1", ["2024"])).toEqual(["2024"]);
+  });
+
+  it("Link all leaves the tag as it was", () => {
+    const body = "Tag #Lighthouse and Lighthouse.\n";
+    const linked = linkMentions(body, findMentions(body, ["Lighthouse"]), (m) => mentionLink("Lighthouse", m.text, true));
+    expect(linked).toBe("Tag #Lighthouse and [[Lighthouse]].\n");
+  });
+});
+
 describe("linking", () => {
   it("as Obsidian 1.14.4: the text as written when it resolves, else [[target|text]]", () => {
     // Title match: the bare text resolves (case-insensitively).

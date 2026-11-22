@@ -840,7 +840,8 @@
       "help": "&Help",
       "about": "About Gumply",
       "importNotion": "Import from Notion…",
-      "exportPdf": "Export as PDF…"
+      "exportPdf": "Export as PDF…",
+      "licences": "Open-Source Licences"
     },
     "about": {
       "detail": "Notes as plain Markdown, with links, a graph and whiteboards."

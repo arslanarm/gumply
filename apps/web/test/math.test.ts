@@ -36,7 +36,8 @@ const FIXTURES: Array<{ name: string; source: string; atoms: Array<[string, stri
   { name: "prices", source: "costs $5 and $10 today", atoms: [], previews: [] },
   { name: "spaced dollars", source: "a $ x $ b", atoms: [], previews: [] },
   { name: "digit after", source: "$x$5 is not math", atoms: [], previews: [] },
-  { name: "escaped dollar", source: "\\$x$ stays text", atoms: [], previews: [] },
+  // No math; since v0.7.1 (#628e927t) the escape itself is kept as an atom.
+  { name: "escaped dollar", source: "\\$x$ stays text", atoms: [["escape", "\\$"]], previews: [] },
   { name: "operators", source: "a == b and c != d", atoms: [], previews: [] },
   { name: "in code", source: "`$x$` and\n\n```\n$$y$$\n```", atoms: [], previews: [] },
 ];

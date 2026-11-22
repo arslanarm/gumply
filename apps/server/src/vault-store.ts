@@ -46,6 +46,7 @@ import {
   type PageMentions,
   headingRenames,
   rewriteHeadingLinks,
+  rewriteHeadingSubpath,
   type HeadingRename,
   rewriteWikilinkFolder,
   rewriteWikilinkTargets,
@@ -68,6 +69,7 @@ import {
   emptyCanvas,
   parseCanvas,
   rewriteCanvas,
+  type CanvasRewrite,
   serializeCanvas,
   withCanvasMeta,
   CanvasParseError,
@@ -204,7 +206,7 @@ export interface GraphOptions {
   center?: PageId;
   /** BFS radius around `center`; defaults to 1 when `center` is set. */
   depth?: number;
-  /** v1.next (E1): add `attachments`, each page's links to attachment files. */
+  /** v1.19 (E1): add `attachments`, each page's links to attachment files. */
   attachments?: boolean;
 }
 
@@ -1429,7 +1431,7 @@ export class VaultStore {
   private readonly attachmentLinks = new Map<PageId, { content: string; paths: string[] }>();
 
   /**
-   * v1.next: each included page's links to attachment files (`![[pic.png]]`,
+   * v1.19: each included page's links to attachment files (`![[pic.png]]`,
    * `[[report.pdf]]`, `![](attachments/pic.png)`), resolved from that page
    * like Obsidian (#8k4ssrkb). Links to missing files are left out.
    */
@@ -2143,14 +2145,19 @@ export class VaultStore {
   }
 
   /**
-   * v0.8 C2 (#u84ebtf3): after headings of page `id` were renamed, rewrite
+   * v1.20, v0.8 C2 (#u84ebtf3): after headings of page `id` were renamed, rewrite
    * `[[Page#Old]]`, `[[Page#Old|alias]]` and `![[Page#Old]]` to them in every
    * other page and board. The page itself is left as the user saved it.
    */
   private async rewriteHeadingLinksTo(id: PageId, renames: readonly HeadingRename[]): Promise<PageId[]> {
     const metas = this.pageMetas();
     const isTarget = (link: { targetTitle: string }) => resolveWikilink(link.targetTitle, metas)?.id === id;
-    return this.rewriteEverywhere(new Set([id]), (markdown) => rewriteHeadingLinks(markdown, isTarget, renames));
+    // Board cards of the page with a `subpath` follow the heading too (#u84ebtf3).
+    const record = this.pages.get(id);
+    const file = record ? relative(this.root, record.filePath).split(sep).join("/").toLowerCase() : null;
+    const subpath = (value: string, node: { file: string }) =>
+      file !== null && node.file.replace(/^\/+/, "").toLowerCase() === file ? rewriteHeadingSubpath(value, renames) : null;
+    return this.rewriteEverywhere(new Set([id]), (markdown) => rewriteHeadingLinks(markdown, isTarget, renames), { subpath });
   }
 
   /**
@@ -2161,13 +2168,14 @@ export class VaultStore {
   private async rewriteEverywhere(
     skip: ReadonlySet<PageId>,
     rewriteText: (markdown: string) => { content: string; count: number },
+    boardNodes: Omit<CanvasRewrite, "text"> = {},
   ): Promise<PageId[]> {
     const rewritten: PageId[] = [];
     for (const other of [...this.pages.values()]) {
       if (skip.has(other.id)) continue;
 
       if (other.board) {
-        const result = rewriteCanvas(other.board, { text: (markdown) => rewriteText(markdown).content });
+        const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown).content });
         if (result.count === 0) continue;
         await this.saveBoardRecord(other, result.board);
         rewritten.push(other.id);
