@@ -10,7 +10,7 @@
  * - Settings (last/recent vaults, window state) live in `userData`, never in
  *   a vault.
  */
-import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, createReadStream, createWriteStream, existsSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -31,7 +31,7 @@ import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downlo
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
-import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
+import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
 
 /**
@@ -73,6 +73,19 @@ if (process.env.GUMPLY_DESKTOP_USER_DATA) app.setPath("userData", resolve(proces
  */
 // The first user argument: after the executable when packaged, after the app folder in development.
 const mcpMode = mcpModeArgs(process.argv, app.isPackaged ? 1 : 2);
+// GUMPLY_MCP_TRACE=<file>: the --mcp support trace (docs/mcp.md), a no-op when unset.
+const trace = mcpTracer(process.env.GUMPLY_MCP_TRACE, appendFileSync);
+if (mcpMode && process.env.GUMPLY_MCP_TRACE) {
+  const fdKind = (fd: number): string => {
+    try {
+      const stats = fstatSync(fd);
+      return stats.isFIFO() ? "fifo" : stats.isCharacterDevice() ? "char" : stats.isFile() ? "file" : stats.isSocket() ? "socket" : "other";
+    } catch (error) {
+      return `error:${(error as NodeJS.ErrnoException).code ?? "?"}`;
+    }
+  };
+  trace(`gumply ${app.getVersion()} argv=${JSON.stringify(process.argv)} packaged=${app.isPackaged} mcp=${JSON.stringify(mcpMode)} fds=${[0, 1, 2].map(fdKind).join(",")}`);
+}
 let mcpThrowaway: string | null = null;
 if (mcpMode) {
   // A process stopped by a signal can't clean up: older leftovers go now.
@@ -676,18 +689,31 @@ function buildMenu(): void {
  */
 function runMcpMode(args: McpModeArgs): void {
   const exit = (code: number): never => {
+    trace(`exit ${code}`);
     exitMcp(
       process.platform,
       {
         cleanup: () => {
-          if (mcpThrowaway) rmSync(mcpThrowaway, { recursive: true, force: true });
+          try {
+            if (mcpThrowaway) rmSync(mcpThrowaway, { recursive: true, force: true });
+            trace(mcpThrowaway ? "cleanup done" : "cleanup: nothing to remove");
+          } catch (error) {
+            trace(`cleanup left for the next start: ${(error as NodeJS.ErrnoException).code ?? String(error)}`);
+            throw error;
+          }
         },
         graceful: (status) => {
+          trace("exit path: graceful (app.exit, process.exit)");
           app.exit(status);
           process.exit(status);
         },
-        reallyExit: (process as unknown as { reallyExit?: (code: number) => void }).reallyExit?.bind(process),
+        reallyExit: (status) => {
+          const reallyExit = (process as unknown as { reallyExit?: (code: number) => void }).reallyExit;
+          trace(`exit path: reallyExit${reallyExit ? "" : " (missing)"}`);
+          reallyExit?.call(process, status);
+        },
         killTree: () => {
+          trace("exit path: taskkill /F /T (reallyExit returned)");
           spawnSync("taskkill", ["/F", "/T", "/PID", String(process.pid)], { stdio: "ignore", windowsHide: true });
         },
       },
@@ -701,13 +727,21 @@ function runMcpMode(args: McpModeArgs): void {
     exit(2);
   }
   // #6bxm6ygf: the app's own version (stamped from the release tag), as /api/health and About show it.
-  // #429bvzwr: on Windows a GUI-subsystem exe's `process.stdout` can be a black hole
-  // (Node's fallback when it can't classify fd 1), so the server reads and writes
-  // fds 0/1 directly there. Elsewhere `process.stdin`/`stdout` are real pipes.
+  // #wfn2pdcx: in the packaged Windows exe (GUI subsystem) `process.stdin` is Node's
+  // dummy stream (no handle): it never delivers the AI app's bytes and ends at once.
+  // So on Windows the server reads and writes fds 0/1 directly. Elsewhere
+  // `process.stdin`/`stdout` are real pipes.
   const stdio =
     process.platform === "win32"
       ? { stdin: createReadStream("", { fd: 0, autoClose: false }), stdout: createWriteStream("", { fd: 1, autoClose: false }) }
       : undefined;
+  if (process.env.GUMPLY_MCP_TRACE) {
+    trace(`served-on=${stdio ? "fd-streams" : "process.stdin/stdout"}`);
+    // On the stdin the server actually reads (a second 'data' listener sees the same chunks).
+    const served = stdio?.stdin ?? process.stdin;
+    served.once("data", (chunk: Buffer | string) => trace(`stdin first ${chunk.length} bytes: ${JSON.stringify(String(chunk).slice(0, 120))}`));
+    served.once("end", () => trace("stdin end"));
+  }
   runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion(), ...(stdio ? { stdio } : {}) });
 }
 
