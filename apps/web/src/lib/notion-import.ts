@@ -7,7 +7,7 @@ import type { NotionImportReport } from "@gumply/core";
 import type { NotionImportJob } from "../api/client.js";
 import type { MessageKey } from "../i18n/index.js";
 
-export type ImportErrorKind = "running" | "tooLarge" | "notExport" | "missingTarget" | "offline" | "other";
+export type ImportErrorKind = "running" | "tooLarge" | "notExport" | "missingTarget" | "offline" | "failed" | "other";
 
 /** The plain-words kind of a failed start or a failed job. */
 export function importErrorKind(error: { status?: number; message?: string } | null | undefined): ImportErrorKind {
@@ -26,6 +26,7 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorKind, MessageKey> = {
   notExport: "notionImport.errors.notExport",
   missingTarget: "notionImport.errors.missingTarget",
   offline: "notionImport.errors.offline",
+  failed: "notionImport.errors.failed",
   other: "notionImport.errors.other",
 };
 

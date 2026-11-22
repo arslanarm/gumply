@@ -1427,11 +1427,12 @@
     "reportFile": "The full report is saved as “Import report.md” in the new folder.",
     "errors": {
       "running": "An import is already running in this vault. Wait for it to finish, then try again.",
-      "tooLarge": "That file is too large to import (over 1 GB).",
+      "tooLarge": "That file is too large to import (over {{limit}}).",
       "notExport": "This doesn't look like a Notion “Markdown & CSV” export.",
       "missingTarget": "The folder to import into no longer exists.",
       "offline": "Couldn't reach Gumply. Check that it's still running.",
-      "other": "The import didn't work."
+      "other": "The import didn't work.",
+      "failed": "The import didn't finish: Gumply couldn't use this file as a Notion “Markdown & CSV” export."
     },
     "details": "Details: {{error}}"
   }

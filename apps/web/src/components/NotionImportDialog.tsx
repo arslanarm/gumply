@@ -4,7 +4,7 @@
  * import, then read the report and open the new folder. The server does the
  * work (B2): it never touches anything already in the vault.
  */
-import type { NotionImportReport, PageMeta } from "@gumply/core";
+import { formatImportLimit, NOTION_IMPORT_LIMITS, type NotionImportReport, type PageMeta } from "@gumply/core";
 import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { api, ApiRequestError, type NotionImportJob } from "../api/client.js";
 import { useT } from "../i18n/index.js";
@@ -94,7 +94,8 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
           return;
         }
         if (job.state === "failed") {
-          setPhase({ kind: "error", message: t(IMPORT_ERROR_MESSAGES.notExport), details: job.error ?? null });
+          // The server's reason (English, e.g. "larger than 2 GB once unpacked") is the detail line.
+          setPhase({ kind: "error", message: t(IMPORT_ERROR_MESSAGES.failed), details: job.error ?? null });
           return;
         }
         setPhase({ kind: "running", job });
@@ -130,7 +131,11 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
       setPhase({ kind: "running", job });
     } catch (error) {
       const kind = importErrorKind(error instanceof ApiRequestError ? error : (error as Error));
-      setPhase({ kind: "error", message: t(IMPORT_ERROR_MESSAGES[kind]), details: kind === "running" || kind === "tooLarge" ? null : ((error as Error).message ?? null) });
+      setPhase({
+        kind: "error",
+        message: t(IMPORT_ERROR_MESSAGES[kind], { limit: formatImportLimit(NOTION_IMPORT_LIMITS.uploadBytes) }),
+        details: kind === "running" || kind === "tooLarge" ? null : ((error as Error).message ?? null),
+      });
     }
   };
 

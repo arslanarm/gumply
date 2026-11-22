@@ -124,7 +124,9 @@ test.describe('Import from Notion (B4)', () => {
     // A broken zip: the server says no, in plain words.
     await page.getByTestId('notion-import-file').setInputFiles({ name: 'broken.zip', mimeType: 'application/zip', buffer: Buffer.from('this is not a zip') });
     await page.getByTestId('notion-import-start').click();
-    await expect(page.getByTestId('notion-import-error')).toHaveText('This doesn\'t look like a Notion “Markdown & CSV” export.', { timeout: 15_000 });
+    // The server takes it (202) and the job fails: our plain words, the server's reason as a detail.
+    await expect(page.getByTestId('notion-import-error')).toHaveText('The import didn\'t finish: Gumply couldn\'t use this file as a Notion “Markdown & CSV” export.', { timeout: 15_000 });
+    await expect(page.getByTestId('notion-import-failed')).toContainText('Details:');
     await page.getByTestId('notion-import-retry').click();
     await expect(page.getByTestId('notion-import-drop')).toBeVisible();
 
@@ -137,5 +139,15 @@ test.describe('Import from Notion (B4)', () => {
     await expect(page.getByTestId('notion-import-error')).toHaveText('An import is already running in this vault. Wait for it to finish, then try again.');
     // Nothing was written.
     await expect(fs.access(path.join(E2E_VAULT, 'Notion import'))).rejects.toThrow();
+
+    // Too large (413): the limit comes from the shared constant.
+    await page.getByTestId('notion-import-retry').click();
+    await page.unroute('**/api/import/notion');
+    await page.route('**/api/import/notion', (route) =>
+      route.fulfill({ status: 413, contentType: 'application/json', body: JSON.stringify({ error: 'The export is too large (max 1 GB)' }) }),
+    );
+    await page.getByTestId('notion-import-file').setInputFiles(await zipFile());
+    await page.getByTestId('notion-import-start').click();
+    await expect(page.getByTestId('notion-import-error')).toHaveText('That file is too large to import (over 1 GB).');
   });
 });
