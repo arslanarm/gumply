@@ -2763,12 +2763,19 @@ input {
   display: inline-flex;
 }
 
+/* #sjts42ue: a portal on <body>, placed by lib/menu-placement.ts (below the
+   ⋯ button or at the pointer, flipped up, scrolling when it can't fit), so it
+   sits above the sidebar, its footer and the narrow layout's scrim (z 49/50). */
 .page-menu-list {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 50;
-  min-width: 150px;
+  position: fixed;
+  z-index: 60;
+  /* About 240 px, wider when a label needs it (Russian), so items stay whole. */
+  width: max-content;
+  min-width: 240px;
+  max-width: min(320px, calc(100vw - 16px));
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.25rem;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -2779,9 +2786,14 @@ input {
 }
 
 .page-menu-list button {
+  flex: none;
   border: 0;
   background: transparent;
   text-align: left;
+  /* One line per item, in every language; an ellipsis only as a last resort. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0.35rem 0.5rem;
   border-radius: 5px;
   font-size: 0.84rem;
@@ -2795,6 +2807,13 @@ input {
 
 .page-menu-list .menu-danger {
   color: var(--danger);
+}
+
+.page-menu-separator {
+  flex: none;
+  height: 1px;
+  margin: 0.25rem 0.35rem;
+  background: var(--border);
 }
 
 /* Danger button + dialog (D15). */
@@ -5006,10 +5025,8 @@ input {
 }
 
 /* Right-click menu on a sidebar row: the ⋯ menu, at the pointer (#ux5cukze). */
-.page-menu-list.is-at-pointer {
-  position: fixed;
-  right: auto;
-  min-width: 200px;
+.page-menu-list.is-above {
+  transform-origin: bottom left;
 }
 
 /* Inline #tags as subtle chips, like Obsidian (#ux5cukze). A decoration only:
