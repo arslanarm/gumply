@@ -1,5 +1,5 @@
 /**
- * `GET/PUT /api/mcp/settings` (v0.8 A3, spec/api-mcp-settings): the app's
+ * `GET/PUT /api/mcp/settings` (v0.8 A3, spec/api v1.25, spec/api-mcp-settings): the app's
  * Settings → MCP. Reads and writes the vault's `.gumply/mcp.json` (the file
  * the MCP server reads on every write call, spec/mcp §2) and shows the newest
  * rows of its audit log. Behind the same local-only guard as every `/api`
