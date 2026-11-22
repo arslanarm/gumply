@@ -322,6 +322,9 @@ input {
 }
 
 .page-item {
+  /* #yw53nria: the row's own fill, under the overlaid actions' fade. */
+  --row-bg: var(--surface-nav);
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -334,7 +337,8 @@ input {
 }
 
 .page-item:hover {
-  background: var(--hover);
+  --row-bg: var(--hover);
+  background: var(--row-bg);
 }
 
 /*
@@ -356,7 +360,8 @@ input {
 }
 
 .page-item.is-selected {
-  background: var(--accent-soft);
+  --row-bg: var(--accent-soft);
+  background: var(--row-bg);
   color: var(--accent);
 }
 
@@ -400,10 +405,23 @@ input {
   white-space: nowrap;
 }
 
+/*
+ * #yw53nria: the ⋯ / + actions lie over the row's end instead of taking
+ * their width, so the title runs to the row's edge until the row is hovered
+ * or focused (as in Notion). A fade in the row's colour covers the title's
+ * end under them. A mouse over them always hovers the row, so they're shown
+ * whenever they can be clicked; touch screens keep them in their own space.
+ */
 .page-actions {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0.35rem;
   display: flex;
   align-items: center;
   gap: 1px;
+  padding-left: 1.1rem;
+  background: linear-gradient(to right, transparent, var(--row-bg) 1rem);
   opacity: 0;
   transition: opacity 80ms ease;
 }
@@ -412,6 +430,25 @@ input {
 .page-item:focus-within .page-actions,
 .page-item.has-menu .page-actions {
   opacity: 1;
+}
+
+/*
+ * While renaming, the input keeps its full box; without hover (touch), a tap
+ * at the title's end must not hit invisible buttons. The actions then sit
+ * after the title, as before.
+ */
+.page-item:has(.page-rename-input) .page-actions {
+  position: static;
+  padding-left: 0;
+  background: none;
+}
+
+@media (hover: none) {
+  .page-actions {
+    position: static;
+    padding-left: 0;
+    background: none;
+  }
 }
 
 .tree-action {

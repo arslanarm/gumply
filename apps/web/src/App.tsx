@@ -302,6 +302,17 @@ export function App() {
     setSearchQuery(typeof query === "string" ? query : "");
     setSearchOpen(true);
   }, []);
+  /**
+   * #hy9dizhb: at <= 900 px the sidebar is an overlay, so every navigation
+   * started from it (Trash, Graph, Search, a tag, New...) closes it first,
+   * like the tree rows and Today do.
+   */
+  const closingSidebar =
+    <A extends unknown[]>(action: (...args: A) => void) =>
+    (...args: A) => {
+      if (window.innerWidth <= 900) setSidebarOpen(false);
+      action(...args);
+    };
   /** A clicked inline `#tag` searches for it (#ux5cukze). */
   const openTagSearch = useCallback((tag: string) => openSearch(`#${tag}`), [openSearch]);
 
@@ -1820,7 +1831,7 @@ export function App() {
         className={`layout${!graphOpen && showingPage && localGraphOpen ? " layout-with-panel" : ""}`}
       >
         <Sidebar
-          onCreateBoard={(parentId) => setGalleryParent({ parentId })}
+          onCreateBoard={closingSidebar((parentId: PageId | null) => setGalleryParent({ parentId }))}
           onCreateBase={(parentId) => void handleCreateBase(parentId)}
           pages={pages}
           selectedId={selectedId}
@@ -1830,7 +1841,7 @@ export function App() {
           graphActive={graphOpen}
           trashActive={trashRoute !== null}
           trashCount={trashItems ? trashedCount(trashItems) : 0}
-          onTrash={() => navigateTrash()}
+          onTrash={closingSidebar(() => navigateTrash())}
           onOpen={handleOpen}
           onCreate={(parentId) => void handleCreate(parentId)}
           onRename={handleRename}
@@ -1840,12 +1851,12 @@ export function App() {
           onDuplicate={(id) => void handleDuplicate(id)}
           onCopyLink={(id) => void handleCopyLink(id)}
           onRetry={handleRetry}
-          onSearch={openSearch}
-          onGraph={navigateGraph}
-          onOpenTag={openTagSearch}
+          onSearch={closingSidebar(() => openSearch())}
+          onGraph={closingSidebar(navigateGraph)}
+          onOpenTag={closingSidebar(openTagSearch)}
           onRenameTag={setTagRename}
           onToday={() => void openToday()}
-          onNewFromTemplate={(parentId) => setTemplatePicker({ mode: "new", parentId })}
+          onNewFromTemplate={closingSidebar((parentId: PageId | null) => setTemplatePicker({ mode: "new", parentId }))}
         />
         {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
         <div
