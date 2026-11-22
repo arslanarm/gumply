@@ -84,6 +84,10 @@ so your notes are still plain Markdown files in a folder you choose.
   results are in the job summary, and the release job checks the uploaded files against the
   SHA-256 sums the build computed. Locally: `node apps/desktop/scripts/inspect-installers.mjs
   --release apps/desktop/release --version <version>` (Node 24 or later).
+- **Real `.deb` install:** the Linux CI job also installs the `.deb` (`apps/desktop/scripts/deb-smoke.sh`,
+  CI only since it needs sudo) with user namespaces restricted as on stock Ubuntu 23.10+, and checks
+  that its AppArmor profile is loaded, that the app and the AI apps (`--mcp`) command run with
+  Chromium's sandbox (no `--no-sandbox`), and that purging removes the profile.
 - **Vaults:** on first start Gumply asks you to open a folder (any Obsidian vault works) or create
   a new vault; a new or empty folder gets the demo notes. **File → Open Vault… / Create New Vault… /
   Open Recent / Reveal Vault in File Manager** switch and find vaults. The list of vaults and the
