@@ -2,6 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
@@ -196,7 +197,9 @@ test.beforeAll(async () => {
   writeFileSync(join(vault, 'Report.md'), REPORT);
   writeFileSync(join(vault, 'chart.png'), PNG);
 
-  const args = ['--remote-debugging-port=0', ...(isLinux ? ['--ozone-platform=x11'] : [])];
+  // macOS: Chromium's mock keychain, so cookie encryption (a fuse) never waits
+  // on a Keychain prompt on the runner, which would hold the main thread.
+  const args = ['--remote-debugging-port=0', ...(isLinux ? ['--ozone-platform=x11'] : []), ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : [])];
   const child = spawn(packaged, args, { env: appEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows });
   app = child;
   child.stdout!.on('data', (chunk: Buffer) => (appLog += chunk.toString()));
@@ -218,9 +221,20 @@ test.beforeAll(async () => {
   expect(host, 'the debugging port listens on loopback only').toMatch(/^127\.0\.0\.1:\d+$/);
   cdpUrl = `http://${host}`;
   await poll("The app's debugging port didn't answer", async () => ((await fetch(`${cdpUrl}/json/version`)).ok ? true : undefined), 30_000);
+  // The window exists before anything attaches (plain HTTP, answered off the main thread).
+  await poll(
+    "The app's window didn't appear among its debugging targets",
+    async () => ((await targets()).some((target) => target.type === 'page' && /^http:\/\/127\.0\.0\.1:\d+\//.test(target.url)) ? true : undefined),
+    60_000,
+  );
   // noDefaults: Playwright leaves the app's own settings alone; without it, it
   // takes over downloads, and the PDF export (a download main prints) never arrives.
-  browser = await chromium.connectOverCDP(cdpUrl, { noDefaults: true });
+  try {
+    browser = await chromium.connectOverCDP(cdpUrl, { noDefaults: true, timeout: 60_000 });
+  } catch (error) {
+    const list = await targets().catch(() => []);
+    throw new Error(`connectOverCDP failed. Targets: ${JSON.stringify(list)}\nApp log:\n${appLog.slice(-4000)}`, { cause: error });
+  }
   page = await poll(
     "The app's window didn't open",
     async () => browser!.contexts().flatMap((context) => context.pages()).find((candidate) => /^http:\/\/127\.0\.0\.1:\d+\//.test(candidate.url())),
@@ -228,6 +242,19 @@ test.beforeAll(async () => {
   );
   appOrigin = new URL(page.url()).origin;
 });
+
+/** The app's debugging targets (`/json/list`). */
+async function targets(): Promise<Array<{ type: string; url: string; title: string }>> {
+  return (await (await fetch(`${cdpUrl}/json/list`, { signal: AbortSignal.timeout(5_000) })).json()) as Array<{ type: string; url: string; title: string }>;
+}
+
+/** Where failures leave their logs (uploaded by CI). */
+const resultsDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'test-results', 'desktop');
+
+function keepLog(name: string, text: string): void {
+  mkdirSync(resultsDir, { recursive: true });
+  writeFileSync(join(resultsDir, name), text);
+}
 
 /** Whether anything still answers at `url`. */
 async function answers(url: string): Promise<boolean> {
@@ -240,6 +267,7 @@ async function answers(url: string): Promise<boolean> {
 test.afterAll(async () => {
   await browser?.close().catch(() => undefined);
   await stopApp();
+  if (appLog) keepLog('packaged-app.log', appLog);
   if (scratch) rmSync(scratch, { recursive: true, force: true });
   // Closed for real: neither port answers any more.
   const ports = [cdpUrl && `${cdpUrl}/json/version`, appOrigin && `${appOrigin}/api/health`].filter(Boolean);
@@ -325,8 +353,39 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
   // Started as Claude Desktop starts a server: command and args, no shell, and no display.
   // The MCP SDK's inherited variables (as a client like Claude Desktop passes on), with this test's user folders.
   const serverEnv: Record<string, string> = { ...getDefaultEnvironment(), ...dirs };
+  // One raw exchange first, so a failure says which side is silent: the
+  // server's stderr shows whether it started, stdout whether it answered.
+  const probe = await new Promise<{ stdout: string; stderr: string; code: number | null }>((done) => {
+    const child = spawn(server.command, server.args, { env: serverEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const finish = () => {
+      clearTimeout(timer);
+      child.stdin!.end();
+      done({ stdout, stderr, code: child.exitCode });
+    };
+    const timer = setTimeout(finish, 30_000);
+    child.stdout!.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+      if (stdout.includes('\n')) finish();
+    });
+    child.stderr!.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    child.stdin!.on('error', () => undefined);
+    child.once('exit', finish);
+    const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'probe', version: '1' } } };
+    child.stdin!.write(`${JSON.stringify(initialize)}\n`);
+  });
+  keepLog('packaged-mcp-probe.log', `stdout:\n${probe.stdout}\n\nstderr:\n${probe.stderr}\n\nexit: ${probe.code}`);
+  record('MCP raw initialize', `stdout ${probe.stdout ? probe.stdout.slice(0, 120) : '(nothing)'}; stderr ${probe.stderr.trim().slice(0, 200) || '(nothing)'}`);
+  expect(probe.stdout, `no answer on stdout; stderr: ${probe.stderr}`).toContain('"serverInfo"');
+
   const client = new Client({ name: 'claude-desktop-smoke', version: '1.0.0' });
-  await client.connect(new StdioClientTransport({ command: server.command, args: server.args, env: serverEnv, stderr: 'pipe' }));
+  const transport = new StdioClientTransport({ command: server.command, args: server.args, env: serverEnv, stderr: 'pipe' });
+  let serverStderr = '';
+  transport.stderr?.on('data', (chunk: Buffer) => (serverStderr += chunk.toString()));
+  await client.connect(transport).catch((error: unknown) => {
+    throw new Error(`MCP connect failed; server stderr:\n${serverStderr}`, { cause: error });
+  });
   try {
     const info = client.getServerVersion();
     expect(info?.name).toBe('gumply');
