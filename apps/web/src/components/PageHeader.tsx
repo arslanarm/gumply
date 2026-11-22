@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Page, PageId } from "@gumply/core";
+import { PAGE_COLORS, type Page, type PageColor, type PageId } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
 import { loadEmojiData } from "../lib/emoji/data.js";
 import { preloadGraph } from "../lazy-parts.js";
 import { EmojiPicker } from "./EmojiPicker.js";
+import { colorRgb } from "./PageCover.js";
 import { Icon } from "./Icon.js";
 import { dateFormat, t, useT } from "../i18n/index.js";
 
@@ -41,6 +42,13 @@ export interface PageHeaderProps {
    * that exists (browsing never creates files), disabled at the ends.
    */
   daily?: { previous: PageId | null; next: PageId | null; onOpen: (id: PageId) => void };
+  /** v0.7 F (#385sexd6): "Add cover" (pages without a cover). */
+  onAddCover?: () => void;
+  /** v0.7 F: the page background colour, and setting it (null = default). */
+  background?: PageColor | null;
+  onSetBackground?: (color: PageColor | null) => void;
+  /** Shown when the page has no icon of its own (the Banners plugin's `banner_icon`), read-only. */
+  fallbackIcon?: string | null;
 }
 
 function formatUpdated(value: string): string {
@@ -64,6 +72,10 @@ export function PageHeader({
   focusTitleSignal = 0,
   sessionKey,
   daily,
+  onAddCover,
+  background = null,
+  onSetBackground,
+  fallbackIcon = null,
 }: PageHeaderProps) {
   useT();
   const isEmpty = page.content.trim().length === 0;
@@ -71,6 +83,8 @@ export function PageHeader({
   const [editing, setEditing] = useState(startsEditing);
   const [draft, setDraft] = useState(page.title);
   const [iconOpen, setIconOpen] = useState(false);
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const backgroundRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const iconControlRef = useRef<HTMLDivElement | null>(null);
   const iconButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -196,6 +210,27 @@ export function PageHeader({
     };
   }, [iconOpen]);
 
+  useEffect(() => {
+    if (!backgroundOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (backgroundRef.current && !backgroundRef.current.contains(event.target as Node)) setBackgroundOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setBackgroundOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [backgroundOpen]);
+
+  const chooseBackground = (color: PageColor | null) => {
+    setBackgroundOpen(false);
+    if (color !== background) onSetBackground?.(color);
+  };
+
   const chooseIcon = (icon: string | null) => {
     setIconOpen(false);
     if (onSetIcon) void onSetIcon(icon);
@@ -235,7 +270,7 @@ export function PageHeader({
         <div className="page-icon-control" ref={iconControlRef}>
           <button
             type="button"
-            className={`page-icon-button${page.icon ? " has-icon" : ""}`}
+            className={`page-icon-button${page.icon || fallbackIcon ? " has-icon" : ""}`}
             data-testid="page-icon-button"
             data-tooltip={page.icon ? t("page.changeIcon") : t("page.addIcon")}
             aria-label={page.icon ? t("page.changeIconLabel") : t("page.addIconLabel")}
@@ -247,14 +282,66 @@ export function PageHeader({
             onFocus={() => void loadEmojiData().catch(() => undefined)}
             onClick={() => setIconOpen((open) => !open)}
           >
-            {page.icon ? (
-              <span className="page-icon-large">{page.icon}</span>
+            {page.icon || fallbackIcon ? (
+              <span className="page-icon-large" data-testid={page.icon ? undefined : "page-banner-icon"}>
+                {page.icon ?? fallbackIcon}
+              </span>
             ) : (
               <span className="page-icon-add">
                 <Icon name="plus" size={13} /> {t("page.addIcon")}
               </span>
             )}
           </button>
+          {onAddCover ? (
+            <button type="button" className="page-look-add" data-testid="add-cover-button" onClick={onAddCover}>
+              <span className="page-icon-add">
+                <Icon name="image" size={13} /> {t("cover.add")}
+              </span>
+            </button>
+          ) : null}
+          {onSetBackground ? (
+            <div className="page-background-control" ref={backgroundRef}>
+              <button
+                type="button"
+                className="page-look-add"
+                data-testid="page-background-button"
+                aria-expanded={backgroundOpen}
+                aria-haspopup="menu"
+                onClick={() => setBackgroundOpen((open) => !open)}
+              >
+                <span className={`page-icon-add${background ? " is-set" : ""}`}>
+                  <span
+                    className="page-background-dot"
+                    aria-hidden="true"
+                    style={background ? { background: `rgb(${colorRgb(background)})` } : undefined}
+                  />{" "}
+                  {t("background.button")}
+                </span>
+              </button>
+              {backgroundOpen ? (
+                <div className="page-background-menu" role="menu" aria-label={t("background.label")} data-testid="page-background-menu">
+                  {([null, ...PAGE_COLORS] as Array<PageColor | null>).map((color) => (
+                    <button
+                      key={color ?? "default"}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={color === background}
+                      className={`page-background-option${color === background ? " is-current" : ""}`}
+                      data-testid={`page-background-${color ?? "default"}`}
+                      onClick={() => chooseBackground(color)}
+                    >
+                      <span
+                        className="page-background-swatch"
+                        aria-hidden="true"
+                        style={color ? { background: `rgba(${colorRgb(color)}, 0.16)` } : undefined}
+                      />
+                      {color ? t(`format.colors.${color}`) : t("format.colorDefault")}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {iconOpen ? (
             <div className="page-icon-popover">
               <EmojiPicker

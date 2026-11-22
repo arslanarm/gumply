@@ -130,9 +130,9 @@ export const MarkdownHeading = Heading.extend({
           if (setext && node.textContent.trim().length > 0 && !node.textContent.includes("\n")) {
             state.renderInline(node);
             state.ensureNewLine();
-            // The underline as written; an older single-character record is
-            // drawn as long as the title.
-            state.write(markup.length > 1 ? markup : markup.repeat(Math.max(3, node.textContent.length)));
+            // The underline exactly as written, even a single `-` or `=`
+            // (the parse records the whole underline line).
+            state.write(markup);
             state.closeBlock(node);
             return;
           }

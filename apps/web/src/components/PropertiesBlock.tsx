@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   isValidPropertyKey,
+  PAGE_LOOK_KEYS,
   propertyValueMatches,
   PROPERTY_TYPES,
   type PropertiesPatch,
@@ -57,8 +58,11 @@ export function PropertiesBlock({ properties, onChange, onSetType }: PropertiesB
   // Gumply writes `tags: []` on every page it creates; an empty tags list is
   // bookkeeping, not a property the user added (one they add starts as
   // `tags:` and shows).
+  // The page cover and background (#385sexd6) are shown as the page's look.
   const shown = properties.filter(
-    (property) => !(property.key === "tags" && Array.isArray(property.value) && property.value.length === 0),
+    (property) =>
+      !PAGE_LOOK_KEYS.includes(property.key) &&
+      !(property.key === "tags" && Array.isArray(property.value) && property.value.length === 0),
   );
 
   const save = async (patch: PropertiesPatch) => {
@@ -492,7 +496,7 @@ function AddProperty({
   const suggestions = useMemo(() => {
     const lower = name.toLowerCase();
     return known
-      .filter((info) => !existing.includes(info.key) && info.key.toLowerCase().includes(lower))
+      .filter((info) => !existing.includes(info.key) && !PAGE_LOOK_KEYS.includes(info.key) && info.key.toLowerCase().includes(lower))
       .slice(0, 8);
   }, [known, existing, name]);
   const exact = suggestions.some((info) => info.key === name);
