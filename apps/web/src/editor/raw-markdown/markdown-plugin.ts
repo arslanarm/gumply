@@ -96,7 +96,7 @@ function rawKind(tokens: any[], index: number, source: string): string | null {
   if (token.type === "paragraph_open") {
     if (FOOTNOTE_DEF.test(source)) return "footnote";
     const trimmed = source.trim();
-    if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length >= 4) return "math";
+    if (isMathBlockSource(trimmed)) return "math";
     // Obsidian block comment `%%\n…\n%%`.
     if (trimmed.startsWith("%%") && trimmed.endsWith("%%") && trimmed.length >= 4) return "comment";
   }
@@ -177,6 +177,23 @@ function rawBlocksRule(state: any): void {
   lastTableSources = tableSources;
 }
 
+/** A top-level paragraph that is a `$$…$$` math block (F1 previews share this rule). */
+export function isMathBlockSource(trimmed: string): boolean {
+  return trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length >= 4;
+}
+
+/**
+ * Obsidian's inline math rule, at `rest = src.slice(pos)` with `before` the
+ * character before it: no space inside the delimiters, no digit right after,
+ * not `$$`, not escaped. So `$5 and $10` and `$ x $` stay text. Returns the
+ * whole `$…$`, or null. Shared with the F1 preview renderers.
+ */
+export function matchInlineMath(rest: string, before: string | undefined): string | null {
+  if (rest[0] !== "$" || rest[1] === "$" || before === "\\") return null;
+  const match = /^\$(?=\S)[^$\n]*?\S\$(?!\d)/.exec(rest) ?? /^\$[^\s$]\$(?!\d)/.exec(rest);
+  return match ? match[0] : null;
+}
+
 /** `[^id]` and Obsidian-style `$math$` as raw inline atoms. */
 function rawInlineRule(state: any, silent: boolean): boolean {
   const src: string = state.src;
@@ -188,9 +205,9 @@ function rawInlineRule(state: any, silent: boolean): boolean {
   if (src[pos] === "[" && src[pos + 1] === "^") {
     match = /^\[\^[^\]\s]+\]/.exec(rest);
     kind = "footnote-ref";
-  } else if (src[pos] === "$" && src[pos + 1] !== "$" && src[pos - 1] !== "\\") {
-    // Obsidian rule: no space inside the delimiters, no digit right after.
-    match = /^\$(?=\S)[^$\n]*?\S\$(?!\d)/.exec(rest) ?? /^\$[^\s$]\$(?!\d)/.exec(rest);
+  } else if (src[pos] === "$") {
+    const math = matchInlineMath(rest, src[pos - 1]);
+    match = math === null ? null : ([math] as unknown as RegExpExecArray);
     kind = "math";
   }
   if (!match) return false;

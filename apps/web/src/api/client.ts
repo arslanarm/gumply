@@ -15,6 +15,11 @@ import type {
   NotionImportReport,
   Backlink,
   GraphData,
+  GraphSettings,
+  GraphSettingsResponse,
+  LinkMentionsInput,
+  LinkMentionsResult,
+  PageMentions,
   Page,
   PageId,
   PageMeta,
@@ -241,6 +246,13 @@ export const api = {
 
   backlinks: (id: PageId): Promise<Backlink[]> => request(`${pagePath(id)}/backlinks`),
 
+  /** v1.21 (C1, spec/api-mentions): pages mentioning this one as plain text. */
+  mentions: (id: PageId): Promise<PageMentions[]> => request(`${pagePath(id)}/mentions`),
+
+  /** Turn mentions of page `id` in `input.source` into links (conditional, D22). */
+  linkMentions: (id: PageId, input: LinkMentionsInput): Promise<LinkMentionsResult> =>
+    mutate(() => request(`${pagePath(id)}/mentions/link`, { method: "POST", body: JSON.stringify(input) })),
+
   /** Full-text search (D13): title and body matches, ranked by the server. */
   search: (query: string): Promise<SearchResult[]> =>
     request(`/search?q=${encodeURIComponent(query)}`),
@@ -423,11 +435,18 @@ export const api = {
   }): Promise<BaseDocument> => mutate(() => request("/bases", { method: "POST", body: JSON.stringify(input) })),
 
   /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */
-  getGraph: (options: { center?: PageId; depth?: number } = {}): Promise<GraphData> => {
+  getGraph: (options: { center?: PageId; depth?: number; attachments?: boolean } = {}): Promise<GraphData> => {
     const params = new URLSearchParams();
     if (options.center !== undefined) params.set("center", options.center);
     if (options.depth !== undefined) params.set("depth", String(options.depth));
+    if (options.attachments) params.set("include", "attachments");
     const query = params.toString();
     return request(`/graph${query.length > 0 ? `?${query}` : ""}`);
   },
+
+  /** E1 (spec/api-graph-groups, v1.19): the graph's colour groups and filters. */
+  getGraphSettings: (): Promise<GraphSettingsResponse> => request("/graph/settings"),
+
+  putGraphSettings: (settings: GraphSettings): Promise<GraphSettingsResponse> =>
+    mutate(() => request("/graph/settings", { method: "PUT", body: JSON.stringify(settings) })),
 };

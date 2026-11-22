@@ -7,6 +7,7 @@
 import type { LinkEdge, PageMeta } from "./types.js";
 import { legacySlugTitle, slugify } from "./ids.js";
 import { findInlineTags } from "./tags.js";
+import { WIKILINK_INNER, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
 
 export interface WikiLink {
   /** Page title the link points at (without alias/heading). */
@@ -188,7 +189,8 @@ export function extractWikilinks(markdown: string): WikiLink[] {
   // it, which keeps graph/backlinks free of attachment ghosts (D19). Board
   // embeds (`![[Map.canvas]]`, D30) and page previews (`![[Page#Heading]]`,
   // #5dpxwac4) are links.
-  const pattern = /(!?)\[\[([^[\]\r\n]*)\]\]/g;
+  // `\[[x]]` is not a link (Obsidian): never a graph edge, backlink or rewrite target.
+  const pattern = new RegExp(String.raw`${WIKILINK_UNESCAPED}(!?)\[\[(${WIKILINK_INNER}*)\]\]`, "g");
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
@@ -324,9 +326,31 @@ function normalise(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+const pathCollator = new Intl.Collator("en", { sensitivity: "base", numeric: false });
+
 /**
- * Resolve a `[[Title]]` target against the page list: title first (exact,
- * then case-insensitive), then page id, then file name. Mirrors D4.
+ * Of several pages that match a link equally well, the one Obsidian 1.14.4
+ * opens: a page before a whiteboard (v1.7: `[[Map]]` is the page), then the
+ * shortest path (string length, not depth), then a case-insensitive locale
+ * compare, as for v1.17 file links (`link-files.ts`). Never list order.
+ * (Obsidian also prefers a match in the linking note's folder; that needs the
+ * source page, a separate P3.)
+ */
+function preferred(a: PageMeta, b: PageMeta): boolean {
+  const boardA = a.kind === "whiteboard";
+  const boardB = b.kind === "whiteboard";
+  if (boardA !== boardB) return boardB;
+  if (a.id.length !== b.id.length) return a.id.length < b.id.length;
+  const order = pathCollator.compare(a.id, b.id);
+  return order !== 0 ? order < 0 : a.id < b.id;
+}
+
+/**
+ * Resolve a `[[Title]]` target against the page list: a whole vault path
+ * first, then title (exact, then case-insensitive), then page id, then file
+ * name. Mirrors D4. When several pages pass the same check (`Target` and
+ * `Other/Target`), `preferred` picks one, so the answer never depends on the
+ * order of `pages` (#u84ebtf3).
  */
 export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[]): PageMeta | null {
   const target = normalise(targetTitle);
@@ -337,6 +361,8 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[])
   const lastSegment = (candidate: PageMeta): string => normalise(candidate.id.split("/").pop() ?? "");
 
   const checks: Array<(page: PageMeta) => boolean> = [
+    // `[[Other/Target]]` is that file, whatever another page's title says.
+    (page) => target.includes("/") && byId(page) === target,
     (page) => page.title === targetTitle.trim(),
     (page) => byTitle(page) === target,
     (page) => byId(page) === target,
@@ -349,7 +375,10 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[])
   ];
 
   for (const check of checks) {
-    const found = pages.find(check);
+    let found: PageMeta | null = null;
+    for (const page of pages) {
+      if (check(page) && (found === null || preferred(page, found))) found = page;
+    }
     if (found) return found;
   }
   return null;

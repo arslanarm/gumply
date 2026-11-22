@@ -124,7 +124,8 @@ function decorationsFor(doc: PMNode, typeName: string, missing: Set<CodeLanguage
   doc.descendants((node, pos) => {
     if (node.type.name !== typeName) return true;
     const language = findLanguage(node.attrs.language as string | null);
-    if (!language) return false;
+    // No grammar (a diagram language, F2): nothing to highlight.
+    if (!language?.grammar) return false;
     if (!isReady(language)) {
       missing.add(language);
       return false;

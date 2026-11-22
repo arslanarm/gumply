@@ -50,6 +50,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      # #mbim529b: THIRD_PARTY_NOTICES.md must list exactly what the builds
+      # bundle, and every licence must be allowed (scripts/notices-lib.mjs).
+      - name: Third-party notices
+        # Reuses the web build above (its module list); only the two small
+        # esbuild bundles are made again, in memory.
+        run: npm run notices:check -- --from-build
+
   # The full browser suite on the Node in .nvmrc (24 LTS).
   e2e:
     runs-on: ubuntu-latest

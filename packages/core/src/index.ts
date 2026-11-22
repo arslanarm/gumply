@@ -29,6 +29,9 @@ export type {
   TrashedDocument,
   TrashedPage,
   TrashItem,
+  LinkMentionsInput,
+  LinkMentionsResult,
+  PageMentions,
 } from "./types.js";
 
 export {
@@ -197,6 +200,24 @@ export {
   type TemplateSettings,
 } from "./templates.js";
 export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
+export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
+export { graphItemPath, matchesGraphQuery, parseGraphQuery, type GraphQuery, type GraphQueryItem, type GraphQueryOp, type GraphQueryTerm } from "./graph-query.js";
+export {
+  DEFAULT_GRAPH_FILTERS,
+  DEFAULT_GRAPH_SETTINGS,
+  fromObsidianGraph,
+  MAX_GRAPH_GROUPS,
+  MAX_GRAPH_QUERY,
+  normalizeGraphSettings,
+  obsidianColor,
+  type GraphFilters,
+  type GraphGroup,
+  type GraphSettings,
+  type GraphSettingsResponse,
+  type GraphSettingsSource,
+} from "./graph-settings.js";
+export { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type HeadingRename } from "./heading-rename.js";
+export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
 
 export {
   coverValue,

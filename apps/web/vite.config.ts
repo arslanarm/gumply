@@ -1,10 +1,33 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { defineConfig, type Plugin } from "vite";
 import { markdownItAlias } from "./markdown-it-path";
 
+/**
+ * #mbim529b: write the list of bundled modules next to the build cache (not
+ * into dist/), so `npm run notices:check -- --from-build` can check
+ * THIRD_PARTY_NOTICES against this very build instead of building again.
+ */
+function bundledModulesManifest(): Plugin {
+  return {
+    name: "gumply-bundled-modules",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const ids = new Set<string>();
+      for (const item of Object.values(bundle)) {
+        if (item.type === "chunk") for (const id of item.moduleIds) ids.add(id);
+      }
+      const out = fileURLToPath(new URL("../../node_modules/.cache/gumply-notices/web-modules.json", import.meta.url));
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, JSON.stringify([...ids].sort()));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), bundledModulesManifest()],
   resolve: {
     alias: [
       // Consume core sources directly so UI edits don't need a core rebuild.
@@ -14,6 +37,19 @@ export default defineConfig({
       },
       // One markdown-it in the bundle (#evh35bn7).
       markdownItAlias,
+      // #u562uvmf: one KaTeX. Mermaid's own `import("katex")` would load its
+      // nested 0.18 copy (a second ~256 kB chunk); it gets the app's KaTeX.
+      // Only the bare name: `katex/dist/…` (our CSS) resolves as usual.
+      {
+        find: /^katex$/,
+        replacement: fileURLToPath(new URL("../../node_modules/katex/dist/katex.mjs", import.meta.url)),
+      },
+      // F2: Mermaid's optional ELK layout pulls in elkjs (EPL-2.0 / GPL-3.0),
+      // which Gumply doesn't ship: a stub that refuses takes its place.
+      {
+        find: /^elkjs\/lib\/elk\.bundled\.js$/,
+        replacement: fileURLToPath(new URL("./src/lib/elk-stub.ts", import.meta.url)),
+      },
     ],
   },
   build: {

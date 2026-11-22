@@ -2107,6 +2107,10 @@ export function App() {
                     items={backlinks}
                     loading={backlinksLoading}
                     onOpen={handleOpen}
+                    pageId={selectedId ?? undefined}
+                    onLinked={() => {
+                      if (selectedId) void loadBacklinks(selectedId);
+                    }}
                   />
                 </>
               ) : pageStatus === "error" ? (

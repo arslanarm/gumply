@@ -19,6 +19,7 @@
  * change) and are hidden from the properties block.
  */
 import type { Property, PropertyValue } from "./properties.js";
+import { WIKILINK_INNER, WIKILINK_TARGET } from "./wikilink-syntax.js";
 
 export const PAGE_LOOK_KEYS: readonly string[] = ["cover", "cover-position", "background"];
 
@@ -51,7 +52,7 @@ const isGradient = (value: string): value is PageGradient => (PAGE_GRADIENTS as 
 
 /** `[[target|alias]]` → `target`; a plain vault path stays as is. */
 function linkTarget(value: string): string | null {
-  const wiki = /^!?\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]$/.exec(value);
+  const wiki = new RegExp(String.raw`^!?\[\[(${WIKILINK_TARGET}+)(?:[#|]${WIKILINK_INNER}*)?\]\]$`).exec(value);
   const target = (wiki ? wiki[1]! : value).trim();
   if (target.length === 0 || target.includes("..") || target.startsWith("/")) return null;
   return target;

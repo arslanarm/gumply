@@ -13,6 +13,8 @@ import {
   type BaseSourceRow,
   type BaseViewResult,
   type FileInfo,
+  WIKILINK_INNER,
+  WIKILINK_TARGET,
 } from "@gumply/core";
 import { notFound } from "./errors.js";
 import type { VaultStore } from "./vault-store.js";
@@ -97,7 +99,7 @@ export class BaseQueries {
       for (const row of result.rows) {
         let value = row.values[imageId];
         if (Array.isArray(value)) value = value[0] ?? null;
-        const link = typeof value === "string" ? /^!?\[\[([^\]|#]+)/.exec(value.trim())?.[1]?.trim() : undefined;
+        const link = typeof value === "string" ? new RegExp(String.raw`^!?\[\[(${WIKILINK_TARGET}+)${WIKILINK_INNER}*\]\]$`).exec(value.trim())?.[1]?.trim() : undefined;
         if (link) row.files = { [link]: this.store.fileIndex.resolve(link, pathOf.get(row.id) ?? null) };
       }
     }

@@ -20,7 +20,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockView } from "../components/CodeBlockView.js";
 import { codeHighlightPlugin } from "./code/highlight-plugin.js";
 import { indentCommand, newlineKeepIndent, outdentCommand } from "./code/indent.js";
-import { typedLanguage } from "./code/languages.js";
+import { findLanguage, typedLanguage } from "./code/languages.js";
 
 export const FENCE_ATTR = "data-md-fence";
 /** The whole fence info string (`js title="x"`), so extra words survive. */
@@ -167,6 +167,10 @@ export const NotionCodeBlock = CodeBlock.extend({
       Escape: ({ editor }) => {
         const { $from } = editor.state.selection;
         if ($from.parent.type !== this.type) return false;
+        // F2: Esc in a diagram leaves the source: the block is selected and shows its diagram.
+        if (findLanguage(String($from.parent.attrs.language ?? ""))?.id === "mermaid") {
+          return editor.commands.setNodeSelection($from.before());
+        }
         const dom = editor.view.nodeDOM($from.before()) as HTMLElement | null;
         const button = dom?.querySelector<HTMLElement>('[data-testid="code-language-button"]');
         if (!button) return false;
