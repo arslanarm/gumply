@@ -18,21 +18,20 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { unzipSync } from "fflate";
-import { notionReportMarkdown, planNotionImport, type NotionEntry, type NotionImportReport, type PageId } from "@gumply/core";
+import {
+  NOTION_IMPORT_LIMITS,
+  formatImportLimit,
+  notionReportMarkdown,
+  planNotionImport,
+  type NotionEntry,
+  type NotionImportReport,
+  type PageId,
+} from "@gumply/core";
 import { conflict, notFound } from "./errors.js";
 import type { VaultStore } from "./vault-store.js";
 
-export const NOTION_IMPORT_LIMITS = {
-  /** The uploaded zip itself. */
-  uploadBytes: 1024 * 1024 * 1024,
-  /** Everything inflated. */
-  totalBytes: 2 * 1024 * 1024 * 1024,
-  entries: 50_000,
-  /** Compression ratio cap per entry, for entries over `ratioFloorBytes` (small text compresses well). */
-  ratio: 200,
-  ratioFloorBytes: 1024 * 1024,
-  attachmentBytes: 25 * 1024 * 1024,
-};
+/** The limits live in core so the web app's messages use the same numbers (#bswmpt63). */
+export { NOTION_IMPORT_LIMITS } from "@gumply/core";
 
 /** Leftover job folders older than this are removed on startup. */
 const STALE_JOB_MS = 60 * 60 * 1000;
@@ -123,7 +122,7 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
         return false;
       }
       if (!/\.(md|csv)$/i.test(name) && file.originalSize > limits.attachmentBytes) {
-        skipped.push({ path: name, reason: "larger than 25 MB" });
+        skipped.push({ path: name, reason: `larger than ${formatImportLimit(limits.attachmentBytes)}` });
         return false;
       }
       if (file.originalSize > limits.ratioFloorBytes && file.originalSize > file.size * limits.ratio) {
@@ -140,7 +139,7 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
     },
   });
   if (tooMany) throw new Error(`The export has more than ${limits.entries} files.`);
-  if (tooBig) throw new Error("The export is larger than 2 GB once unpacked.");
+  if (tooBig) throw new Error(`The export is larger than ${formatImportLimit(limits.totalBytes)} once unpacked.`);
   const entries: NotionEntry[] = [];
   for (const [path, data] of Object.entries(out)) {
     // A size that doesn't match its header is a damaged or crafted entry.
@@ -204,9 +203,7 @@ export class NotionImports {
     const job: NotionImportJob = { id: randomUUID(), state: "reading", done: 0, total: 0 };
     this.jobs.set(job.id, job);
     this.running = job;
-    void this.run(job, zip, parentId).finally(() => {
-      this.running = null;
-    });
+    void this.run(job, zip, parentId);
     return job;
   }
 
@@ -222,6 +219,7 @@ export class NotionImports {
   private async run(job: NotionImportJob, zip: Uint8Array, parentId: PageId | null): Promise<void> {
     const root = this.store.root;
     const temp = join(root, IMPORT_TMP, job.id);
+    let outcome: { state: "done" | "failed"; error?: string } = { state: "failed", error: "The import stopped." };
     try {
       const { entries, skipped } = readNotionZip(zip);
       const parentDir = parentId ?? "";
@@ -269,13 +267,16 @@ export class NotionImports {
         break;
       }
       await this.store.rescan();
-      job.state = "done";
+      outcome = { state: "done" };
     } catch (error) {
-      job.state = "failed";
-      job.error = error instanceof Error ? error.message : String(error);
-    } finally {
-      await rm(temp, { recursive: true, force: true });
+      outcome = { state: "failed", error: error instanceof Error ? error.message : String(error) };
     }
+    // Clean up first, then publish the outcome and free the vault together:
+    // a client that sees `done` can start the next import at once (no 409).
+    await rm(temp, { recursive: true, force: true }).catch(() => undefined);
+    if (outcome.error !== undefined) job.error = outcome.error;
+    this.running = null;
+    job.state = outcome.state;
   }
 
   /** `Notion import`, else `Notion import 2`… free as a folder, a page and an attachments folder (D20, case-insensitive). */

@@ -14,6 +14,31 @@ import { attachmentHref } from "./attachment-paths.js";
 import { pageSegment } from "./ids.js";
 import { maskCode } from "./links.js";
 
+/**
+ * The import's limits (spec/api-import): the server enforces them, and the
+ * web app quotes them in its messages, so they're defined once, here.
+ */
+export const NOTION_IMPORT_LIMITS = {
+  /** The uploaded zip itself. */
+  uploadBytes: 1024 * 1024 * 1024,
+  /** Everything inflated. */
+  totalBytes: 2 * 1024 * 1024 * 1024,
+  entries: 50_000,
+  /** Compression ratio cap per entry, for entries over `ratioFloorBytes` (small text compresses well). */
+  ratio: 200,
+  ratioFloorBytes: 1024 * 1024,
+  attachmentBytes: 25 * 1024 * 1024,
+};
+
+/** A limit for messages: `1 GB`, `25 MB`, `1000 bytes`. */
+export function formatImportLimit(bytes: number): string {
+  const gb = 1024 * 1024 * 1024;
+  const mb = 1024 * 1024;
+  if (bytes >= gb && bytes % gb === 0) return `${bytes / gb} GB`;
+  if (bytes >= mb && bytes % mb === 0) return `${bytes / mb} MB`;
+  return `${bytes} bytes`;
+}
+
 /** One file from the export (a page, a CSV or an attachment). */
 export interface NotionEntry {
   /** Path inside the zip, `/`-separated, e.g. `Private & Shared/Test page 41f9….md`. */

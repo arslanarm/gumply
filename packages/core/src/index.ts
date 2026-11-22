@@ -212,6 +212,8 @@ export {
 } from "./page-look.js";
 
 export {
+  NOTION_IMPORT_LIMITS,
+  formatImportLimit,
   notionReportMarkdown,
   notionUrlId,
   planNotionImport,

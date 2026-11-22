@@ -137,6 +137,13 @@ describe("Notion import jobs (#znyztw3t)", () => {
 });
 
 describe("reading the export safely (spec §2)", () => {
+  it("quotes the shared limits in its messages", async () => {
+    const { formatImportLimit } = await import("@gumply/core");
+    expect(formatImportLimit(NOTION_IMPORT_LIMITS.uploadBytes)).toBe("1 GB");
+    expect(formatImportLimit(NOTION_IMPORT_LIMITS.totalBytes)).toBe("2 GB");
+    expect(formatImportLimit(NOTION_IMPORT_LIMITS.attachmentBytes)).toBe("25 MB");
+  });
+
   const text = (value: string) => new TextEncoder().encode(value);
 
   it("refuses zip-slip names, symlinks and zip bombs, and writes nothing outside the target", async () => {
@@ -170,10 +177,10 @@ describe("reading the export safely (spec §2)", () => {
     const files: Zippable = {};
     for (let i = 0; i < 5; i += 1) files[`Root/p${i}.md`] = text("x");
     expect(() => readNotionZip(zipSync(files), { ...NOTION_IMPORT_LIMITS, entries: 3 })).toThrow(/more than 3 files/);
-    expect(() => readNotionZip(zipSync(files), { ...NOTION_IMPORT_LIMITS, totalBytes: 3 })).toThrow(/larger than 2 GB/);
+    expect(() => readNotionZip(zipSync(files), { ...NOTION_IMPORT_LIMITS, totalBytes: 3 })).toThrow(/larger than 3 bytes once unpacked/);
     const big = zipSync({ "Root/huge.png": crypto.getRandomValues(new Uint8Array(4096)) });
     const { skipped } = readNotionZip(big, { ...NOTION_IMPORT_LIMITS, attachmentBytes: 1000 });
-    expect(skipped).toEqual([{ path: "Root/huge.png", reason: "larger than 25 MB" }]);
+    expect(skipped).toEqual([{ path: "Root/huge.png", reason: "larger than 1000 bytes" }]);
   });
 });
 
