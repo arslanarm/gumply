@@ -713,6 +713,16 @@ async function setUpUpdates(): Promise<void> {
   if (kind === "none") return;
   // Loaded only here: development, unpacked and `--mcp` runs never load it.
   const { autoUpdater } = await import("electron-updater");
+  let firstCheckDelayMs: number | undefined;
+  // spec/auto-update §8, test builds only: scripts/build.mjs drops this labelled
+  // block from every other build. A feed on 127.0.0.1 instead of GitHub, and a
+  // sooner first check.
+  TEST_FEED: {
+    const feed = process.env.GUMPLY_UPDATE_FEED ?? "";
+    if (/^http:\/\/127\.0\.0\.1:\d+\/$/.test(feed)) autoUpdater.setFeedURL({ provider: "generic", url: feed });
+    const delay = Number(process.env.GUMPLY_UPDATE_FIRST_CHECK_MS);
+    if (Number.isFinite(delay) && delay >= 0) firstCheckDelayMs = delay;
+  }
   updates = new UpdateController({
     kind,
     currentVersion: app.getVersion(),
@@ -723,6 +733,7 @@ async function setUpUpdates(): Promise<void> {
     installDir: dirname(process.execPath),
     listProcesses: process.platform === "win32" ? () => listWindowsProcesses() : undefined,
     log: (message) => console.error(message),
+    ...(firstCheckDelayMs !== undefined ? { firstCheckDelayMs } : {}),
     // The window's notice and Settings follow every change.
     onChange: (state) => {
       if (!window || window.isDestroyed()) return;

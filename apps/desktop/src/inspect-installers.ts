@@ -250,15 +250,19 @@ export function inspectAsar(files: AsarFile[], version: string, label: string): 
   const mapRefs: string[] = [];
   const secrets: string[] = [];
   const buildPaths: string[] = [];
+  const testFeed: string[] = [];
   for (const file of files) {
     if (file.unpacked) continue;
     const text = file.read().toString("latin1");
     if (/[#@]\s*sourceMappingURL=/.test(text)) mapRefs.push(file.path);
+    // spec/auto-update §8: only CI's update-test builds may redirect updates.
+    if (text.includes("GUMPLY_UPDATE_FEED")) testFeed.push(file.path);
     for (const [name, re] of SECRET_PATTERNS) if (re.test(text)) secrets.push(`${name} in ${file.path}`);
     for (const [name, re] of BUILD_PATH_PATTERNS) if (re.test(text)) buildPaths.push(`${name} in ${file.path}`);
   }
   add("asar: no sourceMappingURL", mapRefs.length === 0, mapRefs.length ? mapRefs.join(", ") : "none");
   add("asar: no secrets", secrets.length === 0, secrets.length ? secrets.join("; ") : "none");
+  add("asar: no update test feed", testFeed.length === 0, testFeed.length ? `GUMPLY_UPDATE_FEED in ${testFeed.join(", ")}` : "none");
   add("asar: no build-machine paths", buildPaths.length === 0, buildPaths.length ? buildPaths.join("; ") : "none", buildPaths.length > 0);
 
   const pkg = files.find((f) => f.path === "/package.json");

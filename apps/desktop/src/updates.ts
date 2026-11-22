@@ -209,6 +209,8 @@ export interface ControllerDeps {
   listProcesses?(): ProcessInfo[] | null;
   replace?(downloaded: string, target: string): "installed" | "read-only";
   log?(message: string): void;
+  /** Test builds only: the first check's delay (default 30 s). */
+  firstCheckDelayMs?: number;
 }
 
 export type QuitInstall = "nothing" | "installed" | "pending-running" | "read-only" | "failed";
@@ -259,7 +261,7 @@ export class UpdateController {
 
   /** Checks 30 s after start, then once a day (spec §3). Nothing at all when off. */
   start(): void {
-    this.schedule(FIRST_CHECK_DELAY_MS);
+    this.schedule(this.deps.firstCheckDelayMs ?? FIRST_CHECK_DELAY_MS);
   }
 
   stop(): void {

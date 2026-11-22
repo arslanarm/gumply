@@ -191,3 +191,12 @@ describe("update files (spec/auto-update)", () => {
     expect(inspectUpdateConfig("x", null)).toMatchObject({ ok: false, detail: "missing" });
   });
 });
+
+describe("no update test feed in a release (spec/auto-update §8)", () => {
+  it("fails an app whose bundle can be pointed at another feed", () => {
+    const check = (code: string) =>
+      inspectAsar(readAsar(makeAsar({ "/package.json": '{"version":"0.9.0"}', "/dist/main.mjs": code })), "0.9.0", "x").find((r) => r.check === "asar: no update test feed")!;
+    expect(check("const updater = 1;").ok).toBe(true);
+    expect(check('const feed = process.env.GUMPLY_UPDATE_FEED ?? "";')).toMatchObject({ ok: false, detail: "GUMPLY_UPDATE_FEED in /dist/main.mjs" });
+  });
+});

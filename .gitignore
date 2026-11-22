@@ -13,3 +13,4 @@ test-results/
 playwright-report/
 playwright/.cache/
 apps/desktop/release/
+apps/desktop/update-test/

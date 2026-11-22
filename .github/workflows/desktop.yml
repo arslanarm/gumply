@@ -224,6 +224,37 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # spec/auto-update §8 (#a7qepp99): an update from N to N+1 with no GitHub
+      # release. Test builds of N and N+1 (GUMPLY_BUILD_TEST_FEED=1 keeps the
+      # 127.0.0.1 feed switch, which the release artifacts above never have),
+      # after those are uploaded; apps/desktop/e2e/update.spec.ts serves N+1
+      # from a local feed. macOS and the .deb only get a notice (no install).
+      - name: Build the update test (N and N+1 with the test feed)
+        if: runner.os != 'macOS'
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          set -euo pipefail
+          old="${{ steps.version.outputs.version }}"
+          new=$(node -p 'const [a, b, c] = process.argv[1].split("-")[0].split(".").map(Number); [a, b, c + 1].join(".")' "$old")
+          GUMPLY_BUILD_TEST_FEED=1 GUMPLY_DESKTOP_SKIP_WEB=1 node scripts/build.mjs
+          if [[ "$RUNNER_OS" == Windows ]]; then target=(--win nsis --x64); else target=(--linux AppImage --x64); fi
+          npx electron-builder "${target[@]}" --publish never -c.extraMetadata.version="$old" -c.directories.output=update-test/old
+          npx electron-builder "${target[@]}" --publish never -c.extraMetadata.version="$new" -c.directories.output=update-test/new
+          oldfile=$(ls update-test/old/*.AppImage update-test/old/Gumply-Setup-*.exe 2>/dev/null | head -1)
+          abs() { node -p 'require("node:path").resolve(process.argv[1])' "$1"; }
+          { echo "GUMPLY_UPDATE_OLD=$(abs "$oldfile")"; echo "GUMPLY_UPDATE_OLD_VERSION=$old"
+            echo "GUMPLY_UPDATE_FEED_DIR=$(abs update-test/new)"; echo "GUMPLY_UPDATE_NEW_VERSION=$new"; } >> "$GITHUB_ENV"
+
+      - name: Update from N to N+1 (update.spec)
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then node apps/desktop/scripts/test.mjs update.spec.ts
+          else npx playwright test --config apps/desktop/e2e/playwright.config.ts update.spec.ts; fi
+
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v7
