@@ -67,8 +67,8 @@ describe("raw Markdown inline atoms", () => {
   it("keeps an escaped \\= as written, whatever highlight pairing surrounds it (#bg3cb83t)", () => {
     expect(rawInlines("c==d and \\==literal== here")).toEqual([["escape", "\\="]]);
     expect(rawInlines("\\==literal==")).toEqual([["escape", "\\="]]);
-    // Other escapes are still plain text.
-    expect(rawInlines("\\*not em\\*")).toEqual([]);
+    // Every escape is kept as written now (#628e927t).
+    expect(rawInlines("\\*not em\\*")).toEqual([["escape", "\\*"], ["escape", "\\*"]]);
   });
 
   it("doesn't take prices or spaced operators for math or highlights", () => {
@@ -79,6 +79,39 @@ describe("raw Markdown inline atoms", () => {
     expect(render("one  \ntwo\\\nthree")).toBe(
       '<p>one<br data-md-break="spaces">two<br data-md-break="backslash">three</p>',
     );
+  });
+});
+
+describe("backslash escapes and pairing-aware * / _ (#628e927t)", () => {
+  it("keeps every backslash escape in the source as an atom", () => {
+    expect(rawInlines("a\\,b \\$5 \\[x\\] \\\\ \\# \\_")).toEqual([
+      ["escape", "\\,"],
+      ["escape", "\\$"],
+      ["escape", "\\["],
+      ["escape", "\\]"],
+      ["escape", "\\\\"],
+      ["escape", "\\#"],
+      ["escape", "\\_"],
+    ]);
+    // Not escapes: a backslash before a letter, a Windows path.
+    expect(rawInlines("\\n and C:\\Users\\name")).toEqual([]);
+  });
+
+  it("escapes * and _ only where they could pair in the paragraph", () => {
+    const write = (paragraph: string) => escapeMarkdownText(paragraph, false, { paragraph, offset: 0 });
+    // Literal, so as written: an unmatched closer, intraword, a lone star.
+    expect(write("\\sum_{i} and x_1_y")).toBe("\\sum_{i} and x_1_y");
+    expect(write("5 * 3 and a*b")).toBe("5 * 3 and a*b");
+    // Could pair: escaped, so a reload never turns them into emphasis.
+    expect(write("2*3*4")).toBe("2\\*3\\*4");
+    expect(write("_a_ and __b__")).toBe("\\_a\\_ and \\_\\_b\\_\\_");
+    // A run pairs with a run in another text node of the same paragraph…
+    expect(escapeMarkdownText("*x", false, { paragraph: "*x and y*", offset: 0 })).toBe("\\*x");
+    expect(escapeMarkdownText(" y*", false, { paragraph: "*x and y*", offset: 6 })).toBe(" y\\*");
+    // …but a closer before an opener never pairs (CommonMark), so no escape.
+    expect(escapeMarkdownText("x*", false, { paragraph: "x* and *y", offset: 0 })).toBe("x*");
+    // Without a paragraph (pasted tables): the old, stricter rules.
+    expect(escapeMarkdownText("a*b", false)).toBe("a\\*b");
   });
 });
 

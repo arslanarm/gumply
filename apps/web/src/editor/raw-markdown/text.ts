@@ -59,7 +59,81 @@ function isSpace(char: string | undefined): boolean {
 }
 
 /** Escape what would otherwise turn into Markdown syntax. */
-export function escapeMarkdownText(text: string, startOfLine: boolean): string {
+/** Where a piece of text sits in its paragraph, for emphasis pairing (#628e927t). */
+export interface EscapeContext {
+  /** The paragraph's whole text. */
+  paragraph: string;
+  /** Where `text` starts in it. */
+  offset: number;
+}
+
+const UNICODE_SPACE = /\s/u;
+const UNICODE_PUNCT = /[\p{P}\p{S}]/u;
+const isWs = (char: string | undefined) => char === undefined || UNICODE_SPACE.test(char);
+const isPunct = (char: string | undefined) => char !== undefined && UNICODE_PUNCT.test(char);
+
+interface DelimiterRun {
+  start: number;
+  end: number;
+  char: string;
+  canOpen: boolean;
+  canClose: boolean;
+}
+
+/** `*` / `_` delimiter runs with CommonMark's flanking rules (spec 6.2). */
+function delimiterRuns(text: string): DelimiterRun[] {
+  const runs: DelimiterRun[] = [];
+  for (let i = 0; i < text.length; ) {
+    const char = text[i]!;
+    if (char !== "*" && char !== "_") {
+      i += 1;
+      continue;
+    }
+    let end = i;
+    while (text[end] === char) end += 1;
+    const before = text[i - 1];
+    const after = text[end];
+    const left = !isWs(after) && (!isPunct(after) || isWs(before) || isPunct(before));
+    const right = !isWs(before) && (!isPunct(before) || isWs(after) || isPunct(after));
+    const canOpen = char === "*" ? left : left && (!right || isPunct(before));
+    const canClose = char === "*" ? right : right && (!left || isPunct(after));
+    runs.push({ start: i, end, char, canOpen, canClose });
+    i = end;
+  }
+  return runs;
+}
+
+/**
+ * The positions of `*` / `_` that could take part in emphasis somewhere in
+ * the paragraph: an opener with a matching closer after it, or a closer with
+ * an opener before it. Any other delimiter is literal and needs no escape
+ * (an untouched `\sum_{i}` stays as written, #628e927t). Conservative: code
+ * spans and link text count too, which can only add escapes.
+ */
+function pairableDelimiters(paragraph: string): Set<number> {
+  const runs = delimiterRuns(paragraph);
+  const out = new Set<number>();
+  runs.forEach((run, index) => {
+    const opener = run.canOpen && runs.slice(index + 1).some((other) => other.char === run.char && other.canClose);
+    const closer = run.canClose && runs.slice(0, index).some((other) => other.char === run.char && other.canOpen);
+    if (opener || closer) for (let i = run.start; i < run.end; i += 1) out.add(i);
+  });
+  return out;
+}
+
+// The text nodes of one paragraph are written one after another: analyse it once.
+let lastParagraph: string | null = null;
+let lastPairable = new Set<number>();
+
+export function escapeMarkdownText(text: string, startOfLine: boolean, context?: EscapeContext): string {
+  let pairable: Set<number> | null = null;
+  if (context) {
+    if (context.paragraph !== lastParagraph) {
+      lastParagraph = context.paragraph;
+      lastPairable = pairableDelimiters(context.paragraph);
+    }
+    pairable = lastPairable;
+  }
   // Brackets only matter when they could form a link: `](`, `][`, `]:`.
   const linkish = /\]\s*[([:]/.test(text) || /^\[[^\]]*$/.test(text);
   // `==x==` in plain text is a literal the file had escaped (`\==x==`), since
@@ -85,8 +159,9 @@ export function escapeMarkdownText(text: string, startOfLine: boolean): string {
         escape = true;
         break;
       case "*":
-        // Spaces on both sides can never open or close emphasis.
-        escape = !(isSpace(prev) && isSpace(next));
+        // In a paragraph: only a delimiter that can pair (#628e927t).
+        // Without one: spaces on both sides can never open or close emphasis.
+        escape = pairable ? pairable.has(context!.offset + i) : !(isSpace(prev) && isSpace(next));
         break;
       case "~":
         // Strikethrough needs `~~`; a lone tilde is literal.
@@ -94,6 +169,10 @@ export function escapeMarkdownText(text: string, startOfLine: boolean): string {
         escape = next === "~" && prev !== "~" && !(isSpace(prev) && isSpace(text[i + 2]));
         break;
       case "_":
+        if (pairable) {
+          escape = pairable.has(context!.offset + i);
+          break;
+        }
         // Intraword underscores are literal in CommonMark (snake_case).
         escape = !(
           (isSpace(prev) && isSpace(next)) ||
@@ -138,7 +217,7 @@ export const MarkdownText = Text.extend({
   addStorage() {
     return {
       markdown: {
-        serialize(state: TextSerializerState, node: PMNode) {
+        serialize(state: TextSerializerState, node: PMNode, parent?: PMNode, index?: number) {
           const value = node.text ?? "";
           if (state.inAutolink) {
             state.text(value, false);
@@ -150,11 +229,22 @@ export const MarkdownText = Text.extend({
           state.afterSoftBreak = false;
           // `text(…, false)` writes line by line with the block's prefix;
           // escaping is done here, per line, with our own rules.
+          // `*` / `_` are escaped only where they could pair within the
+          // paragraph (#628e927t): the paragraph's text, and where this node starts.
+          let context: EscapeContext | undefined;
+          if (parent && typeof index === "number") {
+            let offset = 0;
+            for (let i = 0; i < index; i += 1) offset += parent.child(i).textContent.length;
+            context = { paragraph: parent.textContent, offset };
+          }
+          let lineOffset = 0;
           const escaped = value
             .split("\n")
-            .map((line, index) => {
-              if (index === 0 && afterSoft) return escapeParagraphInterrupt(escapeMarkdownText(line, false));
-              return escapeMarkdownText(line, index === 0 ? Boolean(state.atBlockStart) : true);
+            .map((line, lineIndex) => {
+              const lineContext = context ? { paragraph: context.paragraph, offset: context.offset + lineOffset } : undefined;
+              lineOffset += line.length + 1;
+              if (lineIndex === 0 && afterSoft) return escapeParagraphInterrupt(escapeMarkdownText(line, false, lineContext));
+              return escapeMarkdownText(line, lineIndex === 0 ? Boolean(state.atBlockStart) : true, lineContext);
             })
             .join("\n");
           state.text(escaped, false);

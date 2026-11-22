@@ -1335,6 +1335,29 @@ input {
   margin: 0.9em 0 0.1em;
 }
 
+/* H4–H6 (#6rbi25wy): smaller steps, as in Obsidian; H6 muted. */
+.gumply-editor h4 {
+  font-size: 1.05rem;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 0.85em 0 0.1em;
+}
+
+.gumply-editor h5 {
+  font-size: 1rem;
+  line-height: 1.45;
+  font-weight: 600;
+  margin: 0.8em 0 0.1em;
+}
+
+.gumply-editor h6 {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  font-weight: 600;
+  margin: 0.8em 0 0.1em;
+  color: var(--muted);
+}
+
 .gumply-editor ul,
 .gumply-editor ol {
   padding-left: 1.5rem;
