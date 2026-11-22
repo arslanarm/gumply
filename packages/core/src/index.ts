@@ -7,6 +7,7 @@ export type {
   ApiError,
   Attachment,
   VaultImage,
+  LinkableFile,
   Backlink,
   BoardDocument,
   BoardUpdateResult,
@@ -195,7 +196,7 @@ export {
   type TemplateContext,
   type TemplateSettings,
 } from "./templates.js";
-export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "./link-files.js";
+export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
 
 export {
   coverValue,

@@ -72,6 +72,7 @@ import type { SlashItem } from "../editor/slash-items.js";
 import { AccessibleTaskItem } from "../editor/task-item.js";
 import { TaskShortcut } from "../editor/task-shortcut.js";
 import { setWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
+import { loadLinkableFiles } from "../lib/linkable-files.js";
 import { headingKey } from "@gumply/core";
 import { WikiLink } from "../editor/wikilink/node.js";
 import {
@@ -312,12 +313,18 @@ export function Editor({
       openLink: onOpenLink,
       createLink: onCreateLink,
       reportError: (message) => onAttachmentErrorRef.current?.(message),
-      addAttachment: (attachment) =>
+      addAttachment: (attachment) => {
         setAttachments((list) =>
           list.some((item) => item.path === attachment.path) ? list : [...list, attachment],
-        ),
+        );
+        // #4usgpjh8: the `![[` menu offers the new file too.
+        loadLinkableFiles(page.id, true);
+      },
     });
   }, [page.id, page.fileLinks, pages, attachments, onOpenLink, onCreateLink]);
+
+  // #4usgpjh8: the vault's files for the `![[` menu, with links from this page.
+  useEffect(() => loadLinkableFiles(page.id), [page.id]);
 
   useEffect(() => {
     let cancelled = false;
