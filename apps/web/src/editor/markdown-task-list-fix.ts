@@ -12,6 +12,7 @@
  */
 import { Extension } from "@tiptap/core";
 import { AFTER_TEXT_ATTR, GAP_ATTR, LOOSE_JOIN_ATTR } from "./raw-markdown/list-source.js";
+import { JOIN_ATTR } from "./raw-markdown/block-joins.js";
 
 function isTaskItem(item: Element): boolean {
   return item.getAttribute("data-type") === "taskItem";
@@ -50,6 +51,10 @@ function splitList(list: Element): void {
     else clone.removeAttribute("data-tight");
     if (group !== groups[0] && group.items[0]!.hasAttribute(GAP_ATTR)) clone.setAttribute(LOOSE_JOIN_ATTR, "loose");
     else clone.removeAttribute(LOOSE_JOIN_ATTR);
+    // The block-join stamp (#54prcupx) belongs to the first group, the one
+    // touching the list's previous sibling; later groups follow a group of
+    // the same list, not that sibling (#q7ajxdr4).
+    if (group !== groups[0]) clone.removeAttribute(JOIN_ATTR);
     // Only the first half can sit right under a line of text.
     if (group !== groups[0]) clone.removeAttribute(AFTER_TEXT_ATTR);
     fragment.appendChild(clone);
