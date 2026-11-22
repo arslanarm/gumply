@@ -5,7 +5,7 @@
  */
 import { Node } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { columnsCleanup, moveToColumn } from "./commands.js";
+import { columnsCleanup, columnsLayout, moveToColumn } from "./commands.js";
 import { COLUMN_ATTR, COLUMNS_ATTR, columnsMarkdownPlugin } from "./markdown.js";
 import { columnsView } from "./view.js";
 
@@ -100,8 +100,8 @@ export const Column = Node.create({
           const value = Number(element.getAttribute("data-width"));
           return element.hasAttribute("data-width") && value > 0 ? value : null;
         },
-        renderHTML: (attributes: Record<string, unknown>) =>
-          typeof attributes.width === "number" ? { style: `flex: ${attributes.width} 1 0` } : {},
+        // Laid out by the row's view (columnShares), which sees the sibling columns too.
+        renderHTML: () => ({}),
       },
       // The width as read, so an unchanged width keeps its fence text.
       readWidth: {
@@ -161,7 +161,7 @@ export const Columns = Node.create({
   },
 
   addProseMirrorPlugins() {
-    return [columnsCleanup];
+    return [columnsCleanup, columnsLayout];
   },
 
   addKeyboardShortcuts() {

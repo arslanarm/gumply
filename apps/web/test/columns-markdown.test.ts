@@ -1,6 +1,6 @@
 import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
-import { columnsMarkdownPlugin, findRow, parseOpenFence } from "../src/editor/columns/markdown.js";
+import { columnShares, columnsMarkdownPlugin, findRow, parseOpenFence } from "../src/editor/columns/markdown.js";
 
 const md = new MarkdownIt();
 columnsMarkdownPlugin(md);
@@ -10,6 +10,15 @@ const rowAt = (source: string, start = 0) => findRow(source.split("\n"), start);
 const ROW = ':::: {.columns}\n::: {.column width="40%"}\n### Pros\n- Fast\n:::\n::: {.column width="60%"}\nCons text.\n:::\n::::';
 
 describe("columns: the exact Pandoc form only (spec/columns)", () => {
+  it("lays columns out by their widths; bare columns share what's left", () => {
+    expect(columnShares([null, null])).toEqual([50, 50]);
+    expect(columnShares([40, null])).toEqual([40, 60]);
+    expect(columnShares([25, null, null])).toEqual([25, 37.5, 37.5]);
+    expect(columnShares([30, 70])).toEqual([30, 70]);
+    // Widths that already fill the row: bare columns still get a fair share.
+    expect(columnShares([60, 60, null])).toEqual([60, 60, 100 / 3]);
+  });
+
   it("reads fence lines", () => {
     expect(parseOpenFence(":::: {.columns}")).toEqual({ colons: 4, classes: ["columns"], width: null });
     expect(parseOpenFence('::: {.column width="40%"}')).toEqual({ colons: 3, classes: ["column"], width: 40 });

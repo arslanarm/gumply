@@ -197,8 +197,10 @@ function createRenderer(): Any {
   columnsMarkdownPlugin(md as Any);
   md.renderer.rules.gumply_columns_open = () => '<div class="md-columns">\n';
   md.renderer.rules.gumply_column_open = (tokens: Any[], index: number) => {
+    // The column's share of the row (bare columns split what the set widths leave).
     const width = Number(tokens[index].meta?.width);
-    return `<div class="md-column"${width > 0 ? ` style="flex: ${width} 1 0"` : ""}>\n`;
+    const share = Math.round(Number(tokens[index].meta?.share) * 100) / 100;
+    return `<div class="md-column"${width > 0 || share > 0 ? ` style="flex: ${share > 0 ? share : width} 1 0"` : ""}>\n`;
   };
   // Code keeps its language for the highlighter; content is escaped by markdown-it.
   return md;

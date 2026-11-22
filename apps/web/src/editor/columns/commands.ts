@@ -5,7 +5,9 @@
  */
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { BLOCK_MOVE_META, type BlockRef } from "../../lib/blocks.js";
+import { columnShares } from "./markdown.js";
 
 export const MAX_COLUMNS = 5;
 
@@ -140,6 +142,49 @@ export function moveToColumn(state: EditorState, direction: "left" | "right"): T
   tr.setSelection(TextSelection.near(tr.doc.resolve(at + Math.max(1, Math.min(offset, block.nodeSize - 1)))));
   tr.setMeta(BLOCK_MOVE_META, true);
   return tr.scrollIntoView();
+}
+
+/**
+ * The columns' widths, as node decorations (`flex: <share> 1 0`), so a
+ * column without a width shares what the set widths leave (40% next to a
+ * bare column is 40/60). Rows without any width get none: equal parts.
+ */
+const layoutKey = new PluginKey<DecorationSet>("gumplyColumnsLayout");
+
+export const columnsLayout: Plugin<DecorationSet> = new Plugin<DecorationSet>({
+  key: layoutKey,
+  state: {
+    init: (_config, state) => layoutDecorations(state.doc),
+    apply: (tr, previous) => (tr.docChanged ? layoutDecorations(tr.doc) : previous),
+  },
+  props: {
+    decorations(state): DecorationSet | undefined {
+      return layoutKey.getState(state);
+    },
+  },
+});
+
+function layoutDecorations(doc: PMNode): DecorationSet {
+  const decorations: Decoration[] = [];
+  const visit = (parent: PMNode, start: number) => {
+    parent.forEach((node, offset) => {
+      if (node.type.name !== "columns") return;
+      const pos = start + offset;
+      const widths: Array<number | null> = [];
+      node.forEach((column) => widths.push(typeof column.attrs.width === "number" ? column.attrs.width : null));
+      const sized = widths.some((width) => width !== null);
+      const shares = columnShares(widths);
+      let columnPos = pos + 1;
+      node.forEach((column, _offset, index) => {
+        if (sized) decorations.push(Decoration.node(columnPos, columnPos + column.nodeSize, { style: `flex: ${shares[index]} 1 0` }));
+        // Rows inside a column (kept from a file) get theirs too.
+        visit(column, columnPos + 1);
+        columnPos += column.nodeSize;
+      });
+    });
+  };
+  visit(doc, 0);
+  return DecorationSet.create(doc, decorations);
 }
 
 /**

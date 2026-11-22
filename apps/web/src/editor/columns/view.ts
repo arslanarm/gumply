@@ -1,8 +1,9 @@
 /**
  * The columns row's node view (spec/columns §3): the flex row, plus a resize
- * gutter between neighbouring columns. Dragging previews the new widths and
- * writes them once, on release (only the `width=` of the fences change);
- * a double-click gives every column an equal share again.
+ * gutter between neighbouring columns. Dragging moves the gutter line and
+ * writes the new widths once, on release (only the `width=` of the fences
+ * change); a double-click gives every column an equal share again. The
+ * columns' own widths are node decorations (columnsLayout in ./commands.ts).
  */
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorView, NodeView } from "@tiptap/pm/view";
@@ -32,12 +33,8 @@ export function columnsView({ node: initial, view, getPos }: Props): NodeView {
   const columnElements = () => Array.from(content.children).filter((child): child is HTMLElement => child instanceof HTMLElement);
 
   /** Each column's share of the row, in percent (from the attributes, or as laid out). */
+  /** Each column's share of the row, in percent, as it's laid out now. */
   const currentShares = (): number[] => {
-    const widths = Array.from({ length: node.childCount }, (_, index) => node.child(index).attrs.width as number | null);
-    if (widths.every((width) => typeof width === "number")) {
-      const total = widths.reduce((sum, width) => sum + (width as number), 0) || 100;
-      return widths.map((width) => ((width as number) / total) * 100);
-    }
     const rects = columnElements().map((element) => element.getBoundingClientRect().width);
     const total = rects.reduce((sum, width) => sum + width, 0) || 1;
     return rects.map((width) => (width / total) * 100);
@@ -93,6 +90,7 @@ export function columnsView({ node: initial, view, getPos }: Props): NodeView {
       const startX = event.clientX;
       const rowWidth = content.getBoundingClientRect().width || 1;
       const pair = shares[i]! + shares[i + 1]!;
+      const startLeft = parseFloat(handle.style.left) || 0;
       let next = shares;
       handle.setPointerCapture(event.pointerId);
       handle.classList.add("is-dragging");
@@ -100,9 +98,8 @@ export function columnsView({ node: initial, view, getPos }: Props): NodeView {
         const delta = ((move.clientX - startX) / rowWidth) * 100;
         const left = Math.max(MIN_PERCENT, Math.min(pair - MIN_PERCENT, shares[i]! + delta));
         next = shares.map((share, k) => (k === i ? left : k === i + 1 ? pair - left : share));
-        // Preview only; the document changes once, on release.
-        columnElements().forEach((element, k) => (element.style.flex = `${next[k]} 1 0`));
-        place();
+        // Only the gutter line follows the pointer; the columns change once, on release.
+        handle.style.left = `${startLeft + ((left - shares[i]!) / 100) * rowWidth}px`;
       };
       const onUp = () => {
         handle.removeEventListener("pointermove", onMove);

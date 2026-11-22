@@ -148,6 +148,20 @@ function readColumn(lines: readonly string[], start: number, end: number): Omit<
   return null;
 }
 
+/**
+ * Each column's share of the row, in percent. Columns without a width split
+ * what the set widths leave (an equal share when nothing is left), so
+ * `width="40%"` next to a bare column lays out 40/60, not 40 against 1.
+ */
+export function columnShares(widths: ReadonlyArray<number | null>): number[] {
+  const set = widths.filter((width): width is number => typeof width === "number" && width > 0);
+  if (set.length === 0) return widths.map(() => 100 / Math.max(1, widths.length));
+  const missing = widths.length - set.length;
+  const left = 100 - set.reduce((sum, width) => sum + width, 0);
+  const each = missing > 0 ? (left > 0 ? left / missing : 100 / widths.length) : 0;
+  return widths.map((width) => (typeof width === "number" && width > 0 ? width : each));
+}
+
 function escapeAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -169,11 +183,14 @@ export function columnsBlockRule(state: any, startLine: number, endLine: number,
   open.block = true;
   open.map = [row.openLine, row.closeLine + 1];
   open.meta = { open: row.open, close: row.close, beforeClose: row.beforeClose };
-  for (const column of row.columns) {
+  // Shares only when some column sets a width; otherwise every column takes an equal part (no style).
+  const sized = row.columns.some((column) => column.width !== null);
+  const shares = sized ? columnShares(row.columns.map((column) => column.width)) : row.columns.map(() => null);
+  for (const [index, column] of row.columns.entries()) {
     const columnOpen = state.push("gumply_column_open", "div", 1);
     columnOpen.block = true;
     columnOpen.map = [column.openLine, column.closeLine + 1];
-    columnOpen.meta = column;
+    columnOpen.meta = { ...column, share: shares[index] };
     const from = column.openLine + 1 + column.lead;
     const to = column.closeLine - column.trail;
     if (to > from) {

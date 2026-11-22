@@ -176,6 +176,30 @@ test.describe('making and editing columns (spec/columns §3)', () => {
     await expect.poll(read).toBe(':::: {.columns}\n::: {.column}\nOne\n:::\n::: {.column}\nTwo\n\nThree\n:::\n::::\n');
   });
 
+  test('a width next to a bare column lays out 40/60, and an 80 px drag moves the split by about 80 px', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    // @opus-hunter's c-attrs shape: one width, one bare column (it laid out 40 against 1 before).
+    await open(page, request, ':::: {.columns}\n::: {.column width="40%" style="x"}\nLeft\n:::\n::: {.column}\nRight\n:::\n::::\n');
+    const widths = async () => Promise.all((await page.getByTestId('column').all()).map(async (column) => (await column.boundingBox())!.width));
+    await expect.poll(async () => {
+      const [a, b] = await widths();
+      return Math.round((a! / (a! + b!)) * 100);
+    }).toBe(40);
+    const [left, right] = await widths();
+    const gutter = (await page.getByTestId('column-gutter').boundingBox())!;
+    await page.mouse.move(gutter.x + gutter.width / 2, gutter.y + gutter.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(gutter.x + gutter.width / 2 + 80, gutter.y + gutter.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await saved(page);
+    const text = await read();
+    const share = Number(/width="(\d+)%" style="x"/.exec(text)![1]);
+    const expected = Math.round(((left! + 80) / (left! + right!)) * 100);
+    expect(Math.abs(share - expected)).toBeLessThanOrEqual(2);
+    expect(text).toMatch(/^:::: \{\.columns\}\n::: \{\.column width="\d+%" style="x"\}\nLeft\n:::\n::: \{\.column width="\d+%"\}\nRight\n:::\n::::\n$/);
+  });
+
   test('the resize gutter writes widths into the fences; a double-click resets them', async ({ page, request, vault }) => {
     void vault;
     await page.setViewportSize({ width: 1280, height: 800 });
