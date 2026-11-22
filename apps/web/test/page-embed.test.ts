@@ -66,6 +66,29 @@ describe("the read-only renderer (#5dpxwac4)", () => {
     expect(html).toContain("<code>#code</code>");
   });
 
+  it("keeps a tight task list's markup as it was (#6j2y4s8m)", () => {
+    const box = (checked: boolean) => `<label contenteditable="false"><input type="checkbox" disabled${checked ? " checked" : ""}><span></span></label>`;
+    expect(renderEmbeddedMarkdown("- [ ] a\n- [x] b\n")).toBe(
+      `<ul data-type="taskList">\n<li data-checked="false" data-type="taskItem">${box(false)}<div>a</div></li>\n` +
+        `<li data-checked="true" data-type="taskItem">${box(true)}<div>b</div></li>\n</ul>\n`,
+    );
+  });
+
+  it("puts a loose task's paragraphs inside its content div, never a div inside a <p> (#6j2y4s8m)", () => {
+    const html = renderEmbeddedMarkdown("- [ ] a\n\n  more\n\n- [x] b\n  - [ ] c\n");
+    expect(html).not.toMatch(/<p>(?:(?!<\/p>).)*<div/s);
+    expect(html).toContain('<li data-checked="false" data-type="taskItem">\n<label contenteditable="false"><input type="checkbox" disabled><span></span></label><div><p>a</p>\n<p>more</p>\n</div></li>');
+    expect(html).toContain('<input type="checkbox" disabled checked><span></span></label><div><p>b</p>');
+    // The nested task inside a loose item is tight again: no <p>, as before.
+    expect(html).toContain('<input type="checkbox" disabled><span></span></label><div>c</div></li>');
+  });
+
+  it("an empty task (`- [ ] `) is a task, not the text [ ] (#6j2y4s8m)", () => {
+    const html = renderEmbeddedMarkdown("- [ ] \n- [x] done\n");
+    expect(html).not.toContain("[ ]");
+    expect(html.match(/data-type="taskItem"/g)).toHaveLength(2);
+  });
+
   it("nested previews become placeholders; boards become link cards", () => {
     const html = renderEmbeddedMarkdown("![[Other#Sec]]\n\n![[Map.canvas|480]]");
     expect(html).toContain('<div class="page-embed-nested" data-target="Other" data-part="Sec"></div>');

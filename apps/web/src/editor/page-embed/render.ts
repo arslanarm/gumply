@@ -93,7 +93,8 @@ function taskListRule(state: Any): void {
     if (item.type !== "list_item_open") continue;
     const inline = tokens[index + 2];
     if (tokens[index + 1]?.type !== "paragraph_open" || inline?.type !== "inline") continue;
-    const match = /^\[([ xX])\]\s+/.exec(inline.content);
+    // `- [ ] ` with nothing after it is an (empty) task too, as in Obsidian.
+    const match = /^\[([ xX])\](?:\s+|$)/.exec(inline.content);
     if (!match) continue;
     const checked = match[1] !== " ";
     item.attrSet("data-checked", String(checked));
@@ -107,10 +108,21 @@ function taskListRule(state: Any): void {
       }
     }
     const first = inline.children?.[0];
-    if (first?.type === "text") first.content = first.content.replace(/^\[[ xX]\]\s+/, "");
-    const box = new state.Token("html_inline", "", 0);
-    box.content = `<label contenteditable="false"><input type="checkbox" disabled${checked ? " checked" : ""}><span></span></label><div>`;
-    inline.children = [box, ...(inline.children ?? [])];
+    if (first?.type === "text") first.content = first.content.replace(/^\[[ xX]\](?:\s+|$)/, "");
+    const markup = `<label contenteditable="false"><input type="checkbox" disabled${checked ? " checked" : ""}><span></span></label><div>`;
+    if (tokens[index + 1].hidden) {
+      // Tight list: no <p>, so the box goes in front of the text.
+      const box = new state.Token("html_inline", "", 0);
+      box.content = markup;
+      inline.children = [box, ...(inline.children ?? [])];
+    } else {
+      // Loose list: the item's paragraphs render as <p>, and a <div> opened
+      // inside a <p> would split it (checkbox and text on separate lines).
+      // Open the content div before the first paragraph instead.
+      const box = new state.Token("html_block", "", 0);
+      box.content = markup;
+      tokens.splice(index + 1, 0, box);
+    }
     // The content div holds the whole item, nested lists too (as in the editor).
     for (let close = index + 1; close < tokens.length; close += 1) {
       const token = tokens[close];
