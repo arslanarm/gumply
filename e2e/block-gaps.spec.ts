@@ -194,6 +194,8 @@ const ESCAPES: Record<string, string> = {
   'lazy.md (lazy quote, callout and list lines)': "> quote line\nlazy continuation\nsecond lazy\n\n> [!note] Callout\n> body\nlazy in callout\n\n- item\nlazy in list\n\nTarget paragraph.\n",
   'nest.md (nested quotes written >>)': "> outer\n>> nested quote\n>> more\n> back\n\n>> starts nested\n\nTarget paragraph.\n",
   'indent.md (indented paragraphs)': "  Indented two at page start.\n\nPlain.\n\n   Indented three mid-file.\n\n## Heading\n  Indented right under a heading.\n\n## Heading two\n\n  Indented under a heading after a blank.\n\nSoft\n  indented continuation line.\n\n- item\n\n  Indented after a list (list continuation).\n\nTarget paragraph.\n",
+  // #6wnxxk4y: a backslash ending a paragraph or list item stays single.
+  'bs.md (trailing backslashes)': "Ends with a backslash\\\n\nHard break here\\\nnext line.\n\nMid \\ space and a\\b and C:\\dir\\\n\n- item ends\\\n\nTarget paragraph.\n",
   'm1.md (math shapes)': "Inline $x^2 + y_1$ and $$E = mc^2$$ in text, a price $5 and $6.\n\n$$\n\\int_0^1 f(x)\\,dx\n$$\nTouching text after math.\n\n$$ a \\neq b $$\n\n> $$\n> \\sum_{i=1}^n i\n> $$\n\n- item with $\\alpha$\n  $$\n  \\beta\n  $$\n\nEscaped \\$ dollar and `$code$`.\n\nTarget paragraph.\n",
 };
 
@@ -207,6 +209,18 @@ test.describe('escapes, math source, tabs and lazy lines are kept (#628e927t, #f
       expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
     });
   }
+
+  test('a typed line ending in a backslash saves as typed and reads back the same (#6wnxxk4y)', async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Target paragraph.\n');
+    await page.getByTestId('editor-content').getByText('Target paragraph.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' C:\\dir\\');
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('Target paragraph. C:\\dir\\\n');
+    await page.reload();
+    await expect(page.getByTestId('editor-content')).toContainText('Target paragraph. C:\\dir\\');
+  });
 
   test("a newly typed * or _ that could pair is still escaped; one that can't, isn't", async ({ page, request, vault }) => {
     void vault;

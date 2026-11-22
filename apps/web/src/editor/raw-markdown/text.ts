@@ -66,6 +66,11 @@ export interface EscapeContext {
   paragraph: string;
   /** Where `text` starts in it. */
   offset: number;
+  /**
+   * Nothing follows `text` in its block: no further node, no mark to close.
+   * A backslash at its very end then escapes nothing (#6wnxxk4y).
+   */
+  endsBlock?: boolean;
 }
 
 const UNICODE_SPACE = /\s/u;
@@ -152,9 +157,11 @@ export function escapeMarkdownText(text: string, startOfLine: boolean, context?:
     let escape = false;
     switch (char) {
       case "\\":
-        // A backslash is literal unless it precedes punctuation (or ends the
-        // text, where it could escape what follows, e.g. a mark delimiter).
-        escape = next === undefined || ASCII_PUNCT.test(next);
+        // A backslash is literal unless it precedes punctuation, or ends the
+        // text where something follows that it could escape (a mark
+        // delimiter, the next node, a line break). At the very end of a block
+        // it escapes nothing and stays single (#6wnxxk4y: Notion's `ratione.\`).
+        escape = next === undefined ? !context?.endsBlock : ASCII_PUNCT.test(next);
         break;
       case "`":
         escape = true;
@@ -233,16 +240,22 @@ export const MarkdownText = Text.extend({
           // `*` / `_` are escaped only where they could pair within the
           // paragraph (#628e927t): the paragraph's text, and where this node starts.
           let context: EscapeContext | undefined;
+          // The last text of its block, with no mark to close after it. Not in
+          // a table cell: ` |` follows on the same line, and `\|` would eat it.
+          const last =
+            !state.inTable && parent !== undefined && typeof index === "number" && index === parent.childCount - 1 && node.marks.length === 0;
           if (parent && typeof index === "number") {
             let offset = 0;
             for (let i = 0; i < index; i += 1) offset += parent.child(i).textContent.length;
             context = { paragraph: parent.textContent, offset };
           }
           let lineOffset = 0;
-          const escaped = value
-            .split("\n")
+          const lines = value.split("\n");
+          const escaped = lines
             .map((line, lineIndex) => {
-              const lineContext = context ? { paragraph: context.paragraph, offset: context.offset + lineOffset } : undefined;
+              const lineContext = context
+                ? { paragraph: context.paragraph, offset: context.offset + lineOffset, endsBlock: last && lineIndex === lines.length - 1 }
+                : undefined;
               lineOffset += line.length + 1;
               if (lineIndex === 0 && afterSoft) return escapeParagraphInterrupt(escapeMarkdownText(line, false, lineContext));
               return escapeMarkdownText(line, lineIndex === 0 ? Boolean(state.atBlockStart) : true, lineContext);

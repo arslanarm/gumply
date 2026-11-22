@@ -17,4 +17,4 @@ Imported into `Notion import`.
 
 ## Not in a Notion export
 
-Database views (Gumply added default views), option colours, text colours, toggles, comments, synced blocks, permissions, people, and embeds of other apps.
+Database views (the rows and their CSV files are imported; views come in a later version), option colours, text colours, toggles, comments, synced blocks, permissions, people, and embeds of other apps.
