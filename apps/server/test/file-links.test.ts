@@ -110,4 +110,14 @@ describe("Obsidian file links resolve across the vault (#8k4ssrkb)", () => {
     expect(files["Work/A"]).toEqual({ "cover.png": "Work/cover.png" });
     expect(files["Home/B"]).toEqual({ "cover.png": "Home/cover.png" });
   });
+  it("an uploaded or imported file resolves by its bare name at once, before any rescan (#zawz963a)", async () => {
+    const { app } = await vault({ "Work/Plan.md": "x\n" });
+    const ask = () => getJson<{ path: string | null }>(app, `/api/files/resolve?link=fresh.png&from=${encodeId("Work/Plan")}`);
+    expect(await ask()).toEqual({ path: null });
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "fresh.png", { type: "image/png" }));
+    const upload = await app.request("/api/attachments", { method: "POST", body: form });
+    expect(upload.status).toBe(201);
+    expect(await ask()).toEqual({ path: "attachments/fresh.png" });
+  });
 });

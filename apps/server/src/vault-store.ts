@@ -1151,6 +1151,14 @@ export class VaultStore {
     return this.linkIndex.resolve(link, fromPath);
   }
 
+  /**
+   * A file the app just saved (upload, image import): linkable at once, not
+   * only after the watcher's next rescan (#zawz963a).
+   */
+  fileSaved(vaultPath: string): void {
+    this.linkIndex.add(vaultPath);
+  }
+
   /** The vault path of a page's file, for resolving links from it (null: unknown). */
   filePathOf(id: PageId): string | null {
     const record = this.pages.get(id);

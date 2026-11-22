@@ -49,6 +49,19 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
     expect(resolveLinkedFile("cover.png", null, files)).toBe("Home/cover.png");
   });
 
+  it("a file added after the scan resolves at once, ranked like the others (#zawz963a)", () => {
+    const grown = new LinkFileIndex(["a/x.png"]);
+    expect(grown.resolve("new.png", null)).toBeNull();
+    grown.add("attachments/new.png");
+    grown.add("attachments/new.png");
+    grown.add(".trash/old.png");
+    expect(grown.size).toBe(2);
+    expect(grown.resolve("new.png", null)).toBe("attachments/new.png");
+    grown.add("x.png");
+    expect(grown.resolve("x.png", "a/na.md")).toBe("x.png");
+    expect(grown.resolve("x.png", "c/nc.md")).toBe("x.png");
+  });
+
   it("only attachment files outside dot folders take part", () => {
     expect(isLinkableFile("att/a.png")).toBe(true);
     expect(isLinkableFile("notes/a.md")).toBe(false);

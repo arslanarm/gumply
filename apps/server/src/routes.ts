@@ -374,6 +374,7 @@ export function createApiRoutes(store: VaultStore): Hono {
       data,
       mime: typeof body["mime"] === "string" ? body["mime"] : undefined,
     });
+    store.fileSaved(attachment.path);
     return c.json<Attachment>(attachment, 201);
   });
 
@@ -383,6 +384,7 @@ export function createApiRoutes(store: VaultStore): Hono {
     const url = body.url;
     if (typeof url !== "string" || url.trim().length === 0) throw badRequest("url is required");
     const attachment = await importRemoteImage(store.root, url.trim(), { allow: importAllow });
+    store.fileSaved(attachment.path);
     return c.json<Attachment>(attachment, 201);
   });
 
