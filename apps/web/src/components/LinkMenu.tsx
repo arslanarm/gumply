@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon.js";
-import type { LinkSuggestion } from "../lib/wikilinks.js";
+import { isImageFile, type LinkSuggestion } from "../lib/wikilinks.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
 
@@ -50,7 +50,9 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
                 ? `link-suggestion-${item.pageId}`
                 : item.kind === "attachment"
                   ? `link-suggestion-attachment-${item.attachment?.name}`
-                  : "link-suggestion-create"
+                  : item.kind === "file"
+                    ? `link-suggestion-file-${item.file?.path}`
+                    : "link-suggestion-create"
             }
             onMouseDown={(event) => {
               event.preventDefault();
@@ -68,6 +70,8 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
                   name={item.attachment?.mime.startsWith("image/") ? "image" : "file"}
                   size={16}
                 />
+              ) : item.kind === "file" && item.file ? (
+                <Icon name={isImageFile(item.file) ? "image" : "file"} size={16} />
               ) : item.part ? (
                 <Icon name={item.part.startsWith("^") ? "grip" : "heading"} size={16} />
               ) : item.icon ? (
