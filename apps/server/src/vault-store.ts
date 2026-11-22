@@ -380,6 +380,13 @@ type DirectoryScan = Map<PageId, number>;
 /** Folders have no timestamps of their own (no file, no extra stat per folder). */
 const FOLDER_TIME = new Date(0).toISOString();
 
+/** spec/sync-conflicts §8 (D43): the watcher's rescan waits for a quiet gap, but never longer than this. */
+const RESCAN_QUIET_MS = 120;
+const RESCAN_MAX_WAIT_MS = 2000;
+/** More watcher events than this within the window is a sync burst ("Syncing changes…"). */
+const SYNC_BURST_EVENTS = 50;
+const SYNC_WINDOW_MS = 2000;
+
 /** A validated `.trash/<trashId>/` entry. */
 interface TrashEntry {
   trashId: string;
@@ -641,6 +648,16 @@ export class VaultStore {
   private readonly directoryWatchers = new Map<string, FSWatcher>();
   private watching = false;
   private watchTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * spec/sync-conflicts §8 (D43): when the first event of the pending rescan
+   * came, so a long burst still refreshes at least every `RESCAN_MAX_WAIT_MS`.
+   */
+  private watchFirstEventAt: number | null = null;
+  /** Recent watcher event times, for the "Syncing changes…" state (§8). */
+  private watchEventTimes: number[] = [];
+  private syncingUntil = 0;
+  /** Queued tasks that aren't rescans: a pending rescan waits for them (save priority, §8). */
+  private pendingWrites = 0;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
   private newVaultPage: PageId | null = null;
 
@@ -763,6 +780,20 @@ export class VaultStore {
     // #8k4ssrkb: an attachment added, renamed or removed changes what links resolve to.
     if (ITEM_FILE.test(name) || hasAttachmentExtension(name) || !name.includes(".")) this.scheduleRescan();
     else if (this.directoryWatchers.has(join(dir, name))) this.scheduleRescan();
+    else return;
+    this.noteWatchEvent();
+  }
+
+  /** §8: over `SYNC_BURST_EVENTS` events within `SYNC_WINDOW_MS`, the vault is "syncing" until it settles. */
+  private noteWatchEvent(now = Date.now()): void {
+    this.watchEventTimes.push(now);
+    while (this.watchEventTimes.length > 0 && now - this.watchEventTimes[0]! > SYNC_WINDOW_MS) this.watchEventTimes.shift();
+    if (this.watchEventTimes.length > SYNC_BURST_EVENTS) this.syncingUntil = now + SYNC_WINDOW_MS;
+  }
+
+  /** v1.29 (§8): another app (a sync tool) is changing many files right now. */
+  get syncing(): boolean {
+    return Date.now() < this.syncingUntil;
   }
 
   /** Re-read the vault and return whether the page index actually changed. */
@@ -771,16 +802,40 @@ export class VaultStore {
   }
 
   private scheduleRescan(): void {
+    const now = Date.now();
     if (this.watchTimer !== null) clearTimeout(this.watchTimer);
+    else this.watchFirstEventAt = now;
+    // A 120 ms quiet gap, but never more than RESCAN_MAX_WAIT_MS after the burst's first event (§8).
+    const deadline = (this.watchFirstEventAt ?? now) + RESCAN_MAX_WAIT_MS;
     this.watchTimer = setTimeout(() => {
       this.watchTimer = null;
-      void this.enqueue(async () => {
+      this.watchFirstEventAt = null;
+      void this.runScheduledRescan();
+    }, Math.max(0, Math.min(RESCAN_QUIET_MS, deadline - now)));
+  }
+
+  /**
+   * §8 save priority: a rescan the watcher asked for joins the queue only once
+   * no save (or other write) is waiting in it, so a pending rescan never
+   * delays a save. It waits at most RESCAN_MAX_WAIT_MS, so steady typing
+   * can't starve it.
+   */
+  private async runScheduledRescan(): Promise<boolean> {
+    const giveUpAt = Date.now() + RESCAN_MAX_WAIT_MS;
+    while (this.pendingWrites > 0 && Date.now() < giveUpAt) {
+      await this.writeQueue;
+      // Let a save that was just handed in reach the queue first.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return this.enqueue(
+      async () => {
         const changed = await this.refreshFromDisk();
         // Folders may have appeared or gone: keep one watcher per directory.
         this.syncDirectoryWatchers();
         return changed;
-      });
-    }, 120);
+      },
+      { rescan: true },
+    );
   }
 
   /**
@@ -5043,12 +5098,13 @@ export class VaultStore {
     return record;
   }
 
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+  private enqueue<T>(task: () => Promise<T>, options: { rescan?: boolean } = {}): Promise<T> {
+    if (!options.rescan) this.pendingWrites += 1;
+    const done = () => {
+      if (!options.rescan) this.pendingWrites -= 1;
+    };
     const result = this.writeQueue.then(task, task);
-    this.writeQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
+    this.writeQueue = result.then(done, done);
     return result;
   }
 }

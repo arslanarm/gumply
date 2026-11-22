@@ -54,6 +54,8 @@ export interface SidebarProps {
   trashActive?: boolean;
   trashCount?: number;
   onTrash?: () => void;
+  /** D43 §8: a sync tool is changing many files right now. */
+  syncing?: boolean;
   /** D43: the Conflicts row, shown only while sync conflict copies exist. */
   conflictsActive?: boolean;
   conflictsCount?: number;
@@ -441,6 +443,9 @@ export function Sidebar(props: SidebarProps) {
           ) : null}
         </button>
       ) : null}
+      <div className="sidebar-syncing" role="status" data-testid="sidebar-syncing">
+        {props.syncing ? t("conflicts.syncing") : null}
+      </div>
       {props.footer ?? null}
     </aside>
   );

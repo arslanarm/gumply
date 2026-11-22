@@ -129,3 +129,20 @@ test('Settings → Version history shows the four .stignore lines; Gumply writes
   await expect(page.getByTestId('history-sync-line')).toHaveText('.gumply/history\n.gumply/mcp-log.jsonl\n.gumply/conflicts\n.gumply/import');
   expect(await exists('.stignore')).toBe(false);
 });
+
+test('a sync burst shows "Syncing changes…" in the sidebar, gone once the vault is quiet', async ({ page, vault }) => {
+  await vault.seed([{ title: 'Note', content: 'Mine.' }]);
+  await page.goto('/');
+  await expect(page.getByTestId('page-item-Note')).toBeVisible();
+  // Keep events coming for a few seconds, as a sync tool delivering a folder does.
+  const writes = (async () => {
+    for (let round = 0; round < 5; round++) {
+      await Promise.all(Array.from({ length: 40 }, (_, i) => writeFile(path.join(E2E_VAULT, `Synced ${round}-${i}.md`), `Note ${i}.\n`, 'utf8')));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  })();
+  await expect(page.getByTestId('sidebar-syncing')).toHaveText('Syncing changes…', { timeout: 8000 });
+  await writes;
+  await expect(page.getByTestId('sidebar-syncing')).toBeEmpty({ timeout: 10_000 });
+  await expect(page.getByTestId('page-item-Synced 4-39')).toBeVisible();
+});

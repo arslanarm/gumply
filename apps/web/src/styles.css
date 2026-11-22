@@ -7692,3 +7692,13 @@ input {
   font-size: 0.75rem;
   font-weight: 500;
 }
+
+.sidebar-syncing:empty {
+  display: none;
+}
+
+.sidebar-syncing {
+  padding: 0.3rem 0.85rem 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}

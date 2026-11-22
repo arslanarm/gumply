@@ -15,7 +15,7 @@ import {
   type DailyNoteSettings,
 } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiRequestError, consumeNewVaultPage, fileUrl, type BaseDocument } from "./api/client.js";
+import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -218,6 +218,8 @@ export function App() {
   const [conflictsOpen, setConflictsOpen] = useState(() => isConflictsHash(window.location.hash));
   const [compareTarget, setCompareTarget] = useState<CompareTarget | null>(null);
   const [conflictsStamp, setConflictsStamp] = useState(0);
+  /** §8: a sync tool is changing many files ("Syncing changes…" in the sidebar). */
+  const [vaultSyncing, setVaultSyncing] = useState(false);
   const pdfTargetRef = useRef<PageMeta | null>(null);
   /** G1: the page "Export as HTML…" was picked for. */
   const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
@@ -693,6 +695,7 @@ export function App() {
     } catch {
       return;
     }
+    setVaultSyncing(isVaultSyncing());
     if (epoch !== renameEpoch.current || renamesInFlight.current.size > 0) return;
     // A save landed while this list was on its way: it is older than what we
     // hold (#m6ppcam2). The next poll brings the current one.
@@ -2046,6 +2049,7 @@ export function App() {
           trashActive={trashRoute !== null}
           trashCount={trashItems ? trashedCount(trashItems) : 0}
           onTrash={closingSidebar(() => navigateTrash())}
+          syncing={vaultSyncing}
           conflictsActive={conflictsOpen}
           conflictsCount={conflictCount}
           onConflicts={closingSidebar(navigateConflicts)}

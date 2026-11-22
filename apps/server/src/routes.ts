@@ -168,6 +168,8 @@ export function createApiRoutes(store: VaultStore): Hono {
     // #jxww67d9 (spec/api v1.24): the linkable-files version; when it moves, the client asks
     // again about file links that had no file.
     c.header("X-Gumply-Files", String(store.fileIndexVersion));
+    // v1.29 (spec/sync-conflicts §8): a sync tool is changing many files right now.
+    if (store.syncing) c.header("X-Gumply-Syncing", "1");
     // v1.12: opt-in properties per page (database views); the default stays light.
     if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());

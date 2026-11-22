@@ -63,6 +63,13 @@ export function consumeNewVaultPage(): PageId | null {
   return page;
 }
 
+let vaultSyncing = false;
+
+/** Whether the last page list said a sync tool is changing many files (spec/sync-conflicts §8). */
+export function isVaultSyncing(): boolean {
+  return vaultSyncing;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -86,6 +93,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const files = response.headers.get("x-gumply-files");
   if (files !== null) noteFileIndexVersion(files);
+  // v1.29 (D43): the page list says whether a sync tool is changing many files.
+  if (path === "/pages" || path.startsWith("/pages?")) vaultSyncing = response.headers.get("x-gumply-syncing") === "1";
 
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
