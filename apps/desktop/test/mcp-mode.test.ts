@@ -131,6 +131,27 @@ describe("exitAfterCleanup", () => {
     expect(exits).toEqual([0]);
   });
 
+  it("#wfn2pdcx: arms a hard exit before the graceful one, which fires after the grace period with the same code", () => {
+    const events: string[] = [];
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    exitAfterCleanup(
+      () => events.push("cleanup"),
+      (code) => events.push(`graceful ${code}`), // on Windows this only schedules a quit that never completes
+      0,
+      { graceMs: 2000, exit: (code) => events.push(`hard ${code}`), setTimer: (fn, ms) => timers.push({ fn, ms }) },
+    );
+    expect(events).toEqual(["cleanup", "graceful 0"]);
+    expect(timers.map((timer) => timer.ms)).toEqual([2000]);
+    timers[0]!.fn();
+    expect(events).toEqual(["cleanup", "graceful 0", "hard 0"]);
+  });
+
+  it("without a hard exit (Linux, macOS) only the graceful exit runs", () => {
+    const events: string[] = [];
+    exitAfterCleanup(() => events.push("cleanup"), (code) => events.push(`graceful ${code}`), 1);
+    expect(events).toEqual(["cleanup", "graceful 1"]);
+  });
+
   it("runs the cleanup before exiting", () => {
     const order: string[] = [];
     exitAfterCleanup(() => order.push("cleanup"), (code) => order.push(`exit ${code}`), 2);

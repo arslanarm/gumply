@@ -129,12 +129,24 @@ export function mcpLaunchCommand(context: LaunchContext): {
  * never stop the exit, or the process lingers after the AI app closed stdin.
  * The next MCP start sweeps leftovers older than a day.
  */
-export function exitAfterCleanup(cleanup: () => void, exit: (code: number) => void, code: number): void {
+export function exitAfterCleanup(
+  cleanup: () => void,
+  exit: (code: number) => void,
+  code: number,
+  /**
+   * #wfn2pdcx: a guaranteed end. On Windows, in MCP mode, Electron's
+   * `app.exit`/`process.exit` only schedule a quit that never completes
+   * (CI: the process lingered after "exit 0" with no error). So a hard exit is
+   * armed first and fires after `graceMs` if we're still alive.
+   */
+  hard?: { exit: (code: number) => void; graceMs: number; setTimer?: (fn: () => void, ms: number) => unknown },
+): void {
   try {
     cleanup();
   } catch {
     // Left for the next start's sweep.
   }
+  if (hard) (hard.setTimer ?? setTimeout)(() => hard.exit(code), hard.graceMs);
   exit(code);
 }
 

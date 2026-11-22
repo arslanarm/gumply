@@ -685,6 +685,17 @@ function runMcpMode(args: McpModeArgs): void {
         process.exit(status);
       },
       code,
+      // #wfn2pdcx: on Windows the graceful quit above never completes in MCP mode;
+      // Node's own exit (keeps the code), then terminating the process, end it for sure.
+      process.platform === "win32"
+        ? {
+            graceMs: 2000,
+            exit: (status) => {
+              (process as unknown as { reallyExit?: (code: number) => void }).reallyExit?.(status);
+              process.kill(process.pid);
+            },
+          }
+        : undefined,
     );
     return undefined as never;
   };
