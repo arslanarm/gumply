@@ -1,4 +1,4 @@
-import type { GraphData, GraphNode, PageId, PageMeta } from "@gumply/core";
+import { graphItemPath, matchesGraphQuery, parseGraphQuery, type GraphData, type GraphGroup, type GraphNode, type PageId, type PageMeta } from "@gumply/core";
 import { t } from "../i18n/index.js";
 
 /**
@@ -136,56 +136,147 @@ export function buildGraphModel(data: GraphData): GraphModel {
 }
 
 export interface GraphFilter {
-  /** Case-insensitive title filter. */
+  /** The search box: a graph query (E1: `tag:#x`, `path:`, `file:`, words, `-not`, `OR`). */
   query?: string;
   /** Selected tags; a page matches any of them. */
   tags?: string[];
+  /** E1 "Existing files only": no ghost nodes. */
+  hideUnresolved?: boolean;
+  /** E1: keep nodes with no links in view (default true). */
+  showOrphans?: boolean;
+  /** E1: tag nodes, each linked to the visible pages that carry the tag. */
+  showTags?: boolean;
+  /** E1: attachment nodes from `GET /graph?include=attachments` (absent: none). */
+  attachments?: GraphData["attachments"];
 }
 
 export interface FilteredGraph {
   nodes: GraphNode[];
   ghosts: GhostNode[];
+  /** E1: tag and attachment nodes (not pages: not in the page counts). */
+  extras: GraphNode[];
   links: GraphLink[];
   /** Tags still present after filtering (for the chips). */
   tags: string[];
 }
 
+const TAG_PREFIX = "\u0001tag:";
+const ATTACHMENT_PREFIX = "\u0001file:";
+
+export const tagNodeId = (tag: string): string => `${TAG_PREFIX}${tag.toLowerCase()}`;
+export const attachmentNodeId = (path: string): string => `${ATTACHMENT_PREFIX}${path}`;
+export const isTagNodeId = (id: string): boolean => id.startsWith(TAG_PREFIX);
+export const isAttachmentNodeId = (id: string): boolean => id.startsWith(ATTACHMENT_PREFIX);
+/** The vault path of an attachment node. */
+export const attachmentPath = (id: string): string => id.slice(ATTACHMENT_PREFIX.length);
+
+function extraNode(id: string, title: string, tags: string[], linkCount: number): GraphNode {
+  return { id, kind: "page", title, tags, parentId: null, childCount: 0, created: "", updated: "", linkCount };
+}
+
 /**
- * Apply the title box and tag chips. Ghosts survive only while at least one of
- * their source pages is visible (spec/ux §9).
+ * Apply the search query, tag chips and E1 filters. Ghosts survive a tag
+ * filter only while one of their source pages is visible (spec/ux §9); tag
+ * and attachment nodes only next to a visible page.
  */
 export function filterGraph(model: GraphModel, filter: GraphFilter = {}): FilteredGraph {
-  const needle = (filter.query ?? "").trim().toLowerCase();
+  const query = parseGraphQuery(filter.query ?? "");
   const selected = new Set((filter.tags ?? []).map((tag) => tag.toLowerCase()));
-
-  const matchesText = (title: string): boolean =>
-    needle.length === 0 || title.toLowerCase().includes(needle);
 
   const nodes = model.nodes.filter(
     (node) =>
-      matchesText(node.title) &&
+      matchesGraphQuery(query, { title: node.title, path: graphItemPath(node.id, node.kind), tags: node.tags }) &&
       (selected.size === 0 || node.tags.some((tag) => selected.has(tag.toLowerCase()))),
   );
   const visiblePages = new Set(nodes.map((node) => node.id));
 
-  const ghosts = model.ghosts.filter((ghost) => {
-    if (!matchesText(ghost.title)) return false;
-    // A text query matches ghost titles independently of their sources (spec/ux
-    // §9: only a tag filter hides a ghost when all sources are filtered out).
-    if (selected.size === 0) return true;
-    return ghost.sources.some((source) => visiblePages.has(source));
-  });
+  const ghosts = filter.hideUnresolved
+    ? []
+    : model.ghosts.filter((ghost) => {
+        if (!matchesGraphQuery(query, { title: ghost.title, path: ghost.title, tags: [] })) return false;
+        // A text query matches ghost titles independently of their sources (spec/ux
+        // §9: only a tag filter hides a ghost when all sources are filtered out).
+        if (selected.size === 0) return true;
+        return ghost.sources.some((source) => visiblePages.has(source));
+      });
   const visibleIds = new Set<string>([...visiblePages, ...ghosts.map((ghost) => ghost.id)]);
+  const links = model.links.filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target));
+
+  const extras: GraphNode[] = [];
+  if (filter.showTags) {
+    const byTag = new Map<string, { title: string; pages: string[] }>();
+    for (const node of nodes) {
+      for (const tag of new Set(node.tags)) {
+        const id = tagNodeId(tag);
+        const entry = byTag.get(id) ?? { title: tag, pages: [] };
+        entry.pages.push(node.id);
+        byTag.set(id, entry);
+      }
+    }
+    for (const [id, entry] of [...byTag].sort((a, b) => a[0].localeCompare(b[0]))) {
+      extras.push(extraNode(id, `#${entry.title}`, [entry.title], entry.pages.length));
+      for (const page of entry.pages) links.push({ source: page, target: id });
+    }
+  }
+  if (filter.attachments) {
+    const byPath = new Map<string, string[]>();
+    for (const edge of filter.attachments) {
+      if (!visiblePages.has(edge.source)) continue;
+      const list = byPath.get(edge.path) ?? [];
+      list.push(edge.source);
+      byPath.set(edge.path, list);
+    }
+    for (const [path, sources] of [...byPath].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const id = attachmentNodeId(path);
+      extras.push(extraNode(id, path.slice(path.lastIndexOf("/") + 1), [], sources.length));
+      for (const source of sources) links.push({ source, target: id });
+    }
+  }
+
+  let shownNodes = nodes;
+  let shownGhosts = ghosts;
+  let shownExtras = extras;
+  if (filter.showOrphans === false) {
+    const linked = new Set<string>();
+    for (const link of links) {
+      if (link.source === link.target) continue;
+      linked.add(link.source);
+      linked.add(link.target);
+    }
+    shownNodes = nodes.filter((node) => linked.has(node.id));
+    shownGhosts = ghosts.filter((ghost) => linked.has(ghost.id));
+    shownExtras = extras.filter((node) => linked.has(node.id));
+  }
 
   return {
-    nodes,
-    ghosts,
-    links: model.links.filter(
-      (link) => visibleIds.has(link.source) && visibleIds.has(link.target),
-    ),
-    tags: [...new Set(nodes.flatMap((node) => node.tags))].sort((a, b) => a.localeCompare(b)),
+    nodes: shownNodes,
+    ghosts: shownGhosts,
+    extras: shownExtras,
+    links,
+    tags: [...new Set(shownNodes.flatMap((node) => node.tags))].sort((a, b) => a.localeCompare(b)),
   };
 }
+
+/**
+ * E1 colour groups: the first group whose query matches a page (or an
+ * attachment) gives its colour; null keeps the default colouring. Queries
+ * are parsed once per group list, not per frame.
+ */
+export function groupColorer(groups: readonly GraphGroup[]): (node: GraphNode) => string | null {
+  const parsed = groups.map((group) => ({ query: parseGraphQuery(group.query), color: group.color })).filter((group) => group.query.length > 0);
+  if (parsed.length === 0) return () => null;
+  return (node) => {
+    if (isTagNodeId(node.id)) return null;
+    const attachment = isAttachmentNodeId(node.id);
+    const item = attachment
+      ? { title: node.title, path: attachmentPath(node.id), tags: [] }
+      : { title: node.title, path: graphItemPath(node.id, node.kind), tags: node.tags };
+    return parsed.find((group) => matchesGraphQuery(group.query, item))?.color ?? null;
+  };
+}
+
+/** Which palette colour attachment nodes use when no group colours them. */
+export const ATTACHMENT_PALETTE_INDEX = 5;
 
 /**
  * Node radius in CSS px (constant on screen at every zoom, Q1b): 4 for

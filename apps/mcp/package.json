@@ -1,0 +1,20 @@
+{
+  "name": "@gumply/mcp",
+  "version": "0.7.1",
+  "private": true,
+  "description": "Gumply MCP server: lets AI apps read (and, if allowed, add to) a vault over stdio",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "gumply": "dist/gumply.mjs" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0"
+  }
+}

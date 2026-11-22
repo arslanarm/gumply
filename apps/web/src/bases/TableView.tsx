@@ -9,7 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
-import { PROPERTY_TYPES, type Property, type PropertyType } from "@gumply/core";
+import { PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
 import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { propertyId } from "@gumply/core";
@@ -69,7 +69,7 @@ export function display(value: BaseValue, type: string): string {
     if (shown !== null) return shown;
   }
   // `[[Page|alias]]` in a text property reads as its label.
-  if (typeof value === "string") return value.replace(/\[\[([^\]|]*)(?:\|([^\]]*))?\]\]/g, (_, target: string, alias?: string) => alias ?? target);
+  if (typeof value === "string") return value.replace(new RegExp(String.raw`\[\[(${WIKILINK_PART}*)(?:\|(${WIKILINK_INNER}*))?\]\]`, "g"), (_, target: string, alias?: string) => alias ?? target);
   return String(value);
 }
 

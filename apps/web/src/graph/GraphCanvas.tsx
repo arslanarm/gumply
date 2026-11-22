@@ -50,6 +50,12 @@ export interface GraphCanvasProps {
   reducedMotion?: boolean;
   onOpenPage: (id: string) => void;
   onCreatePage?: (title: string) => void;
+  /**
+   * E1: a node's fill instead of the default (first tag, else the page
+   * colour), given the theme's palette; null keeps the default. Keep it
+   * stable (memoised): a new function re-styles every node.
+   */
+  colorOf?: (node: GraphNode, palette: readonly string[]) => string | null;
 }
 
 interface ThemeColors {
@@ -300,6 +306,7 @@ export function GraphCanvas({
   reducedMotion = false,
   onOpenPage,
   onCreatePage,
+  colorOf,
 }: GraphCanvasProps) {
   useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -373,7 +380,7 @@ export function GraphCanvas({
         ghost,
         board: !ghost && (node as GraphNode).kind === "whiteboard",
         emoji,
-        fill: ghost ? "" : nodeColor(node as GraphNode, colors.palette, colors.page),
+        fill: ghost ? "" : (colorOf?.(node as GraphNode, colors.palette) ?? nodeColor(node as GraphNode, colors.palette, colors.page)),
         label,
         labelWidth: measureLabel(label),
         // The hovered node's label already shows the title; only repeat it
@@ -382,7 +389,7 @@ export function GraphCanvas({
       });
     }
     return styles;
-  }, [nodes, maxCount, colors.palette, colors.page]);
+  }, [nodes, maxCount, colors.palette, colors.page, colorOf]);
 
   /** Labels drawn when nothing is hovered: what the fit has to keep in view. */
   const restingLabelIds = useMemo(

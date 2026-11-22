@@ -9,13 +9,14 @@
  * pasted into a page in another folder resolves for that folder, and no
  * resolved URL is ever written back into a file.
  */
+import { WIKILINK_INNER } from "@gumply/core";
 import { useSyncExternalStore } from "react";
 import { api, fileUrl, onAttachmentSaved } from "../api/client.js";
 
 /** `![[pic.png|100]]` / `[[att/report.pdf#p=2]]` → `pic.png` / `att/report.pdf`. */
 export function obsidianLinkOf(obsidian: string | null | undefined): string | null {
   if (!obsidian) return null;
-  const match = /^!?\[\[([^\]]*)\]\]$/.exec(obsidian.trim());
+  const match = new RegExp(String.raw`^!?\[\[(${WIKILINK_INNER}*)\]\]$`).exec(obsidian.trim());
   if (!match) return null;
   const link = (match[1] ?? "").split("|")[0]!.split("#")[0]!.trim();
   return link || null;

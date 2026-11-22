@@ -5885,3 +5885,259 @@ input {
   color: var(--warning);
   cursor: help;
 }
+
+/* ---------- v0.8 C1: unlinked mentions under "Linked from" ---------- */
+.mentions {
+  margin-top: 1rem;
+}
+
+.mentions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.mentions-toggle:hover {
+  color: var(--text);
+}
+
+.mentions-body {
+  margin-top: 0.5rem;
+}
+
+.mentions-notice {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.mentions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.mentions-page {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.mentions-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.mentions-page-title {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.87rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mentions-page-title:hover {
+  text-decoration: underline;
+}
+
+.mention {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.2rem 0;
+}
+
+.mention-snippet {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.mention-snippet mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.mentions-link {
+  flex: none;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.mentions-link:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.mentions-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- v0.8 F1: math rendered with KaTeX ---------- */
+/* Typeset math drops the source look; until KaTeX loads, the source shows as before. */
+.raw-block-math:has(.katex),
+.math-block:has(.katex) {
+  background: transparent;
+  font-family: inherit;
+  font-size: 1rem;
+  white-space: normal;
+  text-align: center;
+  padding: 0.4rem 0;
+}
+
+.raw-block-math.is-empty {
+  color: var(--muted);
+  font-family: inherit;
+  font-style: italic;
+  text-align: left;
+}
+
+.raw-inline-math:has(.katex),
+.math-inline:has(.katex) {
+  background: transparent;
+  font-family: inherit;
+  font-size: 1em;
+  padding: 0 0.05em;
+}
+
+.raw-inline:has(.raw-inline-math) {
+  cursor: text;
+  border-radius: 4px;
+}
+
+.raw-inline:has(.raw-inline-math):hover {
+  background: var(--hover);
+}
+
+.math-block {
+  display: block;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+}
+
+.raw-block-math .katex-display,
+.math-block .katex-display {
+  margin: 0;
+}
+
+.math-error {
+  color: var(--danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  text-decoration: underline wavy color-mix(in srgb, var(--danger) 50%, transparent);
+  text-underline-offset: 3px;
+  white-space: pre-wrap;
+}
+
+.raw-inline-math-editor {
+  min-width: 3ch;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  outline: none;
+}
+
+/* ---------- v0.8 F2: Mermaid diagrams ---------- */
+/* A ```mermaid block shows its diagram; the source only while the caret is in it. */
+.code-block.is-diagram:not(.is-editing) pre {
+  display: none;
+}
+
+.code-block-diagram {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0.5rem;
+  overflow-x: auto;
+  border-radius: 0 0 6px 6px;
+  cursor: pointer;
+}
+
+.code-block-diagram:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.code-block-diagram.is-editing {
+  cursor: default;
+  border-top: 1px dashed var(--border);
+}
+
+.code-block-diagram svg,
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-block {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+}
+
+.mermaid-block.diagram pre {
+  margin: 0;
+}
+
+.diagram-error {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: default;
+}
+
+.diagram-error-title {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.diagram-error-message {
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}
+
+.diagram-error pre {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}

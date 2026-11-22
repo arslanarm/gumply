@@ -1,5 +1,6 @@
 /** Pure helpers for the “Linked from” panel (spec/ux §8). */
 import { parseWikiLinkText } from "./wikilinks.js";
+import { WIKILINK_INNER } from "@gumply/core";
 
 export interface SnippetPart {
   text: string;
@@ -23,7 +24,7 @@ function wikiLinkLabel(raw: string): string {
 /** Split a backlink snippet so `[[Page]]` fragments can be highlighted. */
 export function splitSnippet(snippet: string): SnippetPart[] {
   const parts: SnippetPart[] = [];
-  const pattern = /!?\[\[[^[\]\r\n]*\]\]/g;
+  const pattern = new RegExp(String.raw`!?\[\[${WIKILINK_INNER}*\]\]`, "g");
   let last = 0;
 
   for (const match of snippet.matchAll(pattern)) {

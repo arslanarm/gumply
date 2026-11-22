@@ -103,12 +103,17 @@ describe("Obsidian file links resolve across the vault (#8k4ssrkb)", () => {
       "Home/cover.png": PNG,
       "Work/A.md": '---\ncover: "[[cover.png]]"\n---\nA\n',
       "Home/B.md": '---\ncover: "[[cover.png]]"\n---\nB\n',
+      // #wf4hhfj7: the shared syntax: a `[` inside is no link; `#part|alias` is dropped.
+      "Home/C.md": '---\ncover: "[[a[b.png]]"\n---\nC\n',
+      "Home/D.md": '---\ncover: "![[cover.png#x|y]]"\n---\nD\n',
       "All.base": "views:\n  - type: cards\n    name: Cards\n    image: note.cover\n",
     });
     const result = await getJson<BaseViewResult>(app, "/api/bases/All.base/view");
     const files = Object.fromEntries(result.rows.map((row) => [row.id, row.files]));
     expect(files["Work/A"]).toEqual({ "cover.png": "Work/cover.png" });
     expect(files["Home/B"]).toEqual({ "cover.png": "Home/cover.png" });
+    expect(files["Home/C"]).toBeUndefined();
+    expect(files["Home/D"]).toEqual({ "cover.png": "Home/cover.png" });
   });
   it("an uploaded or imported file resolves by its bare name at once, before any rescan (#zawz963a)", async () => {
     const { app } = await vault({ "Work/Plan.md": "x\n" });

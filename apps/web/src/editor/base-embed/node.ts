@@ -6,6 +6,7 @@ import { Node, mergeAttributes, nodeInputRule } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { BaseEmbedView } from "../../components/BaseEmbedView.js";
 import { baseEmbedMarkdown, baseEmbedMarkdownPlugin } from "./markdown-plugin.js";
+import { WIKILINK_PART, WIKILINK_TARGET } from "@gumply/core";
 
 export const BaseEmbed = Node.create({
   name: "baseEmbed",
@@ -53,7 +54,7 @@ export const BaseEmbed = Node.create({
     return [
       nodeInputRule({
         // Only alone in its block: inside a sentence it stays text + link.
-        find: /^!\[\[([^[\]|#]+?\.base)(?:#([^[\]|]*))?\]\]$/i,
+        find: new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?\.base)(?:#(${WIKILINK_PART}*))?\]\]$`, "i"),
         type: this.type,
         getAttributes: (match) => ({ target: (match[1] ?? "").trim(), view: (match[2] ?? "").trim(), raw: "" }),
       }),

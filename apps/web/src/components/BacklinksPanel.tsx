@@ -3,16 +3,21 @@ import { useState } from "react";
 import { splitSnippet, visibleBacklinks } from "../lib/backlinks.js";
 import { isBoard } from "../lib/boards.js";
 import { Icon } from "./Icon.js";
+import { MentionsSection } from "./MentionsSection.js";
 import { useT } from "../i18n/index.js";
 
 export interface BacklinksPanelProps {
   items: readonly Backlink[];
   loading: boolean;
   onOpen: (id: PageId) => void;
+  /** C1: show "Unlinked mentions" for this page (pages only). */
+  pageId?: PageId;
+  /** C1: a mention was linked; reload the backlinks. */
+  onLinked?: () => void;
 }
 
 /** “Linked from” panel shown under the editor. */
-export function BacklinksPanel({ items, loading, onOpen }: BacklinksPanelProps) {
+export function BacklinksPanel({ items, loading, onOpen, pageId, onLinked }: BacklinksPanelProps) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
   const visible = visibleBacklinks(items, expanded);
@@ -77,6 +82,8 @@ export function BacklinksPanel({ items, loading, onOpen }: BacklinksPanelProps) 
           ) : null}
         </>
       )}
+
+      {pageId ? <MentionsSection pageId={pageId} refreshKey={items} onOpen={onOpen} onLinked={() => onLinked?.()} /> : null}
     </section>
   );
 }
