@@ -69,9 +69,12 @@ async function bundledFiles() {
   };
 }
 
+/** Read a text file with LF line endings (the repo stores LF; the output must match a checkout). */
+const readText = (path) => readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
+
 const standardText = (id) => {
   try {
-    return readFileSync(join(TEXTS, `${id}.txt`), "utf8");
+    return readText(join(TEXTS, `${id}.txt`));
   } catch {
     return null;
   }
@@ -101,7 +104,7 @@ async function collect() {
       const key = `${found.name}@${pkg.version}`;
       let entry = byKey.get(key);
       if (!entry) {
-        const texts = licenseFiles(found.dir).map((path) => readFileSync(path, "utf8"));
+        const texts = licenseFiles(found.dir).map((path) => readText(path));
         const license = declaredLicense(pkg) ?? texts.map(licenseFromText).find(Boolean) ?? "UNKNOWN";
         const copyright = copyrightLines(texts);
         const author = authorOf(pkg);
@@ -144,7 +147,7 @@ async function collect() {
       name: "electron",
       version: electron.version,
       license: declaredLicense(electron) ?? "MIT",
-      copyright: copyrightLines(licenseFiles(join(repo, "node_modules/electron")).map((path) => readFileSync(path, "utf8"))),
+      copyright: copyrightLines(licenseFiles(join(repo, "node_modules/electron")).map((path) => readText(path))),
       usedBy: new Set(["desktop"]),
       note: "The desktop installers also carry Electron's own LICENSE.electron.txt and LICENSES.chromium.html (Chromium and its components), shipped by electron-builder next to the app.",
       texts: [],
