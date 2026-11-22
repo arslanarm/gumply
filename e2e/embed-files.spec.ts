@@ -111,3 +111,63 @@ test.describe('![[ offers vault files (#4usgpjh8)', () => {
     await expect.poll(() => read('Note.md')).toBe('Start see ![[mountain.png]]\n');
   });
 });
+
+test.describe('![[ with file names a wikilink can\'t hold (#btgun63k)', () => {
+  for (const [name, testid, bytes] of [
+    ['my file [1].png', 'Files/my file [1].png', 'Start\n\n![my file \\[1\\]](Files/my%20file%20[1].png)\n'],
+    ['pipe|x.png', 'Files/pipe|x.png', 'Start\n\n![pipe|x](Files/pipe|x.png)\n'],
+    ['a#b.png', 'Files/a#b.png', 'Start\n\n![a#b](Files/a%23b.png)\n'],
+  ] as const) {
+    test(`${name}: a Markdown image with a D23 link, which renders`, async ({ page, request, vault }) => {
+      void vault;
+      await write({ 'Note.md': 'Start\n', [`Files/${name}`]: PNG });
+      await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Note');
+      await page.goto('/#/Note');
+      await expect(page.getByTestId('editor-content')).toBeVisible();
+      // `#` in a `![[` query asks for a page's headings, so search by the part after it.
+      await embedQuery(page, (name.includes('#') ? name.split('#')[1]! : name).slice(0, 4));
+      await page.getByTestId(`link-suggestion-file-${testid}`).click();
+      const image = page.getByTestId('editor-content').locator('img').first();
+      await expect(image).toBeVisible();
+      await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(16);
+      await saved(page);
+      // A Markdown image with the D23 note-relative link (the `[[` rows' writer).
+      await expect.poll(() => read('Note.md')).toBe(bytes);
+    });
+  }
+
+  test('a PDF named `notes #2.pdf` becomes a file card with a Markdown link', async ({ page, request, vault }) => {
+    void vault;
+    await write({ 'Note.md': 'Start\n', 'Files/notes #2.pdf': '%PDF-1.4\n' });
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Note');
+    await page.goto('/#/Note');
+    await expect(page.getByTestId('editor-content')).toBeVisible();
+    await embedQuery(page, 'note');
+    await page.getByTestId('link-suggestion-file-Files/notes #2.pdf').click();
+    await expect(page.getByTestId('editor-content').getByText('notes #2.pdf')).toBeVisible();
+    await saved(page);
+    await expect.poll(() => read('Note.md')).toBe('Start\n\n[notes #2.pdf](Files/notes%20%232.pdf)\n');
+
+    // #he3ed9uz: the inserted link survives a reload and an edit elsewhere, and a click opens the file.
+    await page.reload();
+    const link = page.getByTestId('editor-content').locator('a', { hasText: 'notes #2.pdf' });
+    await expect(link).toHaveAttribute('href', 'Files/notes%20%232.pdf');
+    await page.getByTestId('editor-content').getByText('Start', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' X');
+    await saved(page);
+    await expect.poll(() => read('Note.md')).toBe('Start X\n\n[notes #2.pdf](Files/notes%20%232.pdf)\n');
+    await page.evaluate(() => {
+      const opened: string[] = [];
+      (window as unknown as { __opened: string[] }).__opened = opened;
+      window.open = ((url?: string | URL) => {
+        opened.push(String(url));
+        return null;
+      }) as typeof window.open;
+    });
+    await link.click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened))
+      .toEqual(['/api/files/Files/notes%20%232.pdf']);
+  });
+});

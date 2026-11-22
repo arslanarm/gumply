@@ -16,9 +16,9 @@ import Suggestion, {
   type SuggestionKeyDownProps,
   type SuggestionProps,
 } from "@tiptap/suggestion";
-import { buildFileSuggestions, buildLinkSuggestions, type LinkSuggestion } from "../../lib/wikilinks.js";
+import { buildFileSuggestions, buildLinkSuggestions, isImageFile, type LinkSuggestion } from "../../lib/wikilinks.js";
 import { linkableFiles } from "../../lib/linkable-files.js";
-import { insertImageAttachment } from "../attachments/insert.js";
+import { insertFileCard, insertImageAttachment } from "../attachments/insert.js";
 import { getWikiLinkEnvironment } from "./link-store.js";
 import { replaceWithFileEmbed } from "./node.js";
 
@@ -153,10 +153,27 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
           },
           command: ({ editor, range, props }) => {
             if (embedStart(editor.state, range.from) && props.kind === "file" && props.file) {
+              const from = range.from - 1;
+              // #btgun63k: a wikilink can't hold `[ ] | # ^`. Such a file gets a
+              // Markdown image or file link instead, written by the same D23
+              // note-relative writer as the `[[` menu's attachment rows.
+              if (/[[\]|#^]/.test(props.file.link)) {
+                const file = props.file;
+                const extension = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
+                const attachment = {
+                  path: file.path,
+                  name: file.name,
+                  size: 0,
+                  mime: isImageFile(file) ? `image/${extension === "jpg" ? "jpeg" : extension}` : "application/octet-stream",
+                };
+                editor.chain().focus().deleteRange({ from, to: range.to }).run();
+                if (isImageFile(file)) insertImageAttachment(editor, attachment, editor.state.selection.from);
+                else insertFileCard(editor, attachment, editor.state.selection.from);
+                return;
+              }
               // #4usgpjh8: exactly what typing `![[<link>]]` makes (#95x2fjh6),
               // with the link Obsidian would write from this note.
               const typed = `![[${props.file.link}]]`;
-              const from = range.from - 1;
               const parent = editor.state.doc.resolve(from).parent;
               const alone =
                 parent.type.name === "paragraph" &&

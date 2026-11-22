@@ -47,7 +47,10 @@ export function encodeHref(path: string): string {
 
 function decodeHref(href: string): string {
   try {
-    return decodeURI(href.replace(/%(?![0-9a-f]{2})/gi, "%25"));
+    // decodeURIComponent, not decodeURI: the writer (encodeHref) encodes `#`
+    // and `?` too, and decodeURI leaves `%23` / `%3F` encoded, so a file
+    // named `a#b.png` never resolved (#btgun63k). `/` is never encoded.
+    return decodeURIComponent(href.replace(/%(?![0-9a-f]{2})/gi, "%25"));
   } catch {
     return href;
   }
