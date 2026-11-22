@@ -182,6 +182,8 @@ describe("resolving a copy (§4.4)", () => {
     expect(result.page?.id).toBe("Note");
     expect(await readFile(join(dir, "Note.md"), "utf8")).toBe(copyBytes);
     await expect(readFile(join(dir, `${SYNCTHING}.md`), "utf8")).rejects.toThrow();
+    // #e9hs2zgq: written through a hidden temp, none left behind.
+    expect([...(await snapshot(dir)).keys()].filter((file) => file.endsWith(".tmp"))).toEqual([]);
     // Undo: the page's own bytes are the before-restore version.
     expect(result.beforeVersion).toBeTruthy();
     const note = (await getJson<PageMeta>(app, `/api/pages/${enc("Note")}`)) as PageMeta & { updated: string };
@@ -239,6 +241,7 @@ describe("resolving a copy (§4.4)", () => {
     expect((await jsonRequest(app, "POST", `/api/conflicts/${enc("Note 2")}/dismiss`)).status).toBe(200);
     expect((await getJson<ConflictsList>(app, "/api/conflicts")).possible).toEqual([]);
     expect(JSON.parse(await readFile(join(dir, ".gumply/sync-dismissed.json"), "utf8"))).toEqual({ notACopy: ["Note 2"] });
+    expect([...(await snapshot(dir)).keys()].filter((file) => file.endsWith(".tmp"))).toEqual([]);
     expect((await jsonRequest(app, "DELETE", `/api/conflicts/${enc("Note 2")}/dismiss`)).status).toBe(200);
     expect((await getJson<ConflictsList>(app, "/api/conflicts")).possible).toHaveLength(1);
     // A possible copy can't be resolved like a certain one.

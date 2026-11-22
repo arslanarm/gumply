@@ -207,7 +207,7 @@ const HISTORY_COALESCE_MS = 5 * 60_000;
 const HISTORY_SESSION_MS = 10 * 60_000;
 import { PropertyTypesStore, readRawProperties, rewritePropertyLinks, typedProperties, type RawProperty } from "./properties.js";
 import { readDailySettings, readTemplateSettings } from "./note-settings.js";
-import { sweepTempFiles, tempPathBeside } from "./temp-files.js";
+import { sweepTempFiles, tempPathBeside, writeAtomic } from "./temp-files.js";
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -4389,14 +4389,7 @@ export class VaultStore {
           beforeVersion = (await saveVersion(this.root, { id: original.id, ext: extOf(original), bytes: current, version: original.updated, source: "restore", reason: "before-restore" })).file;
         }
         if (!current.equals(bytes)) {
-          const temporary = `${original.filePath}.${process.pid}.${Date.now()}.tmp`;
-          try {
-            await writeFile(temporary, bytes);
-            await rename(temporary, original.filePath);
-          } catch (error) {
-            await rm(temporary, { force: true }).catch(() => undefined);
-            throw error;
-          }
+          await writeAtomic(original.filePath, bytes);
           const fresh = original.kind === "base" ? await this.readBaseRecord(original.filePath, original.id) : await this.readRecord(original.filePath, original.id);
           this.pages.set(original.id, fresh);
           if (versioned(fresh)) {
@@ -4453,14 +4446,7 @@ export class VaultStore {
       const next = dismissed ? [...new Set([...list, key])] : list.filter((id) => id !== key);
       await mkdir(join(this.root, ".gumply"), { recursive: true });
       const file = join(this.root, ".gumply", "sync-dismissed.json");
-      const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
-      try {
-        await writeFile(temporary, `${JSON.stringify({ notACopy: next.sort() }, null, 2)}\n`, "utf8");
-        await rename(temporary, file);
-      } catch (error) {
-        await rm(temporary, { force: true }).catch(() => undefined);
-        throw error;
-      }
+      await writeAtomic(file, `${JSON.stringify({ notACopy: next.sort() }, null, 2)}\n`);
     });
   }
 
