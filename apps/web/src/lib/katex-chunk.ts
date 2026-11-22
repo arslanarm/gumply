@@ -8,7 +8,7 @@ import "katex/dist/katex.min.css";
 import type { KatexChunk } from "./math.js";
 
 export const katexChunk: KatexChunk = {
-  renderToString(tex, display) {
+  renderToString(tex, display, output = "html") {
     try {
       const html = katex.renderToString(tex, {
         displayMode: display,
@@ -16,7 +16,7 @@ export const katexChunk: KatexChunk = {
         // Never: \href, \url, \includegraphics, \htmlClass… from vault text.
         trust: false,
         strict: "ignore",
-        output: "htmlAndMathml",
+        output: output === "mathml" ? "mathml" : "htmlAndMathml",
         // Bounds for hostile input: no giant boxes, no runaway macros.
         maxSize: 50,
         maxExpand: 500,

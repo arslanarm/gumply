@@ -16,11 +16,17 @@ import { t } from "../i18n/index.js";
 export interface MathOptions {
   /** Display (block) math, centred on its own line. */
   display?: boolean;
+  /**
+   * `html` (default): KaTeX's typeset HTML plus hidden MathML (needs KaTeX's
+   * CSS and fonts). `mathml`: MathML only, which browsers render natively;
+   * for files that must work offline on their own (G1's HTML export).
+   */
+  output?: "html" | "mathml";
 }
 
 /** What the lazy chunk exports. */
 export interface KatexChunk {
-  renderToString(tex: string, display: boolean): { html: string; error: string | null };
+  renderToString(tex: string, display: boolean, output?: "html" | "mathml"): { html: string; error: string | null };
 }
 
 let chunk: Promise<KatexChunk> | null = null;
@@ -34,7 +40,7 @@ export function loadKatex(): Promise<KatexChunk> {
 /** The HTML for `tex` (KaTeX's markup, or an escaped error span); never throws. */
 export async function mathToHtml(tex: string, options: MathOptions = {}): Promise<string> {
   const katex = await loadKatex();
-  const { html, error } = katex.renderToString(tex, options.display === true);
+  const { html, error } = katex.renderToString(tex, options.display === true, options.output ?? "html");
   if (error === null) return html;
   return `<span class="math-error" title="${escapeHtml(`${t("math.error")}: ${error}`)}">${escapeHtml(tex)}</span>`;
 }

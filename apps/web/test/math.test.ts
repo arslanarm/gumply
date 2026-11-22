@@ -70,6 +70,18 @@ describe("mathToHtml", () => {
     expect(await mathToHtml("x^2", { display: true })).toContain("katex-display");
   });
 
+  it("output: mathml gives MathML only (no KaTeX HTML, so no fonts or CSS needed)", async () => {
+    const html = await mathToHtml("\\frac{a}{b}", { output: "mathml" });
+    expect(html).toMatch(/^<span class="katex"><math[\s>]/);
+    expect(html).toContain("<mfrac>");
+    expect(html).not.toContain("katex-html");
+    expect(await mathToHtml("x", { display: true, output: "mathml" })).toContain('display="block"');
+    // The default keeps the typeset HTML.
+    expect(await mathToHtml("x")).toContain("katex-html");
+    // Errors are the same inline span either way.
+    expect(await mathToHtml("\\frac{a}{", { output: "mathml" })).toContain("math-error");
+  });
+
   it("never throws: bad TeX comes back as an inline error with the source", async () => {
     const html = await mathToHtml("\\frac{a}{");
     expect(html).toMatch(/^<span class="math-error" title="[^"]+">\\frac\{a\}\{<\/span>$/);
