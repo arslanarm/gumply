@@ -189,10 +189,13 @@ test.describe('H4–H6 are headings (#6rbi25wy)', () => {
 // written after an edit elsewhere; new text is still escaped where it must be.
 const ESCAPES: Record<string, string> = {
   'esc.md (escapes, snake_case, a quote with \\sum_{i})': "Plain a\\,b and c\\;d and \\$5.\n\nEscapes \\* \\_ \\# \\[ \\] \\\\ \\` stay.\n\nsnake_case_word and a_b_c here.\n\n> snake_case in a quote and \\sum_{i}\n\n- snake_case in a list and x_1_y\n\nPath C:\\Users\\name\\file and \\n literal.\n\nTarget paragraph.\n",
+  // #ftx3awn7 (@opus-hunter): tabs inside text, and lazy quote lines.
+  'tab.md (tabs inside text)': "Word\tafter a tab and two\t\ttabs.\n\n- item\twith tab\n\nTarget paragraph.\n",
+  'lazy.md (lazy quote, callout and list lines)': "> quote line\nlazy continuation\nsecond lazy\n\n> [!note] Callout\n> body\nlazy in callout\n\n- item\nlazy in list\n\nTarget paragraph.\n",
   'm1.md (math shapes)': "Inline $x^2 + y_1$ and $$E = mc^2$$ in text, a price $5 and $6.\n\n$$\n\\int_0^1 f(x)\\,dx\n$$\nTouching text after math.\n\n$$ a \\neq b $$\n\n> $$\n> \\sum_{i=1}^n i\n> $$\n\n- item with $\\alpha$\n  $$\n  \\beta\n  $$\n\nEscaped \\$ dollar and `$code$`.\n\nTarget paragraph.\n",
 };
 
-test.describe('backslash escapes and math source are kept (#628e927t)', () => {
+test.describe('escapes, math source, tabs and lazy lines are kept (#628e927t, #ftx3awn7)', () => {
   for (const [name, text] of Object.entries(ESCAPES)) {
     test(name, async ({ page, request, vault }) => {
       void vault;

@@ -294,6 +294,40 @@ function entityRule(state: any): void {
   }
 }
 
+/**
+ * Tabs inside text (#ftx3awn7, D37): the editor's HTML parse collapses
+ * whitespace, so `two⇥⇥tabs` came back as `two tabs`. Each tab becomes a raw
+ * `tab` atom, written back as is and shown at a tab's width. Indentation is
+ * structure, not text, so it never reaches here.
+ */
+function tabRule(state: any): void {
+  for (const block of state.tokens as any[]) {
+    if (block.type !== "inline" || !block.children) continue;
+    if (!(block.children as any[]).some((token) => token.type === "text" && token.content.includes("\t"))) continue;
+    const out: any[] = [];
+    for (const token of block.children as any[]) {
+      if (token.type !== "text" || !token.content.includes("\t")) {
+        out.push(token);
+        continue;
+      }
+      token.content.split(/(\t)/).forEach((part: string) => {
+        if (part === "") return;
+        if (part === "\t") {
+          const tab = new state.Token("gumply_raw_inline", "", 0);
+          tab.content = "\t";
+          tab.info = "tab";
+          out.push(tab);
+        } else {
+          const text = new state.Token("text", "", 0);
+          text.content = part;
+          out.push(text);
+        }
+      });
+    }
+    block.children = out;
+  }
+}
+
 export const AUTOLINK_ATTR = "data-md-autolink";
 
 export const IMAGE_RAW_ATTR = "data-md-raw";
@@ -408,6 +442,9 @@ export function rawMarkdownPlugin(md: any): void {
   md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
   if (md.core.ruler.__find__("text_join") !== -1) {
     md.core.ruler.before("text_join", "gumply_entities", entityRule);
+    md.core.ruler.after("text_join", "gumply_tabs", tabRule);
+  } else {
+    md.core.ruler.after("gumply_inline_images", "gumply_tabs", tabRule);
   }
   md.inline.ruler.before("link", "gumply_raw_inline", rawInlineRule);
   wrapLinkRules(md);

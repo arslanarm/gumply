@@ -115,6 +115,18 @@ describe("backslash escapes and pairing-aware * / _ (#628e927t)", () => {
   });
 });
 
+describe("tabs inside text (#ftx3awn7)", () => {
+  it("keeps each tab as an atom; indentation is structure and untouched", () => {
+    expect(rawInlines("Word\tafter and two\t\ttabs.")).toEqual([
+      ["tab", "\t"],
+      ["tab", "\t"],
+      ["tab", "\t"],
+    ]);
+    expect(rawInlines("- item\twith tab")).toEqual([["tab", "\t"]]);
+    expect(rawInlines("- parent\n\t- nested")).toEqual([]);
+  });
+});
+
 describe("minimal text escaping", () => {
   const cases: Array<[string, string]> = [
     ["a > b, x < y, AT&T", "a > b, x < y, AT&T"],

@@ -5885,3 +5885,9 @@ input {
   color: var(--warning);
   cursor: help;
 }
+
+/* A tab inside text (#ftx3awn7): keeps its width. */
+.raw-inline-tab {
+  white-space: pre;
+  tab-size: 4;
+}

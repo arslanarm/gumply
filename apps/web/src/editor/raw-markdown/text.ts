@@ -327,6 +327,15 @@ export const MarkdownHardBreak = HardBreak.extend({
                   if (lead === "") skipNextPrefix(state);
                   return;
                 }
+                if (lead !== undefined && (state.delim ?? "").includes(">")) {
+                  // A lazy quote line (#ftx3awn7): the source line had no `>`
+                  // (a line with one records no lead), so it's written as read,
+                  // without the quote's prefix.
+                  state.write(before);
+                  state.out += `\n${lead}`;
+                  skipNextPrefix(state);
+                  return;
+                }
                 state.write(`${before}\n`);
                 if (after) state.write(after);
                 return;
