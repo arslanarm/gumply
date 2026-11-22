@@ -182,6 +182,8 @@
       "delete": "Delete",
       "undoRedo": "Undo / redo",
       "openToday": "Open today's note",
+      "toggleOutline": "Toggle outline",
+      "toggleOutlineFallback": "Toggle outline (if the browser keeps the first)",
       "toggle": "Toggle"
     },
     "introBefore": "Press ",
@@ -661,7 +663,8 @@
     "today": "Open today's note",
     "todayWords": "",
     "pageTemplate": "New page from template…",
-    "pageTemplateWords": ""
+    "pageTemplateWords": "",
+    "outlineWords": ""
   },
   "callout": {
     "types": {
@@ -1014,6 +1017,26 @@
       "tags": "Tags",
       "aliases": "Aliases"
     }
+  },
+  "outline": {
+    "title": "Outline",
+    "empty": "No headings yet. Type # and a space to add one.",
+    "emptyBoard": "No frames yet. Press F to add one.",
+    "noOutline": "No outline for this view.",
+    "emptyHeading": "(empty heading)",
+    "emptyHeadingLabel": "Empty heading, level {{level}}",
+    "untitledFrame": "Untitled frame",
+    "toggle": "Toggle outline",
+    "collapseAll": "Collapse all",
+    "expandAll": "Expand all",
+    "collapse": "Collapse",
+    "expand": "Expand"
+  },
+  "panel": {
+    "label": "Side panel",
+    "tabOutline": "Outline",
+    "tabGraph": "Local graph",
+    "close": "Close panel"
   },
   "datePicker": {
     "empty": "Empty",

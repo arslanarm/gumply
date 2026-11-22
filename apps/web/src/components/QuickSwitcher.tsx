@@ -34,6 +34,8 @@ export interface QuickSwitcherProps {
   onOpenToday?: () => void;
   /** v0.7 C: `New page from template…`. */
   onNewPageFromTemplate?: () => void;
+  /** v0.8 D1: `Toggle outline` (only while a page is open). */
+  onToggleOutline?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
@@ -49,6 +51,7 @@ export function QuickSwitcher({
   onNewFromTemplate,
   onOpenLanguage,
   onOpenToday,
+  onToggleOutline,
   onNewPageFromTemplate,
   onClose,
   initialQuery = "",
@@ -117,6 +120,7 @@ export function QuickSwitcher({
     onNewPageFromTemplate ? sections.pageTemplate : null,
     onNewFromTemplate ? sections.fromTemplate : null,
     onOpenToday ? sections.today : null,
+    onToggleOutline ? (sections.outline ?? null) : null,
     onOpenLanguage ? sections.language : null,
   ].filter((row): row is SearchRow => row !== null);
   // Typing an action's name ranks it above "Create “…”" (#5hrsrqsj review).
@@ -156,6 +160,10 @@ export function QuickSwitcher({
     }
     if (row.kind === "today") {
       onOpenToday?.();
+      return;
+    }
+    if (row.kind === "outline") {
+      onToggleOutline?.();
       return;
     }
     if (row.kind === "page-template") {
@@ -223,7 +231,9 @@ export function QuickSwitcher({
                     ? "search-today"
                     : row.kind === "page-template"
                       ? "search-page-template"
-                      : "search-create"
+                      : row.kind === "outline"
+                        ? "search-outline"
+                        : "search-create"
         }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
@@ -243,6 +253,8 @@ export function QuickSwitcher({
             <Icon name="calendar" size={16} />
           ) : row.kind === "page-template" ? (
             <Icon name="pageTemplate" size={16} />
+          ) : row.kind === "outline" ? (
+            <Icon name="list" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
           ) : row.kind === "create-base" ? (

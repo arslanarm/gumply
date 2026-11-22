@@ -11,6 +11,8 @@ export interface LocalGraphPanelProps {
   onOpenPage: (id: PageId) => void;
   onCreatePage: (title: string) => Promise<void>;
   onClose: () => void;
+  /** A tab of the right-hand column (v0.8 D1): the column has the title and the close button. */
+  embedded?: boolean;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -32,7 +34,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** Collapsible right-hand graph for the current page (spec/ux §9). */
-export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: LocalGraphPanelProps) {
+export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, embedded = false }: LocalGraphPanelProps) {
   const t = useT();
   const [depth, setDepth] = useState<Depth>(readDepth);
   const [data, setData] = useState<GraphData | null>(null);
@@ -79,9 +81,9 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
     data.unresolved.length === 0;
 
   return (
-    <aside className="local-graph" data-testid="local-graph" aria-label={t("graph.localTitle")}>
+    <aside className={`local-graph${embedded ? " is-embedded" : ""}`} data-testid="local-graph" aria-label={t("graph.localTitle")}>
       <header className="local-graph-header">
-        <h2>{t("graph.localTitle")}</h2>
+        {embedded ? null : <h2>{t("graph.localTitle")}</h2>}
         <div className="local-graph-actions">
           <div className="local-graph-depth" role="group" aria-label={t("graph.linkDepth")}>
             <button
@@ -103,6 +105,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
               2
             </button>
           </div>
+          {embedded ? null : (
           <button
             type="button"
             className="icon-button"
@@ -113,6 +116,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose }: L
           >
             ×
           </button>
+          )}
         </div>
       </header>
 
