@@ -61,3 +61,21 @@ test('Link all links every mention in one page', async ({ page, vault }) => {
     '[[lighthouse]] one, [[Lighthouse]] two, [[LIGHTHOUSE]] three\n',
   );
 });
+
+test('Link never turns a #tag into a link (#sipu2nxn)', async ({ page, vault }) => {
+  await vault.seed([{ title: 'Lighthouse', content: 'x' }]);
+  await writeFile(file(NOTE), 'Tag #Lighthouse and #lighthouse/keeper, then Lighthouse.\n');
+  await expect.poll(async () => (await vault.pages()).some((meta) => meta.title === 'C1 Journal'), { timeout: 5_000 }).toBe(true);
+  await page.goto(`/#/${encodeURIComponent('Lighthouse')}`);
+  // One mention: the tags aren't (so there's no "Link all" either).
+  await expect(page.getByTestId('mentions-toggle')).toContainText('1');
+  await page.getByTestId('mentions-toggle').click();
+  await expect(page.getByTestId('mentions-link')).toHaveCount(1);
+  await expect(page.getByTestId('mentions-link-all')).toHaveCount(0);
+  await page.getByTestId('mentions-link').click();
+  await expect.poll(() => readFile(file(NOTE), 'utf8'), { timeout: 5_000 }).toBe(
+    'Tag #Lighthouse and #lighthouse/keeper, then [[Lighthouse]].\n',
+  );
+  const journal = (await vault.pages()).find((meta) => meta.title === 'C1 Journal');
+  expect(journal?.tags.map((tag) => tag.toLowerCase()).sort()).toEqual(['lighthouse', 'lighthouse/keeper']);
+});
