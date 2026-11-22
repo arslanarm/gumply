@@ -2535,7 +2535,7 @@ input {
   gap: 0.35rem;
   flex: 1;
   min-width: 0;
-  padding: 0.3rem 0.5rem;
+  padding: 0.3rem 0.4rem;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -2923,6 +2923,8 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  /* The same title → intro space as every other modal's h2 (#jn9vhndu). */
+  margin-bottom: 0.45rem;
 }
 
 .mcp-dialog-head h2 {
@@ -3217,6 +3219,11 @@ input {
 
 .notion-import-done svg {
   color: var(--success);
+}
+
+/* The hint sits right above its list, like the other report lists (#jn9vhndu). */
+.modal .notion-import-lost p.notion-import-note {
+  margin-bottom: 0.1rem;
 }
 
 .notion-import-report ul {
@@ -5405,7 +5412,8 @@ input {
   right: 0;
   top: calc(100% + 6px);
   z-index: 60;
-  width: 260px;
+  /* Room for three equal Theme segments in every language («Системная», #jn9vhndu). */
+  width: 300px;
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
@@ -5455,7 +5463,12 @@ input {
 }
 
 .settings-segment {
-  padding: 0.3rem 0.25rem;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
   border: 0;
   border-radius: 5px;
   background: transparent;

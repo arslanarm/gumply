@@ -16,8 +16,9 @@ const RANK: Record<McpAccess, number> = { read: 0, append: 1, edit: 2 };
 
 /** Raising the level asks first (@lead, A3 review); lowering is instant. */
 const RAISE: Record<Exclude<McpAccess, "read">, { heading: MessageKey; body: MessageKey }> = {
-  append: { heading: "settings.mcp.raiseAppend", body: "settings.mcp.accessAppendHint" },
-  edit: { heading: "settings.mcp.raiseEdit", body: "settings.mcp.accessEditHint" },
+  // Standalone sentences: the radio hints start "Also…", which read as a fragment here (#jn9vhndu).
+  append: { heading: "settings.mcp.raiseAppend", body: "settings.mcp.raiseAppendBody" },
+  edit: { heading: "settings.mcp.raiseEdit", body: "settings.mcp.raiseEditBody" },
 };
 
 const LEVELS: Array<[McpAccess, MessageKey, MessageKey]> = [
