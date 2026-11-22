@@ -21,8 +21,9 @@ import type {
   TrashItem,
   BaseViewResult,
   VaultImage,
+  LinkableFile,
 } from "@gumply/core";
-import { PAGE_LOOK_KEYS } from "@gumply/core";
+import { PAGE_LOOK_KEYS, formatImportLimit } from "@gumply/core";
 import { Hono, type Context } from "hono";
 import {
   listAttachments,
@@ -44,6 +45,7 @@ import type {
   VaultStore,
 } from "./vault-store.js";
 import { BaseQueries } from "./bases.js";
+import { NOTION_IMPORT_LIMITS, NotionImports, type NotionImportJob } from "./notion-import.js";
 import { demoLanguageFor } from "./demo.js";
 
 type JsonObject = Record<string, unknown>;
@@ -108,13 +110,39 @@ function isUploadedFile(value: unknown): value is UploadedFile {
   );
 }
 
-/** #3ht5gh6q: image files the cover picker offers. */
+/** #3ht5gh6q: image files the cover picker offers; #4usgpjh8 caps both lists. */
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
-const MAX_LISTED_IMAGES = 2000;
+const MAX_LISTED_FILES = 2000;
+
+/**
+ * Files from the #8k4ssrkb index (never dot folders, `.trash`, `.gumply` or
+ * `node_modules`) that pass `keep`: newest first, then by path, capped.
+ */
+async function listVaultFiles(store: VaultStore, keep: (path: string) => boolean): Promise<VaultImage[]> {
+  const found = await Promise.all(
+    store.fileIndex
+      .paths()
+      .filter(keep)
+      .map(async (path) => {
+        try {
+          const info = await stat(join(store.root, path));
+          return info.isFile() ? { path, time: info.mtimeMs } : null;
+        } catch {
+          return null;
+        }
+      }),
+  );
+  return found
+    .filter((item): item is { path: string; time: number } => item !== null)
+    .sort((a, b) => b.time - a.time || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    .slice(0, MAX_LISTED_FILES)
+    .map(({ path, time }) => ({ path, name: path.slice(path.lastIndexOf("/") + 1), modified: new Date(time).toISOString() }));
+}
 
 /** All `/api` routes; mounted by `createApp`. */
 export function createApiRoutes(store: VaultStore): Hono {
   const bases = new BaseQueries(store);
+  const imports = new NotionImports(store);
   const api = new Hono();
 
   api.get("/pages", async (c) => {
@@ -398,6 +426,31 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<Attachment>(attachment, 201);
   });
 
+  // v0.8 B2 (#znyztw3t, spec/api-import): import a Notion "Markdown & CSV" export.
+  api.post("/import/notion", async (c) => {
+    const length = Number(c.req.header("content-length") ?? Number.NaN);
+    if (length > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge(`The export is too large (max ${formatImportLimit(NOTION_IMPORT_LIMITS.uploadBytes)})`);
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.parseBody();
+    } catch {
+      throw badRequest("The import must be multipart/form-data with a `file` field");
+    }
+    const file = body["file"];
+    if (!isUploadedFile(file)) throw badRequest("file is required");
+    if (file.size > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge(`The export is too large (max ${formatImportLimit(NOTION_IMPORT_LIMITS.uploadBytes)})`);
+    const parent = body["parentId"];
+    const parentId = typeof parent === "string" && parent.length > 0 ? parent : null;
+    const job = imports.start(new Uint8Array(await file.arrayBuffer()), parentId);
+    return c.json<NotionImportJob>(job, 202);
+  });
+
+  api.get("/import/:job", (c) => {
+    const job = imports.get(c.req.param("job"));
+    if (!job) throw notFound("No such import");
+    return c.json<NotionImportJob>(job);
+  });
+
   api.get("/attachments", async (c) => {
     return c.json<Attachment[]>(await listAttachments(store.root));
   });
@@ -406,23 +459,17 @@ export function createApiRoutes(store: VaultStore): Hono {
   // #8k4ssrkb file index: never dot folders, `.trash` or `.gumply`. Newest
   // first, then by path; read-only.
   api.get("/files/images", async (c) => {
-    const paths = store.fileIndex.paths().filter((path) => IMAGE_FILE.test(path));
-    const found = await Promise.all(
-      paths.map(async (path) => {
-        try {
-          const info = await stat(join(store.root, path));
-          return info.isFile() ? { path, time: info.mtimeMs } : null;
-        } catch {
-          return null;
-        }
-      }),
-    );
-    const images = found
-      .filter((item): item is { path: string; time: number } => item !== null)
-      .sort((a, b) => b.time - a.time || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-      .slice(0, MAX_LISTED_IMAGES)
-      .map(({ path, time }) => ({ path, name: path.slice(path.lastIndexOf("/") + 1), modified: new Date(time).toISOString() }));
-    return c.json<VaultImage[]>(images);
+    return c.json<VaultImage[]>(await listVaultFiles(store, (path) => IMAGE_FILE.test(path)));
+  });
+
+  // #4usgpjh8: every linkable file (the `![[` menu), each with the link text
+  // Obsidian would write for it from the note `from` (bare name when that
+  // resolves back to it, else the full path).
+  api.get("/files/linkable", async (c) => {
+    const from = c.req.query("from");
+    const note = from && from.length <= 1024 ? from : null;
+    const files = await listVaultFiles(store, () => true);
+    return c.json<LinkableFile[]>(files.map((file) => ({ ...file, link: store.linkTextFor(file.path, note) })));
   });
 
   // #8k4ssrkb (spec/api-attachments-resolve): an Obsidian-style file link

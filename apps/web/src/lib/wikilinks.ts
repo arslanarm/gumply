@@ -1,12 +1,12 @@
 /**
  * Pure helpers for the `[[` autocomplete (D4, spec/ux §8).
  */
-import type { Attachment, PageId, PageMeta } from "@gumply/core";
+import type { Attachment, LinkableFile, PageId, PageMeta } from "@gumply/core";
 import { isBoard } from "./boards.js";
 import { t } from "../i18n/index.js";
 
 export interface LinkSuggestion {
-  kind: "page" | "attachment" | "create";
+  kind: "page" | "attachment" | "file" | "create";
   /** Stable key: page id, or `create` for the create row. */
   key: string;
   /** Text shown in the menu (folder path when titles collide). */
@@ -20,6 +20,8 @@ export interface LinkSuggestion {
   board?: boolean;
   /** File/image row from `vault/attachments/`. */
   attachment?: Attachment;
+  /** `![[` (#4usgpjh8): a file anywhere in the vault, with the link Obsidian writes for it. */
+  file?: LinkableFile;
   /** `![[Page#…]]` (#5dpxwac4): a heading's text or `^blockid`. */
   part?: string;
   /** Indent of a heading row in the `![[Page#` menu (its level). */
@@ -115,6 +117,31 @@ export function buildLinkSuggestions(
   }
 
   return items;
+}
+
+const IMAGE_NAME = /\.(avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
+
+/** A vault file that a `![[` row stands for is an image (it embeds as one). */
+export function isImageFile(file: LinkableFile): boolean {
+  return IMAGE_NAME.test(file.name);
+}
+
+/**
+ * `![[` rows for vault files (#4usgpjh8): name matches first, then path
+ * matches, newest first within each (the server's order), capped.
+ */
+export function buildFileSuggestions(files: readonly LinkableFile[], query: string): LinkSuggestion[] {
+  const needle = fold(query);
+  if (needle.length === 0) return [];
+  const byName = files.filter((file) => fold(file.name).includes(needle));
+  const byPath = files.filter((file) => !byName.includes(file) && fold(file.path).includes(needle));
+  return [...byName, ...byPath].slice(0, MAX_ATTACHMENTS).map((file) => ({
+    kind: "file",
+    key: `file:${file.path}`,
+    label: file.link === file.name ? file.name : file.path,
+    title: file.link,
+    file,
+  }));
 }
 
 /** Read a `[[Target#Heading|alias]]` string into node attrs. */

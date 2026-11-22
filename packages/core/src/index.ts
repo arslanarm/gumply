@@ -7,6 +7,7 @@ export type {
   ApiError,
   Attachment,
   VaultImage,
+  LinkableFile,
   Backlink,
   BoardDocument,
   BoardUpdateResult,
@@ -195,7 +196,7 @@ export {
   type TemplateContext,
   type TemplateSettings,
 } from "./templates.js";
-export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "./link-files.js";
+export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
 
 export {
   coverValue,
@@ -209,3 +210,18 @@ export {
   type PageGradient,
   type PageLook,
 } from "./page-look.js";
+
+export {
+  NOTION_IMPORT_LIMITS,
+  formatImportLimit,
+  notionReportMarkdown,
+  notionUrlId,
+  planNotionImport,
+  stripNotionId,
+  type NotionEntry,
+  type NotionImportOptions,
+  type NotionImportPlan,
+  type NotionImportReport,
+  type NotionPlannedDatabase,
+  type NotionPlannedFile,
+} from "./notion-import.js";
