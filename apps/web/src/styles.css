@@ -1335,6 +1335,38 @@ input {
   color: var(--muted);
 }
 
+/* spec/columns: blocks side by side; an equal share unless a width was set. */
+.gumply-editor .md-columns {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0.4em 0;
+}
+
+.gumply-editor .md-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.gumply-editor .md-column > :first-child {
+  margin-top: 0;
+}
+
+.gumply-editor .md-column > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .gumply-editor .md-columns {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .gumply-editor .md-column + .md-column {
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+  }
+}
+
 .gumply-editor ul,
 .gumply-editor ol {
   padding-left: 1.5rem;

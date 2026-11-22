@@ -58,6 +58,7 @@ import { RawBlock, RawInline } from "../editor/raw-markdown/nodes.js";
 import { MarkdownListSource } from "../editor/raw-markdown/list-source.js";
 import { MarkdownBlockJoins } from "../editor/raw-markdown/block-joins.js";
 import { Callout, CalloutTitle } from "../editor/callout/callout.js";
+import { Column, Columns } from "../editor/columns/columns.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
 import {
   GumplyTable,
@@ -711,6 +712,9 @@ export function Editor({
       RawInline,
       Callout,
       CalloutTitle,
+      // spec/columns: Pandoc fenced-div columns (#d93qerr7).
+      Columns,
+      Column,
       MarkdownLink,
       MarkdownTaskList,
       AccessibleTaskItem.configure({
