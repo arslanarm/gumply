@@ -23,7 +23,7 @@ export interface LinkSuggestion {
   attachment?: Attachment;
   /** `![[` (#4usgpjh8): a file anywhere in the vault, with the link Obsidian writes for it. */
   file?: LinkableFile;
-  /** `![[Page#…]]` (#5dpxwac4): a heading's text or `^blockid`. */
+  /** `![[Page#…]]` (#5dpxwac4) and `[[Page#…]]` (#5r8k77fe): a heading's text or `^blockid`. */
   part?: string;
   /** Indent of a heading row in the `![[Page#` menu (its level). */
   level?: number;
@@ -60,14 +60,31 @@ export function folderLabel(page: PageMeta): string {
 }
 
 /**
+ * `[[Nope#Heading` when "Nope" names no page (#5r8k77fe): a **Create “Nope”**
+ * row only. The new page is "Nope" (D20 strips `#` from file names, so
+ * "Nope#Heading" can't be a title); the link keeps its `#Heading`. An empty
+ * part before `#` offers nothing (the caller lists the open page's headings).
+ */
+function createWithPart(query: string): LinkSuggestion[] {
+  const hash = query.indexOf("#");
+  const title = query.slice(0, hash).trim();
+  if (title.length === 0) return [];
+  const part = query.slice(hash + 1).trim();
+  return [{ kind: "create", key: "create", label: t("search.create", { title }), title, ...(part ? { part } : {}) }];
+}
+
+/**
  * Pages matching `query` (title, case-insensitive) plus a **Create “X”** row
  * when there is no exact title match. Duplicate titles show their folder path.
+ * A query with `#` is a link to a part of a page: the caller lists the page's
+ * headings when it exists; here only the Create row for the part before `#`.
  */
 export function buildLinkSuggestions(
   pages: readonly PageMeta[],
   query: string,
   attachments: readonly Attachment[] = [],
 ): LinkSuggestion[] {
+  if (query.includes("#")) return createWithPart(query);
   const needle = normalise(query);
   const counts = new Map<string, number>();
   for (const page of pages) {
