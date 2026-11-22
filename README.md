@@ -192,6 +192,13 @@ and save in Obsidian without changes, and Obsidian's own boards open in Gumply.
   **Reload** or **Keep mine** (Keep mine keeps a backup), as for pages. A board file with entries Gumply can't keep is
   backed up to `.gumply/conflicts/` before the first save.
 
+## AI apps (MCP)
+
+Claude Code, Claude Desktop and other MCP clients can search and read a vault, and add to it if you allow it,
+through Gumply's local MCP server (stdio only, no network port). Read only by default; every change is kept in
+history and can be undone. Set it up from **Settings → AI apps (MCP)…**, which gives a ready-to-paste snippet with
+full paths; see [docs/mcp.md](docs/mcp.md) for the snippets per app and OS, access levels and troubleshooting.
+
 ## Languages
 
 The interface is in English and Russian, following your system language. Change it in

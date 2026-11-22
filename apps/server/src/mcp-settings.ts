@@ -6,8 +6,10 @@
  * route; MCP tools never see `.gumply/`.
  */
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   isMcpAccess,
   MCP_AUDIT_PATH,
@@ -26,8 +28,29 @@ import { badRequest } from "./errors.js";
 /** The Settings section lists this many audit rows. */
 export const MCP_RECENT_ROWS = 50;
 
-/** The npm bin (`gumply mcp`), unless the desktop app says how to start itself. */
-export const NPM_MCP_COMMAND: McpLaunchCommand = { command: "gumply", args: ["mcp"] };
+/** The npm bin (`gumply mcp`): the fallback when the built server isn't next to this one. */
+export const NPM_MCP_COMMAND: McpLaunchCommand = { command: "gumply", args: ["mcp"], hint: "npm" };
+
+/**
+ * A4: how an AI app starts the MCP server for the browser build (the desktop
+ * app passes its own command). AI apps start it without a login shell, so
+ * neither `gumply` nor an nvm `node` is on their PATH: use this Node's
+ * absolute path and the absolute path of the built `apps/mcp/dist/gumply.mjs`
+ * when it exists (the server runs from `apps/server/src` or `dist`).
+ */
+export function browserMcpCommand(
+  moduleUrl: string = import.meta.url,
+  nodePath: string = process.execPath,
+  exists: (path: string) => boolean = existsSync,
+): McpLaunchCommand {
+  try {
+    const script = fileURLToPath(new URL("../../mcp/dist/gumply.mjs", moduleUrl));
+    if (exists(script)) return { command: nodePath, args: [script, "mcp"] };
+  } catch {
+    // Not a file URL (bundled): the npm form below.
+  }
+  return NPM_MCP_COMMAND;
+}
 
 const vaultFile = (vaultPath: string, relative: string) => join(vaultPath, ...relative.split("/"));
 
@@ -65,7 +88,7 @@ export function parseMcpSettingsPatch(body: unknown): McpSettingsPatch {
   return patch;
 }
 
-export function mcpSettingsRoutes(vaultPath: string, command: McpLaunchCommand = NPM_MCP_COMMAND): Hono {
+export function mcpSettingsRoutes(vaultPath: string, command: McpLaunchCommand = browserMcpCommand()): Hono {
   const api = new Hono();
   const settingsFile = vaultFile(vaultPath, MCP_SETTINGS_PATH);
 
