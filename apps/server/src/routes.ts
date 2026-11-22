@@ -20,6 +20,7 @@ import type {
   TrashItem,
   BaseViewResult,
 } from "@gumply/core";
+import { PAGE_LOOK_KEYS } from "@gumply/core";
 import { Hono, type Context } from "hono";
 import {
   listAttachments,
@@ -178,7 +179,10 @@ export function createApiRoutes(store: VaultStore): Hono {
   });
 
   // --- properties (v0.7 A, D34, spec/api v1.12) ---
-  api.get("/properties", async (c) => c.json<PropertyInfo[]>(await store.listProperties()));
+  // The page cover and background (#385sexd6) are the page's look, not properties to suggest.
+  api.get("/properties", async (c) =>
+    c.json<PropertyInfo[]>((await store.listProperties()).filter((info) => !PAGE_LOOK_KEYS.includes(info.key))),
+  );
 
   api.put("/properties/:key", async (c) => {
     const body = await readJson(c);

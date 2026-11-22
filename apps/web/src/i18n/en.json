@@ -1222,5 +1222,44 @@
     "usedTimes_few": "Used {{count}} times, nested tags included; code stays as it is.",
     "usedTimes_many": "Used {{count}} times, nested tags included; code stays as it is.",
     "usedTimes_other": "Used {{count}} times, nested tags included; code stays as it is."
+  },
+  "cover": {
+    "add": "Add cover",
+    "change": "Change cover",
+    "reposition": "Reposition",
+    "remove": "Remove",
+    "hide": "Hide in Gumply",
+    "fromBanners": "Cover from the Banners plugin",
+    "savePosition": "Save position",
+    "dragHint": "Drag the image to reposition",
+    "saveToVault": "Save to vault",
+    "missing": "Cover image not found",
+    "pickerLabel": "Page cover",
+    "gallery": "Gallery",
+    "upload": "Upload",
+    "vault": "Vault images",
+    "link": "Link",
+    "colors": "Colours",
+    "gradients": "Gradients",
+    "gradientNames": {
+      "sunrise": "Sunrise",
+      "ocean": "Ocean",
+      "forest": "Forest",
+      "dusk": "Dusk",
+      "peach": "Peach",
+      "slate": "Slate"
+    },
+    "chooseImage": "Choose an image",
+    "uploading": "Uploading…",
+    "uploadHint": "Saved in the vault's attachments folder.",
+    "noImages": "No images in the attachments folder yet.",
+    "linkPlaceholder": "Paste an image link…",
+    "saveLink": "Save to vault",
+    "saving": "Saving…",
+    "linkHint": "The image is downloaded into the vault, so the page works offline."
+  },
+  "background": {
+    "button": "Background",
+    "label": "Page background"
   }
 }

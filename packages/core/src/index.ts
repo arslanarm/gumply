@@ -195,3 +195,16 @@ export {
   type TemplateSettings,
 } from "./templates.js";
 export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "./link-files.js";
+
+export {
+  coverValue,
+  PAGE_COLORS,
+  PAGE_GRADIENTS,
+  PAGE_LOOK_KEYS,
+  pageLook,
+  parseCover,
+  type PageColor,
+  type PageCover,
+  type PageGradient,
+  type PageLook,
+} from "./page-look.js";
