@@ -33,8 +33,6 @@ export const en: DemoCopy = {
   folderBody: "Small examples you can ignore or delete whenever you like.\n",
   gettingStartedBody: ({ welcome, gettingStarted }) =>
     [
-      `# ${gettingStarted}`,
-      "",
       "Create a page with **New page** in the sidebar. Hover a row to add a **New sub-page**.",
       "",
       "- `/` opens the block menu.",
@@ -46,8 +44,6 @@ export const en: DemoCopy = {
     ].join("\n"),
   graphViewBody: ({ welcome, gettingStarted, graphView }) =>
     [
-      `# ${graphView}`,
-      "",
       "The graph shows every page as a dot and every link as a line.",
       "",
       `Back to [[${welcome}]], or read [[${gettingStarted}]].`,

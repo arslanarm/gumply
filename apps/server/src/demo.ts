@@ -75,10 +75,10 @@ export function buildDemoBoard(language = "en"): CanvasBoard {
   return {
     nodes: [
       // Frames: Obsidian writes `label` last (after geometry and color).
-      { id: "a1f0c2d3e4b5a6f7", type: "group", x: -40, y: -80, width: 1160, height: 400, label: copy.boardFrame },
+      { id: "a1f0c2d3e4b5a6f7", type: "group", x: -40, y: -80, width: 1320, height: 400, label: copy.boardFrame },
       { id: "b2e1d3c4f5a6b7c8", type: "file", file: md(childPageId(null, copy.welcome)), x: 0, y: 0, width: 320, height: 280 },
-      { id: "c3d2e4f5a6b7c8d9", type: "file", file: md(childPageId(folderId, copy.gettingStarted)), x: 400, y: 0, width: 320, height: 280 },
-      { id: "d4c3f5a6b7c8d9e0", type: "file", file: md(childPageId(folderId, copy.graphView)), x: 800, y: 0, width: 280, height: 280 },
+      { id: "c3d2e4f5a6b7c8d9", type: "file", file: md(childPageId(folderId, copy.gettingStarted)), x: 480, y: 0, width: 320, height: 280 },
+      { id: "d4c3f5a6b7c8d9e0", type: "file", file: md(childPageId(folderId, copy.graphView)), x: 960, y: 0, width: 280, height: 280 },
       {
         id: "e5b4a6c7d8e9f0a1",
         type: "text",
