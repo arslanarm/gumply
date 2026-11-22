@@ -151,11 +151,28 @@ export function moveToColumn(state: EditorState, direction: "left" | "right"): T
  */
 const layoutKey = new PluginKey<DecorationSet>("gumplyColumnsLayout");
 
+/**
+ * #9j9cd5x4: while a gutter is dragged, the row at `pos` is laid out in
+ * `shares` (percent) so its columns reflow live. Set on a transaction that
+ * doesn't change the document (nothing is saved, nothing enters undo); `null`
+ * ends the preview, and so does any change to the document (the release
+ * writes the widths).
+ */
+export const COLUMNS_PREVIEW_META = "gumplyColumnsPreview";
+export interface ColumnsPreview {
+  pos: number;
+  shares: number[];
+}
+
 export const columnsLayout: Plugin<DecorationSet> = new Plugin<DecorationSet>({
   key: layoutKey,
   state: {
     init: (_config, state) => layoutDecorations(state.doc),
-    apply: (tr, previous) => (tr.docChanged ? layoutDecorations(tr.doc) : previous),
+    apply: (tr, previous) => {
+      const preview = tr.getMeta(COLUMNS_PREVIEW_META) as ColumnsPreview | null | undefined;
+      if (preview !== undefined && !tr.docChanged) return layoutDecorations(tr.doc, preview);
+      return tr.docChanged ? layoutDecorations(tr.doc) : previous;
+    },
   },
   props: {
     decorations(state): DecorationSet | undefined {
@@ -164,7 +181,7 @@ export const columnsLayout: Plugin<DecorationSet> = new Plugin<DecorationSet>({
   },
 });
 
-function layoutDecorations(doc: PMNode): DecorationSet {
+function layoutDecorations(doc: PMNode, preview: ColumnsPreview | null = null): DecorationSet {
   const decorations: Decoration[] = [];
   const visit = (parent: PMNode, start: number) => {
     parent.forEach((node, offset) => {
@@ -172,8 +189,9 @@ function layoutDecorations(doc: PMNode): DecorationSet {
       const pos = start + offset;
       const widths: Array<number | null> = [];
       node.forEach((column) => widths.push(typeof column.attrs.width === "number" ? column.attrs.width : null));
-      const sized = widths.some((width) => width !== null);
-      const shares = columnShares(widths);
+      const previewed = preview !== null && preview.pos === pos && preview.shares.length === node.childCount;
+      const sized = previewed || widths.some((width) => width !== null);
+      const shares = previewed ? preview.shares : columnShares(widths);
       let columnPos = pos + 1;
       node.forEach((column, _offset, index) => {
         if (sized) decorations.push(Decoration.node(columnPos, columnPos + column.nodeSize, { style: `flex: ${shares[index]} 1 0` }));

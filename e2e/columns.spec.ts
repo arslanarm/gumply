@@ -114,6 +114,30 @@ test.describe('columns (spec/columns)', () => {
     expect(b!.y).toBeGreaterThan(a!.y + a!.height - 1);
     expect(c!.y).toBeGreaterThan(b!.y + b!.height - 1);
   });
+
+  test('stacked, two rows in a row stay two: each row is outlined, with space between (#9j9cd5x4)', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 600, height: 900 });
+    const two = SHAPES['two columns, no widths'];
+    await open(page, request, `Before.\n\n${two}\n\n${two.replace('Left', 'Second left').replace('Right', 'Second right')}\n\nAfter.\n`);
+    const rows = page.locator('.md-columns-wrap');
+    await expect(rows).toHaveCount(2);
+    for (const row of await rows.all()) {
+      const style = await row.evaluate((element) => {
+        const css = getComputedStyle(element);
+        return { border: css.borderTopWidth, radius: css.borderTopLeftRadius, left: css.borderLeftWidth };
+      });
+      // An outline all round (a left bar alone would read as a quote).
+      expect(style.border).toBe('1px');
+      expect(style.left).toBe('1px');
+      expect(parseFloat(style.radius)).toBeGreaterThan(0);
+    }
+    const [first, second] = [(await rows.nth(0).boundingBox())!, (await rows.nth(1).boundingBox())!];
+    expect(second.y - (first.y + first.height)).toBeGreaterThan(6);
+    // Side by side again when wide: no outline.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    expect(await rows.first().evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  });
 });
 
 test.describe('making and editing columns (spec/columns §3)', () => {
@@ -198,6 +222,41 @@ test.describe('making and editing columns (spec/columns §3)', () => {
     const expected = Math.round(((left! + 80) / (left! + right!)) * 100);
     expect(Math.abs(share - expected)).toBeLessThanOrEqual(2);
     expect(text).toMatch(/^:::: \{\.columns\}\n::: \{\.column width="\d+%" style="x"\}\nLeft\n:::\n::: \{\.column width="\d+%"\}\nRight\n:::\n::::\n$/);
+  });
+
+  test('the columns reflow while the gutter is dragged; the file is written once, on release (#9j9cd5x4)', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const text = ':::: {.columns}\n::: {.column}\nLeft\n:::\n::: {.column}\nRight\n:::\n::::\n';
+    await open(page, request, text);
+    const leftWidth = async () => (await page.getByTestId('column').first().boundingBox())!.width;
+    const before = await leftWidth();
+    const gutter = (await page.getByTestId('column-gutter').boundingBox())!;
+    const y = gutter.y + gutter.height / 2;
+    await page.mouse.move(gutter.x + gutter.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(gutter.x + gutter.width / 2 + 100, y, { steps: 6 });
+    // Still dragging: the left column is wider already, the gutter sits at its edge, and nothing is saved.
+    await expect.poll(leftWidth).toBeGreaterThan(before + 80);
+    const line = (await page.getByTestId('column-gutter').boundingBox())!;
+    const leftBox = (await page.getByTestId('column').first().boundingBox())!;
+    const rightBox = (await page.getByTestId('column').nth(1).boundingBox())!;
+    const edge = (leftBox.x + leftBox.width + rightBox.x) / 2;
+    expect(Math.abs(line.x + line.width / 2 - edge)).toBeLessThan(3);
+    expect(await read()).toBe(text);
+    await page.mouse.up();
+    await saved(page);
+    const widths = [...(await read()).matchAll(/width="(\d+)%"/g)].map((match) => Number(match[1]));
+    expect(widths).toHaveLength(2);
+    expect(widths[0]).toBeGreaterThan(55);
+    // Laid out by the written widths now, where the preview had it: no jump on release.
+    const settled = await leftWidth();
+    expect(Math.abs(settled - leftBox.width)).toBeLessThan(6);
+    // One undo step puts the old layout back (the preview never entered the history).
+    await page.getByTestId('editor-content').getByText('Left', { exact: true }).click();
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+z`);
+    await saved(page);
+    await expect.poll(read).toBe(text);
   });
 
   test('a drag far past the edge stops at the 15% minimum, on either side', async ({ page, request, vault }) => {

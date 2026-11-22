@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { countWork } from "./work-counter.js";
 import {
   UnsupportedError,
   evaluateExpression,
@@ -382,14 +383,23 @@ describe("runBaseView", () => {
     expect(runBaseView({ config: base, rows, types: TYPES, now: NOW }).rows.map((r) => r.title)).toEqual(["Beta", "Delta"]);
   });
 
-  it("runs 2,000 pages quickly", () => {
-    const many = Array.from({ length: 2000 }, (_, i) =>
-      row(`Projects/Page ${i}.md`, { status: ["Planned", "Done", "In progress"][i % 3], due: `2026-${String((i % 12) + 1).padStart(2, "0")}-01`, price: i }),
-    );
-    const started = performance.now();
-    const result = runBaseView({ config, rows: many, types: TYPES, now: NOW });
-    expect(result.rows).toHaveLength(2000);
-    expect(performance.now() - started).toBeLessThan(500);
+  // A work counter, not a clock (#9j9cd5x4): "2,000 pages in under 500 ms" could fail on a busy machine.
+  it("filters and sorts with work that grows like n log n, not n²", () => {
+    const pages = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        row(`Projects/Page ${i}.md`, { status: ["Planned", "Done", "In progress"][i % 3], due: `2026-${String((i % 12) + 1).padStart(2, "0")}-01`, price: i }),
+      );
+    const small = pages(1000);
+    const large = pages(8000);
+    let smallRows = 0;
+    let largeRows = 0;
+    const smallWork = countWork(() => void (smallRows = runBaseView({ config, rows: small, types: TYPES, now: NOW }).rows.length));
+    const largeWork = countWork(() => void (largeRows = runBaseView({ config, rows: large, types: TYPES, now: NOW }).rows.length));
+    expect([smallRows, largeRows]).toEqual([1000, 8000]);
+    expect(smallWork).toBeGreaterThan(0);
+    // 8x the rows: a filter is 8x, the sort ~10.4x (8 · log 8000 / log 1000); comparing every row with
+    // every other would be 64x.
+    expect(largeWork / smallWork).toBeLessThan(12);
   });
 });
 

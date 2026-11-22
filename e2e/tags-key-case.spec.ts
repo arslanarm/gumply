@@ -45,7 +45,17 @@ test('#6imze6ux: a tags string Obsidian won\'t read is flagged; "Make it a list"
   await page.goto('/#/Digits');
   const digitsFlag = page.getByTestId('property-issue-tags-digits');
   await expect(digitsFlag).toBeVisible();
-  await expect(digitsFlag).toHaveAttribute('title', "Obsidian doesn't count tags made only of digits.");
+  // #9j9cd5x4: the app's tooltip (as the string flag), right after the chips.
+  await expect(digitsFlag).toHaveAttribute('data-tooltip', "Obsidian doesn't count tags made only of digits.");
+  await expect(digitsFlag).not.toHaveAttribute('title');
+  // Without the native title it keeps its accessible name (aria-label), for screen readers.
+  await expect(digitsFlag).toHaveAccessibleName("Obsidian doesn't count tags made only of digits.");
+  await expect(digitsFlag).toHaveAttribute('role', 'img');
+  const nextToChips = async (flagBox: { x: number } | null) => {
+    const lastChip = (await page.getByTestId('property-value-tags').locator('.property-chip').last().boundingBox())!;
+    return flagBox !== null && flagBox.x > lastChip.x + lastChip.width - 1 && flagBox.x - (lastChip.x + lastChip.width) < 24;
+  };
+  expect(await nextToChips(await digitsFlag.boundingBox())).toBe(true);
   await expect(page.getByTestId('property-make-list')).toHaveCount(0);
   await expect(page.getByTestId('property-chip-2024')).toHaveClass(/is-not-tag/);
   await expect(page.getByTestId('property-chip-ok')).not.toHaveClass(/is-not-tag/);
@@ -58,10 +68,17 @@ test('#6imze6ux: a tags string Obsidian won\'t read is flagged; "Make it a list"
   await expect(row.locator('.property-chip')).toHaveText(['#five', '#six']);
   await expect(page.locator('.page-tag', { hasText: '#five' })).toHaveCount(0);
   await expect(page.locator('.page-tag', { hasText: '#six' })).toHaveCount(0);
-  await expect(flag.locator('.property-mismatch')).toHaveAttribute('title', "Obsidian won't read these as tags. Make it a list");
-  // The flag carries the tooltip as the digits flag does; the button is described by it (keyboard, screen readers).
-  await expect(flag).toHaveAttribute('title', "Obsidian won't read these as tags. Make it a list");
-  await expect(page.getByTestId('property-make-list')).toHaveAccessibleDescription("Obsidian won't read these as tags. Make it a list");
+  // #9j9cd5x4: the icon and the button show the app's tooltip, which names the button; the button is
+  // described by it (keyboard, screen readers). No native titles. The flag sits right after the chips.
+  const hint = "Obsidian doesn't read this text as tags. “Make it a list” writes them as a list.";
+  await expect(flag.locator('.property-mismatch')).toHaveAttribute('data-tooltip', hint);
+  await expect(page.getByTestId('property-make-list')).toHaveAttribute('data-tooltip', hint);
+  await expect(flag).not.toHaveAttribute('title');
+  await expect(page.getByTestId('property-make-list')).toHaveAccessibleDescription(hint);
+  // The icon keeps its accessible name, and the button its own name, without native titles.
+  await expect(flag.locator('.property-mismatch')).toHaveAccessibleName(hint);
+  await expect(page.getByTestId('property-make-list')).toHaveAccessibleName('Make it a list');
+  expect(await nextToChips(await flag.boundingBox())).toBe(true);
   // The specific flag replaces the generic "doesn't match the type" one.
   await expect(page.getByTestId('property-mismatch')).toHaveCount(0);
   // Nothing is written just by opening.

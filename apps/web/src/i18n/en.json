@@ -1106,7 +1106,7 @@
     "readOnly": "This value is nested YAML. Edit it in another editor.",
     "invalid": "That isn't a valid value for a {{type}} property.",
     "mismatch": "This value doesn't match the {{type}} type. Edit it, or change the type.",
-    "tagsString": "Obsidian won't read these as tags. Make it a list",
+    "tagsString": "Obsidian doesn't read this text as tags. “Make it a list” writes them as a list.",
     "makeList": "Make it a list",
     "tagsDigits": "Obsidian doesn't count tags made only of digits.",
     "invalidName": "Property names use letters, digits, spaces, “-” and “_”.",
