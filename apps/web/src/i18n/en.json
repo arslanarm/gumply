@@ -1590,6 +1590,7 @@
     "renamedFrom": "Renamed from “{{title}}”",
     "movedFrom": "Moved from {{folder}}",
     "topLevel": "the top level",
+    "earlierPage": "From an earlier page with this name",
     "otherTitle": "This version was named “{{title}}”. Restoring keeps the current name.",
     "sameAsCurrent": "Same as the current version.",
     "preview": "Preview",

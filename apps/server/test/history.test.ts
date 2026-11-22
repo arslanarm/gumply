@@ -188,6 +188,23 @@ describe("a new page never adopts an old page's history", () => {
   });
 });
 
+describe("a page that appears outside Gumply where history is", () => {
+  it("keeps that history with a `recreated` marker, so the panel can show which versions came before", async () => {
+    const { app, store, dir } = await createTestServer();
+    await writeFile(join(dir, "Draft.md"), "one\n");
+    await store.rescan();
+    await store.update("Draft", { content: "two" });
+    await rm(join(dir, "Draft.md"));
+    await store.rescan();
+    await writeFile(join(dir, "Draft.md"), "a different page\n");
+    await store.rescan();
+    const list = await getJson<HistoryList>(app, `/api/history/${enc("Draft")}`);
+    expect(list.items.length).toBeGreaterThan(0);
+    expect(list.moves.map((move) => move.event)).toEqual(["recreated"]);
+    expect(list.items.every((item) => item.at <= list.moves[0]!.at)).toBe(true);
+  });
+});
+
 describe("restore (§4)", () => {
   it("writes the version's exact bytes, never renames, and is undoable", async () => {
     const { app, store, dir } = await createTestServer();

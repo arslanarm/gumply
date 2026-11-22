@@ -550,7 +550,7 @@ export interface HistoryList {
   items: HistoryItem[];
   nextCursor?: string;
   current: { version: string; sha256: string | null };
-  moves: Array<{ event: "rename" | "move"; from: string; id: string; at: string }>;
+  moves: Array<{ event: "rename" | "move" | "recreated"; from: string; id: string; at: string }>;
 }
 
 export type HistoryDiff =

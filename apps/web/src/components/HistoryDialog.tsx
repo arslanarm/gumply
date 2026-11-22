@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { parseFrontmatter, type BoardDocument, type Page, type PageMeta } from "@gumply/core";
 import { api, ApiRequestError, type HistoryDiff, type HistoryItem, type HistoryList } from "../api/client.js";
 import { dateFormat, relativeTime, useT } from "../i18n/index.js";
@@ -134,6 +134,10 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   };
 
   const rows: Selection[] = useMemo(() => [null, ...items.map((entry) => entry.file)], [items]);
+  // A file that appeared outside Gumply where an earlier page of that name had history:
+  // the versions before that belong to the earlier page (divider above the first of them).
+  const recreatedAt = (list?.moves ?? []).filter((move) => move.event === "recreated").reduce<string | null>((latest, move) => (latest === null || move.at > latest ? move.at : latest), null);
+  const firstEarlier = recreatedAt === null ? null : (items.find((entry) => entry.at < recreatedAt)?.file ?? null);
   const activeIndex = Math.max(0, rows.indexOf(selected));
 
   const onListKeyDown = (event: ReactKeyboardEvent<HTMLUListElement>) => {
@@ -309,7 +313,7 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
             {rows.map((file, index) => {
               const entry = file === null ? null : items.find((candidate) => candidate.file === file);
               const note = entry ? secondary(entry) : null;
-              return (
+              const row = (
                 <li
                   key={file ?? "current"}
                   id={`${id}-row-${index}`}
@@ -338,6 +342,16 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
                     <span className="history-row-time">{t("history.current")}</span>
                   )}
                 </li>
+              );
+              return file !== null && file === firstEarlier ? (
+                <Fragment key={file}>
+                  <li role="presentation" className="history-divider" data-testid="history-earlier-page">
+                    {t("history.earlierPage")}
+                  </li>
+                  {row}
+                </Fragment>
+              ) : (
+                row
               );
             })}
           </ul>

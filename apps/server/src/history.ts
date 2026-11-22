@@ -44,9 +44,13 @@ export interface HistoryEntry {
   restoredFrom?: string;
 }
 
-/** A rename or move of the page (no file). */
+/**
+ * A rename or move of the page (no file), or `recreated`: a file appeared
+ * outside Gumply where an earlier page of that name had history. The versions
+ * before it belong to that earlier page (the panel shows a divider).
+ */
 export interface HistoryMove {
-  event: "rename" | "move";
+  event: "rename" | "move" | "recreated";
   from: string;
   id: string;
   at: string;
@@ -153,7 +157,7 @@ export async function readHistory(dir: string): Promise<PageHistory> {
       const pin = line as unknown as PinLine;
       const known = pins.get(pin.file);
       if (!known || known.at <= pin.at) pins.set(pin.file, pin);
-    } else if ((line.event === "rename" || line.event === "move") && typeof line.id === "string") {
+    } else if ((line.event === "rename" || line.event === "move" || line.event === "recreated") && typeof line.id === "string") {
       const move = line as unknown as HistoryMove;
       moves.set(`${move.at}\u0000${move.id}`, move);
     } else if (typeof line.file === "string" && isVersionFile(line.file) && !entries.has(line.file)) {
@@ -276,6 +280,19 @@ export async function moveHistoryDir(root: string, source: string, from: string,
 export async function setAsideHistory(root: string, id: string, now = new Date()): Promise<void> {
   const dir = historyDir(root, id);
   if (existsSync(dir)) await rename(dir, `${dir}~${stamp(now)}`);
+}
+
+/**
+ * A page or board file appeared outside Gumply at `id`, where history already
+ * is (a page of that name was deleted earlier, or the file came back, e.g. a
+ * git checkout). The history stays (it may be this page's own), with a marker.
+ */
+export async function markRecreated(root: string, id: string, now = new Date()): Promise<boolean> {
+  const dir = historyDir(root, id);
+  if (!existsSync(dir)) return false;
+  const line: HistoryMove = { event: "recreated", from: id, id, at: now.toISOString() };
+  await appendFile(join(dir, INDEX_FILE), `${JSON.stringify(line)}\n`);
+  return true;
 }
 
 // --- retention (D41) -------------------------------------------------------

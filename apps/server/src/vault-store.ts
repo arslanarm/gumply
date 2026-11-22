@@ -119,6 +119,7 @@ import {
   historyKeys,
   keyToId,
   lineDiff,
+  markRecreated,
   moveHistory,
   moveHistoryDir,
   newestVersion,
@@ -859,11 +860,21 @@ export class VaultStore {
       else if (previous && this.recordSignature(previous) !== this.recordSignature(record)) editedOutside.push(record);
     }
 
+    const previousIds = new Set(this.pages.keys());
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
     for (const { from, to } of historyMoves) {
       const record = this.pages.get(to);
       if (record && (record.kind === "page" || record.kind === "whiteboard")) await this.followHistory(from, to);
+    }
+    // A page or board that appeared outside Gumply where an earlier one had history: marked, so
+    // the panel shows which versions came before it (Gumply's own creates set it aside instead).
+    if (this.historySource === "app") {
+      const movedIn = new Set(historyMoves.map(({ to }) => to));
+      for (const [id, record] of next) {
+        if (previousIds.has(id) || movedIn.has(id) || (record.kind !== "page" && record.kind !== "whiteboard")) continue;
+        await markRecreated(this.root, id).catch(() => false);
+      }
     }
     for (const record of editedOutside) await this.versionFromOutside(record);
     // D23: a file moved to another folder outside Gumply keeps working

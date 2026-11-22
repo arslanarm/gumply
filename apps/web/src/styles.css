@@ -7019,6 +7019,15 @@ input {
   color: var(--text);
 }
 
+.history-divider {
+  margin: 0.5rem 0.2rem 0.25rem;
+  padding: 0.35rem 0.4rem 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
 .history-row-pin {
   display: inline-flex;
   color: var(--accent);
