@@ -14,6 +14,12 @@ export default defineConfig({
       },
       // One markdown-it in the bundle (#evh35bn7).
       markdownItAlias,
+      // F2: Mermaid's optional ELK layout pulls in elkjs (EPL-2.0 / GPL-3.0),
+      // which Gumply doesn't ship: a stub that refuses takes its place.
+      {
+        find: /^elkjs\/lib\/elk\.bundled\.js$/,
+        replacement: fileURLToPath(new URL("./src/lib/elk-stub.ts", import.meta.url)),
+      },
     ],
   },
   build: {

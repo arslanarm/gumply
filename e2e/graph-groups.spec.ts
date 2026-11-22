@@ -164,3 +164,39 @@ test('the panel in Russian has no English left', async ({ page, vault }) => {
     await expect(panel.getByLabel(label)).toHaveCount(0);
   }
 });
+
+test('the local graph uses the same groups and filters (E2)', async ({ page, vault }) => {
+  test.setTimeout(60_000);
+  await seed(vault);
+  mkdirSync(path.dirname(GUMPLY_GRAPH), { recursive: true });
+  const COLOR = '#ff00aa';
+  writeFileSync(
+    GUMPLY_GRAPH,
+    JSON.stringify({
+      groups: [{ query: 'tag:#work', color: COLOR }],
+      filters: { search: '', showTags: true, showAttachments: false, hideUnresolved: true, showOrphans: true },
+    }),
+  );
+  await page.goto(`/#/${encodeURIComponent('Alpha')}`);
+  await page.getByTestId('local-graph-toggle').click();
+  const canvas = page.getByTestId('local-graph-canvas');
+  await expect(canvas.locator('canvas')).toBeVisible();
+  // Alpha ↔ Beta plus the #work tag node; the ghost "Someday" is hidden.
+  await expect(canvas).toHaveAttribute('aria-label', /^2 pages, /);
+  await expect(canvas).toHaveAttribute('aria-label', /0 missing/);
+  const painted = () =>
+    canvas.locator('canvas').evaluate((element, color) => {
+      const node = element as HTMLCanvasElement;
+      const context = node.getContext('2d');
+      if (!context) return 0;
+      const [r, g, b] = [1, 3, 5].map((at) => parseInt(color.slice(at, at + 2), 16));
+      const data = context.getImageData(0, 0, node.width, node.height).data;
+      let count = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index + 3]! < 200) continue;
+        if (Math.abs(data[index]! - r!) + Math.abs(data[index + 1]! - g!) + Math.abs(data[index + 2]! - b!) < 30) count += 1;
+      }
+      return count;
+    }, COLOR);
+  await expect.poll(painted, { timeout: 5_000 }).toBeGreaterThan(20);
+});

@@ -177,7 +177,7 @@ export interface GraphData {
    */
   unresolved: Array<{ source: PageId; targetTitle: string }>;
   /**
-   * v1.19 (`?include=attachments`, spec/api-graph-groups): each page's link to
+   * v1.next (`?include=attachments`, spec/api-graph-groups): each page's link to
    * an attachment file it embeds or links (`![[pic.png]]`), resolved like
    * Obsidian. Absent unless asked for.
    */
@@ -257,4 +257,35 @@ export interface Embed {
 /** Error body used for 400/404/409 responses. */
 export interface ApiError {
   error: string;
+}
+
+/** v1.next (C1, spec/api-mentions): `GET /pages/:id/mentions`, one entry per mentioning page. */
+export interface PageMentions {
+  page: PageMeta;
+  /** The source's version: pass it back as `expectedUpdated` to link. */
+  updated: string;
+  mentions: Array<{
+    /** Offset into the source's body (frontmatter excluded): the `positions` to link. */
+    index: number;
+    length: number;
+    /** As written. */
+    text: string;
+    /** The title or alias matched. */
+    term: string;
+    /** Plain text around it; `start`/`end` mark the mention in `text`. */
+    snippet: { text: string; start: number; end: number };
+  }>;
+}
+
+/** `POST /pages/:id/mentions/link` body. */
+export interface LinkMentionsInput {
+  source: PageId;
+  expectedUpdated?: string;
+  positions?: number[];
+  all?: boolean;
+}
+
+export interface LinkMentionsResult {
+  linked: number;
+  rewrittenPages: PageId[];
 }
