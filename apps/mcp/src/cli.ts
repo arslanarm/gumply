@@ -56,7 +56,8 @@ async function main(): Promise<void> {
   const access = effectiveAccess(settings, args.readOnly);
 
   const vault = new Vault(args.vault);
-  await vault.open();
+  // Index in the background: the handshake and tools/list don't wait for it.
+  vault.open().catch((error: unknown) => fail(`[gumply mcp] can't read the vault: ${error instanceof Error ? error.message : String(error)}`));
   const limiter = new RateLimiter(
     Number(process.env.GUMPLY_MCP_WRITES_PER_MINUTE) || 30,
     Number(process.env.GUMPLY_MCP_WRITES_PER_DAY) || 1000,
@@ -74,7 +75,7 @@ async function main(): Promise<void> {
     vault.close();
     void handle.close().finally(() => {
       // Let queued writes finish, then go: watchers are closed, so nothing keeps us alive.
-      void vault.store.rescan().finally(() => process.exit(0));
+      void vault.ready.then(() => vault.store.rescan()).finally(() => process.exit(0));
     });
   };
   process.stdin.on("end", shutdown);

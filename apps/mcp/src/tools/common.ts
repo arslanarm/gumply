@@ -30,9 +30,12 @@ export function tool<In extends z.ZodObject, Out extends z.ZodObject>(
   config: { title: string; description: string; inputSchema: In; outputSchema: Out; annotations: ToolAnnotations },
   handler: (args: z.infer<In>, client: string) => Promise<CallToolResult>,
   clientName: (meta: unknown) => string,
+  ready: Promise<void>,
 ): void {
   server.registerTool(name, config, (async (args: z.infer<In>, ctx: { mcpReq: { envelope?: unknown } }) => {
     try {
+      // The index may still be building (large vaults): wait for it, not for the handshake.
+      await ready;
       return await handler(args, clientName(ctx.mcpReq.envelope));
     } catch (error) {
       return errorResult(error);

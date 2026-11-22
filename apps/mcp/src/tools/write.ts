@@ -119,6 +119,7 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       );
     },
     ctx.clientName,
+    vault.ready,
   );
 
   tool(
@@ -155,6 +156,7 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       }
     },
     ctx.clientName,
+    vault.ready,
   );
 
   tool(
@@ -229,6 +231,7 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       }
     },
     ctx.clientName,
+    vault.ready,
   );
 
   if (rank(startup) < rank("edit")) return;
@@ -295,6 +298,7 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       }
     },
     ctx.clientName,
+    vault.ready,
   );
 
   tool(
@@ -329,6 +333,7 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       return ok({ trashId: result.trashId, deleted: result.deleted }, `Moved "${meta.title}" and ${result.deleted.length - 1} sub-page(s) to the Trash (restorable).`);
     },
     ctx.clientName,
+    vault.ready,
   );
 }
 

@@ -45,15 +45,21 @@ function escapeKind(id: string): "outside" | "hidden" | null {
 export class Vault {
   readonly store: VaultStore;
   private realRoot: string | null = null;
+  /** Settles once the index is built; tool calls wait for it (the handshake doesn't). */
+  ready: Promise<void> = Promise.resolve();
 
   constructor(readonly root: string) {
     this.store = new VaultStore(root);
   }
 
-  async open(): Promise<void> {
-    await this.store.init();
-    this.realRoot = await realpath(this.store.root);
-    this.store.startWatching();
+  /** Start reading the vault. The server answers the handshake meanwhile. */
+  open(): Promise<void> {
+    this.ready = (async () => {
+      await this.store.init();
+      this.realRoot = await realpath(this.store.root);
+      this.store.startWatching();
+    })();
+    return this.ready;
   }
 
   close(): void {
@@ -101,6 +107,19 @@ export class Vault {
   }
 
   private findById(id: string): PageMeta | null {
+    // An exact id: straight from the store, without building the whole list.
+    if (this.record(id)) {
+      try {
+        const { content: _content, fileLinks: _links, properties: _props, ...meta } = this.store.get(id);
+        return meta;
+      } catch {
+        try {
+          return this.store.getBoard(id).meta;
+        } catch {
+          // A base or something else: the list below has it.
+        }
+      }
+    }
     const pages = this.list();
     const exact = pages.find((page) => page.id === id);
     if (exact) return exact;
