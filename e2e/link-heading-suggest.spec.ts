@@ -38,7 +38,7 @@ test('[[Page# lists its headings; picking one writes [[Page#Heading]]', async ({
   await page.keyboard.press('Enter');
   await expect(menu).toHaveCount(0);
 
-  expect(await savedContent(page, request, note!.id)).toBe('[[Target#Risks]]\n');
+  expect(await savedContent(page, request, note!.id)).toBe('[[Target#Risks]]');
   expect((await vault.pages()).some((meta) => meta.title.includes('#'))).toBe(false);
 });
 
@@ -55,7 +55,7 @@ test('[[# lists the open note\'s own headings and writes [[#Heading]]', async ({
   await page.keyboard.press('Enter');
   await expect(menu).toHaveCount(0);
 
-  expect(await savedContent(page, request, note!.id)).toBe('## Alpha\n\nFirst. See [[#Alpha]]\n');
+  expect(await savedContent(page, request, note!.id)).toBe('## Alpha\n\nFirst. See [[#Alpha]]');
 });
 
 test('[[Nope#H offers Create “Nope”, and the link keeps #H', async ({ page, vault, request }) => {
@@ -71,7 +71,7 @@ test('[[Nope#H offers Create “Nope”, and the link keeps #H', async ({ page, 
   await create.click();
 
   await expect.poll(async () => (await vault.pages()).map((meta) => meta.title)).toContain('Nope');
-  expect(await savedContent(page, request, note!.id)).toBe('[[Nope#H]]\n');
+  expect(await savedContent(page, request, note!.id)).toBe('[[Nope#H]]');
 });
 
 test('with two pages of the same name, the headings come from the one in the note\'s folder', async ({ page, vault }) => {
