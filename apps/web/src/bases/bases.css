@@ -537,7 +537,9 @@
 
 .base-title-link {
   display: inline-flex;
-  align-items: center;
+  /* A wrapped title reads left-aligned under its first line, not centred (a button's default, #v85n3uqv). */
+  align-items: flex-start;
+  text-align: start;
   gap: 0.4rem;
   min-width: 0;
   padding: 0.15rem 0.25rem;
@@ -560,6 +562,9 @@
 .base-title-icon {
   display: inline-flex;
   flex: none;
+  align-items: center;
+  /* One line tall, so the icon stays on a wrapped title's first line (#v85n3uqv). */
+  height: 1lh;
   color: var(--muted);
 }
 
@@ -726,14 +731,13 @@
   background: var(--hover);
 }
 
+/*
+ * The view's toolbar sits on its own row under the title bar (#rusxsd5v).
+ * Pulled up beside the title, it was drawn over "Projects · Board" whenever
+ * the page column was narrower than both (Russian labels sooner).
+ */
 .base-embed .base-view.is-embedded .base-head {
-  margin-top: -30px;
-  margin-right: 4.5rem;
-  pointer-events: none;
-}
-
-.base-embed .base-view.is-embedded .base-head > * {
-  pointer-events: auto;
+  margin-top: 0.1rem;
 }
 
 .base-embed-missing {

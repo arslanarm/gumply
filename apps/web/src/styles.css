@@ -4779,6 +4779,8 @@ input {
 }
 
 .context-item-keys {
+  /* Never touching a long (Russian) label (#v85n3uqv). */
+  padding-left: 1.25rem;
   color: var(--muted);
   font-size: 0.76rem;
 }
