@@ -386,24 +386,36 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[],
 }
 
 /**
- * Build deduplicated link edges for a page body. Links pointing back at the
- * page itself are dropped (no graph self-loops); unresolved links keep
- * `target: null`.
+ * Build deduplicated link edges for a page body, then its frontmatter links
+ * (#rpugpydh, `propertyLinks`; marked `via: "property"` when the body doesn't
+ * link the same page). One edge per resolved target page (`[[alpha]]` and
+ * `[[Alpha]]` are one edge); an unresolved link keeps `target: null`, one
+ * per title as written. Links pointing back at the page itself are dropped
+ * (no graph self-loops).
  */
-export function collectLinkEdges(pageId: string, content: string, pages: readonly PageMeta[]): LinkEdge[] {
+export function collectLinkEdges(
+  pageId: string,
+  content: string,
+  pages: readonly PageMeta[],
+  propertyLinks: readonly WikiLink[] = [],
+): LinkEdge[] {
   const seen = new Set<string>();
   const edges: LinkEdge[] = [];
 
-  for (const link of extractWikilinks(content)) {
+  const add = (link: WikiLink, via?: "property") => {
     const target = resolveWikilink(link.targetTitle, pages, pageId);
-    if (target?.id === pageId) continue;
+    if (target?.id === pageId) return;
 
-    const key = `${link.targetTitle}\u0000${target?.id ?? ""}`;
-    if (seen.has(key)) continue;
+    const key = target ? `\u0000${target.id}` : link.targetTitle;
+    if (seen.has(key)) return;
     seen.add(key);
 
-    edges.push({ source: pageId, target: target?.id ?? null, targetTitle: link.targetTitle });
-  }
+    const edge: LinkEdge = { source: pageId, target: target?.id ?? null, targetTitle: link.targetTitle };
+    if (via) edge.via = via;
+    edges.push(edge);
+  };
+  for (const link of extractWikilinks(content)) add(link);
+  for (const link of propertyLinks) add(link, "property");
 
   return edges;
 }

@@ -11,6 +11,7 @@
  */
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
 import { isTagsKey } from "./frontmatter-keys.js";
+import { extractWikilinks, hasAttachmentExtension, type WikiLink } from "./links.js";
 import { HEADER_KEYS } from "./properties.js";
 import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
@@ -85,6 +86,58 @@ export function propertyLinkSpans(yaml: string): PropertyLinkSpan[] | null {
     }
   }
   return spans;
+}
+
+/** A frontmatter value that links a page (#rpugpydh). */
+export interface PropertyPageLink {
+  key: string;
+  link: WikiLink;
+}
+
+/** A frontmatter value that links a vault file (`"[[report.pdf]]"`): the name as written before `|` and `#`. */
+export interface PropertyFileLink {
+  key: string;
+  name: string;
+}
+
+export interface PropertyLinks {
+  pages: PropertyPageLink[];
+  files: PropertyFileLink[];
+}
+
+const WHOLE_LINK = new RegExp(String.raw`^\[\[(${WIKILINK_INNER}+)\]\]$`);
+
+/**
+ * The frontmatter values that count as links for the graph and backlinks
+ * (#rpugpydh, @opus-hunter's `vault-c1obs/` table). A value counts only when
+ * the whole decoded value is exactly one non-embed `[[link]]`: `"[[Alpha]]"`,
+ * `"[[Alpha#Sec]]"`, `"[[Alpha|A]]"`, a list item `- "[[Alpha]]"`. Never:
+ * text around the link or two links (nothing counts), spaces around it (no
+ * trim), an embed `"![[Alpha]]"`, an escaped `"\\[[Alpha]]"`, and the unquoted
+ * `up: [[Alpha]]` (YAML reads a nested list). A whole-value link to an
+ * attachment-type file (`"[[a.pdf]]"`) is a file link instead.
+ * `null` when there are none (or the YAML doesn't parse).
+ */
+export function propertyLinks(yaml: string | null | undefined): PropertyLinks | null {
+  if (!yaml || !yaml.includes("[[")) return null;
+  const spans = propertyLinkSpans(yaml);
+  if (!spans) return null;
+  const pages: PropertyPageLink[] = [];
+  const files: PropertyFileLink[] = [];
+  for (const span of spans) {
+    if (span.style === "flow-link" || !span.value.startsWith("[[")) continue;
+    const links = extractWikilinks(span.value);
+    if (links.length === 1) {
+      const link = links[0]!;
+      if (link.raw === span.value && !link.embed) pages.push({ key: span.key, link });
+      continue;
+    }
+    if (links.length > 0) continue;
+    const whole = WHOLE_LINK.exec(span.value);
+    const name = whole ? whole[1]!.split("|")[0]!.split("#")[0]!.trim() : "";
+    if (name && hasAttachmentExtension(name)) files.push({ key: span.key, name });
+  }
+  return pages.length > 0 || files.length > 0 ? { pages, files } : null;
 }
 
 /** A plain YAML scalar that would read back as something else, or not as one string, needs quotes. */

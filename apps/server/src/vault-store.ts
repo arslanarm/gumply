@@ -84,6 +84,9 @@ import {
   maskCode,
   obsidianFileLinks,
   parseEmbeds,
+  propertyLinks,
+  type PropertyLinks,
+  type WikiLink,
   newBaseSource,
   parseBase,
   updateBaseSource,
@@ -240,6 +243,8 @@ interface PageRecord extends Omit<Page, "childCount"> {
   fileMtimeMs: number;
   /** Frontmatter tags only; `tags` is this plus inline tags. */
   fmTags: string[];
+  /** #rpugpydh: the frontmatter's `[[links]]` (core `propertyLinks`); absent when none. */
+  propertyLinks?: PropertyLinks;
   /**
    * The title comes from a `title:` key. Otherwise it is derived from the file
    * name (typical Obsidian note), and the file is never renamed to "fix" it.
@@ -772,6 +777,8 @@ export class VaultStore {
       record.icon ?? null,
       record.content,
       record.fmTags,
+      // #rpugpydh: an outside edit to the frontmatter's links alone is a change.
+      record.propertyLinks ?? null,
       record.parentId,
     ]);
   }
@@ -1318,6 +1325,11 @@ export class VaultStore {
     return this.enqueue(() => this.updateBoardNow(this.resolveId(id), patch));
   }
 
+  /** #rpugpydh: the page links in a page's frontmatter that count (core `propertyLinks`), in file order. */
+  propertyLinksOf(id: PageId): WikiLink[] {
+    return this.pages.get(this.resolveId(id))?.propertyLinks?.pages.map((entry) => entry.link) ?? [];
+  }
+
   backlinks(id: PageId): Backlink[] {
     id = this.resolveId(id);
     this.require(id);
@@ -1332,7 +1344,7 @@ export class VaultStore {
       if (!source) continue;
       out.push({
         page: metaOf(source, this.directChildCount(sourceId)),
-        snippet: this.linkSnippet(source, edge.targetTitle),
+        snippet: this.linkSnippet(source, edge),
       });
     }
 
@@ -1454,7 +1466,7 @@ export class VaultStore {
   }
 
   /** Attachment links per page, cached until the page's content changes. */
-  private readonly attachmentLinks = new Map<PageId, { content: string; paths: string[] }>();
+  private readonly attachmentLinks = new Map<PageId, { content: string; fromProperties: string; paths: string[] }>();
 
   /**
    * v1.19: each included page's links to attachment files (`![[pic.png]]`,
@@ -1466,17 +1478,21 @@ export class VaultStore {
     for (const id of included) {
       const record = this.pages.get(id);
       if (!record) continue;
+      // #rpugpydh: a frontmatter value that is one whole file link (`"[[report.pdf]]"`) counts too.
+      const fromProperties = record.propertyLinks?.files.map((entry) => entry.name) ?? [];
+      const propertyKey = fromProperties.join("\u0000");
       let cached = this.attachmentLinks.get(id);
-      if (!cached || cached.content !== record.content) {
+      if (!cached || cached.content !== record.content || cached.fromProperties !== propertyKey) {
         const from = relative(this.root, record.filePath).split(sep).join("/");
         const links = new Set(obsidianFileLinks(record.content, maskCode));
         for (const embed of parseEmbeds(record.content)) if (embed.syntax !== "obsidian") links.add(embed.path);
+        for (const name of fromProperties) links.add(name);
         const paths = new Set<string>();
         for (const link of links) {
           const path = this.linkIndex.resolve(link, from);
           if (path) paths.add(path);
         }
-        cached = { content: record.content, paths: [...paths].sort() };
+        cached = { content: record.content, fromProperties: propertyKey, paths: [...paths].sort() };
         this.attachmentLinks.set(id, cached);
       }
       for (const path of cached.paths) out.push({ source: id, path });
@@ -2127,6 +2143,7 @@ export class VaultStore {
     else delete record.ownWrite;
     record.explicitTitle = record.explicitTitle || written.titleKey;
     record.fmTags = fmTags;
+    this.setPropertyLinks(record, written.text);
     if (nextIcon) record.icon = nextIcon;
     else delete record.icon;
 
@@ -2299,6 +2316,7 @@ export class VaultStore {
       ? rewrittenAt
       : mtimeVersion(otherWritten.mtimeMs);
     other.fileMtimeMs = otherWritten.mtimeMs;
+    this.setPropertyLinks(other, otherWritten.text);
     this.refreshTags(other);
   }
 
@@ -3529,7 +3547,8 @@ export class VaultStore {
    * text plus page/board cards, i.e. file nodes).
    */
   private edgesFor(record: PageRecord, metas: readonly PageMeta[]): LinkEdge[] {
-    const edges = collectLinkEdges(record.id, record.content, metas);
+    const fromProperties = record.propertyLinks?.pages.map((entry) => entry.link) ?? [];
+    const edges = collectLinkEdges(record.id, record.content, metas, fromProperties);
     if (!record.board) return edges;
     const seen = new Set(edges.map((edge) => edge.target ?? `?${edge.targetTitle.toLowerCase()}`));
     for (const link of canvasLinks(record.board)) {
@@ -3616,7 +3635,23 @@ export class VaultStore {
     record.tags = normalizeTags([...record.fmTags, ...extractTags(record.content)]).slice(0, MAX_TAGS);
   }
 
-  private linkSnippet(record: PageRecord, targetTitle: string): string {
+  /**
+   * #rpugpydh: the frontmatter's links, re-read after a write or a read of the
+   * file (`raw`: the whole note). Only a note with `[[` in it is parsed.
+   */
+  private setPropertyLinks(record: PageRecord, raw: string): void {
+    const links = raw.includes("[[") ? propertyLinks(parseNoteTemplate(raw).yaml) : null;
+    if (links) record.propertyLinks = links;
+    else delete record.propertyLinks;
+  }
+
+  private linkSnippet(record: PageRecord, edge: LinkEdge): string {
+    const { targetTitle } = edge;
+    if (edge.via === "property") {
+      // A link only in the frontmatter: its key and the link (`related: [[Alpha]]`; the panel shows `related: Alpha`, the link highlighted).
+      const entry = record.propertyLinks?.pages.find((candidate) => candidate.link.targetTitle === targetTitle);
+      if (entry) return `${entry.key}: ${entry.link.raw}`;
+    }
     const link = extractWikilinks(record.content).find(
       (candidate) => candidate.targetTitle.toLowerCase() === targetTitle.toLowerCase(),
     );
@@ -3663,6 +3698,7 @@ export class VaultStore {
       kind: "page",
     };
     if (icon) record.icon = icon;
+    this.setPropertyLinks(record, raw);
     return record;
   }
 
@@ -3740,7 +3776,7 @@ export class VaultStore {
     properties?: { values: Record<string, unknown>; changed: string[]; renames: Array<{ from: string; to: string }> },
     /** #3c86ify2: the existing frontmatter YAML with rewritten link values (used as the template's YAML). */
     frontmatterYaml?: string,
-  ): Promise<{ mtimeMs: number; frontmatter: boolean; titleKey: boolean }> {
+  ): Promise<{ mtimeMs: number; frontmatter: boolean; titleKey: boolean; text: string }> {
     await mkdir(dirname(filePath), { recursive: true });
     // Use the current file as the byte template so unknown frontmatter keys,
     // comments, key order, flow style, CRLF and the trailing newline survive
@@ -3834,6 +3870,7 @@ export class VaultStore {
         frontmatter: !plain && versionKey,
         // A new block always has `title:`; an edited one only if it was written.
         titleKey: !plain && titleWritten,
+        text,
       };
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);

@@ -176,3 +176,39 @@ describe.each(ERAS)("read tools (%s client)", (era) => {
     before = vaultHash(vault.dir, true);
   });
 });
+
+// #rpugpydh: a frontmatter `[[link]]` is a link for MCP too (read's `links`, backlinks).
+describe.each(ERAS)("frontmatter links (%s client)", (era) => {
+  let vault: ReturnType<typeof makeVault>;
+  let mcp: Connection;
+
+  beforeAll(async () => {
+    vault = makeVault();
+    writeFileSync(
+      join(vault.dir, "Related.md"),
+      '---\nrelated: "[[Welcome|the start]]"\nrefs:\n  - "[[Projects/Plan]]"\n  - "[[Nowhere]]"\nup: [[Plain note]]\n---\nSee [[projects/plan]].\n',
+    );
+    mcp = await connect(vault.dir, era);
+  }, 30_000);
+
+  afterAll(async () => {
+    await mcp?.close();
+    vault.cleanup();
+  });
+
+  it("read lists them after the body's links, with via: property, once per page", async () => {
+    const page = (await mcp.call("read", { id: "Related" })).structuredContent!;
+    expect(page.links).toEqual([
+      { target: "projects/plan", id: "Projects/Plan" },
+      { target: "Welcome", id: "Welcome", via: "property" },
+      { target: "Nowhere", id: null, via: "property" },
+    ]);
+  });
+
+  it("backlinks include a property-only link, with its key as the snippet", async () => {
+    const result = await mcp.call("backlinks", { title: "Welcome" });
+    expect(result.isError).toBeFalsy();
+    const items = result.structuredContent!.items as Array<{ id: string; snippet: string }>;
+    expect(items.find((item) => item.id === "Related")?.snippet).toBe("related: [[Welcome|the start]]");
+  });
+});

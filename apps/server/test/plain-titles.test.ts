@@ -46,9 +46,10 @@ describe("plain note titles (#bayuasqq)", () => {
   it("links by file name and by the old readable title both resolve; search finds it with spaces", async () => {
     const { app } = await obsidianVault();
     const graph = await getJson<GraphData>(app, "/api/graph");
-    // `[[meeting-notes]]` (Obsidian) and `[[Meeting notes]]` (older Gumply) both land on the note.
+    // `[[meeting-notes]]` (Obsidian) and `[[Meeting notes]]` (older Gumply) both land on the note:
+    // one edge to it (#rpugpydh: one edge per target page).
     const targets = graph.links.filter((link) => link.source === "Links").map((link) => link.target).sort();
-    expect(targets).toEqual(["meeting-notes", "meeting-notes", "my_page"]);
+    expect(targets).toEqual(["meeting-notes", "my_page"]);
     expect(graph.unresolved.filter((link) => link.source === "Links")).toEqual([]);
     const results = await getJson<Array<{ page: PageMeta; score: number }>>(app, "/api/search?q=meeting%20notes");
     expect(results[0]?.page.id).toBe("meeting-notes");

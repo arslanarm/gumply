@@ -4,7 +4,7 @@
  * by Gumply id or title, never by path.
  */
 import type { McpServer } from "@modelcontextprotocol/server";
-import { canvasNodeKind, canvasText, extractWikilinks, resolveWikilink, tagMatches, type CanvasBoard, type PageMeta } from "@gumply/core";
+import { canvasNodeKind, canvasText, extractWikilinks, resolveWikilink, tagMatches, type CanvasBoard, type PageMeta, type WikiLink } from "@gumply/core";
 import * as z from "zod";
 import { ToolError } from "../errors.js";
 import type { Vault } from "../vault.js";
@@ -101,7 +101,7 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
         updated: z.string(),
         content: z.string(),
         truncated: z.boolean(),
-        links: z.array(z.object({ target: z.string(), id: z.string().nullable() })),
+        links: z.array(z.object({ target: z.string(), id: z.string().nullable(), via: z.literal("property").optional() })),
         cards: z
           .array(
             z.object({
@@ -126,6 +126,7 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
       let properties: Array<{ key: string; type: string; value: string | number | boolean | string[] | null }> = [];
       let cards: Array<{ nodeId: string; type: string; text?: string; pageId?: string | null; url?: string }> | undefined;
       let updated: string;
+      let propertyLinks: WikiLink[] = [];
       if (kind === "whiteboard") {
         const doc = vault.store.getBoard(meta.id);
         updated = doc.meta.updated;
@@ -140,15 +141,21 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
           type: property.type,
           value: property.value,
         }));
+        propertyLinks = vault.store.propertyLinksOf(meta.id);
       }
       const seen = new Set<string>();
-      const links: Array<{ target: string; id: string | null }> = [];
-      for (const link of extractWikilinks(body)) {
-        const key = link.targetTitle.toLowerCase();
-        if (seen.has(key)) continue;
+      const links: Array<{ target: string; id: string | null; via?: "property" }> = [];
+      const add = (link: WikiLink, via?: "property") => {
+        // One entry per page (as the link index keeps one edge per target), one per missing title.
+        const id = resolveWikilink(link.targetTitle, pages, meta.id)?.id ?? null;
+        const key = id === null ? `?${link.targetTitle.toLowerCase()}` : id;
+        if (seen.has(key)) return;
         seen.add(key);
-        links.push({ target: link.targetTitle, id: resolveWikilink(link.targetTitle, pages, meta.id)?.id ?? null });
-      }
+        links.push({ target: link.targetTitle, id, ...(via ? { via } : {}) });
+      };
+      for (const link of extractWikilinks(body)) add(link);
+      // #rpugpydh: then the frontmatter links (`related: "[[Alpha]]"`) the body doesn't already have.
+      for (const link of propertyLinks) add(link, "property");
       const truncated = body.length > maxChars;
       const content = truncated ? body.slice(0, maxChars) : body;
       const result = {
