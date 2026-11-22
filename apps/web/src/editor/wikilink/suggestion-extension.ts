@@ -139,7 +139,7 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
               // names no page, it's part of a file name (`a#b.png`): search
               // files for the whole query (#eg65ktng).
               const hash = query.indexOf("#");
-              if (hash !== -1 && resolveWikilink(query.slice(0, hash).trim(), env.pages)) return partSuggestions(query);
+              if (hash !== -1 && resolveWikilink(query.slice(0, hash).trim(), env.pages, env.pageId)) return partSuggestions(query);
               // No "Create" row: a new board is `/whiteboard` → New board here.
               // The open page can't preview itself.
               const embeddable = env.pages.filter(
