@@ -6,6 +6,7 @@ export const CORE_VERSION = "0.6.0";
 export type {
   ApiError,
   Attachment,
+  VaultImage,
   Backlink,
   BoardDocument,
   BoardUpdateResult,

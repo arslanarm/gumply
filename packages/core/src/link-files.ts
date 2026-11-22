@@ -54,6 +54,11 @@ export class LinkFileIndex {
     return this.byPath.size;
   }
 
+  /** Every indexed file's vault path (#3ht5gh6q: the cover picker's image list). */
+  paths(): string[] {
+    return [...this.byPath.values()];
+  }
+
   /**
    * The file `link` points at from the note at vault path `fromNote`
    * (`Projects/Plan.md`; null or unknown: as from the vault root).

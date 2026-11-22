@@ -13,6 +13,7 @@ import {
   PAGE_COLORS,
   PAGE_GRADIENTS,
   type Attachment,
+  type VaultImage,
   type PageColor,
   type PageCover as Cover,
   type PageGradient,
@@ -36,7 +37,8 @@ export function backgroundStyle(look: PageLook): CSSProperties | undefined {
 /** A colour cover's fill; gray is the theme's ink, so it is kept light. */
 const coverFill = (name: PageColor) => `rgba(${colorRgb(name)}, ${name === "gray" ? 0.22 : 0.55})`;
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp)$/i;
+/** Above this many images the Vault images tab gets a search box. */
+const SEARCH_FROM = 30;
 
 function coverStyle(cover: Cover, position: number): CSSProperties {
   if (cover.kind === "color") return { background: coverFill(cover.name) };
@@ -236,6 +238,12 @@ export function PageCover({ look, pageId, fileLinks, pickerSignal, onChange }: P
 
 type Tab = "gallery" | "upload" | "vault" | "link";
 
+/** The images matching the search (name or folder), in the server's order. */
+const shown = (images: VaultImage[], query: string) => {
+  const needle = query.trim().toLowerCase();
+  return needle ? images.filter((item) => item.path.toLowerCase().includes(needle)) : images;
+};
+
 interface CoverPickerProps {
   current: Cover | null;
   onPick: (cover: Cover) => void;
@@ -245,7 +253,8 @@ interface CoverPickerProps {
 
 function CoverPicker({ current, onPick, onClose, onError }: CoverPickerProps) {
   const [tab, setTab] = useState<Tab>("gallery");
-  const [images, setImages] = useState<Attachment[] | null>(null);
+  const [images, setImages] = useState<VaultImage[] | null>(null);
+  const [query, setQuery] = useState("");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -268,8 +277,8 @@ function CoverPicker({ current, onPick, onClose, onError }: CoverPickerProps) {
   useEffect(() => {
     if (tab !== "vault" || images !== null) return;
     api
-      .listAttachments()
-      .then((list) => setImages(list.filter((item) => IMAGE_EXT.test(item.name))))
+      .listImages()
+      .then(setImages)
       .catch((caught: unknown) => {
         setImages([]);
         onError(errorMessage(caught));
@@ -372,18 +381,29 @@ function CoverPicker({ current, onPick, onClose, onError }: CoverPickerProps) {
         </div>
       ) : tab === "vault" ? (
         <div className="cover-picker-body">
+          {images !== null && images.length > SEARCH_FROM ? (
+            <input
+              className="cover-link-input cover-vault-search"
+              data-testid="cover-vault-search"
+              type="search"
+              value={query}
+              placeholder={t("cover.searchImages")}
+              aria-label={t("cover.searchImages")}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          ) : null}
           {images === null ? null : images.length === 0 ? (
             <p className="cover-picker-note">{t("cover.noImages")}</p>
           ) : (
             <div className="cover-vault-grid">
-              {images.map((item) => (
+              {shown(images, query).map((item) => (
                 <button
                   key={item.path}
                   type="button"
                   className="cover-vault-item"
-                  data-testid={`cover-vault-${item.name}`}
-                  aria-label={item.name}
-                  data-tooltip={item.name}
+                  data-testid={`cover-vault-${item.path}`}
+                  aria-label={item.path}
+                  data-tooltip={item.path}
                   onClick={() => onPick({ kind: "image", link: item.path })}
                 >
                   <img src={fileUrl(item.path)} alt="" loading="lazy" />
