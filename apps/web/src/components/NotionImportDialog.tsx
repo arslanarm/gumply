@@ -4,12 +4,13 @@
  * import, then read the report and open the new folder. The server does the
  * work (B2): it never touches anything already in the vault.
  */
-import { formatImportLimit, NOTION_IMPORT_LIMITS, type NotionImportReport, type PageMeta } from "@gumply/core";
+import { formatImportLimit, KANBAN_MAX_GROUPS, NOTION_IMPORT_LIMITS, type NotionImportReport, type PageMeta } from "@gumply/core";
 import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { api, ApiRequestError, type NotionImportJob } from "../api/client.js";
 import { useT } from "../i18n/index.js";
 import {
   convertedLines,
+  databaseLine,
   folderName,
   IMPORT_ERROR_MESSAGES,
   importErrorKind,
@@ -247,6 +248,33 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
             </ul>
           </section>
         ) : null}
+        {(report.databaseDetails ?? []).length > 0 ? (
+          <section>
+            <h3>{t("notionImport.databasesTitle")}</h3>
+            <ul className="notion-import-converted" data-testid="notion-import-databases">
+              {report.databaseDetails.map((database) => (
+                <li key={database.base}>{databaseLine(database, t, (type) => t(`properties.types.${type}`), KANBAN_MAX_GROUPS)}</li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        <List
+          testId="notion-import-renamed"
+          title={t("notionImport.renamedTitle", { count: (report.renamedKeys ?? []).length })}
+          items={(report.renamedKeys ?? []).map((item) => `${item.database}: ${item.from} → ${item.to}`)}
+        />
+        <List
+          testId="notion-import-kept-types"
+          title={t("notionImport.keptTypesTitle", { count: (report.keptTypes ?? []).length })}
+          items={(report.keptTypes ?? []).map((item) =>
+            t("notionImport.keptType", { key: item.key, type: t(`properties.types.${item.type}`), found: t(`properties.types.${item.found}`) }),
+          )}
+        />
+        <List
+          testId="notion-import-not-rows"
+          title={t("notionImport.notRowsTitle", { count: (report.notRows ?? []).length })}
+          items={(report.notRows ?? []).map((item) => t("notionImport.notRow", { page: item.page, database: item.database }))}
+        />
         <List
           testId="notion-import-skipped"
           title={t("notionImport.skippedTitle", { count: report.skipped.length })}

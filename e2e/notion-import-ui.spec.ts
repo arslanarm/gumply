@@ -76,6 +76,10 @@ test.describe('Import from Notion (B4)', () => {
     await expect(page.getByTestId('notion-import-folder')).toHaveText('Imported into “Notion import”');
     await expect(page.getByTestId('notion-import-counts')).toContainText(/\d+ pages?/);
     await expect(page.getByTestId('notion-import-lost')).toContainText('Database views');
+    // B3 (#cwi22mc6): each database, the views made and its property types.
+    const databases = page.getByTestId('notion-import-databases');
+    await expect(databases).toContainText('Boardview: a table view in Notion\'s column order, and a board grouped by Status');
+    await expect(databases).toContainText('DB: a table view in Notion\'s column order. Properties: Number (Number)');
     await expect(page.getByTestId('notion-import-report')).not.toContainText('Your earlier import is unchanged.');
     // The report also went into the folder.
     await expect.poll(() => fs.access(path.join(E2E_VAULT, 'Notion import', 'Import report.md')).then(() => true, () => false)).toBe(true);

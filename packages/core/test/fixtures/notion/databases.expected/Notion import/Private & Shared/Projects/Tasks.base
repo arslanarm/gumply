@@ -1,0 +1,31 @@
+filters:
+  and:
+    - file.folder == "Notion import/Private & Shared/Projects/Tasks"
+views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - Due
+      - Priority 1 5
+      - Done
+      - Tags
+      - Owner
+      - Notes
+  - type: kanban
+    name: Board
+    order:
+      - file.name
+      - Due
+      - Priority 1 5
+      - Done
+      - Tags
+      - Owner
+      - Notes
+    groupBy:
+      property: Status
+      direction: ASC
+    groupOrder:
+      - Todo
+      - Doing
+      - Done

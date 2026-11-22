@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { zipSync, type Zippable } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 import { NOTION_IMPORT_LIMITS, NotionImports, cleanupStaleImports, readNotionZip, unsafeEntryName, zipSymlinks } from "../src/notion-import";
+import { addMissingTypes } from "../src/properties";
 import { cleanupVaults, createTestServer } from "./helpers";
 
 afterEach(cleanupVaults);
@@ -20,9 +21,9 @@ async function walk(dir: string): Promise<string[]> {
   return out;
 }
 
-/** The lorem fixture zipped as Notion delivers it. */
-async function fixtureZip(): Promise<Uint8Array> {
-  const base = join(CORE_FIXTURES, "basic");
+/** A core fixture (default: the lorem one) zipped as Notion delivers it. */
+async function fixtureZip(name = "basic"): Promise<Uint8Array> {
+  const base = join(CORE_FIXTURES, name);
   const files: Zippable = {};
   for (const path of await walk(base)) files[relative(base, path).split("\\").join("/")] = new Uint8Array(await readFile(path));
   return zipSync(files);
@@ -203,3 +204,81 @@ describe("POST /api/import/notion + GET /api/import/:job", () => {
     expect((await app.request("/api/import/notion", { method: "POST", body: new FormData() })).status).toBe(400);
   });
 });
+
+describe("Notion databases: property types (B3, #cwi22mc6)", () => {
+  it("types.json: only new keys are added, every existing byte stays (D37)", () => {
+    // Obsidian's own layout, with another top-level key.
+    const obsidian = '{\n  "types": {\n    "Price": "number",\n    "aliases": "aliases"\n  },\n  "other": true\n}';
+    expect(addMissingTypes(obsidian, { Price: "text", Due: "date", Done: "checkbox" })).toBe(
+      '{\n  "types": {\n    "Price": "number",\n    "aliases": "aliases",\n    "Due": "date",\n    "Done": "checkbox"\n  },\n  "other": true\n}',
+    );
+    // Tabs and a final newline.
+    expect(addMissingTypes('{\n\t"types": {\n\t\t"a": "text"\n\t}\n}\n', { b: "number" })).toBe('{\n\t"types": {\n\t\t"a": "text",\n\t\t"b": "number"\n\t}\n}\n');
+    // One line, compact.
+    expect(addMissingTypes('{"types":{"a":"text"}}', { b: "date" })).toBe('{"types":{"a":"text","b":"date"}}');
+    // An empty `types`, and none at all.
+    expect(addMissingTypes('{\n  "types": {}\n}\n', { b: "date" })).toBe('{\n  "types": {\n    "b": "date"\n  }\n}\n');
+    expect(addMissingTypes('{\n  "other": 1\n}\n', { b: "date" })).toBe('{\n  "other": 1,\n  "types": {\n    "b": "date"\n  }\n}\n');
+    // Strings that look like keys don't confuse it.
+    expect(addMissingTypes('{\n  "note": "types: {",\n  "types": {\n    "x}": "text"\n  }\n}', { y: "number" })).toBe(
+      '{\n  "note": "types: {",\n  "types": {\n    "x}": "text",\n    "y": "number"\n  }\n}',
+    );
+    // A key that differs only in case is the same Obsidian property: never a second entry (B5).
+    expect(addMissingTypes('{"types":{"due":"text"}}', { Due: "date" })).toBeNull();
+    expect(addMissingTypes('{"types":{"due":"text"}}', { Due: "date", Size: "number" })).toBe('{"types":{"due":"text","Size":"number"}}');
+    // Nothing new: no write. No file: a fresh one in the standard format.
+    expect(addMissingTypes('{"types":{"a":"text"}}', { a: "number" })).toBeNull();
+    expect(addMissingTypes(null, { a: "number" })).toBe('{\n  "types": {\n    "a": "number"\n  }\n}\n');
+    expect(() => addMissingTypes("{ broken", { a: "number" })).toThrow();
+  });
+
+  it("an import adds its keys to Obsidian's types.json and keeps the vault's own types; a re-import adds nothing", async () => {
+    const { store, dir } = await createTestServer();
+    await mkdir(join(dir, ".obsidian"), { recursive: true });
+    const original = '{\n  "types": {\n    "Price": "number"\n  }\n}\n';
+    await writeFile(join(dir, ".obsidian/types.json"), original);
+    const imports = new NotionImports(store);
+    const zip = await fixtureZip("databases");
+    const job = await imports.settled(imports.start(zip, null).id);
+    expect(job.state, job.error).toBe("done");
+    const after = await readFile(join(dir, ".obsidian/types.json"), "utf8");
+    expect(after.startsWith('{\n  "types": {\n    "Price": "number",\n')).toBe(true);
+    expect(JSON.parse(after).types).toEqual({
+      Price: "number",
+      Due: "date",
+      "Priority 1 5": "number",
+      Done: "checkbox",
+      Owner: "multitext",
+      Estimate: "datetime",
+      "created-notion": "datetime",
+    });
+    expect(job.report?.keptTypes).toEqual([{ key: "Price", type: "number", found: "text" }]);
+
+    // The rows have typed properties; the .base is next to the page that held the database.
+    const properties = await store.listProperties();
+    expect(properties.find((info) => info.key === "Due")?.type).toBe("date");
+    expect(await readFile(join(dir, "Notion import/Private & Shared/Projects/Tasks.base"), "utf8")).toContain("type: kanban");
+
+    const second = await imports.settled(imports.start(zip, null).id);
+    expect(second.state, second.error).toBe("done");
+    expect(await readFile(join(dir, ".obsidian/types.json"), "utf8")).toBe(after);
+  });
+
+  it("names are matched case-insensitively, as Obsidian does: a vault `due: text` keeps its type for Notion's `Due` dates (B5)", async () => {
+    const { store, dir } = await createTestServer();
+    await mkdir(join(dir, ".obsidian"), { recursive: true });
+    const original = '{\n  "types": {\n    "due": "text"\n  }\n}\n';
+    await writeFile(join(dir, ".obsidian/types.json"), original);
+    const imports = new NotionImports(store);
+    const job = await imports.settled(imports.start(await fixtureZip("databases"), null).id);
+    expect(job.state, job.error).toBe("done");
+    const after = await readFile(join(dir, ".obsidian/types.json"), "utf8");
+    // The existing bytes stay; other keys are added after them; no `Due` beside `due`.
+    expect(after.startsWith('{\n  "types": {\n    "due": "text",\n')).toBe(true);
+    expect(Object.keys(JSON.parse(after).types).filter((key) => key.toLowerCase().startsWith("due"))).toEqual(["due"]);
+    expect(job.report?.keptTypes).toContainEqual({ key: "Due", type: "text", found: "date" });
+    // Within the database, the `due` column next to `Due` became its own key.
+    expect(job.report?.renamedKeys).toContainEqual({ database: "Tasks", from: "due", to: "due 2" });
+  });
+});
+

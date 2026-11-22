@@ -248,6 +248,17 @@ export function frontmatterKeys(yaml: string | null): string[] {
   return findBlocks(yaml.replace(/\r\n/g, "\n").split("\n")).map((block) => block.key);
 }
 
+/**
+ * Inner YAML for new frontmatter in the given key order, written exactly as
+ * the property editor writes each key (Notion import B3, #cwi22mc6), so the
+ * first edit in Gumply changes only the key it edits.
+ */
+export function orderedFrontmatterYaml(entries: ReadonlyArray<readonly [string, unknown]>): string {
+  const lines: string[] = [];
+  for (const [key, value] of entries) if (value !== undefined) lines.push(...renderKey(key, value, null));
+  return lines.length > 0 ? `${lines.join("\n")}\n` : "";
+}
+
 /** Canonical inner YAML for a brand-new frontmatter block. */
 export function canonicalYaml(frontmatter: Frontmatter): string {
   const keys = [

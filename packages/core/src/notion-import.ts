@@ -6,13 +6,29 @@
  * vault paths and exact contents, plus the report. Nothing here touches the
  * disk, so the whole import is planned before a single file is written.
  *
- * Databases (§6) are B3: this plan records each one (its CSVs and row pages)
- * and strips the row pages' `Key: value` lines; B3 adds the frontmatter and
- * the `.base`.
+ * Databases (§6, B3 #cwi22mc6): each row page gets its properties as
+ * frontmatter (types inferred from the CSV), and each database a `.base`
+ * with a table view (plus a board where the export points to one); see
+ * notion-databases.ts.
  */
 import { attachmentHref } from "./attachment-paths.js";
 import { pageSegment } from "./ids.js";
 import { maskCode } from "./links.js";
+import { isTagsKey } from "./frontmatter-keys.js";
+import { orderedFrontmatterYaml } from "./note-template.js";
+import {
+  columnPropertyType,
+  columnValue,
+  inferNotionColumn,
+  isSelectLike,
+  KANBAN_MAX_GROUPS,
+  notionBaseSource,
+  notionPropertyKey,
+  parseCsv,
+  type NotionColumnKind,
+  type RelationItem,
+} from "./notion-databases.js";
+import type { PropertyType } from "./properties.js";
 
 /**
  * The import's limits (spec/api-import): the server enforces them, and the
@@ -53,6 +69,8 @@ export interface NotionImportOptions {
   attachmentsFolder: string;
   /** Titles of the pages already in the vault: a link to a title that isn't unique gets its path. */
   vaultTitles?: readonly string[];
+  /** The vault's stored property types: they win over the import's guesses (B3). */
+  vaultTypes?: Readonly<Record<string, PropertyType>>;
 }
 
 /** A file the import writes, at a vault path. */
@@ -88,7 +106,25 @@ export interface NotionImportReport {
     databaseLinks: number;
     attachmentLinks: number;
     callouts: number;
+    /** Relation cells' items that became `[[links]]` (B3). */
+    relations: number;
   };
+  /** Each database: its `.base`, property types and the views made (B3). */
+  databaseDetails: Array<{
+    name: string;
+    base: string;
+    properties: Array<{ key: string; type: PropertyType }>;
+    /** The board's grouping property, when one was made. */
+    kanban: string | null;
+    /** A board left out: its column had more than 12 values. */
+    kanbanSkipped: { key: string; groups: number } | null;
+  }>;
+  /** Column names that had to change to be property keys. */
+  renamedKeys: Array<{ database: string; from: string; to: string }>;
+  /** Keys whose type the vault (or an earlier database) already set: kept. */
+  keptTypes: Array<{ key: string; type: PropertyType; found: PropertyType }>;
+  /** Sub-pages of row pages: imported as pages, but not rows. */
+  notRows: Array<{ page: string; database: string }>;
   /** Links to files that aren't in the zip (kept as written). */
   missing: Array<{ page: string; link: string }>;
   /** Mentions of pages that aren't in the export (kept as web links). */
@@ -101,6 +137,8 @@ export interface NotionImportPlan {
   files: NotionPlannedFile[];
   databases: NotionPlannedDatabase[];
   report: NotionImportReport;
+  /** Property types to record for keys the vault doesn't type yet (B3; never text). */
+  types: Record<string, PropertyType>;
 }
 
 const ID_SUFFIX = / ([0-9a-f]{32})$/;
@@ -258,7 +296,11 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     databases: 0,
     rows: 0,
     attachments: 0,
-    converted: { pageLinks: 0, mentions: 0, databaseEmbeds: 0, databaseLinks: 0, attachmentLinks: 0, callouts: 0 },
+    converted: { pageLinks: 0, mentions: 0, databaseEmbeds: 0, databaseLinks: 0, attachmentLinks: 0, callouts: 0, relations: 0 },
+    databaseDetails: [],
+    renamedKeys: [],
+    keptTypes: [],
+    notRows: [],
     missing: [],
     outside: [],
     skipped: [],
@@ -291,7 +333,8 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
   };
 
   // Databases first: their CSVs name the row folders.
-  const databases = new Map<string, NotionPlannedDatabase & { zipDir: string; headers: string[] }>();
+  type Database = NotionPlannedDatabase & { zipDir: string; headers: string[]; viewHeaders: string[] | null };
+  const databases = new Map<string, Database>();
   for (const path of paths) {
     if (!/\.csv$/i.test(path)) continue;
     const stem = posixBasename(path).replace(/\.csv$/i, "");
@@ -312,16 +355,22 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
         rows: [],
         zipDir: zipDir ? `${zipDir}/${name}` : name,
         headers: [],
+        viewHeaders: null,
       };
       databases.set(key, database);
     }
     if (all) {
       database.allCsv = path;
       database.headers = csvHeader(decoder.decode(byPath.get(path)!.data));
-    } else database.viewCsv = path;
+    } else {
+      database.viewCsv = path;
+      database.viewHeaders = csvHeader(decoder.decode(byPath.get(path)!.data));
+      // Without `_all.csv`, the view's columns are all there is.
+      if (!database.allCsv) database.headers = database.viewHeaders;
+    }
   }
   const databaseByRowsDir = new Map([...databases.values()].map((database) => [database.zipDir, database]));
-  const databaseByCsv = new Map<string, NotionPlannedDatabase & { zipDir: string; headers: string[] }>();
+  const databaseByCsv = new Map<string, Database>();
   for (const database of databases.values()) {
     if (database.viewCsv) databaseByCsv.set(database.viewCsv, database);
     if (database.allCsv) databaseByCsv.set(database.allCsv, database);
@@ -341,6 +390,11 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     pages.set(path, info);
     if (id) pageById.set(id, info);
     if (database) database.rows.push(info.vaultPath);
+    else {
+      // Deeper than a database's rows folder: a row's sub-page, not a row (§6).
+      const owner = [...databaseByRowsDir.entries()].find(([rowsDir]) => zipDir.startsWith(`${rowsDir}/`));
+      if (owner) report.notRows.push({ page: info.vaultPath, database: owner[1].name });
+    }
   }
 
   // Attachments: everything else, deduped by name within the folder and by content.
@@ -387,6 +441,103 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     const shown = text || title;
     return shown !== target && (target.includes("/") || shown !== title) ? `[[${target}|${shown}]]` : `[[${target}]]`;
   };
+
+  // Databases (§6): frontmatter for each row page, and the `.base`.
+  const frontmatter = new Map<string, string>();
+  const types: Record<string, PropertyType> = {};
+  const keptTypes = new Map<string, NotionImportReport["keptTypes"][number]>();
+  // Obsidian matches property names case-insensitively (`Due` is `due`), so types are looked up that way too.
+  const vaultTypeByName = new Map(Object.entries(options.vaultTypes ?? {}).map(([key, type]) => [key.toLowerCase(), type]));
+  const knownType = (key: string): PropertyType | undefined =>
+    vaultTypeByName.get(key.toLowerCase()) ?? Object.entries(types).find(([name]) => name.toLowerCase() === key.toLowerCase())?.[1];
+  for (const database of databases.values()) {
+    const csvPath = database.allCsv ?? database.viewCsv;
+    if (!csvPath) continue;
+    const rows = parseCsv(decoder.decode(byPath.get(csvPath)!.data));
+    const headers = (rows.shift() ?? []).map((header) => header.trim());
+    const used = new Set<string>();
+    const columns = headers.slice(1).map((header, offset) => {
+      const index = offset + 1;
+      const key = notionPropertyKey(header, used);
+      if (key !== header) report.renamedKeys.push({ database: database.name, from: header, to: key });
+      const values = rows.map((row) => row[index] ?? "");
+      const kind: NotionColumnKind = inferNotionColumn(header, values);
+      return { header, key, index, kind, values };
+    });
+
+    // Types: the vault's own (or an earlier database's) win; text is the default and never recorded.
+    for (const column of columns) {
+      if (!column.values.some((value) => value.trim())) continue;
+      // `tags` (any case) is the note's tags in Obsidian and Gumply (#ippqkgus, core `isTagsKey`): never given a stored type.
+      if (isTagsKey(column.key)) continue;
+      const found = columnPropertyType(column.kind);
+      const existing = knownType(column.key);
+      if (existing !== undefined && existing !== found) keptTypes.set(column.key, { key: column.key, type: existing, found });
+      else if (existing === undefined && found !== "text") types[column.key] = found;
+    }
+
+    // Rows → pages by title, in CSV order when titles repeat.
+    const queue = new Map<string, PageInfo[]>();
+    for (const vaultPath of database.rows) {
+      const page = [...pages.values()].find((candidate) => candidate.vaultPath === vaultPath);
+      if (!page) continue;
+      const key = page.rawTitle.trim();
+      queue.set(key, [...(queue.get(key) ?? []), page]);
+    }
+    const link = (row: PageInfo) => (item: RelationItem) => {
+      const target = pageById.get(item.id.toLowerCase());
+      if (target) {
+        report.converted.relations += 1;
+        return wikilink(pageTarget(target), "", target.title);
+      }
+      if (/^[a-z][a-z0-9+.-]*:/i.test(item.ref)) report.outside.push({ page: row.vaultPath, url: item.ref });
+      else report.missing.push({ page: row.vaultPath, link: item.ref });
+      return item.title;
+    };
+    for (const row of rows) {
+      if (row.every((cell) => cell.trim() === "")) continue;
+      const title = (row[0] ?? "").trim();
+      const page = queue.get(title)?.shift();
+      if (!page) {
+        report.skipped.push({ path: csvPath, reason: `the row "${title}" has no page in the export` });
+        continue;
+      }
+      const entries = columns.map((column) => [column.key, columnValue(column.kind, row[column.index] ?? "", link(page))] as const);
+      const yaml = orderedFrontmatterYaml(entries);
+      if (yaml) frontmatter.set(page.vaultPath, yaml);
+    }
+
+    // Views: a table in the exported view's order; a board where the view leaves out a select-like column.
+    const byHeader = new Map(columns.map((column) => [column.header, column]));
+    const shown = database.viewHeaders
+      ? database.viewHeaders.slice(1).map((header) => byHeader.get(header.trim())).filter((column) => column !== undefined)
+      : columns;
+    const tableColumns = shown.map((column) => column.key);
+    let kanban: { key: string; groups: string[]; columns: string[] } | null = null;
+    let kanbanSkipped: { key: string; groups: number } | null = null;
+    if (database.viewHeaders) {
+      const visible = new Set(database.viewHeaders.map((header) => header.trim()));
+      const hidden = columns.find(
+        (column) => !visible.has(column.header) && column.values.some((value) => value.trim()) && isSelectLike(column.kind, column.values),
+      );
+      if (hidden) {
+        const groups = [...new Set(hidden.values.map((value) => value.trim()).filter(Boolean))];
+        if (groups.length <= KANBAN_MAX_GROUPS) kanban = { key: hidden.key, groups, columns: tableColumns };
+        else kanbanSkipped = { key: hidden.key, groups: groups.length };
+      }
+    }
+    files.push({ path: database.basePath, content: notionBaseSource({ rowsFolder: database.rowsFolder, columns: tableColumns, kanban }) });
+    report.databaseDetails.push({
+      name: database.name,
+      base: database.basePath,
+      properties: columns
+        .filter((column) => column.values.some((value) => value.trim()))
+        .map((column) => ({ key: column.key, type: isTagsKey(column.key) ? "tags" : (knownType(column.key) ?? columnPropertyType(column.kind)) })),
+      kanban: kanban?.key ?? null,
+      kanbanSkipped,
+    });
+  }
+  report.keptTypes = [...keptTypes.values()];
 
   for (const page of pages.values()) {
     let text = decoder.decode(byPath.get(page.zipPath)!.data).replace(/^﻿/, "").replace(/\r\n/g, "\n");
@@ -470,15 +621,30 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     text = out + text.slice(last);
 
     text = text.replace(/\n+$/, "");
-    files.push({ path: page.vaultPath, content: text.length ? `${text}\n` : "" });
+    const yaml = frontmatter.get(page.vaultPath);
+    // As Gumply writes a note: the block, a blank line, the body (serializeNote).
+    const body = text.length ? `${text}\n` : "";
+    files.push({ path: page.vaultPath, content: yaml ? `---\n${yaml}---\n${body ? `\n${body}` : ""}` : body });
     if (database) report.rows += 1;
     else report.pages += 1;
   }
 
   report.databases = databases.size;
-  const planned = [...databases.values()].map(({ zipDir: _zipDir, headers: _headers, ...database }) => database);
-  return { files, databases: planned, report };
+  const planned = [...databases.values()].map(({ zipDir: _zipDir, headers: _headers, viewHeaders: _view, ...database }) => database);
+  return { files, databases: planned, report, types };
 }
+
+/** Property types in the report's words. */
+const TYPE_WORDS: Record<PropertyType, string> = {
+  text: "text",
+  multitext: "list",
+  number: "number",
+  checkbox: "checkbox",
+  date: "date",
+  datetime: "date and time",
+  tags: "tags",
+  aliases: "aliases",
+};
 
 /** `1 page`, `2 pages`. */
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -503,14 +669,41 @@ export function notionReportMarkdown(report: NotionImportReport, folder: string)
     "## Converted",
     "",
     `- ${count(converted.pageLinks, "link", "links")} and ${count(converted.mentions, "mention", "mentions")} to wiki links`,
-    `- ${count(converted.databaseEmbeds, "database", "databases")} embedded and ${count(converted.databaseLinks, "database link", "database links")} kept as links (their views come in a later version)`,
+    `- ${count(converted.databaseEmbeds, "database", "databases")} embedded as live views, ${count(converted.databaseLinks, "database link", "database links")}`,
+    ...(converted.relations ? [`- ${count(converted.relations, "relation", "relations")} to wiki links`] : []),
     `- ${count(converted.attachmentLinks, "link", "links")} to attachments`,
     `- ${count(converted.callouts, "callout", "callouts")} (their icons are not in the export)`,
+  ];
+  if (report.databaseDetails.length) {
+    lines.push("", "## Databases", "");
+    for (const database of report.databaseDetails) {
+      const properties = database.properties.map((property) => `${property.key} (${TYPE_WORDS[property.type]})`).join(", ");
+      let views = "a table view in Notion's column order";
+      if (database.kanban) views += `, and a board grouped by ${database.kanban} (Notion's exported view leaves that column out, so it was probably a board)`;
+      if (database.kanbanSkipped) {
+        views += `; no board for ${database.kanbanSkipped.key}: it has ${database.kanbanSkipped.groups} values (more than ${KANBAN_MAX_GROUPS})`;
+      }
+      lines.push(`- ${database.name}: ${views}. Properties: ${properties || "none"}.`);
+    }
+  }
+  if (report.renamedKeys.length) {
+    lines.push("", "## Renamed properties", "");
+    for (const item of report.renamedKeys) lines.push(`- ${item.database}: ${item.from} → ${item.to}`);
+  }
+  if (report.keptTypes.length) {
+    lines.push("", "## Property types kept from your vault", "");
+    for (const item of report.keptTypes) lines.push(`- ${item.key}: ${TYPE_WORDS[item.type]} (the import found ${TYPE_WORDS[item.found]})`);
+  }
+  if (report.notRows.length) {
+    lines.push("", "## Sub-pages of database rows", "");
+    for (const item of report.notRows) lines.push(`- ${item.page}: imported as a page, not as a row of ${item.database}`);
+  }
+  lines.push(
     "",
     "## Not in a Notion export",
     "",
-    "Database views (the rows and their CSV files are imported; views come in a later version), option colours, text colours, toggles, comments, synced blocks, permissions, people, and embeds of other apps.",
-  ];
+    "Database views: filters, sorts and layouts (Gumply made a table, and a board where the export points to one), formula and rollup settings (their values arrive as text), option colours, text colours, toggles, comments, synced blocks, permissions, people, files in file properties (their names arrive as text), and embeds of other apps.",
+  );
   if (report.outside.length) {
     lines.push("", "## Links to pages that weren't exported", "");
     for (const item of report.outside) lines.push(`- ${item.page}: ${item.url}`);

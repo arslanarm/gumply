@@ -233,6 +233,7 @@ export class NotionImports {
           folder,
           attachmentsFolder,
           vaultTitles: this.store.list().map((meta) => meta.title),
+          vaultTypes: await this.store.storedPropertyTypes(),
         });
         plan.report.skipped.push(...skipped);
         plan.files.push({ path: `${folder}/Import report.md`, content: notionReportMarkdown(plan.report, folder) });
@@ -262,6 +263,12 @@ export class NotionImports {
         }
         // No attachments: don't leave an empty folder behind.
         if ((await readdir(join(root, attachmentsFolder))).length === 0) await rmdir(join(root, attachmentsFolder));
+        // B3: types for the new property keys (the vault's own types are kept; only missing keys are added).
+        try {
+          await this.store.addPropertyTypes(plan.types);
+        } catch (error) {
+          plan.report.skipped.push({ path: "types.json", reason: `property types not recorded: ${error instanceof Error ? error.message : String(error)}` });
+        }
         job.folder = folder;
         job.report = plan.report;
         break;

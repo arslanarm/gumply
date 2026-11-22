@@ -1,0 +1,6 @@
+﻿Name,Status,Due,Priority (1–5),Done?,Tags,Owner,Estimate,Code,Price,When,Span,Created time,Notes,Notes!,due
+Write spec,Todo,"November 3, 2026",1,Yes,"red, blue",Ada (https://www.notion.so/Ada-000000000000000000000000000000b0?pvs=21),"November 4, 2026 4:05 PM",0042,$5.00,3 ноября 2026 г.,"November 3, 2026 → November 5, 2026","November 1, 2026 9:00 AM","Line one, with a comma
+and ""quotes""",short,soon
+Write spec,Doing,,5,No,blue,"Bob (../People/Bob%20000000000000000000000000000000b1.md), Zed (https://www.notion.so/Zed-000000000000000000000000000000ee?pvs=21)","November 5, 2026 12:30 AM",17,,,,"November 2, 2026 12:00 PM",,,
+Ship,Done,"December 24, 2026",3,No,,,,,,,,"November 2, 2026 1:15 PM",Plain note,,
+Ghost,Todo,,,,,,,,,,,,,,

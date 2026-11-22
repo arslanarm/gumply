@@ -51,6 +51,7 @@ export {
   canonicalYaml,
   editFrontmatterYaml,
   frontmatterKeys,
+  orderedFrontmatterYaml,
   parseNoteTemplate,
   YAML_EMPTY,
   serializeNoteLike,
@@ -254,6 +255,7 @@ export {
   type NotionPlannedDatabase,
   type NotionPlannedFile,
 } from "./notion-import.js";
+export { KANBAN_MAX_GROUPS, notionBaseSource, parseCsv, parseNotionDate } from "./notion-databases.js";
 export { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type HeadingRename } from "./heading-rename.js";
 export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
 

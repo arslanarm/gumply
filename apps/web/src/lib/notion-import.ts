@@ -59,6 +59,7 @@ export function convertedLines(report: NotionImportReport): Array<{ key: Message
     ["databaseLinks", "notionImport.converted.databaseLinks"],
     ["attachmentLinks", "notionImport.converted.attachmentLinks"],
     ["callouts", "notionImport.converted.callouts"],
+    ["relations", "notionImport.converted.relations"],
   ];
   return order.map(([field, key]) => ({ key, count: report.converted[field] ?? 0 })).filter((line) => line.count > 0);
 }
@@ -66,6 +67,7 @@ export function convertedLines(report: NotionImportReport): Array<{ key: Message
 /** What Notion's "Markdown & CSV" export never carries (§8, always shown). */
 export const NOT_IN_EXPORT: MessageKey[] = [
   "notionImport.lost.views",
+  "notionImport.lost.formulas",
   "notionImport.lost.optionColours",
   "notionImport.lost.textColours",
   "notionImport.lost.toggles",
@@ -73,10 +75,31 @@ export const NOT_IN_EXPORT: MessageKey[] = [
   "notionImport.lost.synced",
   "notionImport.lost.permissions",
   "notionImport.lost.people",
+  "notionImport.lost.files",
   "notionImport.lost.embeds",
 ];
 
 /** `Work/Notion import 2` → `Notion import 2`: the name the report leads with. */
 export function folderName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
+}
+
+type DatabaseDetail = NotionImportReport["databaseDetails"][number];
+
+/** One database's report line (B3): the views made and why, then its properties with their types. */
+export function databaseLine(
+  database: DatabaseDetail,
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+  typeName: (type: DatabaseDetail["properties"][number]["type"]) => string,
+  maxGroups: number,
+): string {
+  const views = database.kanban
+    ? t("notionImport.database.board", { name: database.name, key: database.kanban })
+    : database.kanbanSkipped
+      ? t("notionImport.database.boardSkipped", { name: database.name, key: database.kanbanSkipped.key, count: database.kanbanSkipped.groups, max: maxGroups })
+      : t("notionImport.database.table", { name: database.name });
+  const properties = database.properties.length
+    ? t("notionImport.database.properties", { list: database.properties.map((property) => `${property.key} (${typeName(property.type)})`).join(", ") })
+    : t("notionImport.database.noProperties");
+  return `${views} ${properties}`;
 }

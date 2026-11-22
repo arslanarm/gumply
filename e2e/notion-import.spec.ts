@@ -23,9 +23,9 @@ async function walk(dir: string): Promise<string[]> {
   return out;
 }
 
-async function fixtureZip(): Promise<Buffer> {
+async function fixtureZip(dir = FIXTURE): Promise<Buffer> {
   const files: Zippable = {};
-  for (const file of await walk(FIXTURE)) files[path.relative(FIXTURE, file).split(path.sep).join('/')] = new Uint8Array(await fs.readFile(file));
+  for (const file of await walk(dir)) files[path.relative(dir, file).split(path.sep).join('/')] = new Uint8Array(await fs.readFile(file));
   return Buffer.from(zipSync(files));
 }
 
@@ -84,4 +84,35 @@ test('an imported page survives an edit elsewhere byte for byte (its `ratione.\\
     if (index === edited) expect(line.replace(' X', '')).toBe(before[index]);
     else expect(line, `line ${index + 1}`).toBe(before[index]);
   });
+});
+
+// v0.8 B3 (#cwi22mc6): databases arrive as a .base view over typed row pages.
+test('a Notion database opens as a table in Notion\'s column order, with a board, and its rows have typed properties', async ({ page, request, vault }) => {
+  void vault;
+  const zip = await fixtureZip(fileURLToPath(new URL('../packages/core/test/fixtures/notion/databases/', import.meta.url)));
+  const started = await request.post('/api/import/notion', { multipart: { file: { name: 'Export.zip', mimeType: 'application/zip', buffer: zip } } });
+  expect(started.status()).toBe(202);
+  const { id } = (await started.json()) as { id: string };
+  await expect
+    .poll(async () => ((await (await request.get(`/api/import/${id}`)).json()) as { state: string }).state, { timeout: 15_000 })
+    .toBe('done');
+
+  // Earlier tests' imports may still be there: use the folder this one got.
+  const job = (await (await request.get(`/api/import/${id}`)).json()) as { folder: string };
+  const folder = `${job.folder}/Private & Shared/Projects`;
+  await page.goto(`/#/${encodeURIComponent(`${folder}/Tasks.base`)}`);
+  const table = page.getByTestId('base-table');
+  await expect(table.locator('.base-th-label')).toHaveText(['Name', 'Due', 'Priority 1 5', 'Done', 'Tags', 'Owner', 'Notes']);
+  await expect(table.locator('.base-title-text')).toHaveCount(3);
+  await page.getByTestId('base-tab-Board').click();
+  await expect(page.getByTestId('base-kanban').locator('.base-kanban-title > span:first-child')).toHaveText(['Todo', 'Doing', 'Done']);
+
+  // Typed: the vault knows the new keys' types, and a row shows them.
+  const properties = (await (await request.get('/api/properties')).json()) as Array<{ key: string; type: string }>;
+  const typeOf = (key: string) => properties.find((item) => item.key === key)?.type;
+  // (`Tags` gets no stored type: it's the note's tags, #ippqkgus.)
+  expect([typeOf('Due'), typeOf('Priority 1 5'), typeOf('Done'), typeOf('Owner'), typeOf('Estimate')]).toEqual(['date', 'number', 'checkbox', 'multitext', 'datetime']);
+  await page.goto(`/#/${encodeURIComponent(`${folder}/Tasks/Write spec`)}`);
+  await expect(page.getByTestId('property-row-Done').getByRole('checkbox')).toBeChecked();
+  await expect(page.getByTestId('editor-content')).toContainText('First draft.');
 });

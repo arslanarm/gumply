@@ -1484,7 +1484,8 @@
       "databaseEmbeds": "Inline databases → database views: {{count}}",
       "databaseLinks": "Database links → links: {{count}}",
       "attachmentLinks": "Image and file links: {{count}}",
-      "callouts": "Callouts (their icons aren't kept): {{count}}"
+      "callouts": "Callouts (their icons aren't kept): {{count}}",
+      "relations": "Relations → [[links]]: {{count}}"
     },
     "skippedTitle_one": "Left out: {{count}} file",
     "skippedTitle_other": "Left out: {{count}} files",
@@ -1496,7 +1497,7 @@
     "lostTitle": "Not in Notion's export",
     "lostHint": "Notion's Markdown & CSV export leaves these out, so they couldn't be imported:",
     "lost": {
-      "views": "Database views: filters, sorts and layouts (the rows and their CSV files are imported; views come in a later version)",
+      "views": "Database views: filters, sorts and layouts (Gumply made a table, and a board where the export points to one)",
       "optionColours": "Colours of select options",
       "textColours": "Text and background colours",
       "toggles": "Toggles (they arrive as lists)",
@@ -1504,7 +1505,9 @@
       "synced": "Synced blocks (they arrive as copies)",
       "permissions": "Sharing and permissions",
       "people": "Who people properties point to",
-      "embeds": "Embeds of other apps (they arrive as links)"
+      "embeds": "Embeds of other apps (they arrive as links)",
+      "formulas": "Formula and rollup settings (their values arrive as text)",
+      "files": "Files in file properties (their names arrive as text)"
     },
     "reportFile": "The full report is saved as “Import report.md” in the new folder.",
     "errors": {
@@ -1516,7 +1519,20 @@
       "other": "The import didn't work.",
       "failed": "The import didn't finish: Gumply couldn't use this file as a Notion “Markdown & CSV” export."
     },
-    "details": "Details: {{error}}"
+    "details": "Details: {{error}}",
+    "databasesTitle": "Databases",
+    "database": {
+      "table": "{{name}}: a table view in Notion's column order.",
+      "board": "{{name}}: a table view in Notion's column order, and a board grouped by {{key}} (Notion's export leaves that column out of the view, so it was probably a board).",
+      "boardSkipped": "{{name}}: a table view in Notion's column order. No board for {{key}}: it has {{count}} values (more than {{max}}).",
+      "properties": "Properties: {{list}}",
+      "noProperties": "No properties."
+    },
+    "renamedTitle": "Renamed properties: {{count}}",
+    "keptTypesTitle": "Property types kept from your vault: {{count}}",
+    "keptType": "{{key}}: {{type}} (the import found {{found}})",
+    "notRowsTitle": "Sub-pages of database rows: {{count}}",
+    "notRow": "{{page}}: imported as a page, not as a row of {{database}}"
   },
   "math": {
     "inlineHint": "Click to edit the formula",
