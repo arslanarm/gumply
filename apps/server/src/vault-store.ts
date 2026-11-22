@@ -1403,7 +1403,19 @@ export class VaultStore {
     return this.enqueue(async () => {
       const entry = await this.openTrashEntry(trashId);
       await rm(entry.dir, { recursive: true, force: true });
+      await this.dropTrashedHistory(entry);
     });
+  }
+
+  /**
+   * Delete forever / Empty trash (@lead, D41 follow-up): the pages' version
+   * history goes too, unless a live page has that id now (then it's that page's).
+   */
+  private async dropTrashedHistory(entry: TrashEntry): Promise<void> {
+    for (const id of entry.deleted) {
+      if (this.pages.has(id)) continue;
+      await rm(historyDir(this.root, id), { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   /**
@@ -1413,7 +1425,10 @@ export class VaultStore {
   emptyTrash(): Promise<number> {
     return this.enqueue(async () => {
       const entries = await this.trashEntries();
-      for (const entry of entries) await rm(entry.dir, { recursive: true, force: true });
+      for (const entry of entries) {
+        await rm(entry.dir, { recursive: true, force: true });
+        await this.dropTrashedHistory(entry);
+      }
       return entries.length;
     });
   }

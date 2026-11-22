@@ -236,7 +236,11 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
     }
     const content = selected === null ? text : parseFrontmatter(text).content;
     const page: Page = { ...target, content };
-    return <Editor key={`${target.id}:${selected ?? "current"}`} page={page} pages={pages} readOnly onSaveState={noop} onOpenLink={noop} onCreateLink={noop} />;
+    return (
+      <div className="history-page">
+        <Editor key={`${target.id}:${selected ?? "current"}`} page={page} pages={pages} readOnly onSaveState={noop} onOpenLink={noop} onCreateLink={noop} />
+      </div>
+    );
   };
 
   const changes = () => {
@@ -254,9 +258,6 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
     // The diff runs from this version to now: "add" is what now has and this version lacks.
     return (
       <>
-        <button type="button" className="link-button history-whole" data-testid="history-whole-file" onClick={() => setWhole((value) => !value)}>
-          {whole ? t("history.changesOnly") : t("history.wholeFile")}
-        </button>
         <pre className="history-diff" data-testid="history-diff">
           {visibleLines(diff.lines, whole).map((line, index) =>
             line.gap ? (
@@ -379,19 +380,26 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
                         {t("history.changes")}
                       </button>
                     </div>
+                    {view === "changes" && diff?.kind === "page" && diff.lines.some((line) => line.op !== "same") ? (
+                      <button type="button" className="history-quiet" aria-pressed={whole} data-testid="history-whole-file" onClick={() => setWhole((value) => !value)}>
+                        {whole ? t("history.changesOnly") : t("history.wholeFile")}
+                      </button>
+                    ) : null}
+                    <span className="history-toolbar-gap" />
                     <div className="history-actions">
                       <button type="button" className="button-secondary" data-testid="history-copy" onClick={() => void copy()} disabled={text === null}>
                         {copied ? t("history.copied") : t("history.copy")}
                       </button>
                       <button
                         type="button"
-                        className="button-secondary"
+                        className="button-secondary history-keep"
                         aria-pressed={item.pinned}
                         title={item.pinned ? t("history.keptHint") : undefined}
                         data-testid="history-keep"
                         onClick={() => void togglePin()}
                       >
-                        {item.pinned ? t("history.kept") : t("history.keep")}
+                        <Icon name={item.pinned ? "circleCheck" : "pin"} size={14} />
+                        <span>{item.pinned ? t("history.kept") : t("history.keep")}</span>
                       </button>
                       <button
                         type="button"

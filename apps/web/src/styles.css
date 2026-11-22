@@ -6989,8 +6989,16 @@ input {
   outline: none;
 }
 
+/* Focus shows on the active row, never as a frame around the column. */
+.history-list:focus,
 .history-list:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--accent-soft);
+  outline: none;
+  box-shadow: none;
+}
+
+.history-list:focus-visible .history-row.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .history-row {
@@ -7080,6 +7088,39 @@ input {
   font-weight: 500;
 }
 
+.history-toolbar-gap {
+  flex: 1;
+}
+
+/* "Show whole file": a quiet control beside the view toggle, never the loudest thing in the pane. */
+.history-quiet {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.history-quiet:hover,
+.history-quiet[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.history-keep {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.history-keep[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
 .history-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -7121,8 +7162,32 @@ input {
   padding: 1rem 1.75rem 2rem;
 }
 
-.history-whole {
-  margin: 0.2rem 0 0.5rem;
+/* The preview reads like the page: its column and its own content styles (not the dialog's text rules). */
+.history-page {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.history-page .gumply-editor {
+  min-height: 0;
+  color: var(--text);
+}
+
+.history-page .gumply-editor > :first-child {
+  margin-top: 0;
+}
+
+.modal .history-page .gumply-editor p {
+  margin: 0.12em 0;
+  color: inherit;
+}
+
+.modal .history-page .gumply-editor h2 {
+  font-size: 1.4rem;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  margin: 1em 0 0.15em;
 }
 
 .history-diff {

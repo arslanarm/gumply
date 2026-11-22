@@ -172,14 +172,45 @@ describe("history follows the page (D20)", () => {
   });
 });
 
+describe("delete forever (D41 follow-up)", () => {
+  it("Delete forever and Empty trash remove the pages' history; it never becomes an orphan", async () => {
+    const { app, store, dir } = await createTestServer();
+    await writeFile(join(dir, "Secret.md"), "one\n");
+    await writeFile(join(dir, "Other.md"), "a\n");
+    await store.rescan();
+    await store.update("Secret", { content: "two" });
+    await store.update("Other", { content: "b" });
+    const { trashId } = await store.remove("Secret");
+    expect((await entries(dir, "Secret")).length).toBeGreaterThan(0);
+    await store.deleteTrashed(trashId);
+    expect(await entries(dir, "Secret")).toEqual([]);
+    await store.remove("Other");
+    await store.emptyTrash();
+    expect(await entries(dir, "Other")).toEqual([]);
+    expect(await getJson<HistoryOrphan[]>(app, "/api/history-orphans")).toEqual([]);
+  });
+
+  it("keeps the history of a live page that has the same id now", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Note.md"), "old\n");
+    await store.rescan();
+    const { trashId } = await store.remove("Note");
+    await store.create({ title: "Note", content: "new" });
+    await store.update("Note", { content: "newer" });
+    await store.deleteTrashed(trashId);
+    expect((await entries(dir, "Note")).length).toBeGreaterThan(0);
+  });
+});
+
 describe("a new page never adopts an old page's history", () => {
-  it("creating a page where a deleted one had history sets that history aside as an orphan", async () => {
+  it("creating a page where one deleted outside had history sets that history aside as an orphan", async () => {
     const { app, store, dir } = await createTestServer();
     await writeFile(join(dir, "Ideas.md"), "old\n");
     await store.rescan();
     await store.update("Ideas", { content: "older still" });
-    await store.remove("Ideas");
-    await store.emptyTrash();
+    // Deleted outside Gumply (Delete forever would remove the history itself).
+    await rm(join(dir, "Ideas.md"));
+    await store.rescan();
     expect((await getJson<HistoryOrphan[]>(app, "/api/history-orphans")).map((orphan) => orphan.title)).toEqual(["Ideas"]);
 
     await store.create({ title: "Ideas", content: "brand new" });
