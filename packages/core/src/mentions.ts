@@ -103,8 +103,18 @@ export function linkMentions(markdown: string, mentions: readonly MentionMatch[]
 
 /** A plain-text snippet around a mention, about `radius` characters each side. */
 export function mentionSnippet(markdown: string, mention: MentionMatch, radius = 60): { text: string; start: number; end: number } {
-  const from = Math.max(0, mention.index - radius);
-  const to = Math.min(markdown.length, mention.index + mention.length + radius);
+  let from = Math.max(0, mention.index - radius);
+  let to = Math.min(markdown.length, mention.index + mention.length + radius);
+  // Cut at word edges, never mid-word ("…thouse").
+  if (from > 0) {
+    const space = markdown.slice(from, mention.index).search(/\s/);
+    if (space !== -1) from += space + 1;
+  }
+  if (to < markdown.length) {
+    const tail = markdown.slice(mention.index + mention.length, to);
+    const space = Math.max(tail.lastIndexOf(" "), tail.lastIndexOf("\n"), tail.lastIndexOf("\t"));
+    if (space !== -1) to = mention.index + mention.length + space;
+  }
   const before = markdown.slice(from, mention.index).replace(/\s+/g, " ");
   const match = markdown.slice(mention.index, mention.index + mention.length).replace(/\s+/g, " ");
   const after = markdown.slice(mention.index + mention.length, to).replace(/\s+/g, " ");

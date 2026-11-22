@@ -78,3 +78,15 @@ describe("linking", () => {
     expect(snippet.text).not.toContain("\n");
   });
 });
+
+it("snippets cut at word edges, never mid-word", () => {
+  const body = "Lighthouse budget approved. The beacon needs paint. Next week: lighthouse tour with the team.";
+  const mentions = findMentions(body, ["Lighthouse"]);
+  const last = mentionSnippet(body, mentions[1]!, 30);
+  expect(last.text.startsWith("…")).toBe(true);
+  expect(last.text).not.toMatch(/…\S*thouse budget/);
+  expect(last.text.slice(1).split(" ")[0]).toMatch(/^[A-Za-z:.]+$/);
+  const first = mentionSnippet(body, mentions[0]!, 30);
+  expect(first.text.endsWith("…")).toBe(true);
+  expect(body.includes(first.text.slice(0, -1))).toBe(true);
+});

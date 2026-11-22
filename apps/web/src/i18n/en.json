@@ -520,7 +520,16 @@
     "emptyAfter": " on any page to link to this one.",
     "showFewer": "Show fewer",
     "showAll_one": "Show all {{count}}",
-    "showAll_other": "Show all {{count}}"
+    "showAll_other": "Show all {{count}}",
+    "mentions": {
+      "title": "Unlinked mentions",
+      "empty": "No unlinked mentions.",
+      "link": "Link",
+      "linkAll": "Link all",
+      "linkLabel": "Link “{{text}}” in {{page}}",
+      "changed": "That page changed. The list is up to date now.",
+      "failed": "Couldn't link the mention. Try again."
+    }
   },
   "move": {
     "topLevel": "Top level",

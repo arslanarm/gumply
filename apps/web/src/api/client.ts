@@ -14,6 +14,9 @@ import type {
   GraphData,
   GraphSettings,
   GraphSettingsResponse,
+  LinkMentionsInput,
+  LinkMentionsResult,
+  PageMentions,
   Page,
   PageId,
   PageMeta,
@@ -228,6 +231,13 @@ export const api = {
   getPage: (id: PageId): Promise<Page> => request(pagePath(id)),
 
   backlinks: (id: PageId): Promise<Backlink[]> => request(`${pagePath(id)}/backlinks`),
+
+  /** v1.next (C1, spec/api-mentions): pages mentioning this one as plain text. */
+  mentions: (id: PageId): Promise<PageMentions[]> => request(`${pagePath(id)}/mentions`),
+
+  /** Turn mentions of page `id` in `input.source` into links (conditional, D22). */
+  linkMentions: (id: PageId, input: LinkMentionsInput): Promise<LinkMentionsResult> =>
+    mutate(() => request(`${pagePath(id)}/mentions/link`, { method: "POST", body: JSON.stringify(input) })),
 
   /** Full-text search (D13): title and body matches, ranked by the server. */
   search: (query: string): Promise<SearchResult[]> =>
