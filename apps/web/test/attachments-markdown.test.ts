@@ -18,7 +18,7 @@ describe("attachment Markdown parsing (D19)", () => {
 
   it("turns an attachments link into a file card", () => {
     expect(render("[brief.txt](attachments/brief.txt)")).toBe(
-      '<p><file-attachment data-path="attachments/brief.txt" data-name="brief.txt">brief.txt</file-attachment></p>',
+      '<p><file-attachment data-path="attachments/brief.txt" data-name="brief.txt" data-md-source="[brief.txt](attachments/brief.txt)">brief.txt</file-attachment></p>',
     );
   });
 
@@ -39,7 +39,7 @@ describe("attachment Markdown parsing (D19)", () => {
 
   it("accepts note-relative file links (D23)", () => {
     expect(render("[brief.pdf](../attachments/brief.pdf)")).toBe(
-      '<p><file-attachment data-path="../attachments/brief.pdf" data-name="brief.pdf">brief.pdf</file-attachment></p>',
+      '<p><file-attachment data-path="../attachments/brief.pdf" data-name="brief.pdf" data-md-source="[brief.pdf](../attachments/brief.pdf)">brief.pdf</file-attachment></p>',
     );
     expect(render("![pic](../../attachments/pic.png)")).toBe(
       '<p><img src="../../attachments/pic.png" alt="pic"></p>',

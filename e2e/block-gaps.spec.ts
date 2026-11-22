@@ -272,3 +272,106 @@ test.describe('empty list items keep their trailing space (#54prcupx)', () => {
     }
   });
 });
+
+// #he3ed9uz (@opus-hunter, v0.7.1): Markdown links to vault files keep their
+// exact bytes (label, path, title, reference form) after an edit elsewhere.
+const LINKS: Record<string, string> = {
+  'mdlinks.md': "Plain [doc](Files/report.pdf) link.\n\nEncoded [doc2](Files/notes%20%232.pdf) link.\n\nMissing [gone](Files/nothere.pdf) link.\n\nAttach [att](attachments/a.pdf) link.\n\nWeb [site](https://example.com/a.pdf) link.\n\nPage [md page](Other.md) link.\n\nTarget paragraph.\n",
+  'mdlinks2.md': "Title [doc](Files/report.pdf \"The report\") link.\n\nAngle [spaced](<Files/a b.docx>) link.\n\nAnchor [page two](Files/report.pdf#page=2) link.\n\nUpper [CAPS](FILES/REPORT.PDF) link.\n\nEmpty label [](Files/report.pdf) link.\n\nFormatted [**bold** label](Files/report.pdf) link.\n\nRef style [doc][r1] and [r1].\n\n[r1]: Files/report.pdf\n\n- list [item doc](Files/report.pdf)\n> quote [q doc](attachments/b.zip)\n\n| col |\n|---|\n| [cell doc](Files/report.pdf) |\n\nImage with title ![pic](Files/pic.png \"Pic title\") and linked image [![pic](Files/pic.png)](Files/report.pdf).\n\nAutolink <Files/report.pdf> stays text.\n\nTarget paragraph.\n",
+  'hostile.md (refused and odd hrefs stay as written)': "Proto [proto](//evil.example/x) link.\n\nJs [js](javascript:alert(1)) link.\n\nCase [jscase](JaVaScRiPt:alert(1)) link.\n\nTab [jstab](java&#x09;script:alert(1)) link.\n\nSpace [jsspace]( javascript:alert(1)) link.\n\nData [data](data:text/html,<script>alert(1)</script>) link.\n\nVb [vb](vbscript:msgbox(1)) link.\n\nBackslash [bs](\\\\evil.example\\x) link.\n\nPage [page](Folder/Page.md) link.\n\nWeb [web](https://example.com/) link.\n\nFile [file](Files/report.pdf) link.\n\nRel file [relfile](Sub/../Files/report.pdf) link.\n\nTarget paragraph.\n",
+  'schemes.md (obsidian:, zotero:, empty, mailto:, tel:)': "App [obs](obsidian://open?vault=v&file=Note) and [zot](zotero://select/items/ABC) and [none]() and [mail](mailto:a@b.example) and [tel](tel:+100).\n\nTarget paragraph.\n",
+  'rel.md': "Rel [up](../Files/report.pdf) and [att up](../attachments/a.pdf).\n\nTarget paragraph.\n",
+};
+
+async function addLinkedFiles() {
+  for (const name of ['Files/report.pdf', 'Files/notes #2.pdf', 'Files/a b.docx', 'Files/pic.png', 'attachments/a.pdf', 'attachments/b.zip']) {
+    await fs.mkdir(path.dirname(path.join(E2E_VAULT, name)), { recursive: true });
+    await fs.writeFile(path.join(E2E_VAULT, name), 'x');
+  }
+}
+
+/** Put the caret `offset` characters into the link whose text is `label`, and type. */
+async function typeInLink(page: Page, label: string, offset: number, typed: string) {
+  const content = page.getByTestId('editor-content');
+  await content.getByText('Target paragraph.', { exact: true }).click();
+  await page.evaluate(
+    ([text, at]) => {
+      const link = [...document.querySelectorAll('.ProseMirror a')].find((a) => a.textContent === text)!;
+      const range = document.createRange();
+      range.setStart(link.firstChild!, Number(at));
+      range.collapse(true);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    },
+    [label, offset] as const,
+  );
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.anchorNode?.parentElement?.tagName)).toBe('A');
+  await page.keyboard.type(typed);
+  await saved(page);
+}
+
+test.describe('Markdown file links keep their bytes (#he3ed9uz)', () => {
+  for (const [name, text] of Object.entries(LINKS)) {
+    test(`${name} comes back byte-exact after a far edit`, async ({ page, request, vault }) => {
+      void vault;
+      await addLinkedFiles();
+      await open(page, request, text);
+      await editTarget(page);
+      expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+    });
+  }
+
+  test('they are live links in the editor (any folder, existing or missing)', async ({ page, request, vault }) => {
+    void vault;
+    await addLinkedFiles();
+    await open(page, request, LINKS['mdlinks.md']!);
+    const content = page.getByTestId('editor-content');
+    await expect(content.locator('a', { hasText: 'doc2' })).toHaveAttribute('href', 'Files/notes%20%232.pdf');
+    await expect(content.locator('a', { hasText: 'gone' })).toHaveAttribute('href', 'Files/nothere.pdf');
+    await expect(content.getByTestId('file-attachment')).toHaveCount(1);
+  });
+
+  test('a click on a note link opens the note in the app; a file link opens the vault file', async ({ page, request, vault }) => {
+    void vault;
+    await addLinkedFiles();
+    await fs.mkdir(path.join(E2E_VAULT, 'Folder'), { recursive: true });
+    await fs.writeFile(path.join(E2E_VAULT, 'Folder', 'Page.md'), 'Linked note body.\n');
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Folder/Page');
+    await open(page, request, 'See [the page](Folder/Page.md) and [the doc](Files/a%20b.docx) and [away](//example.com/x).\n\nTarget paragraph.\n');
+    const content = page.getByTestId('editor-content');
+    // `//host` is not a live link (it would leave the vault).
+    await expect(content.locator('a', { hasText: 'away' })).toHaveCount(0);
+    await page.evaluate(() => {
+      const opened: string[] = [];
+      (window as unknown as { __opened: string[] }).__opened = opened;
+      window.open = ((url?: string | URL) => {
+        opened.push(String(url));
+        return null;
+      }) as typeof window.open;
+    });
+    await content.locator('a', { hasText: 'the doc' }).click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened))
+      .toEqual(['/api/files/Files/a%20b.docx']);
+    await content.locator('a', { hasText: 'the page' }).click();
+    await expect(page).toHaveURL(/#\/Folder\/Page$/);
+    await expect(page.getByTestId('editor-content')).toContainText('Linked note body.');
+  });
+
+  test('an edited label keeps the destination as written; a changed reference name is written inline', async ({ page, request, vault }) => {
+    void vault;
+    const text = 'Title [doc](<Files/a b.docx> "The report") and ref [r1] here.\n\n[r1]: Files/report.pdf\n\nTarget paragraph.\n';
+    await addLinkedFiles();
+    await open(page, request, text);
+    await typeInLink(page, 'doc', 1, 'Z');
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe(text.replace('[doc]', '[dZoc]'));
+    // `[r1]` names its definition: once the label changes it can't stay a shortcut.
+    await typeInLink(page, 'r1', 1, 'Q');
+    await expect
+      .poll(() => fs.readFile(file(), 'utf8'))
+      .toBe(text.replace('[doc]', '[dZoc]').replace('ref [r1] here', 'ref [rQ1](Files/report.pdf) here'));
+    await page.reload();
+    await expect(page.getByTestId('editor-content').locator('a', { hasText: 'rQ1' })).toHaveAttribute('href', 'Files/report.pdf');
+  });
+});

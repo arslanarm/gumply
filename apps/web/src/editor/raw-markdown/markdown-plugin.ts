@@ -30,6 +30,7 @@ import { markupRule } from "./markup.js";
 import { listSourceRule } from "./list-source.js";
 import { blockJoinRule, JOIN_ATTR } from "./block-joins.js";
 import { inlineImageRule } from "../attachments/inline-image.js";
+import { editorAcceptsHref } from "../link-uri.js";
 
 export const RAW_BLOCK_ATTR = "data-raw-md";
 export const RAW_INLINE_ATTR = "data-raw-md-inline";
@@ -298,6 +299,9 @@ export const AUTOLINK_ATTR = "data-md-autolink";
 
 export const IMAGE_RAW_ATTR = "data-md-raw";
 
+/** #he3ed9uz: how a link was written, as JSON (see recordLinkSource). */
+export const LINK_SOURCE_ATTR = "data-md-link";
+
 /**
  * End of a `[label](dest "title")` / `![…](…)` whose destination markdown-it
  * refuses (`javascript:`, `vbscript:`, `file:`, non-image `data:`), or -1.
@@ -361,6 +365,66 @@ function wrapCodeSpans(md: any): void {
   });
 }
 
+/**
+ * #he3ed9uz (D37): a link remembers how its destination was written (the
+ * part after the label: `(Files/a%20b.pdf "Title")`, `(<a b.pdf>)`, `[ref]`,
+ * `[]` or nothing for a shortcut reference) and its label source, so an
+ * untouched link is written back byte for byte (see editor/link.ts). A link
+ * with an empty label (`[](x.pdf)`), or one whose href the link mark refuses
+ * (`//host/x`, `obsidian://…`), would lose its markup: it becomes an inert raw
+ * atom holding its source.
+ */
+function recordLinkSource(state: any, from: number, start: number, labelEnd: number): void {
+  const tokens: any[] = state.tokens;
+  let open = from;
+  while (open < tokens.length && tokens[open].type !== "link_open") open += 1;
+  const token = tokens[open];
+  if (!token) return;
+  const src: string = state.src;
+  // No text to carry a mark, or an href the link mark refuses (`//host`,
+  // `obsidian://…`, an empty one): it would come back as plain text.
+  if (labelEnd === start + 1 || !editorAcceptsHref(String(token.attrGet("href") ?? ""))) {
+    const raw = new state.Token("gumply_raw_inline", "span", 0);
+    raw.content = src.slice(start, state.pos);
+    raw.info = "inert";
+    raw.level = token.level;
+    tokens.splice(open, tokens.length - open, raw);
+    return;
+  }
+  token.attrSet(
+    LINK_SOURCE_ATTR,
+    JSON.stringify({
+      href: token.attrGet("href") ?? "",
+      title: token.attrGet("title") ?? null,
+      label: src.slice(start + 1, labelEnd),
+      tail: src.slice(labelEnd + 1, state.pos),
+    }),
+  );
+}
+
+/**
+ * #he3ed9uz: link reference definitions (`[r1]: Files/report.pdf`) produce no
+ * token in markdown-it, so they vanished on save and the links using them came
+ * back as text. Keep each one as a raw block (it still defines its label).
+ */
+function wrapReferenceRule(md: any): void {
+  const rules = md.block.ruler.__rules__ as Array<{ name: string; fn: any }>;
+  const original = rules.find((rule) => rule.name === "reference")?.fn;
+  if (!original) return;
+  md.block.ruler.at("reference", (state: any, startLine: number, endLine: number, silent: boolean) => {
+    if (!original(state, startLine, endLine, silent)) return false;
+    if (silent) return true;
+    let last = state.line as number;
+    while (last > startLine && state.isEmpty(last - 1)) last -= 1;
+    const token = state.push("gumply_raw_block", "div", 0);
+    token.block = true;
+    token.map = [startLine, last];
+    token.content = String(state.getLines(startLine, last, state.blkIndent, false));
+    token.info = "reference";
+    return true;
+  });
+}
+
 function wrapLinkRules(md: any): void {
   const rules = md.inline.ruler.__rules__ as Array<{ name: string; fn: any }>;
   for (const name of ["image", "link"]) {
@@ -369,11 +433,15 @@ function wrapLinkRules(md: any): void {
     const isImage = name === "image";
     md.inline.ruler.at(name, (state: any, silent: boolean) => {
       const start = state.pos;
+      const before = state.tokens.length;
+      // Label end, read before the rule runs (parseLinkLabel restores pos).
+      const labelEnd = !isImage && state.src[start] === "[" ? state.md.helpers.parseLinkLabel(state, start, true) : -1;
       if (original(state, silent)) {
         if (!silent && isImage) {
           const token = state.tokens[state.tokens.length - 1];
           if (token?.type === "image") token.attrSet(IMAGE_RAW_ATTR, state.src.slice(start, state.pos));
         }
+        if (!silent && !isImage && labelEnd > start) recordLinkSource(state, before, start, labelEnd);
         return true;
       }
       if (isImage ? state.src[start] !== "!" : state.src[start] !== "[") return false;
@@ -411,6 +479,7 @@ export function rawMarkdownPlugin(md: any): void {
   }
   md.inline.ruler.before("link", "gumply_raw_inline", rawInlineRule);
   wrapLinkRules(md);
+  wrapReferenceRule(md);
   wrapCodeSpans(md);
 
   // #54prcupx: a raw block written right under its previous sibling.

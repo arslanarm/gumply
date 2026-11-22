@@ -23,6 +23,16 @@ interface AttachmentMeta {
   alt: string;
   /** Original Obsidian `![[x.png]]` / `[[x.pdf]]`, written back unchanged (D23). */
   obsidian?: string;
+  /** #he3ed9uz: the Markdown link as written (`[My label](attachments/x.pdf)`). */
+  source?: string;
+}
+
+const MARKDOWN_FILE_LINK = /^\[([^\]]*)\]\(((?:\.\/|(?:\.\.\/)+)?attachments\/[^)\s]+)(?:\s+"[^"]*")?\)/;
+
+/** The path of a `[label](attachments/x.pdf)` source, or null. */
+export function markdownFileLinkPath(source: string): string | null {
+  const match = MARKDOWN_FILE_LINK.exec(source);
+  return match && match[0] === source ? (match[2] ?? null) : null;
 }
 
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
@@ -116,12 +126,11 @@ function readAttachmentRule(state: any, silent: boolean): boolean {
     tokenType = "attachment_file";
   } else if (src[pos] === "[" && src[pos + 1] !== "[") {
     // D23: vault-root (`attachments/…`) and note-relative (`../attachments/…`).
-    const match =
-      /^\[([^\]]*)\]\(((?:\.\/|(?:\.\.\/)+)?attachments\/[^)\s]+)(?:\s+"[^"]*")?\)/.exec(src.slice(pos));
+    const match = MARKDOWN_FILE_LINK.exec(src.slice(pos));
     if (!match) return false;
     const path = match[2] ?? "";
     if (path.length === 0) return false;
-    meta = { path, name: path.split("/").pop() ?? path, alt: match[1] ?? "" };
+    meta = { path, name: path.split("/").pop() ?? path, alt: match[1] ?? "", source: match[0] };
     tokenType = "attachment_file";
     end = pos + match[0].length;
   } else {
@@ -168,6 +177,7 @@ export function wikilinkMarkdownPlugin(md: any): void {
     const meta = tokens[index]?.meta as AttachmentMeta | undefined;
     if (!meta) return "";
     const obsidian = meta.obsidian ? ` data-obsidian="${escapeHtml(meta.obsidian)}"` : "";
-    return `<file-attachment data-path="${escapeHtml(meta.path)}" data-name="${escapeHtml(meta.name)}"${obsidian}>${escapeHtml(meta.name)}</file-attachment>`;
+    const source = meta.source ? ` data-md-source="${escapeHtml(meta.source)}"` : "";
+    return `<file-attachment data-path="${escapeHtml(meta.path)}" data-name="${escapeHtml(meta.name)}"${obsidian}${source}>${escapeHtml(meta.name)}</file-attachment>`;
   };
 }
