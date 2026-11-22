@@ -224,6 +224,41 @@ test.describe('making and editing columns (spec/columns §3)', () => {
     expect(text).toMatch(/^:::: \{\.columns\}\n::: \{\.column width="\d+%" style="x"\}\nLeft\n:::\n::: \{\.column width="\d+%"\}\nRight\n:::\n::::\n$/);
   });
 
+  test('the columns reflow while the gutter is dragged; the file is written once, on release (#9j9cd5x4)', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const text = ':::: {.columns}\n::: {.column}\nLeft\n:::\n::: {.column}\nRight\n:::\n::::\n';
+    await open(page, request, text);
+    const leftWidth = async () => (await page.getByTestId('column').first().boundingBox())!.width;
+    const before = await leftWidth();
+    const gutter = (await page.getByTestId('column-gutter').boundingBox())!;
+    const y = gutter.y + gutter.height / 2;
+    await page.mouse.move(gutter.x + gutter.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(gutter.x + gutter.width / 2 + 100, y, { steps: 6 });
+    // Still dragging: the left column is wider already, the gutter sits at its edge, and nothing is saved.
+    await expect.poll(leftWidth).toBeGreaterThan(before + 80);
+    const line = (await page.getByTestId('column-gutter').boundingBox())!;
+    const leftBox = (await page.getByTestId('column').first().boundingBox())!;
+    const rightBox = (await page.getByTestId('column').nth(1).boundingBox())!;
+    const edge = (leftBox.x + leftBox.width + rightBox.x) / 2;
+    expect(Math.abs(line.x + line.width / 2 - edge)).toBeLessThan(3);
+    expect(await read()).toBe(text);
+    await page.mouse.up();
+    await saved(page);
+    const widths = [...(await read()).matchAll(/width="(\d+)%"/g)].map((match) => Number(match[1]));
+    expect(widths).toHaveLength(2);
+    expect(widths[0]).toBeGreaterThan(55);
+    // Laid out by the written widths now, where the preview had it: no jump on release.
+    const settled = await leftWidth();
+    expect(Math.abs(settled - leftBox.width)).toBeLessThan(6);
+    // One undo step puts the old layout back (the preview never entered the history).
+    await page.getByTestId('editor-content').getByText('Left', { exact: true }).click();
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+z`);
+    await saved(page);
+    await expect.poll(read).toBe(text);
+  });
+
   test('a drag far past the edge stops at the 15% minimum, on either side', async ({ page, request, vault }) => {
     void vault;
     await page.setViewportSize({ width: 1280, height: 800 });
