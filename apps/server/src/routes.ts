@@ -348,13 +348,13 @@ export function createApiRoutes(store: VaultStore): Hono {
 
     const options: GraphOptions = { depth };
     if (center !== undefined) options.center = center;
-    // v1.19 (E1): `include=attachments` adds each page's attachment links.
+    // v1.next (E1): `include=attachments` adds each page's attachment links.
     const include = (c.req.query("include") ?? "").split(",").map((item) => item.trim());
     if (include.includes("attachments")) options.attachments = true;
     return c.json<GraphData>(store.graph(options));
   });
 
-  // v1.19 (E1, spec/api-graph-groups): colour groups and filters, per vault.
+  // v1.next (E1, spec/api-graph-groups): colour groups and filters, per vault.
   api.get("/graph/settings", async (c) => c.json<GraphSettingsResponse>(await readGraphSettings(store.root)));
 
   api.put("/graph/settings", async (c) => {

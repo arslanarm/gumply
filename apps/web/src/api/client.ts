@@ -403,7 +403,7 @@ export const api = {
     return request(`/graph${query.length > 0 ? `?${query}` : ""}`);
   },
 
-  /** E1 (spec/api-graph-groups, v1.19): the graph's colour groups and filters. */
+  /** E1 (spec/api-graph-groups, v1.next): the graph's colour groups and filters. */
   getGraphSettings: (): Promise<GraphSettingsResponse> => request("/graph/settings"),
 
   putGraphSettings: (settings: GraphSettings): Promise<GraphSettingsResponse> =>

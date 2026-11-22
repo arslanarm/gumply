@@ -177,7 +177,7 @@ export interface GraphData {
    */
   unresolved: Array<{ source: PageId; targetTitle: string }>;
   /**
-   * v1.19 (`?include=attachments`, spec/api-graph-groups): each page's link to
+   * v1.next (`?include=attachments`, spec/api-graph-groups): each page's link to
    * an attachment file it embeds or links (`![[pic.png]]`), resolved like
    * Obsidian. Absent unless asked for.
    */
