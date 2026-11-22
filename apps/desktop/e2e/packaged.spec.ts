@@ -404,7 +404,7 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
     const timer = setTimeout(finish, 30_000);
     child.stdout!.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
-      // Not the first newline: Electron on Windows writes a blank line at startup.
+      // Not the first newline: on Windows Electron writes "\r\n" first (see below).
       if (stdout.includes('"serverInfo"') && stdout.trimEnd().endsWith('}')) finish();
     });
     child.stderr!.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
@@ -418,6 +418,16 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
   // JSON-quoted, so a stray \n or \r\n before the answer shows.
   record('MCP raw initialize', `stdout ${JSON.stringify(probe.stdout.slice(0, 200))}; stderr ${JSON.stringify(probe.stderr.slice(0, 200))}; exit ${probe.code ?? 'still running'}`);
   expect(probe.stdout, `no answer on stdout; stderr: ${probe.stderr}`).toContain('"serverInfo"');
+  // stdout is protocol only (#yer9a2dm). The one exception: on Windows, Electron's
+  // native startup writes "\r\n" before any of Gumply's code runs (runs
+  // 45074512060/45074963487: also with an exit at the bundle's first statement,
+  // no GPU or network child, and ELECTRON_NO_ATTACH_CONSOLE). MCP clients skip
+  // a blank line; docs/mcp.md says so. Anything else before the first `{`, or
+  // that prefix on another OS, is new output on the protocol stream. If Electron
+  // stops writing it, this fails: drop the exception here and in docs/mcp.md.
+  expect(JSON.stringify(probe.stdout.slice(0, probe.stdout.indexOf('{'))), 'output before the first JSON-RPC message').toBe(
+    JSON.stringify(isWindows ? '\r\n' : ''),
+  );
 
   const client = new Client({ name: 'claude-desktop-smoke', version: '1.0.0' });
   const transport = new StdioClientTransport({ command: server.command, args: server.args, env: serverEnv, stderr: 'pipe' });
