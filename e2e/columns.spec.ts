@@ -45,6 +45,17 @@ const SHAPES: Record<string, string> = {
   'an empty column': ':::: {.columns}\n::: {.column}\n:::\n::: {.column}\nB\n:::\n::::',
   'five colons, bare classes': '::::: columns\n::: column\nA\n:::\n::: column\nB\n:::\n:::::',
   'text right under the row': ':::: {.columns}\n::: {.column}\nA\n:::\n::: {.column}\nB\n:::\n::::\nText right under.',
+  // A `:::` right under `> quote` would be a lazy continuation of it (CommonMark): the fences are found
+  // before the column is parsed, so the quote ends at the fence (@lead, #ftx3awn7).
+  'a quote as a column\'s last block': ':::: {.columns}\n::: {.column}\nA\n> quoted last\n:::\n::: {.column}\n- item last\n:::\n::::',
+  'a column with only blank lines': ':::: {.columns}\n::: {.column}\n\n\n:::\n::: {.column}\nB\n:::\n::::',
+  'extra attributes, a tab in the braces': ':::: {.columns\t.wide #id}\n::: {.column width="40%" style="x"}\nA\n:::\n::: {.column}\nB\n:::\n::::',
+};
+
+// Pandoc's rule (@lead): a row right under a paragraph is not a row; it stays text, byte-exact.
+const STAY_TEXT: Record<string, string> = {
+  'a row right under a paragraph': 'Above touching.\n:::: {.columns}\n::: {.column}\nA\n:::\n::: {.column}\nB\n:::\n::::',
+  'three colons outside': '::: {.columns}\n::: {.column}\nA\n:::\n:::',
 };
 
 test.describe('columns (spec/columns)', () => {
@@ -65,6 +76,17 @@ test.describe('columns (spec/columns)', () => {
       await open(page, request, text);
       await expect(page.getByTestId('columns').first()).toBeVisible();
       await typeAtEndOf(page, 'Target paragraph.', ' X');
+      expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+    });
+  }
+
+  for (const [name, shape] of Object.entries(STAY_TEXT)) {
+    test(`stays text, byte-exact: ${name}`, async ({ page, request, vault }) => {
+      void vault;
+      const text = `${shape}\n\nTarget paragraph.\n`;
+      await open(page, request, text);
+      await typeAtEndOf(page, 'Target paragraph.', ' X');
+      await expect(page.getByTestId('columns')).toHaveCount(0);
       expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
     });
   }
