@@ -146,6 +146,46 @@ describe("resolveWikilink", () => {
   it("returns null for unknown pages", () => {
     expect(resolveWikilink("Missing", pages)).toBeNull();
   });
+
+  // #u84ebtf3: several pages match equally well → Obsidian's pick, never list order.
+  describe("same name in several places (Obsidian 1.14.4's rule)", () => {
+    const board = (id: string, title: string): PageMeta => ({ ...page(id, title), kind: "whiteboard" });
+    const cases: Array<{ name: string; link: string; pages: PageMeta[]; id: string }> = [
+      { name: "root beats a folder", link: "Target", pages: [page("Target", "Target"), page("Other/Target", "Target")], id: "Target" },
+      { name: "root beats a folder (listed second)", link: "Target", pages: [page("Other/Target", "Target"), page("Target", "Target")], id: "Target" },
+      { name: "case-insensitive title too", link: "target", pages: [page("Other/Target", "Target"), page("Target", "Target")], id: "Target" },
+      { name: "shortest path, not depth", link: "Target", pages: [page("Projects/Target", "Target"), page("a/b/Target", "Target")], id: "a/b/Target" },
+      { name: "equal length: locale order, case-insensitive", link: "Target", pages: [page("b/Target", "Target"), page("A/Target", "Target")], id: "A/Target" },
+      { name: "a path-qualified link is that file", link: "Other/Target", pages: [page("Target", "Target"), page("Other/Target", "Target")], id: "Other/Target" },
+      { name: "a whole path wins over a page titled like it", link: "Other/Target", pages: [page("Weird", "Other/Target"), page("Other/Target", "Target")], id: "Other/Target" },
+      { name: "a page before a whiteboard of that name", link: "Map", pages: [board("Map.canvas", "Map"), page("Deep/Folder/Map", "Map")], id: "Deep/Folder/Map" },
+      { name: "file-name match: shortest path", link: "roadmap", pages: [page("notes/2026/roadmap", "Plan A"), page("notes/roadmap", "Plan B")], id: "notes/roadmap" },
+    ];
+    for (const item of cases) {
+      it(item.name, () => {
+        expect(resolveWikilink(item.link, item.pages)?.id).toBe(item.id);
+        expect(resolveWikilink(item.link, [...item.pages].reverse())?.id).toBe(item.id);
+      });
+    }
+
+    it("D4 still holds: a title match beats another page's file name", () => {
+      expect(resolveWikilink("Target", [page("Target", "Something else"), page("Deep/Note", "Target")])?.id).toBe("Deep/Note");
+    });
+  });
+});
+
+describe("escaped openers (Obsidian: `\\[[x]]` is text)", () => {
+  it("`\\[[x]]` is not a link; `\\\\[[x]]` is", () => {
+    expect(extractWikilinks(String.raw`a \[[Gumply]] b`).map((link) => link.targetTitle)).toEqual([]);
+    expect(extractWikilinks(String.raw`a \\[[Gumply]] b`).map((link) => link.raw)).toEqual(["[[Gumply]]"]);
+    expect(extractWikilinks(String.raw`\\\[[Gumply]] [[Roadmap]]`).map((link) => link.targetTitle)).toEqual(["Roadmap"]);
+  });
+
+  it("an escaped link is never a graph edge or backlink", () => {
+    expect(collectLinkEdges("roadmap-note", String.raw`See \[[Gumply#Intro]] and [[Roadmap]].`, pages)).toEqual([
+      { source: "roadmap-note", target: "notes/roadmap", targetTitle: "Roadmap" },
+    ]);
+  });
 });
 
 describe("collectLinkEdges", () => {
