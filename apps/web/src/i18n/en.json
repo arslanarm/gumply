@@ -863,7 +863,8 @@
       "about": "About Gumply",
       "importNotion": "Import from Notion…",
       "exportPdf": "Export as PDF…",
-      "licences": "Open-Source Licences"
+      "licences": "Open-Source Licences",
+      "checkUpdates": "Check for Updates…"
     },
     "about": {
       "detail": "Notes as plain Markdown, with links, a graph and whiteboards."
@@ -897,6 +898,23 @@
     },
     "export": {
       "saveTitle": "Export board"
+    },
+    "update": {
+      "upToDate": "Gumply {{version}} is up to date.",
+      "available": "Gumply {{version}} is available.",
+      "downloading": "Gumply {{version}} is downloading. It installs when you quit.",
+      "ready": "Gumply {{version}} is ready. It installs when you quit.",
+      "pendingRunning": "Update ready, will install when Gumply and AI apps using it are closed.",
+      "failed": "Couldn't check for updates. Are you online?",
+      "installFailed": "The update couldn't be installed. Download it from the release page.",
+      "readOnly": "Gumply can't replace its own file here. Download the new version.",
+      "debHint": "Installed from a .deb: update with your package manager or the new .deb.",
+      "macHint": "Download the new version and replace Gumply in Applications.",
+      "off": "Automatic update checks are off (Settings → Updates).",
+      "download": "Download",
+      "restart": "Restart now",
+      "later": "Later",
+      "ok": "OK"
     }
   },
   "pageEmbed": {

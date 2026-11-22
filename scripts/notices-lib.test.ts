@@ -46,7 +46,7 @@ describe("licences", () => {
   });
 
   it("allows the listed licences, and an OR when one option is allowed", () => {
-    for (const ok of ["MIT", "ISC", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "0BSD", "OFL-1.1", "(MPL-2.0 OR Apache-2.0)", "MIT OR GPL-3.0"]) {
+    for (const ok of ["MIT", "ISC", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "0BSD", "OFL-1.1", "BlueOak-1.0.0", "(MPL-2.0 OR Apache-2.0)", "MIT OR GPL-3.0"]) {
       expect(lib.isAllowed(ok), ok).toBe(true);
     }
     for (const no of ["MPL-2.0", "GPL-3.0", "EPL-2.0 OR GPL-3.0-or-later", "LGPL-2.1", "UNKNOWN", "", null, "MIT AND GPL-2.0", "CC-BY-4.0"]) {

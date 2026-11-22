@@ -24,7 +24,8 @@
   "devDependencies": {
     "@electron/fuses": "^1.8.0",
     "electron": "45.4.1",
-    "electron-builder": "^26.18.0"
+    "electron-builder": "^26.18.0",
+    "electron-updater": "6.8.11"
   },
   "build": {
     "appId": "app.gumply.desktop",
@@ -34,6 +35,14 @@
       "output": "release",
       "buildResources": "build"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "arslanarm",
+        "repo": "gumply",
+        "releaseType": "release"
+      }
+    ],
     "toolsets": {
       "appimage": "1.0.3"
     },

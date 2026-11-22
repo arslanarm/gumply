@@ -18,12 +18,35 @@ export interface WindowState {
   maximized: boolean;
 }
 
+/** Settings → Updates (spec/auto-update, D42). */
+export type UpdateMode = "auto" | "notify" | "off";
+
+export interface UpdateSettings {
+  /** The user's choice; absent = the format's default (auto where it can install, else notify). */
+  mode?: UpdateMode;
+  /** ISO time of the last successful check. */
+  lastChecked?: string;
+}
+
 export interface DesktopSettings {
   lastVault: string | null;
   recentVaults: string[];
   window: WindowState | null;
   /** The web app's `gumply:*` preferences (#c7fzzxk8): theme, sidebar, board views… */
   uiState: UiState;
+  /** Present only once something about updates was saved. */
+  updates?: UpdateSettings;
+}
+
+const UPDATE_MODES: readonly UpdateMode[] = ["auto", "notify", "off"];
+
+function normaliseUpdates(raw: unknown): UpdateSettings | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const data = raw as Record<string, unknown>;
+  const result: UpdateSettings = {};
+  if (typeof data.mode === "string" && (UPDATE_MODES as readonly string[]).includes(data.mode)) result.mode = data.mode as UpdateMode;
+  if (typeof data.lastChecked === "string" && !Number.isNaN(Date.parse(data.lastChecked))) result.lastChecked = data.lastChecked;
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 export const DEFAULT_SETTINGS: DesktopSettings = { lastVault: null, recentVaults: [], window: null, uiState: {} };
@@ -55,7 +78,8 @@ export function normaliseSettings(raw: unknown): DesktopSettings {
       window.y = Math.round(w.y);
     }
   }
-  return { lastVault, recentVaults, window, uiState: normaliseUiState(data.uiState) };
+  const updates = normaliseUpdates(data.updates);
+  return { lastVault, recentVaults, window, uiState: normaliseUiState(data.uiState), ...(updates ? { updates } : {}) };
 }
 
 export function loadSettings(dir: string): DesktopSettings {

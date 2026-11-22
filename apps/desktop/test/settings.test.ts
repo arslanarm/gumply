@@ -76,4 +76,14 @@ describe("desktop settings (D26)", () => {
       maximized: false,
     });
   });
+
+  it("keeps the update preference and last check, and drops anything else there (spec/auto-update)", () => {
+    expect(normaliseSettings({ updates: { mode: "notify", lastChecked: "2026-11-23T10:00:00.000Z" } }).updates).toEqual({
+      mode: "notify",
+      lastChecked: "2026-11-23T10:00:00.000Z",
+    });
+    expect(normaliseSettings({ updates: { mode: "sometimes", lastChecked: "yesterday", extra: 1 } }).updates).toBeUndefined();
+    // Absent until something about updates is saved: older files and tests stay as they were.
+    expect("updates" in normaliseSettings({})).toBe(false);
+  });
 });
