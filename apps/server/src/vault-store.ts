@@ -465,6 +465,12 @@ export class VaultStore {
    * links. Rebuilt from the names each scan already reads (no stat per file).
    */
   private linkIndex = new LinkFileIndex([]);
+  /**
+   * Goes up whenever the set of linkable files changes: a rescan found
+   * other files, or the app saved one (#jxww67d9). `GET /pages` sends it, so
+   * an open page asks again about links that had no file.
+   */
+  private fileIndexEpoch = 0;
   /** D33: plain folders (no `<Folder>.md`); never link targets or graph nodes. */
   private folders = new Map<PageId, FolderRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
@@ -613,7 +619,9 @@ export class VaultStore {
     }
     const folders = VaultStore.foldersFrom(directories, next);
     VaultStore.assignParents(next, folders);
-    this.linkIndex = new LinkFileIndex([...others, ...(await this.attachmentFiles())]);
+    const linkIndex = new LinkFileIndex([...others, ...(await this.attachmentFiles())]);
+    if (!linkIndex.sameFiles(this.linkIndex)) this.fileIndexEpoch += 1;
+    this.linkIndex = linkIndex;
     return { pages: next, folders };
   }
 
@@ -1156,7 +1164,12 @@ export class VaultStore {
    * only after the watcher's next rescan (#zawz963a).
    */
   fileSaved(vaultPath: string): void {
-    this.linkIndex.add(vaultPath);
+    if (this.linkIndex.add(vaultPath)) this.fileIndexEpoch += 1;
+  }
+
+  /** See `fileIndexEpoch` (#jxww67d9). */
+  get fileIndexVersion(): number {
+    return this.fileIndexEpoch;
   }
 
   /** The vault path of a page's file, for resolving links from it (null: unknown). */

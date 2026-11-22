@@ -42,16 +42,24 @@ export class LinkFileIndex {
     for (const path of paths) this.add(path);
   }
 
-  /** Index one more file (a file saved since the last scan, #zawz963a). */
-  add(path: string): void {
-    if (!isLinkableFile(path)) return;
+  /** Index one more file (a file saved since the last scan, #zawz963a); false if it was already there or isn't linkable. */
+  add(path: string): boolean {
+    if (!isLinkableFile(path)) return false;
     const lower = path.toLowerCase();
-    if (this.byPath.has(lower)) return;
+    if (this.byPath.has(lower)) return false;
     this.byPath.set(lower, path);
     const name = lower.slice(lower.lastIndexOf("/") + 1);
     const list = this.byName.get(name);
     if (list) list.push(path);
     else this.byName.set(name, [path]);
+    return true;
+  }
+
+  /** Whether `other` holds exactly the same files, same spelling (#jxww67d9). */
+  sameFiles(other: LinkFileIndex): boolean {
+    if (other.byPath.size !== this.byPath.size) return false;
+    for (const [lower, path] of other.byPath) if (this.byPath.get(lower) !== path) return false;
+    return true;
   }
 
   get size(): number {

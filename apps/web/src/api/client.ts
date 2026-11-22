@@ -68,6 +68,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
 
+  const files = response.headers.get("x-gumply-files");
+  if (files !== null) noteFileIndexVersion(files);
+
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
     try {
@@ -202,6 +205,25 @@ function mutate<T>(task: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return result;
+}
+
+/** The server's linkable-files version last seen on `GET /pages` (#jxww67d9). */
+let fileIndexVersion: string | null = null;
+const fileIndexListeners = new Set<() => void>();
+
+/**
+ * Call `listener` when the vault's linkable files changed outside this tab
+ * (another app, a sync tool, a second tab), seen on the page-list poll.
+ */
+export function onFileIndexChanged(listener: () => void): () => void {
+  fileIndexListeners.add(listener);
+  return () => fileIndexListeners.delete(listener);
+}
+
+function noteFileIndexVersion(version: string): void {
+  const before = fileIndexVersion;
+  fileIndexVersion = version;
+  if (before !== null && before !== version) for (const listener of fileIndexListeners) listener();
 }
 
 const attachmentListeners = new Set<(attachment: Attachment) => void>();

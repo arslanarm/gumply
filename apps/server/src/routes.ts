@@ -125,6 +125,9 @@ export function createApiRoutes(store: VaultStore): Hono {
     const firstPage = appRequest ? store.consumeNewVaultPage() : null;
     // Percent-encoded: a header carries bytes, an id may be "Добро пожаловать".
     if (firstPage) c.header("X-Gumply-New-Vault", encodeURIComponent(firstPage));
+    // #jxww67d9: the linkable-files version; when it moves, the client asks
+    // again about file links that had no file.
+    c.header("X-Gumply-Files", String(store.fileIndexVersion));
     // v1.12: opt-in properties per page (database views); the default stays light.
     if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());
