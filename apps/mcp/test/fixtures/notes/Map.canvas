@@ -1,0 +1,1 @@
+{"nodes":[{"id":"n1","type":"text","text":"A sticky about [[Welcome]]","x":0,"y":0,"width":220,"height":220,"color":"3","gumply":{"kind":"sticky"}},{"id":"n2","type":"file","file":"Projects/Plan.md","x":300,"y":0,"width":400,"height":300},{"id":"n3","type":"link","url":"https://example.com/","x":0,"y":300,"width":400,"height":240}],"edges":[],"pluginKey":{"kept":true}}
