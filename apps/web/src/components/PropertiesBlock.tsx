@@ -12,6 +12,7 @@ import {
 } from "@gumply/core";
 import { api } from "../api/client.js";
 import { useT } from "../i18n/index.js";
+import { DatePicker } from "./DatePicker.js";
 import { Icon, type IconName } from "./Icon.js";
 
 /** v0.7 A (D34): a page's frontmatter properties, under its title. */
@@ -356,19 +357,15 @@ function CheckboxEditor({ property, autoFocus, onSave }: Omit<ValueEditorProps, 
 
 function DateEditor({ property, autoFocus, onSave }: Omit<ValueEditorProps, "onInvalid">) {
   const raw = typeof property.value === "string" ? property.value : "";
-  const date = property.type === "date";
-  const [value, change] = useOptimistic(date ? raw.slice(0, 10) : raw.slice(0, 16));
+  const [value, change] = useOptimistic(raw);
+  // #93wnicas: the app's date format and picker; the file gets the same bytes the native input wrote.
   return (
-    <input
-      type={date ? "date" : "datetime-local"}
-      className="property-input property-date"
-      aria-label={property.key}
+    <DatePicker
       value={value}
-      autoFocus={autoFocus}
-      onChange={(event) => {
-        const next = event.target.value;
-        change(next, () => onSave(next));
-      }}
+      datetime={property.type === "datetime"}
+      label={property.key}
+      autoOpen={autoFocus}
+      onChange={(next) => change(next, () => onSave(next))}
     />
   );
 }

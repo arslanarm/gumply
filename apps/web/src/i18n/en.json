@@ -1015,6 +1015,15 @@
       "aliases": "Aliases"
     }
   },
+  "datePicker": {
+    "empty": "Empty",
+    "choose": "Choose a date",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "today": "Today",
+    "clear": "Clear",
+    "time": "Time"
+  },
   "bases": {
     "untitled": "Untitled database",
     "newBase": "New database view",
