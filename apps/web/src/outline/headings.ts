@@ -54,11 +54,21 @@ export function nestLevels(levels: readonly number[]): number[] {
  */
 export function outlineOf(doc: PMNode): OutlineEntry[] {
   const found: { level: number; text: string; pos: number }[] = [];
-  doc.forEach((node, offset) => {
-    if (node.type.name !== "heading") return;
-    const level = Math.min(6, Math.max(1, Number(node.attrs.level) || 1));
-    found.push({ level, text: headingText(node), pos: offset });
-  });
+  // Headings directly in the page, and directly in a column (spec/columns: in
+  // reading order, left column first). Nothing else is descended into.
+  const visit = (parent: PMNode, start: number) => {
+    parent.forEach((node, offset) => {
+      const pos = start + offset;
+      if (node.type.name === "columns") {
+        node.forEach((column, columnOffset) => visit(column, pos + 1 + columnOffset + 1));
+        return;
+      }
+      if (node.type.name !== "heading") return;
+      const level = Math.min(6, Math.max(1, Number(node.attrs.level) || 1));
+      found.push({ level, text: headingText(node), pos });
+    });
+  };
+  visit(doc, 0);
   const depths = nestLevels(found.map((entry) => entry.level));
   // Keyed by level and text (and which occurrence), so a collapsed entry stays collapsed while the page is edited.
   const seen = new Map<string, number>();

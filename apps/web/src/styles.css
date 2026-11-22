@@ -1393,6 +1393,11 @@ input {
 }
 
 @media (max-width: 900px) {
+  /* Stacked rows keep clear of each other and of the text around them. */
+  .gumply-editor .md-columns-wrap {
+    margin: 1em 0;
+  }
+
   .gumply-editor .md-columns {
     flex-direction: column;
     gap: 0.6rem;

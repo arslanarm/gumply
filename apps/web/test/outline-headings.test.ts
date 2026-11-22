@@ -109,6 +109,34 @@ describe("outline: what it lists (spec/outline §2, @opus-hunter's Obsidian tabl
     expect(currentIndex([0, 100, 200], 999)).toBe(2);
   });
 
+  it("lists headings inside columns in reading order, left column first (spec/columns)", () => {
+    const schema = new Schema({
+      nodes: {
+        doc: { content: "block+" },
+        paragraph: { content: "text*", group: "block" },
+        heading: { content: "text*", group: "block", attrs: { level: { default: 1 } } },
+        blockquote: { content: "block+", group: "block" },
+        columns: { content: "column+", group: "block" },
+        column: { content: "block+" },
+        text: { group: "inline" },
+      },
+    });
+    const h = (level: number, text: string) => schema.node("heading", { level }, [schema.text(text)]);
+    const p = (text: string) => schema.node("paragraph", null, [schema.text(text)]);
+    const doc = schema.node("doc", null, [
+      h(1, "Top"),
+      schema.node("columns", null, [
+        schema.node("column", null, [h(2, "Left"), p("a"), schema.node("blockquote", null, [h(2, "Quoted")])]),
+        schema.node("column", null, [p("b"), h(3, "Right")]),
+      ]),
+      h(2, "After"),
+    ]);
+    const entries = outlineOf(doc);
+    expect(entries.map((entry) => entry.text)).toEqual(["Top", "Left", "Right", "After"]);
+    // Positions point at the headings themselves (the jump target).
+    for (const entry of entries) expect(doc.nodeAt(entry.pos)?.textContent).toBe(entry.text);
+  });
+
   it("board frames read top to bottom, left to right within a row", () => {
     const frame = (id: string, x: number, y: number, height = 200) => ({ id, title: id, x, y, width: 300, height });
     const order = framesInReadingOrder([frame("C", 0, 400), frame("B", 400, 30), frame("A", 0, 0), frame("D", 400, 420)]);

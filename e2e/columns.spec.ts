@@ -178,3 +178,16 @@ test.describe('making and editing columns (spec/columns §3)', () => {
     await expect.poll(read).toBe(':::: {.columns}\n::: {.column}\nLeft\n:::\n::: {.column}\nRight\n:::\n::::\n');
   });
 });
+
+test('the outline lists headings inside columns, left column first; a click jumps into the column', async ({ page, request, vault }) => {
+  void vault;
+  const text = '# Top\n\n:::: {.columns}\n::: {.column}\n## Left\nA\n:::\n::: {.column}\n## Right\nB\n:::\n::::\n\n## After\n';
+  await open(page, request, text);
+  await page.getByTestId('outline-toggle').click();
+  const items = page.getByTestId('outline-item');
+  await expect(items).toHaveText(['Top', 'Left', 'Right', 'After']);
+  await items.filter({ hasText: 'Right' }).click();
+  const caret = await page.evaluate(() => window.getSelection()?.anchorNode?.parentElement?.closest('h2')?.textContent ?? null);
+  expect(caret).toBe('Right');
+  expect(await fs.readFile(file(), 'utf8')).toBe(text);
+});

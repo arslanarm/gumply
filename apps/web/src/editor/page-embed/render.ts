@@ -15,6 +15,7 @@
 import { hasAttachmentExtension, isBoardTarget } from "@gumply/core";
 import MarkdownIt from "markdown-it";
 import { calloutStyle, defaultCalloutTitle } from "../callout/types.js";
+import { columnsMarkdownPlugin } from "../columns/markdown.js";
 import { wikilinkMarkdownPlugin } from "../wikilink/markdown-plugin.js";
 import { parsePageEmbed } from "./markdown-plugin.js";
 
@@ -192,6 +193,13 @@ function createRenderer(): Any {
   md.block.ruler.before("paragraph", "nested_embed", nestedEmbedRule);
   md.core.ruler.push("task_list", taskListRule);
   md.core.ruler.push("text_decorations", textDecorations);
+  // spec/columns: a preview shows columns as the editor does (same classes; widths as flex shares).
+  columnsMarkdownPlugin(md as Any);
+  md.renderer.rules.gumply_columns_open = () => '<div class="md-columns">\n';
+  md.renderer.rules.gumply_column_open = (tokens: Any[], index: number) => {
+    const width = Number(tokens[index].meta?.width);
+    return `<div class="md-column"${width > 0 ? ` style="flex: ${width} 1 0"` : ""}>\n`;
+  };
   // Code keeps its language for the highlighter; content is escaped by markdown-it.
   return md;
 }
