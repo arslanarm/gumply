@@ -91,59 +91,66 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
     expect(obsidianFileLinks(body, maskCode)).toEqual(["photo.png", "att/pic.png", "report.pdf"]);
   });
 
-  // Timing on a shared, loaded machine: compare how the cost grows with the
-  // vault instead of against wall-clock budgets (a 50 ms budget failed at
-  // 50.2 ms under load ~20). Small and large interleaved, fastest of 9 runs
-  // each, after a warm-up (#wc6ryfte: medians taken apart still flaked at load ~12).
-  it("builds in linear time and resolves in time independent of the vault's size", () => {
+  // A work counter, not a clock (#9j9cd5x4): timing tripped at load ~8 even
+  // after #wc6ryfte's interleaving, and a count can't change with machine load.
+  it("builds in linear work and resolves with work independent of the vault's size", () => {
     /**
-     * Load-aware timing (#wc6ryfte): the small and the large case run
-     * interleaved (alternating which goes first), so both see the same load,
-     * and each keeps its fastest run. Load only ever adds time, so the
-     * minimum is the cleanest estimate of the real cost; a median of runs
-     * taken at different moments let one load spike decide the ratio.
+     * The work `run` does: one unit per Map get/set/has, plus every element an
+     * array search or callback method passes over (`filter`, `some`, `find`,
+     * `includes`, `indexOf`, `forEach`, `map`…). The index's own work goes
+     * through these; a full scan or a quadratic build would show up here.
      */
-    const paired = (small: () => void, large: () => void, runs = 9): [number, number] => {
-      small(); // warm-up (JIT)
-      large();
-      const best = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
-      for (let run = 0; run < runs; run += 1) {
-        const order = run % 2 === 0 ? [0, 1] : [1, 0];
-        for (const which of order) {
-          const started = performance.now();
-          (which === 0 ? small : large)();
-          best[which] = Math.min(best[which]!, performance.now() - started);
-        }
+    const work = (run: () => void): number => {
+      let units = 0;
+      const patches: Array<[object, string, unknown]> = [];
+      const patch = (proto: object, name: string, cost: (self: unknown) => number) => {
+        const original = (proto as Record<string, (...args: unknown[]) => unknown>)[name]!;
+        patches.push([proto, name, original]);
+        (proto as Record<string, unknown>)[name] = function (this: unknown, ...args: unknown[]) {
+          units += cost(this);
+          return original.apply(this, args);
+        };
+      };
+      for (const name of ["get", "set", "has"]) patch(Map.prototype, name, () => 1);
+      for (const name of ["filter", "some", "every", "find", "findIndex", "includes", "indexOf", "forEach", "map", "reduce"]) {
+        patch(Array.prototype, name, (self) => (self as unknown[]).length);
       }
-      return [best[0]!, best[1]!];
+      try {
+        run();
+      } finally {
+        for (const [proto, name, original] of patches.reverse()) (proto as Record<string, unknown>)[name] = original;
+      }
+      return units;
     };
     // `n` files where every name is shared by exactly 7 paths, at any size:
     // a resolve looks at 7 candidates whether the vault is small or large.
     const vault = (n: number) =>
       Array.from({ length: n }, (_, i) => `folder${i % 7}/sub${Math.floor(i / 7) % 13}/image-${Math.floor(i / 7)}.png`);
-    // Big enough that the small build isn't at the timer's noise floor (~1 ms).
-    const small = vault(5_000);
-    const large = vault(40_000);
+    const small = vault(1_000);
+    const large = vault(8_000);
 
-    const [buildSmall, buildLarge] = paired(() => void new LinkFileIndex(small), () => void new LinkFileIndex(large));
+    // Build: 8x the files is 8x the work (an O(n²) build would be ~64x), and a few units per file
+    // (measured: 6,143 and 49,143 units, ~6 per file: the path check plus the map writes).
+    const buildSmall = work(() => void new LinkFileIndex(small));
+    const buildLarge = work(() => void new LinkFileIndex(large));
+    expect(buildSmall).toBeGreaterThan(0);
+    expect(buildLarge).toBeLessThanOrEqual(8 * buildSmall + 8);
+    expect(buildLarge / large.length).toBeLessThanOrEqual(10);
 
-    const resolves = (files: string[]) => {
+    // Resolve: the same links in both vaults cost the same work (only files of
+    // that name are looked at); a scan of the vault would be ~8x. Measured: 9 per link
+    // (7 candidates plus 2 lookups) in both.
+    const resolveWork = (files: string[]) => {
       const index = new LinkFileIndex(files);
-      const names = Math.floor(files.length / 7);
-      const links = Array.from({ length: 5_000 }, (_, i) => `image-${(i * 7919) % names}.png`);
-      return () => {
+      const links = Array.from({ length: 100 }, (_, i) => `image-${(i * 37) % 142}.png`);
+      return work(() => {
         for (const link of links) if (index.resolve(link, "folder3/sub4/note.md") === null) throw new Error(link);
-      };
+      });
     };
-    const [resolveSmall, resolveLarge] = paired(resolves(small), resolves(large));
-
-    // 8x the files: a linear build is ~8x slower, an O(n²) one ~64x. The limit sits in between.
-    expect(buildLarge / Math.max(buildSmall, 0.05)).toBeLessThan(24);
-    // A resolve looks only at files of that name: ~1x; a full scan would be ~8x.
-    expect(resolveLarge / Math.max(resolveSmall, 0.05)).toBeLessThan(3);
-    // Loose sanity bounds that only a pathological slowdown trips, even under load.
-    expect(buildLarge).toBeLessThan(2_000);
-    expect(resolveLarge / 5_000).toBeLessThan(5);
+    const resolveSmall = resolveWork(small);
+    const resolveLarge = resolveWork(large);
+    expect(resolveSmall).toBeGreaterThan(0);
+    expect(resolveLarge).toBe(resolveSmall);
   });
 });
 
