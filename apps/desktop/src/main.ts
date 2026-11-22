@@ -685,7 +685,8 @@ function runMcpMode(args: McpModeArgs): void {
     process.stderr.write(`--vault is required.\n${MCP_MODE_USAGE}\n`);
     exit(2);
   }
-  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit });
+  // #6bxm6ygf: the app's own version (stamped from the release tag), as /api/health and About show it.
+  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion() });
 }
 
 if (mcpMode) {
