@@ -163,7 +163,7 @@ test.describe('export a page as HTML (G1)', () => {
     }
   });
 
-  test('from Cmd+K, with the remembered choices; plain-text links by default', async ({ page, request, vault }) => {
+  test('from Cmd+K, with the remembered choices; plain-text links by default', async ({ page, request, browser, vault }) => {
     void vault;
     await writeVault(request);
     await page.goto('/#/Trips/Trip plan');
@@ -180,6 +180,24 @@ test.describe('export a page as HTML (G1)', () => {
     expect(html).toContain('data-theme="system"');
     expect(html).toContain('<span class="wiki-link">Packing</span>');
     expect(html).not.toContain('Packing.html');
+
+    // Follow the system: both diagram drawings are in the file; the OS scheme picks one, with no script.
+    const file = test.info().outputPath('system.html');
+    await fs.writeFile(file, html);
+    for (const scheme of ['light', 'dark'] as const) {
+      const { context, viewer, requests } = await openOffline(browser, file);
+      try {
+        await viewer.emulateMedia({ colorScheme: scheme });
+        await expect(viewer.locator(`.diagram-${scheme}`)).toBeVisible();
+        await expect(viewer.locator(`.diagram-${scheme === 'light' ? 'dark' : 'light'}`)).toBeHidden();
+        // Each drawing has its own SVG id (their styles are scoped by it).
+        const ids = await viewer.locator('.export-diagram svg').evaluateAll((svgs) => svgs.map((svg) => svg.id));
+        expect(new Set(ids).size).toBe(2);
+        expect(requests).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
 
     // The choice is remembered; Escape closes the dialog.
     await page.keyboard.press(`${MOD}+k`);

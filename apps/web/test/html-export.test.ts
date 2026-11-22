@@ -95,6 +95,14 @@ describe("HTML export (G1)", () => {
     expect(html).toContain("It costs $5 and $10.");
     expect(html).not.toContain("data-math");
     expect(html).not.toContain("data-mermaid");
+
+    // Follow the system: both drawings, wrapped for the stylesheet.
+    const both = await buildPageHtml(
+      page("Q", "```mermaid\ngraph TD; A-->B\n```"),
+      source({}, [root], { diagram: async (_code, theme) => ({ svg: `<svg data-theme="${theme}"></svg>` }) }).value,
+      { theme: "system", links: "text" },
+    );
+    expect(both).toContain('<div class="export-diagram"><div class="diagram-light"><svg data-theme="light"></svg></div><div class="diagram-dark"><svg data-theme="dark"></svg></div></div>');
   });
 
   it("links: plain text by default, or relative links to sibling .html files", async () => {

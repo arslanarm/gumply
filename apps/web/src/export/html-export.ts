@@ -203,10 +203,17 @@ async function renderMath(context: Context, html: string): Promise<string> {
 async function renderDiagrams(context: Context, html: string): Promise<string> {
   const diagram = context.source.diagram;
   return replaceAsync(html, /<div class="mermaid-block" data-mermaid="([^"]*)"[^>]*>(<pre><code>[\s\S]*?<\/code><\/pre>)<\/div>/g, async (match) => {
-    // A system-theme file can't switch an SVG's colours without script: it's drawn light.
-    const result = diagram ? await diagram(unescapeHtml(match[1] ?? ""), context.options.theme === "dark" ? "dark" : "light").catch(() => null) : null;
-    if (result && "svg" in result) return `<div class="export-diagram">${result.svg}</div>`;
-    return match[2] ?? "";
+    if (!diagram) return match[2] ?? "";
+    const source = unescapeHtml(match[1] ?? "");
+    const draw = (theme: "light" | "dark") => diagram(source, theme).catch(() => null);
+    if (context.options.theme !== "system") {
+      const result = await draw(context.options.theme);
+      return result && "svg" in result ? `<div class="export-diagram">${result.svg}</div>` : (match[2] ?? "");
+    }
+    // "Follow the system": both drawings; the stylesheet shows the one that fits (no script).
+    const [light, dark] = await Promise.all([draw("light"), draw("dark")]);
+    if (!light || !("svg" in light) || !dark || !("svg" in dark)) return match[2] ?? "";
+    return `<div class="export-diagram"><div class="diagram-light">${light.svg}</div><div class="diagram-dark">${dark.svg}</div></div>`;
   });
 }
 

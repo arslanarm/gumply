@@ -523,6 +523,32 @@ html[data-theme="dark"] .callout[data-callout-style="quote"] { --callout-rgb: 15
   height: auto;
 }
 
+/* "Follow the system": both drawings are in the file; show the one that fits. */
+.export-diagram .diagram-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] .export-diagram .diagram-light {
+    display: none;
+  }
+
+  html[data-theme="system"] .export-diagram .diagram-dark {
+    display: block;
+  }
+}
+
+/* Print is always light (G2). */
+@media print {
+  html[data-theme] .export-diagram .diagram-light {
+    display: block;
+  }
+
+  html[data-theme] .export-diagram .diagram-dark {
+    display: none;
+  }
+}
+
 /* ---------- Inlined previews, database views, boards, notes ---------- */
 
 .export-embed {
