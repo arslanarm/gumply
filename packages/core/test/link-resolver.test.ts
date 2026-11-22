@@ -117,11 +117,20 @@ function random(seed: number): () => number {
 describe("same answers as before, on random vaults (#udbaghb4, D40)", () => {
   // Names chosen to collide across every check: case, spaces, slugs, legacy slugs, titles that
   // are another page's path, boards with a page's name, the same name in several folders.
-  const NAMES = ["Target", "target", "Five", "five", "Meeting notes", "meeting-notes", "meeting_notes", "Q1 plan", "q1-plan", "Map", "Café", "cafe", "Other/Target", "Ünïcode", "a  b", "Untitled"];
-  const FOLDERS = ["", "Projects/", "Projects/Sub/", "Other/", "Aaaa/", "Zzzz/", "projects/"];
-  const LINKS = [...NAMES, "Projects/Target", "projects/sub/five", "Map.canvas", "Nothing", "  Target  ", "MEETING NOTES", "q1 plan", "Projects"];
+  // @opus-hunter's edge cases too: names whose slug is empty or "untitled", apostrophes,
+  // tabs and edge spaces, spaces around a `/`.
+  const NAMES = [
+    "Target", "target", "Five", "five", "Meeting notes", "meeting-notes", "meeting_notes", "Q1 plan", "q1-plan", "Map",
+    "Café", "cafe", "Other/Target", "Ünïcode", "a  b", "Untitled",
+    "???", "#", "-", "It’s", "It's", "its", "a\tb", "x ", " x",
+  ];
+  const FOLDERS = ["", "Projects/", "Projects/Sub/", "Other/", "Aaaa/", "Zzzz/", "projects/", "Projects /", "Projects/ Sub/", "a/", "A/"];
+  const LINKS = [
+    ...NAMES, "Projects/Target", "projects/sub/five", "Map.canvas", "Nothing", "  Target  ", "MEETING NOTES", "q1 plan", "Projects",
+    "", " ", "/", "a/x", "A/X", "Projects / Target", "projects/ sub/five", "Tasks.base", "Tasks",
+  ];
 
-  for (let seed = 1; seed <= 40; seed++) {
+  for (let seed = 1; seed <= 80; seed++) {
     it(`seed ${seed}`, () => {
       const next = random(seed);
       const pick = <T,>(list: readonly T[]): T => list[Math.floor(next() * list.length)]!;
@@ -138,6 +147,9 @@ describe("same answers as before, on random vaults (#udbaghb4, D40)", () => {
         const title = next() < 0.3 ? pick(NAMES) : name;
         pages.push(page(id, title, board ? "whiteboard" : "page"));
       }
+      // Folders and bases are in the list the server and web pass (`list()`); they're candidates too.
+      for (const folder of ["Projects", "a", "A"]) if (!ids.has(folder) && next() < 0.5) pages.push(page(folder, folder, "folder"));
+      if (next() < 0.5) pages.push(page(`${pick(FOLDERS)}Tasks.base`, "Tasks", "base"));
       for (const link of LINKS) {
         for (const from of [null, ...pages.slice(0, 6).map((p) => p.id), "Projects/Sub/Deep/Note"]) {
           expect(resolveWikilink(link, pages, from)?.id ?? null, `[[${link}]] from ${from}`).toBe(referenceResolve(link, pages, from)?.id ?? null);
