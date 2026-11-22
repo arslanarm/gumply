@@ -11,6 +11,9 @@
   --border: #e5e3dc;
   --accent: #4f46e5;
   --accent-soft: #eef2ff;
+  /* The sidebar's current row (pages, Graph, Trash). */
+  --nav-selected: var(--accent-soft);
+  --nav-selected-text: var(--accent);
   --danger: #c0392b;
   --hover: #ebeae5;
   --success: #22a06b;
@@ -71,6 +74,9 @@
   --border: #333331;
   --accent: #8b8bf0;
   --accent-soft: #26264a;
+  /* Dark: a neutral tint, as in Notion and Obsidian, not a saturated indigo (v0.7 RC audit). */
+  --nav-selected: #343432;
+  --nav-selected-text: var(--text);
   --danger: #ff7b72;
   --hover: #2a2a28;
   --success: #3ddc97;
@@ -313,8 +319,25 @@ input {
 .page-tree {
   flex: 1;
   overflow-y: auto;
-  padding: 0.2rem 0.55rem 2.5rem;
+  /* 1rem + the fade's own 1.5rem below the last row. */
+  padding: 0.2rem 0.55rem 1rem;
   min-height: 80px;
+}
+
+/*
+ * Rows scrolling under the footer (Tags, Graph, Trash) fade out instead of
+ * being cut at its border (v0.7 RC audit). Sticky at the list's visible
+ * bottom; scrolled to the end, it sits in its own space after the last row.
+ */
+.page-tree::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: block;
+  height: 1.5rem;
+  background: linear-gradient(to bottom, transparent, var(--surface-nav));
+  pointer-events: none;
 }
 
 .tree-node {
@@ -360,9 +383,9 @@ input {
 }
 
 .page-item.is-selected {
-  --row-bg: var(--accent-soft);
+  --row-bg: var(--nav-selected);
   background: var(--row-bg);
-  color: var(--accent);
+  color: var(--nav-selected-text);
 }
 
 .page-item.is-drop-target {
@@ -2146,8 +2169,8 @@ input {
 
 .sidebar-row-active,
 .sidebar-row-active:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--nav-selected);
+  color: var(--nav-selected-text);
 }
 
 .local-graph-toggle {
@@ -2370,8 +2393,8 @@ input {
 }
 
 .sidebar-row-active .sidebar-row-count {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--nav-selected-text) 14%, transparent);
+  color: var(--nav-selected-text);
 }
 
 .sidebar-row-icon {
