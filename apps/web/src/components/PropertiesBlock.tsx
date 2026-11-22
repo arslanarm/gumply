@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   isTagsKey,
   isValidPropertyKey,
@@ -164,6 +164,7 @@ function PropertyRow(props: PropertyRowProps) {
   const t = useT();
   const { property } = props;
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const issueId = useId();
 
   // Close the key menu on a click outside or Escape.
   useEffect(() => {
@@ -234,14 +235,18 @@ function PropertyRow(props: PropertyRowProps) {
         <PropertyValueEditor property={property} autoFocus={props.autoFocus} onSave={props.onSave} onInvalid={props.onInvalid} />
         {property.issue?.kind === "tags-string" ? (
           // #6imze6ux: Obsidian reads nothing from a string with spaces or commas; one click makes it the list Gumply shows.
-          <span className="property-issue" data-testid="property-issue-tags-string">
-            <span className="property-mismatch" role="img" title={t("properties.tagsString")} aria-label={t("properties.tagsString")}>
+          // The flag itself carries the tooltip, as the digits flag does; the button (the one focusable part)
+          // shows it on keyboard focus and is described by it for screen readers.
+          <span className="property-issue" data-testid="property-issue-tags-string" title={t("properties.tagsString")}>
+            <span id={issueId} className="property-mismatch" role="img" title={t("properties.tagsString")} aria-label={t("properties.tagsString")}>
               <Icon name="alert" size={14} />
             </span>
             <button
               type="button"
               className="property-issue-fix"
               data-testid="property-make-list"
+              data-tooltip={t("properties.tagsString")}
+              aria-describedby={issueId}
               onClick={() => void props.onSave(property.issue!.tags)}
             >
               {t("properties.makeList")}

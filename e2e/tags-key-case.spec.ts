@@ -59,6 +59,9 @@ test('#6imze6ux: a tags string Obsidian won\'t read is flagged; "Make it a list"
   await expect(page.locator('.page-tag', { hasText: '#five' })).toHaveCount(0);
   await expect(page.locator('.page-tag', { hasText: '#six' })).toHaveCount(0);
   await expect(flag.locator('.property-mismatch')).toHaveAttribute('title', "Obsidian won't read these as tags. Make it a list");
+  // The flag carries the tooltip as the digits flag does; the button is described by it (keyboard, screen readers).
+  await expect(flag).toHaveAttribute('title', "Obsidian won't read these as tags. Make it a list");
+  await expect(page.getByTestId('property-make-list')).toHaveAccessibleDescription("Obsidian won't read these as tags. Make it a list");
   // The specific flag replaces the generic "doesn't match the type" one.
   await expect(page.getByTestId('property-mismatch')).toHaveCount(0);
   // Nothing is written just by opening.
@@ -68,4 +71,19 @@ test('#6imze6ux: a tags string Obsidian won\'t read is flagged; "Make it a list"
   await page.getByTestId('property-make-list').click();
   await expect(flag).toHaveCount(0);
   await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Str.md'), 'utf8')).toBe('---\ntags: # mine\n  - five\n  - six\nstatus: draft\n---\n\nBody.\n');
+});
+
+test('#6imze6ux: removing a chip from a tags string writes a list of the rest; nothing else changes', async ({ page, request, vault }) => {
+  void vault;
+  const STRING = '---\ntags: five, six # mine\nstatus: draft\n---\n\nBody.\n';
+  await fs.writeFile(path.join(E2E_VAULT, 'Str.md'), STRING, 'utf8');
+  await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Str');
+  await page.goto('/#/Str');
+  const row = page.getByTestId('property-value-tags');
+  await expect(row.locator('.property-chip')).toHaveText(['#five', '#six']);
+  // A user edit: turning the string into a list is fine; only the tags lines change.
+  await row.getByTestId('property-chip-five').getByRole('button').click();
+  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Str.md'), 'utf8')).toBe('---\ntags: # mine\n  - six\nstatus: draft\n---\n\nBody.\n');
+  await expect(row.locator('.property-chip')).toHaveText(['#six']);
+  await expect(page.getByTestId('property-issue-tags-string')).toHaveCount(0);
 });
