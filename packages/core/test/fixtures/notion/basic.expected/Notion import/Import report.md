@@ -11,7 +11,7 @@ Imported into `Notion import`.
 ## Converted
 
 - 0 links and 0 mentions to wiki links
-- 3 databases embedded as live views, 0 database links
+- 3 databases embedded and 0 database links kept as links (their views come in a later version)
 - 1 link to attachments
 - 0 callouts (their icons are not in the export)
 

@@ -16,8 +16,9 @@ import Suggestion, {
   type SuggestionKeyDownProps,
   type SuggestionProps,
 } from "@tiptap/suggestion";
-import { buildFileSuggestions, buildLinkSuggestions, type LinkSuggestion } from "../../lib/wikilinks.js";
+import { buildFileSuggestions, buildLinkSuggestions, isImageFile, type LinkSuggestion } from "../../lib/wikilinks.js";
 import { linkableFiles } from "../../lib/linkable-files.js";
+import { fileNameWithoutExtension } from "../../lib/files.js";
 import { insertImageAttachment } from "../attachments/insert.js";
 import { getWikiLinkEnvironment } from "./link-store.js";
 import { replaceWithFileEmbed } from "./node.js";
@@ -134,7 +135,11 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             const env = getWikiLinkEnvironment();
             const active = wikiLinkPluginKey.getState(editor.state) as { range?: { from: number } } | undefined;
             if (active?.range && embedStart(editor.state, active.range.from)) {
-              if (query.includes("#")) return partSuggestions(query);
+              // `![[Page#` lists the page's parts; when the text before `#`
+              // names no page, it's part of a file name (`a#b.png`): search
+              // files for the whole query (#eg65ktng).
+              const hash = query.indexOf("#");
+              if (hash !== -1 && resolveWikilink(query.slice(0, hash).trim(), env.pages)) return partSuggestions(query);
               // No "Create" row: a new board is `/whiteboard` → New board here.
               // The open page can't preview itself.
               const embeddable = env.pages.filter(
@@ -153,15 +158,49 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
           },
           command: ({ editor, range, props }) => {
             if (embedStart(editor.state, range.from) && props.kind === "file" && props.file) {
-              // #4usgpjh8: exactly what typing `![[<link>]]` makes (#95x2fjh6),
-              // with the link Obsidian would write from this note.
-              const typed = `![[${props.file.link}]]`;
               const from = range.from - 1;
+              // #btgun63k: a wikilink can't hold `[ ] | # ^`. Such a file gets a
+              // Markdown image or file link instead, written by the same D23
+              // note-relative writer as the `[[` menu's attachment rows.
               const parent = editor.state.doc.resolve(from).parent;
               const alone =
                 parent.type.name === "paragraph" &&
                 parent.textContent === editor.state.doc.textBetween(from, range.to) &&
                 editor.state.doc.resolve(from).depth > 0;
+              // #btgun63k: a wikilink can't hold `[ ] | # ^`. Such a file gets a
+              // Markdown image or file link instead, written by the same D23
+              // note-relative writer as the `[[` menu's attachment rows, and
+              // placed like the `![[…]]` it stands for: alone on its line an
+              // image replaces the paragraph (no empty one left behind, #eg65ktng).
+              if (/[[\]|#^]/.test(props.file.link)) {
+                const file = props.file;
+                const href = hrefForAttachment(file.path);
+                editor
+                  .chain()
+                  .focus()
+                  .command(({ tr, state }) => {
+                    const { schema } = state;
+                    if (isImageFile(file)) {
+                      const attrs = { src: href, alt: fileNameWithoutExtension(file.name) };
+                      if (alone && schema.nodes.image) {
+                        const $from = tr.doc.resolve(from);
+                        tr.replaceWith($from.before(), $from.after(), schema.nodes.image.create(attrs));
+                        return true;
+                      }
+                      if (!schema.nodes.inlineImage) return false;
+                      tr.replaceWith(from, range.to, schema.nodes.inlineImage.create(attrs));
+                      return true;
+                    }
+                    if (!schema.nodes.fileAttachment) return false;
+                    tr.replaceWith(from, range.to, schema.nodes.fileAttachment.create({ path: href, name: file.name, size: 0 }));
+                    return true;
+                  })
+                  .run();
+                return;
+              }
+              // #4usgpjh8: exactly what typing `![[<link>]]` makes (#95x2fjh6),
+              // with the link Obsidian would write from this note.
+              const typed = `![[${props.file.link}]]`;
               editor
                 .chain()
                 .focus()

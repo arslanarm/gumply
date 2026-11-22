@@ -140,7 +140,7 @@ export const InlineImage = Node.create({
           const src = String(node.attrs.src ?? "");
           const title = String(node.attrs.title ?? "");
           state.write(
-            `![${String(node.attrs.alt ?? "").replace(/[[\]\\]/g, "\\$&")}](${src.replace(/[()]/g, "\\$&")}${
+            `![${String(node.attrs.alt ?? "").replace(/[[\]\\|]/g, "\\$&")}](${src.replace(/[()]/g, "\\$&")}${
               title ? ` "${title.replace(/"/g, '\\"')}"` : ""
             })`,
           );
