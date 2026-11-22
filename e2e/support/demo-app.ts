@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Browser } from '@playwright/test';
 import { API_PORT, WEB_PORT } from './env';
 
 /**
@@ -45,6 +46,45 @@ export class DemoApp {
       '--strictPort',
     ], { GUMPLY_PORT: String(DEMO_API_PORT) });
     await this.waitFor(DEMO_WEB_URL, 'demo web server');
+  }
+
+  /**
+   * Warm the demo's own Vite before the first test (#ktf26af8).
+   *
+   * This app's Vite is cold: the first page load pays for dependency
+   * pre-bundling and the first transform of every module, which under load can
+   * outlast the page-open budget (`support/nav.ts`). So load the app once in a
+   * throwaway context first, with every `/api` request answered **in the
+   * browser** (a single fake page), so the server never sees a request and
+   * first-run seeding stays untouched for the tests. The editor opens on the
+   * fake page, so its modules are transformed and cached too.
+   *
+   * Best effort: a slow or failed warm-up doesn't fail the suite; the tests
+   * then simply open a less warm app.
+   */
+  async warmUp(browser: Browser): Promise<void> {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const now = new Date().toISOString();
+      const meta = { id: 'Warm', kind: 'page', title: 'Warm', tags: [], parentId: null, childCount: 0, created: now, updated: now };
+      // Only the server's `/api/…`, never Vite modules such as `/src/api/client.ts`.
+      await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
+        const { pathname } = new URL(route.request().url());
+        if (pathname === '/api/pages') return route.fulfill({ json: [meta] });
+        if (pathname === '/api/pages/Warm') return route.fulfill({ json: { ...meta, content: 'Warm up.' } });
+        if (pathname === '/api/health') return route.fulfill({ json: { ok: true, name: 'Gumply', version: 'warm-up', vaultPath: '' } });
+        return route.fulfill({ status: 404, json: { error: 'warm-up' } });
+      });
+      const started = Date.now();
+      await page.goto(`${DEMO_WEB_URL}/#/Warm`);
+      await page.getByTestId('editor-content').waitFor({ state: 'visible', timeout: 90_000 });
+      console.log(`[demo warm-up] cold Vite ready after ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    } catch (error) {
+      this.logs.push(`[warm-up] ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
+    } finally {
+      await context.close();
+    }
   }
 
   async restartServer(): Promise<void> {

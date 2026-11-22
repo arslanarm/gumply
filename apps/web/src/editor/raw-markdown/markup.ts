@@ -23,8 +23,17 @@ const MARKUP_TOKENS = new Set(["bullet_list_open", "ordered_list_open", "hr", "h
 /* markdown-it is untyped here (see wikilink plugin). */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function markupRule(state: any): void {
+  let lines: string[] | null = null;
   for (const token of state.tokens as any[]) {
-    if (MARKUP_TOKENS.has(token.type) && token.markup) token.attrSet(MARKUP_ATTR, token.markup);
+    if (!MARKUP_TOKENS.has(token.type) || !token.markup) continue;
+    let markup = String(token.markup);
+    // A setext underline keeps its own length (`===` under "Title"), #54prcupx.
+    if (token.type === "heading_open" && (markup === "=" || markup === "-") && token.map) {
+      lines ??= String(state.src).split("\n");
+      const underline = (lines[(token.map[1] as number) - 1] ?? "").trim();
+      if (new RegExp(`^\\${markup}+$`).test(underline)) markup = underline;
+    }
+    token.attrSet(MARKUP_ATTR, markup);
   }
 }
 
@@ -116,13 +125,14 @@ export const MarkdownHeading = Heading.extend({
       markdown: {
         serialize(state: MarkupSerializerState, node: PMNode) {
           const level = Number(node.attrs.level ?? 1);
-          const markup = node.attrs.markdownMarkup;
-          const setext =
-            (markup === "=" && level === 1) || (markup === "-" && level === 2);
+          const markup = String(node.attrs.markdownMarkup ?? "");
+          const setext = (/^=+$/.test(markup) && level === 1) || (/^-+$/.test(markup) && level === 2);
           if (setext && node.textContent.trim().length > 0 && !node.textContent.includes("\n")) {
             state.renderInline(node);
             state.ensureNewLine();
-            state.write((markup as string).repeat(Math.max(3, node.textContent.length)));
+            // The underline as written; an older single-character record is
+            // drawn as long as the title.
+            state.write(markup.length > 1 ? markup : markup.repeat(Math.max(3, node.textContent.length)));
             state.closeBlock(node);
             return;
           }

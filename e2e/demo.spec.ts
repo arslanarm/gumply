@@ -19,9 +19,12 @@ let app: DemoApp;
 
 test.describe.configure({ mode: 'serial' });
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ browser }) => {
+  // Starting two servers and warming a cold Vite (#ktf26af8) can take a while under load.
+  test.setTimeout(150_000);
   app = new DemoApp();
   await app.start();
+  await app.warmUp(browser);
 });
 
 test.afterAll(async () => {

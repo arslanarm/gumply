@@ -142,7 +142,7 @@ describe("list source attributes (#fmmght8w)", () => {
   });
 
   it("marks a list that starts right under a line of text", () => {
-    expect(render("- a\n\n- parent\n\t- nested")).toContain('<ul data-md-markup="-" data-md-after-text="true">');
+    expect(render("- a\n\n- parent\n\t- nested")).toMatch(/<ul data-md-markup="-" data-md-after-text="true"[ >]/);
     expect(render("- a\n\n- parent\n\n  - nested")).not.toContain("data-md-after-text");
     expect(render("Text\n- a")).toContain('data-md-after-text="true"');
     expect(render("Text\n\n- a")).not.toContain("data-md-after-text");
@@ -162,5 +162,35 @@ describe("list source attributes (#fmmght8w)", () => {
     expect(recordedNumbers(list(["1", null]), 1)).toBeNull();
     expect(recordedNumbers(list(["2", "1"]), 2)).toBeNull();
     expect(recordedNumbers(list(["1", "2"]), 3)).toBeNull();
+  });
+});
+
+describe("block joins (#54prcupx)", () => {
+  it("stamps a block that starts right under its previous sibling, at any depth", () => {
+    expect(render("## H\nText")).toContain('<p data-md-join="h&gt;p">');
+    expect(render("## H\n\nText")).not.toContain("data-md-join");
+    expect(render("Text\n## H")).toContain('data-md-join="p&gt;h"');
+    expect(render("- a\n1. b")).toContain('data-md-join="ul:-&gt;ol:."');
+    expect(render("***\n## H")).toContain('data-md-join="hr:*&gt;h"');
+    expect(render("> ## H\n> Text")).toContain('data-md-join="h&gt;p"');
+    // The first block in a container has no previous sibling.
+    expect(render("> Text")).not.toContain("data-md-join");
+  });
+
+  it("writes the join only while both blocks are still the recorded kinds", async () => {
+    const { joinsPrevious } = await import("../src/editor/raw-markdown/block-joins.js");
+    const node = (name: string, attrs: Record<string, unknown> = {}, childCount = 1) =>
+      ({ type: { name }, attrs, childCount }) as never;
+    expect(joinsPrevious(node("heading"), node("paragraph", { markdownJoin: "h>p" }))).toBe(true);
+    // The heading became text: the two paragraphs would merge.
+    expect(joinsPrevious(node("paragraph"), node("paragraph", { markdownJoin: "h>p" }))).toBe(false);
+    // A list marker changed, or a list that no longer starts at 1 under text.
+    expect(joinsPrevious(node("bulletList", { markdownMarkup: "*" }), node("orderedList", { markdownJoin: "ul:->ol:.", markdownMarkup: "." }))).toBe(false);
+    expect(joinsPrevious(node("paragraph"), node("orderedList", { markdownJoin: "p>ol:.", markdownMarkup: ".", start: 3 }))).toBe(false);
+    expect(joinsPrevious(node("paragraph"), node("orderedList", { markdownJoin: "p>ol:.", markdownMarkup: ".", start: 1 }))).toBe(true);
+    // An `hr` that would now be written `---` under text (a setext heading).
+    expect(joinsPrevious(node("paragraph"), node("horizontalRule", { markdownJoin: "p>hr:*" }))).toBe(false);
+    // An empty (typed) line never joins.
+    expect(joinsPrevious(node("heading"), node("paragraph", { markdownJoin: "h>p" }, 0))).toBe(false);
   });
 });
