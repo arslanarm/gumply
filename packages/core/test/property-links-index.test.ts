@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectLinkEdges, propertyLinks, type PageMeta } from "../src/index.js";
+import { collectLinkEdges, isWholeWikilink, mentionTerms, normalizeTags, parseFrontmatter, propertyLinks, type PageMeta } from "../src/index.js";
 
 /**
  * #rpugpydh: which frontmatter values count as links, row for row from
@@ -17,6 +17,13 @@ const ROWS: Row[] = [
   ["QuotedBlockItem", 'refs:\n  - "[[Alpha]]"', ["refs:Alpha"], []],
   ["QuotedFlowItem", 'flow: ["[[Alpha]]", other]', ["flow:Alpha"], []],
   ["QuotedHeading", 'hd: "[[Alpha#Sec]]"', ["hd:Alpha"], []],
+  // #7xbdttxy: tags, aliases and cssclasses too (Obsidian 1.14.4; never a tag or an alias, see below).
+  ["TagsFlow", 'tags: ["[[Alpha]]"]', ["tags:Alpha"], []],
+  ["TagsBlockItem", 'tags:\n  - "[[Alpha]]"', ["tags:Alpha"], []],
+  ["TagsCapital", 'Tags: ["[[Alpha]]"]', ["Tags:Alpha"], []],
+  ["Aliases", 'aliases: ["[[Alpha]]"]', ["aliases:Alpha"], []],
+  ["Cssclasses", 'cssclasses: ["[[Alpha]]"]', ["cssclasses:Alpha"], []],
+  ["TagsString", 'tags: "[[Alpha]]"', ["tags:Alpha"], []],
   // Not counted.
   ["Unquoted", "up: [[Alpha]]", [], []],
   ["UnquotedBlockItem", "refs:\n  - [[Alpha]]", [], []],
@@ -47,8 +54,8 @@ describe("propertyLinks: frontmatter values that count as links (Obsidian 1.14.4
     expect(read(yaml)).toEqual({ pages, files });
   });
 
-  it("keeps the heading, and never reads tags, header keys or block scalars", () => {
-    const links = propertyLinks('hd: "[[Alpha#Sec]]"\ntags: ["[[Alpha]]"]\ntitle: "[[Alpha]]"\nblock: |\n  [[Alpha]]\n');
+  it("keeps the heading, and never reads header keys or block scalars", () => {
+    const links = propertyLinks('hd: "[[Alpha#Sec]]"\ntitle: "[[Alpha]]"\nblock: |\n  [[Alpha]]\n');
     expect(links?.pages.map((entry) => entry.link)).toEqual([{ targetTitle: "Alpha", heading: "Sec", raw: "[[Alpha#Sec]]", index: 0 }]);
   });
 
@@ -92,3 +99,28 @@ describe("collectLinkEdges: one edge per target page (#rpugpydh)", () => {
     expect(collectLinkEdges("Projects/A", "", vault, fromProperties).map((edge) => edge.target)).toEqual(["Projects/Sub/Three"]);
   });
 });
+
+/** #7xbdttxy: such a value is a link, so it is never a tag or an alias (Obsidian 1.14.4: its tag index stays empty). */
+describe("a whole-value [[link]] under tags or aliases", () => {
+  it("is never a tag", () => {
+    expect(normalizeTags(["[[Alpha]]", "ok"])).toEqual(["ok"]);
+    expect(normalizeTags("[[Alpha]]")).toEqual([]);
+    // A string isn't split into fake tags first.
+    expect(normalizeTags("[[Alpha Beta]]")).toEqual([]);
+    expect(normalizeTags(" [[Alpha|A]] ")).toEqual([]);
+    // Anything else under tags is unchanged.
+    expect(normalizeTags(["#work", "see [[Alpha]]"])).toEqual(["work", "see-[[Alpha]]"]);
+    expect(parseFrontmatter('---\ntags: ["[[Alpha]]", project]\nTags2: x\n---\nBody\n').frontmatter.tags).toEqual(["project"]);
+  });
+
+  it("is never an alias (C1 mention terms)", () => {
+    expect(mentionTerms("Alpha page", ["[[Alpha]]", "AP"])).toEqual(["Alpha page", "AP"]);
+    expect(mentionTerms("Alpha page", [" [[Beta|b]] "])).toEqual(["Alpha page"]);
+  });
+
+  it("isWholeWikilink: exactly one link, nothing around it", () => {
+    for (const yes of ["[[Alpha]]", "[[Alpha#Sec|A]]", "[[a.pdf]]"]) expect(isWholeWikilink(yes)).toBe(true);
+    for (const no of ["[[]]", "[[Alpha]] x", "x [[Alpha]]", "[[A]] and [[B]]", "![[Alpha]]", "[[Al[pha]]", "Alpha"]) expect(isWholeWikilink(no)).toBe(false);
+  });
+});
+

@@ -6,11 +6,10 @@
  *
  * A span is a top-level text value, an item of a list of text values, or an
  * unquoted `[[Target]]` (YAML reads that as a list in a list; Obsidian and its
- * users read it as a link). Gumply's header keys, `tags` (any case), block scalars
+ * users read it as a link). Gumply's header keys, block scalars
  * (`|`, `>`), anchors, YAML tags and multi-line values are never spans.
  */
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
-import { isTagsKey } from "./frontmatter-keys.js";
 import { extractWikilinks, hasAttachmentExtension, type WikiLink } from "./links.js";
 import { HEADER_KEYS } from "./properties.js";
 import { WIKILINK_INNER } from "./wikilink-syntax.js";
@@ -73,9 +72,10 @@ export function propertyLinkSpans(yaml: string): PropertyLinkSpan[] | null {
     const keyNode = pair.key as Node | null;
     if (!isScalar(keyNode) || typeof keyNode.value !== "string") continue;
     const key = keyNode.value;
-    // The first of a repeated key, as everywhere else Gumply reads frontmatter.
-    // `tags` in any case, as Obsidian reads it (core `isTagsKey`, #ippqkgus); Gumply's header keys as it writes them.
-    if (HEADER_KEYS.includes(key) || isTagsKey(key) || seen.has(key)) continue;
+    // The first of a repeated key, as everywhere else Gumply reads frontmatter; Gumply's header keys as it writes them.
+    // `tags`, `aliases` and `cssclasses` are walked like any key (#7xbdttxy): Obsidian 1.14 counts a
+    // whole-value `"[[Alpha]]"` there as a link (and never as a tag or an alias, see `normalizeTags`, `mentionTerms`).
+    if (HEADER_KEYS.includes(key) || seen.has(key)) continue;
     seen.add(key);
     const value = pair.value as Node | null;
     if (isSeq(value) && flowLink(value, yaml) === null) {
