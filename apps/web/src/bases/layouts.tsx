@@ -28,13 +28,21 @@ export interface LayoutProps {
 
 function TitleButton({ row, onOpen, tooltip }: { row: BaseRow; onOpen: (id: string) => void; tooltip?: boolean }) {
   const t = useT();
+  // Cards: the full title as the app's tooltip, only while it's cut off (measured when pointed at or focused).
+  const [cut, setCut] = useState(false);
+  const measure = (event: { currentTarget: HTMLButtonElement }) => {
+    const text = event.currentTarget.querySelector(".base-title-text");
+    setCut(!!text && text.scrollWidth > text.clientWidth);
+  };
   return (
     <button
       type="button"
       className="base-title-link"
       data-testid={`base-open-${row.id}`}
       aria-label={t("bases.openPage", { title: row.title })}
-      title={tooltip ? row.title : undefined}
+      data-tooltip={tooltip && cut ? row.title : undefined}
+      onPointerEnter={tooltip ? measure : undefined}
+      onFocus={tooltip ? measure : undefined}
       onClick={() => onOpen(row.id)}
     >
       <span className="base-title-icon" aria-hidden="true">

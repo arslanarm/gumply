@@ -1,11 +1,13 @@
 /** Public API of `@gumply/core`. */
 
 export const APP_NAME = "Gumply";
-export const CORE_VERSION = "0.6.0";
+export const CORE_VERSION = "0.7.0";
 
 export type {
   ApiError,
   Attachment,
+  VaultImage,
+  LinkableFile,
   Backlink,
   BoardDocument,
   BoardUpdateResult,
@@ -194,7 +196,7 @@ export {
   type TemplateContext,
   type TemplateSettings,
 } from "./templates.js";
-export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "./link-files.js";
+export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
 
 export {
   coverValue,
@@ -240,3 +242,16 @@ export {
   type McpSettingsPatch,
   type McpSettingsResponse,
 } from "./mcp-settings.js";
+
+export {
+  notionReportMarkdown,
+  notionUrlId,
+  planNotionImport,
+  stripNotionId,
+  type NotionEntry,
+  type NotionImportOptions,
+  type NotionImportPlan,
+  type NotionImportReport,
+  type NotionPlannedDatabase,
+  type NotionPlannedFile,
+} from "./notion-import.js";

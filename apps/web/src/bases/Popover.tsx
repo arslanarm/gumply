@@ -23,7 +23,11 @@ export function Popover(props: {
       const rect = anchor.getBoundingClientRect();
       const width = panel.offsetWidth;
       const height = panel.offsetHeight;
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      // Under the anchor's left edge; when that would run past the window, its
+      // right edge lines up with the anchor's instead (toolbar buttons at the
+      // right end), then it's kept inside the window.
+      const start = rect.left + width > window.innerWidth - 8 ? rect.right - width : rect.left;
+      const left = Math.max(8, Math.min(start, window.innerWidth - width - 8));
       const below = rect.bottom + 4;
       const top = below + height > window.innerHeight - 8 && rect.top - height - 4 > 8 ? rect.top - height - 4 : below;
       setStyle({ position: "fixed", left, top });

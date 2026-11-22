@@ -5,13 +5,51 @@
  */
 import { hasAttachmentExtension, linkTargetFor, resolveWikilink, WIKILINK_INNER } from "@gumply/core";
 import { InputRule, Node, mergeAttributes } from "@tiptap/core";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Node as ProseMirrorNode, Schema } from "@tiptap/pm/model";
+import type { Transaction } from "@tiptap/pm/state";
 import { parseWikiLinkText } from "../../lib/wikilinks.js";
 import {
   getWikiLinkEnvironment,
   subscribeWikiLinkEnvironment,
 } from "./link-store.js";
 import { wikilinkMarkdownPlugin } from "./markdown-plugin.js";
+
+/**
+ * Put the node that `typed` (`![[pic.png]]`, `![[report.pdf]]`) stands for
+ * over `range`, as the Markdown parser reads it (wikilink markdown-plugin):
+ * `src`/`path` is the old guess, `obsidian` the text as typed (what is
+ * written back and what resolves across the vault). `alone`: `typed` is the
+ * whole paragraph, so an image becomes an image block in its place. Shared by
+ * typing it (#95x2fjh6) and picking it from the `![[` menu (#4usgpjh8).
+ */
+export function replaceWithFileEmbed(
+  tr: Transaction,
+  schema: Schema,
+  range: { from: number; to: number },
+  typed: string,
+  alone: boolean,
+): boolean {
+  const inner = new RegExp(String.raw`^!?\[\[(${WIKILINK_INNER}+)\]\]$`).exec(typed)?.[1] ?? "";
+  const target = inner.split("|")[0]!.split("#")[0]!.trim();
+  if (!hasAttachmentExtension(target)) return false;
+  const path = target.includes("/") ? target : `attachments/${target}`;
+  const name = target.split("/").pop() ?? target;
+  const image = typed.startsWith("!") && /\.(avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i.test(target);
+  if (image) {
+    if (alone && schema.nodes.image) {
+      const $from = tr.doc.resolve(range.from);
+      tr.replaceWith($from.before(), $from.after(), schema.nodes.image.create({ src: path, obsidian: typed }));
+      return true;
+    }
+    if (!schema.nodes.inlineImage) return false;
+    tr.replaceWith(range.from, range.to, schema.nodes.inlineImage.create({ src: path, obsidian: typed }));
+    return true;
+  }
+  const fileType = schema.nodes.fileAttachment;
+  if (!fileType) return false;
+  tr.replaceWith(range.from, range.to, fileType.create({ path, name, size: 0, obsidian: typed }));
+  return true;
+}
 
 export const WikiLink = Node.create({
   name: "wikiLink",
@@ -69,28 +107,9 @@ export const WikiLink = Node.create({
           const $from = state.doc.resolve(range.from);
           const before = $from.parent.textBetween(0, $from.parentOffset);
           if ((before.match(/`/g)?.length ?? 0) % 2 === 1) return null;
-          const { schema, tr } = state;
-          // As the Markdown parser reads it (wikilink markdown-plugin): `src`/`path`
-          // is the old guess, `obsidian` the text as typed (what is written back and
-          // what resolves across the vault).
-          const path = target.includes("/") ? target : `attachments/${target}`;
-          const name = target.split("/").pop() ?? target;
-          const image = typed.startsWith("!") && /\.(avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i.test(target);
-          if (image) {
-            const parent = $from.parent;
-            const alone = parent.type.name === "paragraph" && parent.textContent === typed && $from.depth > 0;
-            if (alone && schema.nodes.image) {
-              // Alone on its line: an image block in place of the paragraph.
-              tr.replaceWith($from.before(), $from.after(), schema.nodes.image.create({ src: path, obsidian: typed }));
-              return;
-            }
-            if (!schema.nodes.inlineImage) return null;
-            tr.replaceWith(range.from, range.to, schema.nodes.inlineImage.create({ src: path, obsidian: typed }));
-            return;
-          }
-          const fileType = schema.nodes.fileAttachment;
-          if (!fileType) return null;
-          tr.replaceWith(range.from, range.to, fileType.create({ path, name, size: 0, obsidian: typed }));
+          const parent = $from.parent;
+          const alone = parent.type.name === "paragraph" && parent.textContent === typed && $from.depth > 0;
+          if (!replaceWithFileEmbed(state.tr, state.schema, range, typed, alone)) return null;
         },
       }),
       new InputRule({

@@ -67,6 +67,11 @@ export class LinkFileIndex {
     return this.byPath.size;
   }
 
+  /** Every indexed file's vault path (#3ht5gh6q: the cover picker's image list). */
+  paths(): string[] {
+    return [...this.byPath.values()];
+  }
+
   /**
    * The file `link` points at from the note at vault path `fromNote`
    * (`Projects/Plan.md`; null or unknown: as from the vault root).
@@ -90,6 +95,17 @@ export class LinkFileIndex {
     for (const path of pool) if (better(path, best)) best = path;
     return best;
   }
+}
+
+/**
+ * The link text Obsidian writes for `path` from the note at `fromNote`, with
+ * its default "Shortest path when possible" setting (#4usgpjh8): the bare
+ * file name when that resolves back to this very file, else the full vault
+ * path. Checked by resolving, so it can never drift from the resolver.
+ */
+export function shortestLinkText(path: string, index: LinkFileIndex, fromNote: string | null): string {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return index.resolve(name, fromNote) === path ? name : path;
 }
 
 /** One-off resolve over a file list (tests, small callers). */

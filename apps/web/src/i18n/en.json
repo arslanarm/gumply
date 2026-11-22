@@ -1070,6 +1070,15 @@
       "aliases": "Aliases"
     }
   },
+  "datePicker": {
+    "empty": "Empty",
+    "choose": "Choose a date",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "today": "Today",
+    "clear": "Clear",
+    "time": "Time"
+  },
   "bases": {
     "untitled": "Untitled database",
     "newBase": "New database view",
@@ -1289,7 +1298,7 @@
     "savePosition": "Save position",
     "dragHint": "Drag the image to reposition",
     "saveToVault": "Save to vault",
-    "missing": "Cover image not found",
+    "missing": "Cover image not found: {{link}}",
     "pickerLabel": "Page cover",
     "gallery": "Gallery",
     "upload": "Upload",
@@ -1308,11 +1317,13 @@
     "chooseImage": "Choose an image",
     "uploading": "Uploading…",
     "uploadHint": "Saved in the vault's attachments folder.",
-    "noImages": "No images in the attachments folder yet.",
+    "noImages": "No images in the vault yet.",
     "linkPlaceholder": "Paste an image link…",
     "saveLink": "Save to vault",
     "saving": "Saving…",
-    "linkHint": "The image is downloaded into the vault, so the page works offline."
+    "linkHint": "The image is downloaded into the vault, so the page works offline.",
+    "searchImages": "Search images…",
+    "noMatch": "No images match “{{query}}”"
   },
   "background": {
     "button": "Background",
