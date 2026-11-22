@@ -149,22 +149,31 @@ describe("outline: what it lists (spec/outline §2, @opus-hunter's Obsidian tabl
       for (let i = 0; i < sections; i++) lines.push(`## Section ${i}`, "", "Some text with **bold** words.", "", "- a list item");
       return parse(lines.join("\n"));
     };
-    const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
-    // 20 passes per run, so a run is long enough to measure; the median of 5 runs after a warm-up.
-    const time = (doc: ReturnType<typeof parse>) => {
+    // Load-aware (#wc6ryfte): small and large interleaved (alternating which goes first), so both see
+    // the same load, and each keeps its fastest run: load only ever adds time. 20 passes per run, so a
+    // run is long enough to measure; 9 runs each after a warm-up.
+    const run = (doc: ReturnType<typeof parse>) => {
+      const started = performance.now();
       for (let i = 0; i < 20; i++) outlineOf(doc);
-      return median(
-        Array.from({ length: 5 }, () => {
-          const started = performance.now();
-          for (let i = 0; i < 20; i++) outlineOf(doc);
-          return performance.now() - started;
-        }),
-      );
+      return performance.now() - started;
     };
     const small = page(100); // 500 lines
     const large = page(1000); // 5,000 lines
     expect(outlineOf(large)).toHaveLength(1000);
-    const ratio = time(large) / Math.max(time(small), 0.05);
+    run(small);
+    run(large);
+    let fastSmall = Number.POSITIVE_INFINITY;
+    let fastLarge = Number.POSITIVE_INFINITY;
+    for (let k = 0; k < 9; k++) {
+      if (k % 2 === 0) {
+        fastSmall = Math.min(fastSmall, run(small));
+        fastLarge = Math.min(fastLarge, run(large));
+      } else {
+        fastLarge = Math.min(fastLarge, run(large));
+        fastSmall = Math.min(fastSmall, run(small));
+      }
+    }
+    const ratio = fastLarge / Math.max(fastSmall, 0.05);
     // 10x the lines: a linear pass is ~10x slower, a quadratic one ~100x. The limit sits in between.
     expect(ratio).toBeLessThan(40);
   });

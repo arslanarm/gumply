@@ -93,28 +93,39 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
 
   // Timing on a shared, loaded machine: compare how the cost grows with the
   // vault instead of against wall-clock budgets (a 50 ms budget failed at
-  // 50.2 ms under load ~20). Medians of several runs, after a warm-up.
+  // 50.2 ms under load ~20). Small and large interleaved, fastest of 9 runs
+  // each, after a warm-up (#wc6ryfte: medians taken apart still flaked at load ~12).
   it("builds in linear time and resolves in time independent of the vault's size", () => {
-    const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
-    const time = (task: () => void, runs = 5) => {
-      task(); // warm-up (JIT)
-      return median(
-        Array.from({ length: runs }, () => {
+    /**
+     * Load-aware timing (#wc6ryfte): the small and the large case run
+     * interleaved (alternating which goes first), so both see the same load,
+     * and each keeps its fastest run. Load only ever adds time, so the
+     * minimum is the cleanest estimate of the real cost; a median of runs
+     * taken at different moments let one load spike decide the ratio.
+     */
+    const paired = (small: () => void, large: () => void, runs = 9): [number, number] => {
+      small(); // warm-up (JIT)
+      large();
+      const best = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+      for (let run = 0; run < runs; run += 1) {
+        const order = run % 2 === 0 ? [0, 1] : [1, 0];
+        for (const which of order) {
           const started = performance.now();
-          task();
-          return performance.now() - started;
-        }),
-      );
+          (which === 0 ? small : large)();
+          best[which] = Math.min(best[which]!, performance.now() - started);
+        }
+      }
+      return [best[0]!, best[1]!];
     };
     // `n` files where every name is shared by exactly 7 paths, at any size:
     // a resolve looks at 7 candidates whether the vault is small or large.
     const vault = (n: number) =>
       Array.from({ length: n }, (_, i) => `folder${i % 7}/sub${Math.floor(i / 7) % 13}/image-${Math.floor(i / 7)}.png`);
-    const small = vault(2_500);
-    const large = vault(20_000);
+    // Big enough that the small build isn't at the timer's noise floor (~1 ms).
+    const small = vault(5_000);
+    const large = vault(40_000);
 
-    const buildSmall = time(() => void new LinkFileIndex(small));
-    const buildLarge = time(() => void new LinkFileIndex(large));
+    const [buildSmall, buildLarge] = paired(() => void new LinkFileIndex(small), () => void new LinkFileIndex(large));
 
     const resolves = (files: string[]) => {
       const index = new LinkFileIndex(files);
@@ -124,17 +135,14 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
         for (const link of links) if (index.resolve(link, "folder3/sub4/note.md") === null) throw new Error(link);
       };
     };
-    const resolveSmall = time(resolves(small));
-    const resolveLarge = time(resolves(large));
+    const [resolveSmall, resolveLarge] = paired(resolves(small), resolves(large));
 
-    // 8x the files: a linear build is ~8x slower (6.7-13x measured under
-    // load ~25, GC included), an O(n²) one ~64x. The limit sits in between.
-    expect(buildLarge / Math.max(buildSmall, 0.05)).toBeLessThan(32);
-    // A resolve looks only at files of that name: ~1x (1.0-1.4x measured);
-    // a full scan would be ~8x (7.9-9.4x measured).
+    // 8x the files: a linear build is ~8x slower, an O(n²) one ~64x. The limit sits in between.
+    expect(buildLarge / Math.max(buildSmall, 0.05)).toBeLessThan(24);
+    // A resolve looks only at files of that name: ~1x; a full scan would be ~8x.
     expect(resolveLarge / Math.max(resolveSmall, 0.05)).toBeLessThan(3);
     // Loose sanity bounds that only a pathological slowdown trips, even under load.
-    expect(buildLarge).toBeLessThan(1_000);
+    expect(buildLarge).toBeLessThan(2_000);
     expect(resolveLarge / 5_000).toBeLessThan(5);
   });
 });
