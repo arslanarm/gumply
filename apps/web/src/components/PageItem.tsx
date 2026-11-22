@@ -1,10 +1,12 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { PageId, PageMeta } from "@gumply/core";
 import { BOARD_DRAG_MIME } from "../board/constants.js";
 import { isBoard, vaultPathOf } from "../lib/boards.js";
 import { isBase } from "../lib/bases.js";
 import { canMovePage, type PageTreeNode } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
+import { placeMenu, type MenuPlacement } from "../lib/menu-placement.js";
 import { useT } from "../i18n/index.js";
 
 export interface PageItemProps {
@@ -80,7 +82,10 @@ function PageItemRow(props: PageItemProps) {
       return next ? (current ?? { focus: false }) : null;
     });
   const menuRef = useRef<HTMLSpanElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuListRef = useRef<HTMLDivElement | null>(null);
+  // #sjts42ue: where the (portal, fixed-position) menu goes, once measured.
+  const [placement, setPlacement] = useState<MenuPlacement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -98,20 +103,31 @@ function PageItemRow(props: PageItemProps) {
 
   useEffect(() => {
     if (!menuOpen) return;
+    // The list is a portal on <body> (#sjts42ue): a click inside it isn't "outside".
+    const inside = (target: EventTarget | null) =>
+      target instanceof Node && (menuRef.current?.contains(target) || menuListRef.current?.contains(target));
     const onPointerDown = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+      if (!inside(event.target)) setMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // Back where it was opened from: the ⋯ button, or the row for a
+        // right-click / Shift+F10.
+        const fromButton = !menu?.at;
         setMenu(null);
-        rowRef.current?.focus();
+        (fromButton ? menuButtonRef.current : rowRef.current)?.focus();
         return;
       }
       const list = menuListRef.current;
-      if (!list || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+      const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
+      if (!list || !keys.includes(event.key)) return;
       const items = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
       if (items.length === 0) return;
       event.preventDefault();
+      if (event.key === "Home" || event.key === "End") {
+        items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+        return;
+      }
       const index = items.indexOf(document.activeElement as HTMLButtonElement);
       const step = event.key === "ArrowDown" ? 1 : -1;
       items[(index + step + items.length) % items.length]?.focus();
@@ -122,19 +138,121 @@ function PageItemRow(props: PageItemProps) {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, menu?.at]);
 
-  useEffect(() => {
-    if (!menu?.focus) return;
-    menuListRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  // Measure the open menu and place it (#sjts42ue): below the ⋯ button or at
+  // the pointer, flipped up near the bottom, scrolling when it can't fit.
+  // Before it's placed it's invisible, so it never flashes in the wrong spot.
+  useLayoutEffect(() => {
+    if (!menu) {
+      setPlacement(null);
+      return;
+    }
+    const place = () => {
+      const list = menuListRef.current;
+      const button = menuButtonRef.current;
+      if (!list) return;
+      list.style.maxHeight = "";
+      const size = { width: list.offsetWidth, height: list.scrollHeight };
+      const anchor = menu.at ? { point: menu.at } : button ? { button: button.getBoundingClientRect() } : null;
+      if (!anchor) return;
+      setPlacement(placeMenu(anchor, size, { width: window.innerWidth, height: window.innerHeight }));
+    };
+    place();
+    // When the tree scrolls, a ⋯ menu follows its button (and closes once the
+    // button has left the window); a right-click menu stays at the pointer.
+    // Programmatic scrolls (revealing the open page) must not close it.
+    const onScroll = (event: Event) => {
+      if (menu.at || (event.target instanceof Node && menuListRef.current?.contains(event.target))) return;
+      const rect = menuButtonRef.current?.getBoundingClientRect();
+      if (!rect || rect.bottom < 0 || rect.top > window.innerHeight) setMenu(null);
+      else place();
+    };
+    window.addEventListener("resize", place);
+    document.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      document.removeEventListener("scroll", onScroll, true);
+    };
   }, [menu]);
 
-  /** Right-click or Shift+F10 / the context-menu key: the same menu as ⋯. */
+  const placed = placement !== null;
+  useEffect(() => {
+    if (!menu?.focus || !placed) return;
+    menuListRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [menu, placed]);
+
+  /** One menu row: closes the menu, then runs the action. */
+  const menuItem = (testId: string, label: string, action: () => void, extra: { title?: string; danger?: boolean } = {}) => (
+    <button
+      key={testId}
+      type="button"
+      role="menuitem"
+      className={extra.danger ? "menu-danger" : undefined}
+      data-testid={`${testId}-${page.id}`}
+      title={extra.title}
+      onClick={(event) => {
+        event.stopPropagation();
+        setMenuOpen(false);
+        action();
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  // Notion-style groups, separated by a line (#sjts42ue): edit, add inside,
+  // import/export, delete. Groups with no item for this row are left out.
+  const menuGroups: ReactNode[][] = [
+    [
+      menuItem("rename-page", t("sidebar.rename"), () => props.onStartRename(page.id, page.title)),
+      folder
+        ? null
+        : menuItem("duplicate-page", t("sidebar.duplicate"), () => props.onDuplicate(page.id), {
+            title: !leaf && hasChildren ? t("sidebar.subPagesNotCopied") : undefined,
+          }),
+      folder ? null : menuItem("copy-link", t("sidebar.copyLink"), () => props.onCopyLink(page.id)),
+      menuItem("move-page", t("sidebar.moveTo"), () => props.onStartMove(page.id)),
+    ],
+    [
+      leaf ? null : menuItem("add-board", t("sidebar.addBoardInside"), () => props.onCreateBoardChild(page.id)),
+      leaf || !props.onCreateBaseChild
+        ? null
+        : menuItem("add-base", t("bases.addBaseInside"), () => props.onCreateBaseChild?.(page.id)),
+      board ? null : menuItem("new-from-template", t("sidebar.newFromTemplate"), () => props.onNewFromTemplate(page.id)),
+    ],
+    [
+      leaf || !props.onImportNotion
+        ? null
+        : menuItem("import-notion", t("notionImport.menuItem"), () => props.onImportNotion?.(page.id)),
+      leaf || folder || !props.onExportHtml
+        ? null
+        : menuItem("export-html", t("export.menuItem"), () => props.onExportHtml?.(page.id)),
+      leaf || folder || !props.onExportPdf
+        ? null
+        : menuItem("export-pdf", t("export.pdf.menuItem"), () => props.onExportPdf?.(page.id)),
+    ],
+    [
+      menuItem(
+        "delete-page",
+        board
+          ? t("sidebar.deleteBoard")
+          : base
+            ? t("bases.deleteBase")
+            : folder
+              ? t("sidebar.deleteFolder")
+              : t("sidebar.deletePage"),
+        () => props.onDelete(page.id),
+        { danger: true },
+      ),
+    ],
+  ]
+    .map((group) => group.filter((item) => item !== null))
+    .filter((group) => group.length > 0);
+
+  /** Right-click or Shift+F10 / the context-menu key: the same menu as ⋯, placed by `placeMenu`. */
   const openMenuAt = (x: number, y: number, focus: boolean) => {
-    // Keep the menu on screen (it's about 200 × 330 px).
-    const left = Math.max(8, Math.min(x, window.innerWidth - 216));
-    const top = Math.max(8, Math.min(y, window.innerHeight - 344));
-    setMenu({ at: { x: left, y: top }, focus });
+    setMenu({ at: { x, y }, focus });
   };
 
   return (
@@ -292,6 +410,7 @@ function PageItemRow(props: PageItemProps) {
               type="button"
               className="tree-action"
               data-tooltip={t("sidebar.moreActions")}
+              ref={menuButtonRef}
               data-testid={`page-menu-button-${page.id}`}
               aria-label={t("sidebar.moreActions")}
               aria-haspopup="menu"
@@ -304,174 +423,31 @@ function PageItemRow(props: PageItemProps) {
               <Icon name="more" size={16} />
             </button>
 
-            {menuOpen ? (
-              <div
-                ref={menuListRef}
-                className={`page-menu-list${menu?.at ? " is-at-pointer" : ""}`}
-                role="menu"
-                aria-label={t("sidebar.actionsFor", { title: page.title })}
-                data-testid={`page-menu-${page.id}`}
-                style={menu?.at ? { left: menu.at.x, top: menu.at.y } : undefined}
-                onContextMenu={(event) => event.preventDefault()}
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid={`rename-page-${page.id}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuOpen(false);
-                    props.onStartRename(page.id, page.title);
-                  }}
-                >
-                  {t("sidebar.rename")}
-                </button>
-                {folder ? null : (
-                <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid={`duplicate-page-${page.id}`}
-                  title={!leaf && hasChildren ? t("sidebar.subPagesNotCopied") : undefined}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuOpen(false);
-                    props.onDuplicate(page.id);
-                  }}
-                >
-                  {t("sidebar.duplicate")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid={`copy-link-${page.id}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuOpen(false);
-                    props.onCopyLink(page.id);
-                  }}
-                >
-                  {t("sidebar.copyLink")}
-                </button>
-                </>
-                )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-testid={`move-page-${page.id}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuOpen(false);
-                    props.onStartMove(page.id);
-                  }}
-                >
-                  {t("sidebar.moveTo")}
-                </button>
-                {leaf ? null : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid={`add-board-${page.id}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpen(false);
-                      props.onCreateBoardChild(page.id);
-                    }}
+            {menuOpen
+              ? createPortal(
+                  <div
+                    ref={menuListRef}
+                    className={`page-menu-list${menu?.at ? " is-at-pointer" : ""}${placement?.above ? " is-above" : ""}`}
+                    role="menu"
+                    aria-label={t("sidebar.actionsFor", { title: page.title })}
+                    data-testid={`page-menu-${page.id}`}
+                    style={
+                      placement
+                        ? { left: placement.left, top: placement.top, maxHeight: placement.maxHeight }
+                        : { left: 0, top: 0, visibility: "hidden" }
+                    }
+                    onContextMenu={(event) => event.preventDefault()}
                   >
-                    {t("sidebar.addBoardInside")}
-                  </button>
-                )}
-                {leaf || !props.onCreateBaseChild ? null : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid={`add-base-${page.id}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpen(false);
-                      props.onCreateBaseChild?.(page.id);
-                    }}
-                  >
-                    {t("bases.addBaseInside")}
-                  </button>
-                )}
-                {board ? null : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid={`new-from-template-${page.id}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpen(false);
-                      props.onNewFromTemplate(page.id);
-                    }}
-                  >
-                    {t("sidebar.newFromTemplate")}
-                  </button>
-                )}
-                {leaf || !props.onImportNotion ? null : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid={`import-notion-${page.id}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpen(false);
-                      props.onImportNotion?.(page.id);
-                    }}
-                  >
-                    {t("notionImport.menuItem")}
-                  </button>
-                )}
-                {leaf || folder || !props.onExportHtml ? null : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid={`export-html-${page.id}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpen(false);
-                      props.onExportHtml?.(page.id);
-                    }}
-                  >
-                    {t("export.menuItem")}
-                  </button>
-                )}
-                {leaf || folder || !props.onExportPdf ? null : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid={`export-pdf-${page.id}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpen(false);
-                      props.onExportPdf?.(page.id);
-                    }}
-                  >
-                    {t("export.pdf.menuItem")}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="menu-danger"
-                  data-testid={`delete-page-${page.id}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuOpen(false);
-                    props.onDelete(page.id);
-                  }}
-                >
-                  {board
-                    ? t("sidebar.deleteBoard")
-                    : base
-                      ? t("bases.deleteBase")
-                      : folder
-                        ? t("sidebar.deleteFolder")
-                        : t("sidebar.deletePage")}
-                </button>
-              </div>
-            ) : null}
+                    {menuGroups.map((group, index) => (
+                      <Fragment key={index}>
+                        {index > 0 ? <div className="page-menu-separator" role="separator" /> : null}
+                        {group}
+                      </Fragment>
+                    ))}
+                  </div>,
+                  document.body,
+                )
+              : null}
           </span>
         </span>
       </div>
