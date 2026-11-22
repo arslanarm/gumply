@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   isTagsKey,
   isValidPropertyKey,
@@ -164,6 +164,7 @@ function PropertyRow(props: PropertyRowProps) {
   const t = useT();
   const { property } = props;
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const issueId = useId();
 
   // Close the key menu on a click outside or Escape.
   useEffect(() => {
@@ -232,7 +233,36 @@ function PropertyRow(props: PropertyRowProps) {
       </div>
       <div className="property-value" data-testid={`property-value-${property.key}`}>
         <PropertyValueEditor property={property} autoFocus={props.autoFocus} onSave={props.onSave} onInvalid={props.onInvalid} />
-        {property.editable && !propertyValueMatches(property.type, property.value) ? (
+        {property.issue?.kind === "tags-string" ? (
+          // #6imze6ux: Obsidian reads nothing from a string with spaces or commas; one click makes it the list Gumply shows.
+          // The flag itself carries the tooltip, as the digits flag does; the button (the one focusable part)
+          // shows it on keyboard focus and is described by it for screen readers.
+          <span className="property-issue" data-testid="property-issue-tags-string" title={t("properties.tagsString")}>
+            <span id={issueId} className="property-mismatch" role="img" title={t("properties.tagsString")} aria-label={t("properties.tagsString")}>
+              <Icon name="alert" size={14} />
+            </span>
+            <button
+              type="button"
+              className="property-issue-fix"
+              data-testid="property-make-list"
+              data-tooltip={t("properties.tagsString")}
+              aria-describedby={issueId}
+              onClick={() => void props.onSave(property.issue!.tags)}
+            >
+              {t("properties.makeList")}
+            </button>
+          </span>
+        ) : property.issue?.kind === "tags-digits" ? (
+          <span
+            className="property-mismatch"
+            role="img"
+            data-testid="property-issue-tags-digits"
+            title={t("properties.tagsDigits")}
+            aria-label={t("properties.tagsDigits")}
+          >
+            <Icon name="alert" size={14} />
+          </span>
+        ) : property.editable && !propertyValueMatches(property.type, property.value) ? (
           <span
             className="property-mismatch"
             role="img"
@@ -444,13 +474,23 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
 function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProps, "onInvalid">) {
   const t = useT();
   const saved = useMemo(
-    () => (Array.isArray(property.value) ? property.value : property.value ? [String(property.value)] : []),
-    [property.value],
+    () =>
+      // #6imze6ux: a tags string with spaces or commas shows the tags Gumply reads from it (one chip each).
+      property.issue?.kind === "tags-string"
+        ? property.issue.tags
+        : Array.isArray(property.value)
+          ? property.value
+          : property.value
+            ? [String(property.value)]
+            : [],
+    [property.value, property.issue],
   );
   // Chips change at once (typing the next one before the save lands keeps both).
   const [items, change] = useOptimistic(saved);
   const [draft, setDraft] = useState("");
   const tags = property.type === "tags";
+  // #6imze6ux: all-digit tags Obsidian doesn't count, shown muted.
+  const notTags = new Set(property.issue?.kind === "tags-digits" ? property.issue.tags : []);
   const setItems = (next: string[]) => change(next, () => onSave(next));
   const add = () => {
     const parts = draft
@@ -471,7 +511,12 @@ function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProp
   return (
     <div className="property-chips">
       {items.map((item) => (
-        <span key={item} className={`property-chip${tags ? " is-tag" : ""}`} data-testid={`property-chip-${item}`}>
+        <span
+          key={item}
+          className={`property-chip${tags ? " is-tag" : ""}${notTags.has(item) ? " is-not-tag" : ""}`}
+          data-testid={`property-chip-${item}`}
+          title={notTags.has(item) ? t("properties.tagsDigits") : undefined}
+        >
           {tags ? `#${item}` : links ? <PropertyLinkedText text={item} /> : item}
           <button
             type="button"

@@ -74,6 +74,36 @@ describe("`tags` in any case is the page's tags (#ippqkgus)", () => {
   });
 });
 
+describe("tags values Obsidian won't read are flagged (#6imze6ux)", () => {
+  const STRING = "---\nTags: five, six # mine\nstatus: draft\n---\n\nBody.\n";
+  const issueOf = async (app: Awaited<ReturnType<typeof vault>>["app"], id: string) =>
+    ((await getJson<Page>(app, `/api/pages/${id}`)).properties ?? []).find((property) => property.issue)?.issue ?? null;
+
+  it("flags a string with spaces or commas and all-digit tags; not a single word or a list", async () => {
+    const { app, tags } = await vault({
+      "Str.md": STRING,
+      "Digits.md": "---\ntags: [2024, ok]\n---\nB\n",
+      "Num.md": "---\ntags: 2025\n---\nB\n",
+      "One.md": "---\ntags: one\n---\nB\n",
+      "List.md": "---\ntags: [a, b]\n---\nB\n",
+    });
+    expect(await issueOf(app, "Str")).toEqual({ kind: "tags-string", tags: ["five", "six"] });
+    expect(await issueOf(app, "Digits")).toEqual({ kind: "tags-digits", tags: ["2024"] });
+    expect(await issueOf(app, "Num")).toEqual({ kind: "tags-digits", tags: ["2025"] });
+    expect(await issueOf(app, "One")).toBeNull();
+    expect(await issueOf(app, "List")).toBeNull();
+    // Reading is unchanged (the decision): Gumply still shows these tags.
+    expect((await tags()).five).toEqual(["Str"]);
+  });
+
+  it("Make it a list rewrites only the tags lines, keeping the key's spelling and its comment", async () => {
+    const { app, read } = await vault({ "Str.md": STRING });
+    await jsonRequest(app, "PUT", "/api/pages/Str", { properties: { set: { Tags: ["five", "six"] } } });
+    expect(await read("Str.md")).toBe("---\nTags: # mine\n  - five\n  - six\nstatus: draft\n---\n\nBody.\n");
+    expect(await issueOf(app, "Str")).toBeNull();
+  });
+});
+
 describe("`aliases` in any case are the page's aliases (#ippqkgus)", () => {
   it("`Aliases:` makes unlinked mentions; with two spellings only the first counts", async () => {
     const { app } = await vault({

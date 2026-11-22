@@ -6,8 +6,10 @@
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  frontmatterKey,
   HEADER_KEYS,
   isPropertyType,
+  tagsValueIssue,
   type Property,
   type PropertyType,
   type PropertyValue,
@@ -70,7 +72,16 @@ export function readRawProperties(yaml: string | null): RawProperty[] {
 
 /** Attach a type to each raw property. */
 export function typedProperties(raw: readonly RawProperty[], typeOf: (key: string) => PropertyType): Property[] {
-  return raw.map((property) => ({ ...property, type: typeOf(property.key) }));
+  // #6imze6ux: the page's tags key (any case, the first spelling) says when Obsidian won't read its value as tags.
+  const tagsKey = frontmatterKey(raw.map((property) => property.key), "tags");
+  return raw.map((property) => {
+    const typed: Property = { ...property, type: typeOf(property.key) };
+    if (property.key === tagsKey && property.editable) {
+      const issue = tagsValueIssue(property.value);
+      if (issue) typed.issue = issue;
+    }
+    return typed;
+  });
 }
 
 /**
