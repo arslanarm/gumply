@@ -59,7 +59,7 @@ export const WikiLink = Node.create({
       // file card that keeps `obsidian` = the text as typed), so the file gets
       // exactly those bytes and the link resolves across the vault (#8k4ssrkb).
       new InputRule({
-        find: /!?\[\[([^[\]]+)\]\]$/,
+        find: new RegExp(String.raw`!?\[\[(${WIKILINK_INNER}+)\]\]$`),
         handler: ({ state, range, match }) => {
           const typed = match[0] ?? "";
           const inner = match[1] ?? "";

@@ -4,7 +4,8 @@
  * As in Obsidian: no `[` or `]`, and never a line break, so a link split
  * across lines is plain text (#pvrx7t6r). Every pattern that reads wikilinks
  * or embeds, in core and in the web app, is built from these, so they can't
- * drift apart again (a source-scan test checks it).
+ * drift apart again. Tests pin each call site, and a source-scan tripwire
+ * flags new hand-written RegExp literals.
  *
  * They are RegExp source fragments, for `new RegExp(String.raw`…`)`.
  */
