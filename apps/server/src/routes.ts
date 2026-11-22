@@ -8,6 +8,9 @@ import type {
   DeletePageResult,
   GraphData,
   GraphSettingsResponse,
+  LinkMentionsInput,
+  LinkMentionsResult,
+  PageMentions,
   Page,
   PageId,
   PageMeta,
@@ -333,6 +336,14 @@ export function createApiRoutes(store: VaultStore): Hono {
   });
 
   api.get("/pages/:id/backlinks", (c) => c.json<Backlink[]>(store.backlinks(c.req.param("id"))));
+
+  // v1.next (C1, spec/api-mentions): unlinked mentions, and turning them into links.
+  api.get("/pages/:id/mentions", async (c) => c.json<PageMentions[]>(await store.mentions(c.req.param("id"))));
+
+  api.post("/pages/:id/mentions/link", async (c) => {
+    const body = await readJson(c);
+    return c.json<LinkMentionsResult>(await store.linkMentions(c.req.param("id"), body as unknown as LinkMentionsInput));
+  });
 
   api.get("/graph", (c) => {
     const centerQuery = c.req.query("center");

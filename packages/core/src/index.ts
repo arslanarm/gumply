@@ -27,6 +27,9 @@ export type {
   TrashedDocument,
   TrashedPage,
   TrashItem,
+  LinkMentionsInput,
+  LinkMentionsResult,
+  PageMentions,
 } from "./types.js";
 
 export {
@@ -212,3 +215,4 @@ export {
   type GraphSettingsSource,
 } from "./graph-settings.js";
 export { headingRenames, rewriteHeadingLinks, type HeadingRename } from "./heading-rename.js";
+export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";

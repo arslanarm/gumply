@@ -1,0 +1,115 @@
+/**
+ * v0.8 C1 (#sipu2nxn, spec/api-mentions): unlinked mentions, as in Obsidian.
+ *
+ * A mention of a page is its title, or one of its frontmatter `aliases`,
+ * written as plain text in another page: word-bounded, case-insensitive,
+ * never inside code, links, wikilinks, embeds, URLs or HTML. Offsets are into
+ * the page body (frontmatter excluded), so a Link replaces exactly those bytes.
+ */
+import { maskCode } from "./links.js";
+import { WIKILINK_INNER } from "./wikilink-syntax.js";
+
+export interface MentionMatch {
+  /** Offset into the body. */
+  index: number;
+  length: number;
+  /** The text as written there. */
+  text: string;
+  /** The title or alias it matched. */
+  term: string;
+}
+
+const WORD = String.raw`[\p{L}\p{N}_]`;
+const blank = (match: string) => match.replace(/[^\n]/g, " ");
+
+const WIKILINKS = new RegExp(String.raw`!?\[\[${WIKILINK_INNER}*\]\]`, "g");
+/** `[text](url)` and `![alt](url)`, the whole thing (its text is a link already). */
+const MARKDOWN_LINKS = /!?\[[^\]\n]*\]\([^)\n]*\)/g;
+/** Autolinks `<https://…>` and HTML tags. */
+const ANGLE = /<[^<>\n]+>/g;
+const URLS = /\b(?:https?|ftp|mailto|file|obsidian):[^\s<>()]+/gi;
+
+/** The body with everything that can't hold an unlinked mention blanked out (offsets kept). */
+export function mentionableText(markdown: string): string {
+  return maskCode(markdown)
+    .replace(WIKILINKS, blank)
+    .replace(MARKDOWN_LINKS, blank)
+    .replace(ANGLE, blank)
+    .replace(URLS, blank);
+}
+
+/** Lowercase words, the index's tokens (letters, digits, `_`; any script). */
+export function mentionWords(text: string): string[] {
+  return text.toLowerCase().match(new RegExp(`${WORD}+`, "gu")) ?? [];
+}
+
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The terms a page is mentioned by: title first, then aliases; no blanks or repeats. */
+export function mentionTerms(title: string, aliases: readonly string[] = []): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [title, ...aliases]) {
+    const term = raw.trim().replace(/\s+/g, " ");
+    // A term with no word character can't be word-bounded (e.g. "—").
+    if (!term || seen.has(term.toLowerCase()) || mentionWords(term).length === 0) continue;
+    seen.add(term.toLowerCase());
+    out.push(term);
+  }
+  return out;
+}
+
+/**
+ * Every unlinked mention of `terms` in `markdown`, in order. Longer terms win
+ * where they overlap; whitespace inside a term matches any run of spaces.
+ */
+export function findMentions(markdown: string, terms: readonly string[]): MentionMatch[] {
+  if (terms.length === 0) return [];
+  const text = mentionableText(markdown);
+  const ordered = [...terms].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(
+    `(?<!${WORD})(?:${ordered.map((term) => term.split(" ").map(escape).join("[ \\t]+")).join("|")})(?!${WORD})`,
+    "giu",
+  );
+  const out: MentionMatch[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    const written = markdown.slice(index, index + match[0].length);
+    const folded = written.toLowerCase().replace(/\s+/g, " ");
+    // Blanked spans read as spaces: a match across a link or code isn't the term as written.
+    const term = ordered.find((candidate) => candidate.toLowerCase() === folded);
+    if (term === undefined) continue;
+    out.push({ index, length: match[0].length, text: written, term });
+  }
+  return out;
+}
+
+/** The text of the link a mention becomes: `[[Target]]`, or `[[Target|as written]]`. */
+export function mentionLink(target: string, written: string): string {
+  return written === target ? `[[${target}]]` : `[[${target}|${written}]]`;
+}
+
+/**
+ * Replace the given mentions with links (`target` as `linkTargetFor` gives
+ * it). Only those bytes change.
+ */
+export function linkMentions(markdown: string, mentions: readonly MentionMatch[], target: string): string {
+  let out = markdown;
+  for (const mention of [...mentions].sort((a, b) => b.index - a.index)) {
+    out = out.slice(0, mention.index) + mentionLink(target, mention.text) + out.slice(mention.index + mention.length);
+  }
+  return out;
+}
+
+/** A plain-text snippet around a mention, about `radius` characters each side. */
+export function mentionSnippet(markdown: string, mention: MentionMatch, radius = 60): { text: string; start: number; end: number } {
+  const from = Math.max(0, mention.index - radius);
+  const to = Math.min(markdown.length, mention.index + mention.length + radius);
+  const before = markdown.slice(from, mention.index).replace(/\s+/g, " ");
+  const match = markdown.slice(mention.index, mention.index + mention.length).replace(/\s+/g, " ");
+  const after = markdown.slice(mention.index + mention.length, to).replace(/\s+/g, " ");
+  const lead = from > 0 ? "…" : "";
+  const tail = to < markdown.length ? "…" : "";
+  const start = lead.length + before.length;
+  return { text: `${lead}${before}${match}${after}${tail}`, start, end: start + match.length };
+}

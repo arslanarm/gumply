@@ -33,6 +33,16 @@ import {
   pathToPageId,
   resolveWikilink,
   rewriteLinksToPage,
+  findMentions,
+  linkMentions as linkMentionsIn,
+  linkTargetFor,
+  mentionableText,
+  mentionSnippet,
+  mentionTerms,
+  mentionWords,
+  type LinkMentionsInput,
+  type LinkMentionsResult,
+  type PageMentions,
   headingRenames,
   rewriteHeadingLinks,
   type HeadingRename,
@@ -2143,29 +2153,162 @@ export class VaultStore {
       const result = rewriteText(other.content);
       if (result.count === 0) continue;
 
-      const rewrittenAt = new Date().toISOString();
-      const otherWritten = await this.writePage(
-        other.filePath,
-        {
-          title: other.title,
-          ...(other.icon ? { icon: other.icon } : {}),
-          tags: other.fmTags,
-          created: other.created,
-          updated: rewrittenAt,
-        },
-        result.content,
-        ["updated"],
-        titleFromId(other.id),
-      );
-      other.content = noteBody(result.content);
-      other.updated = otherWritten.frontmatter
-        ? rewrittenAt
-        : mtimeVersion(otherWritten.mtimeMs);
-      other.fileMtimeMs = otherWritten.mtimeMs;
-      this.refreshTags(other);
+      await this.writeRewrittenBody(other, result.content);
       rewritten.push(other.id);
     }
     return rewritten;
+  }
+
+  /** Write a page body changed by a rewrite (D12, C1, C2): header keys and every untouched byte kept. */
+  private async writeRewrittenBody(other: PageRecord, content: string): Promise<void> {
+    const rewrittenAt = new Date().toISOString();
+    const otherWritten = await this.writePage(
+      other.filePath,
+      {
+        title: other.title,
+        ...(other.icon ? { icon: other.icon } : {}),
+        tags: other.fmTags,
+        created: other.created,
+        updated: rewrittenAt,
+      },
+      content,
+      ["updated"],
+      titleFromId(other.id),
+    );
+    other.content = noteBody(content);
+    other.updated = otherWritten.frontmatter
+      ? rewrittenAt
+      : mtimeVersion(otherWritten.mtimeMs);
+    other.fileMtimeMs = otherWritten.mtimeMs;
+    this.refreshTags(other);
+  }
+
+  // --- unlinked mentions (v0.8 C1, #sipu2nxn, spec/api-mentions) ----------
+
+  /** Each page's mentionable words, cached until its content changes. */
+  private readonly mentionWordsByPage = new Map<PageId, { content: string; words: Set<string> }>();
+  /** Inverted index: word → pages whose mentionable text has it. */
+  private readonly mentionPostings = new Map<string, Set<PageId>>();
+
+  /**
+   * Bring the word index up to date: only pages whose content changed since
+   * the last request are tokenised again (one identity check per page).
+   */
+  private syncMentionIndex(): void {
+    const drop = (id: PageId, words: Set<string>) => {
+      for (const word of words) {
+        const pages = this.mentionPostings.get(word);
+        if (!pages) continue;
+        pages.delete(id);
+        if (pages.size === 0) this.mentionPostings.delete(word);
+      }
+    };
+    for (const [id, entry] of this.mentionWordsByPage) {
+      const record = this.pages.get(id);
+      if (!record || record.kind !== "page") {
+        drop(id, entry.words);
+        this.mentionWordsByPage.delete(id);
+      }
+    }
+    for (const record of this.pages.values()) {
+      if (record.kind !== "page") continue;
+      const cached = this.mentionWordsByPage.get(record.id);
+      if (cached && cached.content === record.content) continue;
+      if (cached) drop(record.id, cached.words);
+      const words = new Set(mentionWords(mentionableText(record.content)));
+      for (const word of words) {
+        let pages = this.mentionPostings.get(word);
+        if (!pages) this.mentionPostings.set(word, (pages = new Set()));
+        pages.add(record.id);
+      }
+      this.mentionWordsByPage.set(record.id, { content: record.content, words });
+    }
+  }
+
+  /** The terms page `id` is mentioned by: its title and frontmatter `aliases` (decision 4). */
+  private async mentionTermsOf(id: PageId): Promise<string[]> {
+    const record = this.pages.get(id);
+    if (!record) return [];
+    const index = await this.propertyIndex();
+    const properties = typedProperties(await this.rawPropertiesOf(record), (key) => index.typeOf(key));
+    const aliases = properties.find((property) => property.key.toLowerCase() === "aliases")?.value;
+    const list = Array.isArray(aliases) ? aliases : typeof aliases === "string" ? [aliases] : [];
+    return mentionTerms(record.title, list.map(String));
+  }
+
+  /** `GET /pages/:id/mentions`: pages that mention this one as plain text. */
+  mentions(id: PageId): Promise<PageMentions[]> {
+    return this.enqueue(async () => {
+      const target = this.require(this.resolveId(id));
+      if (target.kind !== "page") throw badRequest("Unlinked mentions are for pages");
+      const terms = await this.mentionTermsOf(target.id);
+      this.syncMentionIndex();
+      // Candidates: pages holding every word of some term (posting lists intersected).
+      const candidates = new Set<PageId>();
+      for (const term of terms) {
+        const lists = mentionWords(term).map((word) => this.mentionPostings.get(word) ?? new Set<PageId>());
+        lists.sort((a, b) => a.size - b.size);
+        const [first, ...rest] = lists;
+        for (const page of first ?? []) if (rest.every((list) => list.has(page))) candidates.add(page);
+      }
+      candidates.delete(target.id);
+      const out: PageMentions[] = [];
+      for (const pageId of candidates) {
+        const record = this.pages.get(pageId);
+        if (!record) continue;
+        const found = findMentions(record.content, terms);
+        if (found.length === 0) continue;
+        out.push({
+          page: metaOf(record, this.directChildCount(record.id)),
+          updated: record.updated,
+          mentions: found.map((mention) => ({ ...mention, snippet: mentionSnippet(record.content, mention) })),
+        });
+      }
+      return out.sort((a, b) => a.page.title.localeCompare(b.page.title) || a.page.id.localeCompare(b.page.id));
+    });
+  }
+
+  /**
+   * `POST /pages/:id/mentions/link`: turn mentions of page `id` in `source`
+   * into links. Conditional (D22): a changed file, a stale version, or a
+   * position that is no longer a mention is a 409 and nothing is written.
+   */
+  linkMentions(id: PageId, input: LinkMentionsInput): Promise<LinkMentionsResult> {
+    return this.enqueue(async () => {
+      const target = this.require(this.resolveId(id));
+      if (target.kind !== "page") throw badRequest("Unlinked mentions are for pages");
+      if (typeof input.source !== "string") throw badRequest("source is required");
+      const source = this.require(this.resolveId(input.source));
+      if (source.kind !== "page" || source.id === target.id) throw badRequest("source must be another page");
+      if (input.all !== true && (!Array.isArray(input.positions) || input.positions.length === 0 || !input.positions.every((position) => Number.isInteger(position)))) {
+        throw badRequest("Pass positions (mention offsets) or all: true");
+      }
+      let info;
+      try {
+        info = await stat(source.filePath);
+      } catch {
+        info = null;
+      }
+      if (info === null || Math.abs(info.mtimeMs - source.fileMtimeMs) > 1 || (input.expectedUpdated !== undefined && input.expectedUpdated !== source.updated)) {
+        throw conflict("This page changed on disk.");
+      }
+      const found = findMentions(source.content, await this.mentionTermsOf(target.id));
+      let chosen = found;
+      if (input.all !== true) {
+        const byIndex = new Map(found.map((mention) => [mention.index, mention]));
+        chosen = [];
+        for (const position of new Set(input.positions)) {
+          const mention = byIndex.get(position);
+          if (!mention) throw conflict("That mention changed; reload the mentions.");
+          chosen.push(mention);
+        }
+      }
+      if (chosen.length === 0) return { linked: 0, rewrittenPages: [] };
+      const { target: linkTarget } = linkTargetFor(metaOf(target, this.directChildCount(target.id)), this.pageMetas());
+      await this.writeRewrittenBody(source, linkMentionsIn(source.content, chosen, linkTarget));
+      this.recomputeSource(source.id);
+      return { linked: chosen.length, rewrittenPages: [source.id] };
+    });
   }
 
   /** D20: the id (and therefore file path) follows the title. Boards keep `.canvas`. */
