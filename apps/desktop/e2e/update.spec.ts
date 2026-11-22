@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -152,8 +152,12 @@ async function startApp(): Promise<void> {
     () => /DevTools listening on ws:\/\/([^/\s]+)\//.exec(appLog)?.[1] ?? (existsSync(portFile) ? `127.0.0.1:${readFileSync(portFile, 'utf8').split('\n')[0]}` : undefined),
     60_000,
   );
-  browser = await chromium.connectOverCDP(`http://${host}`, { noDefaults: true, timeout: 60_000 });
-  page = await poll('The window', () => browser!.contexts().flatMap((context) => context.pages()).find((p) => /^http:\/\/127\.0\.0\.1:\d+\//.test(p.url())), 60_000);
+  try {
+    browser = await chromium.connectOverCDP(`http://${host}`, { noDefaults: true, timeout: 30_000 });
+  } catch (error) {
+    throw new Error(`connectOverCDP failed. App log:\n${appLog.slice(-3000)}`, { cause: error });
+  }
+  page = await poll('The window', () => browser!.contexts().flatMap((context) => context.pages()).find((p) => /^http:\/\/127\.0\.0\.1:\d+\//.test(p.url())), 30_000);
 }
 
 /** Quit the way a user does (close the window: save flush, then the update installs), and wait for the exit. */
@@ -166,6 +170,18 @@ async function quitApp(): Promise<void> {
   browser = null;
   await Promise.race([exited, new Promise((_, fail) => setTimeout(() => fail(new Error(`The app didn't quit. Log:\n${appLog.slice(-3000)}`)), 60_000))]);
   app = null;
+  // Its helpers may outlive the main process for a moment: the next start must not
+  // find the single-instance lock still held (it would quit as a second instance).
+  const lock = join(scratch, 'user-data', 'SingletonLock');
+  const held = () => {
+    try {
+      lstatSync(lock);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  await poll('The single-instance lock released', () => (held() ? undefined : true), 30_000);
 }
 
 function killApp(): void {
@@ -180,13 +196,18 @@ async function health(): Promise<{ version?: string }> {
   return (await (await fetch(new URL('/api/health', page.url()))).json()) as { version?: string };
 }
 
-/** Settings → Updates → Check now; returns the status line once `done` matches it. */
-async function checkNow(done: RegExp, timeoutMs = 120_000): Promise<string> {
+/** Settings → Updates → Check now; the status line once it matches `done`. */
+async function checkNow(done: RegExp, timeoutMs = 90_000): Promise<string> {
   await page.getByTestId('settings-button').click();
   await page.getByTestId('settings-updates').click();
   await page.getByTestId('updates-check').click();
   const status = page.getByTestId('updates-status');
-  await expect(status).toHaveText(done, { timeout: timeoutMs });
+  try {
+    await expect(status).toHaveText(done, { timeout: timeoutMs });
+  } catch (error) {
+    const shown = await status.textContent().catch(() => '(no status)');
+    throw new Error(`Check now didn't reach ${done} (showing "${shown}"). Feed requests: ${feedRequests.join(', ') || 'none'}. App log:\n${appLog.slice(-3000)}`, { cause: error });
+  }
   const text = (await status.textContent()) ?? '';
   await page.getByTestId('updates-close').click();
   return text;
@@ -241,7 +262,11 @@ test.beforeAll(async () => {
   record('installed N', `${oldVersion} at ${installed}; feed ${feedUrl} serving ${readdirSync(feedDir).filter((n) => !n.endsWith('-unpacked')).join(', ')}`);
 });
 
-test.afterEach(() => killApp());
+test.afterEach(async ({}, testInfo) => {
+  // A failure always says what the app printed (CI keeps only this output).
+  if (testInfo.status !== testInfo.expectedStatus) console.log(`[update] app log of the failed test:\n${appLog.slice(-6000)}`);
+  killApp();
+});
 
 test.afterAll(async () => {
   killApp();
