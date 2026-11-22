@@ -192,6 +192,8 @@ const ESCAPES: Record<string, string> = {
   // #ftx3awn7 (@opus-hunter): tabs inside text, and lazy quote lines.
   'tab.md (tabs inside text)': "Word\tafter a tab and two\t\ttabs.\n\n- item\twith tab\n\nTarget paragraph.\n",
   'lazy.md (lazy quote, callout and list lines)': "> quote line\nlazy continuation\nsecond lazy\n\n> [!note] Callout\n> body\nlazy in callout\n\n- item\nlazy in list\n\nTarget paragraph.\n",
+  'nest.md (nested quotes written >>)': "> outer\n>> nested quote\n>> more\n> back\n\n>> starts nested\n\nTarget paragraph.\n",
+  'indent.md (indented paragraphs)': "  Indented two at page start.\n\nPlain.\n\n   Indented three mid-file.\n\n## Heading\n  Indented right under a heading.\n\n## Heading two\n\n  Indented under a heading after a blank.\n\nSoft\n  indented continuation line.\n\n- item\n\n  Indented after a list (list continuation).\n\nTarget paragraph.\n",
   'm1.md (math shapes)': "Inline $x^2 + y_1$ and $$E = mc^2$$ in text, a price $5 and $6.\n\n$$\n\\int_0^1 f(x)\\,dx\n$$\nTouching text after math.\n\n$$ a \\neq b $$\n\n> $$\n> \\sum_{i=1}^n i\n> $$\n\n- item with $\\alpha$\n  $$\n  \\beta\n  $$\n\nEscaped \\$ dollar and `$code$`.\n\nTarget paragraph.\n",
 };
 

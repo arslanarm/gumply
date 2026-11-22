@@ -256,9 +256,17 @@ function softBreakSpaces(block: any, sourceLines: readonly string[]): void {
     const lineIndex = firstLine === null ? null : firstLine + allNewlines.indexOf(at) + 1;
     const source = lineIndex === null ? undefined : sourceLines[lineIndex];
     const lead = source === undefined ? undefined : (/^[ \t]*/.exec(source)?.[0] ?? "");
+    const next = content.slice(at + 1 + after.length, at + 1 + after.length + 1);
     // A line under a quote starts with `>`: its prefix is the block's, not raw.
-    const usable = source !== undefined && lead !== undefined && !source.slice(lead.length).startsWith(">") && source.slice(lead.length).startsWith(content.slice(at + 1 + after.length, at + 1 + after.length + 1));
-    token.attrSet(BREAK_SPACE_ATTR, JSON.stringify(usable ? [before, after, lead] : [before, after]));
+    const usable = source !== undefined && lead !== undefined && !source.slice(lead.length).startsWith(">") && source.slice(lead.length).startsWith(next);
+    // #ftx3awn7: a quote line's own prefix as written (`>> `, `> ` for a lazy
+    // line of a nested quote), so markers are written back as read.
+    const prefix = source !== undefined && source.slice(lead?.length ?? 0).startsWith(">") ? (/^[ \t>]*/.exec(source)?.[0] ?? "") : null;
+    const quoted = prefix !== null && source!.slice(prefix.length).startsWith(next) ? prefix : null;
+    token.attrSet(
+      BREAK_SPACE_ATTR,
+      JSON.stringify(usable ? [before, after, lead] : quoted !== null ? [before, after, "", quoted] : [before, after]),
+    );
   });
 }
 

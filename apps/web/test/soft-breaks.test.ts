@@ -8,8 +8,9 @@ import { escapeParagraphInterrupt } from "../src/editor/raw-markdown/text.js";
 const md = new MarkdownIt({ html: false });
 rawMarkdownPlugin(md);
 
-const decode = (value: string) => value.replace(/&quot;/g, '"');
-/** `[before, after, lead?]` of each soft break in rendered HTML. */
+const decode = (value: string) =>
+  value.replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+/** `[before, after, lead?, quotePrefix?]` of each soft break in rendered HTML. */
 const spaces = (markdown: string) =>
   [...md.render(markdown).matchAll(/data-md-break="soft"(?: data-md-space="([^"]*)")?/g)].map((m) =>
     m[1] === undefined ? null : JSON.parse(decode(m[1])),
@@ -31,8 +32,13 @@ describe("soft breaks: parse", () => {
     expect(spaces("- four\n    two")).toEqual([["", "  ", "    "]]);
     expect(spaces("- [ ] task\n  two")).toEqual([["", "", "  "]]);
     expect(spaces("- a\n\t- tab\n\t  two")).toEqual([["", "", "\t  "]]);
-    // Under a quote the prefix is the block's (`>`): no raw indent.
-    expect(spaces("> quote one\n> quote two")).toEqual([["", ""]]);
+    // Under a quote: no raw indent, but the line's own `>` prefix as written
+    // (#ftx3awn7: `>>` stays `>>`, a lazy line of a nested quote keeps one `>`).
+    expect(spaces("> quote one\n> quote two")).toEqual([["", "", "", "> "]]);
+    expect(spaces(">> nested\n>> more\n> back")).toEqual([
+      ["", "", "", ">> "],
+      ["", "", "", "> "],
+    ]);
   });
 
   it("a code span wrapped across lines stays raw (exact source); other breaks still soft", () => {

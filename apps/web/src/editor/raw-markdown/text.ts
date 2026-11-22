@@ -289,9 +289,12 @@ export const MarkdownHardBreak = HardBreak.extend({
         parseHTML: (element: HTMLElement) => {
           try {
             const value = JSON.parse(element.getAttribute(BREAK_SPACE_ATTR) ?? "null") as unknown;
+            // `[before, after, lead?, quotePrefix?]`: whitespace, plus a quote
+            // line's own `>` prefix as written (#ftx3awn7).
             return Array.isArray(value) &&
-              (value.length === 2 || value.length === 3) &&
-              value.every((part) => typeof part === "string" && /^[ \t]*$/.test(part))
+              value.length >= 2 &&
+              value.length <= 4 &&
+              value.every((part, index) => typeof part === "string" && (index === 3 ? /^[ \t>]*$/ : /^[ \t]*$/).test(part))
               ? value
               : null;
           } catch {
@@ -317,8 +320,16 @@ export const MarkdownHardBreak = HardBreak.extend({
             if (parent.child(i).type !== node.type) {
               if (node.attrs.markdownStyle === "soft") {
                 // #iatezw4m: a single newline, as read (with its whitespace).
-                const [before, after, lead] = (node.attrs.markdownSpace as [string, string, string?] | null) ?? ["", ""];
+                const [before, after, lead, quotePrefix] = (node.attrs.markdownSpace as [string, string, string?, string?] | null) ?? ["", ""];
                 state.afterSoftBreak = true;
+                if (quotePrefix !== undefined && (state.delim ?? "").includes(">")) {
+                  // A quote line: its own `>` markers as written (`>>`, or one `>`
+                  // for a lazy line of a nested quote), #ftx3awn7.
+                  state.write(before);
+                  state.out += `\n${quotePrefix}`;
+                  skipNextPrefix(state);
+                  return;
+                }
                 if (lead !== undefined && /^[ \t]*$/.test(state.delim ?? "")) {
                   // A list item's (or top-level) continuation line: its own
                   // indent, verbatim, instead of the list's nesting indent.

@@ -102,6 +102,9 @@ export function serializeParagraph(
     state.closeBlock(node);
     return;
   }
+  // An indented first line (`  Text`, #ftx3awn7) keeps its spaces.
+  const indent = node.attrs.markdownIndent as string | null | undefined;
+  if (indent && parent.type.name === "doc") state.write(indent);
   state.renderInline(node);
   state.closeBlock(node);
 }
