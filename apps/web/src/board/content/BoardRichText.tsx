@@ -11,6 +11,7 @@ import { wikilinkMarkdownPlugin } from "../../editor/wikilink/markdown-plugin.js
 import { useBoardContent } from "./context.js";
 import { obsidianFileUrl, useFileLinkVersion } from "../../lib/file-links.js";
 import { resolveBoardLink, safeWebUrl } from "./links.js";
+import { WIKILINK_INNER, WIKILINK_TARGET } from "@gumply/core";
 
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
 wikilinkMarkdownPlugin(markdown);
@@ -24,7 +25,7 @@ highlightMarkdownPlugin(markdown);
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 markdown.inline.ruler.before("image", "board_embed_link", (state: any, silent: boolean) => {
-  const match = /^!\[\[([^[\]|#\r\n]+?\.canvas)(?:\|[^[\]\r\n]*)?\]\]/i.exec(state.src.slice(state.pos));
+  const match = new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?\.canvas)(?:\|${WIKILINK_INNER}*)?\]\]`, "i").exec(state.src.slice(state.pos));
   if (!match) return false;
   if (!silent) {
     const target = (match[1] ?? "").trim();

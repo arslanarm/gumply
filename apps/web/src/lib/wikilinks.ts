@@ -4,6 +4,7 @@
 import type { Attachment, PageId, PageMeta } from "@gumply/core";
 import { isBoard } from "./boards.js";
 import { t } from "../i18n/index.js";
+import { WIKILINK_INNER } from "@gumply/core";
 
 export interface LinkSuggestion {
   kind: "page" | "attachment" | "create";
@@ -119,7 +120,7 @@ export function buildLinkSuggestions(
 
 /** Read a `[[Target#Heading|alias]]` string into node attrs. */
 export function parseWikiLinkText(raw: string): { title: string; alias: string; heading: string } | null {
-  const match = /^\[\[([^[\]]*)\]\]$/.exec(raw.trim());
+  const match = new RegExp(String.raw`^\[\[(${WIKILINK_INNER}*)\]\]$`).exec(raw.trim());
   if (!match) return null;
   const inner = match[1] ?? "";
   const pipe = inner.indexOf("|");

@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the Cmd/Ctrl+K quick switcher (D13, spec/ux §10).
  */
-import { tagMatches, type PageMeta, type SearchResult } from "@gumply/core";
+import { tagMatches, WIKILINK_INNER, type PageMeta, type SearchResult } from "@gumply/core";
 import { folderPath, parseWikiLinkText } from "./wikilinks.js";
 import { relativeTime, t } from "../i18n/index.js";
 
@@ -170,8 +170,8 @@ export function recentRows(pages: readonly PageMeta[]): SearchRow[] {
  */
 export function plainTextSnippet(snippet: string): string {
   return snippet
-    .replace(/!\[\[([^\]\r\n]*)\]\]/g, (_m, inner: string) => inner.split("|")[0] ?? inner)
-    .replace(/\[\[([^[\]\r\n]*)\]\]/g, (match, inner: string) => {
+    .replace(new RegExp(String.raw`!\[\[(${WIKILINK_INNER}*)\]\]`, "g"), (_m, inner: string) => inner.split("|")[0] ?? inner)
+    .replace(new RegExp(String.raw`\[\[(${WIKILINK_INNER}*)\]\]`, "g"), (match, inner: string) => {
       const parsed = parseWikiLinkText(match);
       if (!parsed) return inner;
       const label = parsed.alias.length > 0 ? parsed.alias : parsed.title;

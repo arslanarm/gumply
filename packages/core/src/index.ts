@@ -195,3 +195,4 @@ export {
   type TemplateSettings,
 } from "./templates.js";
 export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "./link-files.js";
+export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET } from "./wikilink-syntax.js";

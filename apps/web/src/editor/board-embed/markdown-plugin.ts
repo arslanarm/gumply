@@ -10,10 +10,10 @@
  *
  * markdown-it's types are an optional peer dep of tiptap-markdown, hence `any`.
  */
-import { formatBoardEmbed } from "@gumply/core";
+import { formatBoardEmbed, WIKILINK_INNER, WIKILINK_TARGET } from "@gumply/core";
 
 /** `Board.canvas` or `Folder/Board.canvas`, then an optional `|size`. */
-const EMBED = /^!\[\[([^[\]|#\r\n]+?\.canvas)(?:\|([^[\]\r\n]*))?\]\]/i;
+const EMBED = new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?\.canvas)(?:\|(${WIKILINK_INNER}*))?\]\]`, "i");
 
 export interface BoardEmbedMarkup {
   target: string;
