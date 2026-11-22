@@ -10,6 +10,7 @@
  * (`|`, `>`), anchors, YAML tags and multi-line values are never spans.
  */
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
+import { isTagsKey } from "./frontmatter-keys.js";
 import { HEADER_KEYS } from "./properties.js";
 import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
@@ -72,8 +73,8 @@ export function propertyLinkSpans(yaml: string): PropertyLinkSpan[] | null {
     if (!isScalar(keyNode) || typeof keyNode.value !== "string") continue;
     const key = keyNode.value;
     // The first of a repeated key, as everywhere else Gumply reads frontmatter.
-    // `tags` in any case (Obsidian reads `Tags:` as tags too, #ippqkgus); Gumply's header keys as it writes them.
-    if (HEADER_KEYS.includes(key) || key.toLowerCase() === "tags" || seen.has(key)) continue;
+    // `tags` in any case, as Obsidian reads it (core `isTagsKey`, #ippqkgus); Gumply's header keys as it writes them.
+    if (HEADER_KEYS.includes(key) || isTagsKey(key) || seen.has(key)) continue;
     seen.add(key);
     const value = pair.value as Node | null;
     if (isSeq(value) && flowLink(value, yaml) === null) {
