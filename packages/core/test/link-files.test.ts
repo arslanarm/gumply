@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "../src/link-files.js";
 import { maskCode } from "../src/links.js";
+import { countWork } from "./work-counter.js";
 
 /** @opus-hunter's vault, measured in Obsidian 1.14.4 (#8k4ssrkb). */
 const FILES = ["x.png", "a/x.png", "a/b/x.png", "c/y.png", "zz/deep/er/y.png", "a/z.png", "zz/deep/er/z.png"];
@@ -94,34 +95,6 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
   // A work counter, not a clock (#9j9cd5x4): timing tripped at load ~8 even
   // after #wc6ryfte's interleaving, and a count can't change with machine load.
   it("builds in linear work and resolves with work independent of the vault's size", () => {
-    /**
-     * The work `run` does: one unit per Map get/set/has, plus every element an
-     * array search or callback method passes over (`filter`, `some`, `find`,
-     * `includes`, `indexOf`, `forEach`, `map`…). The index's own work goes
-     * through these; a full scan or a quadratic build would show up here.
-     */
-    const work = (run: () => void): number => {
-      let units = 0;
-      const patches: Array<[object, string, unknown]> = [];
-      const patch = (proto: object, name: string, cost: (self: unknown) => number) => {
-        const original = (proto as Record<string, (...args: unknown[]) => unknown>)[name]!;
-        patches.push([proto, name, original]);
-        (proto as Record<string, unknown>)[name] = function (this: unknown, ...args: unknown[]) {
-          units += cost(this);
-          return original.apply(this, args);
-        };
-      };
-      for (const name of ["get", "set", "has"]) patch(Map.prototype, name, () => 1);
-      for (const name of ["filter", "some", "every", "find", "findIndex", "includes", "indexOf", "forEach", "map", "reduce"]) {
-        patch(Array.prototype, name, (self) => (self as unknown[]).length);
-      }
-      try {
-        run();
-      } finally {
-        for (const [proto, name, original] of patches.reverse()) (proto as Record<string, unknown>)[name] = original;
-      }
-      return units;
-    };
     // `n` files where every name is shared by exactly 7 paths, at any size:
     // a resolve looks at 7 candidates whether the vault is small or large.
     const vault = (n: number) =>
@@ -130,20 +103,20 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
     const large = vault(8_000);
 
     // Build: 8x the files is 8x the work (an O(n²) build would be ~64x), and a few units per file
-    // (measured: 6,143 and 49,143 units, ~6 per file: the path check plus the map writes).
-    const buildSmall = work(() => void new LinkFileIndex(small));
-    const buildLarge = work(() => void new LinkFileIndex(large));
+    // (measured with `countWork`: 7,143 and 57,143 units, ~7 per file: the path check plus the index writes).
+    const buildSmall = countWork(() => void new LinkFileIndex(small));
+    const buildLarge = countWork(() => void new LinkFileIndex(large));
     expect(buildSmall).toBeGreaterThan(0);
     expect(buildLarge).toBeLessThanOrEqual(8 * buildSmall + 8);
     expect(buildLarge / large.length).toBeLessThanOrEqual(10);
 
     // Resolve: the same links in both vaults cost the same work (only files of
-    // that name are looked at); a scan of the vault would be ~8x. Measured: 9 per link
-    // (7 candidates plus 2 lookups) in both.
+    // that name are looked at); a scan of the vault would be ~8x. Measured: 10 per link
+    // in both (the 7 candidates plus the lookups).
     const resolveWork = (files: string[]) => {
       const index = new LinkFileIndex(files);
       const links = Array.from({ length: 100 }, (_, i) => `image-${(i * 37) % 142}.png`);
-      return work(() => {
+      return countWork(() => {
         for (const link of links) if (index.resolve(link, "folder3/sub4/note.md") === null) throw new Error(link);
       });
     };
