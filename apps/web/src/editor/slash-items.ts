@@ -10,6 +10,7 @@ import { requestWhiteboard } from "./whiteboard-link.js";
 import { t } from "../i18n/index.js";
 import { requestEmbedPicker, requestPagePreviewPicker } from "./wikilink/suggestion-extension.js";
 import { requestPageTemplate } from "./page-template.js";
+import { insertColumns } from "./columns/commands.js";
 
 export interface SlashItem {
   key: string;
@@ -165,6 +166,26 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (editor, range) =>
       editor.chain().focus().deleteRange(range).setCallout({ type: "note", fold: "-", textInto: "title" }).run(),
   },
+  // spec/columns: 2, 3 or 4 columns side by side (the block's text goes in the first).
+  ...([2, 3, 4] as const).map(
+    (count): SlashItem => ({
+      key: `columns-${count}`,
+      get title() {
+        return t(`slash.columns${count}.title`);
+      },
+      get hint() {
+        return t("slash.columnsHint");
+      },
+      get keywords() {
+        return withLocalKeywords(["columns", "column", "side by side", "layout", "split", String(count)], t("slash.columnsKeywords"));
+      },
+      run: (editor, range) => {
+        editor.chain().focus().deleteRange(range).run();
+        const tr = insertColumns(editor.state, count);
+        if (tr) editor.view.dispatch(tr);
+      },
+    }),
+  ),
   {
     key: "note",
     get title() {

@@ -5,7 +5,9 @@
  */
 import { Node } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { columnsCleanup, moveToColumn } from "./commands.js";
 import { COLUMN_ATTR, COLUMNS_ATTR, columnsMarkdownPlugin } from "./markdown.js";
+import { columnsView } from "./view.js";
 
 export const DEFAULT_ROW_OPEN = ":::: {.columns}";
 export const DEFAULT_ROW_CLOSE = "::::";
@@ -152,6 +154,27 @@ export const Columns = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     return ["div", { ...HTMLAttributes, class: "md-columns", "data-testid": "columns" }, 0];
+  },
+
+  addNodeView() {
+    return (props) => columnsView(props as never);
+  },
+
+  addProseMirrorPlugins() {
+    return [columnsCleanup];
+  },
+
+  addKeyboardShortcuts() {
+    const move = (direction: "left" | "right") => () => {
+      const tr = moveToColumn(this.editor.state, direction);
+      if (!tr) return false;
+      this.editor.view.dispatch(tr);
+      return true;
+    };
+    return {
+      "Mod-Alt-ArrowLeft": move("left"),
+      "Mod-Alt-ArrowRight": move("right"),
+    };
   },
 
   addStorage() {

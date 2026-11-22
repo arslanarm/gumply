@@ -19,14 +19,20 @@ export interface BlockRef {
 const LIST_NAMES = new Set(["bulletList", "orderedList", "taskList"]);
 const ITEM_NAMES = new Set(["listItem", "taskItem"]);
 
-/** The block at `pos`: the innermost list item, else the top-level block. */
+/** Set on transactions that move a block, so a column they empty is removed (spec/columns). */
+export const BLOCK_MOVE_META = "gumply:blockMove";
+
+/**
+ * The block at `pos`: the innermost list item, else a block directly inside
+ * a column (spec/columns), else the top-level block.
+ */
 export function blockAt(doc: ProseMirrorNode, pos: number): BlockRef | null {
   const clamped = Math.max(0, Math.min(pos, doc.content.size));
   const $pos = doc.resolve(clamped);
 
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
     const node = $pos.node(depth);
-    if (ITEM_NAMES.has(node.type.name)) {
+    if (ITEM_NAMES.has(node.type.name) || (depth > 1 && $pos.node(depth - 1).type.name === "column")) {
       return { from: $pos.before(depth), to: $pos.after(depth), node, depth };
     }
   }
@@ -74,12 +80,14 @@ export function moveBlockTo(
   if (!$target.parent.canReplaceWith($target.index(), $target.index(), block.node.type)) {
     return null;
   }
+  // spec/columns: no rows inside rows.
+  if (block.node.type.name === "columns" && $target.parent.type.name === "column") return null;
 
   const offset = state.selection.from - block.from;
   const inside = Math.max(1, Math.min(offset, block.node.nodeSize - 1));
   tr.replaceWith(mapped, mapped, slice.content);
   tr.setSelection(TextSelection.near(tr.doc.resolve(mapped + inside)));
-  return tr;
+  return tr.setMeta(BLOCK_MOVE_META, true);
 }
 
 /** Move the block one sibling up or down (top level or inside its list). */

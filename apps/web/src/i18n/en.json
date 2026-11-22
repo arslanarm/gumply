@@ -303,6 +303,17 @@
       "hint": "Hide content inside",
       "keywords": ""
     },
+    "columns2": {
+      "title": "2 columns"
+    },
+    "columns3": {
+      "title": "3 columns"
+    },
+    "columns4": {
+      "title": "4 columns"
+    },
+    "columnsHint": "Blocks side by side",
+    "columnsKeywords": "",
     "note": {
       "title": "Note",
       "hint": "Note callout",
@@ -559,7 +570,8 @@
       "quote": "Quote",
       "callout": "Callout",
       "toggle": "Toggle",
-      "code": "Code"
+      "code": "Code",
+      "columns": "Columns"
     },
     "turnIntoHeading": "Turn into",
     "insertBelow": "Insert block below",
@@ -1037,6 +1049,9 @@
     "tabOutline": "Outline",
     "tabGraph": "Local graph",
     "close": "Close panel"
+  },
+  "columns": {
+    "resizeHint": "Drag to resize · double-click for equal widths"
   },
   "datePicker": {
     "empty": "Empty",
