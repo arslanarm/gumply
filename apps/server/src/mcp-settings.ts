@@ -5,9 +5,8 @@
  * rows of its audit log. Behind the same local-only guard as every `/api`
  * route; MCP tools never see `.gumply/`.
  */
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -24,6 +23,7 @@ import {
 } from "@gumply/core";
 import { Hono } from "hono";
 import { badRequest } from "./errors.js";
+import { writeAtomic } from "./temp-files.js";
 
 /** The Settings section lists this many audit rows. */
 export const MCP_RECENT_ROWS = 50;
@@ -117,14 +117,7 @@ export function mcpSettingsRoutes(vaultPath: string, command: McpLaunchCommand =
     const next = serializeMcpSettings(await readText(settingsFile), patch);
     // Atomic: the MCP server reads this file on every write call.
     await mkdir(join(vaultPath, ".gumply"), { recursive: true });
-    const temp = `${settingsFile}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temp, next, "utf8");
-      await rename(temp, settingsFile);
-    } catch (error) {
-      await rm(temp, { force: true });
-      throw error;
-    }
+    await writeAtomic(settingsFile, next);
     return c.json<McpSettingsResponse>(await current());
   });
 

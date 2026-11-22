@@ -192,6 +192,7 @@ const HISTORY_COALESCE_MS = 5 * 60_000;
 const HISTORY_SESSION_MS = 10 * 60_000;
 import { PropertyTypesStore, readRawProperties, rewritePropertyLinks, typedProperties, type RawProperty } from "./properties.js";
 import { readDailySettings, readTemplateSettings } from "./note-settings.js";
+import { sweepTempFiles, tempPathBeside } from "./temp-files.js";
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -629,7 +630,13 @@ export class VaultStore {
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true });
     await this.rebuild();
+    // #e9hs2zgq: our own temp files a crash left behind, once a day old. In the
+    // background (never delays opening the vault); tests await `tempSweep`.
+    this.tempSweep = sweepTempFiles(this.root).catch(() => []);
   }
+
+  /** The startup sweep of Gumply's own leftover temp files (#e9hs2zgq). */
+  tempSweep: Promise<string[]> = Promise.resolve([]);
 
   /** Start watching the vault for external create/change/delete events. */
   startWatching(): void {
@@ -1957,7 +1964,7 @@ export class VaultStore {
       repairBackup = await this.backupConflict(record);
       record.boardRepaired = false;
     }
-    const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+    const temporary = tempPathBeside(record.filePath);
     try {
       await mkdir(dirname(record.filePath), { recursive: true });
       const next = text ?? serializeCanvas(board);
@@ -2129,7 +2136,7 @@ export class VaultStore {
   }
 
   private async writeBaseFile(record: PageRecord, text: string): Promise<void> {
-    const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+    const temporary = tempPathBeside(record.filePath);
     try {
       await writeFile(temporary, text, "utf8");
       await rename(temporary, record.filePath);
@@ -4004,7 +4011,7 @@ export class VaultStore {
       const current = await readFile(record.filePath);
       if (!current.equals(bytes)) {
         await saveVersion(this.root, { id: record.id, ext, bytes: current, version: record.updated, source: "restore", reason: "before-restore" });
-        const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+        const temporary = tempPathBeside(record.filePath);
         try {
           await writeFile(temporary, bytes);
           await rename(temporary, record.filePath);
@@ -4433,7 +4440,7 @@ export class VaultStore {
       }
       text = serializeNoteLike(template, frontmatter, content, [...managed, ...asked], properties?.renames ?? []);
     }
-    const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    const temporary = tempPathBeside(filePath);
     try {
       await writeFile(temporary, text, "utf8");
       if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
