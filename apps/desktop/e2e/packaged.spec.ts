@@ -256,6 +256,32 @@ function keepLog(name: string, text: string): void {
   writeFileSync(join(resultsDir, name), text);
 }
 
+/**
+ * Which mode the probe's process is in, from the outside: the app's GUI
+ * settings folder (default userData under the given user folders) appears in
+ * GUI mode; MCP mode makes a `gumply-mcp-*` throwaway in the temp folder.
+ * On Windows, also every Gumply.exe with its command line and parent.
+ */
+function probeState(pid: number | undefined, dirs: Record<string, string>): string {
+  const guiData =
+    process.platform === 'darwin'
+      ? join(dirs.HOME!, 'Library', 'Application Support', 'Gumply')
+      : isWindows
+        ? join(dirs.APPDATA!, 'Gumply')
+        : join(dirs.XDG_CONFIG_HOME!, 'Gumply');
+  const throwaways = readdirSync(tmpdir()).filter((name) => name.startsWith('gumply-mcp-'));
+  const lines = [`probe pid ${pid}`, `GUI settings folder ${guiData}: ${existsSync(guiData) ? 'exists' : 'absent'}`, `temp gumply-mcp-* folders: ${throwaways.join(', ') || 'none'}`];
+  if (isWindows) {
+    const listing = spawnSync(
+      'powershell',
+      ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='Gumply.exe'\" | ForEach-Object { \"$($_.ProcessId) <- $($_.ParentProcessId): $($_.CommandLine)\" }"],
+      { encoding: 'utf8', timeout: 20_000 },
+    );
+    lines.push(`Gumply.exe processes:\n${listing.stdout || listing.stderr || '(none)'}`);
+  }
+  return lines.join('\n');
+}
+
 /** Whether anything still answers at `url`. */
 async function answers(url: string): Promise<boolean> {
   return fetch(url, { signal: AbortSignal.timeout(2_000) }).then(
@@ -355,14 +381,22 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
   const serverEnv: Record<string, string> = { ...getDefaultEnvironment(), ...dirs };
   // One raw exchange first, so a failure says which side is silent: the
   // server's stderr shows whether it started, stdout whether it answered.
-  const probe = await new Promise<{ stdout: string; stderr: string; code: number | null }>((done) => {
+  const probe = await new Promise<{ stdout: string; stderr: string; code: number | null; seen: string }>((done) => {
     const child = spawn(server.command, server.args, { env: serverEnv, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
+    let finished = false;
     const finish = () => {
+      if (finished) return;
+      finished = true;
       clearTimeout(timer);
+      const seen = probeState(child.pid, dirs);
       child.stdin!.end();
-      done({ stdout, stderr, code: child.exitCode });
+      // A probe that turned into something else (a second app?) doesn't outlive the test.
+      if (child.exitCode === null && child.pid) setTimeout(() => {
+        if (child.exitCode === null) isWindows ? spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }) : child.kill('SIGKILL');
+      }, 10_000);
+      done({ stdout, stderr, code: child.exitCode, seen });
     };
     const timer = setTimeout(finish, 30_000);
     child.stdout!.on('data', (chunk: Buffer) => {
@@ -376,7 +410,8 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
     const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'probe', version: '1' } } };
     child.stdin!.write(`${JSON.stringify(initialize)}\n`);
   });
-  keepLog('packaged-mcp-probe.log', `stdout (JSON):\n${JSON.stringify(probe.stdout)}\n\nstderr (JSON):\n${JSON.stringify(probe.stderr)}\n\nexit: ${probe.code}`);
+  keepLog('packaged-mcp-probe.log', `stdout (JSON):\n${JSON.stringify(probe.stdout)}\n\nstderr (JSON):\n${JSON.stringify(probe.stderr)}\n\nexit: ${probe.code}\n\n${probe.seen}`);
+  record('MCP probe: what ran', probe.seen);
   // JSON-quoted, so a stray \n or \r\n before the answer shows.
   record('MCP raw initialize', `stdout ${JSON.stringify(probe.stdout.slice(0, 200))}; stderr ${JSON.stringify(probe.stderr.slice(0, 200))}; exit ${probe.code ?? 'still running'}`);
   expect(probe.stdout, `no answer on stdout; stderr: ${probe.stderr}`).toContain('"serverInfo"');
