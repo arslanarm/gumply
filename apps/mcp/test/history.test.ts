@@ -56,6 +56,8 @@ describe("history layout (D35, shared with 0.9)", () => {
     expect(index.some((entry) => entry.version === "v20")).toBe(false); // 99 days before the newest
     expect(index.some((entry) => entry.version === "v40")).toBe(true); // 79 days before: one a day
     expect(index).toHaveLength(readdirSync(dir).filter((name) => name.endsWith(".md")).length);
+    // #e9hs2zgq: the pruned index was rewritten through a hidden temp, none left behind.
+    expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 });
 

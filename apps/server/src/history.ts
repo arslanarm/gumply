@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { writeAtomic } from "./temp-files.js";
 
 export const HISTORY_DIR = join(".gumply", "history");
 
@@ -354,9 +355,8 @@ async function writeIndex(dir: string, entries: readonly HistoryEntry[], moves: 
     ...entries.map((entry) => ({ order: entry.at, text: JSON.stringify(entry) })),
     ...moves.map((move) => ({ order: move.at, text: JSON.stringify(move) })),
   ].sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
-  const temp = join(dir, `${INDEX_FILE}.${process.pid}.${Date.now()}.tmp`);
-  await writeFile(temp, lines.map((line) => `${line.text}\n`).join(""));
-  await rename(temp, join(dir, INDEX_FILE));
+  // #e9hs2zgq: a hidden temp beside it, removed at once if the rename fails.
+  await writeAtomic(join(dir, INDEX_FILE), lines.map((line) => `${line.text}\n`).join(""));
 }
 
 // --- the whole vault -------------------------------------------------------

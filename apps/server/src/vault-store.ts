@@ -4011,7 +4011,7 @@ export class VaultStore {
       const current = await readFile(record.filePath);
       if (!current.equals(bytes)) {
         await saveVersion(this.root, { id: record.id, ext, bytes: current, version: record.updated, source: "restore", reason: "before-restore" });
-        const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+        const temporary = tempPathBeside(record.filePath);
         try {
           await writeFile(temporary, bytes);
           await rename(temporary, record.filePath);

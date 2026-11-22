@@ -1,6 +1,7 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { prune, saveVersion } from "../src/history";
 import { writeAtomic } from "../src/temp-files";
 import { cleanupVaults, createTestServer, getJson, jsonRequest } from "./helpers";
 
@@ -97,6 +98,23 @@ describe("a failed rename leaves no temp and reports the error (#e9hs2zgq)", () 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(await tempsIn(dir)).toEqual([]);
     expect(await readFile(join(dir, "Tasks.base"), "utf8")).toBe(before);
+  });
+
+  it("the version-history index (prune rewrites it)", async () => {
+    const { dir } = await createTestServer();
+    const day = 86_400_000;
+    const start = Date.UTC(2026, 0, 1);
+    for (let n = 0; n < 3; n += 1) {
+      await saveVersion(dir, { id: "Note", ext: "md", bytes: Buffer.from(`v${n}`), version: `v${n}`, now: new Date(start + n * 1000) });
+    }
+    const historyDir = join(dir, ".gumply/history/Note");
+    const before = await readFile(join(historyDir, "index.jsonl"), "utf8");
+    failing.code = "EACCES";
+    // 200 days later the older versions go, so the index is rewritten.
+    await expect(prune(historyDir, start + 200 * day)).rejects.toMatchObject({ code: "EACCES" });
+    failing.code = null;
+    expect(await tempsIn(dir)).toEqual([]);
+    expect(await readFile(join(historyDir, "index.jsonl"), "utf8")).toBe(before);
   });
 
   it("the settings writers (graph and AI-app settings)", async () => {
