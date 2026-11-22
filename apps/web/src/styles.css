@@ -2527,6 +2527,40 @@ input {
   gap: 0.5rem;
 }
 
+/* G1: Export as HTML. */
+.export-dialog-page {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.export-dialog-group {
+  margin: 0 0 0.9rem;
+  padding: 0;
+  border: 0;
+}
+
+.export-dialog-group legend {
+  margin-bottom: 0.3rem;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.export-dialog-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.22rem 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.export-dialog-choice input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 /* `?` keyboard-shortcuts overlay. */
 .shortcuts-dialog {
   width: min(520px, 100%);

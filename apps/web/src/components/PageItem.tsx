@@ -33,6 +33,8 @@ export interface PageItemProps {
   onCopyLink: (id: PageId) => void;
   /** v0.7 C: ⋯ → New page from template… inside this page or folder. */
   onNewFromTemplate: (id: PageId) => void;
+  /** G1: ⋯ → Export as HTML… (pages only). */
+  onExportHtml?: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
   onStartRename: (id: PageId, title: string) => void;
   onCommitRename: () => void;
@@ -125,9 +127,9 @@ function PageItemRow(props: PageItemProps) {
 
   /** Right-click or Shift+F10 / the context-menu key: the same menu as ⋯. */
   const openMenuAt = (x: number, y: number, focus: boolean) => {
-    // Keep the menu on screen (it's about 200 × 230 px).
+    // Keep the menu on screen (it's about 200 × 270 px).
     const left = Math.max(8, Math.min(x, window.innerWidth - 216));
-    const top = Math.max(8, Math.min(y, window.innerHeight - 248));
+    const top = Math.max(8, Math.min(y, window.innerHeight - 280));
     setMenu({ at: { x: left, y: top }, focus });
   };
 
@@ -401,6 +403,20 @@ function PageItemRow(props: PageItemProps) {
                     }}
                   >
                     {t("sidebar.newFromTemplate")}
+                  </button>
+                )}
+                {leaf || folder || !props.onExportHtml ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid={`export-html-${page.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      props.onExportHtml?.(page.id);
+                    }}
+                  >
+                    {t("export.menuItem")}
                   </button>
                 )}
                 <button

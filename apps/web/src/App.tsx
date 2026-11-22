@@ -67,6 +67,7 @@ import { isTypingTarget } from "./lib/shortcuts.js";
 import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 import { t, useT } from "./i18n/index.js";
+import { ExportDialog } from "./components/ExportDialog.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
@@ -179,6 +180,8 @@ export function App() {
    */
   /** The Settings popover (language, theme; #7h5utv23). */
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** G1: the page "Export as HTML…" was picked for. */
+  const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
   const [galleryParent, setGalleryParent] = useState<{
     parentId: PageId | null;
     resolve?: (template: BoardTemplateId | null | undefined) => void;
@@ -1773,6 +1776,10 @@ export function App() {
   const serverError = listStatus === "error" && pages.length === 0;
   const breadcrumb = selectedId ? pageTrail(pages, selectedId) : [];
 
+  // G1: Cmd+K → Export page as HTML, for the open page (not a board or a database view).
+  const openPageMeta =
+    page && page.id === selectedId ? (pages.find((item) => item.id === page.id && (item.kind ?? "page") === "page") ?? null) : null;
+
   return (
     <div className={`app${sidebarOpen ? "" : " sidebar-collapsed"}`}>
       <header className="topbar">
@@ -1864,6 +1871,7 @@ export function App() {
           onRenameTag={setTagRename}
           onToday={() => void openToday()}
           onNewFromTemplate={closingSidebar((parentId: PageId | null) => setTemplatePicker({ mode: "new", parentId }))}
+          onExportHtml={closingSidebar((id: PageId) => setExportTarget(pages.find((item) => item.id === id) ?? null))}
         />
         {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
         <div
@@ -2236,7 +2244,34 @@ export function App() {
             dismissSearch();
             setTemplatePicker({ mode: "new", parentId: null });
           }}
+          onExportHtml={
+            openPageMeta
+              ? () => {
+                  dismissSearch();
+                  setExportTarget(openPageMeta);
+                }
+              : undefined
+          }
           onClose={closeSearch}
+        />
+      ) : null}
+
+      {exportTarget ? (
+        <ExportDialog
+          title={exportTarget.title}
+          onClose={() => setExportTarget(null)}
+          onExport={async (options) => {
+            const target = exportTarget;
+            try {
+              // Loaded on first use: the builder brings the highlighter and the export stylesheet.
+              const { exportPageAsHtml } = await import("./export/run-export.js");
+              const name = await exportPageAsHtml(target.id, documentPages, options);
+              setToast({ message: t("export.done", { name }), icon: "info" });
+            } catch (error) {
+              setActionError(t("export.failed", { error: errorMessage(error) }));
+            }
+            setExportTarget(null);
+          }}
         />
       ) : null}
 

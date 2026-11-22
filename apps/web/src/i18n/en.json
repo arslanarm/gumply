@@ -661,7 +661,8 @@
     "today": "Open today's note",
     "todayWords": "",
     "pageTemplate": "New page from template…",
-    "pageTemplateWords": ""
+    "pageTemplateWords": "",
+    "exportWords": ""
   },
   "callout": {
     "types": {
@@ -1263,5 +1264,34 @@
   "background": {
     "button": "Background",
     "label": "Page background"
+  },
+  "export": {
+    "menuItem": "Export as HTML…",
+    "command": "Export page as HTML",
+    "dialogTitle": "Export as HTML",
+    "dialogHint": "One file with the page, its images and previews. It opens in any browser, offline.",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "Follow the system",
+    "links": "Links to other pages",
+    "linksText": "Plain text",
+    "linksFiles": "Links to sibling .html files",
+    "export": "Export",
+    "exporting": "Exporting…",
+    "failed": "Couldn't export the page: {{error}}",
+    "done": "Exported “{{name}}”",
+    "missingImage": "[Image not found: {{name}}]",
+    "remoteImage": "[Web image not included: {{url}}]",
+    "missingPage": "[Page not found: {{name}}]",
+    "loopPage": "[“{{name}}” includes itself]",
+    "tooDeep": "[“{{name}}”: previews nested too deep]",
+    "board": "Whiteboard",
+    "baseMissing": "This database view couldn't be loaded.",
+    "moreRows_one": "+{{count}} more row",
+    "moreRows_other": "+{{count}} more rows",
+    "rows_one": "{{count}} row",
+    "rows_other": "{{count}} rows",
+    "exportedFrom": "Exported from Gumply"
   }
 }

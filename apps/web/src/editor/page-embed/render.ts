@@ -70,7 +70,7 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
   if (!text.startsWith("![[")) return false;
   const page = parsePageEmbed(text);
   // A board or a database view (D34) inside a preview: a card linking to it.
-  const board = /^!\[\[([^[\]|#\r\n]+?\.(?:canvas|base))(?:#[^[\]|\r\n]*)?(?:\|[^[\]\r\n]*)?\]\]$/i.exec(text);
+  const board = /^!\[\[([^[\]|#\r\n]+?\.(?:canvas|base))(?:#([^[\]|\r\n]*))?(?:\|[^[\]\r\n]*)?\]\]$/i.exec(text);
   if (!page && !board) return false;
   if (silent) return true;
   const token = state.push("html_block", "", 0);
@@ -80,7 +80,9 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
   } else {
     const target = (board![1] ?? "").trim();
     const name = (target.split("/").pop() ?? target).replace(/\.(?:canvas|base)$/i, "");
-    token.content = `<div class="page-embed-board-card"><span class="page-embed-board-icon" aria-hidden="true"></span><wiki-link data-wikilink-title="${escapeHtml(target)}" data-wikilink-alias="${escapeHtml(name)}">${escapeHtml(name)}</wiki-link></div>\n`;
+    // A database view's name (`![[Tasks.base#Board]]`), for the HTML export's snapshot.
+    const view = board![2]?.trim() ? ` data-view="${escapeHtml(board![2].trim())}"` : "";
+    token.content = `<div class="page-embed-board-card"${view}><span class="page-embed-board-icon" aria-hidden="true"></span><wiki-link data-wikilink-title="${escapeHtml(target)}" data-wikilink-alias="${escapeHtml(name)}">${escapeHtml(name)}</wiki-link></div>\n`;
   }
   state.line = startLine + 1;
   return true;

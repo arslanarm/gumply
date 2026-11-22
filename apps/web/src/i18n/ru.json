@@ -675,7 +675,8 @@
     "today": "Открыть заметку на сегодня",
     "todayWords": "сегодня ежедневная заметка дневник",
     "pageTemplate": "Новая страница из шаблона…",
-    "pageTemplateWords": "новая страница из шаблона шаблон шаблоны"
+    "pageTemplateWords": "новая страница из шаблона шаблон шаблоны",
+    "exportWords": "экспорт экспортировать страницу в html"
   },
   "callout": {
     "types": {
@@ -1277,5 +1278,38 @@
   "background": {
     "button": "Фон",
     "label": "Фон страницы"
+  },
+  "export": {
+    "menuItem": "Экспорт в HTML…",
+    "command": "Экспортировать страницу в HTML",
+    "dialogTitle": "Экспорт в HTML",
+    "dialogHint": "Один файл со страницей, её изображениями и вставками. Открывается в любом браузере без сети.",
+    "theme": "Тема",
+    "themeLight": "Светлая",
+    "themeDark": "Тёмная",
+    "themeSystem": "Как в системе",
+    "links": "Ссылки на другие страницы",
+    "linksText": "Обычный текст",
+    "linksFiles": "Ссылки на соседние файлы .html",
+    "export": "Экспортировать",
+    "exporting": "Экспорт…",
+    "failed": "Не удалось экспортировать страницу: {{error}}",
+    "done": "Экспортировано: «{{name}}»",
+    "missingImage": "[Изображение не найдено: {{name}}]",
+    "remoteImage": "[Изображение из сети не включено: {{url}}]",
+    "missingPage": "[Страница не найдена: {{name}}]",
+    "loopPage": "[«{{name}}» включает саму себя]",
+    "tooDeep": "[«{{name}}»: слишком глубокая вложенность]",
+    "board": "Доска",
+    "baseMissing": "Не удалось загрузить представление базы данных.",
+    "moreRows_one": "Ещё {{count}} строка",
+    "moreRows_few": "Ещё {{count}} строки",
+    "moreRows_many": "Ещё {{count}} строк",
+    "moreRows_other": "Ещё {{count}} строки",
+    "rows_one": "{{count}} строка",
+    "rows_few": "{{count}} строки",
+    "rows_many": "{{count}} строк",
+    "rows_other": "{{count}} строки",
+    "exportedFrom": "Экспортировано из Gumply"
   }
 }
