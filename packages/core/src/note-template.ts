@@ -9,6 +9,7 @@
  */
 
 import type { Frontmatter } from "./frontmatter.js";
+import { frontmatterKey, isAliasesKey, isTagsKey } from "./frontmatter-keys.js";
 
 // Top-level keys: letters of any script, digits, `_`, `-` and inner spaces
 // (Obsidian property names like "due date" or "статус"), up to the first `:`.
@@ -153,14 +154,15 @@ function renderKey(
   // An empty property (any key, tags too) is a bare `key:`.
   if (value === YAML_EMPTY) return [`${key}:${comment}`];
 
-  if (key === "tags") {
+  // `tags` under the note's own spelling (`Tags:` stays `Tags:`, #ippqkgus).
+  if (isTagsKey(key)) {
     const tags = Array.isArray(value) ? value.map((item) => String(item)) : [];
     const flow = previousRest !== null && splitTrailingComment(previousRest).value.trimStart().startsWith("[");
     if (flow) {
-      return [`tags: [${tags.map(formatScalar).join(", ")}]${comment}`];
+      return [`${key}: [${tags.map(formatScalar).join(", ")}]${comment}`];
     }
-    if (tags.length === 0) return [`tags: []${comment}`];
-    return [`tags:${comment}`, ...tags.map((tag) => `  - ${formatScalar(tag)}`)];
+    if (tags.length === 0) return [`${key}: []${comment}`];
+    return [`${key}:${comment}`, ...tags.map((tag) => `  - ${formatScalar(tag)}`)];
   }
 
   if (Array.isArray(value)) {
@@ -204,8 +206,19 @@ export function editFrontmatterYaml(
   const edits: Array<{ start: number; end: number; replacement: string[] }> = [];
   const appended: string[] = [];
 
+  // `tags` / `aliases` go to the note's own key in any case (#ippqkgus): the
+  // first one in file order, kept as spelled; a second spelling is never
+  // touched. Two changes landing on the same key: the later one wins.
+  const resolved = new Map<string, unknown>();
   for (const [key, value] of Object.entries(changes)) {
     if (value === undefined) continue;
+    const special = isTagsKey(key) ? "tags" : isAliasesKey(key) ? "aliases" : null;
+    const target = special ? (frontmatterKey(blocks.map((block) => block.key), special) ?? key) : key;
+    resolved.delete(target);
+    resolved.set(target, value);
+  }
+
+  for (const [key, value] of resolved) {
     const block = existing.get(key);
 
     if (value === null) {

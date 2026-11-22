@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
+  isTagsKey,
   isValidPropertyKey,
   PAGE_LOOK_KEYS,
   propertyValueMatches,
@@ -65,7 +66,7 @@ export function PropertiesBlock({ properties, onChange, onSetType }: PropertiesB
   const shown = properties.filter(
     (property) =>
       !PAGE_LOOK_KEYS.includes(property.key) &&
-      !(property.key === "tags" && Array.isArray(property.value) && property.value.length === 0),
+      !(isTagsKey(property.key) && Array.isArray(property.value) && property.value.length === 0),
   );
 
   const save = async (patch: PropertiesPatch) => {
@@ -207,7 +208,7 @@ function PropertyRow(props: PropertyRowProps) {
               {t("properties.rename")}
             </button>
             <div className="property-menu-label">{t("properties.type")}</div>
-            {PROPERTY_TYPES.filter((type) => property.key !== "tags" || type === "tags").map((type) => (
+            {PROPERTY_TYPES.filter((type) => !isTagsKey(property.key) || type === "tags").map((type) => (
               <button
                 key={type}
                 type="button"
