@@ -48,19 +48,28 @@ function OpenButton({ node, label }: { node: CanvasNode; label: string }) {
 
 // ---------- live page previews ----------
 
-const previewCache = new Map<string, string | null>();
+/** A line of a page card's preview: text, or a task with its box (#vc4hivrr). */
+export interface PreviewLine {
+  text: string;
+  task?: { checked: boolean };
+}
+
+const previewCache = new Map<string, PreviewLine[] | null>();
 const PREVIEW_LINES = 6;
 
 const sameText = (a: string, b: string) =>
   a.trim().toLowerCase().replace(/\s+/g, " ") === b.trim().toLowerCase().replace(/\s+/g, " ");
 
+const TASK = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\](?:\s+|$)/;
+
 /**
  * The first lines of a page as plain text (no Markdown syntax). A leading H1
  * that just repeats the page title is skipped: the card already shows the
- * title (#5kcn4jfc).
+ * title (#5kcn4jfc). A task line (`- [ ]`, `- [x]`) keeps its state, so the
+ * card shows a read-only box like page previews do (#vc4hivrr).
  */
-export function previewText(markdown: string, title?: string): string {
-  const lines: string[] = [];
+export function previewLines(markdown: string, title?: string): PreviewLine[] {
+  const lines: PreviewLine[] = [];
   let inFence = false;
   let first = true;
   for (const raw of markdown.split("\n")) {
@@ -74,18 +83,24 @@ export function previewText(markdown: string, title?: string): string {
       continue;
     }
     if (inFence) continue;
-    const line = plainTextSnippet(raw).trim();
-    if (!line || /^[-*_]{3,}$/.test(line) || /^\|?\s*:?-{2,}/.test(raw.trim())) continue;
-    lines.push(line);
+    const task = TASK.exec(raw);
+    if (task) {
+      lines.push({ text: plainTextSnippet(raw.slice(task[0].length)).trim(), task: { checked: task[1] !== " " } });
+    } else {
+      const line = plainTextSnippet(raw).trim();
+      if (!line || /^[-*_]{3,}$/.test(line) || /^\|?\s*:?-{2,}/.test(raw.trim())) continue;
+      lines.push({ text: line });
+    }
     if (lines.length >= PREVIEW_LINES) break;
   }
-  return lines.join("\n");
+  return lines;
 }
 
-function usePagePreview(path: string, version: string | undefined, title: string | undefined): string | null {
+
+function usePagePreview(path: string, version: string | undefined, title: string | undefined): PreviewLine[] | null {
   const { loadPage } = useBoardContent();
   const key = `${path}\u0000${version ?? ""}\u0000${title ?? ""}`;
-  const [text, setText] = useState<string | null>(() => previewCache.get(key) ?? null);
+  const [text, setText] = useState<PreviewLine[] | null>(() => previewCache.get(key) ?? null);
   useEffect(() => {
     if (!loadPage) return;
     if (previewCache.has(key)) {
@@ -95,7 +110,7 @@ function usePagePreview(path: string, version: string | undefined, title: string
     let cancelled = false;
     void loadPage(path)
       .then((markdown) => {
-        const value = markdown === null ? null : previewText(markdown, title);
+        const value = markdown === null ? null : previewLines(markdown, title);
         previewCache.set(key, value);
         if (!cancelled) setText(value);
       })
@@ -131,9 +146,18 @@ function PageCard({ node }: { node: CanvasNode }) {
         {page.icon ? <span className="board-card-emoji" aria-hidden="true">{page.icon}</span> : <BoardIcon name="page" size={16} />}
         <span data-testid="board-page-card-title">{page.title}</span>
       </div>
-      {preview ? (
+      {preview && preview.length > 0 ? (
         <div className="board-card-preview" data-testid="board-page-card-preview">
-          {preview}
+          {preview.map((line, index) =>
+            line.task ? (
+              <div key={index} className={`board-card-task${line.task.checked ? " is-checked" : ""}`} data-testid="board-page-card-task">
+                <input type="checkbox" disabled checked={line.task.checked} tabIndex={-1} aria-label={line.text} />
+                <span>{line.text}</span>
+              </div>
+            ) : (
+              <div key={index}>{line.text}</div>
+            ),
+          )}
         </div>
       ) : (
         <div className="board-card-sub">{preview === null ? "" : t("board.cards.emptyPage")}</div>

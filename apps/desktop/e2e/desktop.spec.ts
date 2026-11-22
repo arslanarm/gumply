@@ -317,7 +317,7 @@ test('remembers the vault and the window size for the next start', async () => {
   }
 });
 
-test('the native menu runs the in-app commands (New Page, New Whiteboard, Search)', async () => {
+test('the native menu runs the in-app commands (New Page, New Whiteboard, Search, Import from Notion)', async () => {
   const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
   try {
     await expectPageTitle(window, 'Welcome');
@@ -335,6 +335,11 @@ test('the native menu runs the in-app commands (New Page, New Whiteboard, Search
 
     await click('search');
     await expect(window.getByRole('dialog')).toBeVisible();
+    await window.keyboard.press('Escape');
+
+    // B4: File → Import from Notion… opens the import dialog.
+    await click('import-notion');
+    await expect(window.getByTestId('notion-import')).toBeVisible();
   } finally {
     await app.close();
   }

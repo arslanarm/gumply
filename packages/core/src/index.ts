@@ -216,21 +216,22 @@ export {
   type GraphSettingsResponse,
   type GraphSettingsSource,
 } from "./graph-settings.js";
-export { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type HeadingRename } from "./heading-rename.js";
-export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
-
 export {
-  coverValue,
-  PAGE_COLORS,
-  PAGE_GRADIENTS,
-  PAGE_LOOK_KEYS,
-  pageLook,
-  parseCover,
-  type PageColor,
-  type PageCover,
-  type PageGradient,
-  type PageLook,
-} from "./page-look.js";
+  DEFAULT_MCP_SETTINGS,
+  isMcpAccess,
+  MCP_ACCESS_LEVELS,
+  MCP_AUDIT_PATH,
+  MCP_SETTINGS_PATH,
+  parseMcpAuditLog,
+  parseMcpSettings,
+  serializeMcpSettings,
+  type McpAccess,
+  type McpAuditEntry,
+  type McpLaunchCommand,
+  type McpSettings,
+  type McpSettingsPatch,
+  type McpSettingsResponse,
+} from "./mcp-settings.js";
 
 export {
   NOTION_IMPORT_LIMITS,
@@ -246,3 +247,18 @@ export {
   type NotionPlannedDatabase,
   type NotionPlannedFile,
 } from "./notion-import.js";
+export { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type HeadingRename } from "./heading-rename.js";
+export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
+
+export {
+  coverValue,
+  PAGE_COLORS,
+  PAGE_GRADIENTS,
+  PAGE_LOOK_KEYS,
+  pageLook,
+  parseCover,
+  type PageColor,
+  type PageCover,
+  type PageGradient,
+  type PageLook,
+} from "./page-look.js";

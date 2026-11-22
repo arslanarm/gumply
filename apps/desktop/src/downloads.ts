@@ -23,3 +23,24 @@ export function suggestedName(name: string): string {
   const clean = name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim();
   return clean && clean !== "." && clean !== ".." ? clean : "Gumply export";
 }
+
+/**
+ * G2: the web app hands a page to print as a download named
+ * `<Title>.<token>.gumply-print.html` (keep in step with
+ * apps/web/src/export/run-export.ts). The token is random per launch and
+ * only the app's own page learns it (/api/health), so a file that merely
+ * ends in `.gumply-print.html` (say, a vault attachment) is a normal
+ * download. Main prints only these to PDF instead of saving them.
+ */
+export const PRINT_DOWNLOAD_SUFFIX = ".gumply-print.html";
+
+export function isPrintDownload(fileName: string, token: string): boolean {
+  if (!/^[0-9a-f]{16,}$/.test(token)) return false;
+  const ending = `.${token}${PRINT_DOWNLOAD_SUFFIX}`;
+  return fileName.endsWith(ending) && fileName.length > ending.length;
+}
+
+/** `Plan.<token>.gumply-print.html` → `Plan.pdf`, safe for the Save dialog. */
+export function pdfName(fileName: string, token: string): string {
+  return `${suggestedName(fileName.slice(0, -`.${token}${PRINT_DOWNLOAD_SUFFIX}`.length))}.pdf`;
+}

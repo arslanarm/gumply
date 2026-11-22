@@ -17,6 +17,7 @@ import { ViewToolbar, type Panel } from "./ViewToolbar.js";
 import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
+import { BaseLinks } from "./values.js";
 import "./bases.css";
 
 const LAYOUTS = ["table", "kanban", "list", "cards", "calendar"] as const;
@@ -57,6 +58,8 @@ export interface BaseViewProps {
 
 export function BaseView(props: BaseViewProps) {
   const t = useT();
+  // #vc4hivrr: `[[links]]` in values open pages.
+  const baseLinks = useMemo(() => ({ pages: props.pages, onOpen: props.onOpen }), [props.pages, props.onOpen]);
   const { baseId, embed } = props;
   const [doc, setDoc] = useState<BaseDocument>(props.initial);
   const docRef = useRef(doc);
@@ -273,6 +276,7 @@ export function BaseView(props: BaseViewProps) {
   const maxHeight = embed ? ROW_HEIGHT * ((embed.maxRows ?? 10) + 2) + 2 : undefined;
 
   return (
+    <BaseLinks.Provider value={baseLinks}>
     <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view">
       <div className="base-head">
         {embed ? null : (
@@ -370,6 +374,7 @@ export function BaseView(props: BaseViewProps) {
         <div className="base-loading" aria-busy="true" />
       )}
     </div>
+    </BaseLinks.Provider>
   );
 }
 

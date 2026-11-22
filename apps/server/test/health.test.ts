@@ -23,6 +23,14 @@ describe("GET /api/health", () => {
     expect(body.version).toBe(CORE_VERSION);
   });
 
+  it("G2: the print token is the desktop's only, and never on a browser server", async () => {
+    const { store, dir } = await createTestServer();
+    const desktop = createApp({ vaultPath: dir, store, desktop: true, printToken: "3f9a0c1d2e4b5a6978c0d1e2" });
+    expect(((await (await desktop.request("/api/health")).json()) as Record<string, unknown>).printToken).toBe("3f9a0c1d2e4b5a6978c0d1e2");
+    const browser = createApp({ vaultPath: dir, store, printToken: "3f9a0c1d2e4b5a6978c0d1e2" });
+    expect(((await (await browser.request("/api/health")).json()) as Record<string, unknown>).printToken).toBeUndefined();
+  });
+
   it("reports the version it was started with (the desktop app's own)", async () => {
     const { store, dir } = await createTestServer();
     const app = createApp({ vaultPath: dir, store, version: "0.5.0-rc.3" });

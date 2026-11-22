@@ -15,8 +15,8 @@ const read = (file: string) => flattenMessages(JSON.parse(readFileSync(new URL(f
 const english = read("en.json");
 const locales = readdirSync(dir).filter((file) => file.endsWith(".json") && file !== "en.json");
 
-/** Messages that may read the same in every language (names). */
-const SAME_IN_EVERY_LANGUAGE = new Set(["app.name"]);
+/** Messages that may read the same in every language: names, and pure templates (A3). */
+const SAME_IN_EVERY_LANGUAGE = new Set(["app.name", "settings.mcp.claudeCode", "settings.mcp.claudeDesktop", "settings.mcp.recentRow", "notionImport.chosen", "export.pdf.sizeA4", "export.pdf.sizeLetter"]);
 
 /** A key without its plural suffix. */
 const base = (key: string) => key.replace(/_(zero|one|two|few|many|other)$/, "");

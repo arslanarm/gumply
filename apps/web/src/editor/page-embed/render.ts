@@ -15,6 +15,7 @@
 import { hasAttachmentExtension, isBoardTarget, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET } from "@gumply/core";
 import MarkdownIt from "markdown-it";
 import { calloutStyle, defaultCalloutTitle } from "../callout/types.js";
+import { parseColorTag } from "../color.js";
 import { columnsMarkdownPlugin } from "../columns/markdown.js";
 import { wikilinkMarkdownPlugin } from "../wikilink/markdown-plugin.js";
 import { parsePageEmbed } from "./markdown-plugin.js";
@@ -72,7 +73,7 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
   if (!text.startsWith("![[")) return false;
   const page = parsePageEmbed(text);
   // A board or a database view (D34) inside a preview: a card linking to it.
-  const board = new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?\.(?:canvas|base))(?:#${WIKILINK_PART}*)?(?:\|${WIKILINK_INNER}*)?\]\]$`, "i").exec(text);
+  const board = new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?\.(?:canvas|base))(?:#(${WIKILINK_PART}*))?(?:\|${WIKILINK_INNER}*)?\]\]$`, "i").exec(text);
   if (!page && !board) return false;
   if (silent) return true;
   const token = state.push("html_block", "", 0);
@@ -82,7 +83,9 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
   } else {
     const target = (board![1] ?? "").trim();
     const name = (target.split("/").pop() ?? target).replace(/\.(?:canvas|base)$/i, "");
-    token.content = `<div class="page-embed-board-card"><span class="page-embed-board-icon" aria-hidden="true"></span><wiki-link data-wikilink-title="${escapeHtml(target)}" data-wikilink-alias="${escapeHtml(name)}">${escapeHtml(name)}</wiki-link></div>\n`;
+    // A database view's name (`![[Tasks.base#Board]]`), for the HTML export's snapshot.
+    const view = board![2]?.trim() ? ` data-view="${escapeHtml(board![2].trim())}"` : "";
+    token.content = `<div class="page-embed-board-card"${view}><span class="page-embed-board-icon" aria-hidden="true"></span><wiki-link data-wikilink-title="${escapeHtml(target)}" data-wikilink-alias="${escapeHtml(name)}">${escapeHtml(name)}</wiki-link></div>\n`;
   }
   state.line = startLine + 1;
   return true;
@@ -139,7 +142,39 @@ function taskListRule(state: Any): void {
   }
 }
 
-/** `#tags` as chips and `==text==` as marks, in text only (never in code). */
+/** `==marks==` and `#tag` chips in escaped text. */
+function decorate(text: string): string {
+  return escapeHtml(text)
+    .replace(/==([^=\n]+)==/g, "<mark>$1</mark>")
+    .replace(/(^|[\s([{"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu, (match: string, before: string, tag: string) =>
+      // Obsidian's rule (#9bx3aznb): `#2024` alone isn't a tag.
+      /\D/.test(tag) ? `${before}<span class="tag-chip" data-tag="${tag}">#${tag}</span>` : match,
+    );
+}
+
+/** A colour tag around plain text, closed in the same run (#h368c8ni): `<span style="color: …">x</span>`. */
+const COLOR_RUN = /(<(span|mark|font)\b[^<>]*>)([^<>]*)<\/\2\s*>/gi;
+
+/**
+ * Text with its colour tags (only a colour, the editor's own rule) as
+ * coloured spans; the value is re-checked, never copied as markup. Any other
+ * HTML stays text, as before (`html: false`).
+ */
+function decorateWithColors(text: string): string {
+  let out = "";
+  let last = 0;
+  for (const match of text.matchAll(COLOR_RUN)) {
+    const color = parseColorTag(match[1]!);
+    if (!color) continue;
+    out += decorate(text.slice(last, match.index));
+    const style = color.kind === "text" ? `color: ${color.value}` : `background-color: ${color.value}`;
+    out += `<span class="${color.kind === "text" ? "md-color" : "md-bg-color"}" style="${escapeHtml(style)}">${decorate(match[3] ?? "")}</span>`;
+    last = match.index! + match[0].length;
+  }
+  return out + decorate(text.slice(last));
+}
+
+/** `#tags` as chips, `==text==` as marks and colour tags as colours, in text only (never in code). */
 function textDecorations(state: Any): void {
   for (const block of state.tokens) {
     if (block.type !== "inline" || !block.children) continue;
@@ -149,12 +184,7 @@ function textDecorations(state: Any): void {
         out.push(child);
         continue;
       }
-      const html = escapeHtml(child.content)
-        .replace(/==([^=\n]+)==/g, "<mark>$1</mark>")
-        .replace(/(^|[\s([{"'])#([\p{L}\p{N}][\p{L}\p{N}_/-]*)/gu, (match: string, before: string, tag: string) =>
-          // Obsidian's rule (#9bx3aznb): `#2024` alone isn't a tag.
-          /\D/.test(tag) ? `${before}<span class="tag-chip" data-tag="${tag}">#${tag}</span>` : match,
-        );
+      const html = decorateWithColors(child.content);
       if (html === escapeHtml(child.content)) {
         out.push(child);
         continue;

@@ -11,6 +11,9 @@
   --border: #e5e3dc;
   --accent: #4f46e5;
   --accent-soft: #eef2ff;
+  /* The sidebar's current row (pages, Graph, Trash). */
+  --nav-selected: var(--accent-soft);
+  --nav-selected-text: var(--accent);
   --danger: #c0392b;
   --hover: #ebeae5;
   --success: #22a06b;
@@ -71,6 +74,9 @@
   --border: #333331;
   --accent: #8b8bf0;
   --accent-soft: #26264a;
+  /* Dark: a neutral tint, as in Notion and Obsidian, not a saturated indigo (v0.7 RC audit). */
+  --nav-selected: #343432;
+  --nav-selected-text: var(--text);
   --danger: #ff7b72;
   --hover: #2a2a28;
   --success: #3ddc97;
@@ -313,8 +319,25 @@ input {
 .page-tree {
   flex: 1;
   overflow-y: auto;
-  padding: 0.2rem 0.55rem 2.5rem;
+  /* 1rem + the fade's own 1.5rem below the last row. */
+  padding: 0.2rem 0.55rem 1rem;
   min-height: 80px;
+}
+
+/*
+ * Rows scrolling under the footer (Tags, Graph, Trash) fade out instead of
+ * being cut at its border (v0.7 RC audit). Sticky at the list's visible
+ * bottom; scrolled to the end, it sits in its own space after the last row.
+ */
+.page-tree::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: block;
+  height: 1.5rem;
+  background: linear-gradient(to bottom, transparent, var(--surface-nav));
+  pointer-events: none;
 }
 
 .tree-node {
@@ -360,9 +383,9 @@ input {
 }
 
 .page-item.is-selected {
-  --row-bg: var(--accent-soft);
+  --row-bg: var(--nav-selected);
   background: var(--row-bg);
-  color: var(--accent);
+  color: var(--nav-selected-text);
 }
 
 .page-item.is-drop-target {
@@ -2284,8 +2307,8 @@ input {
 
 .sidebar-row-active,
 .sidebar-row-active:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--nav-selected);
+  color: var(--nav-selected-text);
 }
 
 .local-graph-toggle {
@@ -2694,8 +2717,8 @@ input {
 }
 
 .sidebar-row-active .sidebar-row-count {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--nav-selected-text) 14%, transparent);
+  color: var(--nav-selected-text);
 }
 
 .sidebar-row-icon {
@@ -2826,6 +2849,408 @@ input {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+/* G1: Export as HTML. */
+.export-dialog-page {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.export-dialog-group {
+  margin: 0 0 0.9rem;
+  padding: 0;
+  border: 0;
+}
+
+.export-dialog-group legend {
+  margin-bottom: 0.3rem;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.export-dialog-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.22rem 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.export-dialog-choice input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* A3: Settings → AI apps (MCP). */
+.settings-link {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  margin-top: -0.2rem;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-link span {
+  flex: 1;
+}
+
+.settings-link:hover {
+  background: var(--hover);
+}
+
+.mcp-dialog {
+  width: min(620px, 100%);
+  max-height: min(86vh, 760px);
+  overflow-y: auto;
+}
+
+.mcp-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mcp-dialog-head h2 {
+  margin: 0;
+}
+
+.mcp-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.mcp-switch input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.mcp-section {
+  margin: 0 0 1.1rem;
+  padding: 0;
+  border: 0;
+}
+
+.mcp-section legend,
+.mcp-section h3 {
+  margin: 0 0 0.45rem;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.mcp-section h4 {
+  margin: 0.7rem 0 0.15rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.mcp-section:disabled {
+  opacity: 0.55;
+}
+
+.mcp-level {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.mcp-level.is-active {
+  border-color: var(--border);
+  background: var(--hover);
+}
+
+.mcp-level input {
+  margin: 0.2rem 0 0;
+  accent-color: var(--accent);
+}
+
+.mcp-level-name {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.mcp-level-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.modal p.mcp-note {
+  margin: 0.35rem 0 0.4rem;
+  font-size: 0.8rem;
+}
+
+.modal p.mcp-error {
+  color: var(--danger);
+}
+
+.mcp-snippet + .mcp-snippet {
+  margin-top: 0.9rem;
+}
+
+.mcp-snippet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.mcp-section .mcp-snippet-head h4 {
+  margin: 0;
+}
+
+.mcp-snippet pre {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mcp-copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--panel);
+  font-size: 0.76rem;
+}
+
+.mcp-recent {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.84rem;
+}
+
+.mcp-recent li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mcp-recent-page {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.mcp-recent-page:disabled {
+  color: var(--text);
+  cursor: default;
+}
+
+.mcp-recent-meta {
+  flex: 1;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+}
+
+.mcp-recent time {
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+/* B4: Import from Notion. */
+.notion-import-dialog {
+  width: min(560px, 100%);
+  max-height: min(86vh, 760px);
+  overflow-y: auto;
+}
+
+.notion-import-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 116px;
+  margin: 0 0 0.9rem;
+  padding: 1rem;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.notion-import-drop:hover,
+.notion-import-drop.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.notion-import-drop.has-file {
+  border-style: solid;
+  color: var(--text);
+}
+
+.notion-import-change {
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+.notion-import-target {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.notion-import-target .settings-select {
+  font-weight: 400;
+}
+
+.modal p.notion-import-note {
+  margin: 0.4rem 0 0.8rem;
+  font-size: 0.8rem;
+}
+
+.modal p.notion-import-error {
+  color: var(--danger);
+  font-size: 0.88rem;
+}
+
+.notion-import-step {
+  font-weight: 600;
+}
+
+.modal .notion-import-progress p.notion-import-step {
+  margin: 0 0 0.6rem;
+  color: var(--text);
+}
+
+.notion-import-bar {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hover);
+}
+
+.notion-import-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.notion-import-bar.is-indeterminate span {
+  width: 35%;
+  animation: notion-import-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes notion-import-slide {
+  from { left: -35%; }
+  to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notion-import-bar.is-indeterminate span {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+
+.modal p.notion-import-done {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.3rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.notion-import-done svg {
+  color: var(--success);
+}
+
+.notion-import-report ul {
+  margin: 0.2rem 0 0.8rem;
+  padding-left: 1.2rem;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.notion-import-report h3 {
+  margin: 0.6rem 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.notion-import-list {
+  margin: 0 0 0.5rem;
+  font-size: 0.86rem;
+}
+
+.notion-import-list summary {
+  cursor: pointer;
+}
+
+.notion-import-list ul {
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.notion-import-lost ul {
+  color: var(--muted);
 }
 
 /* `?` keyboard-shortcuts overlay. */

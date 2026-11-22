@@ -75,6 +75,17 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
     expect(resolveLinkedFile("missing.png", "root.md", FILES)).toBeNull();
   });
 
+  it("tells whether two indexes hold the same files (#jxww67d9)", () => {
+    const index = new LinkFileIndex(["a.png", "att/b.pdf"]);
+    expect(index.sameFiles(new LinkFileIndex(["att/b.pdf", "a.png", "Note.md"]))).toBe(true);
+    expect(index.sameFiles(new LinkFileIndex(["a.png"]))).toBe(false);
+    expect(index.sameFiles(new LinkFileIndex(["a.png", "att/b.pdf", "c.png"]))).toBe(false);
+    expect(index.sameFiles(new LinkFileIndex(["A.png", "att/b.pdf"]))).toBe(false);
+    expect(index.add("c.png")).toBe(true);
+    expect(index.add("C.PNG")).toBe(false);
+    expect(index.add(".trash/d.png")).toBe(false);
+  });
+
   it("finds the links in a body, as written, outside code", () => {
     const body = "![[photo.png]] and ![[att/pic.png|100]] and [[report.pdf#page=2]] and [[Page]]\n`![[code.png]]`\n";
     expect(obsidianFileLinks(body, maskCode)).toEqual(["photo.png", "att/pic.png", "report.pdf"]);

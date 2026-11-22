@@ -11,9 +11,11 @@ import {
   type PropertyValue,
 } from "@gumply/core";
 import { api } from "../api/client.js";
+import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { useT } from "../i18n/index.js";
 import { DatePicker } from "./DatePicker.js";
 import { Icon, type IconName } from "./Icon.js";
+import { hasWikilink, LinkedText } from "./PropertyLinks.js";
 
 /** v0.7 A (D34): a page's frontmatter properties, under its title. */
 export interface PropertiesBlockProps {
@@ -276,6 +278,8 @@ interface ValueEditorProps {
   autoFocus: boolean;
   onSave: (value: PropertyValue) => Promise<boolean>;
   onInvalid: (type: PropertyType) => void;
+  /** Show `[[links]]` in chips as links (the properties block; not a database cell's editor). */
+  links?: boolean;
 }
 
 export interface PropertyValueEditorProps {
@@ -293,12 +297,12 @@ export interface PropertyValueEditorProps {
 export function PropertyValueEditor({ property, onSave, onInvalid, autoFocus = false, compact = false }: PropertyValueEditorProps) {
   return (
     <div className={`property-editor${compact ? " is-compact" : ""}`}>
-      <ValueEditor property={property} autoFocus={autoFocus} onSave={onSave} onInvalid={onInvalid ?? (() => undefined)} />
+      <ValueEditor property={property} autoFocus={autoFocus} onSave={onSave} onInvalid={onInvalid ?? (() => undefined)} links={!compact} />
     </div>
   );
 }
 
-function ValueEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps) {
+function ValueEditor({ property, autoFocus, onSave, onInvalid, links }: ValueEditorProps) {
   const t = useT();
   if (!property.editable) {
     return (
@@ -316,7 +320,7 @@ function ValueEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProp
     case "multitext":
     case "tags":
     case "aliases":
-      return <ListEditor property={property} autoFocus={autoFocus} onSave={onSave} />;
+      return <ListEditor property={property} autoFocus={autoFocus} onSave={onSave} links={links} />;
     default:
       return <TextEditor property={property} autoFocus={autoFocus} onSave={onSave} onInvalid={onInvalid} />;
   }
@@ -370,12 +374,39 @@ function DateEditor({ property, autoFocus, onSave }: Omit<ValueEditorProps, "onI
   );
 }
 
+/**
+ * The open page's links, for `[[…]]` in values (#vc4hivrr). The editor next
+ * to the properties keeps this store current.
+ */
+function PropertyLinkedText({ text }: { text: string }) {
+  const env = useWikiLinkEnvironment();
+  return <LinkedText text={text} pages={env.pages} from={env.pageId} fileLinks={env.fileLinks} onOpen={env.openLink} openMissing />;
+}
+
 function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps) {
   const t = useT();
   const stored = property.value === null || property.value === undefined ? "" : String(property.value);
   const [draft, setDraft] = useState(stored);
+  // #vc4hivrr: a value with `[[links]]` shows them as links until the field
+  // is clicked or tabbed into (as in Obsidian); then it's the raw text.
+  const [editing, setEditing] = useState(false);
   // A save (or an outside edit) brings a new value: show it.
   useEffect(() => setDraft(stored), [stored]);
+  if (!editing && !autoFocus && property.type !== "number" && hasWikilink(draft)) {
+    return (
+      <div
+        className="property-input property-linked"
+        role="textbox"
+        tabIndex={0}
+        aria-label={t("properties.editValue", { property: property.key })}
+        data-testid={`property-linked-${property.key}`}
+        onClick={() => setEditing(true)}
+        onFocus={() => setEditing(true)}
+      >
+        <PropertyLinkedText text={draft} />
+      </div>
+    );
+  }
   const commit = () => {
     if (draft === stored) return;
     if (property.type === "number" && draft.trim() !== "" && !Number.isFinite(Number(draft.trim()))) {
@@ -392,9 +423,12 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
       inputMode={property.type === "number" ? "decimal" : undefined}
       placeholder={t("properties.empty")}
       value={draft}
-      autoFocus={autoFocus}
+      autoFocus={autoFocus || editing}
       onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
+      onBlur={() => {
+        commit();
+        setEditing(false);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") (event.target as HTMLInputElement).blur();
         else if (event.key === "Escape") {
@@ -406,7 +440,7 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
   );
 }
 
-function ListEditor({ property, autoFocus, onSave }: Omit<ValueEditorProps, "onInvalid">) {
+function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProps, "onInvalid">) {
   const t = useT();
   const saved = useMemo(
     () => (Array.isArray(property.value) ? property.value : property.value ? [String(property.value)] : []),
@@ -437,7 +471,7 @@ function ListEditor({ property, autoFocus, onSave }: Omit<ValueEditorProps, "onI
     <div className="property-chips">
       {items.map((item) => (
         <span key={item} className={`property-chip${tags ? " is-tag" : ""}`} data-testid={`property-chip-${item}`}>
-          {tags ? `#${item}` : item}
+          {tags ? `#${item}` : links ? <PropertyLinkedText text={item} /> : item}
           <button
             type="button"
             className="property-chip-remove"
