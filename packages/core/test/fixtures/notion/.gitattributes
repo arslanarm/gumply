@@ -1,0 +1,2 @@
+# Notion export fixtures are byte-exact (BOM + CRLF CSVs, no final newline): never convert them.
+* -text

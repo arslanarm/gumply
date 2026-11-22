@@ -75,6 +75,7 @@ import {
   CanvasParseError,
   BaseParseError,
   LinkFileIndex,
+  shortestLinkText,
   hasAttachmentExtension,
   maskCode,
   obsidianFileLinks,
@@ -484,6 +485,12 @@ export class VaultStore {
    * links. Rebuilt from the names each scan already reads (no stat per file).
    */
   private linkIndex = new LinkFileIndex([]);
+  /**
+   * Goes up whenever the set of linkable files changes: a rescan found
+   * other files, or the app saved one (#jxww67d9). `GET /pages` sends it, so
+   * an open page asks again about links that had no file.
+   */
+  private fileIndexEpoch = 0;
   /** D33: plain folders (no `<Folder>.md`); never link targets or graph nodes. */
   private folders = new Map<PageId, FolderRecord>();
   private readonly edgesBySource = new Map<PageId, LinkEdge[]>();
@@ -632,7 +639,9 @@ export class VaultStore {
     }
     const folders = VaultStore.foldersFrom(directories, next);
     VaultStore.assignParents(next, folders);
-    this.linkIndex = new LinkFileIndex([...others, ...(await this.attachmentFiles())]);
+    const linkIndex = new LinkFileIndex([...others, ...(await this.attachmentFiles())]);
+    if (!linkIndex.sameFiles(this.linkIndex)) this.fileIndexEpoch += 1;
+    this.linkIndex = linkIndex;
     return { pages: next, folders };
   }
 
@@ -1165,9 +1174,18 @@ export class VaultStore {
 
   /** One Obsidian-style file link from a page or board (`from`; unknown: the vault root). */
   resolveFileLink(link: string, from: PageId | null): string | null {
+    return this.linkIndex.resolve(link, this.notePathOf(from));
+  }
+
+  /** The link text Obsidian would write for `path` from note `from` (#4usgpjh8). */
+  linkTextFor(path: string, from: PageId | null): string {
+    return shortestLinkText(path, this.linkIndex, this.notePathOf(from));
+  }
+
+  /** A note's vault path (`Projects/Plan.md`), or null for an unknown id. */
+  private notePathOf(from: PageId | null): string | null {
     const record = from ? this.pages.get(this.resolveId(from)) : undefined;
-    const fromPath = record ? relative(this.root, record.filePath).split(sep).join("/") : null;
-    return this.linkIndex.resolve(link, fromPath);
+    return record ? relative(this.root, record.filePath).split(sep).join("/") : null;
   }
 
   /**
@@ -1175,7 +1193,12 @@ export class VaultStore {
    * only after the watcher's next rescan (#zawz963a).
    */
   fileSaved(vaultPath: string): void {
-    this.linkIndex.add(vaultPath);
+    if (this.linkIndex.add(vaultPath)) this.fileIndexEpoch += 1;
+  }
+
+  /** See `fileIndexEpoch` (#jxww67d9). */
+  get fileIndexVersion(): number {
+    return this.fileIndexEpoch;
   }
 
   /** The vault path of a page's file, for resolving links from it (null: unknown). */

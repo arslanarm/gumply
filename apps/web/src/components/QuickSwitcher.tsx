@@ -34,6 +34,12 @@ export interface QuickSwitcherProps {
   onOpenToday?: () => void;
   /** v0.7 C: `New page from template…`. */
   onNewPageFromTemplate?: () => void;
+  /** G1: export the open page as HTML (only when a page is open). */
+  onExportHtml?: () => void;
+  /** B4: Import from Notion…. */
+  onImportNotion?: () => void;
+  /** G2: export the open page as PDF. */
+  onExportPdf?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
@@ -50,6 +56,9 @@ export function QuickSwitcher({
   onOpenLanguage,
   onOpenToday,
   onNewPageFromTemplate,
+  onExportHtml,
+  onImportNotion,
+  onExportPdf,
   onClose,
   initialQuery = "",
 }: QuickSwitcherProps) {
@@ -117,6 +126,9 @@ export function QuickSwitcher({
     onNewPageFromTemplate ? sections.pageTemplate : null,
     onNewFromTemplate ? sections.fromTemplate : null,
     onOpenToday ? sections.today : null,
+    onExportHtml ? (sections.exportHtml ?? null) : null,
+    onImportNotion ? (sections.importNotion ?? null) : null,
+    onExportPdf ? (sections.exportPdf ?? null) : null,
     onOpenLanguage ? sections.language : null,
   ].filter((row): row is SearchRow => row !== null);
   // Typing an action's name ranks it above "Create “…”" (#5hrsrqsj review).
@@ -160,6 +172,18 @@ export function QuickSwitcher({
     }
     if (row.kind === "page-template") {
       onNewPageFromTemplate?.();
+      return;
+    }
+    if (row.kind === "export-html") {
+      onExportHtml?.();
+      return;
+    }
+    if (row.kind === "import-notion") {
+      onImportNotion?.();
+      return;
+    }
+    if (row.kind === "export-pdf") {
+      onExportPdf?.();
       return;
     }
     if (row.kind === "create-board") {
@@ -223,7 +247,13 @@ export function QuickSwitcher({
                     ? "search-today"
                     : row.kind === "page-template"
                       ? "search-page-template"
-                      : "search-create"
+                      : row.kind === "export-html"
+                        ? "search-export-html"
+                        : row.kind === "import-notion"
+                          ? "search-import-notion"
+                          : row.kind === "export-pdf"
+                            ? "search-export-pdf"
+                            : "search-create"
         }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
@@ -243,6 +273,12 @@ export function QuickSwitcher({
             <Icon name="calendar" size={16} />
           ) : row.kind === "page-template" ? (
             <Icon name="pageTemplate" size={16} />
+          ) : row.kind === "export-html" ? (
+            <Icon name="download" size={16} />
+          ) : row.kind === "export-pdf" ? (
+            <Icon name="file" size={16} />
+          ) : row.kind === "import-notion" ? (
+            <Icon name="folderOpen" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
           ) : row.kind === "create-base" ? (

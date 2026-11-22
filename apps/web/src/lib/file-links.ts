@@ -5,13 +5,14 @@
  * where it points is worked out when it's shown, from the note that holds it:
  * the page or board payload's `fileLinks`, else (a link typed after load) one
  * `GET /files/resolve`, cached per (note, link) for the session; a miss is
- * asked again after the app saves a file (#zawz963a). So a link
+ * asked again after the app saves a file (#zawz963a) or the vault's files
+ * change outside it (#jxww67d9). So a link
  * pasted into a page in another folder resolves for that folder, and no
  * resolved URL is ever written back into a file.
  */
 import { WIKILINK_INNER } from "@gumply/core";
 import { useSyncExternalStore } from "react";
-import { api, fileUrl, onAttachmentSaved } from "../api/client.js";
+import { api, fileUrl, onAttachmentSaved, onFileIndexChanged } from "../api/client.js";
 
 /** `![[pic.png|100]]` / `[[att/report.pdf#p=2]]` → `pic.png` / `att/report.pdf`. */
 export function obsidianLinkOf(obsidian: string | null | undefined): string | null {
@@ -26,8 +27,11 @@ const cache = new Map<string, string | null>();
 const pending = new Set<string>();
 const listeners = new Set<() => void>();
 let version = 0;
-/** Uploads and imports this session; each one may turn a missing link into a file (#zawz963a). */
-let saves = 0;
+/**
+ * Files that appeared this session (uploads and imports, #zawz963a; files
+ * from outside, #jxww67d9): each may turn a missing link into a file.
+ */
+let fileEpoch = 0;
 
 const keyOf = (from: string, link: string) => `${from}\u0000${link.toLowerCase()}`;
 
@@ -37,12 +41,15 @@ function notify(): void {
 }
 
 // A file saved by the app is linkable at once (the server indexes it on
-// save): a "no such file" answer from before is asked again, once.
-onAttachmentSaved(() => {
-  saves += 1;
+// save), and the page-list poll reports files from outside: a "no such file"
+// answer from before is asked again, once. Found paths stay final.
+function filesChanged(): void {
+  fileEpoch += 1;
   for (const [key, path] of cache) if (path === null) cache.delete(key);
   notify();
-});
+}
+onAttachmentSaved(filesChanged);
+onFileIndexChanged(filesChanged);
 
 /**
  * The vault path `link` resolves to from note `from`: `known` (the payload's
@@ -55,15 +62,15 @@ export function resolvedFileLink(
   known?: Record<string, string | null> | null,
 ): string | null | undefined {
   // The payload's answer stands, except a miss once a file has been saved since.
-  if (known && Object.hasOwn(known, link) && (known[link] != null || saves === 0)) return known[link] ?? null;
+  if (known && Object.hasOwn(known, link) && (known[link] != null || fileEpoch === 0)) return known[link] ?? null;
   const key = keyOf(from, link);
   if (cache.has(key)) return cache.get(key) ?? null;
   if (!pending.has(key)) {
     pending.add(key);
-    const asked = saves;
+    const asked = fileEpoch;
     const settle = (path: string | null) => {
-      // A miss answered across a save may be stale: leave it uncached (asked again).
-      if (path !== null || asked === saves) cache.set(key, path);
+      // A miss answered across a file change may be stale: leave it uncached (asked again).
+      if (path !== null || asked === fileEpoch) cache.set(key, path);
     };
     void api
       .resolveFileLink(link, from)

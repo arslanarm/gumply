@@ -9,6 +9,7 @@
  * Gumply and Obsidian after a reload. `==highlight==` is a mark now; a
  * balanced `==x==` left in plain text was an escaped literal and stays one.
  */
+import { Extension } from "@tiptap/core";
 import HardBreak from "@tiptap/extension-hard-break";
 import Text from "@tiptap/extension-text";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -65,6 +66,11 @@ export interface EscapeContext {
   paragraph: string;
   /** Where `text` starts in it. */
   offset: number;
+  /**
+   * Nothing follows `text` in its block: no further node, no mark to close.
+   * A backslash at its very end then escapes nothing (#6wnxxk4y).
+   */
+  endsBlock?: boolean;
 }
 
 const UNICODE_SPACE = /\s/u;
@@ -151,9 +157,11 @@ export function escapeMarkdownText(text: string, startOfLine: boolean, context?:
     let escape = false;
     switch (char) {
       case "\\":
-        // A backslash is literal unless it precedes punctuation (or ends the
-        // text, where it could escape what follows, e.g. a mark delimiter).
-        escape = next === undefined || ASCII_PUNCT.test(next);
+        // A backslash is literal unless it precedes punctuation, or ends the
+        // text where something follows that it could escape (a mark
+        // delimiter, the next node, a line break). At the very end of a block
+        // it escapes nothing and stays single (#6wnxxk4y: Notion's `ratione.\`).
+        escape = next === undefined ? !context?.endsBlock : ASCII_PUNCT.test(next);
         break;
       case "`":
         escape = true;
@@ -232,16 +240,22 @@ export const MarkdownText = Text.extend({
           // `*` / `_` are escaped only where they could pair within the
           // paragraph (#628e927t): the paragraph's text, and where this node starts.
           let context: EscapeContext | undefined;
+          // The last text of its block, with no mark to close after it. Not in
+          // a table cell: ` |` follows on the same line, and `\|` would eat it.
+          const last =
+            !state.inTable && parent !== undefined && typeof index === "number" && index === parent.childCount - 1 && node.marks.length === 0;
           if (parent && typeof index === "number") {
             let offset = 0;
             for (let i = 0; i < index; i += 1) offset += parent.child(i).textContent.length;
             context = { paragraph: parent.textContent, offset };
           }
           let lineOffset = 0;
-          const escaped = value
-            .split("\n")
+          const lines = value.split("\n");
+          const escaped = lines
             .map((line, lineIndex) => {
-              const lineContext = context ? { paragraph: context.paragraph, offset: context.offset + lineOffset } : undefined;
+              const lineContext = context
+                ? { paragraph: context.paragraph, offset: context.offset + lineOffset, endsBlock: last && lineIndex === lines.length - 1 }
+                : undefined;
               lineOffset += line.length + 1;
               if (lineIndex === 0 && afterSoft) return escapeParagraphInterrupt(escapeMarkdownText(line, false, lineContext));
               return escapeMarkdownText(line, lineIndex === 0 ? Boolean(state.atBlockStart) : true, lineContext);
@@ -289,9 +303,12 @@ export const MarkdownHardBreak = HardBreak.extend({
         parseHTML: (element: HTMLElement) => {
           try {
             const value = JSON.parse(element.getAttribute(BREAK_SPACE_ATTR) ?? "null") as unknown;
+            // `[before, after, lead?, quotePrefix?]`: whitespace, plus a quote
+            // line's own `>` prefix as written (#ftx3awn7).
             return Array.isArray(value) &&
-              (value.length === 2 || value.length === 3) &&
-              value.every((part) => typeof part === "string" && /^[ \t]*$/.test(part))
+              value.length >= 2 &&
+              value.length <= 4 &&
+              value.every((part, index) => typeof part === "string" && (index === 3 ? /^[ \t>]*$/ : /^[ \t]*$/).test(part))
               ? value
               : null;
           } catch {
@@ -317,14 +334,31 @@ export const MarkdownHardBreak = HardBreak.extend({
             if (parent.child(i).type !== node.type) {
               if (node.attrs.markdownStyle === "soft") {
                 // #iatezw4m: a single newline, as read (with its whitespace).
-                const [before, after, lead] = (node.attrs.markdownSpace as [string, string, string?] | null) ?? ["", ""];
+                const [before, after, lead, quotePrefix] = (node.attrs.markdownSpace as [string, string, string?, string?] | null) ?? ["", ""];
                 state.afterSoftBreak = true;
+                if (quotePrefix !== undefined && (state.delim ?? "").includes(">")) {
+                  // A quote line: its own `>` markers as written (`>>`, or one `>`
+                  // for a lazy line of a nested quote), #ftx3awn7.
+                  state.write(before);
+                  state.out += `\n${quotePrefix}`;
+                  skipNextPrefix(state);
+                  return;
+                }
                 if (lead !== undefined && /^[ \t]*$/.test(state.delim ?? "")) {
                   // A list item's (or top-level) continuation line: its own
                   // indent, verbatim, instead of the list's nesting indent.
                   state.write(before);
                   state.out += `\n${lead}`;
                   if (lead === "") skipNextPrefix(state);
+                  return;
+                }
+                if (lead !== undefined && (state.delim ?? "").includes(">")) {
+                  // A lazy quote line (#ftx3awn7): the source line had no `>`
+                  // (a line with one records no lead), so it's written as read,
+                  // without the quote's prefix.
+                  state.write(before);
+                  state.out += `\n${lead}`;
+                  skipNextPrefix(state);
                   return;
                 }
                 state.write(`${before}\n`);
@@ -339,6 +373,33 @@ export const MarkdownHardBreak = HardBreak.extend({
         parse: {
           // handled by markdown-it
         },
+      },
+    };
+  },
+});
+
+/**
+ * Enter right before a line break (#zvdge7ai): the break would otherwise
+ * start the new paragraph (`Intro line.` | ⏎`Typed here`, so typed text
+ * glued onto the next line). Remove the break and let Enter split there, as
+ * Notion and Obsidian do: `Intro line.` | `Typed here`, caret at the start of
+ * the second. Runs before the list and paragraph Enter handlers, which then
+ * split as usual.
+ */
+export const BreakAwareEnter = Extension.create({
+  name: "breakAwareEnter",
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => {
+        const { state, view } = editor;
+        const { selection } = state;
+        if (!selection.empty) return false;
+        const after = selection.$from.nodeAfter;
+        if (after?.type.name !== "hardBreak") return false;
+        view.dispatch(state.tr.delete(selection.from, selection.from + after.nodeSize));
+        // Not handled: the usual Enter now splits where the break was.
+        return false;
       },
     };
   },

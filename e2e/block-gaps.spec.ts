@@ -189,10 +189,17 @@ test.describe('H4–H6 are headings (#6rbi25wy)', () => {
 // written after an edit elsewhere; new text is still escaped where it must be.
 const ESCAPES: Record<string, string> = {
   'esc.md (escapes, snake_case, a quote with \\sum_{i})': "Plain a\\,b and c\\;d and \\$5.\n\nEscapes \\* \\_ \\# \\[ \\] \\\\ \\` stay.\n\nsnake_case_word and a_b_c here.\n\n> snake_case in a quote and \\sum_{i}\n\n- snake_case in a list and x_1_y\n\nPath C:\\Users\\name\\file and \\n literal.\n\nTarget paragraph.\n",
+  // #ftx3awn7 (@opus-hunter): tabs inside text, and lazy quote lines.
+  'tab.md (tabs inside text)': "Word\tafter a tab and two\t\ttabs.\n\n- item\twith tab\n\nTarget paragraph.\n",
+  'lazy.md (lazy quote, callout and list lines)': "> quote line\nlazy continuation\nsecond lazy\n\n> [!note] Callout\n> body\nlazy in callout\n\n- item\nlazy in list\n\nTarget paragraph.\n",
+  'nest.md (nested quotes written >>)': "> outer\n>> nested quote\n>> more\n> back\n\n>> starts nested\n\nTarget paragraph.\n",
+  'indent.md (indented paragraphs)': "  Indented two at page start.\n\nPlain.\n\n   Indented three mid-file.\n\n## Heading\n  Indented right under a heading.\n\n## Heading two\n\n  Indented under a heading after a blank.\n\nSoft\n  indented continuation line.\n\n- item\n\n  Indented after a list (list continuation).\n\nTarget paragraph.\n",
+  // #6wnxxk4y: a backslash ending a paragraph or list item stays single.
+  'bs.md (trailing backslashes)': "Ends with a backslash\\\n\nHard break here\\\nnext line.\n\nMid \\ space and a\\b and C:\\dir\\\n\n- item ends\\\n\nTarget paragraph.\n",
   'm1.md (math shapes)': "Inline $x^2 + y_1$ and $$E = mc^2$$ in text, a price $5 and $6.\n\n$$\n\\int_0^1 f(x)\\,dx\n$$\nTouching text after math.\n\n$$ a \\neq b $$\n\n> $$\n> \\sum_{i=1}^n i\n> $$\n\n- item with $\\alpha$\n  $$\n  \\beta\n  $$\n\nEscaped \\$ dollar and `$code$`.\n\nTarget paragraph.\n",
 };
 
-test.describe('backslash escapes and math source are kept (#628e927t)', () => {
+test.describe('escapes, math source, tabs and lazy lines are kept (#628e927t, #ftx3awn7)', () => {
   for (const [name, text] of Object.entries(ESCAPES)) {
     test(name, async ({ page, request, vault }) => {
       void vault;
@@ -202,6 +209,18 @@ test.describe('backslash escapes and math source are kept (#628e927t)', () => {
       expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
     });
   }
+
+  test('a typed line ending in a backslash saves as typed and reads back the same (#6wnxxk4y)', async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Target paragraph.\n');
+    await page.getByTestId('editor-content').getByText('Target paragraph.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' C:\\dir\\');
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('Target paragraph. C:\\dir\\\n');
+    await page.reload();
+    await expect(page.getByTestId('editor-content')).toContainText('Target paragraph. C:\\dir\\');
+  });
 
   test("a newly typed * or _ that could pair is still escaped; one that can't, isn't", async ({ page, request, vault }) => {
     void vault;

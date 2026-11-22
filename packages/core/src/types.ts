@@ -205,6 +205,12 @@ export interface HealthResponse {
   vaultPath: string;
   /** Running inside the desktop app (v1.9): native-only actions are offered. */
   desktop?: boolean;
+  /**
+   * Desktop only (G2): a random per-launch token. A page handed to main for
+   * printing is downloaded as `<Title>.<token>.gumply-print.html`; main takes
+   * no other name for its print path.
+   */
+  printToken?: string;
 }
 
 /** #3ht5gh6q: `GET /api/files/images`, an image anywhere in the vault. */
@@ -215,6 +221,12 @@ export interface VaultImage {
   name: string;
   /** Last modified, ISO. */
   modified: string;
+}
+
+/** #4usgpjh8: `GET /api/files/linkable?from=`, any linkable file in the vault. */
+export interface LinkableFile extends VaultImage {
+  /** The link text Obsidian writes for it from the note (`pic.png`, or the full path). */
+  link: string;
 }
 
 /** A file stored under `vault/attachments/` (D18). */

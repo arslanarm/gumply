@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { serve, type ServerType } from "@hono/node-server";
 import { createApp } from "./app.js";
 import type { UiStateStore } from "./ui-state.js";
+import type { McpLaunchCommand } from "@gumply/core";
 import { isLoopbackName } from "./security.js";
 import { VaultStore } from "./vault-store.js";
 
@@ -27,8 +28,12 @@ export interface StartOptions {
   version?: string;
   /** Started by the desktop app (reported by /api/health). */
   desktop?: boolean;
+  /** Desktop only (G2): the per-launch print token. */
+  printToken?: string;
   /** Desktop only (#c7fzzxk8): where the app's UI preferences live. */
   uiState?: UiStateStore;
+  /** A3: how an AI app starts this app's MCP mode (desktop: its own executable with `--mcp`). */
+  mcpCommand?: McpLaunchCommand;
   log?: (message: string) => void;
 }
 
@@ -70,6 +75,8 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
     ...(options.version ? { version: options.version } : {}),
     ...(options.desktop ? { desktop: true } : {}),
     ...(options.uiState ? { uiState: options.uiState } : {}),
+    ...(options.mcpCommand ? { mcpCommand: options.mcpCommand } : {}),
+    ...(options.printToken ? { printToken: options.printToken } : {}),
   });
 
   const server: ServerType = await new Promise((resolveServer, reject) => {

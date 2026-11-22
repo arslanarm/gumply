@@ -963,6 +963,26 @@ img.board-card-image {
   -webkit-box-orient: vertical;
 }
 
+/* #vc4hivrr: a task line, with a read-only box like page previews. */
+.board-card-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.board-card-task input {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0.22em 0 0;
+  accent-color: var(--accent);
+  pointer-events: none;
+}
+
+.board-card-task.is-checked span {
+  text-decoration: line-through;
+}
+
 .board-card-body.is-missing .board-card-title,
 .board-card-body.is-unsafe .board-card-title {
   color: var(--muted);

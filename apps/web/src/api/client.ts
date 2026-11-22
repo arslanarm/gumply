@@ -10,7 +10,11 @@ import type {
   CanvasBoard,
   DailyNoteSettings,
   Attachment,
+  McpSettingsPatch,
+  McpSettingsResponse,
   VaultImage,
+  LinkableFile,
+  NotionImportReport,
   Backlink,
   GraphData,
   GraphSettings,
@@ -73,6 +77,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       newVaultPage = firstPage;
     }
   }
+
+  const files = response.headers.get("x-gumply-files");
+  if (files !== null) noteFileIndexVersion(files);
 
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
@@ -188,6 +195,17 @@ export interface TagRenameResult {
 /** `PUT /api/boards/:id`: `rewrittenPages`, `conflictBackup`, `repairBackup` (once). */
 export type SaveBoardResult = BoardUpdateResult;
 
+/** v0.8 B2 (spec/api-import): `GET /api/import/:job`. */
+export interface NotionImportJob {
+  id: string;
+  state: "reading" | "planning" | "writing" | "done" | "failed";
+  done: number;
+  total: number;
+  folder?: string;
+  report?: NotionImportReport;
+  error?: string;
+}
+
 /** Vault-relative path → the API URL that serves it (`/api/files/...`). */
 export function fileUrl(path: string): string {
   if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(path)) return path;
@@ -208,6 +226,25 @@ function mutate<T>(task: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return result;
+}
+
+/** The server's linkable-files version last seen on `GET /pages` (#jxww67d9). */
+let fileIndexVersion: string | null = null;
+const fileIndexListeners = new Set<() => void>();
+
+/**
+ * Call `listener` when the vault's linkable files changed outside this tab
+ * (another app, a sync tool, a second tab), seen on the page-list poll.
+ */
+export function onFileIndexChanged(listener: () => void): () => void {
+  fileIndexListeners.add(listener);
+  return () => fileIndexListeners.delete(listener);
+}
+
+function noteFileIndexVersion(version: string): void {
+  const before = fileIndexVersion;
+  fileIndexVersion = version;
+  if (before !== null && before !== version) for (const listener of fileIndexListeners) listener();
 }
 
 const attachmentListeners = new Set<(attachment: Attachment) => void>();
@@ -250,6 +287,20 @@ export const api = {
   /** #3ht5gh6q: every image in the vault, newest first. */
   listImages: (): Promise<VaultImage[]> => request("/files/images"),
 
+  /** v0.8 B2 (spec/api-import): start importing a Notion export zip into `parentId` (null = the vault root). */
+  startNotionImport: (file: File, parentId: string | null): Promise<NotionImportJob> => {
+    const body = new FormData();
+    body.set("file", file);
+    if (parentId) body.set("parentId", parentId);
+    return request("/import/notion", { method: "POST", body });
+  },
+
+  /** v0.8 B2: an import's progress and, when done, its report. */
+  notionImport: (job: string): Promise<NotionImportJob> => request(`/import/${encodeURIComponent(job)}`),
+
+  /** #4usgpjh8: every linkable file, with the link Obsidian writes for it from note `from`. */
+  listLinkableFiles: (from: string): Promise<LinkableFile[]> => request(`/files/linkable?from=${encodeURIComponent(from)}`),
+
   /** D18: multipart upload; the server dedupes the name and writes the file. */
   uploadAttachment: (file: File): Promise<Attachment> => {
     const body = new FormData();
@@ -260,6 +311,11 @@ export const api = {
   /** #w6i6e6u7: the server downloads a remote image into attachments/. */
   importAttachment: (url: string): Promise<Attachment> =>
     request<Attachment>("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }).then(attachmentSaved),
+
+  /** A3 (spec/api-mcp-settings): Settings → MCP. */
+  mcpSettings: (): Promise<McpSettingsResponse> => request("/mcp/settings"),
+  setMcpSettings: (patch: McpSettingsPatch): Promise<McpSettingsResponse> =>
+    request("/mcp/settings", { method: "PUT", body: JSON.stringify(patch) }),
 
   /** v0.7 C: the templates folder and its pages. */
   listTemplates: (): Promise<{ folder: string; templates: PageMeta[] }> => request("/templates"),

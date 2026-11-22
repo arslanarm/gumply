@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { previewText } from "../src/board/content/BoardCard.js";
+import { previewLines } from "../src/board/content/BoardCard.js";
+
+/** The preview's text, one line per entry (tasks as `[ ]` / `[x]` + text). */
+const previewText = (markdown: string, title?: string) =>
+  previewLines(markdown, title)
+    .map((line) => (line.task ? `[${line.task.checked ? "x" : " "}] ${line.text}` : line.text))
+    .join("\n");
 
 describe("page card preview (#5kcn4jfc)", () => {
   it("drops a leading H1 that repeats the title", () => {
@@ -10,5 +16,25 @@ describe("page card preview (#5kcn4jfc)", () => {
     expect(previewText("# Welcome to Gumply\n\nHi", "Welcome")).toBe("Welcome to Gumply\nHi");
     expect(previewText("Intro\n\n# Welcome", "Welcome")).toBe("Intro\nWelcome");
     expect(previewText("## Welcome\nHi", "Welcome")).toBe("Welcome\nHi");
+  });
+});
+
+describe("page card tasks (#vc4hivrr)", () => {
+  it("keeps each task's state and text, in any list marker", () => {
+    expect(previewLines("Plan\n- [ ] Draft **outline**\n- [x] Book room\n* [X] Send\n1. [ ] Numbered\n  - [ ] Nested")).toEqual([
+      { text: "Plan" },
+      { text: "Draft outline", task: { checked: false } },
+      { text: "Book room", task: { checked: true } },
+      { text: "Send", task: { checked: true } },
+      { text: "Numbered", task: { checked: false } },
+      { text: "Nested", task: { checked: false } },
+    ]);
+  });
+  it("an empty task still counts; a plain bullet or `[link]` is not a task; fences are skipped", () => {
+    expect(previewLines("- [ ]\n- not a task\n- [link](x)\n```\n- [ ] in code\n```")).toEqual([
+      { text: "", task: { checked: false } },
+      { text: "not a task" },
+      { text: "link" },
+    ]);
   });
 });

@@ -122,6 +122,11 @@ export function svgIcon(paths: string, size = 18): SVGSVGElement {
   return svg;
 }
 
+/** The same icon as markup, for places without a DOM (the HTML export, G1). */
+export function calloutIconMarkup(type: string, size = 18): string {
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[calloutStyle(type)]}</svg>`;
+}
+
 export function calloutIcon(type: string, size = 18): SVGSVGElement {
   return svgIcon(ICONS[calloutStyle(type)], size);
 }

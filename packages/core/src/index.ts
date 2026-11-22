@@ -7,6 +7,7 @@ export type {
   ApiError,
   Attachment,
   VaultImage,
+  LinkableFile,
   Backlink,
   BoardDocument,
   BoardUpdateResult,
@@ -198,7 +199,7 @@ export {
   type TemplateContext,
   type TemplateSettings,
 } from "./templates.js";
-export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "./link-files.js";
+export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
 export { linkSourceFolder, pickLinkTarget, preferredLinkPath } from "./link-order.js";
 export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
 export { graphItemPath, matchesGraphQuery, parseGraphQuery, type GraphQuery, type GraphQueryItem, type GraphQueryOp, type GraphQueryTerm } from "./graph-query.js";
@@ -216,6 +217,37 @@ export {
   type GraphSettingsResponse,
   type GraphSettingsSource,
 } from "./graph-settings.js";
+export {
+  DEFAULT_MCP_SETTINGS,
+  isMcpAccess,
+  MCP_ACCESS_LEVELS,
+  MCP_AUDIT_PATH,
+  MCP_SETTINGS_PATH,
+  parseMcpAuditLog,
+  parseMcpSettings,
+  serializeMcpSettings,
+  type McpAccess,
+  type McpAuditEntry,
+  type McpLaunchCommand,
+  type McpSettings,
+  type McpSettingsPatch,
+  type McpSettingsResponse,
+} from "./mcp-settings.js";
+
+export {
+  NOTION_IMPORT_LIMITS,
+  formatImportLimit,
+  notionReportMarkdown,
+  notionUrlId,
+  planNotionImport,
+  stripNotionId,
+  type NotionEntry,
+  type NotionImportOptions,
+  type NotionImportPlan,
+  type NotionImportReport,
+  type NotionPlannedDatabase,
+  type NotionPlannedFile,
+} from "./notion-import.js";
 export { headingRenames, rewriteHeadingLinks, rewriteHeadingSubpath, type HeadingRename } from "./heading-rename.js";
 export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
 

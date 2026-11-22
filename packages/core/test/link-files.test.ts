@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile } from "../src/link-files.js";
+import { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "../src/link-files.js";
 import { maskCode } from "../src/links.js";
 
 /** @opus-hunter's vault, measured in Obsidian 1.14.4 (#8k4ssrkb). */
@@ -75,6 +75,17 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
     expect(resolveLinkedFile("missing.png", "root.md", FILES)).toBeNull();
   });
 
+  it("tells whether two indexes hold the same files (#jxww67d9)", () => {
+    const index = new LinkFileIndex(["a.png", "att/b.pdf"]);
+    expect(index.sameFiles(new LinkFileIndex(["att/b.pdf", "a.png", "Note.md"]))).toBe(true);
+    expect(index.sameFiles(new LinkFileIndex(["a.png"]))).toBe(false);
+    expect(index.sameFiles(new LinkFileIndex(["a.png", "att/b.pdf", "c.png"]))).toBe(false);
+    expect(index.sameFiles(new LinkFileIndex(["A.png", "att/b.pdf"]))).toBe(false);
+    expect(index.add("c.png")).toBe(true);
+    expect(index.add("C.PNG")).toBe(false);
+    expect(index.add(".trash/d.png")).toBe(false);
+  });
+
   it("finds the links in a body, as written, outside code", () => {
     const body = "![[photo.png]] and ![[att/pic.png|100]] and [[report.pdf#page=2]] and [[Page]]\n`![[code.png]]`\n";
     expect(obsidianFileLinks(body, maskCode)).toEqual(["photo.png", "att/pic.png", "report.pdf"]);
@@ -125,5 +136,43 @@ describe("resolving Obsidian file links like Obsidian 1.14.4", () => {
     // Loose sanity bounds that only a pathological slowdown trips, even under load.
     expect(buildLarge).toBeLessThan(1_000);
     expect(resolveLarge / 5_000).toBeLessThan(5);
+  });
+});
+
+describe("shortestLinkText: the link Obsidian writes, shortest path when possible (#4usgpjh8)", () => {
+  const index = new LinkFileIndex([
+    "att/mountain.png",
+    "Plan.png",
+    "Projects/pic.png",
+    "Archive/old/pic.png",
+    "Notes/img/pic.png",
+    "report.pdf",
+    "Files/report.pdf",
+  ]);
+  const link = (path: string, from: string | null = null) => shortestLinkText(path, index, from);
+
+  it("is the bare name when the name is unique", () => {
+    expect(link("att/mountain.png")).toBe("mountain.png");
+    // A page `Plan.md` doesn't compete: attachment links keep their extension.
+    expect(link("Plan.png", "Plan.md")).toBe("Plan.png");
+  });
+
+  it("is the bare name when that name resolves to this file anyway, else the full path", () => {
+    // Three pic.png: from the root, the bare name goes to the shortest path.
+    expect(link("Projects/pic.png")).toBe("pic.png");
+    expect(link("Notes/img/pic.png")).toBe("Notes/img/pic.png");
+    // From a note in Notes/, its own folder's copy wins the bare name.
+    expect(link("Notes/img/pic.png", "Notes/Day.md")).toBe("pic.png");
+    expect(link("Projects/pic.png", "Notes/Day.md")).toBe("Projects/pic.png");
+    expect(link("Files/report.pdf")).toBe("Files/report.pdf");
+    expect(link("report.pdf")).toBe("report.pdf");
+  });
+
+  it("is case-insensitive like the resolver", () => {
+    const mixed = new LinkFileIndex(["Att/Photo.PNG", "other/photo.png"]);
+    // The two names match case-insensitively; the shorter path wins the bare
+    // name, and the written name keeps the file's own case.
+    expect(shortestLinkText("Att/Photo.PNG", mixed, null)).toBe("Photo.PNG");
+    expect(shortestLinkText("other/photo.png", mixed, null)).toBe("other/photo.png");
   });
 });
