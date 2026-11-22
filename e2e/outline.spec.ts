@@ -19,7 +19,7 @@ const DOC = [
   '',
   filler(12),
   '',
-  '### Deep',
+  '#### Deep',
   '',
   filler(12),
   '',
@@ -53,7 +53,7 @@ test.describe('outline pane (v0.8 D1)', () => {
     await expect(page.getByTestId('right-panel')).toHaveCount(0);
     await page.getByTestId('outline-toggle').click();
     await expect(page.getByTestId('right-panel-tab-outline')).toHaveAttribute('aria-selected', 'true');
-    // Top-level headings only; an empty one shows a placeholder; H2 → H3 nests, skipped levels indent one step.
+    // Top-level headings only; an empty one shows a placeholder; H2 → H4 skips a level and still indents one step (H4–H6 are headings since #6rbi25wy).
     await expect(items(page)).toHaveText(['Intro', 'Details', 'Deep', '(empty heading)', 'Ending']);
     await expect(items(page).nth(2)).toHaveAttribute('aria-level', '3');
     await expect(items(page).nth(3)).toHaveAttribute('aria-label', 'Empty heading, level 1');
