@@ -11,6 +11,7 @@ import type {
   DailyNoteSettings,
   Attachment,
   VaultImage,
+  LinkableFile,
   Backlink,
   GraphData,
   Page,
@@ -237,6 +238,9 @@ export const api = {
 
   /** #3ht5gh6q: every image in the vault, newest first. */
   listImages: (): Promise<VaultImage[]> => request("/files/images"),
+
+  /** #4usgpjh8: every linkable file, with the link Obsidian writes for it from note `from`. */
+  listLinkableFiles: (from: string): Promise<LinkableFile[]> => request(`/files/linkable?from=${encodeURIComponent(from)}`),
 
   /** D18: multipart upload; the server dedupes the name and writes the file. */
   uploadAttachment: (file: File): Promise<Attachment> => {
