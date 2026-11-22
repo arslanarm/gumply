@@ -685,7 +685,9 @@ export function Editor({
       GumplyTableRow,
       GumplyTableHeader,
       GumplyTableCell,
-      MarkdownHeading.configure({ levels: [1, 2, 3] }),
+      // All six levels, as Markdown and Obsidian have: H4–H6 must load as headings and save
+      // byte-exact (#6rbi25wy, D37). The menus still offer H1–H3; `####` + space makes an H4.
+      MarkdownHeading.configure({ levels: [1, 2, 3, 4, 5, 6] }),
       MarkdownOrderedList,
       MarkdownHorizontalRule,
       MarkdownMarkup,
