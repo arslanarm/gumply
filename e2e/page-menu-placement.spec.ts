@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 /**
- * #sjts42ue: the sidebar row ⋯ menu is 240 px wide with one line per item,
+ * #sjts42ue: the sidebar row ⋯ menu is 240–320 px wide with one line per item,
  * grouped like Notion, and is never under the Tags/Graph/Trash footer or off
  * screen: it flips up or scrolls, by ⋯, right-click and keyboard alike.
  * Russian, whose labels are the longest.
@@ -17,6 +17,14 @@ test.beforeEach(async ({ page }) => {
 
 async function seedMany(vault: { seed(pages: Array<{ title: string; content: string }>): Promise<unknown> }) {
   await vault.seed(titles.map((title) => ({ title, content: 'x' })));
+}
+
+/**
+ * The menu opens with a scale pop-in (`soft-pop`): box geometry read mid-way
+ * is a little smaller. Every geometry check waits for its animations first.
+ */
+async function settled(menu: Locator): Promise<void> {
+  await menu.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished)));
 }
 
 /** Fully inside the viewport. */
@@ -46,6 +54,7 @@ async function openLastRowMenu(page: Page): Promise<Locator> {
   await page.getByTestId(`page-menu-button-${LAST}`).click();
   const menu = page.getByTestId(`page-menu-${LAST}`);
   await expect(menu).toBeVisible();
+  await settled(menu);
   return menu;
 }
 
@@ -65,12 +74,13 @@ for (const height of [820, 600]) {
 
       // About 240 px (wider when a label needs it, up to 320), no label wraps
       // (every item is one line high) and none is cut with an ellipsis.
-      const width = (await menu.boundingBox())!.width;
+      // offsetWidth: layout width, unaffected by the pop-in transform.
+      const width = await menu.evaluate((el) => (el as HTMLElement).offsetWidth);
       expect(width).toBeGreaterThanOrEqual(240);
       expect(width).toBeLessThanOrEqual(320);
       const clipped = await menu.getByRole('menuitem').evaluateAll((items) => items.filter((item) => item.scrollWidth > item.clientWidth).length);
       expect(clipped).toBe(0);
-      const heights = await menu.getByRole('menuitem').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+      const heights = await menu.getByRole('menuitem').evaluateAll((items) => items.map((item) => (item as HTMLElement).offsetHeight));
       expect(new Set(heights.map((value) => Math.round(value))).size).toBe(1);
       expect(heights[0]!).toBeLessThan(40);
       // Notion-style groups: edit / add inside / import-export / delete.
@@ -89,6 +99,7 @@ for (const height of [820, 600]) {
       await row.click({ button: 'right', position: { x: 40, y: 10 } });
       const menu = page.getByTestId(`page-menu-${LAST}`);
       await expect(menu).toBeVisible();
+      await settled(menu);
       await expectOnScreen(page, menu);
       await expectOnTop(page, page.getByTestId(`delete-page-${LAST}`));
       await page.keyboard.press('Escape');
@@ -97,6 +108,7 @@ for (const height of [820, 600]) {
       await row.focus();
       await page.keyboard.press('Shift+F10');
       await expect(page.getByTestId(`rename-page-${LAST}`)).toBeFocused();
+      await settled(menu);
       await page.keyboard.press('End');
       const remove = page.getByTestId(`delete-page-${LAST}`);
       await expect(remove).toBeFocused();
