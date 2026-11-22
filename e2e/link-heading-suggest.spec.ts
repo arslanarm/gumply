@@ -106,3 +106,35 @@ test('with two pages of the same name, the headings come from the one in the not
   await expect(menu.getByRole('option', { name: 'Sub heading' })).toBeVisible();
   await expect(menu.getByRole('option', { name: 'Other heading' })).toHaveCount(0);
 });
+
+test('a heading fetch that answers after ]] does not reopen the menu (#cafeydb8)', async ({ page, vault }) => {
+  const [target] = await vault.seed([{ title: 'Target', content: '## Section\n\nTarget body.\n' }]);
+  const [note] = await vault.seed([{ title: 'Note', content: '' }]);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Note');
+
+  // Hold every fetch of Target (one per keystroke after `#`) until the link is done.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let held = 0;
+  await page.route(`**/api/pages/${encodeURIComponent(target!.id)}`, async (route) => {
+    held += 1;
+    await released;
+    await route.continue();
+  });
+
+  const body = page.getByTestId('editor-content');
+  await body.click();
+  await page.keyboard.type('See [[Target#Sec]] here');
+  await expect(body.getByTestId(`wiki-link-${target!.id}`)).toHaveCount(1);
+  await expect(page.getByTestId('link-menu')).toHaveCount(0);
+  expect(held).toBeGreaterThan(0);
+
+  // The late answers arrive now; the closed suggestion must stay closed.
+  const answered = page.waitForResponse((response) => response.url().endsWith(`/api/pages/${encodeURIComponent(target!.id)}`));
+  release();
+  await answered;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 200))));
+  await expect(page.getByTestId('link-menu')).toHaveCount(0);
+  await expect(body).toContainText('See Target#Sec here');
+});
