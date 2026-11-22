@@ -295,9 +295,85 @@
   cursor: pointer;
 }
 
+/* Search on top, the list scrolls under it (#2su9ikg4). */
+.base-popover.is-properties {
+  overflow: hidden;
+}
+
+.base-popover > * {
+  flex-shrink: 0;
+}
+
 .base-property-list {
   display: flex;
   flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -0.5rem -0.5rem;
+  padding: 0 0.5rem 0.5rem;
+}
+
+.base-property-list.has-more {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 2rem), transparent);
+}
+
+.base-property-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.base-property-section .base-panel-title {
+  padding: 0.4rem 0.35rem 0.15rem;
+}
+
+.base-property-section .base-check {
+  padding: 0.25rem 0.35rem;
+  border-radius: 5px;
+}
+
+.base-property-section .base-check:hover {
+  background: var(--hover);
+}
+
+/* The app's own checkbox, not the browser's (grey in dark mode). */
+.base-check input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1.5px solid var(--muted);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.base-check input[type="checkbox"]::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5.2 4.1 7.3 8 3' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  transform: scale(0);
+  transition: transform 90ms ease;
+}
+
+.base-check input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.base-check input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+.base-check input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .base-add {
@@ -888,6 +964,21 @@ ol.base-list {
 .base-card-body > .base-title-link {
   align-self: flex-start;
   max-width: 100%;
+  text-align: left;
+}
+
+/* A long title stays on one line with an ellipsis, as in Obsidian; the full title is the tooltip (#2su9ikg4). */
+.base-card-body > .base-title-link .base-title-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A card with no cover in a view with covers (#2su9ikg4). */
+.base-card-image.is-empty {
+  background: var(--hover);
+  opacity: 0.8;
 }
 
 .base-card-prop {

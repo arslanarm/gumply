@@ -1104,7 +1104,8 @@
     "sortAsc": "Сортировать по возрастанию",
     "sortDesc": "Сортировать по убыванию",
     "hideProperty": "Скрыть в этом представлении",
-    "shownProperties": "Показаны в этом представлении",
+    "shownProperties": "Показаны",
+    "hiddenProperties": "Скрыты",
     "searchProperties": "Найти свойство",
     "file": {
       "name": "Название",

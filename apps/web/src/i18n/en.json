@@ -1090,7 +1090,8 @@
     "sortAsc": "Sort ascending",
     "sortDesc": "Sort descending",
     "hideProperty": "Hide in this view",
-    "shownProperties": "Shown in this view",
+    "shownProperties": "Shown",
+    "hiddenProperties": "Hidden",
     "searchProperties": "Find a property",
     "file": {
       "name": "Name",
