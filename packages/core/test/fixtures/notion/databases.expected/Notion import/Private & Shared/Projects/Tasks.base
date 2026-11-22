@@ -14,6 +14,13 @@ views:
       - Notes
   - type: kanban
     name: Board
+    groupBy:
+      property: Status
+      direction: ASC
+    groupOrder:
+      - Todo
+      - Doing
+      - Done
     order:
       - file.name
       - Due
@@ -22,10 +29,3 @@ views:
       - Tags
       - Owner
       - Notes
-    groupBy:
-      property: Status
-      direction: ASC
-    groupOrder:
-      - Todo
-      - Doing
-      - Done

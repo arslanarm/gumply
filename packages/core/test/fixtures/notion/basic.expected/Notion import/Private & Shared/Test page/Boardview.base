@@ -9,9 +9,6 @@ views:
       - Assign
   - type: kanban
     name: Board
-    order:
-      - file.name
-      - Assign
     groupBy:
       property: Status
       direction: ASC
@@ -19,3 +16,6 @@ views:
       - Not started
       - In progress
       - Done
+    order:
+      - file.name
+      - Assign
