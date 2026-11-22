@@ -22,6 +22,7 @@ export const SECURE_KEYS = [
   "flowchart",
   "class",
   "dompurifyConfig",
+  "layout",
 ] as const;
 
 export function mermaidConfig(theme: DiagramTheme) {
@@ -39,5 +40,7 @@ export function mermaidConfig(theme: DiagramTheme) {
     fontFamily: DIAGRAM_FONT,
     theme: theme === "dark" ? ("dark" as const) : ("default" as const),
     deterministicIds: true,
+    // Only Mermaid's own dagre layout: ELK (elkjs, copyleft) isn't shipped.
+    layout: "dagre" as const,
   };
 }

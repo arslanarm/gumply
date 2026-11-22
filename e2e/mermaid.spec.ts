@@ -116,6 +116,62 @@ test('a hostile diagram stays inert: no script, no handlers, no javascript: link
   expect(await body('Hostile.md')).toBe(`${hostile}\n`);
 });
 
+test('CSS loads nothing: a diagram\'s @import/url() never reaches the page, and the SVG pass strips them', async ({ page, vault }) => {
+  const outside = watchNetwork(page);
+  // Mermaid's grammar refuses url(…) in classDef/style lines outright (a parse
+  // error), so the CSS that can reach a drawn diagram comes from %%{init}%%.
+  // themeCSS is a secure key here, and ELK is pinned off.
+  const hostile = [
+    '```mermaid',
+    '%%{init: {"layout": "elk", "themeCSS": "@import url(https://example.com/x.css); .node rect { fill: url(https://example.com/y.png); }"}}%%',
+    'flowchart LR',
+    '  A[Paid] --> B[Tracked]',
+    '  classDef spy fill:#f9f,stroke:#333',
+    '  class A spy',
+    '```',
+  ].join('\n');
+  await vault.seed([{ title: 'Hostile CSS', content: hostile }]);
+  await open(page, 'Hostile CSS');
+  const diagram = page.getByTestId('mermaid-diagram');
+  // Really drawn (with dagre: the ELK request is ignored), so the checks below mean something.
+  await expect(diagram.locator('svg')).toBeVisible();
+  await expect(diagram).toContainText('Tracked');
+  await page.waitForTimeout(800);
+  const drawn = await diagram.evaluate((element) => ({
+    styles: [...element.querySelectorAll('style')].map((style) => style.textContent ?? '').join('\n'),
+    attributes: [...element.querySelectorAll('[style]')].map((node) => node.getAttribute('style') ?? ''),
+  }));
+  expect(drawn.styles).not.toMatch(/@import/i);
+  expect(drawn.styles).not.toMatch(/url\(\s*['"]?https?:/i);
+  for (const style of drawn.attributes) expect(style).not.toMatch(/url\(\s*['"]?https?:/i);
+
+  // The SVG pass itself, on CSS that tries every way out, mounted in the page.
+  const result = await page.evaluate(async () => {
+    const { sanitizeDiagramSvg } = await import('/src/lib/diagram.ts');
+    const svg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">',
+      '<style>@import url(https://example.com/a.css); @import "https://example.com/b.css"; .x { fill: url(https://example.com/p.png); } .y { fill: url(#ok); }</style>',
+      '<defs><linearGradient id="ok"/></defs>',
+      '<rect class="x" style="fill: url(https://example.com/q.png)" width="10" height="10"/>',
+      '<rect class="y" style="fill: url(#ok)" width="10" height="10"/>',
+      '<image href="https://example.com/r.png"/><use xlink:href="https://example.com/s.svg#a"/><use href="#ok"/>',
+      '</svg>',
+    ].join('');
+    const clean = sanitizeDiagramSvg(svg);
+    const host = document.createElement('div');
+    host.innerHTML = clean;
+    document.body.append(host);
+    return clean;
+  });
+  await page.waitForTimeout(500);
+  expect(result).not.toMatch(/@import/i);
+  // (The SVG namespace URIs stay; they're identifiers, never fetched.)
+  expect(result).not.toContain('example.com');
+  expect(result).toContain('url(#ok)');
+  expect(result).toContain('href="#ok"');
+  expect(outside).toEqual([]);
+});
+
 test('/mermaid inserts a starter diagram; errors show inline; previews draw diagrams', async ({ page, vault }) => {
   await vault.seed([
     { title: 'Broken', content: '```mermaid\nflowchart LR\n  A --> \n  ((( nope\n```' },

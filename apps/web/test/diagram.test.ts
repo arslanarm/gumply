@@ -71,9 +71,11 @@ describe("strict Mermaid config", () => {
         class: { htmlLabels: false },
         fontFamily: DIAGRAM_FONT,
         theme: theme === "dark" ? "dark" : "default",
+        // ELK (elkjs, EPL-2.0 / GPL-3.0) isn't shipped: only dagre.
+        layout: "dagre",
       });
       // A diagram's own %%{init}%% can't loosen any of these.
-      for (const key of ["securityLevel", "htmlLabels", "startOnLoad", "flowchart", "maxTextSize", "fontFamily", "themeCSS", "secure", "dompurifyConfig"]) {
+      for (const key of ["securityLevel", "htmlLabels", "startOnLoad", "flowchart", "maxTextSize", "fontFamily", "themeCSS", "secure", "dompurifyConfig", "layout"]) {
         expect(config.secure, key).toContain(key);
       }
       expect(config.secure).toEqual([...SECURE_KEYS]);
