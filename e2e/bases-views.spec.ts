@@ -207,6 +207,25 @@ test.describe('database view layouts (D34)', () => {
     await expect.poll(() => read('Work/Tasks.base')).toBe(BASE);
   });
 
+  test('toolbar panels open under their button: right edges line up when the panel would run past the window', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(page, request, 'Gallery');
+    for (const panel of ['properties', 'settings', 'sort', 'source']) {
+      const button = (await page.getByTestId(`base-${panel}-button`).boundingBox())!;
+      await page.getByTestId(`base-${panel}-button`).click();
+      const popover = page.getByTestId(`base-${panel}-panel`);
+      // Measured once its open animation (a slight scale) has finished.
+      await popover.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+      const box = (await popover.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(1280 - 8 + 1);
+      if (button.x + box.width > 1280 - 8) expect(Math.abs(box.x + box.width - (button.x + button.width))).toBeLessThanOrEqual(1);
+      else expect(Math.abs(box.x - button.x)).toBeLessThanOrEqual(1);
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId(`base-${panel}-panel`)).toHaveCount(0);
+    }
+  });
+
   test('List: bullets by default, numbers as a setting', async ({ page, request, vault }) => {
     void vault;
     await open(page, request, 'List');
