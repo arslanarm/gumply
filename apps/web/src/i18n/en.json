@@ -1453,7 +1453,7 @@
     "lostTitle": "Not in Notion's export",
     "lostHint": "Notion's Markdown & CSV export leaves these out, so they couldn't be imported:",
     "lost": {
-      "views": "Database views: filters, sorts and layouts (Gumply added a table view)",
+      "views": "Database views: filters, sorts and layouts (the rows and their CSV files are imported; views come in a later version)",
       "optionColours": "Colours of select options",
       "textColours": "Text and background colours",
       "toggles": "Toggles (they arrive as lists)",
