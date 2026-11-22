@@ -37,6 +37,10 @@ import type {
   TrashItem,
   BaseConfig,
   BaseViewResult,
+  ConflictDiff,
+  ConflictResolveInput,
+  ConflictResolveResult,
+  ConflictsList,
 } from "@gumply/core";
 import { currentLanguage } from "../i18n/index.js";
 
@@ -493,6 +497,24 @@ export const api = {
 
   putGraphSettings: (settings: GraphSettings): Promise<GraphSettingsResponse> =>
     mutate(() => request("/graph/settings", { method: "PUT", body: JSON.stringify(settings) })),
+
+  // --- sync conflict copies (spec/api v1.29, spec/sync-conflicts, D43) ---
+
+  conflicts: (): Promise<ConflictsList> => request("/conflicts"),
+
+  conflictDiff: (copyId: PageId): Promise<ConflictDiff> => request(`/conflicts/${encodeURIComponent(copyId)}/diff`),
+
+  /** Keep page / copy / both, Delete copy, Keep as original; 409 when either file changed since Compare. */
+  resolveConflict: (copyId: PageId, input: ConflictResolveInput): Promise<ConflictResolveResult> =>
+    mutate(() => request(`/conflicts/${encodeURIComponent(copyId)}/resolve`, { method: "POST", body: JSON.stringify(input) })),
+
+  /** Undo of Keep both / Keep as original: back to the conflict-copy name. */
+  conflictRenameBack: (currentId: PageId, to: PageId): Promise<PageMeta> =>
+    mutate(() => request(`/conflicts/${encodeURIComponent(currentId)}/rename-back`, { method: "POST", body: JSON.stringify({ to }) })),
+
+  /** "Not a copy" for a possible copy, or undo it. */
+  dismissPossibleCopy: (copyId: PageId, dismissed: boolean): Promise<{ dismissed: boolean }> =>
+    mutate(() => request(`/conflicts/${encodeURIComponent(copyId)}/dismiss`, { method: dismissed ? "POST" : "DELETE" })),
 
   // --- version history (spec/api v1.28, spec/api-version-history) ---
 

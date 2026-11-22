@@ -73,3 +73,13 @@ export function trashRouteFromHash(hash: string): TrashRoute | null {
   const id = pageIdFromHash(`#${rest.slice(slash)}`);
   return id ? { trashId, id } : null;
 }
+
+/**
+ * D43 (spec/sync-conflicts §4.2): the Conflicts list lives at `#conflicts`
+ * (no slash, like `#graph` and `#trash`, so no page id can collide).
+ */
+export const CONFLICTS_HASH = "#conflicts";
+
+export function isConflictsHash(hash: string): boolean {
+  return hash === CONFLICTS_HASH;
+}

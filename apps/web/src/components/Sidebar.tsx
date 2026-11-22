@@ -54,6 +54,10 @@ export interface SidebarProps {
   trashActive?: boolean;
   trashCount?: number;
   onTrash?: () => void;
+  /** D43: the Conflicts row, shown only while sync conflict copies exist. */
+  conflictsActive?: boolean;
+  conflictsCount?: number;
+  onConflicts?: () => void;
   /** #9bx3aznb: the Tags section. */
   onOpenTag?: (tag: string) => void;
   onRenameTag?: (request: TagRenameRequest) => void;
@@ -413,6 +417,26 @@ export function Sidebar(props: SidebarProps) {
           {props.trashCount ? (
             <span className="sidebar-row-count" data-testid="sidebar-trash-count">
               {props.trashCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
+      {props.onConflicts && (props.conflictsCount || props.conflictsActive) ? (
+        <button
+          type="button"
+          className={`sidebar-row sidebar-row-conflicts${props.conflictsActive ? " sidebar-row-active" : ""}`}
+          data-testid="sidebar-conflicts"
+          aria-current={props.conflictsActive ? "page" : undefined}
+          aria-label={props.conflictsCount ? t("conflicts.sidebarWithCount", { count: props.conflictsCount }) : t("conflicts.sidebar")}
+          onClick={props.onConflicts}
+        >
+          <span className="sidebar-row-icon" aria-hidden="true">
+            <Icon name="alert" size={16} />
+          </span>
+          {t("conflicts.sidebar")}
+          {props.conflictsCount ? (
+            <span className="sidebar-row-count" data-testid="sidebar-conflicts-count">
+              {props.conflictsCount}
             </span>
           ) : null}
         </button>

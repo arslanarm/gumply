@@ -47,6 +47,8 @@ export interface QuickSwitcherProps {
   onToggleOutline?: () => void;
   /** D41: `Show page history` (only while a page or board is open). */
   onShowHistory?: () => void;
+  /** D43: `Show conflicts`. */
+  onShowConflicts?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
@@ -68,6 +70,7 @@ export function QuickSwitcher({
   onImportNotion,
   onExportPdf,
   onShowHistory,
+  onShowConflicts,
   onClose,
   initialQuery = "",
 }: QuickSwitcherProps) {
@@ -142,6 +145,7 @@ export function QuickSwitcher({
     onExportPdf ? (sections.exportPdf ?? null) : null,
     onToggleOutline ? (sections.outline ?? null) : null,
     onShowHistory ? (sections.history ?? null) : null,
+    onShowConflicts ? (sections.conflicts ?? null) : null,
     onOpenLanguage ? sections.language : null,
   ].filter((row): row is SearchRow => row !== null);
   // Typing an action's name ranks it above "Create “…”" (#5hrsrqsj review).
@@ -189,6 +193,10 @@ export function QuickSwitcher({
     }
     if (row.kind === "history") {
       onShowHistory?.();
+      return;
+    }
+    if (row.kind === "conflicts") {
+      onShowConflicts?.();
       return;
     }
     if (row.kind === "page-template") {
@@ -306,6 +314,8 @@ export function QuickSwitcher({
             <Icon name="list" size={16} />
           ) : row.kind === "history" ? (
             <Icon name="clock" size={16} />
+          ) : row.kind === "conflicts" ? (
+            <Icon name="alert" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (
             <Icon name="board" size={16} />
           ) : row.kind === "create-base" ? (
@@ -317,7 +327,14 @@ export function QuickSwitcher({
           )}
         </span>
         <span className="quick-switcher-text">
-          <span className="quick-switcher-title">{row.label}</span>
+          <span className="quick-switcher-title">
+            {row.label}
+            {typeof row.page?.conflictOf === "string" ? (
+              <span className="quick-switcher-conflict" data-testid="search-conflict-label">
+                {t("conflicts.searchLabel")}
+              </span>
+            ) : null}
+          </span>
           {row.path ? <span className="quick-switcher-path">{row.path}</span> : null}
           {row.snippet ? (
             <span className="quick-switcher-snippet">

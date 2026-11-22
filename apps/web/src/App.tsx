@@ -15,7 +15,7 @@ import {
   type DailyNoteSettings,
 } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, consumeNewVaultPage, fileUrl, type BaseDocument } from "./api/client.js";
+import { api, ApiRequestError, consumeNewVaultPage, fileUrl, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -57,7 +57,9 @@ import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
 import { TagRenameDialog } from "./components/TagRenameDialog.js";
 import type { TagRenameRequest } from "./components/TagsPane.js";
 import {
+  CONFLICTS_HASH,
   GRAPH_HASH,
+  isConflictsHash,
   isGraphHash,
   pageHash,
   pageIdFromHash,
@@ -72,6 +74,12 @@ import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 import { t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
 import { HistoryDialog } from "./components/HistoryDialog.js";
+import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.js";
+import { ConflictCompareDialog, type CompareTarget } from "./components/ConflictCompareDialog.js";
+import { ConflictsView, fileNameOf } from "./components/ConflictsView.js";
+import { resolvedToast } from "./lib/conflicts.js";
+import { BoardPreview } from "./board/BoardPreview.js";
+import type { ConflictCopy, ConflictKeep, PossibleCopy } from "@gumply/core";
 import { HistorySettingsDialog } from "./components/HistorySettingsDialog.js";
 import { pageLeaveTracker } from "./lib/page-leave.js";
 import { McpSettingsDialog } from "./components/McpSettingsDialog.js";
@@ -95,6 +103,10 @@ interface ToastState {
   icon?: IconName;
   undo?: () => Promise<void>;
 }
+
+/** D43: a read-only conflict copy saves nothing and creates no pages. */
+const noopSaveState = () => undefined;
+const noopCreateLink = () => undefined;
 
 const toastKeys = new WeakMap<object, number>();
 let lastToastKey = 0;
@@ -202,6 +214,10 @@ export function App() {
   // D41: the page or board whose History… panel is open.
   const [historyTarget, setHistoryTarget] = useState<PageMeta | null>(null);
   const [historySettingsOpen, setHistorySettingsOpen] = useState(false);
+  // D43 (spec/sync-conflicts): the Conflicts list, the Compare dialog, and a stamp that refreshes both.
+  const [conflictsOpen, setConflictsOpen] = useState(() => isConflictsHash(window.location.hash));
+  const [compareTarget, setCompareTarget] = useState<CompareTarget | null>(null);
+  const [conflictsStamp, setConflictsStamp] = useState(0);
   const pdfTargetRef = useRef<PageMeta | null>(null);
   /** G1: the page "Export as HTML…" was picked for. */
   const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
@@ -468,6 +484,7 @@ export function App() {
     setSelectedId(id);
     setGraphOpen(false);
     setTrashRoute(null);
+    setConflictsOpen(false);
   }, []);
 
   const navigateGraph = useCallback(() => {
@@ -475,6 +492,16 @@ export function App() {
     setSelectedId(null);
     setGraphOpen(true);
     setTrashRoute(null);
+    setConflictsOpen(false);
+  }, []);
+
+  const navigateConflicts = useCallback(() => {
+    if (window.location.hash !== CONFLICTS_HASH) window.location.hash = CONFLICTS_HASH;
+    setSelectedId(null);
+    setGraphOpen(false);
+    setTrashRoute(null);
+    setConflictsOpen(true);
+    setConflictsStamp((value) => value + 1);
   }, []);
 
   const loadTrash = useCallback(async () => {
@@ -493,6 +520,7 @@ export function App() {
       if (window.location.hash !== hash) window.location.hash = hash;
       setSelectedId(null);
       setGraphOpen(false);
+      setConflictsOpen(false);
       setTrashRoute({ trashId: trashId ?? null, id: id ?? null });
       if (!trashId) void loadTrash();
     },
@@ -504,6 +532,66 @@ export function App() {
     reloadEditorAfterFetch.current = true;
     setPageReload((value) => value + 1);
   }, []);
+
+  /**
+   * D43 (spec/sync-conflicts §4.4): Keep page / copy / both, Delete copy, Keep
+   * as original. Conditional on both files; a 409 says so and refreshes the list.
+   * Then the tree, the open page and every conflict view follow, with an Undo toast.
+   */
+  const handleResolveConflict = useCallback(
+    async (copy: ConflictCopy, keep: ConflictKeep) => {
+      const before = pagesRef.current;
+      try {
+        const result = await api.resolveConflict(copy.copyId, {
+          keep,
+          expected: { copy: copy.copyUpdated, ...(copy.originalUpdated ? { page: copy.originalUpdated } : {}) },
+        });
+        const toastInfo = resolvedToast(keep, copy, result, before);
+        const refresh = async () => {
+          await loadPages();
+          setConflictsStamp((value) => value + 1);
+        };
+        const open = selectedRef.current;
+        await refresh();
+        if (open === copy.copyId) navigate(result.renamedTo ?? copy.originalId ?? null, true);
+        else if (open !== null && open === copy.originalId) requestPageReload();
+        setToast({
+          message: toastInfo.message,
+          icon: "info",
+          ...(toastInfo.undo
+            ? {
+                undo: async () => {
+                  await toastInfo.undo!();
+                  await refresh();
+                  if (selectedRef.current === copy.originalId) requestPageReload();
+                },
+              }
+            : {}),
+        });
+      } catch (error) {
+        setConflictsStamp((value) => value + 1);
+        setActionError(error instanceof ApiRequestError && error.status === 409 ? t("conflicts.changed") : errorMessage(error));
+        throw error;
+      }
+    },
+    [loadPages, navigate, requestPageReload, t],
+  );
+
+  const handleNotACopy = useCallback(
+    async (possible: PossibleCopy) => {
+      await api.dismissPossibleCopy(possible.copyId, true);
+      setConflictsStamp((value) => value + 1);
+      setToast({
+        message: t("conflicts.notACopyDone", { title: fileNameOf(possible.copyId) }),
+        icon: "info",
+        undo: async () => {
+          await api.dismissPossibleCopy(possible.copyId, false);
+          setConflictsStamp((value) => value + 1);
+        },
+      });
+    },
+    [t],
+  );
 
   /**
    * D20: the id follows the title, so a rename changes it (and the ids of
@@ -682,6 +770,7 @@ export function App() {
       if (
         selectedRef.current !== null ||
         isGraphHash(window.location.hash) ||
+        isConflictsHash(window.location.hash) ||
         trashRouteFromHash(window.location.hash) !== null
       ) {
         return;
@@ -706,6 +795,7 @@ export function App() {
     const onHashChange = () => {
       setSelectedId(pageIdFromHash(window.location.hash));
       setGraphOpen(isGraphHash(window.location.hash));
+      setConflictsOpen(isConflictsHash(window.location.hash));
       const trash = trashRouteFromHash(window.location.hash);
       setTrashRoute(trash);
       // Back/forward or a typed `#trash`: show the trash as it is now.
@@ -1811,6 +1901,10 @@ export function App() {
   }, [pages, navigate]);
 
   const showingPage = selectedId !== null && page !== null && page.id === selectedId;
+  // D43: copies (orphans too) for the sidebar count, and the open item's own entry.
+  const conflictCount = useMemo(() => pages.filter((item) => item.conflictOf !== undefined).length, [pages]);
+  const selectedMeta = useMemo(() => (selectedId ? (pages.find((item) => item.id === selectedId) ?? null) : null), [pages, selectedId]);
+  const showingCopy = showingPage && typeof selectedMeta?.conflictOf === "string";
   const showingBoard = showingPage && isBoardId(page.id) && boardDoc !== null;
   const showingBase = showingPage && isBaseId(page.id) && baseDoc !== null && baseDoc.meta.id === page.id;
   const outlineSource = useMemo<OutlineSource | null>(
@@ -1952,6 +2046,9 @@ export function App() {
           trashActive={trashRoute !== null}
           trashCount={trashItems ? trashedCount(trashItems) : 0}
           onTrash={closingSidebar(() => navigateTrash())}
+          conflictsActive={conflictsOpen}
+          conflictsCount={conflictCount}
+          onConflicts={closingSidebar(navigateConflicts)}
           onOpen={handleOpen}
           onCreate={(parentId) => void handleCreate(parentId)}
           onRename={handleRename}
@@ -2005,7 +2102,18 @@ export function App() {
             </div>
           ) : null}
 
-          {trashRoute?.trashId ? (
+          {conflictsOpen ? (
+            <div className="editor-pane">
+              <ConflictsView
+                pages={pages}
+                refreshKey={conflictsStamp}
+                onOpen={handleOpen}
+                onCompare={setCompareTarget}
+                onResolve={handleResolveConflict}
+                onNotACopy={handleNotACopy}
+              />
+            </div>
+          ) : trashRoute?.trashId ? (
             <TrashedPageView
               trashId={trashRoute.trashId}
               id={trashRoute.id}
@@ -2045,6 +2153,15 @@ export function App() {
               className={`editor-pane${showingBoard ? " is-board" : showingBase ? " is-base" : ""}${showingNote && look.cover ? " has-cover" : ""}`}
               data-testid="editor"
             >
+              {showingPage && selectedMeta && !showingCopy && (selectedMeta.conflicts || selectedMeta.conflictOf === null) ? (
+                <ConflictBanner
+                  meta={selectedMeta}
+                  refreshKey={conflictsStamp}
+                  onCompare={setCompareTarget}
+                  onShowAll={navigateConflicts}
+                  onResolve={handleResolveConflict}
+                />
+              ) : null}
               {serverError ? (
                 <div className="empty-state" data-testid="server-error">
                   <span className="empty-state-icon" aria-hidden="true">
@@ -2078,6 +2195,27 @@ export function App() {
                   >
                     {t("sidebar.newPage")}
                   </button>
+                </div>
+              ) : showingCopy && selectedMeta ? (
+                // D43: a conflict copy opens read-only; nothing it shows can write.
+                <div className="conflict-copy-page" data-testid="conflict-copy-page">
+                  <ConflictCopyBanner meta={selectedMeta} pages={pages} refreshKey={conflictsStamp} onCompare={setCompareTarget} onResolve={handleResolveConflict} />
+                  <h1 className="page-title">{selectedMeta.title}</h1>
+                  <div className="conflict-copy-body">
+                    {showingBoard && boardDoc ? (
+                      <BoardPreview board={boardDoc.board} />
+                    ) : showingNote ? (
+                      <Editor
+                        key={`copy:${page.id}:${page.updated}`}
+                        page={page}
+                        pages={documentPages}
+                        readOnly
+                        onSaveState={noopSaveState}
+                        onOpenLink={handleOpenLink}
+                        onCreateLink={noopCreateLink}
+                      />
+                    ) : null}
+                  </div>
                 </div>
               ) : selectedFolder ? (
                 <FolderView
@@ -2407,6 +2545,10 @@ export function App() {
                 }
               : undefined
           }
+          onShowConflicts={() => {
+            dismissSearch();
+            navigateConflicts();
+          }}
           onClose={closeSearch}
         />
       ) : null}
@@ -2473,6 +2615,20 @@ export function App() {
       ) : null}
 
       {historySettingsOpen ? <HistorySettingsDialog onClose={() => setHistorySettingsOpen(false)} /> : null}
+
+      {compareTarget ? (
+        <ConflictCompareDialog
+          target={compareTarget}
+          pages={pages}
+          onClose={() => setCompareTarget(null)}
+          onResolve={handleResolveConflict}
+          onNotACopy={handleNotACopy}
+          onShowHistory={(id) => {
+            setCompareTarget(null);
+            setHistoryTarget(pages.find((item) => item.id === id) ?? null);
+          }}
+        />
+      ) : null}
 
       {mcpOpen ? (
         <McpSettingsDialog
