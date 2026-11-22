@@ -12,6 +12,8 @@ import type {
   Attachment,
   McpSettingsPatch,
   McpSettingsResponse,
+  DesktopUpdatesState,
+  UpdateMode,
   VaultImage,
   LinkableFile,
   NotionImportReport,
@@ -313,6 +315,14 @@ export const api = {
   /** #w6i6e6u7: the server downloads a remote image into attachments/. */
   importAttachment: (url: string): Promise<Attachment> =>
     request<Attachment>("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }).then(attachmentSaved),
+
+  /** spec/auto-update: the desktop app's updates (404 in the browser and in development). */
+  desktopUpdates: (): Promise<DesktopUpdatesState> => request("/desktop/updates"),
+  checkDesktopUpdates: (): Promise<DesktopUpdatesState> => request("/desktop/updates/check", { method: "POST", body: "{}" }),
+  setDesktopUpdatesMode: (mode: UpdateMode): Promise<DesktopUpdatesState> =>
+    request("/desktop/updates/settings", { method: "PUT", body: JSON.stringify({ mode }) }),
+  /** "Restart now": the app quits through its normal path (save flush), installs, starts again. */
+  restartForUpdate: (): Promise<{ ok: true }> => request("/desktop/updates/restart", { method: "POST", body: "{}" }),
 
   /** A3 (spec/api-mcp-settings): Settings → MCP. */
   mcpSettings: (): Promise<McpSettingsResponse> => request("/mcp/settings"),

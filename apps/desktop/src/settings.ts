@@ -5,6 +5,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isUpdateMode, type UpdateMode } from "@gumply/core";
 import { normaliseUiState, type UiState } from "../../server/src/ui-state.js";
 
 export const SETTINGS_FILE = "gumply-desktop.json";
@@ -19,7 +20,7 @@ export interface WindowState {
 }
 
 /** Settings → Updates (spec/auto-update, D42). */
-export type UpdateMode = "auto" | "notify" | "off";
+export type { UpdateMode };
 
 export interface UpdateSettings {
   /** The user's choice; absent = the format's default (auto where it can install, else notify). */
@@ -38,13 +39,11 @@ export interface DesktopSettings {
   updates?: UpdateSettings;
 }
 
-const UPDATE_MODES: readonly UpdateMode[] = ["auto", "notify", "off"];
-
 function normaliseUpdates(raw: unknown): UpdateSettings | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const data = raw as Record<string, unknown>;
   const result: UpdateSettings = {};
-  if (typeof data.mode === "string" && (UPDATE_MODES as readonly string[]).includes(data.mode)) result.mode = data.mode as UpdateMode;
+  if (isUpdateMode(data.mode)) result.mode = data.mode;
   if (typeof data.lastChecked === "string" && !Number.isNaN(Date.parse(data.lastChecked))) result.lastChecked = data.lastChecked;
   return Object.keys(result).length > 0 ? result : undefined;
 }

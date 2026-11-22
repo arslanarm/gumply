@@ -7303,3 +7303,93 @@ input {
     border-bottom: 1px solid var(--border);
   }
 }
+
+/* spec/auto-update: the update notice at the bottom of the sidebar, and Settings → Updates. */
+.update-notice {
+  margin: 8px 8px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.update-notice-text {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.update-notice-text svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.update-notice-hint {
+  margin: 4px 0 0 22px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.update-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  margin: 8px 0 0 22px;
+}
+
+.update-notice-button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.update-notice-link,
+.update-notice-later {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.update-notice-later {
+  color: var(--muted);
+}
+
+.update-notice-link:hover,
+.update-notice-later:hover {
+  text-decoration: underline;
+}
+
+.updates-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.updates-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.updates-actions {
+  margin-top: 8px;
+}
+
+.updates-link {
+  color: var(--accent);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.updates-link:hover {
+  text-decoration: underline;
+}

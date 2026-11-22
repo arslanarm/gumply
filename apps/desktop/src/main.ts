@@ -18,6 +18,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
 import { startGumplyServer, type RunningServer } from "../../server/src/start.js";
+import type { DesktopUpdates } from "../../server/src/desktop-updates.js";
 import { applyUiStateChange, type UiState, type UiStateChange, type UiStateStore } from "../../server/src/ui-state.js";
 import {
   loadSettings,
@@ -263,6 +264,8 @@ async function openVault(path: string): Promise<void> {
     version: app.getVersion(),
     desktop: true,
     uiState: uiStateStore,
+    // spec/auto-update: Settings → Updates and the notice (only when this install can update or be told).
+    ...(updates ? { updates: updatesForServer(updates) } : {}),
     // A3: Settings → MCP shows AI apps how to start this app's --mcp mode.
     mcpCommand: mcpLaunchCommand({
       execPath: process.execPath,
@@ -720,9 +723,32 @@ async function setUpUpdates(): Promise<void> {
     installDir: dirname(process.execPath),
     listProcesses: process.platform === "win32" ? () => listWindowsProcesses() : undefined,
     log: (message) => console.error(message),
+    // The window's notice and Settings follow every change.
+    onChange: (state) => {
+      if (!window || window.isDestroyed()) return;
+      void window.webContents
+        .executeJavaScript(`window.dispatchEvent(new CustomEvent("gumply:updates", { detail: ${JSON.stringify(state)} }))`)
+        .catch(() => undefined);
+    },
   });
   updates.start();
   buildMenu();
+}
+
+/** The update controller as the in-process server's routes use it. */
+function updatesForServer(controller: UpdateController): DesktopUpdates {
+  return {
+    get: () => controller.getState(),
+    check: async () => {
+      await controller.check(true);
+      return controller.getState();
+    },
+    setMode: (mode) => controller.setMode(mode),
+    restart: () => {
+      restartAfterQuit = true;
+      app.quit();
+    },
+  };
 }
 
 /** Help → Check for Updates…: check now and say what was found. */
@@ -899,7 +925,8 @@ if (mcpMode) {
 
     settings = loadSettings(app.getPath("userData"));
     buildMenu();
-    void setUpUpdates().catch((error: unknown) => console.error("[gumply] updates unavailable:", error));
+    // Before the vault opens, so its server serves /api/desktop/updates.
+    await setUpUpdates().catch((error: unknown) => console.error("[gumply] updates unavailable:", error));
 
     const fromEnv = process.env.GUMPLY_DESKTOP_VAULT;
     let vault: string | null = fromEnv ? resolve(fromEnv) : settings.lastVault;

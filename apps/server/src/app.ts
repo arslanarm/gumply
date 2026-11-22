@@ -4,6 +4,7 @@ import { badRequest, VaultError } from "./errors.js";
 import { parseUiStateChange, type UiStateStore } from "./ui-state.js";
 import { createApiRoutes } from "./routes.js";
 import { mcpSettingsRoutes } from "./mcp-settings.js";
+import { desktopUpdatesRoutes, type DesktopUpdates } from "./desktop-updates.js";
 import { localOnly, type SecurityOptions } from "./security.js";
 import { serveWebApp } from "./static.js";
 import type { VaultStore } from "./vault-store.js";
@@ -25,6 +26,8 @@ export interface AppOptions {
   uiState?: UiStateStore;
   /** A3: how an AI app starts this Gumply's MCP server (the desktop app's own executable); default `gumply mcp`. */
   mcpCommand?: McpLaunchCommand;
+  /** Desktop only (spec/auto-update): serve `/api/desktop/updates` from this controller. */
+  updates?: DesktopUpdates;
 }
 
 /**
@@ -63,6 +66,9 @@ export function createApp(options: AppOptions): Hono {
       return c.json(uiState.update(parseUiStateChange(body)));
     });
   }
+
+  // spec/auto-update: Settings → Updates and the update notice (desktop app only).
+  if (options.updates) app.route("/api/desktop/updates", desktopUpdatesRoutes(options.updates));
 
   // A3 (spec/api-mcp-settings): Settings → MCP.
   app.route("/api/mcp", mcpSettingsRoutes(options.vaultPath, options.mcpCommand));

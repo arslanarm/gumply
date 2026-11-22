@@ -8,6 +8,7 @@ import {
   effectiveMode,
   FIRST_CHECK_DELAY_MS,
   installKind,
+  offeredModes,
   othersFromInstallDir,
   releaseUrl,
   replaceAppImage,
@@ -41,6 +42,13 @@ describe("installKind and the mode in effect", () => {
     expect(effectiveMode("mac", "auto")).toBe("notify");
     expect(effectiveMode("nsis", "off")).toBe("off");
     expect(effectiveMode("none", "auto")).toBe("off");
+  });
+
+  it("offers automatic only where Gumply can install", () => {
+    expect(offeredModes("nsis")).toEqual(["auto", "notify", "off"]);
+    expect(offeredModes("appimage")).toEqual(["auto", "notify", "off"]);
+    expect(offeredModes("deb")).toEqual(["notify", "off"]);
+    expect(offeredModes("mac")).toEqual(["notify", "off"]);
   });
 
   it("links the release page", () => {

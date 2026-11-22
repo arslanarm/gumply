@@ -16,9 +16,11 @@
 import { spawnSync } from "node:child_process";
 import * as nodeFs from "node:fs";
 import { basename, dirname, join, sep, win32 } from "node:path";
-import type { UpdateMode, UpdateSettings } from "./settings.js";
+import type { DesktopUpdatesState, UpdateInstallKind, UpdateMode, UpdateStatus } from "@gumply/core";
+import type { UpdateSettings } from "./settings.js";
 
-export type InstallKind = "nsis" | "appimage" | "deb" | "mac" | "none";
+export type InstallKind = UpdateInstallKind;
+export type { UpdateStatus };
 
 export interface InstallContext {
   platform: NodeJS.Platform | string;
@@ -164,30 +166,13 @@ export function listWindowsProcesses(run: typeof spawnSync = spawnSync): Process
 
 // --- the controller ------------------------------------------------------------
 
-export type UpdateStatus =
-  | "idle"
-  | "checking"
-  | "up-to-date"
-  | "available"
-  | "downloading"
-  | "ready"
-  | "pending-running"
-  | "installing"
-  | "read-only"
-  | "install-failed"
-  | "error";
+/** The window's view of it (`GET /api/desktop/updates`). */
+export type UpdateState = DesktopUpdatesState;
 
-export interface UpdateState {
-  kind: InstallKind;
-  mode: UpdateMode;
-  status: UpdateStatus;
-  currentVersion: string;
-  /** The newer version found, if any. */
-  version: string | null;
-  /** Its release page (the "What's new" and "Download" links). */
-  releaseUrl: string | null;
-  lastChecked: string | null;
-  error: string | null;
+/** The choices Settings offers for this install. */
+export function offeredModes(kind: InstallKind): UpdateMode[] {
+  if (kind === "none") return ["off"];
+  return canInstall(kind) ? ["auto", "notify", "off"] : ["notify", "off"];
 }
 
 /** The part of electron-updater's AppUpdater the controller uses. */
@@ -239,6 +224,7 @@ export class UpdateController {
     this.state = {
       kind: deps.kind,
       mode: effectiveMode(deps.kind, saved?.mode),
+      modes: offeredModes(deps.kind),
       status: "idle",
       currentVersion: deps.currentVersion,
       version: null,
@@ -268,7 +254,7 @@ export class UpdateController {
   }
 
   getState(): UpdateState {
-    return { ...this.state };
+    return { ...this.state, modes: [...this.state.modes] };
   }
 
   /** Checks 30 s after start, then once a day (spec §3). Nothing at all when off. */
