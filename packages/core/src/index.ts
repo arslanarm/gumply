@@ -1,11 +1,12 @@
 /** Public API of `@gumply/core`. */
 
 export const APP_NAME = "Gumply";
-export const CORE_VERSION = "0.6.0";
+export const CORE_VERSION = "0.7.0";
 
 export type {
   ApiError,
   Attachment,
+  VaultImage,
   Backlink,
   BoardDocument,
   BoardUpdateResult,
@@ -216,3 +217,16 @@ export {
 } from "./graph-settings.js";
 export { headingRenames, rewriteHeadingLinks, type HeadingRename } from "./heading-rename.js";
 export { findMentions, linkMentions, mentionableText, mentionLink, mentionSnippet, mentionTerms, mentionWords, type MentionMatch } from "./mentions.js";
+
+export {
+  coverValue,
+  PAGE_COLORS,
+  PAGE_GRADIENTS,
+  PAGE_LOOK_KEYS,
+  pageLook,
+  parseCover,
+  type PageColor,
+  type PageCover,
+  type PageGradient,
+  type PageLook,
+} from "./page-look.js";

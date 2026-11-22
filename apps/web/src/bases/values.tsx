@@ -90,11 +90,26 @@ export function imageOf(row: BaseRow, view: BaseView): { url?: string; color?: s
  * measurement, #armmzdrx). `contain` letterboxes inside the box on a muted
  * fill, `cover` fills it, a colour fills it.
  */
-export function ImageBox({ row, view, ratio, height }: { row: BaseRow; view: BaseView; ratio: number; height?: number }) {
+export function ImageBox({
+  row,
+  view,
+  ratio,
+  height,
+  placeholder,
+}: {
+  row: BaseRow;
+  view: BaseView;
+  ratio: number;
+  height?: number;
+  /** No cover of its own: an empty box of the same size, so titles line up with cover cards (#2su9ikg4). */
+  placeholder?: boolean;
+}) {
   const image = imageOf(row, view);
-  if (!image) return null;
-  const fit = view.imageFit === "contain" ? "contain" : "cover";
   const size: CSSProperties = height !== undefined ? { height } : { aspectRatio: `${1 / ratio}` };
+  if (!image) {
+    return placeholder ? <div className="base-card-image is-empty" data-testid="base-card-image-empty" style={size} aria-hidden="true" /> : null;
+  }
+  const fit = view.imageFit === "contain" ? "contain" : "cover";
   return (
     <div className="base-card-image" data-testid="base-card-image" style={{ ...size, background: image.color }} aria-hidden="true">
       {image.url ? <img src={image.url} alt="" loading="lazy" style={{ objectFit: fit }} /> : null}

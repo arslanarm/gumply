@@ -322,6 +322,9 @@ input {
 }
 
 .page-item {
+  /* #yw53nria: the row's own fill, under the overlaid actions' fade. */
+  --row-bg: var(--surface-nav);
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -334,7 +337,8 @@ input {
 }
 
 .page-item:hover {
-  background: var(--hover);
+  --row-bg: var(--hover);
+  background: var(--row-bg);
 }
 
 /*
@@ -356,7 +360,8 @@ input {
 }
 
 .page-item.is-selected {
-  background: var(--accent-soft);
+  --row-bg: var(--accent-soft);
+  background: var(--row-bg);
   color: var(--accent);
 }
 
@@ -400,10 +405,23 @@ input {
   white-space: nowrap;
 }
 
+/*
+ * #yw53nria: the ⋯ / + actions lie over the row's end instead of taking
+ * their width, so the title runs to the row's edge until the row is hovered
+ * or focused (as in Notion). A fade in the row's colour covers the title's
+ * end under them. A mouse over them always hovers the row, so they're shown
+ * whenever they can be clicked; touch screens keep them in their own space.
+ */
 .page-actions {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0.35rem;
   display: flex;
   align-items: center;
   gap: 1px;
+  padding-left: 1.1rem;
+  background: linear-gradient(to right, transparent, var(--row-bg) 1rem);
   opacity: 0;
   transition: opacity 80ms ease;
 }
@@ -412,6 +430,25 @@ input {
 .page-item:focus-within .page-actions,
 .page-item.has-menu .page-actions {
   opacity: 1;
+}
+
+/*
+ * While renaming, the input keeps its full box; without hover (touch), a tap
+ * at the title's end must not hit invisible buttons. The actions then sit
+ * after the title, as before.
+ */
+.page-item:has(.page-rename-input) .page-actions {
+  position: static;
+  padding-left: 0;
+  background: none;
+}
+
+@media (hover: none) {
+  .page-actions {
+    position: static;
+    padding-left: 0;
+    background: none;
+  }
 }
 
 .tree-action {
@@ -485,6 +522,367 @@ input {
   color: var(--muted);
 }
 
+/* ---------- Page cover and background (#385sexd6) ---------- */
+
+.content {
+  /* The cover spans the whole content area, wider than the text column. */
+  container-type: inline-size;
+}
+
+.content.has-page-tint {
+  background:
+    linear-gradient(rgba(var(--page-tint-rgb), 0.07), rgba(var(--page-tint-rgb), 0.07)),
+    var(--surface-page);
+}
+
+:root[data-theme="dark"] .content.has-page-tint {
+  background:
+    linear-gradient(rgba(var(--page-tint-rgb), 0.1), rgba(var(--page-tint-rgb), 0.1)),
+    var(--surface-page);
+}
+
+.editor-pane.has-cover {
+  padding-top: 0;
+}
+
+.page-cover {
+  position: relative;
+  width: 100cqw;
+  margin-left: calc(50% - 50cqw);
+  height: min(30vh, 280px);
+  margin-bottom: 2.6rem;
+}
+
+.page-cover.is-empty {
+  height: 0;
+  margin-bottom: 0;
+}
+
+.page-cover-image,
+.page-cover-fill,
+.page-cover-missing {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+
+.page-cover.is-repositioning .page-cover-image {
+  cursor: grab;
+  touch-action: none;
+}
+
+.page-cover.is-repositioning .page-cover-image:active {
+  cursor: grabbing;
+}
+
+.page-cover-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-muted, rgba(var(--mono-rgb-100), 0.05));
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.cover-gradient-sunrise { background: linear-gradient(120deg, rgba(var(--color-orange-rgb), 0.75), rgba(var(--color-pink-rgb), 0.7)); }
+.cover-gradient-ocean { background: linear-gradient(120deg, rgba(var(--color-blue-rgb), 0.75), rgba(var(--color-cyan-rgb), 0.65)); }
+.cover-gradient-forest { background: linear-gradient(120deg, rgba(var(--color-green-rgb), 0.7), rgba(var(--color-cyan-rgb), 0.55)); }
+.cover-gradient-dusk { background: linear-gradient(120deg, rgba(var(--color-purple-rgb), 0.75), rgba(var(--color-blue-rgb), 0.6)); }
+.cover-gradient-peach { background: linear-gradient(120deg, rgba(var(--color-yellow-rgb), 0.6), rgba(var(--color-orange-rgb), 0.55)); }
+.cover-gradient-slate { background: linear-gradient(120deg, rgba(var(--mono-rgb-100), 0.28), rgba(var(--color-blue-rgb), 0.3)); }
+
+.page-cover-actions {
+  position: absolute;
+  right: max(1rem, calc(50cqw - 410px + 1rem));
+  bottom: 0.75rem;
+  display: inline-flex;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-elevated, var(--surface-page));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.page-cover:hover .page-cover-actions,
+.page-cover-actions:focus-within,
+.page-cover-actions.is-visible {
+  opacity: 1;
+}
+
+.page-cover-button {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}
+
+.page-cover-button + .page-cover-button {
+  border-left: 1px solid var(--border);
+}
+
+.page-cover-button:hover {
+  background: rgba(var(--mono-rgb-100), 0.06);
+}
+
+.page-cover-hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+.page-cover-source {
+  position: absolute;
+  left: max(1rem, calc(50cqw - 410px + 1rem));
+  bottom: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 0.7rem;
+}
+
+.page-cover-error {
+  position: absolute;
+  left: 50%;
+  bottom: -2.2rem;
+  transform: translateX(-50%);
+  margin: 0;
+  color: var(--danger, #c0392b);
+  font-size: 0.8rem;
+}
+
+.cover-picker {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% - 0.5rem);
+  right: max(1rem, calc(50cqw - 410px + 1rem));
+  width: min(440px, calc(100cqw - 2rem));
+  background: var(--surface-elevated, var(--surface-page));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+.page-cover.is-empty .cover-picker {
+  top: 0.5rem;
+}
+
+.cover-picker-tabs {
+  display: flex;
+  gap: 0.1rem;
+  padding: 0.35rem 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cover-picker-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.55rem 0.45rem;
+  cursor: pointer;
+}
+
+.cover-picker-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+.cover-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.cover-picker-heading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.cover-picker-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.cover-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.45rem;
+}
+
+.cover-swatch {
+  height: 40px;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  outline-offset: 2px;
+}
+
+.cover-swatch.is-current {
+  outline: 2px solid var(--accent, var(--color-blue));
+}
+
+.cover-vault-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.45rem;
+}
+
+.cover-vault-item {
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cover-vault-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover-upload {
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+/* One input style for the picker's Link field and Vault images search
+   (#i3mgwybb): one focus ring, no native search chrome. */
+.cover-picker-input {
+  width: 100%;
+  appearance: none;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  outline: none;
+}
+
+.cover-picker-input::-webkit-search-cancel-button,
+.cover-picker-input::-webkit-search-decoration {
+  appearance: none;
+  display: none;
+}
+
+/* One ring: the border, not the app-wide focus outline as well. */
+.cover-picker-input:focus,
+.cover-picker-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Stays above the image grid while it scrolls (#3ht5gh6q). */
+.cover-vault-search {
+  position: sticky;
+  top: -0.75rem;
+  z-index: 1;
+  background: var(--surface-elevated, var(--surface-page));
+}
+
+.cover-picker form button {
+  align-self: flex-start;
+}
+
+/* "Add cover" / "Background" sit with "Add icon" and show on hover. */
+.page-look-add {
+  border: 0;
+  padding: 0;
+  margin-left: 0.35rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.page-icon-control:focus-within .page-look-add .page-icon-add,
+.page-heading:hover .page-look-add .page-icon-add {
+  opacity: 1;
+}
+
+.page-background-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.page-background-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.page-background-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 0.35rem);
+  left: 0.35rem;
+  min-width: 170px;
+  padding: 0.3rem;
+  background: var(--surface-elevated, var(--surface-page));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.page-background-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.page-background-option:hover,
+.page-background-option:focus-visible {
+  background: rgba(var(--mono-rgb-100), 0.06);
+}
+
+.page-background-option.is-current {
+  font-weight: 600;
+}
+
+.page-background-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
 /* ---------- Page header ---------- */
 
 .page-header {
@@ -524,18 +922,28 @@ input {
   line-height: 1;
 }
 
+/* Ghost buttons, as in Notion: no border, a fill on hover (#i3mgwybb). */
 .page-icon-add {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.22rem 0.45rem;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--muted);
   font-size: 0.76rem;
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 100ms ease;
+  transition:
+    opacity 100ms ease,
+    background-color 100ms ease;
+}
+
+.page-icon-button:hover .page-icon-add,
+.page-look-add:hover .page-icon-add,
+.page-icon-button:focus-visible .page-icon-add,
+.page-look-add:focus-visible .page-icon-add {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .page-heading:hover .page-icon-add,
@@ -902,6 +1310,29 @@ input {
   line-height: 1.35;
   font-weight: 600;
   margin: 0.9em 0 0.1em;
+}
+
+/* H4–H6 (#6rbi25wy): smaller steps, as in Obsidian; H6 muted. */
+.gumply-editor h4 {
+  font-size: 1.05rem;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 0.85em 0 0.1em;
+}
+
+.gumply-editor h5 {
+  font-size: 1rem;
+  line-height: 1.45;
+  font-weight: 600;
+  margin: 0.8em 0 0.1em;
+}
+
+.gumply-editor h6 {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  font-weight: 600;
+  margin: 0.8em 0 0.1em;
+  color: var(--muted);
 }
 
 .gumply-editor ul,
@@ -5052,9 +5483,204 @@ input {
   opacity: 0.7;
 }
 
-.property-date {
-  width: auto;
-  color-scheme: inherit;
+/* Date values (#93wnicas): the value as text, a small month picker under it. */
+.date-picker-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.date-picker-value > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-picker-value > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.date-picker-value:hover,
+.date-picker-value[aria-expanded="true"] {
+  background: var(--hover);
+}
+
+.date-picker-value.is-empty {
+  color: var(--muted);
+}
+
+.property-editor.is-compact .date-picker-value {
+  width: 100%;
+  min-height: 28px;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0;
+}
+
+.property-editor.is-compact .date-picker-value:hover {
+  background: transparent;
+}
+
+.date-picker {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 16.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 18%);
+  font-size: 0.8125rem;
+  animation: soft-pop 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: top left;
+}
+
+.date-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 0 0.3rem;
+}
+
+.date-picker-month {
+  flex: 1;
+  font-weight: 600;
+}
+
+.date-picker-nav,
+.date-picker-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.date-picker-nav {
+  width: 26px;
+  height: 26px;
+}
+
+.date-picker-nav:hover,
+.date-picker-action:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.date-picker-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.date-picker-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.date-picker-weekday {
+  padding: 0.15rem 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.date-picker-day {
+  height: 30px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.date-picker-day.is-outside {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.date-picker-day:hover {
+  background: var(--hover);
+}
+
+.date-picker-day.is-today {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.date-picker-day.is-selected,
+.date-picker-day.is-selected:hover {
+  background: var(--accent);
+  box-shadow: none;
+  color: #fff;
+  font-weight: 600;
+  opacity: 1;
+}
+
+.date-picker-time {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.3rem 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.date-picker-time-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-page);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.date-picker-time-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.date-picker-time-input.is-invalid {
+  border-color: var(--danger);
+}
+
+.date-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.date-picker-action {
+  padding: 0.3rem 0.5rem;
 }
 
 .property-checkbox {

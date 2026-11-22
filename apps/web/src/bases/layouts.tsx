@@ -26,14 +26,23 @@ export interface LayoutProps {
   onNewRow?: (values?: Record<string, BaseValue>) => void;
 }
 
-function TitleButton({ row, onOpen }: { row: BaseRow; onOpen: (id: string) => void }) {
+function TitleButton({ row, onOpen, tooltip }: { row: BaseRow; onOpen: (id: string) => void; tooltip?: boolean }) {
   const t = useT();
+  // Cards: the full title as the app's tooltip, only while it's cut off (measured when pointed at or focused).
+  const [cut, setCut] = useState(false);
+  const measure = (event: { currentTarget: HTMLButtonElement }) => {
+    const text = event.currentTarget.querySelector(".base-title-text");
+    setCut(!!text && text.scrollWidth > text.clientWidth);
+  };
   return (
     <button
       type="button"
       className="base-title-link"
       data-testid={`base-open-${row.id}`}
       aria-label={t("bases.openPage", { title: row.title })}
+      data-tooltip={tooltip && cut ? row.title : undefined}
+      onPointerEnter={tooltip ? measure : undefined}
+      onFocus={tooltip ? measure : undefined}
       onClick={() => onOpen(row.id)}
     >
       <span className="base-title-icon" aria-hidden="true">
@@ -124,14 +133,26 @@ export function ListView(props: LayoutProps) {
 
 /* -------------------------------------------------------------- cards */
 
-function Card({ row, props, ratio, coverHeight }: { row: BaseRow; props: LayoutProps; ratio: number; coverHeight?: number }) {
+function Card({
+  row,
+  props,
+  ratio,
+  coverHeight,
+  placeholder,
+}: {
+  row: BaseRow;
+  props: LayoutProps;
+  ratio: number;
+  coverHeight?: number;
+  placeholder?: boolean;
+}) {
   const t = useT();
   const columns = detailColumns(props.result.columns);
   return (
     <article className="base-card" data-testid={`base-card-${row.id}`}>
-      <ImageBox row={row} view={props.view} ratio={ratio} height={coverHeight} />
+      <ImageBox row={row} view={props.view} ratio={ratio} height={coverHeight} placeholder={placeholder} />
       <div className="base-card-body">
-        <TitleButton row={row} onOpen={props.onOpen} />
+        <TitleButton row={row} onOpen={props.onOpen} tooltip />
         {columns.map((column) => {
           const value = row.values[column.id] ?? null;
           if (value === null || value === "" || (Array.isArray(value) && !value.length)) return null;
@@ -155,10 +176,12 @@ export function CardsView(props: LayoutProps) {
   const { view, result } = props;
   const size = numberSetting(view, "cardSize", 200, 50, 800);
   const ratio = numberSetting(view, "imageAspectRatio", 1, 0.25, 2.5);
+  // As in Obsidian 1.14.4: a view that sets `image` gives every card a cover box (empty without a cover), so every title sits at the same height (#2su9ikg4).
+  const covers = typeof view.image === "string" && view.image.trim() !== "";
   const grid = (rows: BaseRow[]) => (
     <div className="base-cards" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${size}px, 1fr))` }} data-testid="base-cards">
       {rows.map((row) => (
-        <Card key={row.id} row={row} props={props} ratio={ratio} />
+        <Card key={row.id} row={row} props={props} ratio={ratio} placeholder={covers} />
       ))}
     </div>
   );

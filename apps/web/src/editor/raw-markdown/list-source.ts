@@ -31,7 +31,9 @@ export const NUMBER_ATTR = "data-md-number";
 export const CHECK_ATTR = "data-md-check";
 export const GAP_ATTR = "data-md-gap";
 /** On the second half of a split list: a blank line separated the halves. */
-export const LOOSE_JOIN_ATTR = "data-md-join";
+/* Not `data-md-join`: that's the block-join stamp (#54prcupx), and sharing
+ * the name made the list split drop it (#q7ajxdr4). */
+export const LOOSE_JOIN_ATTR = "data-md-loose-join";
 export const AFTER_TEXT_ATTR = "data-md-after-text";
 
 const LIST_OPEN = new Set(["bullet_list_open", "ordered_list_open"]);

@@ -118,7 +118,12 @@ test.describe('database view layouts (D34)', () => {
     await open(page, request, 'Gallery');
     const alpha = page.getByTestId('base-card-Work/Alpha');
     await expect(alpha.locator('.base-card-image')).toHaveCSS('background-color', 'rgb(42, 157, 143)');
-    await expect(page.getByTestId('base-card-Work/Beta').locator('.base-card-image')).toHaveCount(0);
+    // #2su9ikg4: a card without a cover gets an empty one of the same size, so the titles line up.
+    const beta = page.getByTestId('base-card-Work/Beta');
+    await expect(beta.getByTestId('base-card-image-empty')).toBeVisible();
+    const box = async (locator: import('@playwright/test').Locator) => (await locator.boundingBox())!;
+    expect((await box(beta.getByTestId('base-card-image-empty'))).height).toBeCloseTo((await box(alpha.getByTestId('base-card-image'))).height, 0);
+    expect((await box(beta.locator('.base-title-text'))).y).toBeCloseTo((await box(alpha.locator('.base-title-text'))).y, 0);
     const status = alpha.getByTestId('base-card-prop-note.status');
     await expect(status.locator('.base-card-prop-name')).toHaveText('status');
     await expect(status.locator('.base-card-prop-value')).toHaveText('Todo');
@@ -129,6 +134,96 @@ test.describe('database view layouts (D34)', () => {
     await expect.poll(() => read('Work/Tasks.base')).toContain('    image: note.cover\n    cardSize: 300\n');
     await size.fill('200');
     await expect.poll(() => read('Work/Tasks.base')).toBe(BASE);
+  });
+
+  test('Cards: a view without `image` draws no cover boxes', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request, { ...FILES, 'Work/Tasks.base': BASE.replace('    image: note.cover\n', '') });
+    await page.goto('/#/Work/Tasks.base');
+    await page.getByTestId('base-tab-Gallery').click();
+    await expect(page.getByTestId('base-card-Work/Beta')).toBeVisible();
+    // Alpha has a cover value, but the view doesn't show covers.
+    await expect(page.locator('.base-card-image')).toHaveCount(0);
+  });
+
+  test('Cards: with `image` set and no cover anywhere, every card gets a 1:1 empty box; a long title is one line with an ellipsis', async ({ page, request, vault }) => {
+    void vault;
+    // As Obsidian 1.14.4 draws it (#2su9ikg4): boxes follow the view's `image` key, not whether any card has a cover.
+    const long = 'A rather long page title that cannot possibly fit on one line of a card';
+    await writeVault(request, {
+      'Work/Tasks.base': BASE,
+      'Work/Alpha.md': '---\nstatus: Todo\n---\nA\n',
+      'Work/Beta.md': '---\nstatus: Doing\n---\nB\n',
+      [`Work/${long}.md`]: '---\nstatus: Doing\n---\nL\n',
+    });
+    await page.goto('/#/Work/Tasks.base');
+    await page.getByTestId('base-tab-Gallery').click();
+    const beta = page.getByTestId('base-card-Work/Beta');
+    const card = page.getByTestId(`base-card-Work/${long}`);
+    await expect(beta).toBeVisible();
+    await expect(page.getByTestId('base-card-image')).toHaveCount(0);
+    for (const one of [beta, card]) {
+      const empty = (await one.getByTestId('base-card-image-empty').boundingBox())!;
+      expect(Math.abs(empty.width - empty.height)).toBeLessThanOrEqual(1);
+    }
+    const title = card.locator('.base-title-text');
+    const betaTitle = beta.locator('.base-title-text');
+    // One line, cut with an ellipsis, left-aligned; the card is as tall as its neighbour.
+    expect(Math.abs((await title.boundingBox())!.height - (await betaTitle.boundingBox())!.height)).toBeLessThanOrEqual(1);
+    expect(await title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect(title).toHaveCSS('text-overflow', 'ellipsis');
+    await expect(card.locator('.base-title-link')).toHaveCSS('text-align', 'left');
+    // The full title is the app's tooltip, only while it's cut off (#2su9ikg4 follow-up).
+    await card.locator('.base-title-link').hover();
+    await expect(card.locator('.base-title-link')).toHaveAttribute('data-tooltip', long);
+    await beta.locator('.base-title-link').hover();
+    await expect(beta.locator('.base-title-link')).not.toHaveAttribute('data-tooltip');
+    expect(Math.abs((await card.boundingBox())!.height - (await beta.boundingBox())!.height)).toBeLessThanOrEqual(1);
+    expect((await title.boundingBox())!.y).toBeCloseTo((await betaTitle.boundingBox())!.y, 0);
+  });
+
+  test('Properties panel: Shown (in view order), then Hidden; a click moves a property and writes order as before', async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Gallery');
+    await page.getByTestId('base-properties-button').click();
+    const shown = page.getByTestId('base-properties-shown');
+    const hidden = page.getByTestId('base-properties-hidden');
+    await expect(shown.locator('.base-check span')).toHaveText(['Name', 'status']);
+    await expect(shown.locator('.base-panel-title')).toHaveText(/shown/i);
+    await expect(hidden.locator('.base-panel-title')).toHaveText(/hidden/i);
+    await expect(hidden.getByTestId('base-property-note.due')).not.toBeChecked();
+    // The app's own checkbox, not the browser's.
+    await expect(shown.getByTestId('base-property-note.status')).toHaveCSS('appearance', 'none');
+    // The search field keeps its full height.
+    expect((await page.getByTestId('base-properties-panel').locator('input.base-input').boundingBox())!.height).toBeGreaterThanOrEqual(27);
+
+    // It moves to the other section (so click, not check()).
+    await hidden.getByTestId('base-property-note.due').click();
+    await expect(shown.locator('.base-check span')).toHaveText(['Name', 'status', 'due']);
+    await expect(shown.getByTestId('base-property-note.due')).toBeChecked();
+    await expect.poll(() => read('Work/Tasks.base')).toContain('  - type: cards\n    name: Gallery\n    order:\n      - file.name\n      - status\n      - due\n');
+    await shown.getByTestId('base-property-note.due').click();
+    await expect(hidden.getByTestId('base-property-note.due')).not.toBeChecked();
+    await expect.poll(() => read('Work/Tasks.base')).toBe(BASE);
+  });
+
+  test('toolbar panels open under their button: right edges line up when the panel would run past the window', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(page, request, 'Gallery');
+    for (const panel of ['properties', 'settings', 'sort', 'source']) {
+      const button = (await page.getByTestId(`base-${panel}-button`).boundingBox())!;
+      await page.getByTestId(`base-${panel}-button`).click();
+      const popover = page.getByTestId(`base-${panel}-panel`);
+      // Measured once its open animation (a slight scale) has finished.
+      await popover.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+      const box = (await popover.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(1280 - 8 + 1);
+      if (button.x + box.width > 1280 - 8) expect(Math.abs(box.x + box.width - (button.x + button.width))).toBeLessThanOrEqual(1);
+      else expect(Math.abs(box.x - button.x)).toBeLessThanOrEqual(1);
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId(`base-${panel}-panel`)).toHaveCount(0);
+    }
   });
 
   test('List: bullets by default, numbers as a setting', async ({ page, request, vault }) => {
@@ -288,9 +383,9 @@ test.describe('database view layouts (D34)', () => {
         const card = page.getByTestId(`base-card-Work/${id}`);
         const cover = card.getByTestId('base-card-image');
         const [cardBox, coverBox] = [(await card.boundingBox())!, (await cover.boundingBox())!];
-        // Card-wide, whatever the image's shape.
-        expect(Math.abs(coverBox.width - cardBox.width), id).toBeLessThanOrEqual(2);
-        out[id] = Math.round(coverBox.height);
+        // Card-wide, whatever the image's shape (part of the polled value:
+        // a throw here isn't retried, and the columns settle a moment late).
+        out[id] = Math.abs(coverBox.width - cardBox.width) <= 2 ? Math.round(coverBox.height) : -1;
       }
       return out;
     };

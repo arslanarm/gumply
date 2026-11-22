@@ -177,6 +177,18 @@ describe("block joins (#54prcupx)", () => {
     expect(render("> Text")).not.toContain("data-md-join");
   });
 
+  it("an ordered list right before a bullet + task list is stamped, and the list split can't erase it (#q7ajxdr4)", async () => {
+    // i2–i4 from @opus-hunter's rc.1 gate: the bullet list gets the join to the ordered list.
+    expect(render("1. a\n- c\n- [ ] d")).toContain('<ul data-md-markup="-" data-md-join="ol:.&gt;ul:-">');
+    expect(render("1. a\n2. b\n- c\n- [ ] d")).toContain('data-md-join="ol:.&gt;ul:-"');
+    expect(render("1. a\n10. b\n- c\n- [ ] d\n\t- e")).toContain('data-md-join="ol:.&gt;ul:-"');
+    // The split of a mixed list (markdown-task-list-fix) used the same attribute
+    // name for its own loose-join mark, and removed this stamp with it.
+    const { JOIN_ATTR } = await import("../src/editor/raw-markdown/block-joins.js");
+    const { LOOSE_JOIN_ATTR } = await import("../src/editor/raw-markdown/list-source.js");
+    expect(LOOSE_JOIN_ATTR).not.toBe(JOIN_ATTR);
+  });
+
   it("writes the join only while both blocks are still the recorded kinds", async () => {
     const { joinsPrevious } = await import("../src/editor/raw-markdown/block-joins.js");
     const node = (name: string, attrs: Record<string, unknown> = {}, childCount = 1) =>

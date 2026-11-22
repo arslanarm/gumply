@@ -8,12 +8,13 @@ import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from "
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
-import { dateFormat, useT, type MessageKey } from "../i18n/index.js";
+import { useT, type MessageKey } from "../i18n/index.js";
 import { PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
 import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
+import { formatDateValue } from "../lib/dates.js";
 
 export const ROW_HEIGHT = 34;
 
@@ -63,15 +64,9 @@ export function display(value: BaseValue, type: string): string {
   if (typeof value === "boolean") return "";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "string" && (type === "date" || type === "datetime")) {
-    const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(value);
-    if (match) {
-      const [, y, m, d, h, min] = match;
-      const date = new Date(Number(y), Number(m) - 1, Number(d), Number(h ?? 0), Number(min ?? 0));
-      // In the interface language, like the page header's dates.
-      return h !== undefined
-        ? dateFormat({ dateStyle: "medium", timeStyle: "short" }).format(date)
-        : dateFormat({ dateStyle: "medium" }).format(date);
-    }
+    // In the interface language, like the page header's dates (shared with the properties block, #93wnicas).
+    const shown = formatDateValue(value);
+    if (shown !== null) return shown;
   }
   // `[[Page|alias]]` in a text property reads as its label.
   if (typeof value === "string") return value.replace(new RegExp(String.raw`\[\[(${WIKILINK_PART}*)(?:\|(${WIKILINK_INNER}*))?\]\]`, "g"), (_, target: string, alias?: string) => alias ?? target);
@@ -390,7 +385,10 @@ function ValueCell(props: {
         role="cell"
         data-testid={`base-cell-editor-${row.id}-${column.id}`}
         onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setEditing(false);
+          const next = event.relatedTarget as Element | null;
+          // The date picker is a popover outside the cell (#93wnicas): moving into it keeps the cell editing.
+          if (event.currentTarget.contains(next) || next?.closest(".date-picker")) return;
+          setEditing(false);
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setEditing(false);

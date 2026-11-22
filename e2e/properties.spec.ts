@@ -3,6 +3,7 @@ import path from 'node:path';
 import { test, expect } from './fixtures';
 import { API_URL, E2E_VAULT } from './support/env';
 import { expectPageTitle } from './support/ui';
+import { pickDate } from './support/date-picker';
 
 /**
  * v0.7 A (#qw4pcm2h, D34): page properties are frontmatter, typed like
@@ -66,7 +67,7 @@ test.describe('properties', () => {
     await page.getByTestId('property-create').click();
     await page.getByTestId('property-key-due').click();
     await page.getByTestId('property-type-date').click();
-    await page.getByTestId('property-value-due').locator('input[type="date"]').fill('2026-12-24');
+    await pickDate(page, page.getByTestId('property-value-due'), '2026-12-24');
     await waitForFile('Task', (text) => /\ndue: 2026-12-24\n/.test(text));
 
     // List chips: add two, remove one.

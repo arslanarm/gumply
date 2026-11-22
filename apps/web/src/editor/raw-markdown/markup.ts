@@ -33,6 +33,19 @@ export function markupRule(state: any): void {
       const underline = (lines[(token.map[1] as number) - 1] ?? "").trim();
       if (new RegExp(`^\\${markup}+$`).test(underline)) markup = underline;
     }
+    // An ATX heading's own bytes (#6rbi25wy): the spaces after the hashes
+    // (`####   Title`) and a closing sequence (`## Title ##`), recorded as
+    // `<indent><hashes><spaces>|<closing>`, e.g. `####   |` or `## | ##`.
+    if (token.type === "heading_open" && /^#{1,6}$/.test(markup) && token.map) {
+      lines ??= String(state.src).split("\n");
+      const line = (lines[token.map[0] as number] ?? "").replace(/^(?:[ \t]*>[ \t]?)*/, "");
+      const atx = new RegExp(`^( {0,3})${markup}([ \\t]*)(.*)$`).exec(line);
+      if (atx) {
+        // An empty heading's closing (`### ###`) is all that follows the spaces.
+        const closing = /^#+[ \t]*$/.test(atx[3]!) ? [atx[3]!, atx[3]!] : /^\S.*?([ \t]+#+[ \t]*)$/.exec(atx[3]!);
+        markup = `${atx[1]}${markup}${atx[2]}|${closing ? closing[1] : ""}`;
+      }
+    }
     token.attrSet(MARKUP_ATTR, markup);
   }
 }
@@ -130,14 +143,20 @@ export const MarkdownHeading = Heading.extend({
           if (setext && node.textContent.trim().length > 0 && !node.textContent.includes("\n")) {
             state.renderInline(node);
             state.ensureNewLine();
-            // The underline as written; an older single-character record is
-            // drawn as long as the title.
-            state.write(markup.length > 1 ? markup : markup.repeat(Math.max(3, node.textContent.length)));
+            // The underline exactly as written, even a single `-` or `=`
+            // (the parse records the whole underline line).
+            state.write(markup);
             state.closeBlock(node);
             return;
           }
-          state.write(`${state.repeat("#", level)} `);
+          // As read while the level is the same (#6rbi25wy): the spaces after
+          // the hashes and the closing sequence. A typed heading: `## Text`.
+          const read = /^( {0,3})(#{1,6})([ \t]*)\|([ \t]*#+[ \t]*)?$/.exec(markup);
+          const same = read !== null && read[2]!.length === level;
+          const text = node.textContent.trim().length > 0;
+          state.write(`${same ? read![1] : ""}${state.repeat("#", level)}${same ? read![3] || (text ? " " : "") : " "}`);
           state.renderInline(node);
+          if (same && read![4] && (text || /^#/.test(read![4]))) state.write(read![4]);
           state.closeBlock(node);
         },
       },
