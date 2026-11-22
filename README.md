@@ -199,6 +199,84 @@ through Gumply's local MCP server (stdio only, no network port). Read only by de
 history and can be undone. Set it up from **Settings → AI apps (MCP)…**, which gives a ready-to-paste snippet with
 full paths; see [docs/mcp.md](docs/mcp.md) for the snippets per app and OS, access levels and troubleshooting.
 
+## Import from Notion
+
+In Notion, export a workspace or page as **Markdown & CSV** with **Include subpages** on. Then use
+**Import from Notion…** (Cmd/Ctrl+K, the desktop File menu, or a folder's ⋯ menu) and pick the zip.
+Everything goes into a new `Notion import` folder (`Notion import 2` for the next one); nothing already in
+the vault is changed.
+
+**What comes across:**
+- **Pages and sub-pages**, as Gumply's nested pages. Links between pages and @-mentions become `[[links]]`.
+- **Images and files**, copied to `attachments/Notion import/` and linked with standard Markdown links.
+- **Callouts** become Obsidian callouts, and code blocks keep their language.
+- **Databases** become a folder with one page per row. The row's properties are written as typed frontmatter:
+  numbers, dates, date-times, checkboxes, lists, and relations as `[[links]]`. Each database also gets a
+  `.base` view next to it: a table in Notion's column order, plus a board where the export shows the
+  database was one.
+- **Property types** are added to the vault's types only for names it doesn't type yet. The vault's own types
+  win, compared regardless of case (`Due` is `due`), as Obsidian does.
+
+**What doesn't:** Notion's export carries no view settings, so filters, sorts, calendar and gallery views, option
+colours and comments are left out. Formulas, rollups and people arrive as their text, and file properties as file
+names.
+
+**The report** lists what was converted, what was left out and why. It's shown when the import finishes and saved
+as `Import report.md` in the new folder, in the app's language.
+
+## Export
+
+A page's ⋯ menu in the sidebar and Cmd/Ctrl+K export it:
+- **Export as HTML…** writes one self-contained `.html` file: the page with its images, previews, database
+  snapshots, math and diagrams. It opens in any browser, offline. Choose the theme, and whether links to other
+  pages stay as plain text or point to sibling `.html` files.
+- **Export as PDF…** prints the page in the light theme, with its cover, title, images, math and diagrams, on A4
+  or Letter with normal or narrow margins. The desktop app saves the PDF through a Save dialog (also in its File
+  menu); in a browser, the browser's print dialog opens, where you choose "Save as PDF".
+
+## Columns
+
+Put blocks side by side:
+- **drag a block onto another block's left or right edge** (up to 5 columns);
+- `/columns` makes 2, 3 or 4 columns, and a block's ⋯ menu has **Turn into → Columns**;
+- **Mod+Alt+←/→** moves a block between columns.
+
+Drag the gutter between columns to resize them (each column keeps at least 15%); double-click it to make them
+equal. An emptied column goes away, and columns stack on narrow windows. On disk, columns are
+[Pandoc fenced divs](https://pandoc.org/MANUAL.html#divs-and-spans), so the file stays plain Markdown:
+
+```markdown
+:::: {.columns}
+::: {.column width="40%"}
+Left side
+:::
+::: {.column width="60%"}
+Right side
+:::
+::::
+```
+
+Obsidian shows the `:::` lines as text, with the content one column after the other. The HTML and PDF exports
+lay them out side by side.
+
+## Outline
+
+The **Outline** lists the open page's headings (a board's frames) in the right-hand column, next to the
+**Local graph** tab. Click an entry to jump to it, and collapse or expand sections. Toggle it with the header
+button or **Ctrl/Cmd+Shift+O** (**Ctrl/Cmd+Alt+O** if the browser keeps the first shortcut).
+
+## Tags and aliases
+
+Tags and aliases in frontmatter are read as Obsidian reads them:
+- the keys `tags` and `aliases` count in any case (`Tags:`, `TAGS:`), plural only; `tag:` and `alias:` are
+  ordinary properties;
+- if a note has two spellings (`tags:` and `Tags:`), the first in the file is read and edited, and the other is
+  left as written.
+
+Obsidian only reads tags written as a list. A `tags: a, b` text value still shows its tags in Gumply, with a
+warning that Obsidian won't read them and a **Make it a list** button that rewrites just that value as a list.
+Tags made only of digits (`2024`) get a warning too, since Obsidian doesn't count them.
+
 ## Languages
 
 The interface is in English and Russian, following your system language. Change it in
