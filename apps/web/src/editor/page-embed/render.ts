@@ -12,7 +12,7 @@
  * A page preview inside the preview becomes a placeholder the view fills in
  * (up to a depth); a board embed becomes a link card (never a live board).
  */
-import { hasAttachmentExtension, isBoardTarget } from "@gumply/core";
+import { hasAttachmentExtension, isBoardTarget, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET } from "@gumply/core";
 import MarkdownIt from "markdown-it";
 import { calloutStyle, defaultCalloutTitle } from "../callout/types.js";
 import { parseColorTag } from "../color.js";
@@ -70,7 +70,7 @@ function nestedEmbedRule(state: Any, startLine: number, _endLine: number, silent
   if (!text.startsWith("![[")) return false;
   const page = parsePageEmbed(text);
   // A board or a database view (D34) inside a preview: a card linking to it.
-  const board = /^!\[\[([^[\]|#\r\n]+?\.(?:canvas|base))(?:#([^[\]|\r\n]*))?(?:\|[^[\]\r\n]*)?\]\]$/i.exec(text);
+  const board = new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?\.(?:canvas|base))(?:#(${WIKILINK_PART}*))?(?:\|${WIKILINK_INNER}*)?\]\]$`, "i").exec(text);
   if (!page && !board) return false;
   if (silent) return true;
   const token = state.push("html_block", "", 0);

@@ -176,6 +176,12 @@ export interface GraphData {
    * into one ghost node per title.
    */
   unresolved: Array<{ source: PageId; targetTitle: string }>;
+  /**
+   * v1.19 (`?include=attachments`, spec/api-graph-groups): each page's link to
+   * an attachment file it embeds or links (`![[pic.png]]`), resolved like
+   * Obsidian. Absent unless asked for.
+   */
+  attachments?: Array<{ source: PageId; path: string }>;
 }
 
 /** Payload item of `GET /api/pages/:id/backlinks`. */

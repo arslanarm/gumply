@@ -208,3 +208,19 @@ export {
   type PageGradient,
   type PageLook,
 } from "./page-look.js";
+export { isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET } from "./wikilink-syntax.js";
+export { graphItemPath, matchesGraphQuery, parseGraphQuery, type GraphQuery, type GraphQueryItem, type GraphQueryOp, type GraphQueryTerm } from "./graph-query.js";
+export {
+  DEFAULT_GRAPH_FILTERS,
+  DEFAULT_GRAPH_SETTINGS,
+  fromObsidianGraph,
+  MAX_GRAPH_GROUPS,
+  MAX_GRAPH_QUERY,
+  normalizeGraphSettings,
+  obsidianColor,
+  type GraphFilters,
+  type GraphGroup,
+  type GraphSettings,
+  type GraphSettingsResponse,
+  type GraphSettingsSource,
+} from "./graph-settings.js";

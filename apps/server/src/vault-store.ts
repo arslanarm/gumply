@@ -62,6 +62,7 @@ import {
   hasAttachmentExtension,
   maskCode,
   obsidianFileLinks,
+  parseEmbeds,
   newBaseSource,
   parseBase,
   updateBaseSource,
@@ -188,6 +189,8 @@ export interface GraphOptions {
   center?: PageId;
   /** BFS radius around `center`; defaults to 1 when `center` is set. */
   depth?: number;
+  /** v1.19 (E1): add `attachments`, each page's links to attachment files. */
+  attachments?: boolean;
 }
 
 const MAX_TITLE_LENGTH = 300;
@@ -1394,7 +1397,42 @@ export class VaultStore {
       links: edges.map((edge) => ({ source: edge.source, target: edge.target as PageId })),
       tags,
       unresolved,
+      ...(options.attachments ? { attachments: this.attachmentEdges(included) } : {}),
     };
+  }
+
+  /** Attachment links per page, cached until the page's content changes. */
+  private readonly attachmentLinks = new Map<PageId, { content: string; paths: string[] }>();
+
+  /**
+   * v1.19: each included page's links to attachment files (`![[pic.png]]`,
+   * `[[report.pdf]]`, `![](attachments/pic.png)`), resolved from that page
+   * like Obsidian (#8k4ssrkb). Links to missing files are left out.
+   */
+  private attachmentEdges(included: ReadonlySet<PageId>): Array<{ source: PageId; path: string }> {
+    const out: Array<{ source: PageId; path: string }> = [];
+    for (const id of included) {
+      const record = this.pages.get(id);
+      if (!record) continue;
+      let cached = this.attachmentLinks.get(id);
+      if (!cached || cached.content !== record.content) {
+        const from = relative(this.root, record.filePath).split(sep).join("/");
+        const links = new Set(obsidianFileLinks(record.content, maskCode));
+        for (const embed of parseEmbeds(record.content)) if (embed.syntax !== "obsidian") links.add(embed.path);
+        const paths = new Set<string>();
+        for (const link of links) {
+          const path = this.linkIndex.resolve(link, from);
+          if (path) paths.add(path);
+        }
+        cached = { content: record.content, paths: [...paths].sort() };
+        this.attachmentLinks.set(id, cached);
+      }
+      for (const path of cached.paths) out.push({ source: id, path });
+    }
+    if (this.attachmentLinks.size > this.pages.size * 2 + 100) {
+      for (const id of this.attachmentLinks.keys()) if (!this.pages.has(id)) this.attachmentLinks.delete(id);
+    }
+    return out.sort((a, b) => a.source.localeCompare(b.source) || a.path.localeCompare(b.path));
   }
 
   search(query: string): SearchResult[] {

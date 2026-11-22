@@ -71,7 +71,28 @@
     "noLinks": "No links yet.",
     "noLinksBefore": "Type ",
     "noLinksAfter": " in this page to connect it.",
-    "legendIcon": "emoji = page icon"
+    "legendIcon": "emoji = page icon",
+    "panel": {
+      "open": "Graph settings",
+      "title": "Graph settings",
+      "close": "Close graph settings",
+      "filters": "Filters",
+      "showTags": "Tags",
+      "showAttachments": "Attachments",
+      "existingOnly": "Existing files only",
+      "showOrphans": "Orphans",
+      "groups": "Groups",
+      "noGroups": "No groups yet.",
+      "newGroup": "New group",
+      "groupQuery": "tag:#work, path:Projects…",
+      "groupQueryLabel": "Group query",
+      "groupColor": "Group colour",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "removeGroup": "Remove group",
+      "groupsHint": "The first matching group colours a page. Queries: tag:#work, path:Folder, file:name, words, -word to exclude, OR."
+    },
+    "legendAttachment": "Attachment"
   },
   "sidebar": {
     "hide": "Hide sidebar",

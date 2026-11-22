@@ -9,6 +9,7 @@
  *   `<mark style="background: #FF5582A6;">`, #h368c8ni).
  */
 import { maskCode } from "./links.js";
+import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
 export interface InlineTag {
   /** The tag without `#`, trailing `/` and `-` dropped. */
@@ -25,7 +26,7 @@ const blank = (match: string) => match.replace(/[^\n]/g, " ");
 /** Code, URLs, link targets, wikilinks and HTML tags blanked out (same length as `markdown`). */
 function maskNonTags(markdown: string): string {
   return maskCode(markdown)
-    .replace(/\[\[[^\]\n]*\]\]/g, blank)
+    .replace(new RegExp(String.raw`\[\[${WIKILINK_INNER}*\]\]`, "g"), blank)
     .replace(/\]\([^)\n]*\)/g, (match) => `]${blank(match.slice(1))}`)
     .replace(/<[a-z][a-z0-9+.-]*:[^>\s]*>/gi, blank)
     .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]*/gi, blank)

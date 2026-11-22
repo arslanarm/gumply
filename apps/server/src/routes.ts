@@ -7,6 +7,7 @@ import type {
   BoardUpdateResult,
   DeletePageResult,
   GraphData,
+  GraphSettingsResponse,
   Page,
   PageId,
   PageMeta,
@@ -29,6 +30,7 @@ import {
   saveAttachment,
 } from "./attachments.js";
 import { badRequest, notFound, payloadTooLarge } from "./errors.js";
+import { readGraphSettings, writeGraphSettings } from "./graph-settings.js";
 import { importAllowList, importRemoteImage } from "./remote-image.js";
 
 // Tests only: host:port pairs the image import may reach on localhost.
@@ -353,7 +355,18 @@ export function createApiRoutes(store: VaultStore): Hono {
 
     const options: GraphOptions = { depth };
     if (center !== undefined) options.center = center;
+    // v1.19 (E1): `include=attachments` adds each page's attachment links.
+    const include = (c.req.query("include") ?? "").split(",").map((item) => item.trim());
+    if (include.includes("attachments")) options.attachments = true;
     return c.json<GraphData>(store.graph(options));
+  });
+
+  // v1.19 (E1, spec/api-graph-groups): colour groups and filters, per vault.
+  api.get("/graph/settings", async (c) => c.json<GraphSettingsResponse>(await readGraphSettings(store.root)));
+
+  api.put("/graph/settings", async (c) => {
+    const body = await readJson(c);
+    return c.json<GraphSettingsResponse>(await writeGraphSettings(store.root, body));
   });
 
   api.get("/search", (c) => {

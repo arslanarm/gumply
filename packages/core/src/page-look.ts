@@ -18,6 +18,7 @@
  * These keys are written through the property patch (only their own lines
  * change) and are hidden from the properties block.
  */
+import { WIKILINK_INNER, WIKILINK_TARGET } from "./wikilink-syntax.js";
 import type { Property, PropertyValue } from "./properties.js";
 
 export const PAGE_LOOK_KEYS: readonly string[] = ["cover", "cover-position", "background"];
@@ -49,9 +50,12 @@ export interface PageLook {
 const isColor = (value: string): value is PageColor => (PAGE_COLORS as readonly string[]).includes(value);
 const isGradient = (value: string): value is PageGradient => (PAGE_GRADIENTS as readonly string[]).includes(value);
 
+/** `[[target]]`, `![[target|alias]]`, `[[target#part]]`, from the shared wikilink syntax (#wf4hhfj7). */
+const WIKILINK_COVER = new RegExp(String.raw`^!?\[\[(${WIKILINK_TARGET}+)(?:[#|]${WIKILINK_INNER}*)?\]\]$`);
+
 /** `[[target|alias]]` → `target`; a plain vault path stays as is. */
 function linkTarget(value: string): string | null {
-  const wiki = /^!?\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]$/.exec(value);
+  const wiki = WIKILINK_COVER.exec(value);
   const target = (wiki ? wiki[1]! : value).trim();
   if (target.length === 0 || target.includes("..") || target.startsWith("/")) return null;
   return target;

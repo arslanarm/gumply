@@ -5,7 +5,7 @@
  *
  * Lazy-loaded through `./index.ts` so page startup doesn't pay for it.
  */
-import { gumplyNodeData, type CanvasBoard, type CanvasNode, type GumplyShape, type InkPoint } from "@gumply/core";
+import { gumplyNodeData, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, type CanvasBoard, type CanvasNode, type GumplyShape, type InkPoint } from "@gumply/core";
 import {
   Background,
   BackgroundVariant,
@@ -1295,7 +1295,7 @@ function BoardCanvas(props: BoardEditorProps) {
       }
       const trimmed = text.trim();
       // W2b: a pasted `[[Page]]` (or `[[Map.canvas|Map]]`) becomes a page/board card.
-      const wiki = /^\[\[([^[\]|#]+)(?:#[^[\]|]*)?(?:\|[^[\]]*)?\]\]$/.exec(trimmed);
+      const wiki = new RegExp(String.raw`^\[\[(${WIKILINK_TARGET}+)(?:#${WIKILINK_PART}*)?(?:\|${WIKILINK_INNER}*)?\]\]$`).exec(trimmed);
       const linked = wiki ? resolveBoardLink(wiki[1] ?? "", pagesRef.current) : null;
       if (linked) {
         addAndSelect(

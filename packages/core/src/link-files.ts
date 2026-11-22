@@ -15,6 +15,7 @@
  * link resolves to, as in Obsidian; nothing is rewritten.
  */
 import { hasAttachmentExtension } from "./links.js";
+import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
 /** Whether a vault path may be a link target: an allowlisted file outside dot folders. */
 export function isLinkableFile(path: string): boolean {
@@ -104,7 +105,7 @@ export function resolveLinkedFile(link: string, fromNote: string | null, files: 
 export function obsidianFileLinks(markdown: string, mask: (text: string) => string): string[] {
   const text = mask(markdown);
   const out = new Set<string>();
-  const pattern = /!?\[\[([^[\]\n]+)\]\]/g;
+  const pattern = new RegExp(String.raw`!?\[\[(${WIKILINK_INNER}+)\]\]`, "g");
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     const inner = (match[1] ?? "").split("|")[0]!.split("#")[0]!.trim();
