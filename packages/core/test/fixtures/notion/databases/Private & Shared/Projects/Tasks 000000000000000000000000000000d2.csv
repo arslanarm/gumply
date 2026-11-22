@@ -1,0 +1,6 @@
+﻿Name,Due,Priority (1–5),Done?,Tags,Owner,Notes
+Write spec,"November 3, 2026",1,Yes,"red, blue",Ada (https://www.notion.so/Ada-000000000000000000000000000000b0?pvs=21),"Line one, with a comma
+and ""quotes"""
+Write spec,,5,No,blue,"Bob (../People/Bob%20000000000000000000000000000000b1.md), Zed (https://www.notion.so/Zed-000000000000000000000000000000ee?pvs=21)",
+Ship,"December 24, 2026",3,No,,,Plain note
+Ghost,,,,,,

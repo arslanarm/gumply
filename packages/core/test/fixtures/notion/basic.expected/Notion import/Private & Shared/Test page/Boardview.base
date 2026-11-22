@@ -1,0 +1,21 @@
+filters:
+  and:
+    - file.folder == "Notion import/Private & Shared/Test page/Boardview"
+views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - Assign
+  - type: kanban
+    name: Board
+    order:
+      - file.name
+      - Assign
+    groupBy:
+      property: Status
+      direction: ASC
+    groupOrder:
+      - Not started
+      - In progress
+      - Done

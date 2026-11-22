@@ -86,6 +86,106 @@ export function typedProperties(raw: readonly RawProperty[], typeOf: (key: strin
   });
 }
 
+/** Index of the `}` / `]` closing the bracket at `open` (JSON strings skipped), or -1. */
+function closingBracket(text: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    const char = text[i]!;
+    if (char === '"') {
+      for (i += 1; i < text.length && text[i] !== '"'; i += 1) if (text[i] === "\\") i += 1;
+    } else if (char === "{" || char === "[") depth += 1;
+    else if (char === "}" || char === "]") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Where the value of top-level `key` starts in a JSON object's text, or -1. */
+function topLevelValue(text: string, key: string): number {
+  const root = text.indexOf("{");
+  if (root === -1) return -1;
+  let depth = 0;
+  for (let i = root; i < text.length; i += 1) {
+    const char = text[i]!;
+    if (char === '"') {
+      const start = i;
+      for (i += 1; i < text.length && text[i] !== '"'; i += 1) if (text[i] === "\\") i += 1;
+      if (depth === 1 && JSON.parse(text.slice(start, i + 1)) === key) {
+        const colon = text.indexOf(":", i + 1);
+        let value = colon + 1;
+        while (/\s/.test(text[value] ?? "")) value += 1;
+        // A key, not a string value: it's followed by `:`.
+        if (colon !== -1 && text.slice(i + 1, colon).trim() === "") return value;
+      }
+    } else if (char === "{" || char === "[") depth += 1;
+    else if (char === "}" || char === "]") depth -= 1;
+  }
+  return -1;
+}
+
+/** Add `entries` as members of the object at `open`..`close`, in its own layout. */
+function insertMembers(text: string, open: number, close: number, entries: Array<[string, string]>, outerIndent: string, unit: string): string {
+  const inner = text.slice(open + 1, close);
+  const member = ([key, value]: [string, string], spaced: boolean) => `${JSON.stringify(key)}:${spaced ? " " : ""}${value}`;
+  if (inner.trim() === "") {
+    const lines = entries.map((entry) => `${outerIndent}${unit}${member(entry, true)}`);
+    return `${text.slice(0, open + 1)}\n${lines.join(",\n")}\n${outerIndent}${text.slice(close)}`;
+  }
+  let last = close - 1;
+  while (/\s/.test(text[last]!)) last -= 1;
+  const multiline = /\n/.test(inner);
+  if (multiline) {
+    const indent = /\n([ \t]*)\S/.exec(inner)?.[1] ?? `${outerIndent}${unit}`;
+    const spaced = /":\s/.test(inner);
+    return `${text.slice(0, last + 1)}${entries.map((entry) => `,\n${indent}${member(entry, spaced)}`).join("")}${text.slice(last + 1)}`;
+  }
+  const spaced = /":\s/.test(inner);
+  const comma = /,\s/.test(inner) ? ", " : ",";
+  return `${text.slice(0, last + 1)}${entries.map((entry) => `${comma}${member(entry, spaced)}`).join("")}${text.slice(last + 1)}`;
+}
+
+/**
+ * `types.json` with `types` added for keys it doesn't have yet (Notion
+ * import B3, #cwi22mc6). The new entries are inserted into the text as it
+ * is: every existing byte stays (D37). No file: a fresh one in the standard
+ * format. Null: nothing to add. Throws on a file that isn't a JSON object.
+ */
+export function addMissingTypes(text: string | null, types: Readonly<Record<string, PropertyType>>): string | null {
+  if (text === null) {
+    const entries = Object.entries(types);
+    return entries.length ? `${JSON.stringify({ types: Object.fromEntries(entries) }, null, 2)}\n` : null;
+  }
+  const data = JSON.parse(text) as unknown;
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("types.json isn't a JSON object");
+  const current = (data as { types?: unknown }).types;
+  const known = current && typeof current === "object" && !Array.isArray(current) ? (current as Record<string, unknown>) : null;
+  // Obsidian matches property names case-insensitively: `Due` is the vault's `due`, never a second entry.
+  const taken = new Set(Object.keys(known ?? {}).map((key) => key.toLowerCase()));
+  const entries: Array<[string, string]> = [];
+  for (const [key, type] of Object.entries(types)) {
+    if (taken.has(key.toLowerCase())) continue;
+    taken.add(key.toLowerCase());
+    entries.push([key, JSON.stringify(type)]);
+  }
+  if (entries.length === 0) return null;
+  const unit = /\n(\t|[ ]+)"/.exec(text)?.[1] ?? "  ";
+  const valueAt = topLevelValue(text, "types");
+  if (valueAt !== -1 && text[valueAt] === "{") {
+    const close = closingBracket(text, valueAt);
+    const lineStart = text.lastIndexOf("\n", valueAt) + 1;
+    const outerIndent = /^[ \t]*/.exec(text.slice(lineStart))?.[0] ?? "";
+    return insertMembers(text, valueAt, close, entries, outerIndent, unit);
+  }
+  if (valueAt !== -1) throw new Error("types.json has a `types` that isn't an object");
+  // No `types` yet: add it as the root object's last member.
+  const root = text.indexOf("{");
+  const close = closingBracket(text, root);
+  const block = `{\n${entries.map(([key, value]) => `${unit}${unit}${JSON.stringify(key)}: ${value}`).join(",\n")}\n${unit}}`;
+  return insertMembers(text, root, close, [["types", block]], "", unit);
+}
+
 /**
  * The vault's stored property types. When the vault has `.obsidian/` (an
  * Obsidian vault), they live in Obsidian's own `.obsidian/types.json`, so
@@ -124,6 +224,35 @@ export class PropertyTypesStore {
     }
     this.cache = { file, mtimeMs: info.mtimeMs, types };
     return types;
+  }
+
+  /**
+   * Add types for keys that have none yet, keeping every existing byte
+   * (Notion import B3). Returns the keys added.
+   */
+  async addMissing(types: Readonly<Record<string, PropertyType>>): Promise<string[]> {
+    const file = await this.file();
+    let text: string | null = null;
+    try {
+      text = await readFile(file, "utf8");
+    } catch {
+      text = null;
+    }
+    const before = text === null ? {} : (((JSON.parse(text) as { types?: Record<string, unknown> }).types ?? {}) as Record<string, unknown>);
+    const next = addMissingTypes(text, types);
+    if (next === null) return [];
+    if (file.startsWith(join(this.root, ".gumply"))) await mkdir(join(this.root, ".gumply"), { recursive: true });
+    const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      await writeFile(temporary, next, "utf8");
+      await rename(temporary, file);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    this.cache = null;
+    const had = new Set(Object.keys(before).map((key) => key.toLowerCase()));
+    return Object.keys(types).filter((key) => !had.has(key.toLowerCase()));
   }
 
   /** Set one key's type (only that entry changes). */

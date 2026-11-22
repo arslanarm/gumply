@@ -1032,6 +1032,21 @@ export class VaultStore {
     return this.enqueue(async () => (await this.propertyIndex()).infos());
   }
 
+  /** The types stored in types.json (Notion import B3: they win over its guesses). */
+  storedPropertyTypes(): Promise<Record<string, PropertyType>> {
+    return this.enqueue(async () => ({ ...(await this.propertyTypes.read()) }));
+  }
+
+  /** Record types for keys that have none yet; existing bytes of types.json stay (B3, D37). */
+  addPropertyTypes(types: Readonly<Record<string, PropertyType>>): Promise<string[]> {
+    return this.enqueue(async () => {
+      const valid = Object.fromEntries(
+        Object.entries(types).filter(([key, type]) => isValidPropertyKey(key) && !HEADER_KEYS.includes(key) && isPropertyType(type)),
+      );
+      return this.propertyTypes.addMissing(valid);
+    });
+  }
+
   /** Change a key's type vault-wide (types.json only; files keep their values, as in Obsidian). */
   setPropertyType(key: string, type: PropertyType): Promise<PropertyInfo[]> {
     return this.enqueue(async () => {

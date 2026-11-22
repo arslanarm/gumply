@@ -2,11 +2,18 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { notionReportMarkdown, notionUrlId, planNotionImport, stripNotionId, type NotionEntry } from "../src/index";
+import {
+  NOTION_REPORT_LANGUAGES,
+  notionReportMarkdown,
+  notionUrlId,
+  planNotionImport,
+  stripNotionId,
+  type NotionEntry,
+  type NotionImportOptions,
+} from "../src/index";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const FIXTURE = join(here, "fixtures/notion/basic");
-const EXPECTED = join(here, "fixtures/notion/basic.expected");
+const FIXTURES = join(here, "fixtures/notion");
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -15,30 +22,70 @@ function walk(dir: string): string[] {
   });
 }
 
-/** The fixture as the zip's entries (`/` paths, bytes). */
-function fixtureEntries(): NotionEntry[] {
-  return walk(FIXTURE).map((path) => ({ path: relative(FIXTURE, path).split("\\").join("/"), data: readFileSync(path) }));
+/** A fixture as the zip's entries (`/` paths, bytes). */
+function fixtureEntries(fixture: string): NotionEntry[] {
+  return walk(fixture).map((path) => ({ path: relative(fixture, path).split("\\").join("/"), data: readFileSync(path) }));
 }
 
 const enc = new TextEncoder();
 const bytes = (content: string | Uint8Array) => (typeof content === "string" ? enc.encode(content) : content);
 
+/** Plan `fixtures/notion/<name>` and compare every written file with `<name>.expected/`, byte for byte. */
+function expectGolden(name: string, options: Partial<NotionImportOptions> = {}) {
+  const plan = planNotionImport(fixtureEntries(join(FIXTURES, name)), {
+    folder: "Notion import",
+    attachmentsFolder: "attachments/Notion import",
+    ...options,
+  });
+  const written = new Map(plan.files.map((file) => [file.path, bytes(file.content)]));
+  written.set("Notion import/Import report.md", enc.encode(notionReportMarkdown(plan.report, "Notion import")));
+  const expectedDir = join(FIXTURES, `${name}.expected`);
+  if (process.env.UPDATE_NOTION_GOLDEN === "1") {
+    for (const [path, data] of written) {
+      mkdirSync(dirname(join(expectedDir, path)), { recursive: true });
+      writeFileSync(join(expectedDir, path), data);
+    }
+  }
+  expect(existsSync(expectedDir)).toBe(true);
+  const expected = new Map(walk(expectedDir).map((path) => [relative(expectedDir, path).split("\\").join("/"), readFileSync(path)]));
+  expect([...written.keys()].sort()).toEqual([...expected.keys()].sort());
+  for (const [path, data] of written) expect(Buffer.from(data).equals(expected.get(path)!), path).toBe(true);
+
+  // #n86gnptg: the same report in every other language the app ships, byte for byte.
+  for (const language of NOTION_REPORT_LANGUAGES.filter((code) => code !== "en")) {
+    const report = notionReportMarkdown(plan.report, "Notion import", language);
+    const file = join(FIXTURES, "reports", `${name}.${language}.md`);
+    if (process.env.UPDATE_NOTION_GOLDEN === "1") {
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, report);
+    }
+    expect(report, file).toBe(readFileSync(file, "utf8"));
+  }
+  return plan;
+}
+
 describe("Notion import planner (#znyztw3t, spec/notion-import)", () => {
   it("plans the lorem fixture byte for byte (the golden in basic.expected/)", () => {
-    const plan = planNotionImport(fixtureEntries(), { folder: "Notion import", attachmentsFolder: "attachments/Notion import" });
-    const written = new Map(plan.files.map((file) => [file.path, bytes(file.content)]));
-    written.set("Notion import/Import report.md", enc.encode(notionReportMarkdown(plan.report, "Notion import")));
+    const plan = expectGolden("basic");
+    expect(plan.types).toEqual({ Number: "number", Date: "date" });
+  });
 
-    if (process.env.UPDATE_NOTION_GOLDEN === "1") {
-      for (const [path, data] of written) {
-        mkdirSync(dirname(join(EXPECTED, path)), { recursive: true });
-        writeFileSync(join(EXPECTED, path), data);
-      }
-    }
-    expect(existsSync(EXPECTED)).toBe(true);
-    const expected = new Map(walk(EXPECTED).map((path) => [relative(EXPECTED, path).split("\\").join("/"), readFileSync(path)]));
-    expect([...written.keys()].sort()).toEqual([...expected.keys()].sort());
-    for (const [path, data] of written) expect(Buffer.from(data).equals(expected.get(path)!), path).toBe(true);
+  it("databases (B3, #cwi22mc6): every column type, relations, renamed keys, views (the golden in databases.expected/)", () => {
+    const plan = expectGolden("databases", { vaultTypes: { Price: "number" } });
+    expect(plan.types).toEqual({
+      Due: "date",
+      "Priority 1 5": "number",
+      Done: "checkbox",
+      Owner: "multitext",
+      Estimate: "datetime",
+      "created-notion": "datetime",
+    });
+    expect(plan.report.keptTypes).toEqual([{ key: "Price", type: "number", found: "text" }]);
+    expect(plan.report.converted.relations).toBe(2);
+    expect(plan.report.databaseDetails.map((database) => [database.name, database.kanban, database.kanbanSkipped])).toEqual([
+      ["People", null, { key: "Group", groups: 13 }],
+      ["Tasks", "Status", null],
+    ]);
   });
 });
 
@@ -89,7 +136,7 @@ describe("Notion import planner: constructs the lorem fixture doesn't show (synt
     expect(notionUrlId(`https://app.notion.com/p/${A}?pvs=21`)).toBe(A);
   });
 
-  it("databases: an embed alone on its line, a link inside text; row pages lose their property lines (B3 hooks)", () => {
+  it("databases: an embed alone on its line, a link inside text; row pages get their properties as frontmatter (B3)", () => {
     const result = plan([
       page(`Root/Home ${A}.md`, `# Home\n\n[Tasks](Home/Tasks%20${B}.csv)\n\nSee [the list](Home/Tasks%20${B}.csv) too.`),
       page(`Root/Home/Tasks ${B}.csv`, "﻿Name,Status\r\nWrite,Doing"),
@@ -97,7 +144,12 @@ describe("Notion import planner: constructs the lorem fixture doesn't show (synt
       page(`Root/Home/Tasks/Write ${C}.md`, "# Write\n\nStatus: Doing\nDue: November 3, 2026\n\nThe body stays."),
     ]);
     expect(content(result, "Notion import/Root/Home.md")).toBe("![[Tasks.base]]\n\nSee [[Tasks.base|the list]] too.\n");
-    expect(content(result, "Notion import/Root/Home/Tasks/Write.md")).toBe("The body stays.\n");
+    expect(content(result, "Notion import/Root/Home/Tasks/Write.md")).toBe("---\nStatus: Doing\nDue: 2026-11-03\n---\n\nThe body stays.\n");
+    // A table in the view's order (Due isn't in the view, and isn't select-like: no board).
+    expect(content(result, "Notion import/Root/Home/Tasks.base")).toBe(
+      'filters:\n  and:\n    - file.folder == "Notion import/Root/Home/Tasks"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - Status\n',
+    );
+    expect(result.types).toEqual({ Due: "date" });
     expect(result.databases).toEqual([
       {
         name: "Tasks",
@@ -109,6 +161,28 @@ describe("Notion import planner: constructs the lorem fixture doesn't show (synt
       },
     ]);
     expect(result.report).toMatchObject({ pages: 1, rows: 1, databases: 1 });
+  });
+
+  it("types: the vault's own win case-insensitively, as Obsidian matches names (`Due` is the vault's `due`; @opus-hunter, B5)", () => {
+    const entries = [
+      page(`Root/Home ${A}.md`, `# Home\n\n[Tasks](Home/Tasks%20${B}.csv)`),
+      page(`Root/Home/Tasks ${B}_all.csv`, "\uFEFFName,Due,Size\r\nWrite,\"November 3, 2026\",3"),
+      page(`Root/Home/Tasks/Write ${C}.md`, "# Write\n\nDue: November 3, 2026\nSize: 3"),
+    ];
+    const typed = (vaultTypes: Record<string, "text" | "date" | "number">) =>
+      planNotionImport(entries, { folder: "Notion import", attachmentsFolder: "attachments/Notion import", vaultTypes });
+    // Same type, other case: nothing to add, nothing to report.
+    const same = typed({ due: "date" });
+    expect(same.types).toEqual({ Size: "number" });
+    expect(same.report.keptTypes).toEqual([]);
+    // A different type under another case: the vault's wins and is reported; no second entry.
+    const other = typed({ DUE: "text" });
+    expect(other.types).toEqual({ Size: "number" });
+    expect(other.report.keptTypes).toEqual([{ key: "Due", type: "text", found: "date" }]);
+    expect(other.report.databaseDetails[0]!.properties).toEqual([
+      { key: "Due", type: "text" },
+      { key: "Size", type: "number" },
+    ]);
   });
 
   it("callouts and code: the emoji picks the type and is dropped; Notion's language names map to the editor's", () => {

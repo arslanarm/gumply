@@ -76,6 +76,10 @@ test.describe('Import from Notion (B4)', () => {
     await expect(page.getByTestId('notion-import-folder')).toHaveText('Imported into “Notion import”');
     await expect(page.getByTestId('notion-import-counts')).toContainText(/\d+ pages?/);
     await expect(page.getByTestId('notion-import-lost')).toContainText('Database views');
+    // B3 (#cwi22mc6): each database, the views made and its property types.
+    const databases = page.getByTestId('notion-import-databases');
+    await expect(databases).toContainText('Boardview: a table view in Notion\'s column order, and a board grouped by Status');
+    await expect(databases).toContainText('DB: a table view in Notion\'s column order. Properties: Number (Number)');
     await expect(page.getByTestId('notion-import-report')).not.toContainText('Your earlier import is unchanged.');
     // The report also went into the folder.
     await expect.poll(() => fs.access(path.join(E2E_VAULT, 'Notion import', 'Import report.md')).then(() => true, () => false)).toBe(true);
@@ -108,6 +112,23 @@ test.describe('Import from Notion (B4)', () => {
     await importZip(page);
     await expect(page.getByTestId('notion-import-folder')).toHaveText('Imported into “Notion import”');
     await expect.poll(() => fs.access(path.join(E2E_VAULT, 'Work', 'Notion import', 'Import report.md')).then(() => true, () => false)).toBe(true);
+  });
+
+  test('in Russian, Import report.md is written in Russian (#n86gnptg)', async ({ page, vault }) => {
+    test.setTimeout(90_000);
+    await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+    await vault.seed([{ title: 'Home', content: 'Hi' }]);
+    await fs.mkdir(path.join(E2E_VAULT, 'Work'), { recursive: true });
+    await page.goto('/#/Home');
+    await expect(page.getByTestId('page-item-Work')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('page-menu-button-Work').click();
+    await page.getByTestId('import-notion-Work').click();
+    await importZip(page);
+    await expect(page.getByTestId('notion-import-databases')).toContainText('таблица');
+    const golden = await fs.readFile(new URL('../packages/core/test/fixtures/notion/reports/basic.ru.md', import.meta.url), 'utf8');
+    await expect
+      .poll(() => fs.readFile(path.join(E2E_VAULT, 'Work', 'Notion import', 'Import report.md'), 'utf8').catch(() => ''))
+      .toBe(golden.replace('Импортировано в `Notion import`.', 'Импортировано в `Work/Notion import`.'));
   });
 
   test('plain-words errors: not a zip, not an export, an import already running; Try again goes back', async ({ page, vault }) => {
