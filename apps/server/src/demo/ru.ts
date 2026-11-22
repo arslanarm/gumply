@@ -32,8 +32,6 @@ export const ru: DemoCopy = {
   folderBody: "Небольшие примеры — их можно не замечать или удалить в любой момент.\n",
   gettingStartedBody: ({ welcome, gettingStarted }) =>
     [
-      `# ${gettingStarted}`,
-      "",
       "Создайте страницу кнопкой **Новая страница** на боковой панели. Наведите на строку, чтобы добавить **Новую подстраницу**.",
       "",
       "- `/` открывает меню блоков.",
@@ -45,8 +43,6 @@ export const ru: DemoCopy = {
     ].join("\n"),
   graphViewBody: ({ welcome, gettingStarted, graphView }) =>
     [
-      `# ${graphView}`,
-      "",
       "Граф показывает каждую страницу точкой, а каждую ссылку — линией.",
       "",
       `Назад к [[${welcome}]] или прочитайте [[${gettingStarted}]].`,

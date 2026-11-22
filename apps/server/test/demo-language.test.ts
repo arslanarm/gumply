@@ -32,6 +32,28 @@ describe("demo copy per language", () => {
       // Valid JSON Canvas.
       expect(parseCanvas(JSON.stringify(buildDemoBoard(language))).nodes).toHaveLength(5);
     });
+
+    it(`${language}: no demo page repeats its title as a heading under the page title (#sgn8ybdc)`, () => {
+      for (const page of buildDemoPages(language)) {
+        const firstLine = page.content.split("\n")[0] ?? "";
+        expect(firstLine, page.title).not.toMatch(/^#{1,6}\s/);
+        expect(page.content, page.title).not.toContain(`# ${page.title}\n`);
+      }
+    });
+
+    it(`${language}: the arrow label has room between its cards (#sgn8ybdc)`, () => {
+      const board = buildDemoBoard(language);
+      const edge = board.edges.find((candidate) => candidate.label);
+      const from = board.nodes.find((node) => node.id === edge?.fromNode);
+      const to = board.nodes.find((node) => node.id === edge?.toNode);
+      // "читать дальше" didn't fit in the old 80 px gap; 160 px leaves room in both languages.
+      expect(to!.x - (from!.x + from!.width)).toBeGreaterThanOrEqual(160);
+      // The frame still contains every card, with its 40 px margin.
+      const frame = board.nodes.find((node) => node.type === "group")!;
+      for (const node of board.nodes.filter((candidate) => candidate.type === "file")) {
+        expect(node.x + node.width + 40).toBeLessThanOrEqual(frame.x + frame.width);
+      }
+    });
   }
 
   it("unknown languages fall back to English", () => {
