@@ -173,7 +173,11 @@ test.describe('database view layouts (D34)', () => {
     expect(await title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
     await expect(title).toHaveCSS('text-overflow', 'ellipsis');
     await expect(card.locator('.base-title-link')).toHaveCSS('text-align', 'left');
-    await expect(card.locator('.base-title-link')).toHaveAttribute('title', long);
+    // The full title is the app's tooltip, only while it's cut off (#2su9ikg4 follow-up).
+    await card.locator('.base-title-link').hover();
+    await expect(card.locator('.base-title-link')).toHaveAttribute('data-tooltip', long);
+    await beta.locator('.base-title-link').hover();
+    await expect(beta.locator('.base-title-link')).not.toHaveAttribute('data-tooltip');
     expect(Math.abs((await card.boundingBox())!.height - (await beta.boundingBox())!.height)).toBeLessThanOrEqual(1);
     expect((await title.boundingBox())!.y).toBeCloseTo((await betaTitle.boundingBox())!.y, 0);
   });
