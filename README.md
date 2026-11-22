@@ -84,7 +84,11 @@ so your notes are still plain Markdown files in a folder you choose.
   inside, the app archive (no `node_modules`, source maps or secrets) and the macOS signature. The
   results are in the job summary, and the release job checks the uploaded files against the
   SHA-256 sums the build computed. Locally: `node apps/desktop/scripts/inspect-installers.mjs
-  --release apps/desktop/release --version <version>` (Node 24 or later).
+  --release apps/desktop/release --version <version>` (Node 24 or later). Each build then installs
+  its own app as a user would (Windows installer, macOS `.dmg`, Linux AppImage) and checks that it
+  starts, ships its licences file, exports a PDF and serves a vault to an AI app from the Claude
+  Desktop snippet (`apps/desktop/e2e/packaged.spec.ts`; locally: `GUMPLY_PACKAGED_APP=<installed
+  app> npm run desktop:test -- packaged.spec.ts`).
 - **Real `.deb` install:** the Linux CI job also installs the `.deb` (`apps/desktop/scripts/deb-smoke.sh`,
   CI only since it needs sudo) with user namespaces restricted as on stock Ubuntu 23.10+, and checks
   that its AppArmor profile is loaded, that the app and the AI apps (`--mcp`) command run with

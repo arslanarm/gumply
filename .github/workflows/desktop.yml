@@ -136,6 +136,81 @@ jobs:
           DEB_SMOKE_LOGS: ${{ github.workspace }}/test-results/deb-smoke
         run: bash scripts/deb-smoke.sh release
 
+      # #429bvzwr: the installed app as a user gets it, on every OS
+      # (apps/desktop/e2e/packaged.spec.ts): it starts on a vault and reports
+      # the version, the licences file is in its resources, PDF export prints
+      # through the OS print backend, and the Claude Desktop snippet, written
+      # into claude_desktop_config.json and started as Claude Desktop starts it,
+      # serves the vault while the app is open. Real Claude Desktop (sign-in)
+      # stays an optional owner spot-check.
+      - name: Install the packaged app (Windows, NSIS per user)
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release -Filter 'Gumply-Setup-*-x64.exe' | Select-Object -First 1
+          $process = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "The installer exited with $($process.ExitCode)" }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Gumply\Gumply.exe'
+          if (-not (Test-Path $exe)) { Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Depth 1 | Out-Host; throw "Not installed at $exe" }
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | Get-ItemProperty | Where-Object DisplayName -like 'Gumply*' | Select-Object -First 1
+          "GUMPLY_PACKAGED_APP=$exe" >> $env:GITHUB_ENV
+          "| OS | Check | Result |`n|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
+          "| win32 | installed ($($setup.Name) /S, per user) | $exe; uninstall entry: $($entry.DisplayName) $($entry.DisplayVersion) |" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Install the packaged app (macOS, the arm64 .dmg into ~/Applications)
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=$(ls release/Gumply-*-arm64.dmg | head -1)
+          mount=$(mktemp -d)
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount"
+          mkdir -p "$HOME/Applications"
+          ditto "$mount/Gumply.app" "$HOME/Applications/Gumply.app"
+          hdiutil detach "$mount"
+          app="$HOME/Applications/Gumply.app/Contents/MacOS/Gumply"
+          test -x "$app"
+          quarantine=$(xattr -p com.apple.quarantine "$HOME/Applications/Gumply.app" 2>/dev/null || echo none)
+          echo "GUMPLY_PACKAGED_APP=$app" >> "$GITHUB_ENV"
+          { echo "| OS | Check | Result |"; echo "|---|---|---|"
+            echo "| darwin | installed ($(basename "$dmg") → ~/Applications) | $app; quarantine: $quarantine (Gatekeeper not exercised) |"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install the packaged app (Linux, the AppImage)
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The AppImage's static runtime mounts itself with fusermount (no libfuse2).
+          command -v fusermount3 >/dev/null || command -v fusermount >/dev/null || sudo apt-get install -y fuse3
+          app=$(ls "$PWD"/release/Gumply-*-x86_64.AppImage | head -1)
+          chmod +x "$app"
+          echo "GUMPLY_PACKAGED_APP=$app" >> "$GITHUB_ENV"
+          { echo "| OS | Check | Result |"; echo "|---|---|---|"
+            echo "| linux | AppImage | $app; userns restricted: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a) (AppRun adds --no-sandbox when 1) |"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke-test the installed app (packaged.spec)
+        shell: bash
+        env:
+          GUMPLY_PACKAGED_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Linux: the virtual display and private D-Bus of the smoke tests above.
+          if [[ "$RUNNER_OS" == Linux ]]; then node apps/desktop/scripts/test.mjs packaged.spec.ts
+          else npx playwright test --config apps/desktop/e2e/playwright.config.ts packaged.spec.ts; fi
+
+      - name: Uninstall the packaged app (Windows)
+        if: always() && runner.os == 'Windows' && env.GUMPLY_PACKAGED_APP != ''
+        shell: pwsh
+        run: |
+          $dir = Split-Path $env:GUMPLY_PACKAGED_APP
+          & (Join-Path $dir 'Uninstall Gumply.exe') /S
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path $env:GUMPLY_PACKAGED_APP) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Seconds 1 }
+          if (Test-Path $env:GUMPLY_PACKAGED_APP) { throw "Still installed 60 s after the uninstaller ran" }
+          "| win32 | uninstall (/S) | $dir removed |" >> $env:GITHUB_STEP_SUMMARY
+
       - uses: actions/upload-artifact@v7
         with:
           name: gumply-${{ runner.os }}
@@ -144,10 +219,10 @@ jobs:
           retention-days: 14
 
       - name: Upload test results on failure
-        if: failure() && runner.os == 'Linux'
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: desktop-test-results
+          name: desktop-test-results-${{ runner.os }}
           path: |
             test-results/desktop
             test-results/deb-smoke
