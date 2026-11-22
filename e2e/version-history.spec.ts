@@ -57,7 +57,8 @@ test('History…: preview, changes, restore without renaming, then undo it', asy
   await expect(dialog.getByTestId('history-status')).toContainText('Undo is at the top of the list');
   // Byte-exact into the same file, which keeps its name.
   await expect.poll(async () => (await readFile(path.join(E2E_VAULT, 'Ledger.md'))).equals(original)).toBe(true);
-  await expect(page.getByTestId('editor-content')).toHaveText('First line.');
+  // The page's own editor (the panel's preview is a read-only editor too).
+  await expect(page.getByTestId('editor').getByTestId('editor-content')).toHaveText('First line.');
 
   // Undo: the "Before restore" entry puts the edited bytes back.
   const before = versions.filter({ hasText: 'Before restore' });
@@ -102,3 +103,63 @@ test('Settings → Version history: the Syncthing line, and .stignore is never w
   await expect(dialog.getByTestId('history-copy-line')).toHaveText('Copy line');
   await expect(stat(path.join(E2E_VAULT, '.stignore'))).rejects.toThrow();
 });
+
+/** `YYYYMMDDTHHMMSSmmmZ`, as the history store names version files. */
+const stampOf = (date: Date) => date.toISOString().replace(/[-:.]/g, '');
+
+test('a page that comes back outside Gumply: the older versions sit under "From an earlier page with this name"', async ({ page, vault, request }) => {
+  const [note] = await vault.seed([{ title: 'Draft', content: 'Old draft.' }]);
+  await request.put(`${API_URL}/api/pages/${encodeURIComponent(note!.id)}`, { data: { content: 'Old draft, edited.' } });
+  const file = path.join(E2E_VAULT, 'Draft.md');
+  const { rm } = await import('node:fs/promises');
+  await rm(file);
+  await expect.poll(async () => (await (await request.get(`${API_URL}/api/pages`)).json()).some((meta: { id: string }) => meta.id === 'Draft'), { timeout: 10_000 }).toBe(false);
+  await writeFile(file, 'A different page with the same name.\n');
+  await expect.poll(async () => (await (await request.get(`${API_URL}/api/pages`)).json()).some((meta: { id: string }) => meta.id === 'Draft'), { timeout: 10_000 }).toBe(true);
+
+  await page.goto('/#/Draft');
+  await expectPageTitle(page, 'Draft');
+  await openHistoryFromMenu(page, 'Draft');
+  const divider = page.getByTestId('history-dialog').getByTestId('history-earlier-page');
+  await expect(divider).toHaveText('From an earlier page with this name');
+  // The divider sits above the earlier page's version.
+  await expect(page.getByTestId('history-dialog').locator('[data-testid="history-earlier-page"] + [data-testid="history-item"]')).toHaveCount(1);
+});
+
+test('Settings → AI apps: Undo on an AI app\'s write restores the bytes it saved before writing', async ({ page, vault }) => {
+  const [note] = await vault.seed([{ title: 'Brief', content: 'Rewritten by the AI app.' }]);
+  // What an MCP write leaves: the version it replaced (source mcp, version = the row's `before`) and its audit row.
+  const at = new Date(Date.now() - 60_000);
+  const before = '2026-11-01T10:00:00.000Z';
+  const bytes = 'Written by me, before the AI app.\n';
+  const dir = path.join(E2E_VAULT, '.gumply', 'history', 'Brief');
+  const { mkdir } = await import('node:fs/promises');
+  const { createHash } = await import('node:crypto');
+  await mkdir(dir, { recursive: true });
+  const fileName = `${stampOf(at)}.md`;
+  await writeFile(path.join(dir, fileName), bytes);
+  const entry = { file: fileName, at: at.toISOString(), id: 'Brief', version: before, source: 'mcp', tool: 'update_page', client: 'Claude Code', bytes: Buffer.byteLength(bytes), sha256: createHash('sha256').update(bytes).digest('hex') };
+  await writeFile(path.join(dir, 'index.jsonl'), `${JSON.stringify(entry)}\n`);
+  const row = { at: new Date(at.getTime() + 10).toISOString(), tool: 'update_page', id: note!.id, before, after: note!.updated, client: 'Claude Code' };
+  const log = path.join(E2E_VAULT, '.gumply', 'mcp-log.jsonl');
+  await writeFile(log, `${JSON.stringify(row)}\n`);
+  // The vault reset doesn't clear the audit log: other specs expect it empty.
+  const { rm } = await import('node:fs/promises');
+  try {
+    await undoFromSettings(page, note!.id, bytes);
+  } finally {
+    await rm(log, { force: true });
+  }
+});
+
+async function undoFromSettings(page: Page, id: string, bytes: string) {
+  await page.goto(`/#/${encodeURIComponent(id)}`);
+  await expectPageTitle(page, 'Brief');
+  await page.getByTestId('settings-button').click();
+  await page.getByTestId('settings-mcp').click();
+  await page.getByTestId('mcp-recent-undo').click();
+  await expect(page.getByTestId('mcp-undo-status')).toContainText('is back to the version before this change');
+  await expect.poll(() => readFile(path.join(E2E_VAULT, 'Brief.md'), 'utf8')).toBe(bytes);
+  await page.getByTestId('mcp-close').click();
+  await expect(page.getByTestId('editor-content')).toHaveText('Written by me, before the AI app.');
+}

@@ -7090,8 +7090,14 @@ input {
 .history-status,
 .history-error,
 .history-muted {
-  margin: 0.6rem 1rem 0;
+  margin: 0.75rem 1.75rem 0;
   font-size: 0.85rem;
+}
+
+.history-empty {
+  margin: auto;
+  max-width: 340px;
+  text-align: center;
 }
 
 .history-note {
@@ -7112,7 +7118,7 @@ input {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.5rem 1rem 1.5rem;
+  padding: 1rem 1.75rem 2rem;
 }
 
 .history-whole {

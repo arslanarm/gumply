@@ -361,9 +361,12 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
                 {t("history.failed", { error: loadError })}
               </p>
             ) : list !== null && items.length === 0 ? (
-              <p className="history-muted" data-testid="history-empty">
-                {t("history.empty")}
-              </p>
+              <div className="empty-state history-empty" data-testid="history-empty">
+                <span className="empty-state-icon" aria-hidden="true">
+                  <Icon name="clock" size={26} />
+                </span>
+                <p>{t("history.empty")}</p>
+              </div>
             ) : (
               <>
                 {item ? (
