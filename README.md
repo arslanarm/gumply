@@ -62,8 +62,9 @@ so your notes are still plain Markdown files in a folder you choose.
     user namespaces are restricted (Ubuntu 23.10+), the AppImage's launcher starts Gumply without
     Chromium's sandbox rather than not at all (electron-builder's own fallback). If you want the
     sandbox on Ubuntu 23.10+, use the `.deb`.
-  - Don't set `APPIMAGE_EXTRACT_AND_RUN=1` for the AI apps (MCP) command: it prints the files it
-    extracts to standard output, which is the MCP connection.
+  - `APPIMAGE_EXTRACT_AND_RUN=1` is only needed for AppImages before 0.8 (those needed
+    `libfuse2`); with 0.8+ it isn't needed. Before 0.8 it printed the extracted files to standard
+    output, which broke the AI apps (MCP) connection.
 - **Windows and macOS:** built on GitHub Actions (`.github/workflows/desktop.yml`). A `v*` tag builds
   all three platforms (Windows installer `.exe`; macOS `.dmg`/`.zip` for Apple silicon and Intel)
   and attaches them, with `SHA256SUMS.txt`, to a **draft** GitHub Release that is published after
