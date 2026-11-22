@@ -9,7 +9,16 @@ import { api } from "../api/client.js";
 import { relativeTime, useT, type MessageKey } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
 import { claudeCodeSnippet, claudeDesktopConfigPath, claudeDesktopSnippet } from "../lib/mcp-snippets.js";
+import { ConfirmDialog } from "./ConfirmDialog.js";
 import { Icon } from "./Icon.js";
+
+const RANK: Record<McpAccess, number> = { read: 0, append: 1, edit: 2 };
+
+/** Raising the level asks first (@lead, A3 review); lowering is instant. */
+const RAISE: Record<Exclude<McpAccess, "read">, { heading: MessageKey; body: MessageKey }> = {
+  append: { heading: "settings.mcp.raiseAppend", body: "settings.mcp.accessAppendHint" },
+  edit: { heading: "settings.mcp.raiseEdit", body: "settings.mcp.accessEditHint" },
+};
 
 const LEVELS: Array<[McpAccess, MessageKey, MessageKey]> = [
   ["read", "settings.mcp.accessRead", "settings.mcp.accessReadHint"],
@@ -63,6 +72,8 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
   const [settings, setSettings] = useState<McpSettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** A higher level waiting for "Allow". */
+  const [raising, setRaising] = useState<Exclude<McpAccess, "read"> | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -71,6 +82,8 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
   }, [t]);
 
   useEffect(() => {
+    // While the confirmation is open, Escape is its Cancel, not this dialog's close.
+    if (raising) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -79,7 +92,13 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, raising]);
+
+  const pickLevel = (level: McpAccess) => {
+    if (!settings || level === settings.access) return;
+    if (level !== "read" && RANK[level] > RANK[settings.access]) setRaising(level);
+    else save({ access: level });
+  };
 
   const save = (patch: McpSettingsPatch) => {
     if (!settings) return;
@@ -143,7 +162,7 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
                     value={level}
                     data-testid={`mcp-access-${level}`}
                     checked={settings.access === level}
-                    onChange={() => save({ access: level })}
+                    onChange={() => pickLevel(level)}
                   />
                   <span>
                     <span className="mcp-level-name">{t(label)}</span>
@@ -205,6 +224,20 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
           </>
         )}
       </div>
+      {raising ? (
+        <ConfirmDialog
+          testId="mcp-raise"
+          heading={t(RAISE[raising].heading)}
+          body={t(RAISE[raising].body)}
+          confirmLabel={t("settings.mcp.allow")}
+          onCancel={() => setRaising(null)}
+          onConfirm={() => {
+            const level = raising;
+            setRaising(null);
+            save({ access: level });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

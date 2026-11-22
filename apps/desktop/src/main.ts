@@ -10,7 +10,8 @@
  * - Settings (last/recent vaults, window state) live in `userData`, never in
  *   a vault.
  */
-import { mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
@@ -52,6 +53,36 @@ const isDev = !app.isPackaged;
 app.setName("Gumply");
 // Tests (and anyone who wants a separate profile) can move the settings.
 if (process.env.GUMPLY_DESKTOP_USER_DATA) app.setPath("userData", resolve(process.env.GUMPLY_DESKTOP_USER_DATA));
+
+/**
+ * A3: `--mcp` launches never touch the app's settings folder (recent vaults,
+ * window state). Chromium still keeps some state of its own (Local State,
+ * GPU cache, crash reports): it goes to a throwaway folder, removed on exit.
+ */
+const mcpMode = mcpModeArgs(process.argv);
+let mcpThrowaway: string | null = null;
+if (mcpMode) {
+  // A process stopped by a signal can't clean up: older leftovers go now.
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  try {
+    for (const name of readdirSync(tmpdir())) {
+      if (!name.startsWith("gumply-mcp-")) continue;
+      const path = join(tmpdir(), name);
+      if (statSync(path).mtimeMs < dayAgo) rmSync(path, { recursive: true, force: true });
+    }
+  } catch {
+    // Not ours to fail on.
+  }
+  const throwaway = mkdtempSync(join(tmpdir(), "gumply-mcp-"));
+  mcpThrowaway = throwaway;
+  app.setPath("userData", throwaway);
+  app.setPath("sessionData", throwaway);
+  app.setPath("crashDumps", join(throwaway, "Crashpad"));
+  app.disableHardwareAcceleration();
+  const removeThrowaway = () => rmSync(throwaway, { recursive: true, force: true });
+  process.on("exit", removeThrowaway);
+  app.on("will-quit", removeThrowaway);
+}
 
 let settings: DesktopSettings;
 let server: RunningServer | null = null;
@@ -559,6 +590,7 @@ function buildMenu(): void {
  */
 function runMcpMode(args: McpModeArgs): void {
   const exit = (code: number): never => {
+    if (mcpThrowaway) rmSync(mcpThrowaway, { recursive: true, force: true });
     app.exit(code);
     process.exit(code);
   };
@@ -570,7 +602,6 @@ function runMcpMode(args: McpModeArgs): void {
   runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit });
 }
 
-const mcpMode = mcpModeArgs(process.argv);
 if (mcpMode) {
   runMcpMode(mcpMode);
 } else if (!app.requestSingleInstanceLock()) {

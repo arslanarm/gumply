@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -120,6 +120,27 @@ test('takes no single-instance lock: the app window opens while it runs', async 
   } finally {
     await client.close();
   }
+});
+
+test('writes nothing to the app\'s settings: no recent vaults, no window state', async () => {
+  test.setTimeout(120_000);
+  const userData = join(scratch, 'user-data');
+  mkdirSync(userData, { recursive: true });
+  const before = JSON.stringify({ lastVault: join(scratch, 'other'), recentVaults: [join(scratch, 'other')], window: { width: 900, height: 700 } });
+  writeFileSync(join(userData, 'gumply-desktop.json'), before);
+  const listing = () => readdirSync(userData, { recursive: true }).map(String).sort();
+  const filesBefore = listing();
+
+  const client = await connect('legacy');
+  try {
+    expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+  } finally {
+    await client.close();
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  expect(readFileSync(join(userData, 'gumply-desktop.json'), 'utf8')).toBe(before);
+  console.log(`[mcp userData] ${listing().join(', ')}`);
+  expect(listing()).toEqual(filesBefore);
 });
 
 test('exits 0 when stdin closes; 1 for a missing vault or MCP turned off; 2 without --vault', async () => {

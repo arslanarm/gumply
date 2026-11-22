@@ -13,7 +13,8 @@ import { expectPageTitle } from './support/ui';
 
 const settingsFile = path.join(E2E_VAULT, '.gumply', 'mcp.json');
 const logFile = path.join(E2E_VAULT, '.gumply', 'mcp-log.jsonl');
-const readSettings = async () => JSON.parse(await fs.readFile(settingsFile, 'utf8')) as Record<string, unknown>;
+/** The file's settings (null until it exists). */
+const readSettings = async () => JSON.parse(await fs.readFile(settingsFile, 'utf8').catch(() => 'null')) as Record<string, unknown> | null;
 
 async function openMcp(page: Page) {
   await page.getByTestId('settings-button').click();
@@ -39,9 +40,34 @@ test.describe('Settings → AI apps (MCP)', () => {
     await expect(page.getByTestId('mcp-access-read')).toBeChecked();
     await expect(fs.access(settingsFile)).rejects.toThrow();
 
-    await page.getByTestId('mcp-access-append').check();
+    // Raising asks first; Cancel (or Escape) leaves everything as it was.
+    await page.getByTestId('mcp-access-edit').click();
+    await expect(page.getByTestId('mcp-raise')).toContainText('Let AI apps edit and trash pages in this vault?');
+    await page.getByTestId('mcp-raise-cancel').click();
+    await expect(page.getByTestId('mcp-raise')).toHaveCount(0);
+    await expect(page.getByTestId('mcp-access-read')).toBeChecked();
+    await expect(page.getByTestId('mcp-settings')).toBeVisible();
+    await expect(fs.access(settingsFile)).rejects.toThrow();
+
+    await page.getByTestId('mcp-access-append').click();
+    await expect(page.getByTestId('mcp-raise')).toContainText('Let AI apps add pages and text to this vault?');
+    await page.getByTestId('mcp-raise-confirm').click();
     await expect.poll(readSettings).toEqual({ enabled: true, access: 'append' });
-    await page.getByTestId('mcp-access-edit').check();
+    await page.getByTestId('mcp-access-edit').click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('mcp-raise')).toHaveCount(0);
+    await expect(page.getByTestId('mcp-settings')).toBeVisible();
+    await expect.poll(readSettings).toEqual({ enabled: true, access: 'append' });
+    await page.getByTestId('mcp-access-edit').click();
+    await page.getByTestId('mcp-raise-confirm').click();
+    await expect.poll(readSettings).toEqual({ enabled: true, access: 'edit' });
+
+    // Lowering is instant.
+    await page.getByTestId('mcp-access-append').click();
+    await expect(page.getByTestId('mcp-raise')).toHaveCount(0);
+    await expect.poll(readSettings).toEqual({ enabled: true, access: 'append' });
+    await page.getByTestId('mcp-access-edit').click();
+    await page.getByTestId('mcp-raise-confirm').click();
     await expect.poll(readSettings).toEqual({ enabled: true, access: 'edit' });
 
     await page.getByTestId('mcp-enabled').uncheck();

@@ -772,7 +772,10 @@
       "loading": "Loading…",
       "loadFailed": "Couldn't load the MCP settings: {{error}}",
       "saveFailed": "Couldn't save the MCP settings: {{error}}",
-      "offNote": "AI apps can't use this vault while this is off."
+      "offNote": "AI apps can't use this vault while this is off.",
+      "raiseAppend": "Let AI apps add pages and text to this vault?",
+      "raiseEdit": "Let AI apps edit and trash pages in this vault?",
+      "allow": "Allow"
     }
   },
   "desktop": {
