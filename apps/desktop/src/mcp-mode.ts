@@ -121,3 +121,20 @@ export function mcpLaunchCommand(context: LaunchContext): {
   }
   return { command: execPath, args: mcp };
 }
+
+/**
+ * #429bvzwr: how `--mcp` ends. The cleanup (the throwaway Chromium profile) is
+ * best effort: on Windows our own GPU and network-service child processes
+ * still hold files in it, so removing it can throw (ENOTEMPTY), and that must
+ * never stop the exit, or the process lingers after the AI app closed stdin.
+ * The next MCP start sweeps leftovers older than a day.
+ */
+export function exitAfterCleanup(cleanup: () => void, exit: (code: number) => void, code: number): void {
+  try {
+    cleanup();
+  } catch {
+    // Left for the next start's sweep.
+  }
+  exit(code);
+}
+

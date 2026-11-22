@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
+import { exitAfterCleanup, hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
 
 describe("desktop MCP mode arguments (A3)", () => {
   it("is off without --mcp", () => {
@@ -116,3 +116,25 @@ describe("restricted user namespaces and FUSE (#4ckqijua)", () => {
     expect(hasFusermount(has([]))).toBe(false);
   });
 });
+
+/** #429bvzwr: on Windows our own Chromium children still hold files in the throwaway profile when stdin closes. */
+describe("exitAfterCleanup", () => {
+  it("exits even when the cleanup throws (ENOTEMPTY on Windows)", () => {
+    const exits: number[] = [];
+    exitAfterCleanup(
+      () => {
+        throw Object.assign(new Error("ENOTEMPTY, Directory not empty"), { code: "ENOTEMPTY" });
+      },
+      (code) => exits.push(code),
+      0,
+    );
+    expect(exits).toEqual([0]);
+  });
+
+  it("runs the cleanup before exiting", () => {
+    const order: string[] = [];
+    exitAfterCleanup(() => order.push("cleanup"), (code) => order.push(`exit ${code}`), 2);
+    expect(order).toEqual(["cleanup", "exit 2"]);
+  });
+});
+

@@ -10,7 +10,7 @@
  * - Settings (last/recent vaults, window state) live in `userData`, never in
  *   a vault.
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -31,7 +31,7 @@ import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downlo
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
-import { hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
+import { exitAfterCleanup, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
 
 /**
@@ -676,9 +676,17 @@ function buildMenu(): void {
  */
 function runMcpMode(args: McpModeArgs): void {
   const exit = (code: number): never => {
-    if (mcpThrowaway) rmSync(mcpThrowaway, { recursive: true, force: true });
-    app.exit(code);
-    process.exit(code);
+    exitAfterCleanup(
+      () => {
+        if (mcpThrowaway) rmSync(mcpThrowaway, { recursive: true, force: true });
+      },
+      (status) => {
+        app.exit(status);
+        process.exit(status);
+      },
+      code,
+    );
+    return undefined as never;
   };
   if (process.platform === "darwin") app.dock?.hide();
   if (!args.vault) {
@@ -686,7 +694,14 @@ function runMcpMode(args: McpModeArgs): void {
     exit(2);
   }
   // #6bxm6ygf: the app's own version (stamped from the release tag), as /api/health and About show it.
-  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion() });
+  // #429bvzwr: on Windows a GUI-subsystem exe's `process.stdout` can be a black hole
+  // (Node's fallback when it can't classify fd 1), so the server reads and writes
+  // fds 0/1 directly there. Elsewhere `process.stdin`/`stdout` are real pipes.
+  const stdio =
+    process.platform === "win32"
+      ? { stdin: createReadStream("", { fd: 0, autoClose: false }), stdout: createWriteStream("", { fd: 1, autoClose: false }) }
+      : undefined;
+  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion(), ...(stdio ? { stdio } : {}) });
 }
 
 if (mcpMode) {

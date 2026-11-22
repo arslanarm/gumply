@@ -5,7 +5,8 @@
  * exits when stdin closes.
  */
 import { statSync } from "node:fs";
-import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import type { Readable, Writable } from "node:stream";
+import { serveStdio, StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { RateLimiter } from "./limits.js";
 import { createServer } from "./server.js";
 import { effectiveAccess, readSettings } from "./settings.js";
@@ -19,6 +20,12 @@ export interface RunMcpOptions {
   exit?: (code: number) => never;
   /** #6bxm6ygf: `serverInfo.version` (the desktop app's own); default `SERVER_VERSION`. */
   version?: string;
+  /**
+   * #429bvzwr: the streams to serve on, instead of `process.stdin`/`stdout`.
+   * The desktop app passes streams over fds 0/1 on Windows: in a GUI-subsystem
+   * exe, Node's own `process.stdout` can be a black hole there.
+   */
+  stdio?: { stdin: Readable; stdout: Writable };
 }
 
 /** Point every console method at stderr: stdout is the protocol. */
@@ -61,6 +68,7 @@ export function runMcp(options: RunMcpOptions): void {
 
   const handle = serveStdio(() => createServer({ vault, access, write: { readOnly: options.readOnly, limiter, logMaxBytes }, ...(options.version ? { version: options.version } : {}) }), {
     onerror: (error) => console.error("[gumply mcp]", error.message),
+    ...(options.stdio ? { transport: new StdioServerTransport(options.stdio.stdin, options.stdio.stdout) } : {}),
   });
 
   let closing = false;
@@ -73,8 +81,9 @@ export function runMcp(options: RunMcpOptions): void {
       void vault.ready.then(() => vault.store.rescan()).finally(() => exit(0));
     });
   };
-  process.stdin.on("end", shutdown);
-  process.stdin.on("close", shutdown);
+  const stdin = options.stdio?.stdin ?? process.stdin;
+  stdin.on("end", shutdown);
+  stdin.on("close", shutdown);
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
   console.error(`[gumply mcp] serving ${options.vault} (${access})`);
