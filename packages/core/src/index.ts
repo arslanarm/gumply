@@ -244,6 +244,8 @@ export {
 } from "./mcp-settings.js";
 
 export {
+  NOTION_IMPORT_LIMITS,
+  formatImportLimit,
   notionReportMarkdown,
   notionUrlId,
   planNotionImport,

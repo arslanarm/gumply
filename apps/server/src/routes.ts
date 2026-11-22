@@ -24,7 +24,7 @@ import type {
   VaultImage,
   LinkableFile,
 } from "@gumply/core";
-import { PAGE_LOOK_KEYS } from "@gumply/core";
+import { PAGE_LOOK_KEYS, formatImportLimit } from "@gumply/core";
 import { Hono, type Context } from "hono";
 import {
   listAttachments,
@@ -445,7 +445,7 @@ export function createApiRoutes(store: VaultStore): Hono {
   // v0.8 B2 (#znyztw3t, spec/api-import): import a Notion "Markdown & CSV" export.
   api.post("/import/notion", async (c) => {
     const length = Number(c.req.header("content-length") ?? Number.NaN);
-    if (length > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge("The export is too large (max 1 GB)");
+    if (length > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge(`The export is too large (max ${formatImportLimit(NOTION_IMPORT_LIMITS.uploadBytes)})`);
     let body: Record<string, unknown>;
     try {
       body = await c.req.parseBody();
@@ -454,7 +454,7 @@ export function createApiRoutes(store: VaultStore): Hono {
     }
     const file = body["file"];
     if (!isUploadedFile(file)) throw badRequest("file is required");
-    if (file.size > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge("The export is too large (max 1 GB)");
+    if (file.size > NOTION_IMPORT_LIMITS.uploadBytes) throw payloadTooLarge(`The export is too large (max ${formatImportLimit(NOTION_IMPORT_LIMITS.uploadBytes)})`);
     const parent = body["parentId"];
     const parentId = typeof parent === "string" && parent.length > 0 ? parent : null;
     const job = imports.start(new Uint8Array(await file.arrayBuffer()), parentId);

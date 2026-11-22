@@ -54,6 +54,14 @@ const SHAPES: Record<string, string> = {
   'inside a quote': '> ## Heading\n> Text under it\n> - item',
   'inside a callout': '> [!tip] Tips\n> ## Heading\n> Text under it',
   'html block → heading': '<div>html</div>\n\n## After html',
+  // #q7ajxdr4 (@opus-hunter's rc.1 gate): an ordered list right before a
+  // bullet list that also holds a task (split into bullet + task lists).
+  'ordered → mixed bullets and task (i2)': '1. a\n- c\n- [ ] d',
+  'two ordered → mixed bullets and task (i3)': '1. a\n2. b\n- c\n- [ ] d',
+  'ordered 1/10 → mixed list with a nested item (i4)': '1. a\n10. b\n- c\n- [ ] d\n\t- e',
+  'ordered 1/10 → bullets (i1)': '1. a\n10. b\n- c',
+  'ordered → bullet with a nested item (i5)': '1. a\n- c\n\t- nested',
+  'ordered → task first, then a bullet': '1. a\n- [ ] d\n- c',
   // @lead's review: setext headings stay setext, with text right under them.
   'setext = → text': 'Title\n===\nText under it.',
   'setext - → text': 'Sub\n---\nText under it.',
