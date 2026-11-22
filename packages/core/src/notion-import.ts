@@ -503,7 +503,7 @@ export function notionReportMarkdown(report: NotionImportReport, folder: string)
     "## Converted",
     "",
     `- ${count(converted.pageLinks, "link", "links")} and ${count(converted.mentions, "mention", "mentions")} to wiki links`,
-    `- ${count(converted.databaseEmbeds, "database", "databases")} embedded as live views, ${count(converted.databaseLinks, "database link", "database links")}`,
+    `- ${count(converted.databaseEmbeds, "database", "databases")} embedded and ${count(converted.databaseLinks, "database link", "database links")} kept as links (their views come in a later version)`,
     `- ${count(converted.attachmentLinks, "link", "links")} to attachments`,
     `- ${count(converted.callouts, "callout", "callouts")} (their icons are not in the export)`,
     "",

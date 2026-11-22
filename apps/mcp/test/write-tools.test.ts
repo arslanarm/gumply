@@ -128,6 +128,20 @@ describe.each(ERAS)("write tools (%s client)", (era) => {
     expect(codeOf(await mcp.call("update_page", { id: "Map.canvas", expectedUpdated: "x", content: "y" }))).toBe("UNSUPPORTED");
   });
 
+  it("update_page: tags on a `Tags:` note land on that one key, keeping its spelling (#ippqkgus)", async () => {
+    // The server reads the vault on connect: write the note, then reconnect.
+    await mcp.close();
+    writeFileSync(join(vault.dir, "Caps.md"), "---\nTags: [capT]\nstatus: draft # mine\n---\n\nBody.\n");
+    mcp = await connect(vault.dir, era, { name: "claude-test" });
+    const read = await version("Caps");
+    const result = await mcp.call("update_page", { id: "Caps", expectedUpdated: read, properties: { set: { tags: ["capT", "more"] } } });
+    expect(result.isError).toBeFalsy();
+    const text = file("Caps.md");
+    expect(text.match(/^tags:/gim)).toHaveLength(1);
+    expect(text).toContain("Tags: [capT, more]");
+    expect(text).toContain("status: draft # mine");
+  });
+
   it("update_page: a new title renames the file and rewrites links (D12/D20)", async () => {
     const read = await version("Projects/Plan");
     const result = await mcp.call("update_page", { id: "Projects/Plan", expectedUpdated: read, title: "Roadmap" });

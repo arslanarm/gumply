@@ -38,7 +38,7 @@ export function normaliseVaultPath(path: string): string | null {
 
 /** Percent-encode what a CommonMark link destination can't hold as-is. */
 export function encodeHref(path: string): string {
-  return path.replace(/[%\s()<>#?\\]|[\u0000-\u001f\u007f]/g, (char) =>
+  return path.replace(/[%\s()<>#?\\|]|[\u0000-\u001f\u007f]/g, (char) =>
     Array.from(new TextEncoder().encode(char))
       .map((byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`)
       .join(""),
@@ -47,7 +47,10 @@ export function encodeHref(path: string): string {
 
 function decodeHref(href: string): string {
   try {
-    return decodeURI(href.replace(/%(?![0-9a-f]{2})/gi, "%25"));
+    // decodeURIComponent, not decodeURI: the writer (encodeHref) encodes `#`
+    // and `?` too, and decodeURI leaves `%23` / `%3F` encoded, so a file
+    // named `a#b.png` never resolved (#btgun63k). `/` is never encoded.
+    return decodeURIComponent(href.replace(/%(?![0-9a-f]{2})/gi, "%25"));
   } catch {
     return href;
   }

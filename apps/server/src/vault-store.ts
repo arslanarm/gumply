@@ -25,6 +25,9 @@ import {
   linkSnippet,
   plainText,
   type MarkdownLink,
+  frontmatterKey,
+  frontmatterValue,
+  isTagsKey,
   normalizeTags,
   parentOf,
   parseFrontmatter,
@@ -1101,7 +1104,7 @@ export class VaultStore {
     for (const rename of patch.rename ?? []) {
       const from = editableKey(rename?.from, "rename");
       const to = editableKey(rename?.to, "rename");
-      if (from === "tags" || to === "tags") throw badRequest("rename: tags can't be renamed");
+      if (isTagsKey(from) || isTagsKey(to)) throw badRequest("rename: tags can't be renamed");
       if (!present.has(from)) throw badRequest(`rename: no property "${from}"`);
       if (from === to) continue;
       if (present.has(to)) throw badRequest(`rename: "${to}" already exists`);
@@ -1135,7 +1138,7 @@ export class VaultStore {
       // An empty value is written as `key:` (YAML null), like Obsidian does.
       values[key] = coerced === null || (Array.isArray(coerced) && coerced.length === 0 && !present.has(key))
         ? YAML_EMPTY
-        : key === "tags"
+        : isTagsKey(key)
           ? normalizeTags(coerced)
           : coerced;
       changed.add(key);
@@ -1576,7 +1579,13 @@ export class VaultStore {
       // the title, and tags/created/updated when the template has none.
       const seed = await this.renderTemplateFile(input.template, title, new Date());
       const parsed = parseFrontmatter(seed);
-      const changes = ["title", ...(icon ? ["icon"] : []), ...["tags", "created", "updated"].filter((key) => !(key in parsed.frontmatter))];
+      const keys = Object.keys(parsed.frontmatter);
+      const changes = [
+        "title",
+        ...(icon ? ["icon"] : []),
+        ...(frontmatterKey(keys, "tags") === undefined ? ["tags"] : []),
+        ...["created", "updated"].filter((key) => !(key in parsed.frontmatter)),
+      ];
       await this.writePage(
         filePath,
         { title, ...(icon ? { icon } : {}), tags: [], created: now, updated: now },
@@ -2023,8 +2032,10 @@ export class VaultStore {
       patch.properties === undefined ? null : await this.preparePropertiesPatch(record, patch.properties);
     let fmTags =
       patch.tags === undefined ? record.fmTags : normalizeTags(patch.tags).slice(0, MAX_TAGS);
-    if (propertyPatch && "tags" in propertyPatch.values) {
-      const tags = propertyPatch.values.tags;
+    // The tags key under the note's own spelling (`Tags:`, #ippqkgus).
+    const patchTagsKey = propertyPatch ? frontmatterKey(Object.keys(propertyPatch.values), "tags") : undefined;
+    if (propertyPatch && patchTagsKey !== undefined) {
+      const tags = propertyPatch.values[patchTagsKey];
       fmTags = Array.isArray(tags) ? normalizeTags(tags).slice(0, MAX_TAGS) : [];
     }
     const updated = new Date().toISOString();
@@ -2268,7 +2279,9 @@ export class VaultStore {
     if (!record) return [];
     const index = await this.propertyIndex();
     const properties = typedProperties(await this.rawPropertiesOf(record), (key) => index.typeOf(key));
-    const aliases = properties.find((property) => property.key.toLowerCase() === "aliases")?.value;
+    // `aliases` in any case, the first in file order (#ippqkgus), as Obsidian reads it.
+    const aliasKey = frontmatterKey(properties.map((property) => property.key), "aliases");
+    const aliases = properties.find((property) => property.key === aliasKey)?.value;
     const list = Array.isArray(aliases) ? aliases : typeof aliases === "string" ? [aliases] : [];
     return mentionTerms(record.title, list.map(String));
   }
@@ -3103,11 +3116,12 @@ export class VaultStore {
     const existing = parseFrontmatter(await readFile(record.filePath, "utf8")).frontmatter;
     const added: Frontmatter = {};
     for (const [key, value] of Object.entries(parsed.frontmatter)) {
-      if (key === "title" || key === "tags" || key in existing) continue;
+      if (key === "title" || isTagsKey(key) || key in existing) continue;
       added[key] = value;
     }
     const changes = Object.keys(added);
-    const templateTags = Array.isArray(parsed.frontmatter.tags) ? (parsed.frontmatter.tags as string[]) : [];
+    const templateTagValue = frontmatterValue(parsed.frontmatter, "tags");
+    const templateTags = Array.isArray(templateTagValue) ? (templateTagValue as string[]) : [];
     const tags = normalizeTags([...record.fmTags, ...templateTags]);
     if (JSON.stringify(tags) !== JSON.stringify(record.fmTags)) {
       added.tags = tags;
@@ -3604,7 +3618,7 @@ export class VaultStore {
       content,
       filePath: absolute,
       fileMtimeMs: stats.mtimeMs,
-      fmTags: normalizeTags(frontmatter.tags),
+      fmTags: normalizeTags(frontmatterValue(frontmatter, "tags")),
       explicitTitle,
       kind: "page",
     };

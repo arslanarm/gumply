@@ -3,6 +3,7 @@
  * Properties. Pure helpers shared by the server and the web app; the YAML
  * itself is read on the server.
  */
+import { isAliasesKey, isTagsKey } from "./frontmatter-keys.js";
 
 /** Obsidian's property types (the names in `.obsidian/types.json`). */
 export type PropertyType = "text" | "multitext" | "number" | "checkbox" | "date" | "datetime" | "tags" | "aliases";
@@ -85,8 +86,9 @@ function typeOfValue(value: unknown): PropertyType | null {
  * they disagree or there are none).
  */
 export function inferPropertyType(key: string, values: readonly unknown[]): PropertyType {
-  if (key === "tags") return "tags";
-  if (key === "aliases") return "aliases";
+  // In any case, plural only, as Obsidian (`Tags`, `Aliases`; not `tag`, #ippqkgus).
+  if (isTagsKey(key)) return "tags";
+  if (isAliasesKey(key)) return "aliases";
   const counts = new Map<PropertyType, number>();
   for (const value of values) {
     const type = typeOfValue(value);

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PAGE_COLORS, type Page, type PageColor, type PageId } from "@gumply/core";
+import { frontmatterKey, PAGE_COLORS, type Page, type PageColor, type PageId } from "@gumply/core";
 import { plannedTitleRename } from "../lib/rename.js";
 import { loadEmojiData } from "../lib/emoji/data.js";
 import { preloadGraph } from "../lazy-parts.js";
@@ -265,7 +265,9 @@ export function PageHeader({
 
   // Frontmatter tags are shown in the Tags property (v0.7 A); the header
   // keeps the inline #tags from the body.
-  const propertyTags = page.properties?.find((property) => property.key === "tags")?.value;
+  // `tags` in any case, the first in file order (#ippqkgus).
+  const tagsKey = frontmatterKey((page.properties ?? []).map((property) => property.key), "tags");
+  const propertyTags = page.properties?.find((property) => property.key === tagsKey)?.value;
   const shownAsProperty = new Set(Array.isArray(propertyTags) ? propertyTags.map((tag) => tag.toLowerCase()) : []);
   const headerTags = page.tags.filter((tag) => !shownAsProperty.has(tag.toLowerCase()));
 

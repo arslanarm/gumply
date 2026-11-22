@@ -106,3 +106,15 @@ describe("relinkAttachments keepValidAtDestination", () => {
     );
   });
 });
+
+describe("names with # or ? round-trip (#btgun63k)", () => {
+  it("a link written for `a#b.png` or `why?.png` resolves back to the same file", () => {
+    for (const path of ["Files/a#b.png", "Files/why?.png", "Files/my file [1].png", "Files/pipe|x.png"]) {
+      const href = attachmentHref("Notes/Day", path);
+      expect(resolveAttachmentHref("Notes/Day", href), href).toBe(path);
+    }
+    expect(attachmentHref("Notes/Day", "Files/a#b.png")).toBe("../Files/a%23b.png");
+    // #eg65ktng: `|` is encoded, so the link is safe inside a table cell.
+    expect(attachmentHref("Notes/Day", "Files/pipe|x.png")).toBe("../Files/pipe%7Cx.png");
+  });
+});
