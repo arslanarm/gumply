@@ -203,7 +203,7 @@ export interface GraphOptions {
   center?: PageId;
   /** BFS radius around `center`; defaults to 1 when `center` is set. */
   depth?: number;
-  /** v1.next (E1): add `attachments`, each page's links to attachment files. */
+  /** v1.19 (E1): add `attachments`, each page's links to attachment files. */
   attachments?: boolean;
 }
 
@@ -1406,7 +1406,7 @@ export class VaultStore {
   private readonly attachmentLinks = new Map<PageId, { content: string; paths: string[] }>();
 
   /**
-   * v1.next: each included page's links to attachment files (`![[pic.png]]`,
+   * v1.19: each included page's links to attachment files (`![[pic.png]]`,
    * `[[report.pdf]]`, `![](attachments/pic.png)`), resolved from that page
    * like Obsidian (#8k4ssrkb). Links to missing files are left out.
    */
@@ -2120,7 +2120,7 @@ export class VaultStore {
   }
 
   /**
-   * v0.8 C2 (#u84ebtf3): after headings of page `id` were renamed, rewrite
+   * v1.20, v0.8 C2 (#u84ebtf3): after headings of page `id` were renamed, rewrite
    * `[[Page#Old]]`, `[[Page#Old|alias]]` and `![[Page#Old]]` to them in every
    * other page and board. The page itself is left as the user saved it.
    */

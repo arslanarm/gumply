@@ -233,7 +233,7 @@ export const api = {
 
   backlinks: (id: PageId): Promise<Backlink[]> => request(`${pagePath(id)}/backlinks`),
 
-  /** v1.next (C1, spec/api-mentions): pages mentioning this one as plain text. */
+  /** v1.21 (C1, spec/api-mentions): pages mentioning this one as plain text. */
   mentions: (id: PageId): Promise<PageMentions[]> => request(`${pagePath(id)}/mentions`),
 
   /** Turn mentions of page `id` in `input.source` into links (conditional, D22). */
@@ -417,7 +417,7 @@ export const api = {
     return request(`/graph${query.length > 0 ? `?${query}` : ""}`);
   },
 
-  /** E1 (spec/api-graph-groups, v1.next): the graph's colour groups and filters. */
+  /** E1 (spec/api-graph-groups, v1.19): the graph's colour groups and filters. */
   getGraphSettings: (): Promise<GraphSettingsResponse> => request("/graph/settings"),
 
   putGraphSettings: (settings: GraphSettings): Promise<GraphSettingsResponse> =>

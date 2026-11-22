@@ -177,7 +177,7 @@ export interface GraphData {
    */
   unresolved: Array<{ source: PageId; targetTitle: string }>;
   /**
-   * v1.next (`?include=attachments`, spec/api-graph-groups): each page's link to
+   * v1.19 (`?include=attachments`, spec/api-graph-groups): each page's link to
    * an attachment file it embeds or links (`![[pic.png]]`), resolved like
    * Obsidian. Absent unless asked for.
    */
@@ -253,7 +253,7 @@ export interface ApiError {
   error: string;
 }
 
-/** v1.next (C1, spec/api-mentions): `GET /pages/:id/mentions`, one entry per mentioning page. */
+/** v1.21 (C1, spec/api-mentions): `GET /pages/:id/mentions`, one entry per mentioning page. */
 export interface PageMentions {
   page: PageMeta;
   /** The source's version: pass it back as `expectedUpdated` to link. */
