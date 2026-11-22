@@ -11,6 +11,23 @@ import { t } from "../i18n/index.js";
 import { requestEmbedPicker, requestPagePreviewPicker } from "./wikilink/suggestion-extension.js";
 import { requestPageTemplate } from "./page-template.js";
 
+/** Insert a math atom and open it for editing (its node view edits on click). */
+function insertMath(editor: Editor, range: Range, content: { type: string; attrs: Record<string, string> }): void {
+  editor.chain().focus().deleteRange(range).insertContent(content).run();
+  const { from } = editor.state.selection;
+  // insertContent leaves the caret after the atom: find it just before.
+  window.setTimeout(() => {
+    for (const pos of [from - 1, from - 2, from]) {
+      if (pos < 0) continue;
+      const node = editor.view.nodeDOM(pos);
+      if (node instanceof HTMLElement && (node.dataset.testid === "raw-block" || node.dataset.testid === "raw-inline")) {
+        node.click();
+        return;
+      }
+    }
+  }, 0);
+}
+
 export interface SlashItem {
   key: string;
   readonly title: string;
@@ -224,6 +241,34 @@ export const SLASH_ITEMS: SlashItem[] = [
     },
     run: (editor, range) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+  },
+  {
+    // F1: a `$$…$$` block, opened as source right away.
+    key: "math",
+    get title() {
+      return t("slash.math.title");
+    },
+    get hint() {
+      return t("slash.math.hint");
+    },
+    get keywords() {
+      return withLocalKeywords(["math", "latex", "tex", "katex", "formula", "block"], t("slash.math.keywords"));
+    },
+    run: (editor, range) => insertMath(editor, range, { type: "rawBlock", attrs: { kind: "math", source: "$$\n\n$$" } }),
+  },
+  {
+    // F1: an inline `$…$`, opened as source right away.
+    key: "equation",
+    get title() {
+      return t("slash.equation.title");
+    },
+    get hint() {
+      return t("slash.equation.hint");
+    },
+    get keywords() {
+      return withLocalKeywords(["equation", "inline", "math", "latex", "tex", "formula"], t("slash.equation.keywords"));
+    },
+    run: (editor, range) => insertMath(editor, range, { type: "rawInline", attrs: { kind: "math", source: "$x$" } }),
   },
   {
     key: "table",

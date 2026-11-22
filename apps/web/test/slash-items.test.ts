@@ -19,6 +19,8 @@ describe("filterSlashItems", () => {
       "tip",
       "warning",
       "code",
+      "math",
+      "equation",
       "table",
       "emoji",
       "image",

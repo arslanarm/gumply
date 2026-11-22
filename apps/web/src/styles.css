@@ -5375,3 +5375,71 @@ input {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ---------- v0.8 F1: math rendered with KaTeX ---------- */
+/* Typeset math drops the source look; until KaTeX loads, the source shows as before. */
+.raw-block-math:has(.katex),
+.math-block:has(.katex) {
+  background: transparent;
+  font-family: inherit;
+  font-size: 1rem;
+  white-space: normal;
+  text-align: center;
+  padding: 0.4rem 0;
+}
+
+.raw-block-math.is-empty {
+  color: var(--muted);
+  font-family: inherit;
+  font-style: italic;
+  text-align: left;
+}
+
+.raw-inline-math:has(.katex),
+.math-inline:has(.katex) {
+  background: transparent;
+  font-family: inherit;
+  font-size: 1em;
+  padding: 0 0.05em;
+}
+
+.raw-inline:has(.raw-inline-math) {
+  cursor: text;
+  border-radius: 4px;
+}
+
+.raw-inline:has(.raw-inline-math):hover {
+  background: var(--hover);
+}
+
+.math-block {
+  display: block;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+}
+
+.raw-block-math .katex-display,
+.math-block .katex-display {
+  margin: 0;
+}
+
+.math-error {
+  color: var(--danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  text-decoration: underline wavy color-mix(in srgb, var(--danger) 50%, transparent);
+  text-underline-offset: 3px;
+  white-space: pre-wrap;
+}
+
+.raw-inline-math-editor {
+  min-width: 3ch;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  outline: none;
+}

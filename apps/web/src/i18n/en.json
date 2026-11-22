@@ -402,6 +402,16 @@
       "title": "Embed existing database…",
       "hint": "Show a database view in this page",
       "keywords": ""
+    },
+    "math": {
+      "title": "Math block",
+      "hint": "A LaTeX formula on its own line ($$ … $$)",
+      "keywords": ""
+    },
+    "equation": {
+      "title": "Inline equation",
+      "hint": "A LaTeX formula in the text ($ … $)",
+      "keywords": ""
     }
   },
   "keys": {
@@ -1252,5 +1262,11 @@
     "usedTimes_few": "Used {{count}} times, nested tags included; code stays as it is.",
     "usedTimes_many": "Used {{count}} times, nested tags included; code stays as it is.",
     "usedTimes_other": "Used {{count}} times, nested tags included; code stays as it is."
+  },
+  "math": {
+    "inlineHint": "Click to edit the formula",
+    "sourceLabel": "Formula source (LaTeX)",
+    "empty": "Empty formula. Click to write LaTeX.",
+    "error": "Can't render this formula"
   }
 }
