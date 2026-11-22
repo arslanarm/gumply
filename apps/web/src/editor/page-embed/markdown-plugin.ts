@@ -9,9 +9,9 @@
  *
  * markdown-it's types are an optional peer dep of tiptap-markdown, hence `any`.
  */
-import { formatPageEmbed, hasAttachmentExtension, isBaseTarget, isBoardTarget } from "@gumply/core";
+import { formatPageEmbed, hasAttachmentExtension, isBaseTarget, isBoardTarget, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET } from "@gumply/core";
 
-const EMBED = /^!\[\[([^[\]|#\r\n]+?)(?:#([^[\]|\r\n]*))?(?:\|([^[\]\r\n]*))?\]\]$/;
+const EMBED = new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?)(?:#(${WIKILINK_PART}*))?(?:\|(${WIKILINK_INNER}*))?\]\]$`);
 
 export interface PageEmbedMarkup {
   /** The page as linked: `Plan`, `Folder/Plan`. */

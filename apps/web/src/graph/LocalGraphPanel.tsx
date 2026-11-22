@@ -1,8 +1,18 @@
-import type { GraphData, PageId } from "@gumply/core";
+import type { GraphData, GraphNode, PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiRequestError } from "../api/client.js";
+import { api, ApiRequestError, fileUrl } from "../api/client.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
-import { ariaSummary, buildGraphModel } from "./graph-model.js";
+import {
+  ariaSummary,
+  ATTACHMENT_PALETTE_INDEX,
+  attachmentPath,
+  buildGraphModel,
+  filterGraph,
+  groupColorer,
+  isAttachmentNodeId,
+  isTagNodeId,
+} from "./graph-model.js";
+import { useGraphSettings } from "./graph-settings.js";
 import { usePrefersReducedMotion } from "./use-reduced-motion.js";
 import { t, useT } from "../i18n/index.js";
 
@@ -41,6 +51,11 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   const reducedMotion = usePrefersReducedMotion();
+  // E2: the vault's groups and filters (edited in the global graph's panel).
+  // The first layout waits for them, as on the global graph.
+  const { settings } = useGraphSettings();
+  const filters = settings?.filters;
+  const wantAttachments = filters?.showAttachments ?? false;
 
   const changeDepth = (next: Depth) => {
     setDepth(next);
@@ -55,25 +70,54 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
     setStatus("loading");
     setError(null);
     try {
-      const graph = await api.getGraph({ center: pageId, depth });
+      const graph = await api.getGraph({ center: pageId, depth, attachments: wantAttachments });
       setData(graph);
       setStatus("ready");
     } catch (caught) {
       setError(errorMessage(caught));
       setStatus("error");
     }
-  }, [pageId, depth]);
+  }, [pageId, depth, wantAttachments]);
 
+  const settingsReady = settings !== null;
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (settingsReady) void load();
+  }, [load, settingsReady]);
 
   const model = useMemo(() => (data ? buildGraphModel(data) : null), [data]);
-  const canvasNodes = useMemo<CanvasNode[]>(
-    () => (model ? [...model.nodes, ...model.ghosts] : []),
-    [model],
+  // The search box and Orphans are about the whole vault: here only tags,
+  // attachments and "existing files only" apply, so the page itself always stays.
+  const filtered = useMemo(
+    () =>
+      model && filters
+        ? filterGraph(model, {
+            hideUnresolved: filters.hideUnresolved,
+            showTags: filters.showTags,
+            attachments: filters.showAttachments ? data?.attachments : undefined,
+          })
+        : null,
+    [model, filters, data],
   );
-  const canvasLinks = useMemo(() => model?.links ?? [], [model]);
+  const canvasNodes = useMemo<CanvasNode[]>(
+    () => (filtered ? [...filtered.nodes, ...filtered.ghosts, ...filtered.extras] : []),
+    [filtered],
+  );
+  const canvasLinks = useMemo(() => filtered?.links ?? [], [filtered]);
+  const groups = settings?.groups;
+  const colorOf = useMemo(() => {
+    const group = groupColorer(groups ?? []);
+    return (node: GraphNode, palette: readonly string[]) =>
+      group(node) ?? (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null);
+  }, [groups]);
+  /** Tag nodes have no page to open; attachment nodes open the file. */
+  const openNode = (id: PageId) => {
+    if (isTagNodeId(id)) return;
+    if (isAttachmentNodeId(id)) {
+      window.open(fileUrl(attachmentPath(id)), "_blank", "noopener");
+      return;
+    }
+    onOpenPage(id);
+  };
   const empty =
     status === "ready" &&
     data !== null &&
@@ -121,7 +165,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
       </header>
 
       <div className="local-graph-body">
-        {status === "loading" ? (
+        {status === "loading" || !settingsReady ? (
           <p className="graph-panel-note">{t("graph.localLoading")}</p>
         ) : status === "error" ? (
           <div className="graph-panel-state">
@@ -130,7 +174,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
               {t("common.retry")}
             </button>
           </div>
-        ) : empty || !model || !data ? (
+        ) : empty || !model || !data || !filtered ? (
           <div className="graph-panel-state" data-testid="local-graph-empty">
             <h3>{t("graph.noLinks")}</h3>
             <p>
@@ -144,11 +188,12 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
             highlightId={pageId}
             centerId={pageId}
             testId="local-graph-canvas"
-            ariaLabel={ariaSummary(model)}
+            ariaLabel={ariaSummary(filtered)}
             reducedMotion={reducedMotion}
-            onOpenPage={onOpenPage}
+            onOpenPage={openNode}
+            colorOf={colorOf}
             onCreatePage={(title) => {
-              const ghost = model.ghosts.find(
+              const ghost = filtered.ghosts.find(
                 (candidate) => candidate.title.toLowerCase() === title.toLowerCase(),
               );
               if (ghost) void onCreatePage(ghost.title);

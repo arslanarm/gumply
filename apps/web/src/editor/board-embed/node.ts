@@ -4,7 +4,7 @@
  * `![[Board.canvas]]`, with an optional height: `![[Board.canvas|480]]`.
  * An untouched embed is written back exactly as it was read.
  */
-import { linkTargetFor, type PageMeta } from "@gumply/core";
+import { linkTargetFor, WIKILINK_TARGET, type PageMeta } from "@gumply/core";
 import { Node, mergeAttributes, nodeInputRule } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
@@ -68,7 +68,7 @@ export const BoardEmbed = Node.create({
     return [
       nodeInputRule({
         // Only alone in its block: inside a sentence it stays text + link.
-        find: /^!\[\[([^[\]|#]+?\.canvas)(?:\|(\d{2,4}))?\]\]$/i,
+        find: new RegExp(String.raw`^!\[\[(${WIKILINK_TARGET}+?\.canvas)(?:\|(\d{2,4}))?\]\]$`, "i"),
         type: this.type,
         getAttributes: (match) => ({ target: (match[1] ?? "").trim(), size: match[2] ?? "", raw: "" }),
       }),

@@ -45,6 +45,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = join(here, "web");
 const isDev = !app.isPackaged;
 
+/**
+ * THIRD_PARTY_NOTICES (#mbim529b): shipped next to the app as a .txt (opens
+ * on every OS without asking which app to use); in dev, the repo's .md.
+ */
+export function noticesPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, "THIRD_PARTY_NOTICES.txt")
+    : join(here, "..", "..", "..", "THIRD_PARTY_NOTICES.md");
+}
+
 // One settings folder in dev and packaged builds: ~/.config/Gumply on Linux
 // (dev would otherwise use the package name, "@gumply/desktop").
 app.setName("Gumply");
@@ -535,6 +545,15 @@ function buildMenu(): void {
       role: "help",
       label: tr("menu.help"),
       submenu: [
+        {
+          id: "licences",
+          label: tr("menu.licences"),
+          click: () => {
+            void shell.openPath(noticesPath()).then((error) => {
+              if (error) void dialog.showMessageBox({ type: "error", message: tr("menu.licences"), detail: error });
+            });
+          },
+        },
         {
           id: "about",
           label: tr("menu.about"),

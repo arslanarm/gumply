@@ -17,6 +17,8 @@ export interface CodeLanguage {
   aliases?: string[];
   /** highlight.js grammar to load; none for plain text. */
   grammar?: () => Promise<{ default: LanguageFn }>;
+  /** F2: shown as a rendered diagram instead of highlighted code. */
+  diagram?: true;
 }
 
 /** Shown first in the picker; an empty fence. */
@@ -49,6 +51,8 @@ export const CODE_LANGUAGES: readonly CodeLanguage[] = [
   { id: "lua", label: "Lua", grammar: () => import("highlight.js/lib/languages/lua") },
   { id: "makefile", label: "Makefile", aliases: ["make", "mk"], grammar: () => import("highlight.js/lib/languages/makefile") },
   { id: "md", label: "Markdown", aliases: ["markdown"], grammar: () => import("highlight.js/lib/languages/markdown") },
+  // F2: rendered as a diagram (lib/diagram.ts); no highlighting grammar.
+  { id: "mermaid", label: "Mermaid", aliases: ["mmd"], diagram: true },
   { id: "php", label: "PHP", grammar: () => import("highlight.js/lib/languages/php") },
   { id: "python", label: "Python", aliases: ["py", "python3"], grammar: () => import("highlight.js/lib/languages/python") },
   { id: "r", label: "R", grammar: () => import("highlight.js/lib/languages/r") },
@@ -77,7 +81,7 @@ export function findLanguage(name: string | null | undefined): CodeLanguage | nu
   const key = (name ?? "").trim().toLowerCase();
   if (!key) return null;
   const found = BY_NAME.get(key) ?? null;
-  return found && found.grammar ? found : null;
+  return found && (found.grammar || found.diagram) ? found : null;
 }
 
 /** Label for the picker button: known label, or the name as written. */

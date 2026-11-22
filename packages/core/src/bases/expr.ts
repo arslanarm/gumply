@@ -13,6 +13,7 @@
  * filter (or show "—" for that formula) and report it; the file is never
  * rewritten because of it.
  */
+import { WIKILINK_INNER } from "../wikilink-syntax.js";
 
 /* ------------------------------------------------------------------ AST */
 
@@ -457,7 +458,7 @@ function asDate(value: Value): DateValue | null {
 /** Strip `[[…]]`, `|alias`, `#heading` and `.md` for link comparisons. */
 function linkKey(text: string): string {
   let target = text.trim();
-  const wiki = /^\[\[([^\]]*)\]\]$/.exec(target);
+  const wiki = new RegExp(String.raw`^\[\[(${WIKILINK_INNER}*)\]\]$`).exec(target);
   if (wiki) target = wiki[1]!;
   target = target.split("|")[0]!.split("#")[0]!.trim();
   return target.replace(/\.md$/i, "").toLowerCase();

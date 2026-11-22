@@ -8,6 +8,10 @@ import type {
   BoardUpdateResult,
   DeletePageResult,
   GraphData,
+  GraphSettingsResponse,
+  LinkMentionsInput,
+  LinkMentionsResult,
+  PageMentions,
   Page,
   PageId,
   PageMeta,
@@ -31,6 +35,7 @@ import {
   saveAttachment,
 } from "./attachments.js";
 import { badRequest, notFound, payloadTooLarge } from "./errors.js";
+import { readGraphSettings, writeGraphSettings } from "./graph-settings.js";
 import { importAllowList, importRemoteImage } from "./remote-image.js";
 
 // Tests only: host:port pairs the image import may reach on localhost.
@@ -342,6 +347,14 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   api.get("/pages/:id/backlinks", (c) => c.json<Backlink[]>(store.backlinks(c.req.param("id"))));
 
+  // v1.21 (C1, spec/api-mentions): unlinked mentions, and turning them into links.
+  api.get("/pages/:id/mentions", async (c) => c.json<PageMentions[]>(await store.mentions(c.req.param("id"))));
+
+  api.post("/pages/:id/mentions/link", async (c) => {
+    const body = await readJson(c);
+    return c.json<LinkMentionsResult>(await store.linkMentions(c.req.param("id"), body as unknown as LinkMentionsInput));
+  });
+
   api.get("/graph", (c) => {
     const centerQuery = c.req.query("center");
     const center = centerQuery === undefined || centerQuery === "" ? undefined : centerQuery;
@@ -356,7 +369,18 @@ export function createApiRoutes(store: VaultStore): Hono {
 
     const options: GraphOptions = { depth };
     if (center !== undefined) options.center = center;
+    // v1.19 (E1): `include=attachments` adds each page's attachment links.
+    const include = (c.req.query("include") ?? "").split(",").map((item) => item.trim());
+    if (include.includes("attachments")) options.attachments = true;
     return c.json<GraphData>(store.graph(options));
+  });
+
+  // v1.19 (E1, spec/api-graph-groups): colour groups and filters, per vault.
+  api.get("/graph/settings", async (c) => c.json<GraphSettingsResponse>(await readGraphSettings(store.root)));
+
+  api.put("/graph/settings", async (c) => {
+    const body = await readJson(c);
+    return c.json<GraphSettingsResponse>(await writeGraphSettings(store.root, body));
   });
 
   api.get("/search", (c) => {

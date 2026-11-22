@@ -13,6 +13,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import type { Editor } from "@tiptap/core";
 import { RAW_BLOCK_ATTR, RAW_INLINE_ATTR, rawMarkdownPlugin } from "./markdown-plugin.js";
 import { t } from "../../i18n/index.js";
+import { renderMath } from "../../lib/math.js";
 
 /** The bits of markdown-it the previews use. */
 export interface PreviewRenderer {
@@ -101,7 +102,16 @@ export function renderRawBlockPreview(
   }
 
   if (kind === "math") {
-    return el("pre", "raw-block-math", source.trim().replace(/^\$\$|\$\$$/g, "").trim());
+    // F1: typeset with KaTeX (lazy); the source shows until it has loaded.
+    const box = el("div", "raw-block-math");
+    const tex = source.trim().replace(/^\$\$|\$\$$/g, "").trim();
+    if (!tex) {
+      box.classList.add("is-empty");
+      box.textContent = t("math.empty");
+      return box;
+    }
+    void renderMath(box, tex, { display: true });
+    return box;
   }
 
   const wrap = el("div", "raw-block-source");
@@ -250,7 +260,11 @@ export const RawBlock = Node.create({
 /** Read-only preview of a raw inline atom. */
 export function renderRawInlinePreview(source: string, kind: string): HTMLElement {
   if (kind === "footnote-ref") return el("sup", "raw-inline-footnote", source.slice(2, -1));
-  if (kind === "math") return el("code", "raw-inline-math", source.slice(1, -1));
+  if (kind === "math") {
+    const span = el("span", "raw-inline-math");
+    void renderMath(span, source.slice(1, -1));
+    return span;
+  }
   // #iatezw4m: a code span wrapped across lines, kept as written.
   if (kind === "code") return el("code", "raw-inline-code", source.replace(/^(`+)\s?([\s\S]*?)\s?\1$/, "$2").replace(/\s*\n\s*/g, " "));
   if (kind === "entity") {
@@ -262,6 +276,54 @@ export function renderRawInlinePreview(source: string, kind: string): HTMLElemen
   // `\=`: shows as the `=` it stands for (#bg3cb83t).
   if (kind === "escape") return el("span", "raw-inline-escape", source.slice(1));
   return el("code", "raw-inline-source", source);
+}
+
+/**
+ * F1: a small source field inside an inline math atom. A value that is still
+ * `$…$` stays an atom; anything else becomes plain text (recognised again on
+ * the next load, like the double-click edit).
+ */
+function editInlineMath(dom: HTMLElement, node: PMNode, editor: Editor, getPos: () => number | undefined): void {
+  const source = String(node.attrs.source);
+  const input = el("input", "raw-inline-math-editor");
+  input.value = source;
+  input.spellcheck = false;
+  input.setAttribute("aria-label", t("math.sourceLabel"));
+  input.dataset.testid = "math-inline-editor";
+  input.size = Math.max(4, source.length + 1);
+  let done = false;
+  const finish = (save: boolean) => {
+    if (done) return;
+    done = true;
+    const value = input.value;
+    const pos = getPos();
+    if (!save || value === source || typeof pos !== "number") {
+      dom.replaceChildren(renderRawInlinePreview(source, "math"));
+      editor.commands.focus();
+      return;
+    }
+    const tr = editor.state.tr;
+    if (value === "") tr.delete(pos, pos + node.nodeSize);
+    else if (/^\$[^$\n]+\$$/.test(value)) tr.setNodeMarkup(pos, undefined, { ...node.attrs, source: value });
+    else tr.replaceWith(pos, pos + node.nodeSize, editor.schema.text(value));
+    editor.view.dispatch(tr);
+    editor.commands.focus();
+  };
+  input.addEventListener("input", () => (input.size = Math.max(4, input.value.length + 1)));
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    }
+  });
+  dom.replaceChildren(input);
+  input.focus();
+  input.setSelectionRange(1, Math.max(1, source.length - 1));
 }
 
 export const RawInline = Node.create({
@@ -299,6 +361,16 @@ export const RawInline = Node.create({
       dom.dataset.testid = "raw-inline";
       dom.title = t("raw.inlineHint", { source: String(node.attrs.source) });
       dom.append(renderRawInlinePreview(String(node.attrs.source), String(node.attrs.kind)));
+      // F1: inline math edits as source on click; Enter or leaving saves, Esc
+      // goes back to the rendered math unchanged.
+      if (node.attrs.kind === "math") {
+        dom.title = t("math.inlineHint");
+        dom.addEventListener("click", (event) => {
+          if (!editor.isEditable || dom.querySelector("input")) return;
+          event.preventDefault();
+          editInlineMath(dom, node, editor, typeof getPos === "function" ? getPos : () => undefined);
+        });
+      }
       // Double-click turns the atom back into plain text to edit; it is
       // recognised again on the next load.
       dom.addEventListener("dblclick", (event) => {
@@ -311,7 +383,7 @@ export const RawInline = Node.create({
           return true;
         }).setTextSelection(pos + text.nodeSize).run();
       });
-      return { dom, ignoreMutation: () => true };
+      return { dom, ignoreMutation: () => true, stopEvent: (event: Event) => event.target instanceof HTMLInputElement };
     };
   },
 

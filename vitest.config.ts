@@ -16,7 +16,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.ts", "e2e/support/*.test.ts"],
+    include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.ts", "e2e/support/*.test.ts", "scripts/*.test.ts"],
     reporters: "default",
   },
 });

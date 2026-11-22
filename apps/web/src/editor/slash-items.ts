@@ -12,6 +12,26 @@ import { requestEmbedPicker, requestPagePreviewPicker } from "./wikilink/suggest
 import { requestPageTemplate } from "./page-template.js";
 import { insertColumns } from "./columns/commands.js";
 
+/** F2: what /mermaid starts with: small, and shows how arrows and labels work. */
+const MERMAID_STARTER = "flowchart LR\n  A[Idea] --> B{Worth it?}\n  B -- yes --> C[Do it]\n  B -- no --> D[Park it]";
+
+/** Insert a math atom and open it for editing (its node view edits on click). */
+function insertMath(editor: Editor, range: Range, content: { type: string; attrs: Record<string, string> }): void {
+  editor.chain().focus().deleteRange(range).insertContent(content).run();
+  const { from } = editor.state.selection;
+  // insertContent leaves the caret after the atom: find it just before.
+  window.setTimeout(() => {
+    for (const pos of [from - 1, from - 2, from]) {
+      if (pos < 0) continue;
+      const node = editor.view.nodeDOM(pos);
+      if (node instanceof HTMLElement && (node.dataset.testid === "raw-block" || node.dataset.testid === "raw-inline")) {
+        node.click();
+        return;
+      }
+    }
+  }, 0);
+}
+
 export interface SlashItem {
   key: string;
   readonly title: string;
@@ -245,6 +265,54 @@ export const SLASH_ITEMS: SlashItem[] = [
     },
     run: (editor, range) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+  },
+  {
+    // F2: a ```mermaid block with a small starter diagram, source open.
+    key: "mermaid",
+    get title() {
+      return t("slash.mermaid.title");
+    },
+    get hint() {
+      return t("slash.mermaid.hint");
+    },
+    get keywords() {
+      return withLocalKeywords(["mermaid", "diagram", "chart", "flowchart", "graph", "sequence"], t("slash.mermaid.keywords"));
+    },
+    run: (editor, range) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({ type: "codeBlock", attrs: { language: "mermaid" }, content: [{ type: "text", text: MERMAID_STARTER }] })
+        .run(),
+  },
+  {
+    // F1: a `$$…$$` block, opened as source right away.
+    key: "math",
+    get title() {
+      return t("slash.math.title");
+    },
+    get hint() {
+      return t("slash.math.hint");
+    },
+    get keywords() {
+      return withLocalKeywords(["math", "latex", "tex", "katex", "formula", "block"], t("slash.math.keywords"));
+    },
+    run: (editor, range) => insertMath(editor, range, { type: "rawBlock", attrs: { kind: "math", source: "$$\n\n$$" } }),
+  },
+  {
+    // F1: an inline `$…$`, opened as source right away.
+    key: "equation",
+    get title() {
+      return t("slash.equation.title");
+    },
+    get hint() {
+      return t("slash.equation.hint");
+    },
+    get keywords() {
+      return withLocalKeywords(["equation", "inline", "math", "latex", "tex", "formula"], t("slash.equation.keywords"));
+    },
+    run: (editor, range) => insertMath(editor, range, { type: "rawInline", attrs: { kind: "math", source: "$x$" } }),
   },
   {
     key: "table",

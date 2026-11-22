@@ -1,16 +1,23 @@
-import type { GraphData, PageId } from "@gumply/core";
+import type { GraphData, GraphNode, GraphSettings, PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiRequestError } from "../api/client.js";
+import { api, ApiRequestError, fileUrl } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
+import { GraphControls } from "./GraphControls.js";
 import {
   ariaSummary,
+  ATTACHMENT_PALETTE_INDEX,
+  attachmentPath,
   buildGraphModel,
   filterGraph,
   graphSubtitle,
+  groupColorer,
+  isAttachmentNodeId,
+  isTagNodeId,
   paletteIndex,
   type GhostNode,
 } from "./graph-model.js";
+import { useGraphSettings } from "./graph-settings.js";
 import { normaliseIcon } from "./emoji-sprites.js";
 import { usePrefersReducedMotion } from "./use-reduced-motion.js";
 import "./graph.css";
@@ -43,16 +50,24 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [legendOpen, setLegendOpen] = useState(true);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
+  // E1: groups and filters, per vault. The graph waits for them, so its first
+  // layout already uses them (no restart when they arrive).
+  const { settings, update: updateSettings } = useGraphSettings();
+  // The search box stays per visit, as before E1: a filter typed once must not
+  // greet the next visit with a half-empty graph. (`filters.search` is kept in
+  // the file as read, for Obsidian round-trips.)
+  const [query, setQuery] = useState("");
+  const wantAttachments = settings?.filters.showAttachments ?? false;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (attachments: boolean) => {
     setStatus("loading");
     setError(null);
     try {
-      const graph = await api.getGraph();
+      const graph = await api.getGraph({ attachments });
       setData(graph);
       setStatus("ready");
     } catch (caught) {
@@ -61,23 +76,67 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
     }
   }, []);
 
+  const settingsReady = settings !== null;
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (settingsReady) void load(wantAttachments);
+    // Attachments turned on later: fetch them once; turning them off just hides them.
+  }, [settingsReady, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (wantAttachments && data && !data.attachments) {
+      api
+        .getGraph({ attachments: true })
+        .then(setData)
+        .catch((caught: unknown) => setActionError(errorMessage(caught)));
+    }
+  }, [wantAttachments, data]);
 
   const model = useMemo(() => (data ? buildGraphModel(data) : null), [data]);
+  const filters = settings?.filters;
   const filtered = useMemo(
-    () => (model ? filterGraph(model, { query, tags: selectedTags }) : null),
-    [model, query, selectedTags],
+    () =>
+      model && filters
+        ? filterGraph(model, {
+            query,
+            tags: selectedTags,
+            hideUnresolved: filters.hideUnresolved,
+            showOrphans: filters.showOrphans,
+            showTags: filters.showTags,
+            attachments: filters.showAttachments ? data?.attachments : undefined,
+          })
+        : null,
+    [model, filters, query, selectedTags, data],
   );
 
   // Stable arrays: a new identity on every render would restart the force
   // simulation (and the auto-fit) on unrelated state changes such as hovering.
   const canvasNodes = useMemo<CanvasNode[]>(
-    () => (filtered ? [...filtered.nodes, ...filtered.ghosts] : []),
+    () => (filtered ? [...filtered.nodes, ...filtered.ghosts, ...filtered.extras] : []),
     [filtered],
   );
   const canvasLinks = useMemo(() => filtered?.links ?? [], [filtered]);
+
+  // E1: the first matching group colours a node; attachments otherwise share one theme colour.
+  const groups = settings?.groups;
+  const colorOf = useMemo(() => {
+    const group = groupColorer(groups ?? []);
+    return (node: GraphNode, palette: readonly string[]) =>
+      group(node) ?? (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null);
+  }, [groups]);
+  const legendGroups = useMemo(() => (groups ?? []).filter((group) => group.query.trim().length > 0), [groups]);
+
+  /** Tag nodes search for their tag; attachment nodes open the file. */
+  const openNode = (id: string) => {
+    if (isTagNodeId(id)) {
+      const node = filtered?.extras.find((candidate) => candidate.id === id);
+      if (node) setQuery(`tag:${node.title}`);
+      return;
+    }
+    if (isAttachmentNodeId(id)) {
+      window.open(fileUrl(attachmentPath(id)), "_blank", "noopener");
+      return;
+    }
+    onOpenPage(id);
+  };
 
   const toggleTag = (tag: string) => {
     setSelectedTags((previous) =>
@@ -106,7 +165,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
     return null;
   }, [data]);
   const hasBoards = useMemo(() => (data?.nodes ?? []).some((node) => node.kind === "whiteboard"), [data]);
-  const hasVisible = (filtered?.nodes.length ?? 0) + (filtered?.ghosts.length ?? 0) > 0;
+  const hasVisible = (filtered?.nodes.length ?? 0) + (filtered?.ghosts.length ?? 0) + (filtered?.extras.length ?? 0) > 0;
   const filtersActive = query.trim().length > 0 || selectedTags.length > 0;
 
   return (
@@ -153,6 +212,18 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
               </div>
               <button
                 type="button"
+                className={`button-secondary graph-panel-toggle${controlsOpen ? " is-active" : ""}`}
+                data-testid="graph-panel-toggle"
+                aria-expanded={controlsOpen}
+                aria-label={t("graph.panel.open")}
+                data-tooltip={t("graph.panel.open")}
+                disabled={!settings}
+                onClick={() => setControlsOpen((value) => !value)}
+              >
+                <Icon name="filter" size={14} />
+              </button>
+              <button
+                type="button"
                 className={`button-secondary graph-legend-toggle${legendOpen ? " is-active" : ""}`}
                 aria-expanded={legendOpen}
                 aria-controls="graph-legend"
@@ -196,7 +267,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
       ) : null}
 
       <div className="graph-body">
-        {status === "loading" ? (
+        {status === "loading" || !settings ? (
           <div className="graph-state graph-state-loading" data-testid="graph-loading">
             <p>{t("graph.loading")}</p>
           </div>
@@ -207,7 +278,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             </span>
             <h2>{t("graph.loadFailed")}</h2>
             <p>{error ?? t("errors.generic")}</p>
-            <button type="button" className="button-primary" onClick={() => void load()}>
+            <button type="button" className="button-primary" onClick={() => void load(wantAttachments)}>
               {t("common.retry")}
             </button>
           </div>
@@ -244,7 +315,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
               ariaLabel={ariaSummary(filtered)}
               showControls
               reducedMotion={reducedMotion}
-              onOpenPage={onOpenPage}
+              onOpenPage={openNode}
+              colorOf={colorOf}
               onCreatePage={(title) => {
                 const ghost = filtered.ghosts.find(
                   (candidate) => candidate.title.toLowerCase() === title.toLowerCase(),
@@ -256,9 +328,19 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
           </>
         ) : null}
 
+        {controlsOpen && settings && status === "ready" && hasPages ? (
+          <GraphControls settings={settings} onChange={(next: GraphSettings) => updateSettings(next)} onClose={() => setControlsOpen(false)} />
+        ) : null}
+
         {legendOpen && status === "ready" && hasPages ? (
           <aside className="graph-legend" id="graph-legend" data-testid="graph-legend">
             <p className="graph-legend-title">{t("graph.legend")}</p>
+            {legendGroups.map((group, index) => (
+              <p key={`${index}-${group.query}`} className="graph-legend-row graph-legend-group" data-testid="graph-legend-group">
+                <span className="graph-legend-dot" style={{ background: group.color }} aria-hidden="true" />
+                <span className="graph-legend-query">{group.query}</span>
+              </p>
+            ))}
             <p className="graph-legend-row">
               <span className="graph-legend-solid" aria-hidden="true" /> {t("graph.legendPage")}
             </p>
@@ -267,9 +349,17 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                 <span className="graph-legend-board" aria-hidden="true" /> {t("graph.legendBoard")}
               </p>
             ) : null}
-            <p className="graph-legend-row">
-              <span className="graph-legend-dashed" aria-hidden="true" /> {t("graph.legendGhost")}
-            </p>
+            {settings?.filters.hideUnresolved ? null : (
+              <p className="graph-legend-row">
+                <span className="graph-legend-dashed" aria-hidden="true" /> {t("graph.legendGhost")}
+              </p>
+            )}
+            {settings?.filters.showAttachments ? (
+              <p className="graph-legend-row" data-testid="graph-legend-attachment">
+                <span className="graph-legend-dot" style={{ background: `var(--graph-${ATTACHMENT_PALETTE_INDEX})` }} aria-hidden="true" />{" "}
+                {t("graph.legendAttachment")}
+              </p>
+            ) : null}
             {sampleIcon ? (
               <p className="graph-legend-row" data-testid="graph-legend-icon">
                 <span className="graph-legend-emoji" aria-hidden="true">

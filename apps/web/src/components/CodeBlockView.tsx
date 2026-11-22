@@ -9,6 +9,67 @@ import {
 import { loadGrammar } from "../editor/code/highlight-plugin.js";
 import { Icon } from "./Icon.js";
 import { t, useT } from "../i18n/index.js";
+import { mountDiagram } from "../lib/diagram.js";
+
+/** F2: whether the caret (or a selection) is inside this block's text. */
+function useCaretInside(editor: NodeViewProps["editor"], getPos: NodeViewProps["getPos"], size: number): boolean {
+  const [inside, setInside] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const pos = typeof getPos === "function" ? getPos() : undefined;
+      if (typeof pos !== "number" || !editor.isFocused) return setInside(false);
+      const { from, to } = editor.state.selection;
+      setInside(from > pos && to <= pos + 1 + size);
+    };
+    check();
+    editor.on("selectionUpdate", check);
+    editor.on("focus", check);
+    editor.on("blur", check);
+    return () => {
+      editor.off("selectionUpdate", check);
+      editor.off("focus", check);
+      editor.off("blur", check);
+    };
+  }, [editor, getPos, size]);
+  return inside;
+}
+
+/**
+ * F2: a ```mermaid block shows its diagram; the source shows while the caret
+ * is in the block (a click on the diagram puts it there; Esc leaves). The
+ * diagram follows the source, debounced while typing.
+ */
+function MermaidPreview({ source, editing, onEdit }: { source: string; editing: boolean; onEdit: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const timer = window.setTimeout(() => void mountDiagram(element, source), editing ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [source, editing]);
+  return (
+    <div
+      ref={ref}
+      className={`code-block-diagram${editing ? " is-editing" : ""}`}
+      data-testid="mermaid-diagram"
+      contentEditable={false}
+      role={editing ? undefined : "button"}
+      tabIndex={editing ? -1 : 0}
+      title={editing ? undefined : t("diagram.clickToEdit")}
+      onMouseDown={(event) => {
+        if (editing) return;
+        event.preventDefault();
+        onEdit();
+      }}
+      onKeyDown={(event) => {
+        if (!editing && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onEdit();
+        }
+      }}
+    />
+  );
+}
 
 /**
  * Notion-style code block (#zvhhn84v): a language button (searchable picker)
@@ -24,6 +85,8 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
   // An unknown fence shows as written: `{r echo=FALSE}`, not `{r`.
   const info = String(node.attrs.markdownInfo ?? "");
   const label = !known && language && info.startsWith(language) ? info : languageLabel(language);
+  const diagram = known?.id === "mermaid";
+  const editing = useCaretInside(editor, getPos, node.content.size);
 
   useEffect(() => {
     if (!copied) return;
@@ -56,7 +119,7 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
 
   return (
     <NodeViewWrapper
-      className={`code-block${open ? " is-picking" : ""}`}
+      className={`code-block${open ? " is-picking" : ""}${diagram ? ` is-diagram${editing ? " is-editing" : ""}` : ""}`}
       data-testid="code-block"
       data-language={language}
     >
@@ -98,6 +161,16 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
       <pre spellCheck={false}>
         <NodeViewContent as="code" className={known ? `language-${known.id}` : undefined} />
       </pre>
+      {diagram ? (
+        <MermaidPreview
+          source={node.textContent}
+          editing={editing}
+          onEdit={() => {
+            const pos = typeof getPos === "function" ? getPos() : undefined;
+            if (typeof pos === "number") editor.chain().focus(pos + 1).run();
+          }}
+        />
+      ) : null}
     </NodeViewWrapper>
   );
 }

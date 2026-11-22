@@ -8,6 +8,7 @@ import { Node, mergeAttributes, nodeInputRule } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { PageEmbedView } from "../../components/PageEmbedView.js";
 import { pageEmbedMarkdown, pageEmbedMarkdownPlugin, parsePageEmbed } from "./markdown-plugin.js";
+import { WIKILINK_INNER } from "@gumply/core";
 
 export const PageEmbed = Node.create({
   name: "pageEmbed",
@@ -52,7 +53,7 @@ export const PageEmbed = Node.create({
   addInputRules() {
     const rule = nodeInputRule({
       // Typed alone in its block: `![[Plan#Goals]]` becomes the preview.
-      find: /^(!\[\[[^[\]]+\]\])$/,
+      find: new RegExp(String.raw`^(!\[\[${WIKILINK_INNER}+\]\])$`),
       type: this.type,
       getAttributes: (match) => {
         const meta = parsePageEmbed(match[1] ?? "");
