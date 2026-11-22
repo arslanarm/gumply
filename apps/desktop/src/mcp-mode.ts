@@ -47,6 +47,33 @@ export interface LaunchContext {
   platform: NodeJS.Platform | string;
   /** `APPIMAGE`: the .AppImage file itself (Linux AppImage launches only). */
   appImage?: string;
+  /** #4ckqijua: `userNamespacesWork()` (development on Linux only; packaged builds don't need it). */
+  userNamespaces?: boolean;
+  /** #4ckqijua: `hasFusermount()` (AppImage launches only). */
+  fusermount?: boolean;
+}
+
+/**
+ * #4ckqijua: the probe electron-builder's AppImage `AppRun` uses before adding
+ * `--no-sandbox` (`unshare -Ur true`): the kernel has user namespaces and an
+ * unprivileged process may create one and map itself in it. Ubuntu 23.10+ restricts that through AppArmor
+ * (`kernel.apparmor_restrict_unprivileged_userns = 1`) for any binary without a
+ * profile; the `.deb` installs one for /opt/Gumply/gumply, and AppRun handles
+ * the AppImage, but development Electron (node_modules) has neither.
+ */
+export function userNamespacesWork(
+  exists: (path: string) => boolean,
+  run: (command: string, args: string[]) => number | null,
+): boolean {
+  // `-Ur` (map root), exactly as AppRun: under Ubuntu's restriction a bare
+  // `unshare --user` still succeeds, but mapping a uid is refused, and that is
+  // what Chromium's namespace sandbox needs.
+  return exists("/proc/self/ns/user") && run("unshare", ["-Ur", "true"]) === 0;
+}
+
+/** #4ckqijua: the static AppImage runtime mounts itself with `fusermount` (from fuse3, or fuse 2). */
+export function hasFusermount(exists: (path: string) => boolean): boolean {
+  return ["/usr/bin", "/bin", "/usr/local/bin"].some((dir) => exists(`${dir}/fusermount3`) || exists(`${dir}/fusermount`));
 }
 
 /**
@@ -62,15 +89,32 @@ export interface LaunchContext {
  * `hint` names a location the user may move, so the dialog can say to copy
  * the snippet again afterwards.
  */
-export function mcpLaunchCommand(context: LaunchContext): { command: string; args: string[]; hint?: "appimage" | "macos-location" } {
+export function mcpLaunchCommand(context: LaunchContext): {
+  command: string;
+  args: string[];
+  hint?: "appimage" | "macos-location";
+  warning?: "fuse";
+} {
   const { execPath, packaged, appPath, platform, appImage } = context;
   // Linux: MCP mode shows nothing, so it must not need a display. Without this
   // switch Chromium picks X11 or Wayland from the environment, and an AI app
   // started over SSH, on a headless box or with a stale XDG_SESSION_TYPE exits
   // before serving. It has to be on the command line: from main.ts it's too late.
   const mcp = platform === "linux" ? ["--mcp", "--ozone-platform=headless"] : ["--mcp"];
-  if (!packaged) return { command: execPath, args: [appPath, ...mcp] };
-  if (platform === "linux" && appImage && appImage.startsWith("/")) return { command: appImage, args: mcp, hint: "appimage" };
+  if (!packaged) {
+    // #4ckqijua: development Electron has no AppArmor profile and no AppRun, so
+    // where user namespaces are restricted Chromium's sandbox can't start and
+    // aborts ("SUID sandbox helper… not configured"). Apply AppRun's own rule:
+    // without working user namespaces, run without the sandbox. MCP mode never
+    // creates a window or loads web content, so the sandbox protects nothing
+    // there. Packaged builds keep theirs (AppArmor profile, or AppRun decides).
+    const sandbox = platform === "linux" && context.userNamespaces === false ? ["--no-sandbox"] : [];
+    return { command: execPath, args: [appPath, ...mcp, ...sandbox] };
+  }
+  if (platform === "linux" && appImage && appImage.startsWith("/")) {
+    // The static runtime needs a `fusermount` to mount itself (#4ckqijua): say so instead of failing silently.
+    return { command: appImage, args: mcp, hint: "appimage", ...(context.fusermount === false ? { warning: "fuse" as const } : {}) };
+  }
   // Run from the disk image or a translocated copy: that path goes away.
   if (platform === "darwin" && !/^\/Applications\/|^\/Users\/[^/]+\/Applications\//.test(execPath)) {
     return { command: execPath, args: ["--mcp"], hint: "macos-location" };

@@ -56,7 +56,7 @@ The desktop app in MCP mode opens no window and doesn't stop you from opening Gu
 | `CONFLICT: … changed since it was read` | You (or another app) changed the page after the AI read it. Nothing was overwritten; the AI app should read it again. |
 | `RATE_LIMITED` | More than 30 changes a minute (or 1,000 a day). Wait a moment. |
 | Linux: `Missing X server or $DISPLAY` / `Failed to connect to Wayland display` | Copy the snippet again from Settings: it includes `--ozone-platform=headless`, so no display is needed. |
-| Linux AppImage: nothing happens, or a FUSE error | The AppImage needs FUSE 2 (`libfuse2` on Ubuntu/Debian). Or install the `.deb`. |
+| Linux AppImage: nothing happens, or a FUSE error (`fusermount: not found`, `AppImages require FUSE to run`) | Gumply 0.8+ AppImages need FUSE 3: `sudo apt install fuse3` (installed by default on Ubuntu 22.04+). Settings → AI apps shows a note when it's missing. Older AppImages needed `libfuse2t64`. Or install the `.deb`. Don't use `APPIMAGE_EXTRACT_AND_RUN=1` for MCP: it prints to the connection and breaks it. |
 
 Gumply's MCP server writes its own messages to stderr: Claude Code shows them with `claude --debug`, Claude Desktop in its MCP logs (`~/Library/Logs/Claude/` on macOS, `%APPDATA%\Claude\logs\` on Windows).
 

@@ -190,6 +190,7 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
               />
               {settings.command.hint === "npm" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.npmHint")}</p> : null}
               {settings.command.hint === "appimage" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.appImageHint")}</p> : null}
+              {settings.command.warning === "fuse" ? <p className="mcp-note mcp-error" data-testid="mcp-fuse-warning">{t("settings.mcp.fuseWarning")}</p> : null}
               {settings.command.hint === "macos-location" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.macLocationHint")}</p> : null}
             </section>
 
