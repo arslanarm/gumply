@@ -377,6 +377,25 @@ interface FolderRecord {
 /** Directories met while scanning, with the non-page files directly in each. */
 type DirectoryScan = Map<PageId, number>;
 
+/**
+ * What a refresh re-reads (#g95wkd9y): everything (still served from the read
+ * cache while a file's stat is unchanged), or a set of files the watcher
+ * reported, which are always read again.
+ */
+type RefreshScope = { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string> };
+
+/** More touched paths than this in one burst: refresh "all" (the read cache still applies). */
+const MAX_REFRESH_PATHS = 200;
+
+/**
+ * A file's identity for the read cache. mtime and size alone miss a same-size
+ * edit within the mtime granularity (2 s on FAT/exFAT, coarse on some network
+ * and sync mounts); ctime moves on any write and ino on an atomic replace.
+ */
+function statKey(stats: { mtimeMs: number; size: number; ino: number; ctimeMs: number }): string {
+  return `${stats.mtimeMs}:${stats.size}:${stats.ino}:${stats.ctimeMs}`;
+}
+
 /** Folders have no timestamps of their own (no file, no extra stat per folder). */
 const FOLDER_TIME = new Date(0).toISOString();
 
@@ -713,6 +732,16 @@ export class VaultStore {
   private sessionBytesTotal = 0;
   private readonly sessionBytesCap: number;
   private pruneTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * #g95wkd9y: the record last read from each file (absolute path), reused by
+   * a refresh while the file's `statKey` is unchanged: a 10,000-note rescan
+   * is then a directory walk plus stats, not 10,000 reads and parses.
+   */
+  private readCache = new Map<string, { key: string; id: PageId; record: PageRecord }>();
+  /** Files the watcher reported since the last refresh (absolute paths). */
+  private readonly pendingPaths = new Set<string>();
+  /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
+  private pendingFull = false;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
   private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
 
@@ -791,6 +820,7 @@ export class VaultStore {
         watcher.on("error", () => {
           watcher.close();
           this.directoryWatchers.delete(dir);
+          this.pendingFull = true;
           this.scheduleRescan();
         });
         this.directoryWatchers.set(dir, watcher);
@@ -803,13 +833,18 @@ export class VaultStore {
   private onWatchEvent(dir: string, filename: string | Buffer | null): void {
     const name = filename === null ? "" : String(filename);
     // Unknown name (some platforms): rescan to be safe.
-    if (name.length === 0) return this.scheduleRescan();
+    if (name.length === 0) {
+      this.pendingFull = true;
+      return this.scheduleRescan();
+    }
     if (name.startsWith(".") || name.endsWith(".tmp") || name === "node_modules") return;
-    // A page/board changed, or a folder appeared or went away.
-    // #8k4ssrkb: an attachment added, renamed or removed changes what links resolve to.
-    if (ITEM_FILE.test(name) || hasAttachmentExtension(name) || !name.includes(".")) this.scheduleRescan();
-    else if (this.directoryWatchers.has(join(dir, name))) this.scheduleRescan();
+    // A page/board changed: re-read that file (#g95wkd9y).
+    if (ITEM_FILE.test(name)) this.pendingPaths.add(join(dir, name));
+    // #8k4ssrkb: an attachment added, renamed or removed changes what links resolve to;
+    // a folder appeared or went away. Both are settled by a full walk.
+    else if (hasAttachmentExtension(name) || !name.includes(".") || this.directoryWatchers.has(join(dir, name))) this.pendingFull = true;
     else return;
+    this.scheduleRescan();
     this.noteWatchEvent();
   }
 
@@ -827,7 +862,16 @@ export class VaultStore {
 
   /** Re-read the vault and return whether the page index actually changed. */
   rescan(): Promise<boolean> {
-    return this.enqueue(() => this.refreshFromDisk());
+    return this.enqueue(() => this.refreshFromDisk({ kind: "all" }));
+  }
+
+  /** What the watcher reported since the last refresh, as a scope (and cleared). */
+  private takePendingScope(): RefreshScope {
+    const full = this.pendingFull || this.pendingPaths.size === 0 || this.pendingPaths.size > MAX_REFRESH_PATHS;
+    const scope: RefreshScope = full ? { kind: "all" } : { kind: "paths", paths: new Set(this.pendingPaths) };
+    this.pendingFull = false;
+    this.pendingPaths.clear();
+    return scope;
   }
 
   private scheduleRescan(): void {
@@ -858,7 +902,9 @@ export class VaultStore {
     }
     return this.enqueue(
       async () => {
-        const changed = await this.refreshFromDisk();
+        // #g95wkd9y: the scope is taken when the job runs, so events that came in
+        // while it waited for saves are part of it.
+        const changed = await this.refreshFromDisk(this.takePendingScope());
         // Folders may have appeared or gone: keep one watcher per directory.
         this.syncDirectoryWatchers();
         return changed;
@@ -872,8 +918,9 @@ export class VaultStore {
    * boards keep `.canvas`. A page whose id would equal a board's (a file
    * `Map.canvas.md` next to `Map.canvas`) keeps its `.md` so both stay.
    */
-  private async scanRecords(): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
+  private async scanRecords(reread?: ReadonlySet<string>): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
     const next = new Map<PageId, PageRecord>();
+    const nextCache = new Map<string, { key: string; id: PageId; record: PageRecord }>();
     const directories: DirectoryScan = new Map();
     const others: string[] = [];
     const files = (await this.scan(this.root, directories, others)).map((absolute) => ({
@@ -885,10 +932,25 @@ export class VaultStore {
       let id = keepsExtension(rel) ? rel : pathToPageId(rel);
       if (!keepsExtension(rel) && boards.has(id.toLowerCase())) id = rel;
       if (!isValidPageId(id)) continue;
-      const record = await this.readRecord(absolute, id);
-      this.refreshTags(record);
+      let stats;
+      try {
+        stats = await stat(absolute);
+      } catch {
+        continue; // Gone since the directory was read.
+      }
+      const key = statKey(stats);
+      const cached = this.readCache.get(absolute);
+      // #g95wkd9y: an unchanged file keeps its record; a file the watcher named is always read.
+      let record: PageRecord;
+      if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) record = cached.record;
+      else {
+        record = await this.readRecord(absolute, id);
+        this.refreshTags(record);
+      }
+      nextCache.set(absolute, { key, id, record });
       next.set(id, record);
     }
+    this.readCache = nextCache;
     const folders = VaultStore.foldersFrom(directories, next);
     VaultStore.assignParents(next, folders);
     const linkIndex = new LinkFileIndex([...others, ...(await this.attachmentFiles())]);
@@ -949,19 +1011,24 @@ export class VaultStore {
     return JSON.stringify([...folders.values()].map((folder) => [folder.id, folder.parentId]).sort());
   }
 
-  private async refreshFromDisk(): Promise<boolean> {
-    const { pages: next, folders } = await this.scanRecords();
+  private async refreshFromDisk(scope: RefreshScope = { kind: "all" }): Promise<boolean> {
+    const epochBefore = this.fileIndexEpoch;
+    const { pages: next, folders } = await this.scanRecords(scope.kind === "paths" ? scope.paths : undefined);
 
-    let changed = next.size !== this.pages.size;
-    if (!changed) {
-      for (const [id, record] of next) {
-        const current = this.pages.get(id);
-        if (!current || this.recordSignature(current) !== this.recordSignature(record)) {
-          changed = true;
-          break;
-        }
+    // #g95wkd9y: which records differ (a reused record is the same object: no compare).
+    const changedIds: PageId[] = [];
+    for (const [id, record] of next) {
+      const current = this.pages.get(id);
+      if (current !== record && (!current || this.recordSignature(current) !== this.recordSignature(record))) changedIds.push(id);
+    }
+    let removed = false;
+    for (const id of this.pages.keys()) {
+      if (!next.has(id)) {
+        removed = true;
+        break;
       }
     }
+    const changed = changedIds.length > 0 || removed;
     const foldersChanged = VaultStore.folderSignature(folders) !== VaultStore.folderSignature(this.folders);
     this.folders = folders;
     if (!changed) return foldersChanged;
@@ -1002,6 +1069,7 @@ export class VaultStore {
     }
 
     const previousIds = new Set(this.pages.keys());
+    const previous = new Map(this.pages);
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
     for (const { from, to } of historyMoves) {
@@ -1026,7 +1094,20 @@ export class VaultStore {
     // D23: a file moved to another folder outside Gumply keeps working
     // attachment links. Links the other tool already fixed are kept.
     await this.relinkMoved(externalMoves, { keepValidAtDestination: true });
-    this.reindexAll();
+    // #g95wkd9y: a change that leaves every link target where it was (same ids,
+    // titles and kinds, same linkable files) only changes the changed pages'
+    // own links. Anything else can change what other pages' links resolve to.
+    const targetsMoved =
+      removed ||
+      externalMoves.length > 0 ||
+      this.fileIndexEpoch !== epochBefore ||
+      changedIds.some((id) => {
+        const before = previous.get(id);
+        const after = this.pages.get(id);
+        return !before || !after || before.title !== after.title || before.kind !== after.kind;
+      });
+    if (targetsMoved) this.reindexAll();
+    else this.recomputeSources(changedIds);
     return true;
   }
 
@@ -3989,6 +4070,19 @@ export class VaultStore {
       const record = this.pages.get(meta.id);
       if (!record) continue;
       this.edgesBySource.set(meta.id, this.edgesFor(record, metas));
+    }
+  }
+
+  /** Recompute the link edges of these sources only (one page list for all of them). */
+  private recomputeSources(ids: readonly PageId[]): void {
+    if (ids.length === 0) return;
+    const metas = this.pageMetas();
+    // D43: a conflict copy beside its original holds no links (as recomputeSource).
+    const copies = this.copyIds();
+    for (const id of ids) {
+      const record = this.pages.get(id);
+      if (record && !copies.has(id)) this.edgesBySource.set(id, this.edgesFor(record, metas));
+      else this.edgesBySource.delete(id);
     }
   }
 
