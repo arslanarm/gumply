@@ -20,10 +20,17 @@ import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./
 import { lodLevel, type LodLevel } from "./lod.js";
 import { NODE_TYPES } from "./nodes.js";
 
+/** How a card changed between a version and now (the History panel's Changes, #fr5baurg). */
+export type BoardDiffMark = "added" | "removed" | "changed";
+
 export interface BoardPreviewProps {
   board: CanvasBoard;
   pages?: readonly BoardPageOption[];
   loadPage?: (path: string) => Promise<string | null>;
+  /** Pan and zoom (the History panel); an embed in a page stays still so the page scrolls (D30). */
+  interactive?: boolean;
+  /** Cards to mark, by node id: `board-diff-added` / `-removed` / `-changed` classes. */
+  highlight?: ReadonlyMap<string, BoardDiffMark>;
 }
 
 const NONE = new Set<string>();
@@ -53,7 +60,7 @@ const MIN_ZOOM = 0.02;
  */
 const CHUNK = 40;
 
-function Preview({ board, pages = [], loadPage }: BoardPreviewProps) {
+function Preview({ board, pages = [], loadPage, interactive = false, highlight }: BoardPreviewProps) {
   const flow = useReactFlow<BoardFlowNode, BoardFlowEdge>();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const lod = useRef<LodLevel>(0);
@@ -68,7 +75,10 @@ function Preview({ board, pages = [], loadPage }: BoardPreviewProps) {
     return () => cancelAnimationFrame(frame);
   }, [complete, revealed]);
 
-  const shownNodes = useMemo(() => (complete ? nodes : nodes.slice(0, revealed)), [complete, nodes, revealed]);
+  const shownNodes = useMemo(() => {
+    const shown = complete ? nodes : nodes.slice(0, revealed);
+    return highlight ? marked(shown, highlight) : shown;
+  }, [complete, nodes, revealed, highlight]);
   const shownEdges = useMemo(() => {
     if (complete) return edges;
     const ids = new Set(shownNodes.map((node) => node.id));
@@ -140,7 +150,7 @@ function Preview({ board, pages = [], loadPage }: BoardPreviewProps) {
               edgeTypes={EDGE_TYPES}
               onInit={fit}
               minZoom={MIN_ZOOM}
-              maxZoom={1}
+              maxZoom={interactive ? 2 : 1}
               // Every side handle is a "source" (like the editor): an edge may end on one.
               connectionMode={ConnectionMode.Loose}
               nodesDraggable={false}
@@ -148,13 +158,13 @@ function Preview({ board, pages = [], loadPage }: BoardPreviewProps) {
               nodesFocusable={false}
               edgesFocusable={false}
               elementsSelectable={false}
-              panOnDrag={false}
+              panOnDrag={interactive}
               panOnScroll={false}
-              zoomOnScroll={false}
-              zoomOnPinch={false}
+              zoomOnScroll={interactive}
+              zoomOnPinch={interactive}
               zoomOnDoubleClick={false}
-              // The page scrolls over the embed.
-              preventScrolling={false}
+              // An embed: the page scrolls over it. The History panel: the wheel zooms the board.
+              preventScrolling={interactive}
               deleteKeyCode={null}
               selectionKeyCode={null}
               multiSelectionKeyCode={null}
@@ -167,6 +177,15 @@ function Preview({ board, pages = [], loadPage }: BoardPreviewProps) {
       </BoardContentContext.Provider>
     </BoardActionsContext.Provider>
   );
+}
+
+/** The diff marks as classes on the flow nodes (new objects only where the class changes). */
+function marked(nodes: BoardFlowNode[], highlight: ReadonlyMap<string, BoardDiffMark>): BoardFlowNode[] {
+  return nodes.map((node) => {
+    const mark = highlight.get(node.id);
+    const className = mark ? `board-diff-${mark}` : undefined;
+    return node.className === className ? node : { ...node, className };
+  });
 }
 
 /** Nodes the preview can't move: no `nopan`/drag handling, no resize handles. */
