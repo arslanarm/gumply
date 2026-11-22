@@ -2331,7 +2331,7 @@ export function App() {
             const target = pdfTarget;
             try {
               const { exportPageAsPdf } = await import("./export/run-export.js");
-              if (options.print) await exportPageAsPdf(target.id, documentPages, options.print, desktop);
+              if (options.print) await exportPageAsPdf(target.id, documentPages, options.print);
             } catch (error) {
               setActionError(t("export.failed", { error: errorMessage(error) }));
             }

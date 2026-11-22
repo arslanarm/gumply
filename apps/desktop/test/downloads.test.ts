@@ -26,12 +26,24 @@ describe("desktop downloads (#yewapn9k)", () => {
 });
 
 describe("G2 print downloads", () => {
-  it("recognises the print hand-off and names the PDF", async () => {
+  const token = "3f9a0c1d2e4b5a6978c0d1e2";
+  it("takes only <Title>.<token>.gumply-print.html, and names the PDF", async () => {
     const { isPrintDownload, pdfName } = await import("../src/downloads");
-    expect(isPrintDownload("Trip plan.gumply-print.html")).toBe(true);
-    expect(isPrintDownload(".gumply-print.html")).toBe(false);
-    expect(isPrintDownload("Trip plan.html")).toBe(false);
-    expect(pdfName("Trip plan.gumply-print.html")).toBe("Trip plan.pdf");
-    expect(pdfName("a:b.gumply-print.html")).toBe("a b.pdf");
+    expect(isPrintDownload(`Trip plan.${token}.gumply-print.html`, token)).toBe(true);
+    expect(pdfName(`Trip plan.${token}.gumply-print.html`, token)).toBe("Trip plan.pdf");
+    expect(pdfName(`a:b.${token}.gumply-print.html`, token)).toBe("a b.pdf");
+  });
+
+  it("a marker name without this launch's token is a normal download", async () => {
+    const { isPrintDownload } = await import("../src/downloads");
+    // A vault attachment that happens to end in the marker.
+    expect(isPrintDownload("x.gumply-print.html", token)).toBe(false);
+    // Another launch's token, or a guessed one.
+    expect(isPrintDownload("x.0123456789abcdef0123.gumply-print.html", token)).toBe(false);
+    // No title before the token.
+    expect(isPrintDownload(`.${token}.gumply-print.html`, token)).toBe(false);
+    // An empty or malformed token never matches.
+    expect(isPrintDownload("x..gumply-print.html", "")).toBe(false);
+    expect(isPrintDownload("x.abc.gumply-print.html", "abc")).toBe(false);
   });
 });

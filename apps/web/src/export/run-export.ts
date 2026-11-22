@@ -83,12 +83,13 @@ export async function exportPageAsHtml(id: PageId, pages: readonly PageMeta[], o
  * Save dialog); a browser prints the same document from a hidden iframe, and
  * its own dialog offers "Save as PDF".
  */
-export async function exportPageAsPdf(id: PageId, pages: readonly PageMeta[], print: PrintOptions, desktop: boolean): Promise<string> {
-  const page = await api.getPage(id);
+export async function exportPageAsPdf(id: PageId, pages: readonly PageMeta[], print: PrintOptions): Promise<string> {
+  const [page, health] = await Promise.all([api.getPage(id), api.health()]);
   const html = await buildPageHtml(page, exportSource(pages), { theme: "light", links: "text", print });
   const name = exportFileName(page.title).replace(/\.html$/, ".pdf");
-  if (desktop) {
-    downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), exportFileName(page.title).replace(/\.html$/, PRINT_DOWNLOAD_SUFFIX));
+  // The desktop app prints in main; it recognises the hand-off by this launch's token.
+  if (health.desktop && health.printToken) {
+    downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), exportFileName(page.title).replace(/\.html$/, `.${health.printToken}${PRINT_DOWNLOAD_SUFFIX}`));
     return name;
   }
   printInFrame(html, page.title);

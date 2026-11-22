@@ -12,6 +12,7 @@
  */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
@@ -83,6 +84,9 @@ if (mcpMode) {
   process.on("exit", removeThrowaway);
   app.on("will-quit", removeThrowaway);
 }
+
+/** G2: per launch; the app's page gets it from /api/health and names print hand-offs with it. */
+const printToken = randomBytes(12).toString("hex");
 
 let settings: DesktopSettings;
 let server: RunningServer | null = null;
@@ -231,6 +235,7 @@ async function openVault(path: string): Promise<void> {
     uiState: uiStateStore,
     // A3: Settings → MCP shows AI apps how to start this app's --mcp mode.
     mcpCommand: mcpLaunchCommand(process.execPath, app.isPackaged, app.getAppPath()),
+    printToken,
     log: (message) => console.log(message),
   });
   launchPhase("server-started");
@@ -686,10 +691,10 @@ if (mcpMode) {
         return;
       }
       // G2: a page to print. It goes to a scratch folder, then printToPDF and the Save dialog.
-      if (isPrintDownload(item.getFilename())) {
+      if (isPrintDownload(item.getFilename(), printToken)) {
         const scratchDir = mkdtempSync(join(tmpdir(), "gumply-print-"));
         const htmlPath = join(scratchDir, "page.html");
-        const target = pdfName(item.getFilename());
+        const target = pdfName(item.getFilename(), printToken);
         item.setSavePath(htmlPath);
         item.once("done", (_doneEvent, state) => {
           if (state === "completed") void printToPdf(htmlPath, target, scratchDir).catch((error: unknown) => console.error("[gumply] PDF export failed:", error));
