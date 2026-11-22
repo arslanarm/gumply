@@ -1,6 +1,7 @@
-import type { BaseViewResult, Page, PageMeta } from "@gumply/core";
+import type { BaseValue, BaseViewResult, Page, PageMeta } from "@gumply/core";
 import { describe, expect, it } from "vitest";
 import { buildPageHtml, exportFileName, MAX_BASE_ROWS, pageRule, siblingHref, unescapeHtml, type ExportSource } from "../src/export/html-export.js";
+import { display } from "../src/bases/TableView.js";
 
 const meta = (id: string, kind: PageMeta["kind"] = "page"): PageMeta =>
   ({ id, title: id.split("/").pop()!.replace(/\.(canvas|base)$/, ""), kind, parentId: null, updated: "2026-11-22T10:00:00.000Z", created: "2026-11-22T10:00:00.000Z" }) as PageMeta;
@@ -163,6 +164,20 @@ describe("HTML export (G1)", () => {
     expect(html).toContain('<td class="is-check">☑</td>');
     expect(html.match(/<tr>/g)!.length).toBe(MAX_BASE_ROWS + 1);
     expect(html).toContain('export.moreRows(3)');
+  });
+
+  it("database snapshots show dates and links as the table does (display / formatDateValue)", async () => {
+    const root = page("Plan", "![[Work/Tasks.base]]");
+    const rows = [{ id: "Work/T1", kind: "page", title: "T1", updated: "", values: { "note.due": "2026-11-21", "note.owner": "[[People/Ann|Ann]]" } }];
+    const result = { view: "Table", type: "table", columns: [{ id: "file.name", type: "file", editable: false }, { id: "note.due", type: "date", editable: true }, { id: "note.owner", type: "text", editable: true }], rows, total: 1, warnings: [] } as unknown as BaseViewResult;
+    const { value } = source({}, [root], {
+      runBase: async () => ({ result, label: (id) => id.replace(/^note\./, "") }),
+      formatValue: (cell, type) => display((cell ?? null) as BaseValue, type),
+    });
+    const html = await buildPageHtml(root, value, options);
+    expect(html).toContain("<td>Nov 21, 2026</td>");
+    expect(html).not.toContain("2026-11-21");
+    expect(html).toContain("<td>Ann</td>");
   });
 
   it("colour spans become colours, safely; other HTML in a page stays text", async () => {
