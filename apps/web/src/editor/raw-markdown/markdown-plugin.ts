@@ -264,8 +264,8 @@ function softBreakSpaces(block: any, sourceLines: readonly string[]): void {
 
 /**
  * Keep HTML entities as typed (`&nbsp;`, `&copy;`): markdown-it decodes them
- * into the text, so an edit used to write a literal NBSP / ©. An escaped
- * `\=` is kept the same way. Runs before
+ * into the text, so an edit used to write a literal NBSP / ©. Backslash
+ * escapes are kept the same way. Runs before
  * markdown-it joins `text_special` tokens back into plain text.
  */
 function entityRule(state: any): void {
@@ -276,10 +276,16 @@ function entityRule(state: any): void {
         token.type = "gumply_raw_inline";
         token.content = token.markup;
         token.info = "entity";
-      } else if (token.type === "text_special" && token.info === "escape" && token.markup === "\\=") {
-        // An escaped `\=` (#bg3cb83t): highlight pairing around it can't be
-        // rebuilt from the text alone (`c==d and \==x== here` pairs `c==`
-        // with the last `==`), so it's kept exactly as written.
+      } else if (token.type === "text_special" && token.info === "escape" && /^\\[!-/:-@[-`{-~]$/.test(token.markup)) {
+        // Only real escapes (a backslash before ASCII punctuation): markdown-it
+        // also emits `\n` / `\U` here with the backslash kept, and those are
+        // plain text already (shown and written as typed).
+        // Every backslash escape is kept exactly as written (#628e927t, D37):
+        // markdown-it drops the backslash, and the writer only re-escapes
+        // what it thinks needs it, so `\$5`, `\,` (LaTeX spacing), `\[`,
+        // `\*` and `\\` lost theirs on any save. An escaped `\=` was the
+        // first case (#bg3cb83t): highlight pairing around it can't be
+        // rebuilt from the text alone. The atom shows the character itself.
         token.type = "gumply_raw_inline";
         token.content = token.markup;
         token.info = "escape";
