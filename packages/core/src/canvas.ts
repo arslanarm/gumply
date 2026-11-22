@@ -413,6 +413,8 @@ export interface CanvasRewrite {
   file?: (path: string, node: CanvasFileNode) => string | null | undefined;
   /** New Markdown for a text node's `text` (e.g. `rewriteLinksToPage`). */
   text?: (markdown: string, node: CanvasTextNode) => string;
+  /** New `subpath` (`#Heading`) for a file node that has one, or null/undefined to leave it (C2). */
+  subpath?: (subpath: string, node: CanvasFileNode) => string | null | undefined;
 }
 
 /**
@@ -423,11 +425,17 @@ export interface CanvasRewrite {
 export function rewriteCanvas(board: CanvasBoard, rewrite: CanvasRewrite): { board: CanvasBoard; count: number } {
   let count = 0;
   const nodes = board.nodes.map((node): CanvasNode => {
-    if (node.type === "file" && rewrite.file && typeof node.file === "string") {
-      const next = rewrite.file(node.file, node);
-      if (next && next !== node.file) {
+    if (node.type === "file" && typeof node.file === "string" && (rewrite.file || rewrite.subpath)) {
+      const file = rewrite.file?.(node.file, node);
+      const subpath =
+        rewrite.subpath && typeof node.subpath === "string" && node.subpath.length > 0
+          ? rewrite.subpath(node.subpath, node)
+          : null;
+      const fileChanged = Boolean(file) && file !== node.file;
+      const subpathChanged = Boolean(subpath) && subpath !== node.subpath;
+      if (fileChanged || subpathChanged) {
         count += 1;
-        return { ...node, file: next };
+        return { ...node, ...(fileChanged ? { file: file! } : {}), ...(subpathChanged ? { subpath: subpath! } : {}) };
       }
     } else if (node.type === "text" && rewrite.text && typeof node.text === "string") {
       const next = rewrite.text(node.text, node);

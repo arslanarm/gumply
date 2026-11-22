@@ -277,6 +277,26 @@ describe("rewriteCanvas (rename writer)", () => {
     expect(serializeCanvas(board)).toBe(source);
   });
 
+  it("rewrites a file node's subpath (C2, #u84ebtf3), alone or with its path", () => {
+    const source = fixture("obsidian-basic.canvas");
+    const board = parseCanvas(source);
+    const onlySubpath = rewriteCanvas(board, { subpath: (subpath, n) => (n.file === "Projects/Q1 plan.md" && subpath === "#Risks" ? "#Threats" : null) });
+    expect(onlySubpath.count).toBe(1);
+    expect(node(onlySubpath.board, "9a8b7c6d5e4f3a2b")).toMatchObject({ file: "Projects/Q1 plan.md", subpath: "#Threats" });
+    // A node without a subpath is never asked.
+    expect(node(onlySubpath.board, "0f1e2d3c4b5a6978").subpath).toBeUndefined();
+    const before = source.split("\n");
+    const after = serializeCanvas(onlySubpath.board).split("\n");
+    expect(after.filter((line, i) => line !== before[i]).length).toBe(1);
+
+    const both = rewriteCanvas(board, {
+      file: (path) => (path === "Projects/Q1 plan.md" ? "Projects/Q1 roadmap.md" : null),
+      subpath: () => "#Threats",
+    });
+    expect(both.count).toBe(2);
+    expect(node(both.board, "9a8b7c6d5e4f3a2b")).toMatchObject({ file: "Projects/Q1 roadmap.md", subpath: "#Threats" });
+  });
+
   it("returns the same board when nothing matches", () => {
     const board = parseCanvas(fixture("gumply-extras.canvas"));
     const result = rewriteCanvas(board, { file: () => null, text: (markdown) => markdown });
