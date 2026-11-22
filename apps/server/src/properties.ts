@@ -13,6 +13,8 @@ import {
   type Property,
   type PropertyType,
   type PropertyValue,
+  encodePropertyValue,
+  propertyLinkSpans,
 } from "@gumply/core";
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
 
@@ -165,4 +167,52 @@ export class PropertyTypesStore {
     }
     this.cache = null;
   }
+}
+
+/**
+ * #3c86ify2: rewrite `[[links]]` inside frontmatter values (a rename, a folder
+ * move, a heading rename), changing only the values that hold a matching link
+ * (D37). The spans come from core `propertyLinkSpans`, the same walk the link
+ * index uses (#rpugpydh). The rewrite runs on the **decoded** value (so
+ * `"\\[[X]]"`, an escaped opener, stays text, as in the body), and each new
+ * value is written in its own style (`encodePropertyValue`). The result is read
+ * back: the same keys and values, except exactly the rewritten ones, or the
+ * YAML is returned unchanged.
+ */
+export function rewritePropertyLinks(
+  yaml: string,
+  rewrite: (text: string) => { content: string; count: number },
+): { yaml: string; count: number } {
+  const unchanged = { yaml, count: 0 };
+  if (!yaml.includes("[[")) return unchanged;
+  const spans = propertyLinkSpans(yaml);
+  if (!spans) return unchanged;
+
+  const edits = new Map<number, { text: string; value: string }>();
+  let count = 0;
+  spans.forEach((span, index) => {
+    if (!span.value.includes("[[")) return;
+    const result = rewrite(span.value);
+    if (result.count === 0 || result.content === span.value) return;
+    edits.set(index, { text: encodePropertyValue(span.style, result.content), value: result.content });
+    count += result.count;
+  });
+  if (edits.size === 0) return unchanged;
+
+  let out = yaml;
+  for (const index of [...edits.keys()].sort((a, b) => spans[b]!.start - spans[a]!.start)) {
+    const span = spans[index]!;
+    out = out.slice(0, span.start) + edits.get(index)!.text + out.slice(span.end);
+  }
+
+  // Read it back: the same spans, the rewritten ones as intended, the rest as before.
+  const after = propertyLinkSpans(out);
+  if (!after || after.length !== spans.length) return unchanged;
+  for (let index = 0; index < spans.length; index += 1) {
+    const expected = edits.get(index)?.value ?? spans[index]!.value;
+    if (after[index]!.key !== spans[index]!.key || after[index]!.value !== expected) return unchanged;
+  }
+  const keys = (text: string) => JSON.stringify(readRawProperties(text).map((property) => property.key));
+  if (keys(yaml) !== keys(out)) return unchanged;
+  return { yaml: out, count };
 }

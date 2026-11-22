@@ -3,6 +3,7 @@
  * Each write: exact bytes on disk, nothing else in the vault changed, one
  * history entry holding the replaced bytes, one audit line without page text.
  */
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -166,6 +167,36 @@ describe.each(ERAS)("write tools (%s client)", (era) => {
     expect(readdirSync(join(vault.dir, ".trash")).length).toBeGreaterThan(0);
     expect(codeOf(await mcp.call("read", { id: "Injection" }))).toBe("NOT_FOUND");
     expect(codeOf(await mcp.call("trash_page", { id: "Projects", expectedUpdated: "x" }))).toBe("UNSUPPORTED");
+  });
+
+  it.each([
+    ["spaced, with a final newline", (board: unknown) => `${JSON.stringify(board, null, 2)}\n`],
+    ["tab-indented, without one", (board: unknown) => JSON.stringify(board, null, "\t")],
+  ])("add_to_board (#3c86ify2) on a board %s: only the new node is inserted; history holds the exact bytes read once", async (_name, layout) => {
+    // The fixture board in a layout of its own, as another app might write it.
+    const original = layout(JSON.parse(file("Map.canvas")));
+    writeFileSync(join(vault.dir, "Map.canvas"), original);
+    const result = await mcp.call("add_to_board", { boardId: "Map.canvas", item: { type: "text", text: "Inserted" } });
+    expect(result.isError).toBeFalsy();
+    const after = file("Map.canvas");
+    // Pure insertion: removing the inserted run gives back the original byte for byte.
+    let at = 0;
+    while (at < original.length && original[at] === after[at]) at += 1;
+    expect(after.slice(0, at) + after.slice(at + after.length - original.length)).toBe(original);
+    expect(after.slice(at, at + after.length - original.length)).toContain('"text":"Inserted"');
+    // History: the snapshot file is those bytes, and its index line describes them.
+    const [entry] = await historyOf("Map.canvas");
+    const snapshot = readFileSync(join(vault.dir, ".gumply/history", pageKey("Map.canvas"), entry!.file));
+    expect(snapshot.toString("utf8")).toBe(original);
+    expect(entry).toMatchObject({
+      tool: "add_to_board",
+      bytes: Buffer.byteLength(original),
+      sha256: createHash("sha256").update(original).digest("hex"),
+    });
+    // Audit: one line, whose `after` is the version returned.
+    const lines = auditLines().filter((line) => line.tool === "add_to_board");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.after).toBe(result.structuredContent!.updated);
   });
 
   it("add_to_board: sticky beside a card, page card, http links only; unknown keys kept", async () => {

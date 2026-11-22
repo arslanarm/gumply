@@ -71,6 +71,7 @@ import {
   canvasText,
   emptyCanvas,
   parseCanvas,
+  patchCanvasFile,
   rewriteCanvas,
   type CanvasRewrite,
   serializeCanvas,
@@ -107,7 +108,7 @@ import {
   type TrashItem,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
-import { PropertyTypesStore, readRawProperties, typedProperties, type RawProperty } from "./properties.js";
+import { PropertyTypesStore, readRawProperties, rewritePropertyLinks, typedProperties, type RawProperty } from "./properties.js";
 import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import {
   buildDemoBoard,
@@ -169,6 +170,13 @@ export interface UpdateBoardInput {
   expectedUpdated?: string;
   force?: boolean;
   writer?: string;
+  /**
+   * #3c86ify2: write only what changed in the file's own layout (MCP
+   * `add_to_board` appends a node). `base` is the file as the caller read it
+   * (MCP keeps those exact bytes as its history snapshot); without it the
+   * file is read here. Not part of the HTTP API.
+   */
+  minimal?: boolean | { base: string };
 }
 
 /** D34 (spec/api-bases): a new database view, optionally sourced from a folder or tag. */
@@ -1733,7 +1741,10 @@ export class VaultStore {
     board = withBoardTitle(board, nextTitle, boardStem(targetId));
 
     const replaced = record.updated;
-    const repairBackup = await this.saveBoardRecord(record, board);
+    const repairBackup = await this.saveBoardRecord(record, board, {
+      minimal: patch.minimal !== undefined && patch.minimal !== false,
+      ...(typeof patch.minimal === "object" ? { base: patch.minimal.base } : {}),
+    });
     if (patch.writer) record.ownWrite = { version: record.updated, replaced, writer: patch.writer };
     else delete record.ownWrite;
 
@@ -1762,9 +1773,23 @@ export class VaultStore {
    * Write a board file atomically and refresh its record. When the file had
    * entries a board can't keep (or wasn't valid JSON Canvas), the original is
    * copied to `.gumply/conflicts/` first, once. Returns that backup path.
+   *
+   * `minimal` (#3c86ify2, D37): link rewrites, folder moves and MCP
+   * `add_to_board` change only the strings that changed (and append new
+   * nodes) in the file's own layout. Anything else, a repaired board, or a
+   * file that no longer matches the record, is written whole as before.
    */
-  private async saveBoardRecord(record: PageRecord, board: CanvasBoard): Promise<string | undefined> {
+  private async saveBoardRecord(
+    record: PageRecord,
+    board: CanvasBoard,
+    options: { minimal?: boolean; base?: string } = {},
+  ): Promise<string | undefined> {
     let repairBackup: string | undefined;
+    let text: string | null = null;
+    if (options.minimal && !record.boardRepaired && record.board) {
+      const raw = options.base ?? (await readFile(record.filePath, "utf8").catch(() => null));
+      text = raw === null ? null : patchCanvasFile(raw, record.board, board);
+    }
     if (record.boardRepaired) {
       repairBackup = await this.backupConflict(record);
       record.boardRepaired = false;
@@ -1772,7 +1797,7 @@ export class VaultStore {
     const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       await mkdir(dirname(record.filePath), { recursive: true });
-      await writeFile(temporary, serializeCanvas(board), "utf8");
+      await writeFile(temporary, text ?? serializeCanvas(board), "utf8");
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
@@ -2154,7 +2179,7 @@ export class VaultStore {
         ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
         : rewriteWikilinkTargets(markdown, isTarget, record.title);
     };
-    return this.rewriteEverywhere(new Set([oldId, record.id]), rewriteText);
+    return this.rewriteEverywhere(new Set([oldId, record.id]), rewriteText, {}, { frontmatter: true });
   }
 
   /**
@@ -2171,7 +2196,7 @@ export class VaultStore {
     const file = record ? relative(this.root, record.filePath).split(sep).join("/").toLowerCase() : null;
     const subpath = (value: string, node: { file: string }) =>
       file !== null && node.file.replace(/^\/+/, "").toLowerCase() === file ? rewriteHeadingSubpath(value, renames) : null;
-    return this.rewriteEverywhere(new Set([id]), (markdown, source) => rewriteHeadingLinks(markdown, isTargetFrom(source), renames), { subpath });
+    return this.rewriteEverywhere(new Set([id]), (markdown, source) => rewriteHeadingLinks(markdown, isTargetFrom(source), renames), { subpath }, { frontmatter: true });
   }
 
   /**
@@ -2183,8 +2208,11 @@ export class VaultStore {
    */
   private async rewriteEverywhere(
     skip: ReadonlySet<PageId>,
+    /** `source`: the page or board the text is in (links resolve from it, #35e42m7v). */
     rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
     boardNodes: Omit<CanvasRewrite, "text"> = {},
+    /** #3c86ify2: also rewrite links inside frontmatter values (renames, folder moves, heading renames). */
+    options: { frontmatter?: boolean } = {},
   ): Promise<PageId[]> {
     const rewritten: PageId[] = [];
     for (const other of [...this.pages.values()]) {
@@ -2193,22 +2221,47 @@ export class VaultStore {
       if (other.board) {
         const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other.id).content });
         if (result.count === 0) continue;
-        await this.saveBoardRecord(other, result.board);
+        await this.saveBoardRecord(other, result.board, { minimal: true });
         rewritten.push(other.id);
         continue;
       }
 
       const result = rewriteText(other.content, other.id);
-      if (result.count === 0) continue;
+      const yaml = options.frontmatter ? await this.rewrittenFrontmatter(other, rewriteText) : null;
+      if (result.count === 0 && yaml === null) continue;
 
-      await this.writeRewrittenBody(other, result.content);
+      await this.writeRewrittenBody(other, result.content, yaml ?? undefined);
       rewritten.push(other.id);
     }
     return rewritten;
   }
 
+  /**
+   * #3c86ify2: the page's frontmatter YAML with `[[links]]` in its values
+   * rewritten, or null when no value has a matching link. Only pages whose
+   * properties hold `[[` (the cached property read) are read from disk.
+   */
+  private async rewrittenFrontmatter(
+    record: PageRecord,
+    rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
+  ): Promise<string | null> {
+    if (record.kind !== "page") return null;
+    const properties = await this.rawPropertiesOf(record);
+    if (!properties.some((property) => JSON.stringify(property.value).includes("[["))) return null;
+    let yaml: string | null;
+    try {
+      yaml = parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml;
+    } catch {
+      return null;
+    }
+    if (yaml === null) return null;
+    // The same check as the body next to it, from the same note (#35e42m7v).
+    const result = rewritePropertyLinks(yaml, (text) => rewriteText(text, record.id));
+    return result.count === 0 ? null : result.yaml;
+  }
+
   /** Write a page body changed by a rewrite (D12, C1, C2): header keys and every untouched byte kept. */
-  private async writeRewrittenBody(other: PageRecord, content: string): Promise<void> {
+  private async writeRewrittenBody(other: PageRecord, content: string, frontmatterYaml?: string): Promise<void> {
     const rewrittenAt = new Date().toISOString();
     const otherWritten = await this.writePage(
       other.filePath,
@@ -2222,6 +2275,9 @@ export class VaultStore {
       content,
       ["updated"],
       titleFromId(other.id),
+      undefined,
+      undefined,
+      frontmatterYaml,
     );
     other.content = noteBody(content);
     other.updated = otherWritten.frontmatter
@@ -3292,40 +3348,9 @@ export class VaultStore {
     return [...new Set([...relinked, ...boards, ...linked])].sort((a, b) => a.localeCompare(b));
   }
 
-  /** Rewrite `[[from/…]]` links to `[[to/…]]` in every page and board (D33). */
+  /** Rewrite `[[from/…]]` links to `[[to/…]]` in every page and board (D33), frontmatter values included (#3c86ify2). */
   private async rewriteFolderLinks(from: PageId, to: PageId): Promise<PageId[]> {
-    const rewritten: PageId[] = [];
-    for (const other of [...this.pages.values()]) {
-      if (other.board) {
-        const result = rewriteCanvas(other.board, { text: (markdown) => rewriteWikilinkFolder(markdown, from, to).content });
-        if (result.count === 0) continue;
-        await this.saveBoardRecord(other, result.board);
-        rewritten.push(other.id);
-        continue;
-      }
-      const result = rewriteWikilinkFolder(other.content, from, to);
-      if (result.count === 0) continue;
-      const at = new Date().toISOString();
-      const written = await this.writePage(
-        other.filePath,
-        {
-          title: other.title,
-          ...(other.icon ? { icon: other.icon } : {}),
-          tags: other.fmTags,
-          created: other.created,
-          updated: at,
-        },
-        result.content,
-        ["updated"],
-        titleFromId(other.id),
-      );
-      other.content = noteBody(result.content);
-      other.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
-      other.fileMtimeMs = written.mtimeMs;
-      this.refreshTags(other);
-      rewritten.push(other.id);
-    }
-    return rewritten;
+    return this.rewriteEverywhere(new Set(), (markdown) => rewriteWikilinkFolder(markdown, from, to), {}, { frontmatter: true });
   }
 
   private async renameTagNow(fromInput: string, toInput: string, skip: readonly PageId[]): Promise<TagRenameResult> {
@@ -3546,7 +3571,7 @@ export class VaultStore {
         file: (path) => byOldFile.get(path.replace(/^\/+/, "").toLowerCase()) ?? null,
       });
       if (result.count === 0) continue;
-      await this.saveBoardRecord(board, result.board);
+      await this.saveBoardRecord(board, result.board, { minimal: true });
       changed.push(board.id);
     }
     return changed;
@@ -3698,6 +3723,8 @@ export class VaultStore {
     seed?: string,
     /** v1.12: a properties patch (values, changed keys, renames). */
     properties?: { values: Record<string, unknown>; changed: string[]; renames: Array<{ from: string; to: string }> },
+    /** #3c86ify2: the existing frontmatter YAML with rewritten link values (used as the template's YAML). */
+    frontmatterYaml?: string,
   ): Promise<{ mtimeMs: number; frontmatter: boolean; titleKey: boolean }> {
     await mkdir(dirname(filePath), { recursive: true });
     // Use the current file as the byte template so unknown frontmatter keys,
@@ -3713,6 +3740,7 @@ export class VaultStore {
       // New file: write canonical frontmatter, or keep a template's layout.
       if (seed !== undefined) template = parseNoteTemplate(seed);
     }
+    if (frontmatterYaml !== undefined && template !== null && template.yaml !== null) template = { ...template, yaml: frontmatterYaml };
     // A note without frontmatter (the Obsidian default) stays without it
     // unless it now needs a key: an icon, tags, or a title the file name
     // can't express.
