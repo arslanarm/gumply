@@ -100,6 +100,25 @@ test('answers both MCP revisions over stdio and reads the vault', async () => {
   }
 });
 
+test('A4: `gumply mcp --vault …` (the npm form; /usr/bin/gumply from a .deb) is MCP mode, never a window', async () => {
+  test.setTimeout(60_000);
+  // In development `mcp` follows the app folder, as `/opt/Gumply/gumply mcp` has it first.
+  const transport = new StdioClientTransport({
+    command: electronPath,
+    args: [appDir, 'mcp', '--ozone-platform=x11', '--vault', vault],
+    env: isolatedEnv(),
+    stderr: 'pipe',
+  });
+  const client = new Client({ name: 'desktop-npm-form', version: '1.0.0' });
+  await client.connect(transport);
+  try {
+    const result = (await client.callTool({ name: 'read', arguments: { id: 'Plan' } })) as { structuredContent?: { content?: string } };
+    expect(result.structuredContent?.content).toContain('Ship the export.');
+  } finally {
+    await client.close();
+  }
+});
+
 test('takes no single-instance lock: the app window opens while it runs', async () => {
   test.setTimeout(120_000);
   const client = await connect('legacy');

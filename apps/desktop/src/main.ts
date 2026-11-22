@@ -244,7 +244,13 @@ async function openVault(path: string): Promise<void> {
     desktop: true,
     uiState: uiStateStore,
     // A3: Settings → MCP shows AI apps how to start this app's --mcp mode.
-    mcpCommand: mcpLaunchCommand(process.execPath, app.isPackaged, app.getAppPath()),
+    mcpCommand: mcpLaunchCommand({
+      execPath: process.execPath,
+      packaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      platform: process.platform,
+      ...(process.env.APPIMAGE ? { appImage: process.env.APPIMAGE } : {}),
+    }),
     printToken,
     log: (message) => console.log(message),
   });

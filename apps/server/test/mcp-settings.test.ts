@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { McpSettingsResponse } from "@gumply/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
-import { MCP_RECENT_ROWS } from "../src/mcp-settings";
+import { browserMcpCommand, MCP_RECENT_ROWS, NPM_MCP_COMMAND } from "../src/mcp-settings";
 import { cleanupVaults, createTestServer, getJson, jsonRequest } from "./helpers";
 
 afterEach(cleanupVaults);
@@ -20,11 +20,26 @@ describe("GET/PUT /api/mcp/settings (A3)", () => {
       configured: false,
       vaultPath: dir,
       platform: process.platform,
-      command: { command: "gumply", args: ["mcp"] },
+      // Absolute node + the built server when apps/mcp is built, else `gumply mcp` (A4).
+      command: browserMcpCommand(),
       recent: [],
     });
     // Reading never creates the file.
     await expect(readdir(join(dir, ".gumply")).catch(() => [])).resolves.not.toContain("mcp.json");
+  });
+
+  it("A4: the browser build's command is absolute (AI apps have no user PATH, no nvm node)", () => {
+    const url = "file:///srv/gumply/apps/server/src/mcp-settings.ts";
+    const built = "/srv/gumply/apps/mcp/dist/gumply.mjs";
+    expect(browserMcpCommand(url, "/home/me/.nvm/versions/node/v22.11.0/bin/node", (path) => path === built)).toEqual({
+      command: "/home/me/.nvm/versions/node/v22.11.0/bin/node",
+      args: [built, "mcp"],
+    });
+    // From apps/server/dist too.
+    expect(browserMcpCommand("file:///srv/gumply/apps/server/dist/mcp-settings.js", "/usr/bin/node", (path) => path === built).args[0]).toBe(built);
+    // Not built: `gumply mcp`, with the hint that it needs gumply on the AI app's PATH.
+    expect(browserMcpCommand(url, "/usr/bin/node", () => false)).toEqual({ command: "gumply", args: ["mcp"], hint: "npm" });
+    expect(NPM_MCP_COMMAND.hint).toBe("npm");
   });
 
   it("the desktop app's own command when it passes one", async () => {
