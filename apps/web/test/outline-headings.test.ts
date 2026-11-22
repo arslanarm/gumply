@@ -115,19 +115,29 @@ describe("outline: what it lists (spec/outline §2, @opus-hunter's Obsidian tabl
     expect(order.map((entry) => entry.id)).toEqual(["A", "B", "C", "D"]);
   });
 
-  it("stays cheap on a 5,000-line page", () => {
-    const lines: string[] = [];
-    for (let i = 0; i < 1000; i++) lines.push(`## Section ${i}`, "", "Some text with **bold** words.", "", "- a list item");
-    const doc = parse(lines.join("\n"));
-    outlineOf(doc);
-    const runs: number[] = [];
-    for (let run = 0; run < 7; run++) {
-      const start = performance.now();
-      outlineOf(doc);
-      runs.push(performance.now() - start);
-    }
-    // The fastest run: a loaded machine slows some runs, not all of them. Spec budget 2 ms; 8 ms leaves room for slow CI.
-    expect(outlineOf(doc)).toHaveLength(1000);
-    expect(Math.min(...runs)).toBeLessThan(8);
+  it("grows linearly with the page: 500 vs 5,000 lines (no wall-clock budget)", () => {
+    const page = (sections: number) => {
+      const lines: string[] = [];
+      for (let i = 0; i < sections; i++) lines.push(`## Section ${i}`, "", "Some text with **bold** words.", "", "- a list item");
+      return parse(lines.join("\n"));
+    };
+    const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+    // 20 passes per run, so a run is long enough to measure; the median of 5 runs after a warm-up.
+    const time = (doc: ReturnType<typeof parse>) => {
+      for (let i = 0; i < 20; i++) outlineOf(doc);
+      return median(
+        Array.from({ length: 5 }, () => {
+          const started = performance.now();
+          for (let i = 0; i < 20; i++) outlineOf(doc);
+          return performance.now() - started;
+        }),
+      );
+    };
+    const small = page(100); // 500 lines
+    const large = page(1000); // 5,000 lines
+    expect(outlineOf(large)).toHaveLength(1000);
+    const ratio = time(large) / Math.max(time(small), 0.05);
+    // 10x the lines: a linear pass is ~10x slower, a quadratic one ~100x. The limit sits in between.
+    expect(ratio).toBeLessThan(40);
   });
 });

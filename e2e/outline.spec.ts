@@ -157,6 +157,11 @@ test.describe('outline pane (v0.8 D1)', () => {
     await page.reload();
     await expect(page.getByTestId('right-panel-tab-graph')).toHaveAttribute('aria-selected', 'true');
     expect(await page.evaluate(() => window.sessionStorage.getItem('gumply:local-graph'))).toBeNull();
+    // Carried over once: closed now, it stays closed (the old key is gone).
+    await page.getByTestId('right-panel-close').click();
+    await page.reload();
+    await expect(page.getByTestId('editor-content')).toContainText('Paragraph 1 of filler');
+    await expect(page.getByTestId('right-panel')).toHaveCount(0);
   });
 
   test('a board lists its frames in reading order; a click zooms to the frame', async ({ page, request, vault }) => {
