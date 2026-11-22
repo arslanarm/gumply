@@ -89,6 +89,17 @@ export class LinkFileIndex {
   }
 }
 
+/**
+ * The link text Obsidian writes for `path` from the note at `fromNote`, with
+ * its default "Shortest path when possible" setting (#4usgpjh8): the bare
+ * file name when that resolves back to this very file, else the full vault
+ * path. Checked by resolving, so it can never drift from the resolver.
+ */
+export function shortestLinkText(path: string, index: LinkFileIndex, fromNote: string | null): string {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return index.resolve(name, fromNote) === path ? name : path;
+}
+
 /** One-off resolve over a file list (tests, small callers). */
 export function resolveLinkedFile(link: string, fromNote: string | null, files: Iterable<string>): string | null {
   return new LinkFileIndex(files).resolve(link, fromNote);

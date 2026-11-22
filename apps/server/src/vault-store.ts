@@ -75,6 +75,7 @@ import {
   CanvasParseError,
   BaseParseError,
   LinkFileIndex,
+  shortestLinkText,
   hasAttachmentExtension,
   maskCode,
   obsidianFileLinks,
@@ -1165,9 +1166,18 @@ export class VaultStore {
 
   /** One Obsidian-style file link from a page or board (`from`; unknown: the vault root). */
   resolveFileLink(link: string, from: PageId | null): string | null {
+    return this.linkIndex.resolve(link, this.notePathOf(from));
+  }
+
+  /** The link text Obsidian would write for `path` from note `from` (#4usgpjh8). */
+  linkTextFor(path: string, from: PageId | null): string {
+    return shortestLinkText(path, this.linkIndex, this.notePathOf(from));
+  }
+
+  /** A note's vault path (`Projects/Plan.md`), or null for an unknown id. */
+  private notePathOf(from: PageId | null): string | null {
     const record = from ? this.pages.get(this.resolveId(from)) : undefined;
-    const fromPath = record ? relative(this.root, record.filePath).split(sep).join("/") : null;
-    return this.linkIndex.resolve(link, fromPath);
+    return record ? relative(this.root, record.filePath).split(sep).join("/") : null;
   }
 
   /**

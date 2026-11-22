@@ -24,6 +24,7 @@
  *   moved have no recorded join.
  */
 import { Extension } from "@tiptap/core";
+import Blockquote from "@tiptap/extension-blockquote";
 import { MarkdownSerializerState } from "@tiptap/pm/markdown";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
@@ -67,11 +68,45 @@ function tokenKind(token: any): string | null {
 /** Block-level tokens that start a sibling (list items are their list's own). */
 const startsBlock = (token: any) => token.block && token.nesting >= 0 && token.map && token.type !== "list_item_open";
 
+/** #ftx3awn7: a top-level paragraph's first-line indent (0–3 spaces), as read. */
+export const INDENT_ATTR = "data-md-indent";
+/** #ftx3awn7: a nested quote whose `>` sits right after the outer one (`>>`). */
+export const QUOTE_TIGHT_ATTR = "data-md-quote-tight";
+
+/** Positions of the `>` markers at the start of a line (`> >` and `>>` alike). */
+function quoteMarkers(line: string): number[] {
+  const markers: number[] = [];
+  let i = 0;
+  for (;;) {
+    while (line[i] === " " || line[i] === "\t") i += 1;
+    if (line[i] !== ">") return markers;
+    markers.push(i);
+    i += 1;
+  }
+}
+
 export function blockJoinRule(state: any): void {
   const lines = String(state.src).split("\n");
   // The previous sibling's kind at each nesting level ("" = none yet).
   const previous: string[] = [];
+  let quoteDepth = 0;
   for (const token of state.tokens as any[]) {
+    if (token.type === "blockquote_close" || token.type === "gumply_callout_close") quoteDepth -= 1;
+    if (token.type === "blockquote_open" || token.type === "gumply_callout_open") {
+      quoteDepth += 1;
+      // `>>`: this quote's marker right after the outer one, no space between.
+      if (quoteDepth > 1 && token.type === "blockquote_open" && token.map) {
+        const markers = quoteMarkers(lines[token.map[0] as number] ?? "");
+        const own = markers[quoteDepth - 1];
+        const outer = markers[quoteDepth - 2];
+        if (own !== undefined && outer !== undefined && own === outer + 1) token.attrSet(QUOTE_TIGHT_ATTR, "true");
+      }
+    }
+    // An indented first line (`  Text`, up to 3 spaces), top level only.
+    if (token.type === "paragraph_open" && token.level === 0 && token.map) {
+      const indent = /^( {1,3})\S/.exec(lines[token.map[0] as number] ?? "");
+      if (indent) token.attrSet(INDENT_ATTR, indent[1]);
+    }
     if (token.nesting === 1) previous[token.level + 1] = "";
     if (!startsBlock(token)) continue;
     const level = token.level as number;
@@ -157,7 +192,68 @@ export const MarkdownBlockJoins = Extension.create({
           },
         },
       },
+      {
+        types: ["paragraph"],
+        attributes: {
+          markdownIndent: {
+            default: null,
+            keepOnSplit: false,
+            parseHTML: (element: HTMLElement) => {
+              const value = element.getAttribute(INDENT_ATTR);
+              return value && /^ {1,3}$/.test(value) ? value : null;
+            },
+            renderHTML: () => ({}),
+          },
+        },
+      },
+      {
+        types: ["blockquote"],
+        attributes: {
+          markdownTight: {
+            default: false,
+            keepOnSplit: false,
+            parseHTML: (element: HTMLElement) => element.getAttribute(QUOTE_TIGHT_ATTR) === "true",
+            renderHTML: () => ({}),
+          },
+        },
+      },
     ];
+  },
+});
+
+interface QuoteState {
+  delim: string;
+  out: string;
+  wrapBlock(delim: string, firstDelim: string | null, node: PMNode, f: () => void): void;
+  renderContent(node: PMNode): void;
+}
+
+/**
+ * Blockquotes, with nested markers kept as written (#ftx3awn7): a quote read
+ * as `>>` (its `>` right after the outer one) is written `>>`, not `> >`.
+ */
+export const MarkdownBlockquote = Blockquote.extend({
+  addStorage() {
+    return {
+      ...this.parent?.(),
+      markdown: {
+        serialize(state: QuoteState, node: PMNode) {
+          if (!node.attrs.markdownTight || !/>\s*$/.test(state.delim)) {
+            state.wrapBlock("> ", null, node, () => state.renderContent(node));
+            return;
+          }
+          const outer = state.delim;
+          const tight = outer.replace(/[ \t]+$/, "");
+          // The outer quote may already have written its prefix on this line
+          // (`>> first` starts the outer quote too): drop its trailing space.
+          const lineStart = state.out.lastIndexOf("\n") + 1;
+          if (state.out.slice(lineStart) === outer) state.out = state.out.slice(0, lineStart) + tight;
+          state.delim = tight;
+          state.wrapBlock("> ", null, node, () => state.renderContent(node));
+          state.delim = outer;
+        },
+      },
+    };
   },
 });
 

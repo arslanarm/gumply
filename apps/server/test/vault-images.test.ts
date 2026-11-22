@@ -45,3 +45,41 @@ describe("GET /files/images (#3ht5gh6q)", () => {
     expect(images[2]).toEqual({ path: "att/photo.jpg", name: "photo.jpg", modified: new Date(3000 * 1000).toISOString() });
   });
 });
+
+describe("GET /files/linkable (#4usgpjh8)", () => {
+  it("lists every linkable file with the link Obsidian writes from the note", async () => {
+    const server = await createTestServer();
+    const files: Record<string, string> = {
+      "att/mountain.png": "x",
+      "Plan.png": "x",
+      "Projects/pic.png": "x",
+      "Notes/img/pic.png": "x",
+      "Files/report.pdf": "x",
+      ".trash/x/gone.png": "x",
+      "Plan.md": "Plan page\n",
+      "Notes/Day.md": "Day\n",
+    };
+    for (const [path, body] of Object.entries(files)) {
+      await mkdir(join(server.dir, path, ".."), { recursive: true });
+      await writeFile(join(server.dir, path), body);
+    }
+    const store = new VaultStore(server.dir);
+    await store.init();
+    const app = createApp({ vaultPath: server.dir, store });
+
+    const links = (list: Array<{ path: string; link: string }>) => Object.fromEntries(list.map((file) => [file.path, file.link]));
+    const fromRoot = await getJson<Array<{ path: string; link: string }>>(app, "/api/files/linkable?from=Plan");
+    expect(links(fromRoot)).toEqual({
+      "att/mountain.png": "mountain.png",
+      // The page Plan.md doesn't compete with Plan.png.
+      "Plan.png": "Plan.png",
+      "Projects/pic.png": "pic.png",
+      "Notes/img/pic.png": "Notes/img/pic.png",
+      "Files/report.pdf": "report.pdf",
+    });
+    // From a note in Notes/, its folder's copy takes the bare name.
+    const fromNotes = await getJson<Array<{ path: string; link: string }>>(app, `/api/files/linkable?from=${encodeURIComponent("Notes/Day")}`);
+    expect(links(fromNotes)["Notes/img/pic.png"]).toBe("pic.png");
+    expect(links(fromNotes)["Projects/pic.png"]).toBe("Projects/pic.png");
+  });
+});

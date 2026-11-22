@@ -16,9 +16,11 @@ import Suggestion, {
   type SuggestionKeyDownProps,
   type SuggestionProps,
 } from "@tiptap/suggestion";
-import { buildLinkSuggestions, type LinkSuggestion } from "../../lib/wikilinks.js";
+import { buildFileSuggestions, buildLinkSuggestions, type LinkSuggestion } from "../../lib/wikilinks.js";
+import { linkableFiles } from "../../lib/linkable-files.js";
 import { insertImageAttachment } from "../attachments/insert.js";
 import { getWikiLinkEnvironment } from "./link-store.js";
+import { replaceWithFileEmbed } from "./node.js";
 
 const wikiLinkPluginKey = new PluginKey("wikiLinkSuggestion");
 
@@ -141,11 +143,32 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
                   (embedKindOnly === null ||
                     (embedKindOnly === "base" ? isBase(page) : isBoard(page))),
               );
-              return buildLinkSuggestions(embeddable, query).filter((item) => item.kind === "page");
+              const pageRows = buildLinkSuggestions(embeddable, query).filter((item) => item.kind === "page");
+              // #4usgpjh8: files anywhere in the vault too (not for the
+              // `/whiteboard` or `/database` pickers).
+              if (embedKindOnly !== null || pickPartAfterPage) return pageRows;
+              return [...pageRows, ...buildFileSuggestions(linkableFiles(env.pageId), query)];
             }
             return buildLinkSuggestions(env.pages, query, env.attachments);
           },
           command: ({ editor, range, props }) => {
+            if (embedStart(editor.state, range.from) && props.kind === "file" && props.file) {
+              // #4usgpjh8: exactly what typing `![[<link>]]` makes (#95x2fjh6),
+              // with the link Obsidian would write from this note.
+              const typed = `![[${props.file.link}]]`;
+              const from = range.from - 1;
+              const parent = editor.state.doc.resolve(from).parent;
+              const alone =
+                parent.type.name === "paragraph" &&
+                parent.textContent === editor.state.doc.textBetween(from, range.to) &&
+                editor.state.doc.resolve(from).depth > 0;
+              editor
+                .chain()
+                .focus()
+                .command(({ tr, state }) => replaceWithFileEmbed(tr, state.schema, { from, to: range.to }, typed, alone))
+                .run();
+              return;
+            }
             if (embedStart(editor.state, range.from) && props.kind === "page") {
               const env = getWikiLinkEnvironment();
               const board = env.pages.find((item) => item.id === props.pageId);
