@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { API_URL, E2E_VAULT } from './support/env';
 import { expectPageTitle } from './support/ui';
@@ -13,9 +13,16 @@ import { expectPageTitle } from './support/ui';
 
 const file = (name: string) => path.join(E2E_VAULT, name);
 
-async function savedContent(page: Page, request: APIRequestContext, id: string): Promise<string> {
-  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
-  return (await (await request.get(`${API_URL}/api/pages/${encodeURIComponent(id)}`)).json()).content as string;
+/**
+ * The page's content on disk, polled until it's `expected` (#9jrdufrh). Waiting for
+ * `save-status` = saved isn't enough: right after an edit it can still show the
+ * previous save's "saved" (React renders the new state a task later), so a
+ * single read could see the file before the last edit is written.
+ */
+async function expectSaved(request: APIRequestContext, id: string, expected: string): Promise<void> {
+  await expect
+    .poll(async () => (await (await request.get(`${API_URL}/api/pages/${encodeURIComponent(id)}`)).json()).content as string, { timeout: 10_000 })
+    .toBe(expected);
 }
 
 test('[[Page# lists its headings; picking one writes [[Page#Heading]]', async ({ page, vault, request }) => {
@@ -27,18 +34,22 @@ test('[[Page# lists its headings; picking one writes [[Page#Heading]]', async ({
   await page.getByTestId('editor-content').click();
   await page.keyboard.type('[[Target#');
   const menu = page.getByTestId('link-menu');
-  await expect(menu.getByRole('option', { name: 'Goals' })).toBeVisible();
-  await expect(menu.getByRole('option', { name: 'Risks' })).toBeVisible();
+  // #9jrdufrh: the headings come from a fetch of Target (one per keystroke after
+  // `#`), then a render; under full-suite load that can take longer than the
+  // default 5 s expect timeout. Same wait on state, with room for the load.
+  const loaded = { timeout: 15_000 };
+  await expect(menu.getByRole('option', { name: 'Goals' })).toBeVisible(loaded);
+  await expect(menu.getByRole('option', { name: 'Risks' })).toBeVisible(loaded);
   // No "Whole page" row for a plain link, and never Create “Target#”.
   await expect(menu.getByRole('option')).toHaveCount(2);
   await expect(page.getByTestId('link-suggestion-create')).toHaveCount(0);
 
   await page.keyboard.type('Ri');
-  await expect(menu.getByRole('option')).toHaveCount(1);
+  await expect(menu.getByRole('option')).toHaveCount(1, loaded);
   await page.keyboard.press('Enter');
   await expect(menu).toHaveCount(0);
 
-  expect(await savedContent(page, request, note!.id)).toBe('[[Target#Risks]]');
+  await expectSaved(request, note!.id, '[[Target#Risks]]');
   expect((await vault.pages()).some((meta) => meta.title.includes('#'))).toBe(false);
 });
 
@@ -55,7 +66,7 @@ test('[[# lists the open note\'s own headings and writes [[#Heading]]', async ({
   await page.keyboard.press('Enter');
   await expect(menu).toHaveCount(0);
 
-  expect(await savedContent(page, request, note!.id)).toBe('## Alpha\n\nFirst. See [[#Alpha]]');
+  await expectSaved(request, note!.id, '## Alpha\n\nFirst. See [[#Alpha]]');
 });
 
 test('[[Nope#H offers Create “Nope”, and the link keeps #H', async ({ page, vault, request }) => {
@@ -71,7 +82,7 @@ test('[[Nope#H offers Create “Nope”, and the link keeps #H', async ({ page, 
   await create.click();
 
   await expect.poll(async () => (await vault.pages()).map((meta) => meta.title)).toContain('Nope');
-  expect(await savedContent(page, request, note!.id)).toBe('[[Nope#H]]');
+  await expectSaved(request, note!.id, '[[Nope#H]]');
 });
 
 test('with two pages of the same name, the headings come from the one in the note\'s folder', async ({ page, vault }) => {
