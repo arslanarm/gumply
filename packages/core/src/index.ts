@@ -5,6 +5,14 @@ export const CORE_VERSION = "0.8.1";
 
 export type {
   ApiError,
+  ConflictAttachment,
+  ConflictCopy,
+  ConflictDiff,
+  ConflictKeep,
+  ConflictResolveInput,
+  ConflictResolveResult,
+  ConflictsList,
+  PossibleCopy,
   Attachment,
   VaultImage,
   LinkableFile,
@@ -303,3 +311,12 @@ export {
   type PageGradient,
   type PageLook,
 } from "./page-look.js";
+export {
+  conflictCopyOf,
+  possibleCopyOf,
+  sharedRatio,
+  POSSIBLE_COPY_MIN_SHARED,
+  type ConflictCopyName,
+  type ConflictTool,
+  type PossibleCopyName,
+} from "./sync-conflicts.js";

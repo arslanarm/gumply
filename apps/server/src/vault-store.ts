@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync, watch, type FSWatcher } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   coercePropertyValue,
   frontmatterKeys,
@@ -109,6 +109,18 @@ import {
   type TrashedDocument,
   type TrashedPage,
   type TrashItem,
+  conflictCopyOf,
+  possibleCopyOf,
+  sharedRatio,
+  POSSIBLE_COPY_MIN_SHARED,
+  type ConflictAttachment,
+  type ConflictCopy,
+  type ConflictCopyName,
+  type ConflictDiff,
+  type ConflictResolveInput,
+  type ConflictResolveResult,
+  type ConflictsList,
+  type PossibleCopy,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
 import {
@@ -563,6 +575,12 @@ function metaOf(record: PageRecord, childCount: number): PageMeta {
   };
   if (record.icon) meta.icon = record.icon;
   return meta;
+}
+
+/** Two files hold the same bytes (missing files never do). */
+async function sameBytes(a: string, b: string): Promise<boolean> {
+  const [left, right] = await Promise.all([readFile(a).catch(() => null), readFile(b).catch(() => null)]);
+  return left !== null && right !== null && left.equals(right);
 }
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -1096,7 +1114,8 @@ export class VaultStore {
     const plans: Array<{ from: PageId; to: PageId }> = [];
     const planned = new Map<PageId, PageId>();
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const records = [...this.pages.values()].filter((record) => record.kind === "page").sort(
+    const copies = this.copyIds();
+    const records = [...this.pages.values()].filter((record) => record.kind === "page" && !copies.has(record.id)).sort(
       (a, b) => a.id.split("/").length - b.id.split("/").length || a.id.localeCompare(b.id),
     );
 
@@ -1131,7 +1150,17 @@ export class VaultStore {
   /** Flat list of every tree item (pages, boards and D33 plain folders), sorted by id. */
   list(): PageMeta[] {
     const counts = this.childCounts();
-    const metas = [...this.pages.values()].map((record) => metaOf(record, counts.get(record.id) ?? 0));
+    const copies = this.conflictNames();
+    const copyCounts = new Map<PageId, number>();
+    for (const { of } of copies.values()) if (of !== null) copyCounts.set(of, (copyCounts.get(of) ?? 0) + 1);
+    const metas = [...this.pages.values()].map((record) => {
+      const meta = metaOf(record, counts.get(record.id) ?? 0);
+      const copy = copies.get(record.id);
+      if (copy) meta.conflictOf = copy.of;
+      const own = copyCounts.get(record.id);
+      if (own) meta.conflicts = own;
+      return meta;
+    });
     for (const folder of this.folders.values()) {
       metas.push({
         id: folder.id,
@@ -1148,9 +1177,38 @@ export class VaultStore {
     return metas.sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  /** Pages and boards only: what links, the graph and search resolve against (D33). */
-  private pageMetas(): PageMeta[] {
-    return this.list().filter((meta) => meta.kind !== "folder");
+  /**
+   * Pages and boards only: what links, the graph and search resolve against (D33).
+   * D43: without conflict copies that have their original beside them (they're
+   * no link source or target), unless `withCopies`.
+   */
+  private pageMetas(options: { withCopies?: boolean } = {}): PageMeta[] {
+    return this.list().filter((meta) => meta.kind !== "folder" && (options.withCopies || typeof meta.conflictOf !== "string"));
+  }
+
+  /**
+   * spec/sync-conflicts §3 (D43): every page, board and base whose file name is
+   * a sync tool's conflict copy, with the id of its original in the same
+   * folder, or null when that's gone (an orphan copy, treated as a page).
+   */
+  private conflictNames(): Map<PageId, { of: PageId | null; name: ConflictCopyName }> {
+    const byPath = new Map<string, PageId>();
+    for (const record of this.pages.values()) byPath.set(record.filePath, record.id);
+    const copies = new Map<PageId, { of: PageId | null; name: ConflictCopyName }>();
+    for (const record of this.pages.values()) {
+      const name = conflictCopyOf(basename(record.filePath));
+      if (!name) continue;
+      const of = byPath.get(join(dirname(record.filePath), name.originalName)) ?? null;
+      copies.set(record.id, { of: of === record.id ? null : of, name });
+    }
+    return copies;
+  }
+
+  /** Ids of conflict copies whose original is beside them: never indexed or rewritten (D37, D43). */
+  private copyIds(): Set<PageId> {
+    const ids = new Set<PageId>();
+    for (const [id, { of }] of this.conflictNames()) if (of !== null) ids.add(id);
+    return ids;
   }
 
   // --- properties (v0.7 A, D34, spec/api v1.12) ----------------------------
@@ -1238,8 +1296,9 @@ export class VaultStore {
     const stored = await this.propertyTypes.read();
     const values = new Map<string, unknown[]>();
     const counts = new Map<string, number>();
+    const copies = this.copyIds();
     for (const record of this.pages.values()) {
-      if (record.kind !== "page") continue;
+      if (record.kind !== "page" || copies.has(record.id)) continue;
       for (const property of await this.rawPropertiesOf(record)) {
         counts.set(property.key, (counts.get(property.key) ?? 0) + 1);
         const list = values.get(property.key) ?? [];
@@ -1533,7 +1592,8 @@ export class VaultStore {
    */
   tags(): TagCount[] {
     const byKey = new Map<string, { tag: string; count: number; pages: Set<PageId> }>();
-    const records = [...this.pages.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const copies = this.copyIds();
+    const records = [...this.pages.values()].filter((record) => !copies.has(record.id)).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     for (const record of records) {
       for (const tag of [...record.fmTags, ...this.inlineTags(record)]) {
         const key = tag.toLowerCase();
@@ -1721,18 +1781,48 @@ export class VaultStore {
     }
     hits.sort((a, b) => b.score - a.score || a.record.title.localeCompare(b.record.title));
 
+    // D43: a conflict copy goes right after its page when the page is a hit too
+    // (one grouping pass, one emit pass); a copy whose page isn't a hit keeps its rank.
+    // Paging runs on this final order, so the cursor stays stable.
+    const copies = this.conflictNames();
+    const hitIds = new Set(hits.map((hit) => hit.record.id));
+    const copiesOf = new Map<PageId, typeof hits>();
+    for (const hit of hits) {
+      const of = copies.get(hit.record.id)?.of;
+      if (typeof of === "string" && hitIds.has(of)) {
+        const list = copiesOf.get(of);
+        if (list) list.push(hit);
+        else copiesOf.set(of, [hit]);
+      }
+    }
+    const ordered: typeof hits = [];
+    for (const hit of hits) {
+      const of = copies.get(hit.record.id)?.of;
+      if (typeof of === "string" && hitIds.has(of)) continue;
+      ordered.push(hit);
+      const own = copiesOf.get(hit.record.id);
+      if (own) for (const copy of own) ordered.push(copy);
+    }
+
     const start = Math.max(0, Math.floor(Number(options.cursor ?? 0)) || 0);
     const limit = Math.min(Math.max(Math.floor(options.limit ?? SEARCH_LIMIT) || SEARCH_LIMIT, 1), SEARCH_LIMIT_MAX);
-    const page = hits.slice(start, start + limit);
+    const page = ordered.slice(start, start + limit);
     const counts = page.length > 0 ? this.childCounts() : new Map<PageId, number>();
-    const items = page.map((hit) => this.searchItem(hit, counts));
-    return start + limit < hits.length ? { items, nextCursor: String(start + limit) } : { items };
+    const items = page.map((hit) => this.searchItem(hit, counts, copies));
+    return start + limit < ordered.length ? { items, nextCursor: String(start + limit) } : { items };
   }
 
-  /** One returned result: its meta and snippet (built only for the page returned). */
-  private searchItem(hit: { record: PageRecord; text: string; around: string; score: number }, counts: ReadonlyMap<PageId, number>): SearchResult {
+  /** One returned result: its meta and snippet (built only for the page returned); D43 marks a conflict copy. */
+  private searchItem(
+    hit: { record: PageRecord; text: string; around: string; score: number },
+    counts: ReadonlyMap<PageId, number>,
+    copies: ReadonlyMap<PageId, { of: PageId | null }>,
+  ): SearchResult {
+    const page = metaOf(hit.record, counts.get(hit.record.id) ?? 0);
+    const copy = copies.get(hit.record.id);
+    if (copy) page.conflictOf = copy.of;
     return {
-      page: metaOf(hit.record, counts.get(hit.record.id) ?? 0),
+      page,
       snippet: makeSnippet(hit.text, hit.around, 80),
       score: hit.score,
     };
@@ -2069,8 +2159,9 @@ export class VaultStore {
   baseIndex(): BaseIndexEntry[] {
     const entries: BaseIndexEntry[] = [];
     const counts = this.childCounts();
+    const copies = this.copyIds();
     for (const record of this.pages.values()) {
-      if (record.kind !== "page") continue;
+      if (record.kind !== "page" || copies.has(record.id)) continue;
       const links: string[] = [];
       for (const edge of this.edgesBySource.get(record.id) ?? []) {
         const target = edge.target === null ? undefined : this.pages.get(edge.target);
@@ -2463,8 +2554,10 @@ export class VaultStore {
     options: { frontmatter?: boolean },
     rewritten: PageId[],
   ): Promise<void> {
+    // D37/D43: a conflict copy is never rewritten; nothing is written until the user resolves it.
+    const copies = this.copyIds();
     for (const other of [...this.pages.values()]) {
-      if (skip.has(other.id)) continue;
+      if (skip.has(other.id) || copies.has(other.id)) continue;
 
       if (other.board) {
         const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other.id).content });
@@ -2555,15 +2648,16 @@ export class VaultStore {
         if (pages.size === 0) this.mentionPostings.delete(word);
       }
     };
+    const copies = this.copyIds();
     for (const [id, entry] of this.mentionWordsByPage) {
       const record = this.pages.get(id);
-      if (!record || record.kind !== "page") {
+      if (!record || record.kind !== "page" || copies.has(id)) {
         drop(id, entry.words);
         this.mentionWordsByPage.delete(id);
       }
     }
     for (const record of this.pages.values()) {
-      if (record.kind !== "page") continue;
+      if (record.kind !== "page" || copies.has(record.id)) continue;
       const cached = this.mentionWordsByPage.get(record.id);
       if (cached && cached.content === record.content) continue;
       if (cached) drop(record.id, cached.words);
@@ -2812,10 +2906,11 @@ export class VaultStore {
     const files = await this.attachmentFiles();
     const exists = (path: string) => files.has(path);
     const changed: PageId[] = [];
+    const copies = this.copyIds();
     for (const { from, to } of relevant) {
       const record = this.pages.get(to);
-      // Boards reference attachments vault-root (JSON Canvas), never relative.
-      if (!record || record.kind !== "page") continue;
+      // Boards reference attachments vault-root (JSON Canvas), never relative. D43: copies are never rewritten.
+      if (!record || record.kind !== "page" || copies.has(record.id)) continue;
       const next = relinkAttachments(record.content, from, to, exists, options);
       if (next === record.content) continue;
       const at = new Date().toISOString();
@@ -3276,7 +3371,7 @@ export class VaultStore {
     const restoredIds = new Set(entry.deleted.map(remap));
     return {
       // Pages and boards (v1.9); a restored folder itself is in the tree list (D33).
-      restored: this.pageMetas().filter((meta) => restoredIds.has(meta.id)),
+      restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)),
       id: newId,
       movedToTopLevel: !parentAlive,
       renamed,
@@ -3317,7 +3412,7 @@ export class VaultStore {
     const restoredIds = new Set(entry.deleted.map(remap));
     return {
       // Pages and boards (v1.9); a restored folder itself is in the tree list (D33).
-      restored: this.pageMetas().filter((meta) => restoredIds.has(meta.id)),
+      restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)),
       id: newId,
       movedToTopLevel: !parentAlive,
       renamed: (newId.split("/").pop() ?? newId) !== name,
@@ -3650,7 +3745,10 @@ export class VaultStore {
 
     const rewrittenPages: PageId[] = [];
     const skippedPages: PageId[] = [];
+    const copies = this.copyIds();
     for (const record of [...this.pages.values()]) {
+      // D37/D43: a conflict copy keeps its tags as written until the user resolves it.
+      if (copies.has(record.id)) continue;
       const changed = record.board ? this.boardWithTagRenamed(record.board, from, to) : null;
       const fmTags = record.board ? null : renameTagList(record.fmTags, from, to);
       const body = record.board ? null : renameInlineTag(record.content, from, to);
@@ -3795,7 +3893,7 @@ export class VaultStore {
 
   private recomputeSource(id: PageId): void {
     const record = this.pages.get(id);
-    if (!record) {
+    if (!record || this.copyIds().has(id)) {
       this.edgesBySource.delete(id);
       return;
     }
@@ -3859,8 +3957,9 @@ export class VaultStore {
       byOldFile.set(`${from}${suffix}`.toLowerCase(), newFile);
     }
     const changed: PageId[] = [];
+    const copies = this.copyIds();
     for (const board of [...this.pages.values()]) {
-      if (!board.board) continue;
+      if (!board.board || copies.has(board.id)) continue;
       const result = rewriteCanvas(board.board, {
         file: (path) => byOldFile.get(path.replace(/^\/+/, "").toLowerCase()) ?? null,
       });
@@ -4140,6 +4239,237 @@ export class VaultStore {
   /** "Clear history older than…": every unpinned version older than that, except each page's newest. */
   clearHistory(olderThanMs: number): Promise<HistoryUsage> {
     return this.enqueue(async () => pruneVault(this.root, { budget: budgetFor(await this.vaultBytes()), olderThanMs }));
+  }
+
+  // --- sync conflict copies (spec/sync-conflicts, D43; spec/api v1.29) -------
+
+  /** Every conflict copy, attachment copy and possible copy in the vault. Reads only (D37). */
+  conflicts(): Promise<ConflictsList> {
+    return this.enqueue(async () => {
+      const copies: ConflictCopy[] = [];
+      for (const [copyId, { of, name }] of this.conflictNames()) {
+        const copy = this.pages.get(copyId)!;
+        const original = of === null ? undefined : this.pages.get(of);
+        const same = original ? await sameBytes(copy.filePath, original.filePath) : false;
+        copies.push({
+          copyId,
+          originalId: of,
+          tool: name.tool,
+          ...(name.device ? { device: name.device } : {}),
+          ...(name.at ? { at: name.at } : {}),
+          kind: copy.kind,
+          same,
+          copyUpdated: copy.updated,
+          ...(original ? { originalUpdated: original.updated } : {}),
+        });
+      }
+      const files = new Set([...this.linkIndex.files(), ...(await this.attachmentFiles())]);
+      const attachments: ConflictAttachment[] = [];
+      for (const path of [...files].sort()) {
+        const slash = path.lastIndexOf("/");
+        const name = conflictCopyOf(path.slice(slash + 1));
+        if (!name) continue;
+        const originalPath = `${path.slice(0, slash + 1)}${name.originalName}`;
+        attachments.push({
+          path,
+          originalPath: files.has(originalPath) ? originalPath : null,
+          tool: name.tool,
+          ...(name.device ? { device: name.device } : {}),
+          ...(name.at ? { at: name.at } : {}),
+        });
+      }
+      return { copies: copies.sort((a, b) => a.copyId.localeCompare(b.copyId)), attachments, possible: await this.possibleCopiesNow() };
+    });
+  }
+
+  /** The copy against its original: a line diff (pages, bases) or cards added/removed/changed (boards). */
+  conflictDiff(copyId: PageId): Promise<ConflictDiff> {
+    return this.enqueue(async () => {
+      const { copy, original } = this.conflictPair(copyId, { possible: true });
+      if (!original) throw badRequest("This copy's original is gone; there is nothing to compare with");
+      const [before, after] = await Promise.all([readFile(original.filePath, "utf8"), readFile(copy.filePath, "utf8")]);
+      if (copy.kind === "whiteboard") return { kind: "board", ...boardDiff(before, after) };
+      return { kind: "text", lines: lineDiff(before, after) };
+    });
+  }
+
+  /**
+   * Resolve a conflict copy (§4.4). Conditional on both files: a file that
+   * changed since Compare (the sync tool may still be at work) is a 409.
+   * Nothing is deleted: the losing side goes to the Trash, and its bytes into
+   * the original's history.
+   */
+  resolveConflict(copyId: PageId, input: ConflictResolveInput): Promise<ConflictResolveResult> {
+    return this.enqueue(async () => {
+      if (!input || typeof input !== "object" || typeof input.expected !== "object" || input.expected === null) throw badRequest("expected is required");
+      const keep = input.keep;
+      if (!["page", "copy", "both", "delete", "as-original"].includes(keep)) throw badRequest("keep must be page, copy, both, delete or as-original");
+      await this.refreshFromDisk();
+      const { copy, original, name } = this.conflictPair(copyId);
+      if (!["page", "whiteboard", "base"].includes(copy.kind)) throw badRequest("Only pages, boards and bases are resolved here");
+      await this.assertUnchanged(copy, input.expected.copy);
+      if (original) await this.assertUnchanged(original, input.expected.page);
+      const client = `${name.tool}${name.device ? ` ${name.device}` : ""}`;
+      const versioned = (record: PageRecord) => record.kind === "page" || record.kind === "whiteboard";
+      const extOf = (record: PageRecord): "md" | "canvas" => (record.kind === "whiteboard" ? "canvas" : "md");
+
+      if (keep === "page" || keep === "delete") {
+        if (keep === "page" && !original) throw badRequest("This copy's original is gone");
+        if (keep === "delete" && original && !(await sameBytes(copy.filePath, original.filePath))) {
+          throw badRequest("Delete copy is for an orphan copy or one that's the same as its page");
+        }
+        if (original && versioned(original)) {
+          await saveVersion(this.root, { id: original.id, ext: extOf(original), bytes: await readFile(copy.filePath), version: copy.updated, source: "external", reason: "conflict", client });
+        }
+        const removed = await this.removeNow(copy.id);
+        return { keep, ...(original ? { page: this.metaFor(original.id) } : {}), trashId: removed.trashId };
+      }
+
+      if (keep === "copy") {
+        if (!original) throw badRequest("This copy's original is gone; use as-original");
+        const bytes = await readFile(copy.filePath);
+        const current = await readFile(original.filePath);
+        let beforeVersion: string | undefined;
+        if (versioned(original) && !current.equals(bytes)) {
+          beforeVersion = (await saveVersion(this.root, { id: original.id, ext: extOf(original), bytes: current, version: original.updated, source: "restore", reason: "before-restore" })).file;
+        }
+        if (!current.equals(bytes)) {
+          const temporary = `${original.filePath}.${process.pid}.${Date.now()}.tmp`;
+          try {
+            await writeFile(temporary, bytes);
+            await rename(temporary, original.filePath);
+          } catch (error) {
+            await rm(temporary, { force: true }).catch(() => undefined);
+            throw error;
+          }
+          const fresh = original.kind === "base" ? await this.readBaseRecord(original.filePath, original.id) : await this.readRecord(original.filePath, original.id);
+          this.pages.set(original.id, fresh);
+          if (versioned(fresh)) {
+            await saveVersion(this.root, { id: fresh.id, ext: extOf(fresh), bytes, version: fresh.updated, source: "external", reason: "conflict", client });
+          }
+        }
+        const removed = await this.removeNow(copy.id);
+        this.reindexAll();
+        return { keep, page: this.metaFor(original.id), trashId: removed.trashId, ...(beforeVersion ? { beforeVersion } : {}) };
+      }
+
+      // both / as-original: the copy becomes an ordinary page under a new name; its bytes are untouched.
+      let title: string;
+      if (keep === "as-original") {
+        if (original) throw badRequest("The original is still there; use both");
+        title = name.originalName.replace(/\.(md|canvas|base)$/i, "");
+      } else {
+        if (!original) throw badRequest("This copy's original is gone; use as-original");
+        const date = (name.at ?? new Date().toISOString()).slice(0, 10);
+        title = `${original.title} (copy ${date})`;
+      }
+      const folder = copy.id.includes("/") ? copy.id.slice(0, copy.id.lastIndexOf("/") + 1) : "";
+      const extension = copy.kind === "whiteboard" ? ".canvas" : copy.kind === "base" ? ".base" : "";
+      const targetId = await this.freeId(`${folder}${pageSegment(title)}${extension}`, copy.kind);
+      await this.relocateNow(copy.id, targetId);
+      this.reindexAll();
+      return { keep, renamedTo: targetId, ...(original ? { page: this.metaFor(original.id) } : {}) };
+    });
+  }
+
+  /**
+   * Undo of Keep both / as-original: rename the page back to the conflict-copy
+   * name it had. `previousId` must be a conflict-copy name in the same folder.
+   */
+  undoConflictRename(currentId: PageId, previousId: PageId): Promise<PageMeta> {
+    return this.enqueue(async () => {
+      const record = this.require(this.resolveId(currentId));
+      const folderOf = (id: string) => (id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : "");
+      const previousName = previousId.slice(previousId.lastIndexOf("/") + 1);
+      const fileName = record.kind === "page" ? `${previousName}.md` : previousName;
+      if (folderOf(previousId) !== folderOf(record.id) || !conflictCopyOf(fileName)) throw badRequest("Not the conflict copy this page was");
+      if (this.pages.has(previousId)) throw badRequest("That name is taken again");
+      await this.relocateNow(record.id, previousId);
+      this.reindexAll();
+      return this.metaFor(previousId, { withCopies: true });
+    });
+  }
+
+  /** "Not a copy": a possible copy (§3) is left alone from now on, in `.gumply/sync-dismissed.json`. */
+  dismissPossibleCopy(copyId: PageId, dismissed: boolean): Promise<void> {
+    return this.enqueue(async () => {
+      const list = await this.readDismissed();
+      const key = this.resolveId(copyId);
+      const next = dismissed ? [...new Set([...list, key])] : list.filter((id) => id !== key);
+      await mkdir(join(this.root, ".gumply"), { recursive: true });
+      const file = join(this.root, ".gumply", "sync-dismissed.json");
+      const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+      try {
+        await writeFile(temporary, `${JSON.stringify({ notACopy: next.sort() }, null, 2)}\n`, "utf8");
+        await rename(temporary, file);
+      } catch (error) {
+        await rm(temporary, { force: true }).catch(() => undefined);
+        throw error;
+      }
+    });
+  }
+
+  private async readDismissed(): Promise<string[]> {
+    try {
+      const data = JSON.parse(await readFile(join(this.root, ".gumply", "sync-dismissed.json"), "utf8")) as { notACopy?: unknown };
+      return Array.isArray(data.notACopy) ? data.notACopy.filter((id): id is string => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** §3's possible copies: the name pattern, the original beside it, ≥60% shared, not dismissed. */
+  private async possibleCopiesNow(): Promise<PossibleCopy[]> {
+    const dismissed = new Set(await this.readDismissed());
+    const byPath = new Map<string, PageRecord>();
+    for (const record of this.pages.values()) byPath.set(record.filePath, record);
+    const out: PossibleCopy[] = [];
+    for (const record of this.pages.values()) {
+      if (dismissed.has(record.id) || !["page", "whiteboard", "base"].includes(record.kind)) continue;
+      const name = possibleCopyOf(basename(record.filePath));
+      if (!name) continue;
+      const original = byPath.get(join(dirname(record.filePath), name.originalName));
+      if (!original || original.id === record.id) continue;
+      const similarity = await this.sharedContent(record, original);
+      if (similarity >= POSSIBLE_COPY_MIN_SHARED) out.push({ copyId: record.id, originalId: original.id, similarity: Math.round(similarity * 100) / 100 });
+    }
+    return out.sort((a, b) => a.copyId.localeCompare(b.copyId));
+  }
+
+  private async sharedContent(a: PageRecord, b: PageRecord): Promise<number> {
+    if (a.board && b.board) return sharedRatio(a.board.nodes.map((node) => node.id), b.board.nodes.map((node) => node.id));
+    const [left, right] = await Promise.all([readFile(a.filePath, "utf8").catch(() => ""), readFile(b.filePath, "utf8").catch(() => "")]);
+    return sharedRatio(left.split(/\r?\n/), right.split(/\r?\n/));
+  }
+
+  /** A conflict copy (or, for Compare, a possible copy) and its original. */
+  private conflictPair(copyId: PageId, options: { possible?: boolean } = {}): { copy: PageRecord; original: PageRecord | undefined; name: ConflictCopyName } {
+    const id = this.resolveId(copyId);
+    const copy = this.pages.get(id);
+    if (!copy) throw notFound("Page not found");
+    const entry = this.conflictNames().get(id);
+    if (entry) return { copy, original: entry.of === null ? undefined : this.pages.get(entry.of), name: entry.name };
+    if (options.possible) {
+      const possible = possibleCopyOf(basename(copy.filePath));
+      const original = possible ? [...this.pages.values()].find((record) => record.filePath === join(dirname(copy.filePath), possible.originalName)) : undefined;
+      if (possible && original) return { copy, original, name: { tool: "syncthing", originalName: possible.originalName } };
+    }
+    throw badRequest("Not a conflict copy");
+  }
+
+  /** D22 for a resolve: the file must be as Compare saw it. */
+  private async assertUnchanged(record: PageRecord, expected: string | undefined): Promise<void> {
+    if (typeof expected !== "string") throw badRequest("expected versions are required");
+    const info = await stat(record.filePath).catch(() => null);
+    if (info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 || expected !== record.updated) {
+      throw conflict("This changed while you were comparing. Check again.");
+    }
+  }
+
+  private metaFor(id: PageId, options: { withCopies?: boolean } = { withCopies: true }): PageMeta {
+    const meta = this.pageMetas(options).find((item) => item.id === id);
+    if (!meta) throw notFound("Page not found");
+    return meta;
   }
 
   private async historyOrphansNow(): Promise<HistoryOrphan[]> {

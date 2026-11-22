@@ -71,9 +71,12 @@ export class Vault {
     return (this.store as unknown as StoreInternals).pages.get(id);
   }
 
-  /** Every page, board, folder and base the index holds. */
+  /**
+   * Every page, board, folder and base the index holds. Not a sync tool's
+   * conflict copy beside its page (D43): resolving one is a person's decision.
+   */
   list(): PageMeta[] {
-    return this.store.list();
+    return this.store.list().filter((page) => typeof page.conflictOf !== "string");
   }
 
   /**

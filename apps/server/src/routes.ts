@@ -5,6 +5,7 @@ import type {
   Attachment,
   Backlink,
   BoardDocument,
+  ConflictKeep,
   BoardUpdateResult,
   DeletePageResult,
   GraphData,
@@ -315,6 +316,42 @@ export function createApiRoutes(store: VaultStore): Hono {
     const days = Number(c.req.query("olderThan") ?? "");
     if (!Number.isFinite(days) || days < 0) throw badRequest("olderThan must be a number of days");
     return c.json(await store.clearHistory(days * 86_400_000));
+  });
+
+  // --- sync conflict copies (spec/sync-conflicts, D43; spec/api v1.29) ---
+  api.get("/conflicts", async (c) => c.json(await store.conflicts()));
+
+  api.get("/conflicts/:id/diff", async (c) => c.json(await store.conflictDiff(c.req.param("id"))));
+
+  api.post("/conflicts/:id/resolve", async (c) => {
+    const body = await readJson(c);
+    const expected = body.expected as { page?: unknown; copy?: unknown } | undefined;
+    if (typeof expected !== "object" || expected === null || typeof expected.copy !== "string") throw badRequest("expected.copy is required");
+    if (expected.page !== undefined && typeof expected.page !== "string") throw badRequest("expected.page must be a string");
+    return c.json(
+      await store.resolveConflict(c.req.param("id"), {
+        keep: body.keep as ConflictKeep,
+        expected: { copy: expected.copy, ...(typeof expected.page === "string" ? { page: expected.page } : {}) },
+      }),
+    );
+  });
+
+  // Undo of Keep both / Keep as original: back to the conflict-copy name.
+  api.post("/conflicts/:id/rename-back", async (c) => {
+    const body = await readJson(c);
+    const to = optionalString(body, "to");
+    if (!to) throw badRequest("to is required");
+    return c.json(await store.undoConflictRename(c.req.param("id"), to));
+  });
+
+  api.post("/conflicts/:id/dismiss", async (c) => {
+    await store.dismissPossibleCopy(c.req.param("id"), true);
+    return c.json({ dismissed: true });
+  });
+
+  api.delete("/conflicts/:id/dismiss", async (c) => {
+    await store.dismissPossibleCopy(c.req.param("id"), false);
+    return c.json({ dismissed: false });
   });
 
   // #9bx3aznb: every tag with its counts (the tags pane).
