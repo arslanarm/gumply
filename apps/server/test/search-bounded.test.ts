@@ -35,17 +35,17 @@ async function vaultOf(hits: number, others = 0): Promise<VaultStore> {
 
 /** Results built (one meta each) while `run` runs. */
 function built(store: VaultStore, run: () => void): number {
-  const internals = store as unknown as { directChildCount: (id: string) => number };
-  const original = internals.directChildCount;
+  const internals = store as unknown as { searchItem: (...args: unknown[]) => unknown };
+  const original = internals.searchItem;
   let count = 0;
-  internals.directChildCount = function (this: unknown, id: string) {
+  internals.searchItem = function (this: unknown, ...args: unknown[]) {
     count += 1;
-    return original.call(this, id);
+    return original.apply(this, args);
   };
   try {
     run();
   } finally {
-    internals.directChildCount = original;
+    internals.searchItem = original;
   }
   return count;
 }

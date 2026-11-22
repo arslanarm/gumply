@@ -1111,12 +1111,7 @@ export class VaultStore {
 
   /** Flat list of every tree item (pages, boards and D33 plain folders), sorted by id. */
   list(): PageMeta[] {
-    const counts = new Map<PageId, number>();
-    const count = (parentId: PageId | null) => {
-      if (parentId) counts.set(parentId, (counts.get(parentId) ?? 0) + 1);
-    };
-    for (const record of this.pages.values()) count(record.parentId);
-    for (const folder of this.folders.values()) count(folder.parentId);
+    const counts = this.childCounts();
     const metas = [...this.pages.values()].map((record) => metaOf(record, counts.get(record.id) ?? 0));
     for (const folder of this.folders.values()) {
       metas.push({
@@ -1492,6 +1487,7 @@ export class VaultStore {
     this.require(id);
 
     const out: Backlink[] = [];
+    let counts: Map<PageId, number> | undefined;
     for (const [sourceId, edges] of this.edgesBySource) {
       if (sourceId === id) continue;
       const edge = edges.find((candidate) => candidate.target === id);
@@ -1500,7 +1496,7 @@ export class VaultStore {
       const source = this.pages.get(sourceId);
       if (!source) continue;
       out.push({
-        page: metaOf(source, this.directChildCount(sourceId)),
+        page: metaOf(source, (counts ??= this.childCounts()).get(sourceId) ?? 0),
         snippet: this.linkSnippet(source, edge),
       });
     }
@@ -1708,12 +1704,19 @@ export class VaultStore {
 
     const start = Math.max(0, Math.floor(Number(options.cursor ?? 0)) || 0);
     const limit = Math.min(Math.max(Math.floor(options.limit ?? SEARCH_LIMIT) || SEARCH_LIMIT, 1), SEARCH_LIMIT_MAX);
-    const items = hits.slice(start, start + limit).map(({ record, text, around, score }) => ({
-      page: metaOf(record, this.directChildCount(record.id)),
-      snippet: makeSnippet(text, around, 80),
-      score,
-    }));
+    const page = hits.slice(start, start + limit);
+    const counts = page.length > 0 ? this.childCounts() : new Map<PageId, number>();
+    const items = page.map((hit) => this.searchItem(hit, counts));
     return start + limit < hits.length ? { items, nextCursor: String(start + limit) } : { items };
+  }
+
+  /** One returned result: its meta and snippet (built only for the page returned). */
+  private searchItem(hit: { record: PageRecord; text: string; around: string; score: number }, counts: ReadonlyMap<PageId, number>): SearchResult {
+    return {
+      page: metaOf(hit.record, counts.get(hit.record.id) ?? 0),
+      snippet: makeSnippet(hit.text, hit.around, 80),
+      score: hit.score,
+    };
   }
 
   /** Plain text and link targets of a page for search, cached until its content changes. */
@@ -2045,6 +2048,7 @@ export class VaultStore {
   /** Pages (not boards, bases or folders) with what base expressions read. */
   baseIndex(): BaseIndexEntry[] {
     const entries: BaseIndexEntry[] = [];
+    const counts = this.childCounts();
     for (const record of this.pages.values()) {
       if (record.kind !== "page") continue;
       const links: string[] = [];
@@ -2053,7 +2057,7 @@ export class VaultStore {
         if (target) links.push(relative(this.root, target.filePath).split(sep).join("/"));
       }
       entries.push({
-        meta: metaOf(record, this.directChildCount(record.id)),
+        meta: metaOf(record, counts.get(record.id) ?? 0),
         path: relative(this.root, record.filePath).split(sep).join("/"),
         filePath: record.filePath,
         fileMtimeMs: record.fileMtimeMs,
@@ -2583,13 +2587,14 @@ export class VaultStore {
       }
       candidates.delete(target.id);
       const out: PageMentions[] = [];
+      let counts: Map<PageId, number> | undefined;
       for (const pageId of candidates) {
         const record = this.pages.get(pageId);
         if (!record) continue;
         const found = findMentions(record.content, terms);
         if (found.length === 0) continue;
         out.push({
-          page: metaOf(record, this.directChildCount(record.id)),
+          page: metaOf(record, (counts ??= this.childCounts()).get(record.id) ?? 0),
           updated: record.updated,
           mentions: found.map((mention) => ({ ...mention, snippet: mentionSnippet(record.content, mention) })),
         });
@@ -4551,6 +4556,22 @@ export class VaultStore {
     });
   }
 
+  /**
+   * Direct children (pages, boards, folders) of every parent, in one pass.
+   * #g95wkd9y: anything that builds many metas uses this, not
+   * `directChildCount` per item (which walks the vault each time).
+   */
+  private childCounts(): Map<PageId, number> {
+    const counts = new Map<PageId, number>();
+    const count = (parentId: PageId | null) => {
+      if (parentId) counts.set(parentId, (counts.get(parentId) ?? 0) + 1);
+    };
+    for (const record of this.pages.values()) count(record.parentId);
+    for (const folder of this.folders.values()) count(folder.parentId);
+    return counts;
+  }
+
+  /** One item's direct children; for many items use `childCounts`. */
   private directChildCount(id: PageId): number {
     let count = 0;
     for (const record of this.pages.values()) {
