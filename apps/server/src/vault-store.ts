@@ -186,6 +186,9 @@ export interface HistoryOrphan {
   newest: string;
 }
 
+/** The kept last-written bytes (#yikrbg7h) stay under this in total; the oldest are saved early. */
+const SESSION_BYTES_CAP = 64 * 1024 * 1024;
+
 /** App versions while typing: at most one per 5 min (D41). */
 const HISTORY_COALESCE_MS = 5 * 60_000;
 /** An editing session ends 10 min after the last app save (D41). */
@@ -624,14 +627,18 @@ export class VaultStore {
    * user's last save, not the one before it.
    */
   private readonly sessionBytes = new Map<PageId, Buffer>();
+  /** Their total size, capped: past it the oldest are saved as versions early. */
+  private sessionBytesTotal = 0;
+  private readonly sessionBytesCap: number;
   private pruneTimer: ReturnType<typeof setTimeout> | null = null;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
   private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
 
-  constructor(root: string, options: { historySource?: HistorySource } = {}) {
+  constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number } = {}) {
     this.root = resolve(root);
     this.propertyTypes = new PropertyTypesStore(this.root);
     this.historySource = options.historySource ?? "app";
+    this.sessionBytesCap = options.sessionBytesCap ?? SESSION_BYTES_CAP;
   }
 
   async init(): Promise<void> {
@@ -1985,7 +1992,7 @@ export class VaultStore {
       if (previous !== null && !previous.equals(Buffer.from(next, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
       if (previous === null) await this.freshHistory(record.filePath);
       await rename(temporary, record.filePath);
-      this.rememberWrite(record.filePath, next);
+      await this.rememberWrite(record.filePath, next);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
@@ -2848,7 +2855,7 @@ export class VaultStore {
     for (const deletedId of deleted) {
       const doomed = this.pages.get(deletedId);
       if (doomed) await this.snapshotRecord(doomed, this.historySource, "trash");
-      this.sessionBytes.delete(deletedId);
+      this.forgetSessionBytes(deletedId);
     }
 
     const manifest: TrashManifest = {
@@ -3695,7 +3702,7 @@ export class VaultStore {
     for (const deletedId of deleted) {
       const doomed = this.pages.get(deletedId);
       if (doomed) await this.snapshotRecord(doomed, this.historySource, "trash");
-      this.sessionBytes.delete(deletedId);
+      this.forgetSessionBytes(deletedId);
     }
 
     const manifest: TrashManifest = {
@@ -4037,7 +4044,7 @@ export class VaultStore {
         const fresh = await this.readRecord(record.filePath, record.id);
         this.pages.set(record.id, fresh);
         // The bytes Gumply wrote before are the `before-restore` version now.
-        this.sessionBytes.delete(record.id);
+        this.forgetSessionBytes(record.id);
         this.reindexAll();
         await saveVersion(this.root, { id: record.id, ext, bytes, version: fresh.updated, source: "app", restoredFrom: entry.file });
       }
@@ -4296,13 +4303,34 @@ export class VaultStore {
     }
   }
 
-  /** Keep the bytes a Gumply write just put in a page or board file (#yikrbg7h). */
-  private rememberWrite(filePath: string, text: string): void {
+  /**
+   * Keep the bytes a Gumply write just put in a page or board file (#yikrbg7h).
+   * Past the cap, the pages written longest ago are saved as `session`
+   * versions early and dropped from memory.
+   */
+  private async rememberWrite(filePath: string, text: string): Promise<void> {
     if (this.historySource !== "app") return;
     const path = relative(this.root, filePath).split(sep).join("/");
     if (!/\.(md|canvas)$/i.test(path)) return;
     const id = this.historyRecordFor(filePath)?.id ?? path.replace(/\.md$/i, "");
-    this.sessionBytes.set(id, Buffer.from(text, "utf8"));
+    this.forgetSessionBytes(id);
+    const bytes = Buffer.from(text, "utf8");
+    // Re-inserted, so the Map's order is "written longest ago" first.
+    this.sessionBytes.set(id, bytes);
+    this.sessionBytesTotal += bytes.length;
+    for (const oldest of [...this.sessionBytes.keys()]) {
+      if (this.sessionBytesTotal <= this.sessionBytesCap || oldest === id) break;
+      await this.saveSessionBytes(oldest);
+    }
+  }
+
+  private forgetSessionBytes(id: PageId): Buffer | undefined {
+    const bytes = this.sessionBytes.get(id);
+    if (bytes) {
+      this.sessionBytes.delete(id);
+      this.sessionBytesTotal -= bytes.length;
+    }
+    return bytes;
   }
 
   /**
@@ -4310,9 +4338,8 @@ export class VaultStore {
    * (deduplicated), ending its editing session. True when a version was written.
    */
   private async saveSessionBytes(id: PageId): Promise<boolean> {
-    const bytes = this.sessionBytes.get(id);
+    const bytes = this.forgetSessionBytes(id);
     if (!bytes) return false;
-    this.sessionBytes.delete(id);
     const timer = this.sessionTimers.get(id);
     if (timer) clearTimeout(timer);
     this.sessionTimers.delete(id);
@@ -4352,10 +4379,10 @@ export class VaultStore {
       this.sessionTimers.delete(from);
       this.sessionTimers.set(to, timer);
     }
-    const written = this.sessionBytes.get(from);
+    const written = this.forgetSessionBytes(from);
     if (written) {
-      this.sessionBytes.delete(from);
       this.sessionBytes.set(to, written);
+      this.sessionBytesTotal += written.length;
     }
     try {
       await moveHistory(this.root, from, to, parentOf(from) === parentOf(to) ? "rename" : "move");
@@ -4509,7 +4536,7 @@ export class VaultStore {
       if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
       if (previous === null) await this.freshHistory(filePath);
       await rename(temporary, filePath);
-      this.rememberWrite(filePath, text);
+      await this.rememberWrite(filePath, text);
       return {
         mtimeMs: (await stat(filePath)).mtimeMs,
         // True when the version is the `updated:` just written; otherwise the

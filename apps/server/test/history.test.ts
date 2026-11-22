@@ -164,6 +164,30 @@ describe("the user's last save survives an outside change or delete (#yikrbg7h)"
     expect((await entries(dir, "Viewed")).map((entry) => entry.source)).toEqual(["external"]);
   });
 
+  it("the kept bytes are capped: past the cap, the page written longest ago is saved as a session version early", async () => {
+    const { dir } = await createTestServer();
+    await writeFile(join(dir, "A.md"), "a0\n");
+    await writeFile(join(dir, "B.md"), "b0\n");
+    const store = new VaultStore(dir, { sessionBytesCap: 100 });
+    await store.init();
+    await store.update("A", { content: "a".repeat(60) });
+    expect((await entries(dir, "A")).map((entry) => entry.reason)).toEqual(["edit"]);
+    await store.update("B", { content: "b".repeat(60) });
+    // A's last save went to history early (byte-exact); B's is still only kept.
+    const a = await entries(dir, "A");
+    expect(a.map((entry) => [entry.source, entry.reason])).toEqual([
+      ["app", "edit"],
+      ["app", "session"],
+    ]);
+    expect(await readFile(join(historyDir(dir, "A"), a[1]!.file), "utf8")).toBe(await readFile(join(dir, "A.md"), "utf8"));
+    expect((await entries(dir, "B")).map((entry) => entry.reason)).toEqual(["edit"]);
+    // A's session is over: an outside change now adds only the external version.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(join(dir, "A.md"), "theirs\n");
+    await store.rescan();
+    expect((await entries(dir, "A")).map((entry) => entry.source)).toEqual(["app", "app", "external"]);
+  });
+
   it("a session already ended (checkpoint) isn't saved twice", async () => {
     const { store, dir } = await createTestServer();
     await writeFile(join(dir, "Note.md"), "a\n");
