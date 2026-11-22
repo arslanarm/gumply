@@ -35,6 +35,7 @@ import {
   rewriteLinksToPage,
   findMentions,
   linkMentions as linkMentionsIn,
+  mentionLink,
   linkTargetFor,
   mentionableText,
   mentionSnippet,
@@ -2304,8 +2305,16 @@ export class VaultStore {
         }
       }
       if (chosen.length === 0) return { linked: 0, rewrittenPages: [] };
-      const { target: linkTarget } = linkTargetFor(metaOf(target, this.directChildCount(target.id)), this.pageMetas());
-      await this.writeRewrittenBody(source, linkMentionsIn(source.content, chosen, linkTarget));
+      // As Obsidian 1.14.4 writes it: the text as written when that bare text
+      // resolves to the page (a title match), else `[[target|text]]` (an alias,
+      // or a title that isn't the file name).
+      const metas = this.pageMetas();
+      const { target: linkTarget, alias: autoAlias } = linkTargetFor(metaOf(target, this.directChildCount(target.id)), metas);
+      // The bare text must resolve in both apps: in Obsidian a link names the
+      // file, so a title that isn't the file name (autoAlias) always gets a target.
+      const linkFor = (mention: { text: string }) =>
+        mentionLink(linkTarget, mention.text, autoAlias === "" && resolveWikilink(mention.text, metas)?.id === target.id);
+      await this.writeRewrittenBody(source, linkMentionsIn(source.content, chosen, linkFor));
       this.recomputeSource(source.id);
       return { linked: chosen.length, rewrittenPages: [source.id] };
     });

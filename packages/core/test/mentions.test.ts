@@ -16,14 +16,27 @@ describe("findMentions", () => {
     expect(texts("ёжик Ёжик ёжики", ["Ёжик"])).toEqual(["ёжик", "Ёжик"]);
   });
 
-  it("aliases; the longest term wins where they overlap; spaces inside a term", () => {
-    const found = findMentions("Project Alpha ships. Alpha too. PA is short.\nProject\tAlpha again", ["Alpha", "Project Alpha", "PA"]);
+  it("aliases; the longest term wins where they overlap", () => {
+    const found = findMentions("Project Alpha ships. Alpha too. PA is short.", ["Alpha", "Project Alpha", "PA"]);
     expect(found.map((mention) => [mention.text, mention.term])).toEqual([
       ["Project Alpha", "Project Alpha"],
       ["Alpha", "Alpha"],
       ["PA", "PA"],
-      ["Project\tAlpha", "Project Alpha"],
     ]);
+  });
+
+  it("multi-word titles: the exact sequence, case-insensitive; no extra spaces, never across a line break (Obsidian 1.14.4)", () => {
+    const table: Array<[string, string, string[]]> = [
+      ["Q1 plan", "The q1 plan is late. Q1 PLAN again.", ["q1 plan", "Q1 PLAN"]],
+      ["Q1 plan", "Our Q1  plan (two spaces).", []],
+      ["Q1 plan", "Split Q1\nplan across lines.", []],
+      ["Q1 plan", "Split Q1\r\nplan across lines.", []],
+      ["Q1 plan", "Tabbed Q1\tplan.", []],
+      ["План на неделю", "Составили план на неделю вчера.", ["план на неделю"]],
+      ["План на неделю", "Составили план  на неделю.", []],
+      ["План на неделю", "Составили план на\nнеделю.", []],
+    ];
+    for (const [title, body, expected] of table) expect(texts(body, [title]), `${title} in ${JSON.stringify(body)}`).toEqual(expected);
   });
 
   it("never inside code, wikilinks, embeds, Markdown links, URLs or HTML", () => {
@@ -47,25 +60,30 @@ describe("findMentions", () => {
   });
 
   it("terms: title first, aliases after, no blanks, repeats or wordless terms", () => {
-    expect(mentionTerms("Alpha", ["alpha", " Project  Alpha ", "", "—"])).toEqual(["Alpha", "Project Alpha"]);
+    // Trimmed, but inner whitespace stays as written (it has to match exactly).
+    expect(mentionTerms("Alpha", ["alpha", " Project  Alpha ", "", "—"])).toEqual(["Alpha", "Project  Alpha"]);
     expect(mentionWords("Проект-Alpha 2_x")).toEqual(["проект", "alpha", "2_x"]);
   });
 });
 
 describe("linking", () => {
-  it("[[Target]] when it reads the same, else [[Target|as written]]", () => {
-    expect(mentionLink("Alpha", "Alpha")).toBe("[[Alpha]]");
-    expect(mentionLink("Alpha", "alpha")).toBe("[[Alpha|alpha]]");
-    expect(mentionLink("Alpha", "PA")).toBe("[[Alpha|PA]]");
-    // Title differs from the file name: linkTargetFor's target, the text kept.
-    expect(mentionLink("alpha-notes", "Alpha")).toBe("[[alpha-notes|Alpha]]");
+  it("as Obsidian 1.14.4: the text as written when it resolves, else [[target|text]]", () => {
+    // Title match: the bare text resolves (case-insensitively).
+    expect(mentionLink("Alpha", "alpha", true)).toBe("[[alpha]]");
+    expect(mentionLink("Q1 plan", "q1 plan", true)).toBe("[[q1 plan]]");
+    // Alias match: an alias isn't a link target.
+    expect(mentionLink("Alpha Beta", "ab", false)).toBe("[[Alpha Beta|ab]]");
+    expect(mentionLink("Alpha Beta", "AB", false)).toBe("[[Alpha Beta|AB]]");
+    // Title isn't the file name: linkTargetFor's target, the text kept.
+    expect(mentionLink("alpha-notes", "Alpha", false)).toBe("[[alpha-notes|Alpha]]");
   });
 
   it("replaces only the chosen mentions; every other byte stays (CRLF too)", () => {
     const body = "Alpha here.\r\nAnd alpha there, `Alpha` in code.\r\n";
     const mentions = findMentions(body, ["Alpha"]);
-    expect(linkMentions(body, mentions, "Alpha")).toBe("[[Alpha]] here.\r\nAnd [[Alpha|alpha]] there, `Alpha` in code.\r\n");
-    expect(linkMentions(body, [mentions[1]!], "Alpha")).toBe("Alpha here.\r\nAnd [[Alpha|alpha]] there, `Alpha` in code.\r\n");
+    const linkFor = (mention: { text: string }) => mentionLink("Alpha", mention.text, true);
+    expect(linkMentions(body, mentions, linkFor)).toBe("[[Alpha]] here.\r\nAnd [[alpha]] there, `Alpha` in code.\r\n");
+    expect(linkMentions(body, [mentions[1]!], linkFor)).toBe("Alpha here.\r\nAnd [[alpha]] there, `Alpha` in code.\r\n");
   });
 
   it("snippets mark the mention", () => {

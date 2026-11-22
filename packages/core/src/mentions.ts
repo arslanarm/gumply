@@ -50,7 +50,8 @@ export function mentionTerms(title: string, aliases: readonly string[] = []): st
   const out: string[] = [];
   const seen = new Set<string>();
   for (const raw of [title, ...aliases]) {
-    const term = raw.trim().replace(/\s+/g, " ");
+    // As written (Obsidian 1.14.4): no whitespace normalising inside the term.
+    const term = raw.trim();
     // A term with no word character can't be word-bounded (e.g. "—").
     if (!term || seen.has(term.toLowerCase()) || mentionWords(term).length === 0) continue;
     seen.add(term.toLowerCase());
@@ -61,21 +62,23 @@ export function mentionTerms(title: string, aliases: readonly string[] = []): st
 
 /**
  * Every unlinked mention of `terms` in `markdown`, in order. Longer terms win
- * where they overlap; whitespace inside a term matches any run of spaces.
+ * where they overlap. As in Obsidian 1.14.4: the term's exact character
+ * sequence, case-insensitive; no whitespace normalising (two spaces don't
+ * match one), and never across a line break.
  */
 export function findMentions(markdown: string, terms: readonly string[]): MentionMatch[] {
   if (terms.length === 0) return [];
   const text = mentionableText(markdown);
   const ordered = [...terms].sort((a, b) => b.length - a.length);
   const pattern = new RegExp(
-    `(?<!${WORD})(?:${ordered.map((term) => term.split(" ").map(escape).join("[ \\t]+")).join("|")})(?!${WORD})`,
+    `(?<!${WORD})(?:${ordered.map(escape).join("|")})(?!${WORD})`,
     "giu",
   );
   const out: MentionMatch[] = [];
   for (const match of text.matchAll(pattern)) {
     const index = match.index ?? 0;
     const written = markdown.slice(index, index + match[0].length);
-    const folded = written.toLowerCase().replace(/\s+/g, " ");
+    const folded = written.toLowerCase();
     // Blanked spans read as spaces: a match across a link or code isn't the term as written.
     const term = ordered.find((candidate) => candidate.toLowerCase() === folded);
     if (term === undefined) continue;
@@ -84,19 +87,21 @@ export function findMentions(markdown: string, terms: readonly string[]): Mentio
   return out;
 }
 
-/** The text of the link a mention becomes: `[[Target]]`, or `[[Target|as written]]`. */
-export function mentionLink(target: string, written: string): string {
-  return written === target ? `[[${target}]]` : `[[${target}|${written}]]`;
+/**
+ * The link a mention becomes, as Obsidian 1.14.4 writes it: the text as
+ * written (`[[alpha]]`) when that bare text already resolves to the page,
+ * else `[[target|text as written]]` (an alias, or a title that isn't the file
+ * name: `target` as `linkTargetFor` gives it).
+ */
+export function mentionLink(target: string, written: string, bareResolves: boolean): string {
+  return bareResolves || written === target ? `[[${written}]]` : `[[${target}|${written}]]`;
 }
 
-/**
- * Replace the given mentions with links (`target` as `linkTargetFor` gives
- * it). Only those bytes change.
- */
-export function linkMentions(markdown: string, mentions: readonly MentionMatch[], target: string): string {
+/** Replace the given mentions with `linkFor(mention)`. Only those bytes change. */
+export function linkMentions(markdown: string, mentions: readonly MentionMatch[], linkFor: (mention: MentionMatch) => string): string {
   let out = markdown;
   for (const mention of [...mentions].sort((a, b) => b.index - a.index)) {
-    out = out.slice(0, mention.index) + mentionLink(target, mention.text) + out.slice(mention.index + mention.length);
+    out = out.slice(0, mention.index) + linkFor(mention) + out.slice(mention.index + mention.length);
   }
   return out;
 }

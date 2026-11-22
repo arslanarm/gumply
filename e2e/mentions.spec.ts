@@ -44,7 +44,7 @@ test('Link and Link all turn plain mentions into links, byte for byte', async ({
   await page.getByTestId('backlinks-panel').evaluate(() => undefined);
   await journal.getByTestId('mentions-link').click();
   await expect.poll(() => readFile(file(NOTE), 'utf8'), { timeout: 5_000 }).toBe(
-    'Visited the [[Lighthouse|lighthouse]].\r\nThe [[Lighthouse]] was closed; `Lighthouse` in code.\r\n',
+    'Visited the [[lighthouse]].\r\nThe [[Lighthouse]] was closed; `Lighthouse` in code.\r\n',
   );
   await expect(section.getByText('No unlinked mentions.')).toBeVisible();
   expect(await readFile(file('Other.md'), 'utf8')).toBe(otherBefore);
@@ -58,6 +58,6 @@ test('Link all links every mention in one page', async ({ page, vault }) => {
   await page.getByTestId('mentions-toggle').click();
   await page.getByTestId('mentions-link-all').click();
   await expect.poll(() => readFile(file(NOTE), 'utf8'), { timeout: 5_000 }).toBe(
-    '[[Lighthouse|lighthouse]] one, [[Lighthouse]] two, [[Lighthouse|LIGHTHOUSE]] three\n',
+    '[[lighthouse]] one, [[Lighthouse]] two, [[LIGHTHOUSE]] three\n',
   );
 });

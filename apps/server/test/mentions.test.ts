@@ -80,7 +80,8 @@ describe("POST /api/pages/:id/mentions/link", () => {
     const response = await link(app, { source: "Daily", expectedUpdated: daily!.updated, all: true });
     expect(await response.json()).toEqual({ linked: 3, rewrittenPages: ["Daily"] });
     expect(await readFile(join(dir, "Daily.md"), "utf8")).toBe(
-      "Worked on [[Alpha|alpha]] today.\r\n[[Alpha|PA]] review; see [[Alpha]] and `Alpha`.\r\n[[Alpha|Project Alpha]] is late.\r\n",
+      // Obsidian 1.14.4: a title match keeps the text ([[alpha]]); an alias match is [[Title|text]].
+      "Worked on [[alpha]] today.\r\n[[Alpha|PA]] review; see [[Alpha]] and `Alpha`.\r\n[[Alpha|Project Alpha]] is late.\r\n",
     );
     // The links count now: Daily is a backlink and no longer a mention.
     expect(await mentionsOf(app)).toEqual([]);
@@ -101,5 +102,17 @@ describe("POST /api/pages/:id/mentions/link", () => {
     expect((await link(app, { source: "Daily", all: true, positions: "x" })).status).toBe(409);
     expect((await link(app, { source: "Projects/Alpha", all: true })).status).toBe(400);
     expect((await link(app, { source: "Daily" })).status).toBe(400);
+  });
+
+  it("a title that isn't the file name always gets the file as target (Obsidian resolves by file)", async () => {
+    const { app, dir } = await vault({
+      "alpha-notes.md": "---\ntitle: Alpha\n---\nBody\n",
+      "Daily.md": "About alpha today.\n",
+    });
+    const mentions = await getJson<PageMentions[]>(app, `/api/pages/${encodeId("alpha-notes")}/mentions`);
+    const [daily] = mentions;
+    const response = await jsonRequest(app, "POST", `/api/pages/${encodeId("alpha-notes")}/mentions/link`, { source: "Daily", expectedUpdated: daily!.updated, all: true });
+    expect(response.status).toBe(200);
+    expect(await readFile(join(dir, "Daily.md"), "utf8")).toBe("About [[alpha-notes|alpha]] today.\n");
   });
 });
