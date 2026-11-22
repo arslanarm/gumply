@@ -57,11 +57,11 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   // E1: groups and filters, per vault. The graph waits for them, so its first
   // layout already uses them (no restart when they arrive).
   const { settings, update: updateSettings } = useGraphSettings();
-  const query = settings?.filters.search ?? "";
+  // The search box stays per visit, as before E1: a filter typed once must not
+  // greet the next visit with a half-empty graph. (`filters.search` is kept in
+  // the file as read, for Obsidian round-trips.)
+  const [query, setQuery] = useState("");
   const wantAttachments = settings?.filters.showAttachments ?? false;
-  const setQuery = (search: string) => {
-    if (settings) updateSettings({ ...settings, filters: { ...settings.filters, search } });
-  };
 
   const load = useCallback(async (attachments: boolean) => {
     setStatus("loading");
@@ -96,7 +96,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
     () =>
       model && filters
         ? filterGraph(model, {
-            query: filters.search,
+            query,
             tags: selectedTags,
             hideUnresolved: filters.hideUnresolved,
             showOrphans: filters.showOrphans,
@@ -104,7 +104,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
             attachments: filters.showAttachments ? data?.attachments : undefined,
           })
         : null,
-    [model, filters, selectedTags, data],
+    [model, filters, query, selectedTags, data],
   );
 
   // Stable arrays: a new identity on every render would restart the force
