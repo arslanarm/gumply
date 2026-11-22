@@ -619,6 +619,7 @@
       "columns": "Columns"
     },
     "turnIntoHeading": "Turn into",
+    "turnIntoLabel": "Turn into: {{block}}",
     "insertBelow": "Insert block below",
     "actions": "Block actions",
     "handleHint": "Drag to move · click for actions",

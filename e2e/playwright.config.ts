@@ -48,9 +48,10 @@ export default defineConfig({
     // `graph-visual` (dev-graph: fit geometry, resize, filter, DPR) supersedes
     // the earlier `graph-pixels` smoke check, which is kept as a cheap guard.
     // `today-shortcut` (#5hrsrqsj): Ctrl+Shift+D must beat Firefox's own binding.
+    // `tooltip-names` (#hwrv5hvk): Firefox handles the `content: … / ""` alt text itself.
     {
       name: 'firefox',
-      testMatch: /(graph-(visual|pixels|interaction)|today-shortcut|outline-shortcut)\.spec\.ts$/,
+      testMatch: /(graph-(visual|pixels|interaction)|today-shortcut|outline-shortcut|tooltip-names)\.spec\.ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
   ],
