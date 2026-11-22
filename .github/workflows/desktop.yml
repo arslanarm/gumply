@@ -243,7 +243,10 @@ jobs:
           if [[ "$RUNNER_OS" == Windows ]]; then target=(--win nsis --x64); else target=(--linux AppImage --x64); fi
           npx electron-builder "${target[@]}" --publish never -c.extraMetadata.version="$old" -c.directories.output=update-test/old
           npx electron-builder "${target[@]}" --publish never -c.extraMetadata.version="$new" -c.directories.output=update-test/new
-          oldfile=$(ls update-test/old/*.AppImage update-test/old/Gumply-Setup-*.exe 2>/dev/null | head -1)
+          # One of the two patterns never matches on a given OS: nullglob, not ls (exit 2 under pipefail).
+          shopt -s nullglob
+          found=(update-test/old/*.AppImage update-test/old/Gumply-Setup-*.exe)
+          oldfile="${found[0]}"
           abs() { node -p 'require("node:path").resolve(process.argv[1])' "$1"; }
           { echo "GUMPLY_UPDATE_OLD=$(abs "$oldfile")"; echo "GUMPLY_UPDATE_OLD_VERSION=$old"
             echo "GUMPLY_UPDATE_FEED_DIR=$(abs update-test/new)"; echo "GUMPLY_UPDATE_NEW_VERSION=$new"; } >> "$GITHUB_ENV"
