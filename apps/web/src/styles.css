@@ -1416,9 +1416,21 @@ input {
 }
 
 @media (max-width: 900px) {
-  /* Stacked rows keep clear of each other and of the text around them. */
+  /*
+   * Stacked rows keep clear of each other and of the text around them. A
+   * light outline groups a row's columns, so two rows in a row read as two
+   * (#9j9cd5x4: "Cons" ran straight into "Plan"). Not a left bar: that is
+   * how a quote looks.
+   */
   .gumply-editor .md-columns-wrap {
     margin: 1em 0;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .gumply-editor .md-columns-wrap + .md-columns-wrap {
+    margin-top: 0.75em;
   }
 
   .gumply-editor .md-columns {

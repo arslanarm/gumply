@@ -114,6 +114,30 @@ test.describe('columns (spec/columns)', () => {
     expect(b!.y).toBeGreaterThan(a!.y + a!.height - 1);
     expect(c!.y).toBeGreaterThan(b!.y + b!.height - 1);
   });
+
+  test('stacked, two rows in a row stay two: each row is outlined, with space between (#9j9cd5x4)', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 600, height: 900 });
+    const two = SHAPES['two columns, no widths'];
+    await open(page, request, `Before.\n\n${two}\n\n${two.replace('Left', 'Second left').replace('Right', 'Second right')}\n\nAfter.\n`);
+    const rows = page.locator('.md-columns-wrap');
+    await expect(rows).toHaveCount(2);
+    for (const row of await rows.all()) {
+      const style = await row.evaluate((element) => {
+        const css = getComputedStyle(element);
+        return { border: css.borderTopWidth, radius: css.borderTopLeftRadius, left: css.borderLeftWidth };
+      });
+      // An outline all round (a left bar alone would read as a quote).
+      expect(style.border).toBe('1px');
+      expect(style.left).toBe('1px');
+      expect(parseFloat(style.radius)).toBeGreaterThan(0);
+    }
+    const [first, second] = [(await rows.nth(0).boundingBox())!, (await rows.nth(1).boundingBox())!];
+    expect(second.y - (first.y + first.height)).toBeGreaterThan(6);
+    // Side by side again when wide: no outline.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    expect(await rows.first().evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  });
 });
 
 test.describe('making and editing columns (spec/columns §3)', () => {
