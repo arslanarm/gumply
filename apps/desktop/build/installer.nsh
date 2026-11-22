@@ -12,6 +12,13 @@
 ; Manual installs (no `--updated`) keep electron-builder's stock behaviour:
 ; the "Gumply is running, close it?" prompt.
 
+; Defining customCheckAppRunning makes electron-builder skip including
+; getProcessInfo.nsh and declaring $pid (allowOnlyOneInstallerInstance.nsh), and
+; the stock _CHECK_APP_RUNNING we fall back to needs both, in the installer
+; and the uninstaller alike.
+!include "getProcessInfo.nsh"
+Var pid
+
 !macro customCheckAppRunning
   !insertmacro IS_POWERSHELL_AVAILABLE
   ${if} ${isUpdated}
