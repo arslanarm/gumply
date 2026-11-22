@@ -226,7 +226,7 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
     body = (
       <div className="notion-import-report" data-testid="notion-import-report">
         <p className="notion-import-done">
-          <Icon name="checkSquare" size={18} />
+          <Icon name="circleCheck" size={18} />
           <strong data-testid="notion-import-folder">{t("notionImport.doneTitle", { folder: folderName(folder) })}</strong>
         </p>
         {reimport ? <p className="notion-import-note">{t("notionImport.reimportNote")}</p> : null}

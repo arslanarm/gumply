@@ -817,7 +817,9 @@
       "saveFailed": "Couldn't save the MCP settings: {{error}}",
       "offNote": "AI apps can't use this vault while this is off.",
       "raiseAppend": "Let AI apps add pages and text to this vault?",
+      "raiseAppendBody": "What's already written never changes. Every change is kept in history and can be undone.",
       "raiseEdit": "Let AI apps edit and trash pages in this vault?",
+      "raiseEditBody": "Every change is kept in history and can be undone, but a note with misleading text could trick an AI into editing other pages.",
       "allow": "Allow"
     }
   },
