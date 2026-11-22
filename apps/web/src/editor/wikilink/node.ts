@@ -29,7 +29,7 @@ export function replaceWithFileEmbed(
   typed: string,
   alone: boolean,
 ): boolean {
-  const inner = /^!?\[\[([^[\]]+)\]\]$/.exec(typed)?.[1] ?? "";
+  const inner = new RegExp(String.raw`^!?\[\[(${WIKILINK_INNER}+)\]\]$`).exec(typed)?.[1] ?? "";
   const target = inner.split("|")[0]!.split("#")[0]!.trim();
   if (!hasAttachmentExtension(target)) return false;
   const path = target.includes("/") ? target : `attachments/${target}`;
