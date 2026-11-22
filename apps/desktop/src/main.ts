@@ -28,6 +28,8 @@ import { isAppDownload, suggestedName } from "./downloads.js";
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
+import { MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, type McpModeArgs } from "./mcp-mode.js";
+import { runMcp } from "../../mcp/src/run.js";
 
 /**
  * Launch phases with the process's age in ms (#tcw8r7vc), kept for the
@@ -196,6 +198,8 @@ async function openVault(path: string): Promise<void> {
     version: app.getVersion(),
     desktop: true,
     uiState: uiStateStore,
+    // A3: Settings → MCP shows AI apps how to start this app's --mcp mode.
+    mcpCommand: mcpLaunchCommand(process.execPath, app.isPackaged, app.getAppPath()),
     log: (message) => console.log(message),
   });
   launchPhase("server-started");
@@ -548,7 +552,28 @@ function buildMenu(): void {
 
 // --- lifecycle ------------------------------------------------------------
 
-if (!app.requestSingleInstanceLock()) {
+/**
+ * `Gumply --mcp --vault <path>` (A3, spec/mcp §1): the stdio MCP server, and
+ * nothing else: no window, menu or tray, and no single-instance lock, so an
+ * AI app can start it while the app is open. It exits when stdin closes.
+ */
+function runMcpMode(args: McpModeArgs): void {
+  const exit = (code: number): never => {
+    app.exit(code);
+    process.exit(code);
+  };
+  if (process.platform === "darwin") app.dock?.hide();
+  if (!args.vault) {
+    process.stderr.write(`--vault is required.\n${MCP_MODE_USAGE}\n`);
+    exit(2);
+  }
+  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit });
+}
+
+const mcpMode = mcpModeArgs(process.argv);
+if (mcpMode) {
+  runMcpMode(mcpMode);
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {

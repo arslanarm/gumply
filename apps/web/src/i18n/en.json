@@ -744,7 +744,36 @@
     "title": "Settings",
     "language": "Language",
     "languageSystem": "Same as system",
-    "languageCommand": "Language…"
+    "languageCommand": "Language…",
+    "mcp": {
+      "open": "AI apps (MCP)…",
+      "title": "AI apps (MCP)",
+      "intro": "Let AI apps such as Claude Code and Claude Desktop use this vault through the Model Context Protocol. They run Gumply on this computer; nothing goes over the network.",
+      "enabled": "Let AI apps use this vault",
+      "access": "What AI apps may do",
+      "accessRead": "Read only",
+      "accessReadHint": "Search and read pages, tags, links and the graph.",
+      "accessAppend": "Read and add",
+      "accessAppendHint": "Also create pages, add to the end of a page, and add cards to boards. Never changes what's already written.",
+      "accessEdit": "Read and edit",
+      "accessEditHint": "Also change and trash pages. Every change is kept in history and can be undone, but a note with misleading text could trick an AI into editing other pages. Keep “Read and add” unless you need this.",
+      "restartNote": "After allowing more, restart the AI app's connection to Gumply. Allowing less takes effect at once.",
+      "setup": "Connect an AI app",
+      "claudeCode": "Claude Code",
+      "claudeCodeHint": "Run this in a terminal:",
+      "claudeDesktop": "Claude Desktop",
+      "claudeDesktopHint": "Add this to {{path}}, then quit Claude Desktop completely and open it again:",
+      "npmHint": "Needs the gumply command on your PATH.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "recent": "Recent activity",
+      "recentEmpty": "No changes by AI apps yet.",
+      "recentRow": "{{tool}} · {{client}}",
+      "loading": "Loading…",
+      "loadFailed": "Couldn't load the MCP settings: {{error}}",
+      "saveFailed": "Couldn't save the MCP settings: {{error}}",
+      "offNote": "AI apps can't use this vault while this is off."
+    }
   },
   "desktop": {
     "menu": {

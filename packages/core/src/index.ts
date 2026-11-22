@@ -224,3 +224,19 @@ export {
   type GraphSettingsResponse,
   type GraphSettingsSource,
 } from "./graph-settings.js";
+export {
+  DEFAULT_MCP_SETTINGS,
+  isMcpAccess,
+  MCP_ACCESS_LEVELS,
+  MCP_AUDIT_PATH,
+  MCP_SETTINGS_PATH,
+  parseMcpAuditLog,
+  parseMcpSettings,
+  serializeMcpSettings,
+  type McpAccess,
+  type McpAuditEntry,
+  type McpLaunchCommand,
+  type McpSettings,
+  type McpSettingsPatch,
+  type McpSettingsResponse,
+} from "./mcp-settings.js";

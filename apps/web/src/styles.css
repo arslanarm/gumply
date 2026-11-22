@@ -2561,6 +2561,216 @@ input {
   accent-color: var(--accent);
 }
 
+/* A3: Settings → AI apps (MCP). */
+.settings-link {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  margin-top: -0.2rem;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-link span {
+  flex: 1;
+}
+
+.settings-link:hover {
+  background: var(--hover);
+}
+
+.mcp-dialog {
+  width: min(620px, 100%);
+  max-height: min(86vh, 760px);
+  overflow-y: auto;
+}
+
+.mcp-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mcp-dialog-head h2 {
+  margin: 0;
+}
+
+.mcp-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.mcp-switch input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.mcp-section {
+  margin: 0 0 1.1rem;
+  padding: 0;
+  border: 0;
+}
+
+.mcp-section legend,
+.mcp-section h3 {
+  margin: 0 0 0.45rem;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.mcp-section h4 {
+  margin: 0.7rem 0 0.15rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.mcp-section:disabled {
+  opacity: 0.55;
+}
+
+.mcp-level {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.mcp-level.is-active {
+  border-color: var(--border);
+  background: var(--hover);
+}
+
+.mcp-level input {
+  margin: 0.2rem 0 0;
+  accent-color: var(--accent);
+}
+
+.mcp-level-name {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.mcp-level-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.modal p.mcp-note {
+  margin: 0.35rem 0 0.4rem;
+  font-size: 0.8rem;
+}
+
+.modal p.mcp-error {
+  color: var(--danger);
+}
+
+.mcp-snippet + .mcp-snippet {
+  margin-top: 0.9rem;
+}
+
+.mcp-snippet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.mcp-section .mcp-snippet-head h4 {
+  margin: 0;
+}
+
+.mcp-snippet pre {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mcp-copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--panel);
+  font-size: 0.76rem;
+}
+
+.mcp-recent {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.84rem;
+}
+
+.mcp-recent li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mcp-recent-page {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.mcp-recent-page:disabled {
+  color: var(--text);
+  cursor: default;
+}
+
+.mcp-recent-meta {
+  flex: 1;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+}
+
+.mcp-recent time {
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
 /* `?` keyboard-shortcuts overlay. */
 .shortcuts-dialog {
   width: min(520px, 100%);

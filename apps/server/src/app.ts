@@ -1,8 +1,9 @@
-import { APP_NAME, CORE_VERSION, type ApiError, type HealthResponse } from "@gumply/core";
+import { APP_NAME, CORE_VERSION, type ApiError, type HealthResponse, type McpLaunchCommand } from "@gumply/core";
 import { Hono } from "hono";
 import { badRequest, VaultError } from "./errors.js";
 import { parseUiStateChange, type UiStateStore } from "./ui-state.js";
 import { createApiRoutes } from "./routes.js";
+import { mcpSettingsRoutes } from "./mcp-settings.js";
 import { localOnly, type SecurityOptions } from "./security.js";
 import { serveWebApp } from "./static.js";
 import type { VaultStore } from "./vault-store.js";
@@ -20,6 +21,8 @@ export interface AppOptions {
   desktop?: boolean;
   /** Desktop only (#c7fzzxk8): serve `GET/PUT /api/ui/state` from this store. */
   uiState?: UiStateStore;
+  /** A3: how an AI app starts this Gumply's MCP server (the desktop app's own executable); default `gumply mcp`. */
+  mcpCommand?: McpLaunchCommand;
 }
 
 /**
@@ -57,6 +60,9 @@ export function createApp(options: AppOptions): Hono {
       return c.json(uiState.update(parseUiStateChange(body)));
     });
   }
+
+  // A3 (spec/api-mcp-settings): Settings → MCP.
+  app.route("/api/mcp", mcpSettingsRoutes(options.vaultPath, options.mcpCommand));
 
   app.route("/api", createApiRoutes(options.store));
 

@@ -10,6 +10,8 @@ import type {
   CanvasBoard,
   DailyNoteSettings,
   Attachment,
+  McpSettingsPatch,
+  McpSettingsResponse,
   Backlink,
   GraphData,
   GraphSettings,
@@ -268,6 +270,11 @@ export const api = {
   /** #w6i6e6u7: the server downloads a remote image into attachments/. */
   importAttachment: (url: string): Promise<Attachment> =>
     request<Attachment>("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }).then(attachmentSaved),
+
+  /** A3 (spec/api-mcp-settings): Settings → MCP. */
+  mcpSettings: (): Promise<McpSettingsResponse> => request("/mcp/settings"),
+  setMcpSettings: (patch: McpSettingsPatch): Promise<McpSettingsResponse> =>
+    request("/mcp/settings", { method: "PUT", body: JSON.stringify(patch) }),
 
   /** v0.7 C: the templates folder and its pages. */
   listTemplates: (): Promise<{ folder: string; templates: PageMeta[] }> => request("/templates"),

@@ -68,6 +68,7 @@ import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 import { t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
+import { McpSettingsDialog } from "./components/McpSettingsDialog.js";
 
 type ListStatus = "loading" | "ready" | "error";
 type PageStatus = "idle" | "loading" | "ready" | "error";
@@ -180,6 +181,8 @@ export function App() {
    */
   /** The Settings popover (language, theme; #7h5utv23). */
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** A3: Settings → AI apps (MCP). */
+  const [mcpOpen, setMcpOpen] = useState(false);
   /** G1: the page "Export as HTML…" was picked for. */
   const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
   const [galleryParent, setGalleryParent] = useState<{
@@ -1828,7 +1831,7 @@ export function App() {
           onKeepMine={handleConflictKeepMine}
         />
         <ThemeToggle />
-        <SettingsMenu open={settingsOpen} onOpenChange={setSettingsOpen} />
+        <SettingsMenu open={settingsOpen} onOpenChange={setSettingsOpen} onOpenMcp={() => setMcpOpen(true)} />
         <button
           type="button"
           className="icon-button"
@@ -2274,6 +2277,8 @@ export function App() {
           }}
         />
       ) : null}
+
+      {mcpOpen ? <McpSettingsDialog onClose={() => setMcpOpen(false)} onOpenPage={(id) => handleOpen(id)} /> : null}
 
       {shortcutsOpen ? <ShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}
     </div>
