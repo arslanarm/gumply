@@ -10,10 +10,10 @@
  * - Settings (last/recent vaults, window state) live in `userData`, never in
  *   a vault.
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
 import { startGumplyServer, type RunningServer } from "../../server/src/start.js";
 import { applyUiStateChange, type UiState, type UiStateChange, type UiStateStore } from "../../server/src/ui-state.js";
@@ -25,7 +25,7 @@ import {
   type DesktopSettings,
   type WindowState,
 } from "./settings.js";
-import { isAppDownload, suggestedName } from "./downloads.js";
+import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downloads.js";
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
@@ -470,7 +470,53 @@ function revealTrashed(trashId: string): void {
   shell.showItemInFolder(target);
 }
 
-function sendCommand(command: "new-page" | "new-whiteboard" | "search" | "import-notion"): void {
+/**
+ * G2: print a page the web app built (G1's self-contained document, light,
+ * with an @page rule) to PDF. A hidden window on its own throwaway session
+ * loads only that file: no script, no preload, and every other request is
+ * cancelled. Then the native Save dialog (tests: GUMPLY_DESKTOP_DOWNLOAD_DIR).
+ */
+async function printToPdf(htmlPath: string, name: string, scratchDir: string): Promise<void> {
+  const documentUrl = pathToFileURL(htmlPath).href;
+  const printSession = session.fromPartition(`gumply-print-${Date.now()}`, { cache: false });
+  const blocked: string[] = [];
+  printSession.webRequest.onBeforeRequest((details, callback) => {
+    const allowed = details.url === documentUrl || details.url.startsWith("data:");
+    if (!allowed) blocked.push(details.url);
+    callback({ cancel: !allowed });
+  });
+  const printWindow = new BrowserWindow({
+    show: false,
+    webPreferences: { session: printSession, javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false },
+  });
+  printWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  printWindow.webContents.on("will-navigate", (event) => event.preventDefault());
+  try {
+    await printWindow.loadURL(documentUrl);
+    const pdf = await printWindow.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true });
+    const testDir = process.env.GUMPLY_DESKTOP_DOWNLOAD_DIR;
+    let target: string | undefined;
+    if (testDir) target = join(resolve(testDir), name);
+    else {
+      const options = {
+        title: tr("export.saveTitle"),
+        defaultPath: join(app.getPath("downloads"), name),
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      };
+      const answer = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+      target = answer.canceled ? undefined : answer.filePath;
+    }
+    if (target) writeFileSync(target, pdf);
+  } finally {
+    // Tests read what was refused (nothing should ever be).
+    const record = globalThis as { __gumplyPrintBlocked?: string[] };
+    record.__gumplyPrintBlocked = [...(record.__gumplyPrintBlocked ?? []), ...blocked];
+    printWindow.destroy();
+    rmSync(scratchDir, { recursive: true, force: true });
+  }
+}
+
+function sendCommand(command: "new-page" | "new-whiteboard" | "search" | "import-notion" | "export-pdf"): void {
   if (!window || window.isDestroyed()) return;
   void window.webContents.executeJavaScript(
     `window.dispatchEvent(new CustomEvent("gumply:command", { detail: ${JSON.stringify(command)} }))`,
@@ -499,6 +545,8 @@ function buildMenu(): void {
         { type: "separator" },
         // B4: the in-app "Import from Notion…" dialog.
         { id: "import-notion", label: tr("menu.importNotion"), click: () => sendCommand("import-notion") },
+        // G2: the open page as PDF (the web app's dialog, then printToPDF here).
+        { id: "export-pdf", label: tr("menu.exportPdf"), click: () => sendCommand("export-pdf") },
         { type: "separator" },
         { id: "open-vault", label: tr("menu.openVault"), accelerator: "CmdOrCtrl+O", click: () => void openVaultFromMenu("open") },
         { label: tr("menu.createVault"), click: () => void openVaultFromMenu("create") },
@@ -635,6 +683,18 @@ if (mcpMode) {
       const appOrigin = server ? new URL(server.url).origin : "";
       if (!isAppDownload(item.getURL(), appOrigin)) {
         event.preventDefault();
+        return;
+      }
+      // G2: a page to print. It goes to a scratch folder, then printToPDF and the Save dialog.
+      if (isPrintDownload(item.getFilename())) {
+        const scratchDir = mkdtempSync(join(tmpdir(), "gumply-print-"));
+        const htmlPath = join(scratchDir, "page.html");
+        const target = pdfName(item.getFilename());
+        item.setSavePath(htmlPath);
+        item.once("done", (_doneEvent, state) => {
+          if (state === "completed") void printToPdf(htmlPath, target, scratchDir).catch((error: unknown) => console.error("[gumply] PDF export failed:", error));
+          else rmSync(scratchDir, { recursive: true, force: true });
+        });
         return;
       }
       const name = suggestedName(item.getFilename());

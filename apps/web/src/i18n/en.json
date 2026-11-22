@@ -708,7 +708,8 @@
     "pageTemplate": "New page from template…",
     "pageTemplateWords": "",
     "exportWords": "",
-    "importWords": ""
+    "importWords": "",
+    "pdfWords": ""
   },
   "callout": {
     "types": {
@@ -838,7 +839,8 @@
       "close": "Close Window",
       "help": "&Help",
       "about": "About Gumply",
-      "importNotion": "Import from Notion…"
+      "importNotion": "Import from Notion…",
+      "exportPdf": "Export as PDF…"
     },
     "about": {
       "detail": "Notes as plain Markdown, with links, a graph and whiteboards."
@@ -1382,7 +1384,19 @@
     "moreRows_other": "+{{count}} more rows",
     "rows_one": "{{count}} row",
     "rows_other": "{{count}} rows",
-    "exportedFrom": "Exported from Gumply"
+    "exportedFrom": "Exported from Gumply",
+    "pdf": {
+      "menuItem": "Export as PDF…",
+      "command": "Export page as PDF",
+      "dialogTitle": "Export as PDF",
+      "dialogHint": "The page on paper: the cover, title, images, math and diagrams, always in the light theme.",
+      "size": "Paper size",
+      "sizeA4": "A4",
+      "sizeLetter": "Letter",
+      "margins": "Margins",
+      "marginsNormal": "Normal",
+      "marginsNarrow": "Narrow"
+    }
   },
   "notionImport": {
     "menuItem": "Import from Notion…",

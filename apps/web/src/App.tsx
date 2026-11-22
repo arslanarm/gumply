@@ -188,6 +188,9 @@ export function App() {
   const [notionImport, setNotionImport] = useState<{ target: PageMeta | null } | null>(null);
   /** The default target, for the desktop File menu's command (set each render). */
   const importTargetRef = useRef<PageMeta | null>(null);
+  /** G2: the page "Export as PDF…" was picked for. */
+  const [pdfTarget, setPdfTarget] = useState<PageMeta | null>(null);
+  const pdfTargetRef = useRef<PageMeta | null>(null);
   /** G1: the page "Export as HTML…" was picked for. */
   const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
   const [galleryParent, setGalleryParent] = useState<{
@@ -936,6 +939,7 @@ export function App() {
       else if (command === "new-whiteboard") setGalleryParent({ parentId: null });
       else if (command === "search") openSearch();
       else if (command === "import-notion") setNotionImport({ target: importTargetRef.current });
+      else if (command === "export-pdf" && pdfTargetRef.current) setPdfTarget(pdfTargetRef.current);
     };
     window.addEventListener("gumply:command", onCommand);
     // Toasts from parts of the editor that don't see the app (#5dpxwac4).
@@ -1794,6 +1798,8 @@ export function App() {
   // G1: Cmd+K → Export page as HTML, for the open page (not a board or a database view).
   const openPageMeta =
     page && page.id === selectedId ? (pages.find((item) => item.id === page.id && (item.kind ?? "page") === "page") ?? null) : null;
+  // G2: File → Export as PDF… (desktop) exports the open page.
+  pdfTargetRef.current = openPageMeta;
 
   return (
     <div className={`app${sidebarOpen ? "" : " sidebar-collapsed"}`}>
@@ -1888,6 +1894,7 @@ export function App() {
           onNewFromTemplate={closingSidebar((parentId: PageId | null) => setTemplatePicker({ mode: "new", parentId }))}
           onExportHtml={closingSidebar((id: PageId) => setExportTarget(pages.find((item) => item.id === id) ?? null))}
           onImportNotion={closingSidebar((id: PageId) => setNotionImport({ target: pages.find((item) => item.id === id) ?? null }))}
+          onExportPdf={closingSidebar((id: PageId) => setPdfTarget(pages.find((item) => item.id === id) ?? null))}
         />
         {/* Narrow windows: the sidebar is an overlay; tapping the page closes it. */}
         <div
@@ -2276,6 +2283,14 @@ export function App() {
             dismissSearch();
             setNotionImport({ target: importDefaultTarget });
           }}
+          onExportPdf={
+            openPageMeta
+              ? () => {
+                  dismissSearch();
+                  setPdfTarget(openPageMeta);
+                }
+              : undefined
+          }
           onExportHtml={
             openPageMeta
               ? () => {
@@ -2303,6 +2318,24 @@ export function App() {
               setActionError(t("export.failed", { error: errorMessage(error) }));
             }
             setExportTarget(null);
+          }}
+        />
+      ) : null}
+
+      {pdfTarget ? (
+        <ExportDialog
+          title={pdfTarget.title}
+          format="pdf"
+          onClose={() => setPdfTarget(null)}
+          onExport={async (options) => {
+            const target = pdfTarget;
+            try {
+              const { exportPageAsPdf } = await import("./export/run-export.js");
+              if (options.print) await exportPageAsPdf(target.id, documentPages, options.print, desktop);
+            } catch (error) {
+              setActionError(t("export.failed", { error: errorMessage(error) }));
+            }
+            setPdfTarget(null);
           }}
         />
       ) : null}

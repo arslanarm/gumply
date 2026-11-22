@@ -600,35 +600,101 @@ html[data-theme="dark"] .callout[data-callout-style="quote"] { --callout-rgb: 15
   font-style: italic;
 }
 
-/* ---------- Print (G2 builds on this) ---------- */
+/* ---------- Print (G2: PDF from the desktop app, or the browser's print) ---------- */
 
 @media print {
+  /* Light only, whatever the theme chosen for the screen. */
+  html[data-theme] {
+    color-scheme: light;
+    --surface-page: #ffffff;
+    --text: #1f1e1a;
+    --muted: #5f5d56;
+    --border: #d9d7cf;
+    --accent: #3f37c9;
+    --hover: #f2f1ed;
+  }
+
   body.export,
   body.export.has-tint {
     background: none;
+    font-size: 11pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
-  .export-page {
+  .export-page,
+  .export-page.has-cover {
     max-width: none;
     padding: 0;
   }
 
+  /* The cover stays, smaller; the page margins come from @page. */
   .export-cover {
-    max-height: 180px;
+    height: 38mm;
+    min-height: 0;
+    max-height: 38mm;
+    margin-bottom: 8mm;
+    border-radius: 3mm;
   }
 
+  .export-title {
+    font-size: 24pt;
+  }
+
+  /* Headings never end a page; blocks don't split where it can be helped. */
+  .export-title,
   .export-body h1,
   .export-body h2,
-  .export-body h3 {
+  .export-body h3,
+  .export-body h4,
+  .export-embed-title,
+  .export-base-title {
     break-after: avoid;
+    page-break-after: avoid;
   }
 
-  .export-body pre,
   .export-body img,
+  .export-diagram,
+  .export-body .math-block,
   .callout,
-  .export-embed,
-  .export-body tr {
+  .export-properties,
+  .export-body li,
+  .export-body tr,
+  .export-base tr {
     break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Images and diagrams fit the paper. */
+  .export-body img,
+  .export-diagram svg {
+    max-width: 100%;
+    max-height: 90vh;
+    object-fit: contain;
+  }
+
+  /* Code wraps instead of running off the page. */
+  .export-body pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+
+  /* Long tables: the header repeats on every page; nothing scrolls. */
+  .export-body thead,
+  .export-base thead {
+    display: table-header-group;
+  }
+
+  .export-table-wrap,
+  .export-diagram,
+  .export-body .math-block {
+    overflow: visible;
+  }
+
+  .export-body a {
+    color: var(--accent);
+    text-decoration: none;
   }
 
   .export-footer {

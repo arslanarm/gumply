@@ -40,6 +40,31 @@ export type ExportLinks = "text" | "files";
 export interface ExportOptions {
   theme: ExportTheme;
   links: ExportLinks;
+  /**
+   * G2: a document for printing to PDF. Always light, links as text (a PDF
+   * has no sibling files), and an `@page` rule for the paper.
+   */
+  print?: PrintOptions;
+}
+
+export type PageSize = "A4" | "Letter";
+export type PrintMargins = "normal" | "narrow";
+
+export interface PrintOptions {
+  pageSize: PageSize;
+  margins: PrintMargins;
+}
+
+const MARGINS: Record<PrintMargins, string> = { normal: "18mm", narrow: "10mm" };
+
+/** The `@page` rule a print document carries (Chromium's printToPDF honours it with preferCSSPageSize). */
+export function pageRule(print: PrintOptions): string {
+  return `@page { size: ${print.pageSize}; margin: ${MARGINS[print.margins]}; }`;
+}
+
+/** The options as the builder applies them: printing forces light and text links. */
+function effectiveOptions(options: ExportOptions): ExportOptions {
+  return options.print ? { ...options, theme: "light", links: "text" } : options;
 }
 
 /** A vault file's bytes, for a `data:` URI. */
@@ -359,7 +384,8 @@ function propertiesHtml(context: Context, properties: readonly Property[] | unde
 }
 
 /** The whole page as one self-contained HTML document. */
-export async function buildPageHtml(page: Page, source: ExportSource, options: ExportOptions): Promise<string> {
+export async function buildPageHtml(page: Page, source: ExportSource, requested: ExportOptions): Promise<string> {
+  const options = effectiveOptions(requested);
   const context: Context = { source, options, files: new Map() };
   const look = pageLook(page.properties);
   const [cover, body] = await Promise.all([coverHtml(context, page), renderBody(context, page.content, page.id, page.fileLinks, 1, [page.id])]);
@@ -375,7 +401,7 @@ export async function buildPageHtml(page: Page, source: ExportSource, options: E
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     '<meta name="generator" content="Gumply">',
     `<title>${escapeHtml(page.title)}</title>`,
-    `<style>${source.css.replace(/<\/style/gi, "<\\/style")}</style>`,
+    `<style>${source.css.replace(/<\/style/gi, "<\\/style")}${options.print ? `\n${pageRule(options.print)}` : ""}</style>`,
     "</head>",
     `<body${bodyAttrs}>`,
     cover,

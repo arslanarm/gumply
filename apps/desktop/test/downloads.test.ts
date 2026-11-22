@@ -24,3 +24,14 @@ describe("desktop downloads (#yewapn9k)", () => {
     expect(suggestedName("")).toBe("Gumply export");
   });
 });
+
+describe("G2 print downloads", () => {
+  it("recognises the print hand-off and names the PDF", async () => {
+    const { isPrintDownload, pdfName } = await import("../src/downloads");
+    expect(isPrintDownload("Trip plan.gumply-print.html")).toBe(true);
+    expect(isPrintDownload(".gumply-print.html")).toBe(false);
+    expect(isPrintDownload("Trip plan.html")).toBe(false);
+    expect(pdfName("Trip plan.gumply-print.html")).toBe("Trip plan.pdf");
+    expect(pdfName("a:b.gumply-print.html")).toBe("a b.pdf");
+  });
+});

@@ -1,6 +1,6 @@
 import type { BaseViewResult, Page, PageMeta } from "@gumply/core";
 import { describe, expect, it } from "vitest";
-import { buildPageHtml, exportFileName, MAX_BASE_ROWS, siblingHref, unescapeHtml, type ExportSource } from "../src/export/html-export.js";
+import { buildPageHtml, exportFileName, MAX_BASE_ROWS, pageRule, siblingHref, unescapeHtml, type ExportSource } from "../src/export/html-export.js";
 
 const meta = (id: string, kind: PageMeta["kind"] = "page"): PageMeta =>
   ({ id, title: id.split("/").pop()!.replace(/\.(canvas|base)$/, ""), kind, parentId: null, updated: "2026-11-22T10:00:00.000Z", created: "2026-11-22T10:00:00.000Z" }) as PageMeta;
@@ -103,6 +103,28 @@ describe("HTML export (G1)", () => {
       { theme: "system", links: "text" },
     );
     expect(both).toContain('<div class="export-diagram"><div class="diagram-light"><svg data-theme="light"></svg></div><div class="diagram-dark"><svg data-theme="dark"></svg></div></div>');
+  });
+
+  it("G2 print: light, text links, the light diagram only, and an @page rule for the paper", async () => {
+    const other = page("Other", "x");
+    const root = page("Plan", "See [[Other]].\n\n```mermaid\ngraph TD; A-->B\n```");
+    const themes: string[] = [];
+    const html = await buildPageHtml(
+      root,
+      source({}, [root, other], {
+        diagram: async (_code, theme) => {
+          themes.push(theme);
+          return { svg: `<svg data-theme="${theme}"></svg>` };
+        },
+      }).value,
+      { theme: "system", links: "files", print: { pageSize: "Letter", margins: "narrow" } },
+    );
+    expect(html).toContain('data-theme="light"');
+    expect(html).toContain("@page { size: Letter; margin: 10mm; }");
+    expect(html).toContain('<span class="wiki-link">Other</span>');
+    expect(html).not.toContain("Other.html");
+    expect(themes).toEqual(["light"]);
+    expect(pageRule({ pageSize: "A4", margins: "normal" })).toBe("@page { size: A4; margin: 18mm; }");
   });
 
   it("links: plain text by default, or relative links to sibling .html files", async () => {

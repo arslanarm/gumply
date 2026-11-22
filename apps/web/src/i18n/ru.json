@@ -722,7 +722,8 @@
     "pageTemplate": "Новая страница из шаблона…",
     "pageTemplateWords": "новая страница из шаблона шаблон шаблоны",
     "exportWords": "экспорт экспортировать страницу в html",
-    "importWords": "импорт импортировать нотион"
+    "importWords": "импорт импортировать нотион",
+    "pdfWords": "пдф печать печатать распечатать"
   },
   "callout": {
     "types": {
@@ -852,7 +853,8 @@
       "close": "Закрыть окно",
       "help": "&Справка",
       "about": "О Gumply",
-      "importNotion": "Импорт из Notion…"
+      "importNotion": "Импорт из Notion…",
+      "exportPdf": "Экспорт в PDF…"
     },
     "about": {
       "detail": "Заметки в обычном Markdown — со ссылками, графом и досками."
@@ -1400,7 +1402,19 @@
     "rows_few": "{{count}} строки",
     "rows_many": "{{count}} строк",
     "rows_other": "{{count}} строки",
-    "exportedFrom": "Экспортировано из Gumply"
+    "exportedFrom": "Экспортировано из Gumply",
+    "pdf": {
+      "menuItem": "Экспорт в PDF…",
+      "command": "Экспортировать страницу в PDF",
+      "dialogTitle": "Экспорт в PDF",
+      "dialogHint": "Страница на бумаге: обложка, заголовок, изображения, формулы и диаграммы, всегда в светлой теме.",
+      "size": "Размер бумаги",
+      "sizeA4": "A4",
+      "sizeLetter": "Letter",
+      "margins": "Поля",
+      "marginsNormal": "Обычные",
+      "marginsNarrow": "Узкие"
+    }
   },
   "notionImport": {
     "menuItem": "Импорт из Notion…",

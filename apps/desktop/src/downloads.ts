@@ -23,3 +23,19 @@ export function suggestedName(name: string): string {
   const clean = name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim();
   return clean && clean !== "." && clean !== ".." ? clean : "Gumply export";
 }
+
+/**
+ * G2: the web app hands a page to print as a download named
+ * `<Title>.gumply-print.html` (keep in step with apps/web/src/export/run-export.ts).
+ * Main prints it to PDF in a hidden window instead of saving it.
+ */
+export const PRINT_DOWNLOAD_SUFFIX = ".gumply-print.html";
+
+export function isPrintDownload(fileName: string): boolean {
+  return fileName.endsWith(PRINT_DOWNLOAD_SUFFIX) && fileName.length > PRINT_DOWNLOAD_SUFFIX.length;
+}
+
+/** `Plan.gumply-print.html` → `Plan.pdf`, safe for the Save dialog. */
+export function pdfName(fileName: string): string {
+  return `${suggestedName(fileName.slice(0, -PRINT_DOWNLOAD_SUFFIX.length))}.pdf`;
+}

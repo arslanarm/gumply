@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion";
+  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -50,10 +50,12 @@ export interface SearchSections {
   exportHtml?: SearchRow | null;
   /** B4: `Import from Notion…` ("notion", "import"…). */
   importNotion?: SearchRow | null;
+  /** G2: `Export page as PDF` ("pdf", "print"…). */
+  exportPdf?: SearchRow | null;
 }
 
 /** Words for this language's command (English always counts), from a message. */
-function localWords(key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords"): string[] {
+function localWords(key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords" | "search.pdfWords"): string[] {
   return t(key).toLowerCase().split(/\s+/).filter(Boolean);
 }
 
@@ -73,6 +75,17 @@ export function wantsImportNotion(query: string): boolean {
   const words = needle.split(" ").filter((word) => word.length > 0);
   const known = ["import", "from", "notion", ...localWords("search.importWords")];
   return words.every((word) => known.some((candidate) => candidate.startsWith(word)));
+}
+
+/** Whether `query` asks to print the page or export a PDF: "pdf", "print", "export pdf"… (G2). */
+export function wantsExportPdf(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = needle.split(" ").filter((word) => word.length > 0);
+  const local = localWords("search.pdfWords");
+  const known = ["export", "as", "pdf", "print", "page", ...local, ...localWords("search.exportWords")];
+  const key = ["pdf", "print", ...local];
+  return words.every((word) => known.some((candidate) => candidate.startsWith(word))) && words.some((word) => key.some((candidate) => candidate.startsWith(word)));
 }
 
 /** Whether `query` asks for today's daily note: "today", "daily", "journal"… (v0.7 C). */
@@ -291,7 +304,8 @@ export function searchSections(
     : null;
   const exportHtml = wantsExportHtml(query) ? { kind: "export-html" as const, key: "export-html", label: t("export.command") } : null;
   const importNotion = wantsImportNotion(query) ? { kind: "import-notion" as const, key: "import-notion", label: t("notionImport.command") } : null;
-  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion };
+  const exportPdf = wantsExportPdf(query) ? { kind: "export-pdf" as const, key: "export-pdf", label: t("export.pdf.command") } : null;
+  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion, exportPdf };
 }
 
 export interface SnippetPart {

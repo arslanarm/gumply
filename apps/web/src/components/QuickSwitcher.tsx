@@ -38,6 +38,8 @@ export interface QuickSwitcherProps {
   onExportHtml?: () => void;
   /** B4: Import from Notion…. */
   onImportNotion?: () => void;
+  /** G2: export the open page as PDF. */
+  onExportPdf?: () => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
@@ -56,6 +58,7 @@ export function QuickSwitcher({
   onNewPageFromTemplate,
   onExportHtml,
   onImportNotion,
+  onExportPdf,
   onClose,
   initialQuery = "",
 }: QuickSwitcherProps) {
@@ -125,6 +128,7 @@ export function QuickSwitcher({
     onOpenToday ? sections.today : null,
     onExportHtml ? (sections.exportHtml ?? null) : null,
     onImportNotion ? (sections.importNotion ?? null) : null,
+    onExportPdf ? (sections.exportPdf ?? null) : null,
     onOpenLanguage ? sections.language : null,
   ].filter((row): row is SearchRow => row !== null);
   // Typing an action's name ranks it above "Create “…”" (#5hrsrqsj review).
@@ -176,6 +180,10 @@ export function QuickSwitcher({
     }
     if (row.kind === "import-notion") {
       onImportNotion?.();
+      return;
+    }
+    if (row.kind === "export-pdf") {
+      onExportPdf?.();
       return;
     }
     if (row.kind === "create-board") {
@@ -243,7 +251,9 @@ export function QuickSwitcher({
                         ? "search-export-html"
                         : row.kind === "import-notion"
                           ? "search-import-notion"
-                          : "search-create"
+                          : row.kind === "export-pdf"
+                            ? "search-export-pdf"
+                            : "search-create"
         }
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
@@ -265,6 +275,8 @@ export function QuickSwitcher({
             <Icon name="pageTemplate" size={16} />
           ) : row.kind === "export-html" ? (
             <Icon name="download" size={16} />
+          ) : row.kind === "export-pdf" ? (
+            <Icon name="file" size={16} />
           ) : row.kind === "import-notion" ? (
             <Icon name="folderOpen" size={16} />
           ) : row.kind === "create-board" || row.kind === "from-template" ? (

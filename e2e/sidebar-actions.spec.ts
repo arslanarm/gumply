@@ -58,6 +58,7 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
       'New page from template…',
       'Import from Notion…',
       'Export as HTML…',
+      'Export as PDF…',
       'Delete page',
     ]);
     // Right-click didn't open the page.

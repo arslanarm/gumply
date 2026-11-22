@@ -14,7 +14,14 @@ import { renderMermaid } from "../lib/diagram.js";
 import { resolveFileLinkAsync } from "../lib/file-links.js";
 import { mathToHtml } from "../lib/math.js";
 import exportCss from "./export.css?raw";
-import { buildPageHtml, exportFileName, type ExportFile, type ExportOptions, type ExportSource } from "./html-export.js";
+import { buildPageHtml, exportFileName, type ExportFile, type ExportOptions, type ExportSource, type PrintOptions } from "./html-export.js";
+
+/**
+ * G2: the desktop app recognises this download (main's will-download) and
+ * prints it to PDF in a hidden window instead of saving it. Keep in step
+ * with apps/desktop/src/downloads.ts.
+ */
+export const PRINT_DOWNLOAD_SUFFIX = ".gumply-print.html";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -69,4 +76,46 @@ export async function exportPageAsHtml(id: PageId, pages: readonly PageMeta[], o
   const name = exportFileName(page.title);
   downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), name);
   return name;
+}
+
+/**
+ * G2: print the page to PDF. The desktop app does it in main (printToPDF, a
+ * Save dialog); a browser prints the same document from a hidden iframe, and
+ * its own dialog offers "Save as PDF".
+ */
+export async function exportPageAsPdf(id: PageId, pages: readonly PageMeta[], print: PrintOptions, desktop: boolean): Promise<string> {
+  const page = await api.getPage(id);
+  const html = await buildPageHtml(page, exportSource(pages), { theme: "light", links: "text", print });
+  const name = exportFileName(page.title).replace(/\.html$/, ".pdf");
+  if (desktop) {
+    downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), exportFileName(page.title).replace(/\.html$/, PRINT_DOWNLOAD_SUFFIX));
+    return name;
+  }
+  printInFrame(html, page.title);
+  return name;
+}
+
+/** The document in a hidden same-origin iframe, printed with the browser's own dialog. */
+export function printInFrame(html: string, title: string): HTMLIFrameElement {
+  const frame = document.createElement("iframe");
+  frame.title = title;
+  frame.setAttribute("aria-hidden", "true");
+  frame.dataset.testid = "print-frame";
+  frame.style.cssText = "position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; visibility: hidden;";
+  let printed = false;
+  const remove = () => window.setTimeout(() => frame.remove(), 1000);
+  frame.addEventListener("load", () => {
+    if (printed) return;
+    printed = true;
+    const view = frame.contentWindow;
+    if (!view) return;
+    view.addEventListener("afterprint", remove, { once: true });
+    view.focus();
+    view.print();
+    // Some browsers don't fire afterprint: don't keep the frame forever.
+    window.setTimeout(() => frame.remove(), 120_000);
+  });
+  frame.srcdoc = html;
+  document.body.append(frame);
+  return frame;
 }
