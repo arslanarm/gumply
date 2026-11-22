@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,8 +21,30 @@ afterEach(async () => {
 type Internals = {
   readRecord: (absolute: string, id: string) => Promise<unknown>;
   edgesFor: (...args: unknown[]) => unknown;
-  refreshFromDisk: (scope: { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string> }) => Promise<boolean>;
+  refreshFromDisk: (scope: Scope) => Promise<boolean>;
+  onWatchEvent: (dir: string, filename: string) => void;
+  takePendingScope: () => Scope;
+  scheduleRescan: () => void;
 };
+type Scope = { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string> };
+
+/** The store's watcher hooks, with the debounce timer switched off so a test drives each refresh. */
+function watcherOf(store: VaultStore) {
+  const internals = store as unknown as Internals;
+  internals.scheduleRescan = () => {};
+  return {
+    internals,
+    /** Report watcher events, then refresh with what they add up to; returns the scope used. */
+    async settle(events: Array<[dir: string, name: string]>): Promise<Scope> {
+      for (const [eventDir, name] of events) internals.onWatchEvent(eventDir, name);
+      const scope = internals.takePendingScope();
+      await internals.refreshFromDisk(scope);
+      return scope;
+    },
+  };
+}
+
+const backlinkIds = (store: VaultStore, id: string) => store.backlinks(id).map((item) => item.page.id).sort();
 
 /** Count `readRecord` and `edgesFor` calls on this store while `run` runs. */
 async function counted(store: VaultStore, run: () => Promise<unknown>): Promise<{ reads: number; edges: number }> {
@@ -161,5 +183,120 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
     await rm(join(dir, "Fresh.md"));
     await store.rescan();
     expect(store.graph().unresolved).toContainEqual({ source: "Linker", targetTitle: "Fresh" });
+  });
+
+  describe("watcher-driven edge cases (@lead's list)", () => {
+    for (const order of ["delete first", "create first"] as const) {
+      it(`an outside rename (${order}) moves the page and keeps links working`, async () => {
+        const store = await vaultOf(10);
+        await writeFile(join(dir, "Keep.md"), "---\ntitle: Keeper\n---\nPoints at [[Hub]].\n");
+        await writeFile(join(dir, "Fan.md"), "See [[Keeper]].\n");
+        await store.rescan();
+        await rename(join(dir, "Keep.md"), join(dir, "Renamed.md"));
+        const events: Array<[string, string]> = [[dir, "Keep.md"], [dir, "Renamed.md"]];
+        const { settle } = watcherOf(store);
+        await settle(order === "delete first" ? events : events.reverse());
+        expect(store.get("Keep").id).toBe("Renamed"); // The old URL follows.
+        expect(backlinkIds(store, "Hub")).toEqual(["Renamed"]);
+        expect(backlinkIds(store, "Renamed")).toEqual(["Fan"]);
+      });
+    }
+
+    it("an outside rename split over two refreshes ends in the same index", async () => {
+      const store = await vaultOf(10);
+      await writeFile(join(dir, "Keep.md"), "Points at [[Hub]].\n");
+      await store.rescan();
+      await rename(join(dir, "Keep.md"), join(dir, "Renamed.md"));
+      const { settle } = watcherOf(store);
+      await settle([[dir, "Keep.md"]]);
+      await settle([[dir, "Renamed.md"]]);
+      expect(store.list().some((page) => page.id === "Keep")).toBe(false);
+      expect(backlinkIds(store, "Hub")).toEqual(["Renamed"]);
+    });
+
+    for (const [from, to] of [["Area", "Zone"], ["v1.2", "v1.3"]] as const) {
+      it(`a folder renamed outside (${from} → ${to}) is a full refresh, and its pages move`, async () => {
+        const store = await vaultOf(10);
+        await mkdir(join(dir, from));
+        await writeFile(join(dir, from, "Inner.md"), "Points at [[Hub]].\n");
+        await writeFile(join(dir, "Fan.md"), "See [[Inner]].\n");
+        await store.rescan();
+        await rename(join(dir, from), join(dir, to));
+        const { settle } = watcherOf(store);
+        // The parent reports the new name (the old one too, when it was watched),
+        // and the moved folder's own watcher may still report under its old path.
+        const scope = await settle([[dir, to], [join(dir, from), "Inner.md"]]);
+        expect(scope.kind).toBe("all");
+        expect(store.get(`${from}/Inner`).id).toBe(`${to}/Inner`);
+        expect(backlinkIds(store, "Hub")).toEqual([`${to}/Inner`]);
+        expect(backlinkIds(store, `${to}/Inner`)).toEqual(["Fan"]);
+      });
+    }
+
+    for (const mid of [120, 250]) {
+      it(`events arriving mid-refresh are kept (${mid} more, ${mid > 200 ? "over" : "under"} the 200-path line)`, async () => {
+        const store = await vaultOf(300);
+        const file = (i: number) => join(dir, `Note ${i}.md`);
+        const { internals, settle } = watcherOf(store);
+        const edit = async (i: number, mark: string) => {
+          await writeFile(file(i), `Edit ${mark} of note ${i}, links to [[Hub]].\n`);
+          internals.onWatchEvent(dir, `Note ${i}.md`);
+        };
+        for (let i = 0; i < 150; i++) await edit(i, "one");
+        const first = internals.takePendingScope();
+        expect(first.kind).toBe("paths");
+        // Halfway through the first refresh's reads, more edits land, half of
+        // them on notes this refresh has already read.
+        const readRecord = internals.readRecord;
+        let reads = 0;
+        internals.readRecord = async function (this: unknown, ...args) {
+          reads += 1;
+          if (reads === 75) for (let i = 0; i < mid; i++) await edit(i, "two");
+          return readRecord.apply(this, args as [string, string]);
+        };
+        try {
+          await internals.refreshFromDisk(first);
+        } finally {
+          internals.readRecord = readRecord;
+        }
+        const second = await settle([]);
+        expect(second.kind).toBe(mid > 200 ? "all" : "paths");
+        for (let i = 0; i < 300; i++) {
+          const want = i < mid ? "two" : i < 150 ? "one" : null;
+          const content = store.get(`Note ${i}`).content;
+          if (want) expect(content, `Note ${i}`).toContain(`Edit ${want} of note ${i}`);
+          else expect(content, `Note ${i}`).not.toContain("Edit");
+        }
+        expect(backlinkIds(store, "Hub")).toHaveLength(Math.max(mid, 150));
+      });
+    }
+
+    for (const when of ["before its stat", "between its stat and its read"] as const) {
+      for (const kind of ["paths", "all"] as const) {
+        it(`a file deleted after the scope was taken (${when}, ${kind}) drops out without failing the refresh`, async () => {
+          const store = await vaultOf(10);
+          await writeFile(join(dir, "Gone.md"), "Points at [[Hub]].\n");
+          await store.rescan();
+          const file = join(dir, "Gone.md");
+          await writeFile(file, "Edited: points at [[Hub]] twice: [[Hub]].\n");
+          const { internals } = watcherOf(store);
+          internals.onWatchEvent(dir, "Gone.md");
+          const scope: Scope = kind === "all" ? { kind: "all" } : internals.takePendingScope();
+          if (when === "before its stat") await rm(file);
+          const readRecord = internals.readRecord;
+          internals.readRecord = async function (this: unknown, ...args) {
+            if (args[0] === file) await rm(file, { force: true });
+            return readRecord.apply(this, args as [string, string]);
+          };
+          try {
+            await internals.refreshFromDisk(scope);
+          } finally {
+            internals.readRecord = readRecord;
+          }
+          expect(store.list().some((page) => page.id === "Gone")).toBe(false);
+          expect(backlinkIds(store, "Hub")).toEqual([]);
+        });
+      }
+    }
   });
 });

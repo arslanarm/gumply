@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdirSync, watch, type FSWatcher } from "node:fs";
+import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
@@ -386,6 +386,15 @@ type RefreshScope = { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string
 
 /** More touched paths than this in one burst: refresh "all" (the read cache still applies). */
 const MAX_REFRESH_PATHS = 200;
+
+/** A folder named like a file ("v1.2") that appeared: not watched yet, so only a stat tells. */
+function isDirectorySync(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 /**
  * A file's identity for the read cache. mtime and size alone miss a same-size
@@ -842,7 +851,8 @@ export class VaultStore {
     if (ITEM_FILE.test(name)) this.pendingPaths.add(join(dir, name));
     // #8k4ssrkb: an attachment added, renamed or removed changes what links resolve to;
     // a folder appeared or went away. Both are settled by a full walk.
-    else if (hasAttachmentExtension(name) || !name.includes(".") || this.directoryWatchers.has(join(dir, name))) this.pendingFull = true;
+    else if (hasAttachmentExtension(name) || !name.includes(".") || this.directoryWatchers.has(join(dir, name)) || isDirectorySync(join(dir, name)))
+      this.pendingFull = true;
     else return;
     this.scheduleRescan();
     this.noteWatchEvent();
@@ -944,7 +954,9 @@ export class VaultStore {
       let record: PageRecord;
       if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) record = cached.record;
       else {
-        record = await this.readRecord(absolute, id);
+        const read = await this.readIfPresent(absolute, id);
+        if (!read) continue; // Deleted between the stat and the read.
+        record = read;
         this.refreshTags(record);
       }
       nextCache.set(absolute, { key, id, record });
@@ -978,7 +990,8 @@ export class VaultStore {
     }
     const next = new Map(this.pages);
     for (const { absolute, id, key } of reads) {
-      const record = await this.readRecord(absolute, id);
+      const record = await this.readIfPresent(absolute, id);
+      if (!record) return null; // Deleted after its stat: the walk settles it.
       this.refreshTags(record);
       // The layout didn't change, so neither did the parent.
       record.parentId = this.pages.get(id)!.parentId;
@@ -986,6 +999,16 @@ export class VaultStore {
       this.readCache.set(absolute, { key, id, record });
     }
     return { pages: next, folders: this.folders };
+  }
+
+  /** `readRecord`, or null when the file is gone (deleted mid-refresh). */
+  private async readIfPresent(absolute: string, id: PageId): Promise<PageRecord | null> {
+    try {
+      return await this.readRecord(absolute, id);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
   }
 
   /**
