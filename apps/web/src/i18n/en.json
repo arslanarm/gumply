@@ -1573,6 +1573,7 @@
     "loading": "Loading…",
     "failed": "Couldn't load the history: {{error}}",
     "empty": "No earlier versions yet. Gumply keeps a version as you edit.",
+    "emptyViewed": "A page you've only viewed here has no version from before another app changes it.",
     "source": {
       "app": "You",
       "external": "Outside edit",

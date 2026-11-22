@@ -111,6 +111,76 @@ describe("versions on save (§3)", () => {
   });
 });
 
+describe("the user's last save survives an outside change or delete (#yikrbg7h)", () => {
+  it("an outside overwrite within the session: Mine. Me. stays in history, byte-exact, before Theirs. Me.", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Journal.md"), "Mine.\n");
+    await store.rescan();
+    await store.update("Journal", { content: "Mine. Me." });
+    const saved = await readFile(join(dir, "Journal.md"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(join(dir, "Journal.md"), "Theirs. Me.\n");
+    await store.rescan();
+
+    const list = await entries(dir, "Journal");
+    const bytes = await Promise.all(list.map((entry) => readFile(join(historyDir(dir, "Journal"), entry.file))));
+    expect(list.map((entry) => [entry.source, entry.reason])).toEqual([
+      ["app", "edit"],
+      ["app", "session"],
+      ["external", undefined],
+    ]);
+    expect(bytes.map((value) => value.toString("utf8"))).toEqual(["Mine.\n", saved.toString("utf8"), "Theirs. Me.\n"]);
+    expect(bytes[1]!.equals(saved)).toBe(true);
+    // D37: the page file is the other program's, untouched by history.
+    expect(await readFile(join(dir, "Journal.md"), "utf8")).toBe("Theirs. Me.\n");
+  });
+
+  it("an outside delete within the session: the orphan's newest version is the user's last save", async () => {
+    const { app, store, dir } = await createTestServer();
+    await writeFile(join(dir, "Gone.md"), "before\n");
+    await store.rescan();
+    await store.update("Gone", { content: "my edit" });
+    const saved = await readFile(join(dir, "Gone.md"));
+    await rm(join(dir, "Gone.md"));
+    await store.rescan();
+
+    const list = await entries(dir, "Gone");
+    expect(list.at(-1)).toMatchObject({ source: "app", reason: "session" });
+    expect((await readFile(join(historyDir(dir, "Gone"), list.at(-1)!.file))).equals(saved)).toBe(true);
+    const orphans = await getJson<HistoryOrphan[]>(app, "/api/history-orphans");
+    expect(orphans.map((orphan) => orphan.title)).toEqual(["Gone"]);
+    const response = await jsonRequest(app, "POST", `/api/history-orphans/${enc(orphans[0]!.key)}/restore`, {});
+    expect(response.status).toBe(201);
+    expect((await readFile(join(dir, "Gone.md"))).equals(saved)).toBe(true);
+  });
+
+  it("a page only viewed in Gumply gets no version before an outside change (by spec)", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Viewed.md"), "theirs 1\n");
+    await store.rescan();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(join(dir, "Viewed.md"), "theirs 2\n");
+    await store.rescan();
+    expect((await entries(dir, "Viewed")).map((entry) => entry.source)).toEqual(["external"]);
+  });
+
+  it("a session already ended (checkpoint) isn't saved twice", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Note.md"), "a\n");
+    await store.rescan();
+    await store.update("Note", { content: "b" });
+    expect(await store.checkpoint("Note")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(join(dir, "Note.md"), "c\n");
+    await store.rescan();
+    expect((await entries(dir, "Note")).map((entry) => [entry.source, entry.reason])).toEqual([
+      ["app", "edit"],
+      ["app", "session"],
+      ["external", undefined],
+    ]);
+  });
+});
+
 describe("history follows the page (D20)", () => {
   it("a rename moves the directory; the old version knows its old title", async () => {
     const { app, store, dir } = await createTestServer();

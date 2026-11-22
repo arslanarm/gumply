@@ -7141,6 +7141,12 @@ input {
   text-align: center;
 }
 
+.history-empty .history-empty-note {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .history-note {
   padding: 0.45rem 0.65rem;
   border-radius: 6px;

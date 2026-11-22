@@ -617,6 +617,13 @@ export class VaultStore {
   private historyReason: HistoryReason | null = null;
   /** Per page: the editing session's end (10 min without an app save). */
   private readonly sessionTimers = new Map<PageId, ReturnType<typeof setTimeout>>();
+  /**
+   * #yikrbg7h: the last bytes Gumply wrote to each page or board since its
+   * last version, byte-exact. An outside change or delete saves them first
+   * (`app` / `session`), so "the version before Obsidian changed it" is the
+   * user's last save, not the one before it.
+   */
+  private readonly sessionBytes = new Map<PageId, Buffer>();
   private pruneTimer: ReturnType<typeof setTimeout> | null = null;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
   private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
@@ -873,6 +880,11 @@ export class VaultStore {
     for (const { from, to } of historyMoves) {
       const record = this.pages.get(to);
       if (record && (record.kind === "page" || record.kind === "whiteboard")) await this.followHistory(from, to);
+    }
+    // #yikrbg7h: a page deleted outside Gumply keeps the user's last save in its (orphaned) history.
+    const movedAway = new Set(historyMoves.map(({ from }) => from));
+    for (const id of previousIds) {
+      if (!next.has(id) && !movedAway.has(id)) await this.saveSessionBytes(id);
     }
     // A page or board that appeared outside Gumply where an earlier one had history: marked, so
     // the panel shows which versions came before it (Gumply's own creates set it aside instead).
@@ -1973,6 +1985,7 @@ export class VaultStore {
       if (previous !== null && !previous.equals(Buffer.from(next, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
       if (previous === null) await this.freshHistory(record.filePath);
       await rename(temporary, record.filePath);
+      this.rememberWrite(record.filePath, next);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
@@ -2835,6 +2848,7 @@ export class VaultStore {
     for (const deletedId of deleted) {
       const doomed = this.pages.get(deletedId);
       if (doomed) await this.snapshotRecord(doomed, this.historySource, "trash");
+      this.sessionBytes.delete(deletedId);
     }
 
     const manifest: TrashManifest = {
@@ -3681,6 +3695,7 @@ export class VaultStore {
     for (const deletedId of deleted) {
       const doomed = this.pages.get(deletedId);
       if (doomed) await this.snapshotRecord(doomed, this.historySource, "trash");
+      this.sessionBytes.delete(deletedId);
     }
 
     const manifest: TrashManifest = {
@@ -4021,6 +4036,8 @@ export class VaultStore {
         }
         const fresh = await this.readRecord(record.filePath, record.id);
         this.pages.set(record.id, fresh);
+        // The bytes Gumply wrote before are the `before-restore` version now.
+        this.sessionBytes.delete(record.id);
         this.reindexAll();
         await saveVersion(this.root, { id: record.id, ext, bytes, version: fresh.updated, source: "app", restoredFrom: entry.file });
       }
@@ -4220,6 +4237,8 @@ export class VaultStore {
       let record: PageRecord | undefined;
       record = this.pages.get(resolved);
       if (!record || (record.kind !== "page" && record.kind !== "whiteboard")) return false;
+      // What Gumply wrote (the file may already hold an outside change the watcher hasn't seen yet).
+      if (this.sessionBytes.has(resolved)) return this.saveSessionBytes(resolved);
       return this.snapshotRecord(record, "app", "session");
     });
   }
@@ -4261,6 +4280,8 @@ export class VaultStore {
   private async versionFromOutside(record: PageRecord): Promise<void> {
     if (record.kind !== "page" && record.kind !== "whiteboard") return;
     if (this.historySource !== "app") return;
+    // #yikrbg7h: the user's last save first, then what the other program wrote.
+    await this.saveSessionBytes(record.id);
     try {
       const newest = await newestVersion(this.root, record.id);
       const age = newest ? Date.now() - Date.parse(newest.at) : Infinity;
@@ -4272,6 +4293,43 @@ export class VaultStore {
       await this.snapshotRecord(record, "external");
     } catch (error) {
       console.warn(`[gumply] history for ${record.id} not saved:`, error);
+    }
+  }
+
+  /** Keep the bytes a Gumply write just put in a page or board file (#yikrbg7h). */
+  private rememberWrite(filePath: string, text: string): void {
+    if (this.historySource !== "app") return;
+    const path = relative(this.root, filePath).split(sep).join("/");
+    if (!/\.(md|canvas)$/i.test(path)) return;
+    const id = this.historyRecordFor(filePath)?.id ?? path.replace(/\.md$/i, "");
+    this.sessionBytes.set(id, Buffer.from(text, "utf8"));
+  }
+
+  /**
+   * The last bytes Gumply wrote to `id`, as an `app` / `session` version
+   * (deduplicated), ending its editing session. True when a version was written.
+   */
+  private async saveSessionBytes(id: PageId): Promise<boolean> {
+    const bytes = this.sessionBytes.get(id);
+    if (!bytes) return false;
+    this.sessionBytes.delete(id);
+    const timer = this.sessionTimers.get(id);
+    if (timer) clearTimeout(timer);
+    this.sessionTimers.delete(id);
+    try {
+      const before = await newestVersion(this.root, id);
+      const entry = await saveVersion(this.root, {
+        id,
+        ext: /\.canvas$/i.test(id) ? "canvas" : "md",
+        bytes,
+        version: this.pages.get(id)?.updated ?? new Date().toISOString(),
+        source: "app",
+        reason: "session",
+      });
+      return entry.file !== before?.file;
+    } catch (error) {
+      console.warn(`[gumply] history for ${id} not saved:`, error);
+      return false;
     }
   }
 
@@ -4293,6 +4351,11 @@ export class VaultStore {
     if (timer) {
       this.sessionTimers.delete(from);
       this.sessionTimers.set(to, timer);
+    }
+    const written = this.sessionBytes.get(from);
+    if (written) {
+      this.sessionBytes.delete(from);
+      this.sessionBytes.set(to, written);
     }
     try {
       await moveHistory(this.root, from, to, parentOf(from) === parentOf(to) ? "rename" : "move");
@@ -4446,6 +4509,7 @@ export class VaultStore {
       if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
       if (previous === null) await this.freshHistory(filePath);
       await rename(temporary, filePath);
+      this.rememberWrite(filePath, text);
       return {
         mtimeMs: (await stat(filePath)).mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
