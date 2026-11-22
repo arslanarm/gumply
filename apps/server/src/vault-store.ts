@@ -33,6 +33,9 @@ import {
   pathToPageId,
   resolveWikilink,
   rewriteLinksToPage,
+  headingRenames,
+  rewriteHeadingLinks,
+  type HeadingRename,
   rewriteWikilinkFolder,
   rewriteWikilinkTargets,
   renderTemplate,
@@ -2023,6 +2026,7 @@ export class VaultStore {
       propertyPatch ?? undefined,
     );
     const fileMtimeMs = written.mtimeMs;
+    const previousContent = record.content;
 
     // Update the record before relocating so the moved copy carries the new
     // title/content; relocate then swaps the map entries and the object.
@@ -2062,6 +2066,18 @@ export class VaultStore {
       this.recomputeSource(targetId);
     }
 
+    // v0.8 C2: a renamed heading takes the links to it along (after a title
+    // rename, so they already point at the new name).
+    const renames = patch.content === undefined ? [] : headingRenames(previousContent, record.content);
+    if (renames.length > 0) {
+      const headingPages = await this.rewriteHeadingLinksTo(record.id, renames);
+      for (const pageId of headingPages) {
+        this.recomputeSource(pageId);
+        if (!rewrittenPages.includes(pageId)) rewrittenPages.push(pageId);
+      }
+      rewrittenPages.sort((a, b) => a.localeCompare(b));
+    }
+
     return {
       ...this.get(targetId),
       rewrittenPages,
@@ -2081,7 +2097,6 @@ export class VaultStore {
     previousTitle: string,
     beforeMetas: readonly PageMeta[],
   ): Promise<PageId[]> {
-    const rewritten: PageId[] = [];
     const afterMetas = this.pageMetas();
     const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
     const isTarget = (link: { targetTitle: string }) =>
@@ -2090,9 +2105,32 @@ export class VaultStore {
       renamedMeta
         ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
         : rewriteWikilinkTargets(markdown, isTarget, record.title);
+    return this.rewriteEverywhere(new Set([oldId, record.id]), rewriteText);
+  }
 
+  /**
+   * v0.8 C2 (#u84ebtf3): after headings of page `id` were renamed, rewrite
+   * `[[Page#Old]]`, `[[Page#Old|alias]]` and `![[Page#Old]]` to them in every
+   * other page and board. The page itself is left as the user saved it.
+   */
+  private async rewriteHeadingLinksTo(id: PageId, renames: readonly HeadingRename[]): Promise<PageId[]> {
+    const metas = this.pageMetas();
+    const isTarget = (link: { targetTitle: string }) => resolveWikilink(link.targetTitle, metas)?.id === id;
+    return this.rewriteEverywhere(new Set([id]), (markdown) => rewriteHeadingLinks(markdown, isTarget, renames));
+  }
+
+  /**
+   * The D12 writer: apply `rewriteText` to every page and board text except
+   * `skip`, and write only those it changed (D37: a file without a matching
+   * link is never written). Returns the ids written.
+   */
+  private async rewriteEverywhere(
+    skip: ReadonlySet<PageId>,
+    rewriteText: (markdown: string) => { content: string; count: number },
+  ): Promise<PageId[]> {
+    const rewritten: PageId[] = [];
     for (const other of [...this.pages.values()]) {
-      if (other.id === oldId || other.id === record.id) continue;
+      if (skip.has(other.id)) continue;
 
       if (other.board) {
         const result = rewriteCanvas(other.board, { text: (markdown) => rewriteText(markdown).content });

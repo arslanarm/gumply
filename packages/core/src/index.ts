@@ -211,3 +211,4 @@ export {
   type GraphSettingsResponse,
   type GraphSettingsSource,
 } from "./graph-settings.js";
+export { headingRenames, rewriteHeadingLinks, type HeadingRename } from "./heading-rename.js";
