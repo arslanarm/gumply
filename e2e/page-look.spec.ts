@@ -197,7 +197,47 @@ test.describe('page cover and background (#385sexd6)', () => {
     await write({ 'Remote.md': original });
     await open(page, request, 'Remote');
     // The remote image can't load here; the cover says so and offers the vault copy.
-    await expect(page.getByTestId('page-cover-missing')).toBeVisible();
+    // It names the link that didn't load (#i3mgwybb).
+    await expect(page.getByTestId('page-cover-missing')).toHaveText('Cover image not found: https://example.invalid/remote.png');
     expect(await read('Remote.md')).toBe(original);
   });
+
+  for (const width of [1280, 900]) {
+    test(`RC polish at ${width} px: the picker opens under Add cover, clear of the title buttons; one-ring search; ghost buttons (#i3mgwybb)`, async ({ page, request, vault }) => {
+      void vault;
+      await page.setViewportSize({ width, height: 800 });
+      await page.addInitScript(() => localStorage.setItem('gumply:language', 'ru'));
+      await write({ 'Wide.md': 'Body.\n', 'att/one.png': PNG });
+      await open(page, request, 'Wide');
+      await page.getByTestId('page-title').hover();
+      const add = page.getByTestId('add-cover-button');
+      // Ghost buttons: no border.
+      await expect(add.locator('.page-icon-add')).toHaveCSS('border-top-style', 'none');
+      await add.click();
+      const picker = page.getByTestId('cover-picker');
+      await expect(picker).toBeVisible();
+      const [anchor, box] = [(await add.boundingBox())!, (await picker.boundingBox())!];
+      expect(box.y).toBeGreaterThanOrEqual(anchor.y + anchor.height);
+      expect(box.x).toBeLessThanOrEqual(anchor.x + 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      // Never over the title row's buttons.
+      for (const id of ['local-graph-toggle', 'rename-page-button', 'delete-page-button-page']) {
+        const button = (await page.getByTestId(id).boundingBox())!;
+        const overlaps =
+          box.x < button.x + button.width && button.x < box.x + box.width && box.y < button.y + button.height && button.y < box.y + box.height;
+        expect(overlaps, id).toBe(false);
+      }
+      // The search field: one focus ring, no browser search chrome.
+      await page.getByTestId('cover-tab-vault').click();
+      await page.getByTestId('cover-tab-link').click();
+      const input = page.getByTestId('cover-link-input');
+      await input.focus();
+      await expect(input).toHaveCSS('outline-style', 'none');
+      await expect(input).toHaveCSS('appearance', 'none');
+      // Clicking Add cover again doesn't close and reopen it.
+      await page.getByTestId('page-title').hover();
+      await add.click();
+      await expect(picker).toBeVisible();
+    });
+  }
 });

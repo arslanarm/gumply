@@ -43,7 +43,7 @@ export interface PageHeaderProps {
    */
   daily?: { previous: PageId | null; next: PageId | null; onOpen: (id: PageId) => void };
   /** v0.7 F (#385sexd6): "Add cover" (pages without a cover). */
-  onAddCover?: () => void;
+  onAddCover?: (anchor: HTMLElement) => void;
   /** v0.7 F: the page background colour, and setting it (null = default). */
   background?: PageColor | null;
   onSetBackground?: (color: PageColor | null) => void;
@@ -293,7 +293,7 @@ export function PageHeader({
             )}
           </button>
           {onAddCover ? (
-            <button type="button" className="page-look-add" data-testid="add-cover-button" onClick={onAddCover}>
+            <button type="button" className="page-look-add" data-testid="add-cover-button" onClick={(event) => onAddCover(event.currentTarget)}>
               <span className="page-icon-add">
                 <Icon name="image" size={13} /> {t("cover.add")}
               </span>
