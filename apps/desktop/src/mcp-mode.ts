@@ -155,3 +155,26 @@ export function exitMcp(platform: NodeJS.Platform | string, steps: McpExitSteps,
   steps.reallyExit?.(code);
   steps.killTree();
 }
+
+/**
+ * A support tool for "the AI app can't connect" (#3cp6ysgs): with
+ * `GUMPLY_MCP_TRACE=<file>` an `--mcp` launch appends how it was read and what
+ * happened to that file. Never to stdio (stdout is the protocol), nothing when
+ * the variable is unset, and best effort: a failed write is dropped and never
+ * affects MCP. The file holds the vault path and the start of what the AI app
+ * sent (docs/mcp.md says so).
+ */
+export function mcpTracer(
+  file: string | undefined,
+  append: (file: string, text: string) => void,
+  stamp: () => string = () => `${new Date().toISOString()} [${process.pid}]`,
+): (line: string) => void {
+  if (!file) return () => {};
+  return (line) => {
+    try {
+      append(file, `${stamp()} ${line}\n`);
+    } catch {
+      // A support aid only.
+    }
+  };
+}

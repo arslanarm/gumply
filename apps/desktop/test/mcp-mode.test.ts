@@ -1,5 +1,8 @@
+import { appendFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { exitMcp, hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
+import { exitMcp, hasFusermount, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork } from "../src/mcp-mode";
 
 describe("desktop MCP mode arguments (A3)", () => {
   it("is off without --mcp", () => {
@@ -158,6 +161,37 @@ describe("exitMcp", () => {
       const { events, steps } = recorder();
       exitMcp(platform, steps(true), 1);
       expect(events, platform).toEqual(["cleanup", "graceful 1"]);
+    }
+  });
+});
+
+describe("mcpTracer (#3cp6ysgs)", () => {
+  it("writes nothing when GUMPLY_MCP_TRACE is unset or empty", () => {
+    const writes: string[] = [];
+    for (const file of [undefined, ""]) mcpTracer(file, (_f, text) => writes.push(text))("gumply argv=[]");
+    expect(writes).toEqual([]);
+  });
+
+  it("appends one stamped line per call to that file", () => {
+    const writes: Array<[string, string]> = [];
+    const trace = mcpTracer("/tmp/trace.log", (file, text) => writes.push([file, text]), () => "T");
+    trace("served-on=fd-streams");
+    trace("exit 0");
+    expect(writes).toEqual([
+      ["/tmp/trace.log", "T served-on=fd-streams\n"],
+      ["/tmp/trace.log", "T exit 0\n"],
+    ]);
+  });
+
+  it("a bad path (missing directory, a directory) never throws", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gumply-trace-"));
+    try {
+      expect(() => mcpTracer(join(dir, "missing", "trace.log"), appendFileSync)("exit 0")).not.toThrow();
+      expect(() => mcpTracer(dir, appendFileSync)("exit 0")).not.toThrow();
+      expect(() => mcpTracer("x", () => { throw new Error("EACCES"); })("exit 0")).not.toThrow();
+      expect(readdirSync(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
