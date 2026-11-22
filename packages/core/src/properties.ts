@@ -4,6 +4,7 @@
  * itself is read on the server.
  */
 import { isAliasesKey, isTagsKey } from "./frontmatter-keys.js";
+import { normalizeTags } from "./frontmatter.js";
 
 /** Obsidian's property types (the names in `.obsidian/types.json`). */
 export type PropertyType = "text" | "multitext" | "number" | "checkbox" | "date" | "datetime" | "tags" | "aliases";
@@ -28,6 +29,33 @@ export interface Property {
   value: PropertyValue;
   /** False for YAML Gumply can't edit safely (nested maps, multi-line text): shown read-only, never rewritten. */
   editable: boolean;
+  /** On the page's tags key: a value Obsidian won't read as tags (#6imze6ux). */
+  issue?: TagsValueIssue;
+}
+
+/**
+ * A `tags` value Gumply shows as tags but Obsidian 1.14 doesn't (#6imze6ux,
+ * measured by @opus-hunter):
+ * - `tags-string`: a string with a space or a comma (`tags: a, b`). Obsidian
+ *   reads nothing; Gumply splits it. Fixable: make it a list of those tags.
+ * - `tags-digits`: tags made only of digits (`2024`, `[2024]`, `"2029"`),
+ *   which Obsidian never counts (its inline rule too).
+ */
+export interface TagsValueIssue {
+  kind: "tags-string" | "tags-digits";
+  /** `tags-string`: the tags Gumply reads (the list "Make it a list" writes); `tags-digits`: the all-digit ones. */
+  tags: string[];
+}
+
+/** The issue with a raw `tags` value, or null when Obsidian reads it as Gumply does. */
+export function tagsValueIssue(raw: unknown): TagsValueIssue | null {
+  if (typeof raw === "string" && /[\s,]/.test(raw.trim())) {
+    const tags = normalizeTags(raw);
+    return tags.length > 0 ? { kind: "tags-string", tags } : null;
+  }
+  const items = Array.isArray(raw) ? raw : raw === null || raw === undefined ? [] : [raw];
+  const digits = items.map((item) => String(item).trim().replace(/^#+/, "")).filter((tag) => /^\d+$/.test(tag));
+  return digits.length > 0 ? { kind: "tags-digits", tags: digits } : null;
 }
 
 /** `GET /api/properties`: every key used in the vault. */

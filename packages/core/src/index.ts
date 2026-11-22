@@ -183,11 +183,13 @@ export {
   isValidPropertyKey,
   PROPERTY_TYPES,
   propertyValueMatches,
+  tagsValueIssue,
   type PropertiesPatch,
   type Property,
   type PropertyInfo,
   type PropertyType,
   type PropertyValue,
+  type TagsValueIssue,
 } from "./properties.js";
 
 export {

@@ -232,7 +232,32 @@ function PropertyRow(props: PropertyRowProps) {
       </div>
       <div className="property-value" data-testid={`property-value-${property.key}`}>
         <PropertyValueEditor property={property} autoFocus={props.autoFocus} onSave={props.onSave} onInvalid={props.onInvalid} />
-        {property.editable && !propertyValueMatches(property.type, property.value) ? (
+        {property.issue?.kind === "tags-string" ? (
+          // #6imze6ux: Obsidian reads nothing from a string with spaces or commas; one click makes it the list Gumply shows.
+          <span className="property-issue" data-testid="property-issue-tags-string">
+            <span className="property-mismatch" role="img" title={t("properties.tagsString")} aria-label={t("properties.tagsString")}>
+              <Icon name="alert" size={14} />
+            </span>
+            <button
+              type="button"
+              className="property-issue-fix"
+              data-testid="property-make-list"
+              onClick={() => void props.onSave(property.issue!.tags)}
+            >
+              {t("properties.makeList")}
+            </button>
+          </span>
+        ) : property.issue?.kind === "tags-digits" ? (
+          <span
+            className="property-mismatch"
+            role="img"
+            data-testid="property-issue-tags-digits"
+            title={t("properties.tagsDigits")}
+            aria-label={t("properties.tagsDigits")}
+          >
+            <Icon name="alert" size={14} />
+          </span>
+        ) : property.editable && !propertyValueMatches(property.type, property.value) ? (
           <span
             className="property-mismatch"
             role="img"
@@ -451,6 +476,8 @@ function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProp
   const [items, change] = useOptimistic(saved);
   const [draft, setDraft] = useState("");
   const tags = property.type === "tags";
+  // #6imze6ux: all-digit tags Obsidian doesn't count, shown muted.
+  const notTags = new Set(property.issue?.kind === "tags-digits" ? property.issue.tags : []);
   const setItems = (next: string[]) => change(next, () => onSave(next));
   const add = () => {
     const parts = draft
@@ -471,7 +498,12 @@ function ListEditor({ property, autoFocus, onSave, links }: Omit<ValueEditorProp
   return (
     <div className="property-chips">
       {items.map((item) => (
-        <span key={item} className={`property-chip${tags ? " is-tag" : ""}`} data-testid={`property-chip-${item}`}>
+        <span
+          key={item}
+          className={`property-chip${tags ? " is-tag" : ""}${notTags.has(item) ? " is-not-tag" : ""}`}
+          data-testid={`property-chip-${item}`}
+          title={notTags.has(item) ? t("properties.tagsDigits") : undefined}
+        >
           {tags ? `#${item}` : links ? <PropertyLinkedText text={item} /> : item}
           <button
             type="button"

@@ -6423,6 +6423,38 @@ input {
   color: var(--accent);
 }
 
+/* #6imze6ux: an all-digit tag Obsidian doesn't count: muted, with its tooltip. */
+.property-chip.is-tag.is-not-tag {
+  background: transparent;
+  border-color: var(--border);
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* A tags value Obsidian won't read: the warning, then "Make it a list". */
+.property-issue {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.property-issue-fix {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.property-issue-fix:hover {
+  background: var(--hover);
+}
+
 .property-chip-remove {
   display: inline-flex;
   padding: 2px;

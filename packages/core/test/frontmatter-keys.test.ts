@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { frontmatterKey, frontmatterValue, inferPropertyType, isAliasesKey, isTagsKey, parseFrontmatter } from "../src/index.js";
+import { frontmatterKey, frontmatterValue, inferPropertyType, isAliasesKey, isTagsKey, parseFrontmatter, tagsValueIssue } from "../src/index.js";
 import { editFrontmatterYaml } from "../src/note-template.js";
 
 /** #ippqkgus: `tags` / `aliases` in any case, plural only, the first spelling in file order (Obsidian 1.14.4). */
@@ -42,6 +42,20 @@ describe("tags and aliases keys in any case (#ippqkgus)", () => {
     expect(editFrontmatterYaml("status: x\n", { tags: ["a"] })).toBe("status: x\ntags:\n  - a\n");
     // `Aliases:` the same way.
     expect(editFrontmatterYaml("Aliases: [A]\n", { aliases: ["A", "B"] })).toBe("Aliases: [A, B]\n");
+  });
+
+  it("tags values Obsidian 1.14 won't read (#6imze6ux, @opus-hunter's vault-tagstr table)", () => {
+    // Read by Obsidian as Gumply does: no issue.
+    for (const raw of ["one", "#four", ["seven", "eight"], ["nine", "#ten"], ["2027a", "y2028"], null, []]) {
+      expect(tagsValueIssue(raw), JSON.stringify(raw)).toBeNull();
+    }
+    // A string with spaces or commas: Obsidian reads nothing; the fix is the list Gumply shows.
+    expect(tagsValueIssue("two three")).toEqual({ kind: "tags-string", tags: ["two", "three"] });
+    expect(tagsValueIssue("five, six")).toEqual({ kind: "tags-string", tags: ["five", "six"] });
+    // All-digit tags, in any form.
+    expect(tagsValueIssue(2024)).toEqual({ kind: "tags-digits", tags: ["2024"] });
+    expect(tagsValueIssue("2029")).toEqual({ kind: "tags-digits", tags: ["2029"] });
+    expect(tagsValueIssue(["2024", "ok", "#2025"])).toEqual({ kind: "tags-digits", tags: ["2024", "2025"] });
   });
 
   it("property types: `Tags` → tags, `Aliases` → aliases; `tag` / `alias` aren't special", () => {
