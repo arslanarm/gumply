@@ -47,7 +47,7 @@ export function runMcp(options: RunMcpOptions): void {
   if (!isDir) fail(`No vault folder at ${options.vault}`);
 
   const settings = readSettings(options.vault);
-  if (!settings.enabled) fail("MCP is turned off for this vault (Gumply → Settings → MCP)");
+  if (!settings.enabled) fail("MCP is turned off for this vault (Gumply → Settings → AI apps (MCP))");
   const access = effectiveAccess(settings, options.readOnly);
 
   const vault = new Vault(options.vault);

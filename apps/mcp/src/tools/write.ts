@@ -48,7 +48,7 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
   const guard = (required: Access) => {
     const settings = readSettings(root);
     if (!settings.enabled || rank(effectiveAccess(settings, ctx.readOnly)) < rank(required)) {
-      throw new ToolError("WRITES_DISABLED", "Writing is turned off for this vault (Gumply → Settings → MCP).");
+      throw new ToolError("WRITES_DISABLED", "Writing is turned off for this vault (Gumply → Settings → AI apps (MCP)).");
     }
   };
   const tooLarge = (text: string, max: number, field: string) => {
