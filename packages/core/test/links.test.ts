@@ -168,6 +168,61 @@ describe("resolveWikilink", () => {
       });
     }
 
+    // #35e42m7v: Obsidian prefers a match inside the linking note's folder (descendants too).
+    describe("from the linking note's folder", () => {
+      const two = [page("Target", "Target"), page("Projects/Target", "Target")];
+      const table: Array<{ name: string; from: string | null; link: string; pages: PageMeta[]; id: string }> = [
+        { name: "a note in Projects/ gets Projects/Target", from: "Projects/A", link: "Target", pages: two, id: "Projects/Target" },
+        { name: "a root note gets the root Target", from: "A", link: "Target", pages: two, id: "Target" },
+        { name: "no linking note: shortest path", from: null, link: "Target", pages: two, id: "Target" },
+        { name: "folder match is case-insensitive", from: "projects/A", link: "target", pages: two, id: "Projects/Target" },
+        { name: "a board in Projects/ too", from: "Projects/Map.canvas", link: "Target", pages: two, id: "Projects/Target" },
+        {
+          name: "descendants of the folder count",
+          from: "Projects/A",
+          link: "Target",
+          pages: [page("Target", "Target"), page("Projects/Deep/er/Target", "Target")],
+          id: "Projects/Deep/er/Target",
+        },
+        {
+          name: "several inside: the shortest of those",
+          from: "Projects/A",
+          link: "Target",
+          pages: [page("Target", "Target"), page("Projects/Deep/Target", "Target"), page("Projects/Target", "Target")],
+          id: "Projects/Target",
+        },
+        {
+          name: "a parent folder isn't the note's folder: shortest path",
+          from: "Projects/Sub/A",
+          link: "Target",
+          pages: two,
+          id: "Target",
+        },
+        { name: "a path-qualified link is that file", from: "Projects/A", link: "Other/Target", pages: [...two, page("Other/Target", "Target")], id: "Other/Target" },
+        { name: "file-name matches too", from: "Notes/2026/Day", link: "roadmap", pages: [page("roadmap", "Plan A"), page("Notes/2026/roadmap", "Plan B")], id: "Notes/2026/roadmap" },
+        {
+          name: "the check order (D4) comes first: an exact title outside beats a file name inside",
+          from: "Projects/A",
+          link: "Target",
+          pages: [page("Elsewhere/Note", "Target"), page("Projects/target", "Other title")],
+          id: "Elsewhere/Note",
+        },
+      ];
+      for (const item of table) {
+        it(item.name, () => {
+          expect(resolveWikilink(item.link, item.pages, item.from)?.id).toBe(item.id);
+          expect(resolveWikilink(item.link, [...item.pages].reverse(), item.from)?.id).toBe(item.id);
+        });
+      }
+
+      it("graph edges and backlinks resolve from their source page", () => {
+        expect(collectLinkEdges("Projects/A", "See [[Target]].", two)).toEqual([
+          { source: "Projects/A", target: "Projects/Target", targetTitle: "Target" },
+        ]);
+        expect(collectLinkEdges("A", "See [[Target]].", two)).toEqual([{ source: "A", target: "Target", targetTitle: "Target" }]);
+      });
+    });
+
     it("D4 still holds: a title match beats another page's file name", () => {
       expect(resolveWikilink("Target", [page("Target", "Something else"), page("Deep/Note", "Target")])?.id).toBe("Deep/Note");
     });

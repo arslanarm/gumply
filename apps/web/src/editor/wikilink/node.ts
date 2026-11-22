@@ -136,7 +136,7 @@ export const WikiLink = Node.create({
           // written `[[Ideas Q3|Ideas: Q3?]]`, so Obsidian resolves it too
           // (#mp8eadhk). Unknown titles and plain matches stay as typed.
           const { pages } = getWikiLinkEnvironment();
-          const page = resolveWikilink(parsed.title, pages);
+          const page = resolveWikilink(parsed.title, pages, getWikiLinkEnvironment().pageId);
           const link =
             page && page.title.trim().toLowerCase() === parsed.title.trim().toLowerCase()
               ? linkTargetFor(page, pages)
@@ -190,7 +190,8 @@ export const WikiLink = Node.create({
 
       const render = () => {
         const { targetTitle, alias, heading } = attrs();
-        const resolved = resolveWikilink(targetTitle, getWikiLinkEnvironment().pages);
+        const env = getWikiLinkEnvironment();
+        const resolved = resolveWikilink(targetTitle, env.pages, env.pageId);
 
         dom.classList.toggle("is-resolved", resolved !== null);
         dom.classList.toggle("is-unresolved", resolved === null);

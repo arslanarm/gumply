@@ -56,7 +56,7 @@ export function requestPagePreviewPicker(): void {
 async function partSuggestions(query: string): Promise<LinkSuggestion[]> {
   const env = getWikiLinkEnvironment();
   const hash = query.indexOf("#");
-  const page = resolveWikilink(query.slice(0, hash).trim(), env.pages);
+  const page = resolveWikilink(query.slice(0, hash).trim(), env.pages, env.pageId);
   if (!page || isBoard(page)) return [];
   const needle = query.slice(hash + 1).trim().toLowerCase();
   if (isBase(page)) {

@@ -127,7 +127,8 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const near = useNearViewport(ref);
-  const resolved = resolveWikilink(target, env.pages);
+  // From the page this preview sits in (the last of the chain, #35e42m7v).
+  const resolved = resolveWikilink(target, env.pages, chain[chain.length - 1] ?? env.pageId);
   const page = resolved && !isBoard(resolved) ? resolved : null;
   const loop = page ? chain.includes(page.id) : false;
   const { content, fileLinks, error } = usePageContent(page, near && !loop);
@@ -170,7 +171,7 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
     for (const link of Array.from(root.querySelectorAll("wiki-link"))) {
       const title = link.getAttribute("data-wikilink-title") ?? "";
       link.classList.add("wiki-link");
-      link.classList.toggle("is-unresolved", !resolveWikilink(title, env.pages));
+      link.classList.toggle("is-unresolved", !resolveWikilink(title, env.pages, page.id));
       link.setAttribute("role", "link");
     }
     for (const icon of Array.from(root.querySelectorAll<HTMLElement>("[data-callout-icon]"))) {
@@ -223,6 +224,8 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
       env.openLink({
         targetTitle: wiki.getAttribute("data-wikilink-title") ?? "",
         heading: wiki.getAttribute("data-wikilink-heading") ?? "",
+        // A link inside the preview is written in the previewed page.
+        ...(page ? { from: page.id } : {}),
       });
       return;
     }
@@ -316,7 +319,7 @@ export function PageEmbedView({ node, selected }: NodeViewProps) {
   const env = useWikiLinkEnvironment();
   const target = String(node.attrs.target ?? "");
   const part = String(node.attrs.part ?? "");
-  const resolved = resolveWikilink(target, env.pages);
+  const resolved = resolveWikilink(target, env.pages, env.pageId);
   const page = resolved && !isBoard(resolved) ? resolved : null;
   const open = () => {
     if (page) env.openLink({ targetTitle: target, heading: part });

@@ -328,18 +328,28 @@ function normalise(value: string): string {
 
 const pathCollator = new Intl.Collator("en", { sensitivity: "base", numeric: false });
 
+/** The folder a page lives in, lowercased with a trailing `/` ("" at the vault root). */
+function folderOf(id: string): string {
+  const slash = id.lastIndexOf("/");
+  return slash === -1 ? "" : `${id.slice(0, slash + 1).toLowerCase()}`;
+}
+
 /**
  * Of several pages that match a link equally well, the one Obsidian 1.14.4
- * opens: a page before a whiteboard (v1.7: `[[Map]]` is the page), then the
+ * opens: a page before a whiteboard (v1.7: `[[Map]]` is the page), then one
+ * inside the linking note's folder (descendants too, #35e42m7v), then the
  * shortest path (string length, not depth), then a case-insensitive locale
  * compare, as for v1.17 file links (`link-files.ts`). Never list order.
- * (Obsidian also prefers a match in the linking note's folder; that needs the
- * source page, a separate P3.)
  */
-function preferred(a: PageMeta, b: PageMeta): boolean {
+function preferred(a: PageMeta, b: PageMeta, folder: string): boolean {
   const boardA = a.kind === "whiteboard";
   const boardB = b.kind === "whiteboard";
   if (boardA !== boardB) return boardB;
+  if (folder) {
+    const insideA = a.id.toLowerCase().startsWith(folder);
+    const insideB = b.id.toLowerCase().startsWith(folder);
+    if (insideA !== insideB) return insideA;
+  }
   if (a.id.length !== b.id.length) return a.id.length < b.id.length;
   const order = pathCollator.compare(a.id, b.id);
   return order !== 0 ? order < 0 : a.id < b.id;
@@ -350,11 +360,14 @@ function preferred(a: PageMeta, b: PageMeta): boolean {
  * first, then title (exact, then case-insensitive), then page id, then file
  * name. Mirrors D4. When several pages pass the same check (`Target` and
  * `Other/Target`), `preferred` picks one, so the answer never depends on the
- * order of `pages` (#u84ebtf3).
+ * order of `pages` (#u84ebtf3). `from` is the id of the page or board the
+ * link is written in: a match in its folder wins a tie, as in Obsidian
+ * (#35e42m7v). Without it (no linking note), no folder is preferred.
  */
-export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[]): PageMeta | null {
+export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[], from?: string | null): PageMeta | null {
   const target = normalise(targetTitle);
   if (target.length === 0) return null;
+  const folder = from ? folderOf(from) : "";
 
   const byTitle = (candidate: PageMeta): string => normalise(candidate.title);
   const byId = (candidate: PageMeta): string => normalise(candidate.id);
@@ -365,7 +378,9 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[])
     (page) => target.includes("/") && byId(page) === target,
     (page) => page.title === targetTitle.trim(),
     (page) => byTitle(page) === target,
-    (page) => byId(page) === target,
+    // The file name, in any folder (a bare link names a file, as in Obsidian):
+    // a root `roadmap.md` doesn't win over `Notes/roadmap.md` before the tie rule.
+    (page) => byId(page) === target || (!target.includes("/") && lastSegment(page) === target),
     (page) => lastSegment(page) === slugify(targetTitle),
     (page) => lastSegment(page) === target,
     (page) => byId(page).endsWith(`/${slugify(targetTitle)}`),
@@ -377,7 +392,7 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[])
   for (const check of checks) {
     let found: PageMeta | null = null;
     for (const page of pages) {
-      if (check(page) && (found === null || preferred(page, found))) found = page;
+      if (check(page) && (found === null || preferred(page, found, folder))) found = page;
     }
     if (found) return found;
   }
@@ -394,7 +409,7 @@ export function collectLinkEdges(pageId: string, content: string, pages: readonl
   const edges: LinkEdge[] = [];
 
   for (const link of extractWikilinks(content)) {
-    const target = resolveWikilink(link.targetTitle, pages);
+    const target = resolveWikilink(link.targetTitle, pages, pageId);
     if (target?.id === pageId) continue;
 
     const key = `${link.targetTitle}\u0000${target?.id ?? ""}`;

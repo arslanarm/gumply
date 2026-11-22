@@ -96,7 +96,7 @@ export function BoardEmbedView({ node, updateAttributes, selected }: NodeViewPro
   const frameRef = useRef<HTMLDivElement | null>(null);
   const near = useNearViewport(frameRef);
 
-  const resolved = resolveWikilink(target, env.pages);
+  const resolved = resolveWikilink(target, env.pages, env.pageId);
   const board = resolved && isBoard(resolved) ? resolved : null;
   const { board: document, error } = useBoardDocument(board, near);
 

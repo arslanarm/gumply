@@ -2112,12 +2112,14 @@ export class VaultStore {
   ): Promise<PageId[]> {
     const afterMetas = this.pageMetas();
     const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
-    const isTarget = (link: { targetTitle: string }) =>
-      resolveWikilink(link.targetTitle, beforeMetas)?.id === oldId;
-    const rewriteText = (markdown: string) =>
-      renamedMeta
+    // Resolved from the page the link is written in (#35e42m7v).
+    const rewriteText = (markdown: string, source: PageId) => {
+      const isTarget = (link: { targetTitle: string }) =>
+        resolveWikilink(link.targetTitle, beforeMetas, source)?.id === oldId;
+      return renamedMeta
         ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
         : rewriteWikilinkTargets(markdown, isTarget, record.title);
+    };
     return this.rewriteEverywhere(new Set([oldId, record.id]), rewriteText);
   }
 
@@ -2128,23 +2130,26 @@ export class VaultStore {
    */
   private async rewriteHeadingLinksTo(id: PageId, renames: readonly HeadingRename[]): Promise<PageId[]> {
     const metas = this.pageMetas();
-    const isTarget = (link: { targetTitle: string }) => resolveWikilink(link.targetTitle, metas)?.id === id;
+    const isTargetFrom = (source: PageId) => (link: { targetTitle: string }) =>
+      resolveWikilink(link.targetTitle, metas, source)?.id === id;
     // Board cards of the page with a `subpath` follow the heading too (#u84ebtf3).
     const record = this.pages.get(id);
     const file = record ? relative(this.root, record.filePath).split(sep).join("/").toLowerCase() : null;
     const subpath = (value: string, node: { file: string }) =>
       file !== null && node.file.replace(/^\/+/, "").toLowerCase() === file ? rewriteHeadingSubpath(value, renames) : null;
-    return this.rewriteEverywhere(new Set([id]), (markdown) => rewriteHeadingLinks(markdown, isTarget, renames), { subpath });
+    return this.rewriteEverywhere(new Set([id]), (markdown, source) => rewriteHeadingLinks(markdown, isTargetFrom(source), renames), { subpath });
   }
 
   /**
    * The D12 writer: apply `rewriteText` to every page and board text except
    * `skip`, and write only those it changed (D37: a file without a matching
-   * link is never written). Returns the ids written.
+   * link is never written). `rewriteText` gets the id of the page or board
+   * the text belongs to, so links resolve from there (#35e42m7v). Returns the
+   * ids written.
    */
   private async rewriteEverywhere(
     skip: ReadonlySet<PageId>,
-    rewriteText: (markdown: string) => { content: string; count: number },
+    rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
     boardNodes: Omit<CanvasRewrite, "text"> = {},
   ): Promise<PageId[]> {
     const rewritten: PageId[] = [];
@@ -2152,14 +2157,14 @@ export class VaultStore {
       if (skip.has(other.id)) continue;
 
       if (other.board) {
-        const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown).content });
+        const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other.id).content });
         if (result.count === 0) continue;
         await this.saveBoardRecord(other, result.board);
         rewritten.push(other.id);
         continue;
       }
 
-      const result = rewriteText(other.content);
+      const result = rewriteText(other.content, other.id);
       if (result.count === 0) continue;
 
       await this.writeRewrittenBody(other, result.content);
@@ -2321,7 +2326,7 @@ export class VaultStore {
       // The bare text must resolve in both apps: in Obsidian a link names the
       // file, so a title that isn't the file name (autoAlias) always gets a target.
       const linkFor = (mention: { text: string }) =>
-        mentionLink(linkTarget, mention.text, autoAlias === "" && resolveWikilink(mention.text, metas)?.id === target.id);
+        mentionLink(linkTarget, mention.text, autoAlias === "" && resolveWikilink(mention.text, metas, source.id)?.id === target.id);
       await this.writeRewrittenBody(source, linkMentionsIn(source.content, chosen, linkFor));
       this.recomputeSource(source.id);
       return { linked: chosen.length, rewrittenPages: [source.id] };

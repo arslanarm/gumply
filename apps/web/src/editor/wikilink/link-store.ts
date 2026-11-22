@@ -13,7 +13,8 @@ export interface WikiLinkEnvironment {
   attachments: readonly Attachment[];
   /** #8k4ssrkb: the open page's Obsidian file links, resolved by the server. */
   fileLinks?: Readonly<Record<string, string | null>>;
-  openLink: (link: { targetTitle: string; heading: string }) => void;
+  /** `from`: the page the link is written in, when it isn't the open page (a preview's own links, #35e42m7v). */
+  openLink: (link: { targetTitle: string; heading: string; from?: string }) => void;
   createLink: (title: string) => void;
   /** Show an error in the page's action banner (e.g. "Save to vault" failed). */
   reportError?: (message: string) => void;

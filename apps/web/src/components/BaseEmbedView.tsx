@@ -32,7 +32,7 @@ export function BaseEmbedView({ node, selected }: NodeViewProps) {
   const env = useWikiLinkEnvironment();
   const frameRef = useRef<HTMLDivElement | null>(null);
   const near = useNearViewport(frameRef);
-  const resolved = resolveWikilink(target, env.pages);
+  const resolved = resolveWikilink(target, env.pages, env.pageId);
   const base = resolved && isBase(resolved) ? resolved : null;
   const stamp = useMemo(() => stampOf(env.pages), [env.pages]);
 
