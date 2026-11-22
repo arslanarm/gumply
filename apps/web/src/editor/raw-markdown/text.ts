@@ -9,6 +9,7 @@
  * Gumply and Obsidian after a reload. `==highlight==` is a mark now; a
  * balanced `==x==` left in plain text was an escaped literal and stays one.
  */
+import { Extension } from "@tiptap/core";
 import HardBreak from "@tiptap/extension-hard-break";
 import Text from "@tiptap/extension-text";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -359,6 +360,33 @@ export const MarkdownHardBreak = HardBreak.extend({
         parse: {
           // handled by markdown-it
         },
+      },
+    };
+  },
+});
+
+/**
+ * Enter right before a line break (#zvdge7ai): the break would otherwise
+ * start the new paragraph (`Intro line.` | ⏎`Typed here`, so typed text
+ * glued onto the next line). Remove the break and let Enter split there, as
+ * Notion and Obsidian do: `Intro line.` | `Typed here`, caret at the start of
+ * the second. Runs before the list and paragraph Enter handlers, which then
+ * split as usual.
+ */
+export const BreakAwareEnter = Extension.create({
+  name: "breakAwareEnter",
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => {
+        const { state, view } = editor;
+        const { selection } = state;
+        if (!selection.empty) return false;
+        const after = selection.$from.nodeAfter;
+        if (after?.type.name !== "hardBreak") return false;
+        view.dispatch(state.tr.delete(selection.from, selection.from + after.nodeSize));
+        // Not handled: the usual Enter now splits where the break was.
+        return false;
       },
     };
   },

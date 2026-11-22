@@ -63,7 +63,7 @@ import {
   GumplyTableRow,
   registerTableSources,
 } from "../editor/table/table.js";
-import { MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
+import { BreakAwareEnter, MarkdownHardBreak, MarkdownText } from "../editor/raw-markdown/text.js";
 import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/raw-markdown/list-style.js";
 import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
@@ -706,6 +706,7 @@ export function Editor({
       EmptyLineParagraph,
       MarkdownText,
       MarkdownHardBreak,
+      BreakAwareEnter,
       RawBlock,
       RawInline,
       Callout,
