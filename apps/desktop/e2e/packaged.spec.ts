@@ -382,7 +382,10 @@ test('the Claude Desktop snippet, written into claude_desktop_config.json, serve
   // One raw exchange first, so a failure says which side is silent: the
   // server's stderr shows whether it started, stdout whether it answered.
   const probe = await new Promise<{ stdout: string; stderr: string; code: number | null; seen: string }>((done) => {
-    const child = spawn(server.command, server.args, { env: serverEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    // GUMPLY_MCP_TRACE: the app's own step-by-step trace of --mcp, to a file only (@polish-dev).
+    mkdirSync(resultsDir, { recursive: true });
+    const traceEnv = { ...serverEnv, GUMPLY_MCP_TRACE: join(resultsDir, 'packaged-mcp-trace.log') };
+    const child = spawn(server.command, server.args, { env: traceEnv, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let finished = false;
