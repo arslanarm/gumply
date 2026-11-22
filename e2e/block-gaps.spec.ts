@@ -185,6 +185,36 @@ test.describe('H4–H6 are headings (#6rbi25wy)', () => {
   });
 });
 
+// #628e927t (@opus-hunter, v0.7.0): backslash escapes and math source stay as
+// written after an edit elsewhere; new text is still escaped where it must be.
+const ESCAPES: Record<string, string> = {
+  'esc.md (escapes, snake_case, a quote with \\sum_{i})': "Plain a\\,b and c\\;d and \\$5.\n\nEscapes \\* \\_ \\# \\[ \\] \\\\ \\` stay.\n\nsnake_case_word and a_b_c here.\n\n> snake_case in a quote and \\sum_{i}\n\n- snake_case in a list and x_1_y\n\nPath C:\\Users\\name\\file and \\n literal.\n\nTarget paragraph.\n",
+  'm1.md (math shapes)': "Inline $x^2 + y_1$ and $$E = mc^2$$ in text, a price $5 and $6.\n\n$$\n\\int_0^1 f(x)\\,dx\n$$\nTouching text after math.\n\n$$ a \\neq b $$\n\n> $$\n> \\sum_{i=1}^n i\n> $$\n\n- item with $\\alpha$\n  $$\n  \\beta\n  $$\n\nEscaped \\$ dollar and `$code$`.\n\nTarget paragraph.\n",
+};
+
+test.describe('backslash escapes and math source are kept (#628e927t)', () => {
+  for (const [name, text] of Object.entries(ESCAPES)) {
+    test(name, async ({ page, request, vault }) => {
+      void vault;
+      expect(text).toContain('Target paragraph.');
+      await open(page, request, text);
+      await editTarget(page);
+      expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+    });
+  }
+
+  test("a newly typed * or _ that could pair is still escaped; one that can't, isn't", async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Target paragraph.\n');
+    await page.getByTestId('editor-content').getByText('Target paragraph.', { exact: true }).click();
+    await page.keyboard.press('End');
+    // Typed text: the * pair would become emphasis on reload without escapes.
+    await page.keyboard.type(' 2*3*4 and a_b and x_{i}');
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('Target paragraph. 2\\*3\\*4 and a_b and x_{i}\n');
+  });
+});
+
 test.describe('empty list items keep their trailing space (#54prcupx)', () => {
   const EMPTY: Record<string, string> = {
     'empty task': '## Tasks\n- [ ] \n',
