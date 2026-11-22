@@ -143,38 +143,51 @@ describe("outline: what it lists (spec/outline §2, @opus-hunter's Obsidian tabl
     expect(order.map((entry) => entry.id)).toEqual(["A", "B", "C", "D"]);
   });
 
-  it("grows linearly with the page: 500 vs 5,000 lines (no wall-clock budget)", () => {
+  it("grows linearly with the page: 500 vs 5,000 lines (counts node visits, no clock)", () => {
     const page = (sections: number) => {
       const lines: string[] = [];
       for (let i = 0; i < sections; i++) lines.push(`## Section ${i}`, "", "Some text with **bold** words.", "", "- a list item");
       return parse(lines.join("\n"));
     };
-    // Load-aware (#wc6ryfte): small and large interleaved (alternating which goes first), so both see
-    // the same load, and each keeps its fastest run: load only ever adds time. 20 passes per run, so a
-    // run is long enough to measure; 9 runs each after a warm-up.
-    const run = (doc: ReturnType<typeof parse>) => {
-      const started = performance.now();
-      for (let i = 0; i < 20; i++) outlineOf(doc);
-      return performance.now() - started;
-    };
+    // A work counter, not a timer (#wc6ryfte, then load ~21 on #5r8k77fe): every node the pass
+    // touches goes through a Fragment's forEach / nodesBetween / descendants, so count those
+    // callbacks. The count can't change with machine load.
     const small = page(100); // 500 lines
     const large = page(1000); // 5,000 lines
-    expect(outlineOf(large)).toHaveLength(1000);
-    run(small);
-    run(large);
-    let fastSmall = Number.POSITIVE_INFINITY;
-    let fastLarge = Number.POSITIVE_INFINITY;
-    for (let k = 0; k < 9; k++) {
-      if (k % 2 === 0) {
-        fastSmall = Math.min(fastSmall, run(small));
-        fastLarge = Math.min(fastLarge, run(large));
-      } else {
-        fastLarge = Math.min(fastLarge, run(large));
-        fastSmall = Math.min(fastSmall, run(small));
+    const fragment = Object.getPrototypeOf(small.content) as Record<string, (...args: unknown[]) => unknown>;
+    const visitsOf = (doc: ReturnType<typeof parse>) => {
+      let visits = 0;
+      const originals = new Map<string, (...args: unknown[]) => unknown>();
+      for (const name of ["forEach", "nodesBetween", "descendants"]) {
+        const original = fragment[name];
+        if (typeof original !== "function") continue;
+        originals.set(name, original);
+        fragment[name] = function (this: unknown, ...args: unknown[]) {
+          const callback = args.find((arg) => typeof arg === "function") as ((...inner: unknown[]) => unknown) | undefined;
+          if (callback) {
+            const counted = (...inner: unknown[]) => {
+              visits += 1;
+              return callback(...inner);
+            };
+            args = args.map((arg) => (arg === callback ? counted : arg));
+          }
+          return original.apply(this, args);
+        };
       }
-    }
-    const ratio = fastLarge / Math.max(fastSmall, 0.05);
-    // 10x the lines: a linear pass is ~10x slower, a quadratic one ~100x. The limit sits in between.
-    expect(ratio).toBeLessThan(40);
+      try {
+        expect(outlineOf(doc).length).toBeGreaterThan(0);
+      } finally {
+        for (const [name, original] of originals) fragment[name] = original;
+      }
+      return visits;
+    };
+    expect(outlineOf(large)).toHaveLength(1000);
+    const smallVisits = visitsOf(small);
+    const largeVisits = visitsOf(large);
+    // Every top-level block once, plus each heading's own children: about 4 per section.
+    expect(smallVisits).toBeGreaterThanOrEqual(100);
+    expect(largeVisits).toBeLessThanOrEqual(10 * smallVisits + 10);
+    expect(largeVisits).toBeLessThanOrEqual(6 * 1000);
+    // `nestLevels` is one stack pass: each level is pushed once and popped at most once.
   });
 });
