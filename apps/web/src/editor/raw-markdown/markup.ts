@@ -33,6 +33,14 @@ export function markupRule(state: any): void {
       const underline = (lines[(token.map[1] as number) - 1] ?? "").trim();
       if (new RegExp(`^\\${markup}+$`).test(underline)) markup = underline;
     }
+    // An ATX closing sequence (`## Title ##`) is kept as written, #6rbi25wy:
+    // recorded after the opening hashes, e.g. `##` + ` ##`.
+    if (token.type === "heading_open" && /^#{1,6}$/.test(markup) && token.map) {
+      lines ??= String(state.src).split("\n");
+      const line = (lines[token.map[0] as number] ?? "").replace(/^(?:[ \t]*>[ \t]?)*/, "");
+      const closing = new RegExp(`^ {0,3}${markup}[ \\t]+\\S.*?([ \\t]+#+[ \\t]*)$`).exec(line);
+      if (closing) markup += closing[1];
+    }
     token.attrSet(MARKUP_ATTR, markup);
   }
 }
@@ -138,6 +146,9 @@ export const MarkdownHeading = Heading.extend({
           }
           state.write(`${state.repeat("#", level)} `);
           state.renderInline(node);
+          // The closing sequence as read (`## Title ##`), while the level is the same (#6rbi25wy).
+          const hashes = /^(#{1,6})([ \t]+#+[ \t]*)$/.exec(markup);
+          if (hashes && hashes[1]!.length === level && node.textContent.trim().length > 0) state.write(hashes[2]!);
           state.closeBlock(node);
         },
       },
