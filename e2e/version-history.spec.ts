@@ -179,8 +179,10 @@ test('a board\'s history: Preview draws the version; Changes marks cards added, 
   await expect(page.getByTestId('board-page')).toBeVisible();
   await openHistoryFromMenu(page, id);
   const dialog = page.getByTestId('history-dialog');
-  // The version with the three earlier cards. (In dev, StrictMode's effect re-run can end the board's
-  // session at once, which adds an "End of editing" version equal to now: never the one to pick.)
+  // Opening the board added no version (no "End of editing" equal to now, even under StrictMode in dev):
+  // the empty board before the first save, and the three cards kept when the session ended.
+  await expect(dialog.getByTestId('history-item')).toHaveCount(2);
+  // The version with the three earlier cards (by its content, not its row position).
   await pickVersionWith(dialog, 'Remove me');
   const preview = dialog.getByTestId('history-board-preview').getByTestId('board-preview');
   await expect(preview).toHaveAttribute('data-nodes', '3');
