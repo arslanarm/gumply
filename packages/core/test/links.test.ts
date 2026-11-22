@@ -168,8 +168,58 @@ describe("resolveWikilink", () => {
       });
     }
 
-    it("D4 still holds: a title match beats another page's file name", () => {
-      expect(resolveWikilink("Target", [page("Target", "Something else"), page("Deep/Note", "Target")])?.id).toBe("Deep/Note");
+    // #35e42m7v: @opus-hunter's table, measured in Obsidian 1.14.4 with
+    // metadataCache.getFirstLinkpathDest(link, source). Plain notes: title = file name.
+    describe("Obsidian 1.14.4's measured table (linking note × link)", () => {
+      const vault = [
+        "Target",
+        "Projects/Target",
+        "Projects/Sub/Target",
+        "Other/Two",
+        "Zeta/Deep/Two",
+        "Alpha/Two",
+        "Projects/Sub/Three",
+        "Other/Three",
+        "Zeta/Four",
+        "Alpha/four",
+      ].map((id) => page(id, id.split("/").pop()!));
+      const table: Record<string, Record<string, string>> = {
+        "Projects/A": { Target: "Target", Two: "Alpha/Two", Three: "Projects/Sub/Three", Four: "Zeta/Four" },
+        "Projects/Sub/B": { Target: "Target", Two: "Alpha/Two", Three: "Projects/Sub/Three", Four: "Zeta/Four" },
+        "Other/C": { Target: "Target", Two: "Other/Two", Three: "Other/Three", Four: "Zeta/Four" },
+        Root: { Target: "Target", Two: "Alpha/Two", Three: "Other/Three", Four: "Zeta/Four" },
+        "Zeta/Deep/D": { Target: "Target", Two: "Zeta/Deep/Two", Three: "Other/Three", Four: "Zeta/Four" },
+      };
+      for (const [from, row] of Object.entries(table)) {
+        for (const [link, id] of Object.entries(row)) {
+          it(`[[${link}]] from ${from} → ${id}`, () => {
+            expect(resolveWikilink(link, vault, from)?.id).toBe(id);
+            expect(resolveWikilink(link, [...vault].reverse(), from)?.id).toBe(id);
+          });
+        }
+      }
+
+      it("the case of a name never decides (equal lengths: alphabetical by folder)", () => {
+        const five = [page("Zzzz/Five", "Five"), page("Aaaa/five", "five")];
+        expect(resolveWikilink("Five", five, "Root")?.id).toBe("Aaaa/five");
+        expect(resolveWikilink("five", five, "Root")?.id).toBe("Aaaa/five");
+        const six = [page("Yyyy/six", "six"), page("Bbbb/SIX", "SIX")];
+        for (const link of ["six", "SIX", "Six"]) expect(resolveWikilink(link, six, "Root")?.id).toBe("Bbbb/SIX");
+      });
+
+      it("a whole vault path wins outright, also over titles and the folder rule", () => {
+        expect(resolveWikilink("projects/target", vault, "Other/C")?.id).toBe("Projects/Target");
+        expect(resolveWikilink("Target", [page("Target", "Something else"), page("Projects/Note", "Target")], "Projects/A")?.id).toBe("Target");
+      });
+
+      it("graph edges and backlinks resolve from their source page", () => {
+        expect(collectLinkEdges("Projects/A", "[[Three]] [[Target]]", vault).map((edge) => edge.target)).toEqual(["Projects/Sub/Three", "Target"]);
+        expect(collectLinkEdges("Other/C", "[[Three]] [[Two]]", vault).map((edge) => edge.target)).toEqual(["Other/Three", "Other/Two"]);
+      });
+    });
+
+    it("after the exact path, D4 still holds: a title match beats another page's file name", () => {
+      expect(resolveWikilink("Plan", [page("Archive/Plan", "Old"), page("Deep/Note", "Plan")])?.id).toBe("Deep/Note");
     });
   });
 });

@@ -30,7 +30,7 @@ export function BaseText({ text, rowId }: { text: string; rowId: string }) {
       pages={links.pages}
       from={rowId}
       onOpen={(link) => {
-        const page = resolveWikilink(link.targetTitle, links.pages);
+        const page = resolveWikilink(link.targetTitle, links.pages, rowId);
         if (page) links.onOpen(page.id);
       }}
     />

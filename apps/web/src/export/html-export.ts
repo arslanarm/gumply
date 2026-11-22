@@ -174,10 +174,10 @@ function missingImage(context: Context, name: string): string {
   return `<span class="export-note">${escapeHtml(context.source.t("export.missingImage", { name }))}</span>`;
 }
 
-/** A page or board link: plain text, or a link to its sibling `.html` file. */
-function linkHtml(context: Context, title: string, label: string, heading: string): string {
+/** A page or board link: plain text, or a link to its sibling `.html` file. `fromId`: the note it's written in (#35e42m7v). */
+function linkHtml(context: Context, title: string, label: string, heading: string, fromId: string): string {
   const shown = escapeHtml(label);
-  const page = resolveWikilink(title, context.source.pages);
+  const page = resolveWikilink(title, context.source.pages, fromId);
   if (context.options.links === "files" && page && (page.kind ?? "page") === "page") {
     const hash = heading ? `#${encodeURIComponent(heading)}` : "";
     return `<a class="wiki-link" href="${escapeHtml(siblingHref(page.title))}${hash}">${shown}</a>`;
@@ -262,19 +262,19 @@ function staticCallouts(html: string): string {
 }
 
 /** `<wiki-link>` and file attachments as the chosen link style / plain names. */
-function staticLinks(context: Context, html: string): string {
+function staticLinks(context: Context, html: string, fromId: string): string {
   return html
     .replace(/<wiki-link ([^>]*)>([\s\S]*?)<\/wiki-link>/g, (_, attrs: string, label: string) => {
       const title = unescapeHtml(/data-wikilink-title="([^"]*)"/.exec(attrs)?.[1] ?? "");
       const heading = unescapeHtml(/data-wikilink-heading="([^"]*)"/.exec(attrs)?.[1] ?? "");
-      return linkHtml(context, title, unescapeHtml(label), heading);
+      return linkHtml(context, title, unescapeHtml(label), heading, fromId);
     })
     .replace(/<file-attachment [^>]*data-name="([^"]*)"[^>]*>[\s\S]*?<\/file-attachment>/g, (_, name: string) => `<span class="export-file">${name}</span>`)
     .replace(/<a href="([^"]*)"/g, (whole, href: string) => (/^(https?:|mailto:)/i.test(unescapeHtml(href)) ? `${whole} rel="noopener noreferrer"` : "<a"));
 }
 
 async function baseSnapshot(context: Context, target: string, view: string | undefined, thisId: string): Promise<string> {
-  const base = resolveWikilink(target, context.source.pages);
+  const base = resolveWikilink(target, context.source.pages, thisId);
   const name = escapeHtml((target.split("/").pop() ?? target).replace(/\.base$/i, ""));
   const loaded = base ? await context.source.runBase(base.id, view, thisId).catch(() => null) : null;
   if (!loaded) {
@@ -284,7 +284,7 @@ async function baseSnapshot(context: Context, target: string, view: string | und
   const head = result.columns.map((column) => `<th>${escapeHtml(label(column.id))}</th>`).join("");
   const rows = result.rows.slice(0, MAX_BASE_ROWS).map((row) => {
     const cells = result.columns.map((column) => {
-      if (column.id === "file.name") return `<td>${row.icon ? `${escapeHtml(row.icon)} ` : ""}${linkHtml(context, row.id, row.title, "")}</td>`;
+      if (column.id === "file.name") return `<td>${row.icon ? `${escapeHtml(row.icon)} ` : ""}${linkHtml(context, row.id, row.title, "", thisId)}</td>`;
       const value = row.values[column.id] ?? null;
       if (typeof value === "boolean") return `<td class="is-check">${value ? "☑" : "☐"}</td>`;
       return `<td>${escapeHtml(context.source.formatValue(value, column.type))}</td>`;
@@ -310,11 +310,11 @@ async function boardCards(context: Context, html: string, thisId: string): Promi
   });
 }
 
-async function nestedPreviews(context: Context, html: string, depth: number, chain: readonly string[]): Promise<string> {
+async function nestedPreviews(context: Context, html: string, depth: number, chain: readonly string[], fromId: string): Promise<string> {
   return replaceAsync(html, /<div class="page-embed-nested" data-target="([^"]*)" data-part="([^"]*)"><\/div>/g, async (match) => {
     const target = unescapeHtml(match[1] ?? "");
     const part = unescapeHtml(match[2] ?? "");
-    const meta = resolveWikilink(target, context.source.pages);
+    const meta = resolveWikilink(target, context.source.pages, fromId);
     const note = (key: ExportMessage) => `<div class="export-embed"><p class="export-note">${escapeHtml(context.source.t(key, { name: target }))}</p></div>`;
     if (!meta || (meta.kind ?? "page") !== "page") return note("export.missingPage");
     if (chain.includes(meta.id)) return note("export.loopPage");
@@ -339,14 +339,14 @@ async function renderBody(
   chain: readonly string[],
 ): Promise<string> {
   let html = renderEmbeddedMarkdown(markdown);
-  html = await nestedPreviews(context, html, depth, chain);
+  html = await nestedPreviews(context, html, depth, chain, fromId);
   html = await boardCards(context, html, fromId);
   html = await inlineImages(context, html, fromId, fileLinks);
   html = await renderMath(context, html);
   html = await renderDiagrams(context, html);
   html = await highlightCode(context, html);
   html = staticCallouts(html);
-  return staticLinks(context, html);
+  return staticLinks(context, html, fromId);
 }
 
 const COVER_COLORS: Record<string, string> = {

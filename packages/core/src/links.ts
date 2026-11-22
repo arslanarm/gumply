@@ -7,6 +7,7 @@
 import type { LinkEdge, PageMeta } from "./types.js";
 import { legacySlugTitle, slugify } from "./ids.js";
 import { findInlineTags } from "./tags.js";
+import { linkSourceFolder, preferredLinkPath } from "./link-order.js";
 import { WIKILINK_INNER, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
 
 export interface WikiLink {
@@ -326,46 +327,46 @@ function normalise(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-const pathCollator = new Intl.Collator("en", { sensitivity: "base", numeric: false });
-
 /**
  * Of several pages that match a link equally well, the one Obsidian 1.14.4
  * opens: a page before a whiteboard (v1.7: `[[Map]]` is the page), then the
- * shortest path (string length, not depth), then a case-insensitive locale
- * compare, as for v1.17 file links (`link-files.ts`). Never list order.
- * (Obsidian also prefers a match in the linking note's folder; that needs the
- * source page, a separate P3.)
+ * rule shared with v1.17 file links (`link-order.ts`): under the linking
+ * note's folder at any depth, then the shortest path, then alphabetical,
+ * case-insensitive. Never list order.
  */
-function preferred(a: PageMeta, b: PageMeta): boolean {
+function preferred(a: PageMeta, b: PageMeta, folder: string): boolean {
   const boardA = a.kind === "whiteboard";
   const boardB = b.kind === "whiteboard";
   if (boardA !== boardB) return boardB;
-  if (a.id.length !== b.id.length) return a.id.length < b.id.length;
-  const order = pathCollator.compare(a.id, b.id);
-  return order !== 0 ? order < 0 : a.id < b.id;
+  return preferredLinkPath(a.id, b.id, folder);
 }
 
 /**
- * Resolve a `[[Title]]` target against the page list: a whole vault path
- * first, then title (exact, then case-insensitive), then page id, then file
- * name. Mirrors D4. When several pages pass the same check (`Target` and
- * `Other/Target`), `preferred` picks one, so the answer never depends on the
- * order of `pages` (#u84ebtf3).
+ * Resolve a `[[Title]]` target against the page list, as Obsidian 1.14.4 does
+ * (@opus-hunter's measured table, #35e42m7v), case-insensitive throughout:
+ *
+ * 1. a link that is a whole vault path wins outright (`[[Target]]` is the root
+ *    `Target.md` even from `Projects/A`, `[[Other/Target]]` that file);
+ * 2. then, keeping D4's order, the title, then the file-name and legacy slug
+ *    forms; when several pages pass the same check, `preferred` picks one.
+ *
+ * `from` is the id of the page or board the link is written in (its folder
+ * wins a tie); without it, as from the vault root.
  */
-export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[]): PageMeta | null {
+export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[], from?: string | null): PageMeta | null {
   const target = normalise(targetTitle);
   if (target.length === 0) return null;
+  const folder = linkSourceFolder(from);
 
   const byTitle = (candidate: PageMeta): string => normalise(candidate.title);
   const byId = (candidate: PageMeta): string => normalise(candidate.id);
   const lastSegment = (candidate: PageMeta): string => normalise(candidate.id.split("/").pop() ?? "");
 
   const checks: Array<(page: PageMeta) => boolean> = [
-    // `[[Other/Target]]` is that file, whatever another page's title says.
-    (page) => target.includes("/") && byId(page) === target,
-    (page) => page.title === targetTitle.trim(),
-    (page) => byTitle(page) === target,
+    // 1. A whole vault path (case-insensitive), whatever another page's title says.
     (page) => byId(page) === target,
+    // 2. Titles, case-insensitive: the case of a name never decides (measured).
+    (page) => byTitle(page) === target,
     (page) => lastSegment(page) === slugify(targetTitle),
     (page) => lastSegment(page) === target,
     (page) => byId(page).endsWith(`/${slugify(targetTitle)}`),
@@ -377,7 +378,7 @@ export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[])
   for (const check of checks) {
     let found: PageMeta | null = null;
     for (const page of pages) {
-      if (check(page) && (found === null || preferred(page, found))) found = page;
+      if (check(page) && (found === null || preferred(page, found, folder))) found = page;
     }
     if (found) return found;
   }
@@ -394,7 +395,7 @@ export function collectLinkEdges(pageId: string, content: string, pages: readonl
   const edges: LinkEdge[] = [];
 
   for (const link of extractWikilinks(content)) {
-    const target = resolveWikilink(link.targetTitle, pages);
+    const target = resolveWikilink(link.targetTitle, pages, pageId);
     if (target?.id === pageId) continue;
 
     const key = `${link.targetTitle}\u0000${target?.id ?? ""}`;

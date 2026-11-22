@@ -147,7 +147,7 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
         const key = link.targetTitle.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
-        links.push({ target: link.targetTitle, id: resolveWikilink(link.targetTitle, pages)?.id ?? null });
+        links.push({ target: link.targetTitle, id: resolveWikilink(link.targetTitle, pages, meta.id)?.id ?? null });
       }
       const truncated = body.length > maxChars;
       const content = truncated ? body.slice(0, maxChars) : body;

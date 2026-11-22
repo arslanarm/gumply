@@ -103,7 +103,7 @@ export function LinkedText({ text, pages, from, fileLinks, onOpen, openMissing =
             </a>
           );
         }
-        const found = resolveWikilink(part.target, pages) !== null;
+        const found = resolveWikilink(part.target, pages, from) !== null;
         if (!found && !openMissing) {
           return (
             <span key={index} className="wiki-link property-link is-unresolved" data-testid="property-link">

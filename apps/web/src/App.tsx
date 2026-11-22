@@ -1206,8 +1206,9 @@ export function App() {
   );
 
   const openWikiLink = useCallback(
-    async (link: { targetTitle: string; heading: string }) => {
-      const resolved = resolveWikilink(link.targetTitle, documentPages);
+    async (link: { targetTitle: string; heading: string; from?: string }) => {
+      // From the page the link is written in: a same-named page in its folder wins (#35e42m7v).
+      const resolved = resolveWikilink(link.targetTitle, documentPages, link.from ?? page?.id);
 
       if (!resolved) {
         try {
@@ -1650,7 +1651,7 @@ export function App() {
   }, [loadPages, navigate]);
 
   const handleOpenLink = useCallback(
-    (link: { targetTitle: string; heading: string }) => {
+    (link: { targetTitle: string; heading: string; from?: string }) => {
       void openWikiLink(link);
     },
     [openWikiLink],
