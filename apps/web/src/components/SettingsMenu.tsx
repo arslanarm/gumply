@@ -79,7 +79,8 @@ export function SettingsMenu({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
       >
-        <Icon name="languages" size={16} />
+        {/* A gear: the popover holds Language, Theme and AI apps, not just the language (#jn9vhndu). */}
+        <Icon name="settings" size={16} />
       </button>
       {open ? (
         <div className="settings-popover" role="dialog" aria-label={t("settings.title")} data-testid="settings-popover">

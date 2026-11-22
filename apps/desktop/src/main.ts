@@ -10,7 +10,8 @@
  * - Settings (last/recent vaults, window state) live in `userData`, never in
  *   a vault.
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { dirname, join, resolve, sep } from "node:path";
@@ -30,7 +31,7 @@ import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downlo
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
-import { MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, type McpModeArgs } from "./mcp-mode.js";
+import { hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
 
 /**
@@ -250,7 +251,10 @@ async function openVault(path: string): Promise<void> {
       packaged: app.isPackaged,
       appPath: app.getAppPath(),
       platform: process.platform,
-      ...(process.env.APPIMAGE ? { appImage: process.env.APPIMAGE } : {}),
+      ...(process.env.APPIMAGE ? { appImage: process.env.APPIMAGE, fusermount: hasFusermount(existsSync) } : {}),
+      ...(process.platform === "linux" && !app.isPackaged
+        ? { userNamespaces: userNamespacesWork(existsSync, (command, args) => spawnSync(command, args, { stdio: "ignore", timeout: 2000 }).status) }
+        : {}),
     }),
     printToken,
     log: (message) => console.log(message),

@@ -16,8 +16,9 @@ const RANK: Record<McpAccess, number> = { read: 0, append: 1, edit: 2 };
 
 /** Raising the level asks first (@lead, A3 review); lowering is instant. */
 const RAISE: Record<Exclude<McpAccess, "read">, { heading: MessageKey; body: MessageKey }> = {
-  append: { heading: "settings.mcp.raiseAppend", body: "settings.mcp.accessAppendHint" },
-  edit: { heading: "settings.mcp.raiseEdit", body: "settings.mcp.accessEditHint" },
+  // Standalone sentences: the radio hints start "Also…", which read as a fragment here (#jn9vhndu).
+  append: { heading: "settings.mcp.raiseAppend", body: "settings.mcp.raiseAppendBody" },
+  edit: { heading: "settings.mcp.raiseEdit", body: "settings.mcp.raiseEditBody" },
 };
 
 const LEVELS: Array<[McpAccess, MessageKey, MessageKey]> = [
@@ -190,6 +191,7 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
               />
               {settings.command.hint === "npm" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.npmHint")}</p> : null}
               {settings.command.hint === "appimage" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.appImageHint")}</p> : null}
+              {settings.command.warning === "fuse" ? <p className="mcp-note mcp-error" data-testid="mcp-fuse-warning">{t("settings.mcp.fuseWarning")}</p> : null}
               {settings.command.hint === "macos-location" ? <p className="mcp-note" data-testid="mcp-hint">{t("settings.mcp.macLocationHint")}</p> : null}
             </section>
 

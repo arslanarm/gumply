@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mcpLaunchCommand, mcpModeArgs } from "../src/mcp-mode";
+import { hasFusermount, mcpLaunchCommand, mcpModeArgs, userNamespacesWork } from "../src/mcp-mode";
 
 describe("desktop MCP mode arguments (A3)", () => {
   it("is off without --mcp", () => {
@@ -74,5 +74,45 @@ describe("mcpLaunchCommand", () => {
       command: "C:\\Users\\me\\AppData\\Local\\Programs\\Gumply\\Gumply.exe",
       args: ["--mcp"],
     });
+  });
+});
+
+/** #4ckqijua: Ubuntu 23.10+ restricts unprivileged user namespaces (AppArmor); FUSE for the static AppImage runtime. */
+describe("restricted user namespaces and FUSE (#4ckqijua)", () => {
+  const dev = { platform: "linux", packaged: false, execPath: "/repo/node_modules/electron/dist/electron", appPath: "/repo/apps/desktop" };
+  it("development without working user namespaces runs without the sandbox, as AppRun decides for the AppImage", () => {
+    expect(mcpLaunchCommand({ ...dev, userNamespaces: false }).args).toEqual(["/repo/apps/desktop", "--mcp", "--ozone-platform=headless", "--no-sandbox"]);
+    expect(mcpLaunchCommand({ ...dev, userNamespaces: true }).args).not.toContain("--no-sandbox");
+    expect(mcpLaunchCommand(dev).args).not.toContain("--no-sandbox");
+    // Not Linux: no such restriction.
+    expect(mcpLaunchCommand({ ...dev, platform: "darwin", userNamespaces: false }).args).not.toContain("--no-sandbox");
+  });
+
+  it("packaged builds never get --no-sandbox from us: the .deb's AppArmor profile or the AppImage's AppRun decides", () => {
+    const deb = mcpLaunchCommand({ platform: "linux", packaged: true, execPath: "/opt/Gumply/gumply", appPath: "/x", userNamespaces: false });
+    expect(deb.args).toEqual(["--mcp", "--ozone-platform=headless"]);
+    const appImage = mcpLaunchCommand({ platform: "linux", packaged: true, execPath: "/tmp/.mount_x/gumply", appPath: "/x", appImage: "/home/you/Gumply.AppImage", userNamespaces: false });
+    expect(appImage.args).toEqual(["--mcp", "--ozone-platform=headless"]);
+  });
+
+  it("an AppImage on a system without fusermount says so in Settings → AI apps", () => {
+    const base = { platform: "linux", packaged: true, execPath: "/tmp/.mount_x/gumply", appPath: "/x", appImage: "/home/you/Gumply.AppImage" };
+    expect(mcpLaunchCommand({ ...base, fusermount: false }).warning).toBe("fuse");
+    expect(mcpLaunchCommand({ ...base, fusermount: true }).warning).toBeUndefined();
+    expect(mcpLaunchCommand({ platform: "linux", packaged: true, execPath: "/opt/Gumply/gumply", appPath: "/x", fusermount: false }).warning).toBeUndefined();
+  });
+
+  it("the probes: AppRun's user-namespace check, and fusermount from fuse3 or fuse 2", () => {
+    const has = (paths: string[]) => (path: string) => paths.includes(path);
+    const calls: string[][] = [];
+    expect(userNamespacesWork(has(["/proc/self/ns/user"]), (command, args) => (calls.push([command, ...args]), 0))).toBe(true);
+    // AppRun's exact probe: `unshare -Ur true` (a bare `unshare --user` passes even under Ubuntu's restriction).
+    expect(calls).toEqual([["unshare", "-Ur", "true"]]);
+    expect(userNamespacesWork(has(["/proc/self/ns/user"]), () => 1)).toBe(false); // Ubuntu 24.04's AppArmor restriction
+    expect(userNamespacesWork(has([]), () => 0)).toBe(false); // no user namespaces in the kernel
+    expect(userNamespacesWork(has(["/proc/self/ns/user"]), () => null)).toBe(false); // unshare missing or timed out
+    expect(hasFusermount(has(["/usr/bin/fusermount3"]))).toBe(true);
+    expect(hasFusermount(has(["/bin/fusermount"]))).toBe(true);
+    expect(hasFusermount(has([]))).toBe(false);
   });
 });

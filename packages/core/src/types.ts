@@ -144,6 +144,11 @@ export interface LinkEdge {
   source: PageId;
   target: PageId | null;
   targetTitle: string;
+  /**
+   * #rpugpydh: the link is only in the page's frontmatter (`related: "[[X]]"`),
+   * not its body. Additive; only snippets read it (never the graph payload).
+   */
+  via?: "property";
 }
 
 /** One node of the graph view. */

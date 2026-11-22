@@ -181,10 +181,14 @@ test.describe('outline pane (v0.8 D1)', () => {
     const start = await zoom();
     await items(page).filter({ hasText: 'Second' }).click();
     await expect.poll(zoom).not.toBe(start);
-    // The frame is on screen.
-    const box = await page.locator('[data-id="b"]').boundingBox();
-    const view = await page.getByTestId('board').boundingBox();
-    expect(box && view && box.x >= view.x - 2 && box.x + box.width <= view.x + view.width + 2).toBe(true);
+    // The frame ends up on screen. The zoom is a 250 ms animation, so poll until it settles
+    // (one read right after the transform first changes can land mid-animation).
+    const onScreen = async () => {
+      const box = await page.locator('[data-id="b"]').boundingBox();
+      const view = await page.getByTestId('board').boundingBox();
+      return Boolean(box && view && box.x >= view.x - 2 && box.x + box.width <= view.x + view.width + 2);
+    };
+    await expect.poll(onScreen).toBe(true);
     expect(readFileSync(file('Plan.canvas'), 'utf8')).toBe(before);
   });
 });

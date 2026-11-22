@@ -53,6 +53,17 @@ so your notes are still plain Markdown files in a folder you choose.
 - **Build installers:** `npm run desktop:build:linux` writes `apps/desktop/release/Gumply-<version>-x86_64.AppImage`
   and `Gumply-<version>-amd64.deb`. Run the AppImage directly (`chmod +x` it first), or install the
   .deb with `sudo apt install ./Gumply-<version>-amd64.deb`.
+- **Linux, which file:**
+  - **The `.deb`** (Ubuntu, Debian) installs to `/opt/Gumply` with an AppArmor profile, so on
+    Ubuntu 23.10+ (which restricts unprivileged user namespaces) the app keeps Chromium's sandbox.
+  - **The AppImage** runs anywhere without installing. Since v0.8 it uses AppImage's static runtime,
+    so it needs only FUSE 3 (`fusermount`, from the `fuse3` package, installed by default on Ubuntu
+    22.04+); older Gumply AppImages needed `libfuse2` (`sudo apt install libfuse2t64`). Where
+    user namespaces are restricted (Ubuntu 23.10+), the AppImage's launcher starts Gumply without
+    Chromium's sandbox rather than not at all (electron-builder's own fallback). If you want the
+    sandbox on Ubuntu 23.10+, use the `.deb`.
+  - Don't set `APPIMAGE_EXTRACT_AND_RUN=1` for the AI apps (MCP) command: it prints the files it
+    extracts to standard output, which is the MCP connection.
 - **Windows and macOS:** built on GitHub Actions (`.github/workflows/desktop.yml`). A `v*` tag builds
   all three platforms (Windows installer `.exe`; macOS `.dmg`/`.zip` for Apple silicon and Intel)
   and attaches them, with `SHA256SUMS.txt`, to a **draft** GitHub Release that is published after
@@ -87,6 +98,10 @@ so your notes are still plain Markdown files in a folder you choose.
   `--ozone-platform=x11`, and run under `xvfb-run`. The test launcher (`apps/desktop/scripts/test.mjs`
   and `launch()` in `apps/desktop/e2e/desktop.spec.ts`) does all three; copy it for any new launch.
 - If npm skipped Electron's download (npm can block install scripts), the desktop build fetches it.
+- **Restricted user namespaces (Ubuntu 23.10+), development:** Electron from `node_modules` has no
+  AppArmor profile, so Chromium's sandbox can't start and the app aborts ("SUID sandbox helper… not
+  configured"). The development MCP command (Settings → AI apps, and `apps/desktop/e2e/mcp.spec.ts`)
+  then adds `--no-sandbox`, decided by the same `unshare -Ur true` probe as the AppImage launcher.
 
 ## Scripts (from repo root)
 
