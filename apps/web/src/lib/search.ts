@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template";
+  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -46,11 +46,46 @@ export interface SearchSections {
   today: SearchRow | null;
   /** v0.7 C: `New page from template…` ("template", "new page from…"). */
   pageTemplate: SearchRow | null;
+  /** G1: `Export page as HTML` ("export", "html"…). */
+  exportHtml?: SearchRow | null;
+  /** B4: `Import from Notion…` ("notion", "import"…). */
+  importNotion?: SearchRow | null;
+  /** G2: `Export page as PDF` ("pdf", "print"…). */
+  exportPdf?: SearchRow | null;
 }
 
 /** Words for this language's command (English always counts), from a message. */
-function localWords(key: "search.todayWords" | "search.pageTemplateWords"): string[] {
+function localWords(key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords" | "search.pdfWords"): string[] {
   return t(key).toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Whether `query` asks to export the page: "export", "html", "export as html"… (G1). */
+export function wantsExportHtml(query: string): boolean {
+  const words = normalise(query).split(" ").filter((word) => word.length > 0);
+  if (words.length === 0 || normalise(query).length < 3) return false;
+  const known = ["export", "as", "html", "page", "save", ...localWords("search.exportWords")];
+  const key = ["export", "html", ...localWords("search.exportWords").filter((word) => word.startsWith("экспорт"))];
+  return words.every((word) => known.some((candidate) => candidate.startsWith(word))) && words.some((word) => key.some((candidate) => candidate.startsWith(word)));
+}
+
+/** Whether `query` asks to import from Notion: "notion", "import", "import from notion"… (B4). */
+export function wantsImportNotion(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = needle.split(" ").filter((word) => word.length > 0);
+  const known = ["import", "from", "notion", ...localWords("search.importWords")];
+  return words.every((word) => known.some((candidate) => candidate.startsWith(word)));
+}
+
+/** Whether `query` asks to print the page or export a PDF: "pdf", "print", "export pdf"… (G2). */
+export function wantsExportPdf(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = needle.split(" ").filter((word) => word.length > 0);
+  const local = localWords("search.pdfWords");
+  const known = ["export", "as", "pdf", "print", "page", ...local, ...localWords("search.exportWords")];
+  const key = ["pdf", "print", ...local];
+  return words.every((word) => known.some((candidate) => candidate.startsWith(word))) && words.some((word) => key.some((candidate) => candidate.startsWith(word)));
 }
 
 /** Whether `query` asks for today's daily note: "today", "daily", "journal"… (v0.7 C). */
@@ -267,7 +302,10 @@ export function searchSections(
   const pageTemplate = wantsPageTemplate(query)
     ? { kind: "page-template" as const, key: "page-template", label: t("search.pageTemplate") }
     : null;
-  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate };
+  const exportHtml = wantsExportHtml(query) ? { kind: "export-html" as const, key: "export-html", label: t("export.command") } : null;
+  const importNotion = wantsImportNotion(query) ? { kind: "import-notion" as const, key: "import-notion", label: t("notionImport.command") } : null;
+  const exportPdf = wantsExportPdf(query) ? { kind: "export-pdf" as const, key: "export-pdf", label: t("export.pdf.command") } : null;
+  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion, exportPdf };
 }
 
 export interface SnippetPart {

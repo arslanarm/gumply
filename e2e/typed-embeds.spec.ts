@@ -148,6 +148,42 @@ test.describe('typing Obsidian embeds by hand (#95x2fjh6)', () => {
     }
   });
 
+  test('#jxww67d9: a file arriving from outside shows for a link already on the page and one typed before it came', async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request);
+    const body = 'Start\n\n![[outside.png]]\n';
+    await fs.writeFile(path.join(E2E_VAULT, 'Typed.md'), body);
+    await expect.poll(async () => (await api.getPage(request, 'Typed')).content).toContain('![[outside.png]]');
+    const arrived = editorImages(page, 'assets/outside.png');
+    try {
+      await page.goto('/#/Typed');
+      const editor = page.getByTestId('editor-content');
+      await expect(editor).toContainText('Start');
+      // Typed now, before the file exists: the session caches a miss for it.
+      await editor.click();
+      await page.keyboard.press('Control+End');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('![[outside.png]]', { delay: 40 });
+      await expect.poll(async () => (await read('Typed.md')).split('![[outside.png]]').length - 1, { timeout: 10_000 }).toBe(2);
+      await expect(arrived).toHaveCount(0);
+
+      // Another app (or a sync tool) drops the file into a folder.
+      await fs.mkdir(path.join(E2E_VAULT, 'assets'), { recursive: true });
+      await fs.writeFile(path.join(E2E_VAULT, 'assets', 'outside.png'), PNG);
+      // The page-list poll (2 s) sees the new file version; no reload.
+      await expect(arrived).toHaveCount(2, { timeout: 10_000 });
+      for (const index of [0, 1]) {
+        await expect.poll(() => arrived.nth(index).evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth)).toBe(40);
+      }
+      // Nothing is written back: both links stay as typed.
+      expect((await read('Typed.md')).split('![[outside.png]]').length - 1).toBe(2);
+    } finally {
+      await fs.rm(path.join(E2E_VAULT, 'pic.png'), { force: true });
+      await fs.rm(path.join(E2E_VAULT, 'att', 'doc.pdf'), { force: true });
+      await fs.rm(path.join(E2E_VAULT, 'assets'), { recursive: true, force: true });
+    }
+  });
+
   test('Ctrl+Z right after the rule fires gives back the typed text', async ({ page, request, vault }) => {
     void vault;
     await writeVault(request);

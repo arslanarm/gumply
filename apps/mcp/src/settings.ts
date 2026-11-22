@@ -2,31 +2,27 @@
  * `.gumply/mcp.json` (spec/mcp §2, D35): `{ enabled, access }`, per vault.
  * No file → enabled at `read`; an unreadable or invalid file → `read` too.
  * Read again on every write call, so lowering the level takes effect at once.
+ * The format lives in core (`mcp-settings.ts`), shared with the app's
+ * Settings → MCP (A3).
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MCP_ACCESS_LEVELS, MCP_SETTINGS_PATH, parseMcpSettings, type McpAccess, type McpSettings } from "@gumply/core";
 
-export type Access = "read" | "append" | "edit";
-export const ACCESS_LEVELS: readonly Access[] = ["read", "append", "edit"];
+export type Access = McpAccess;
+export type { McpSettings };
+export const ACCESS_LEVELS: readonly Access[] = MCP_ACCESS_LEVELS;
 
-export interface McpSettings {
-  enabled: boolean;
-  access: Access;
-}
-
-export const SETTINGS_FILE = join(".gumply", "mcp.json");
+export const SETTINGS_FILE = join(...MCP_SETTINGS_PATH.split("/"));
 
 export function readSettings(vault: string): McpSettings {
-  let raw: unknown;
+  let text: string | null = null;
   try {
-    raw = JSON.parse(readFileSync(join(vault, SETTINGS_FILE), "utf8"));
+    text = readFileSync(join(vault, SETTINGS_FILE), "utf8");
   } catch {
-    return { enabled: true, access: "read" };
+    text = null;
   }
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { enabled: true, access: "read" };
-  const data = raw as Record<string, unknown>;
-  const access = ACCESS_LEVELS.includes(data.access as Access) ? (data.access as Access) : "read";
-  return { enabled: data.enabled !== false, access };
+  return parseMcpSettings(text);
 }
 
 export function rank(access: Access): number {

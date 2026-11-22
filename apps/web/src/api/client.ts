@@ -10,6 +10,8 @@ import type {
   CanvasBoard,
   DailyNoteSettings,
   Attachment,
+  McpSettingsPatch,
+  McpSettingsResponse,
   VaultImage,
   LinkableFile,
   NotionImportReport,
@@ -75,6 +77,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       newVaultPage = firstPage;
     }
   }
+
+  const files = response.headers.get("x-gumply-files");
+  if (files !== null) noteFileIndexVersion(files);
 
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
@@ -223,6 +228,25 @@ function mutate<T>(task: () => Promise<T>): Promise<T> {
   return result;
 }
 
+/** The server's linkable-files version last seen on `GET /pages` (#jxww67d9). */
+let fileIndexVersion: string | null = null;
+const fileIndexListeners = new Set<() => void>();
+
+/**
+ * Call `listener` when the vault's linkable files changed outside this tab
+ * (another app, a sync tool, a second tab), seen on the page-list poll.
+ */
+export function onFileIndexChanged(listener: () => void): () => void {
+  fileIndexListeners.add(listener);
+  return () => fileIndexListeners.delete(listener);
+}
+
+function noteFileIndexVersion(version: string): void {
+  const before = fileIndexVersion;
+  fileIndexVersion = version;
+  if (before !== null && before !== version) for (const listener of fileIndexListeners) listener();
+}
+
 const attachmentListeners = new Set<(attachment: Attachment) => void>();
 
 /** Call `listener` after each upload or image import (#zawz963a: links that missed may resolve now). */
@@ -287,6 +311,11 @@ export const api = {
   /** #w6i6e6u7: the server downloads a remote image into attachments/. */
   importAttachment: (url: string): Promise<Attachment> =>
     request<Attachment>("/attachments/import", { method: "POST", body: JSON.stringify({ url }) }).then(attachmentSaved),
+
+  /** A3 (spec/api-mcp-settings): Settings → MCP. */
+  mcpSettings: (): Promise<McpSettingsResponse> => request("/mcp/settings"),
+  setMcpSettings: (patch: McpSettingsPatch): Promise<McpSettingsResponse> =>
+    request("/mcp/settings", { method: "PUT", body: JSON.stringify(patch) }),
 
   /** v0.7 C: the templates folder and its pages. */
   listTemplates: (): Promise<{ folder: string; templates: PageMeta[] }> => request("/templates"),

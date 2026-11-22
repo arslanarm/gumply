@@ -1,0 +1,741 @@
+/*
+ * G1: the stylesheet an exported page carries (one self-contained .html).
+ * The app's values (styles.css: theme, editor typography, callouts, code
+ * colours, palette), for static markup only: no editing UI, no script.
+ * Theme: <html data-theme="light|dark|system">. Print rules at the end (G2).
+ */
+
+html[data-theme] {
+  color-scheme: light;
+  --surface-page: #ffffff;
+  --text: #26251f;
+  --muted: #6f6d65;
+  --border: #e5e3dc;
+  --accent: #4f46e5;
+  --hover: #ebeae5;
+  --code-keyword: #cf222e;
+  --code-string: #0a3069;
+  --code-number: #0550ae;
+  --code-comment: #6e7781;
+  --code-title: #8250df;
+  --code-type: #953800;
+  --code-tag: #116329;
+  --code-meta: #6639ba;
+  --code-added: #116329;
+  --code-added-bg: #dafbe1;
+  --code-removed: #82071e;
+  --code-removed-bg: #ffebe9;
+  --color-red-rgb: 233, 49, 71;
+  --color-orange-rgb: 236, 117, 0;
+  --color-yellow-rgb: 224, 172, 0;
+  --color-green-rgb: 8, 185, 78;
+  --color-cyan-rgb: 0, 191, 188;
+  --color-blue-rgb: 8, 109, 221;
+  --color-purple-rgb: 120, 82, 238;
+  --color-pink-rgb: 213, 57, 132;
+  --mono-rgb-100: 0, 0, 0;
+  --mark: color-mix(in srgb, #f5d90a 45%, transparent);
+  --tint: 0.07;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-page: #191919;
+  --text: #ececec;
+  --muted: #a3a39b;
+  --border: #333331;
+  --accent: #8b8bf0;
+  --hover: #2a2a28;
+  --code-keyword: #ff7b72;
+  --code-string: #a5d6ff;
+  --code-number: #79c0ff;
+  --code-comment: #8b949e;
+  --code-title: #d2a8ff;
+  --code-type: #ffa657;
+  --code-tag: #7ee787;
+  --code-meta: #d2a8ff;
+  --code-added: #aff5b4;
+  --code-added-bg: #033a16;
+  --code-removed: #ffdcd7;
+  --code-removed-bg: #67060c;
+  --color-red-rgb: 251, 70, 76;
+  --color-orange-rgb: 233, 151, 63;
+  --color-yellow-rgb: 224, 222, 113;
+  --color-green-rgb: 68, 207, 110;
+  --color-cyan-rgb: 83, 223, 221;
+  --color-blue-rgb: 2, 122, 255;
+  --color-purple-rgb: 168, 130, 255;
+  --color-pink-rgb: 250, 153, 205;
+  --mono-rgb-100: 255, 255, 255;
+  --mark: color-mix(in srgb, #d8b600 38%, transparent);
+  --tint: 0.1;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] {
+    color-scheme: dark;
+    --surface-page: #191919;
+    --text: #ececec;
+    --muted: #a3a39b;
+    --border: #333331;
+    --accent: #8b8bf0;
+    --hover: #2a2a28;
+    --code-keyword: #ff7b72;
+    --code-string: #a5d6ff;
+    --code-number: #79c0ff;
+    --code-comment: #8b949e;
+    --code-title: #d2a8ff;
+    --code-type: #ffa657;
+    --code-tag: #7ee787;
+    --code-meta: #d2a8ff;
+    --code-added: #aff5b4;
+    --code-added-bg: #033a16;
+    --code-removed: #ffdcd7;
+    --code-removed-bg: #67060c;
+    --color-red-rgb: 251, 70, 76;
+    --color-orange-rgb: 233, 151, 63;
+    --color-yellow-rgb: 224, 222, 113;
+    --color-green-rgb: 68, 207, 110;
+    --color-cyan-rgb: 83, 223, 221;
+    --color-blue-rgb: 2, 122, 255;
+    --color-purple-rgb: 168, 130, 255;
+    --color-pink-rgb: 250, 153, 205;
+    --mono-rgb-100: 255, 255, 255;
+    --mark: color-mix(in srgb, #d8b600 38%, transparent);
+    --tint: 0.1;
+  }
+}
+
+html {
+  --color-red: rgb(var(--color-red-rgb));
+  --color-orange: rgb(var(--color-orange-rgb));
+  --color-yellow: rgb(var(--color-yellow-rgb));
+  --color-green: rgb(var(--color-green-rgb));
+  --color-cyan: rgb(var(--color-cyan-rgb));
+  --color-blue: rgb(var(--color-blue-rgb));
+  --color-purple: rgb(var(--color-purple-rgb));
+  --color-pink: rgb(var(--color-pink-rgb));
+  --text-muted: var(--muted);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body.export {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.export.has-tint {
+  background:
+    linear-gradient(rgba(var(--page-tint-rgb), var(--tint)), rgba(var(--page-tint-rgb), var(--tint))),
+    var(--surface-page);
+  min-height: 100vh;
+}
+
+/* ---------- Page frame: cover, title, properties ---------- */
+
+.export-cover {
+  height: 30vh;
+  min-height: 160px;
+  max-height: 280px;
+  overflow: hidden;
+}
+
+.export-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover-gradient-sunrise { background: linear-gradient(120deg, rgba(var(--color-orange-rgb), 0.75), rgba(var(--color-pink-rgb), 0.7)); }
+.cover-gradient-ocean { background: linear-gradient(120deg, rgba(var(--color-blue-rgb), 0.75), rgba(var(--color-cyan-rgb), 0.65)); }
+.cover-gradient-forest { background: linear-gradient(120deg, rgba(var(--color-green-rgb), 0.7), rgba(var(--color-cyan-rgb), 0.55)); }
+.cover-gradient-dusk { background: linear-gradient(120deg, rgba(var(--color-purple-rgb), 0.75), rgba(var(--color-blue-rgb), 0.6)); }
+.cover-gradient-peach { background: linear-gradient(120deg, rgba(var(--color-yellow-rgb), 0.6), rgba(var(--color-orange-rgb), 0.55)); }
+.cover-gradient-slate { background: linear-gradient(120deg, rgba(var(--mono-rgb-100), 0.28), rgba(var(--color-blue-rgb), 0.3)); }
+
+.export-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 72px 24px 64px;
+}
+
+.export-page.has-cover {
+  padding-top: 40px;
+}
+
+.export-icon {
+  display: block;
+  font-size: 3.4rem;
+  line-height: 1.1;
+  margin-bottom: 0.35rem;
+}
+
+.export-title {
+  margin: 0 0 0.6rem;
+  font-size: 2.5rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.export-properties {
+  border-collapse: collapse;
+  margin: 0.4rem 0 1.2rem;
+  font-size: 0.9rem;
+}
+
+.export-properties th {
+  min-width: 140px;
+  padding: 0.3rem 1rem 0.3rem 0;
+  color: var(--muted);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+
+.export-properties td {
+  padding: 0.3rem 0;
+  overflow-wrap: anywhere;
+}
+
+.export-footer {
+  margin-top: 3rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+/* ---------- Body: the editor's typography ---------- */
+
+.export-body {
+  word-break: break-word;
+}
+
+.export-body > * + * {
+  margin-top: 0.3em;
+}
+
+.export-body p {
+  margin: 0.12em 0;
+}
+
+.export-body h1 {
+  font-size: 1.75rem;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  margin: 1.15em 0 0.2em;
+}
+
+.export-body h2 {
+  font-size: 1.4rem;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  margin: 1em 0 0.15em;
+}
+
+.export-body h3,
+.export-body h4,
+.export-body h5,
+.export-body h6 {
+  font-size: 1.15rem;
+  line-height: 1.35;
+  font-weight: 600;
+  margin: 0.9em 0 0.1em;
+}
+
+.export-body ul,
+.export-body ol {
+  padding-left: 1.5rem;
+  margin: 0.2em 0;
+}
+
+.export-body li {
+  margin: 0.12em 0;
+}
+
+.export-body li > p {
+  margin: 0;
+}
+
+.export-body blockquote {
+  border-left: 3px solid var(--border);
+  margin: 0.5em 0;
+  padding-left: 0.9rem;
+}
+
+.export-body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.6em 0;
+}
+
+.export-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.export-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.export-body mark {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.md-bg-color {
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.tag-chip {
+  padding: 0.05em 0.35em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: color-mix(in srgb, var(--accent) 85%, var(--text));
+  font-size: 0.92em;
+}
+
+.wiki-link {
+  color: var(--accent);
+}
+
+span.wiki-link {
+  text-decoration: none;
+}
+
+.wiki-link.is-unresolved {
+  color: var(--muted);
+}
+
+/* Tables */
+.export-body table,
+.export-base table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.92rem;
+}
+
+.export-body th,
+.export-body td,
+.export-base th,
+.export-base td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.export-body th,
+.export-base th {
+  background: rgba(var(--mono-rgb-100), 0.04);
+  font-weight: 600;
+}
+
+/* Task lists: read-only boxes, done items struck through. */
+.export-body ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.2rem;
+}
+
+.export-body ul[data-type="taskList"] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.export-body ul[data-type="taskList"] > li > label {
+  margin-top: 0.18rem;
+}
+
+.export-body ul[data-type="taskList"] > li > div {
+  flex: 1;
+}
+
+.export-body input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.export-body ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* From f454953: a plain item in the same list as tasks keeps its bullet. */
+.export-body ul[data-type="taskList"] > li:not([data-type="taskItem"]) {
+  display: list-item;
+  list-style: disc;
+  margin-left: 1.4em;
+}
+
+/* Loose lists: the item's own spacing, and the box level with the first line. */
+.export-body li[data-type="taskItem"] > div > p {
+  margin: 0.25em 0;
+}
+
+.export-body li[data-type="taskItem"] > div > p:first-child {
+  margin-top: 0;
+}
+
+/* Code */
+.export-body code {
+  background: var(--hover);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86em;
+}
+
+.export-body pre {
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.export-body pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+pre .hljs-keyword, pre .hljs-selector-tag, pre .hljs-doctag, pre .hljs-template-tag, pre .hljs-type.hljs-keyword { color: var(--code-keyword); }
+pre .hljs-string, pre .hljs-regexp, pre .hljs-char, pre .hljs-template-variable, pre .hljs-meta .hljs-string { color: var(--code-string); }
+pre .hljs-number, pre .hljs-literal, pre .hljs-attr, pre .hljs-attribute, pre .hljs-variable.language_, pre .hljs-operator,
+pre .hljs-symbol, pre .hljs-selector-attr, pre .hljs-selector-class, pre .hljs-selector-id { color: var(--code-number); }
+pre .hljs-comment, pre .hljs-quote { color: var(--code-comment); font-style: italic; }
+pre .hljs-title, pre .hljs-title.function_, pre .hljs-title.class_, pre .hljs-section { color: var(--code-title); }
+pre .hljs-type, pre .hljs-built_in, pre .hljs-variable, pre .hljs-params, pre .hljs-property { color: var(--code-type); }
+pre .hljs-name, pre .hljs-tag, pre .hljs-selector-pseudo, pre .hljs-bullet { color: var(--code-tag); }
+pre .hljs-meta, pre .hljs-meta .hljs-keyword { color: var(--code-meta); }
+pre .hljs-addition { color: var(--code-added); background: var(--code-added-bg); }
+pre .hljs-deletion { color: var(--code-removed); background: var(--code-removed-bg); }
+pre .hljs-emphasis { font-style: italic; }
+pre .hljs-strong { font-weight: 600; }
+
+/* Callouts: Obsidian's colours, always open. */
+.callout {
+  --callout-rgb: 8, 109, 221;
+  position: relative;
+  margin: 0.55em 0;
+  padding: 0.7rem 0.95rem 0.7rem 2.6rem;
+  border-radius: 6px;
+  background: rgba(var(--callout-rgb), 0.08);
+  border: 1px solid rgba(var(--callout-rgb), 0.16);
+}
+
+.callout[data-callout-style="abstract"], .callout[data-callout-style="tip"] { --callout-rgb: 0, 160, 158; }
+.callout[data-callout-style="success"] { --callout-rgb: 8, 155, 66; }
+.callout[data-callout-style="question"], .callout[data-callout-style="warning"] { --callout-rgb: 214, 106, 0; }
+.callout[data-callout-style="failure"], .callout[data-callout-style="danger"], .callout[data-callout-style="bug"] { --callout-rgb: 221, 44, 66; }
+.callout[data-callout-style="example"] { --callout-rgb: 120, 82, 238; }
+.callout[data-callout-style="quote"] { --callout-rgb: 120, 119, 116; }
+
+html[data-theme="dark"] .callout { --callout-rgb: 2, 122, 255; }
+html[data-theme="dark"] .callout[data-callout-style="abstract"], html[data-theme="dark"] .callout[data-callout-style="tip"] { --callout-rgb: 83, 223, 221; }
+html[data-theme="dark"] .callout[data-callout-style="success"] { --callout-rgb: 68, 207, 110; }
+html[data-theme="dark"] .callout[data-callout-style="question"], html[data-theme="dark"] .callout[data-callout-style="warning"] { --callout-rgb: 233, 151, 63; }
+html[data-theme="dark"] .callout[data-callout-style="failure"], html[data-theme="dark"] .callout[data-callout-style="danger"], html[data-theme="dark"] .callout[data-callout-style="bug"] { --callout-rgb: 251, 70, 76; }
+html[data-theme="dark"] .callout[data-callout-style="example"] { --callout-rgb: 168, 130, 255; }
+html[data-theme="dark"] .callout[data-callout-style="quote"] { --callout-rgb: 158, 158, 158; }
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] .callout { --callout-rgb: 2, 122, 255; }
+  html[data-theme="system"] .callout[data-callout-style="abstract"], html[data-theme="system"] .callout[data-callout-style="tip"] { --callout-rgb: 83, 223, 221; }
+  html[data-theme="system"] .callout[data-callout-style="success"] { --callout-rgb: 68, 207, 110; }
+  html[data-theme="system"] .callout[data-callout-style="question"], html[data-theme="system"] .callout[data-callout-style="warning"] { --callout-rgb: 233, 151, 63; }
+  html[data-theme="system"] .callout[data-callout-style="failure"], html[data-theme="system"] .callout[data-callout-style="danger"], html[data-theme="system"] .callout[data-callout-style="bug"] { --callout-rgb: 251, 70, 76; }
+  html[data-theme="system"] .callout[data-callout-style="example"] { --callout-rgb: 168, 130, 255; }
+  html[data-theme="system"] .callout[data-callout-style="quote"] { --callout-rgb: 158, 158, 158; }
+}
+
+.callout-content > * + * {
+  margin-top: 0.3em;
+}
+
+.callout-content > p,
+.callout-body > p {
+  margin: 0.12em 0;
+}
+
+.callout-title {
+  font-weight: 600;
+  color: rgb(var(--callout-rgb));
+  min-height: 1.6em;
+}
+
+.callout-icon {
+  position: absolute;
+  top: 0.7rem;
+  left: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.6em;
+  width: 1.5rem;
+  color: rgb(var(--callout-rgb));
+}
+
+/* Columns (#d93qerr7): the preview renderer's .md-columns / .md-column;
+   a column's width comes as an inline `flex: N 1 0`. Stacked when narrow. */
+.export-body .md-columns {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0.4em 0;
+}
+
+.export-body .md-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.export-body .md-column > :first-child {
+  margin-top: 0;
+}
+
+.export-body .md-column > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .export-body .md-columns {
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+}
+
+/* F1/F2: math (MathML) and diagrams (inline SVG). */
+.export-body .math-block {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+
+.export-body .math-error {
+  color: var(--color-red);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.export-diagram {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+
+.export-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* "Follow the system": both drawings are in the file; show the one that fits. */
+.export-diagram .diagram-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] .export-diagram .diagram-light {
+    display: none;
+  }
+
+  html[data-theme="system"] .export-diagram .diagram-dark {
+    display: block;
+  }
+}
+
+/* Print is always light (G2). */
+@media print {
+  html[data-theme] .export-diagram .diagram-light {
+    display: block;
+  }
+
+  html[data-theme] .export-diagram .diagram-dark {
+    display: none;
+  }
+}
+
+/* ---------- Inlined previews, database views, boards, notes ---------- */
+
+.export-embed {
+  margin: 0.6em 0;
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--border);
+  background: rgba(var(--mono-rgb-100), 0.025);
+  border-radius: 0 6px 6px 0;
+}
+
+.export-embed-title,
+.export-base-title {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+.export-base {
+  margin: 0.8em 0;
+}
+
+.export-table-wrap {
+  overflow-x: auto;
+}
+
+.export-base td.is-check {
+  text-align: center;
+}
+
+.export-base-count {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.export-board,
+.export-file {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.export-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* ---------- Print (G2: PDF from the desktop app, or the browser's print) ---------- */
+
+@media print {
+  /* Light only, whatever the theme chosen for the screen. */
+  html[data-theme] {
+    color-scheme: light;
+    --surface-page: #ffffff;
+    --text: #1f1e1a;
+    --muted: #5f5d56;
+    --border: #d9d7cf;
+    --accent: #3f37c9;
+    --hover: #f2f1ed;
+  }
+
+  body.export,
+  body.export.has-tint {
+    background: none;
+    font-size: 11pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .export-page,
+  .export-page.has-cover {
+    max-width: none;
+    padding: 0;
+  }
+
+  /* The cover stays, smaller; the page margins come from @page. */
+  .export-cover {
+    height: 38mm;
+    min-height: 0;
+    max-height: 38mm;
+    margin-bottom: 8mm;
+    border-radius: 3mm;
+  }
+
+  .export-title {
+    font-size: 24pt;
+  }
+
+  /* Headings never end a page; blocks don't split where it can be helped. */
+  .export-title,
+  .export-body h1,
+  .export-body h2,
+  .export-body h3,
+  .export-body h4,
+  .export-embed-title,
+  .export-base-title {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .export-body img,
+  .export-diagram,
+  .export-body .math-block,
+  .callout,
+  .export-properties,
+  .export-body li,
+  .export-body tr,
+  .export-base tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Columns keep side by side on paper; a column isn't split across pages. */
+  .export-body .md-columns {
+    flex-direction: row;
+  }
+
+  .export-body .md-column {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Images and diagrams fit the paper. */
+  .export-body img,
+  .export-diagram svg {
+    max-width: 100%;
+    max-height: 90vh;
+    object-fit: contain;
+  }
+
+  /* Code wraps instead of running off the page. */
+  .export-body pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+
+  /* Long tables: the header repeats on every page; nothing scrolls. */
+  .export-body thead,
+  .export-base thead {
+    display: table-header-group;
+  }
+
+  .export-table-wrap,
+  .export-diagram,
+  .export-body .math-block {
+    overflow: visible;
+  }
+
+  .export-body a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .export-footer {
+    display: none;
+  }
+}

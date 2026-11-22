@@ -19,7 +19,16 @@ import { Icon } from "./Icon.js";
 
 const THEMES: readonly ThemePreference[] = ["system", "light", "dark"];
 
-export function SettingsMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function SettingsMenu({
+  open,
+  onOpenChange,
+  onOpenMcp,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** A3: Settings → AI apps (MCP)…. */
+  onOpenMcp?: () => void;
+}) {
   const t = useT();
   // Re-render when the language changes (the selected option moves).
   useLanguage();
@@ -115,6 +124,21 @@ export function SettingsMenu({ open, onOpenChange }: { open: boolean; onOpenChan
               ))}
             </div>
           </div>
+          {onOpenMcp ? (
+            <button
+              type="button"
+              className="settings-link"
+              data-testid="settings-mcp"
+              onClick={() => {
+                onOpenChange(false);
+                onOpenMcp();
+              }}
+            >
+              <Icon name="graph" size={15} />
+              <span>{t("settings.mcp.open")}</span>
+              <Icon name="chevronRight" size={14} />
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

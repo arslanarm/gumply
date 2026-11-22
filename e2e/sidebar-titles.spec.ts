@@ -67,3 +67,56 @@ test.describe('sidebar title width (#yw53nria)', () => {
     await expect.poll(async () => (await geometry(page)).actionsOpacity).toBe('1');
   });
 });
+
+test.describe('sidebar look (v0.7 RC audit, for v0.8)', () => {
+  test('dark mode: the current row is a neutral tint, not indigo; light keeps the accent', async ({ page, vault }) => {
+    await vault.seed([{ title: 'Home', content: 'Home' }, { title: 'Other', content: 'Other' }]);
+    const colors = (id: string) =>
+      page.getByTestId(`page-item-${id}`).evaluate((row) => {
+        const style = getComputedStyle(row);
+        return { background: style.backgroundColor, color: style.color };
+      });
+    const channels = (color: string) => color.match(/\d+/g)!.slice(0, 3).map(Number);
+
+    await page.addInitScript(() => localStorage.setItem('gumply:theme', window.name || 'dark'));
+    await page.goto('/#/Home');
+    await expect(page.getByTestId('page-item-Home')).toHaveClass(/is-selected/);
+    await page.mouse.move(800, 500);
+    const dark = await colors('Home');
+    const [r, g, b] = channels(dark.background);
+    // Grey: the channels within a few steps of each other.
+    expect(Math.max(r!, g!, b!) - Math.min(r!, g!, b!)).toBeLessThanOrEqual(4);
+    // The same text colour as any other row.
+    expect(dark.color).toBe((await colors('Other')).color);
+
+    // Light keeps the accent: indigo text on a lavender fill.
+    await page.evaluate(() => {
+      window.name = 'light';
+    });
+    await page.reload();
+    await expect(page.getByTestId('page-item-Home')).toHaveClass(/is-selected/);
+    await page.mouse.move(800, 500);
+    const light = await colors('Home');
+    const [lr, , lb] = channels(light.color);
+    expect(lb! - lr!).toBeGreaterThan(80);
+  });
+
+  test('rows scrolling under the footer fade out', async ({ page, vault }) => {
+    await vault.seed(Array.from({ length: 40 }, (_, index) => ({ title: `Note ${String(index).padStart(2, '0')}`, content: 'x' })));
+    await page.goto('/#/Note 00');
+    await expect(page.getByTestId('page-item-Note 39')).toBeAttached();
+    const fade = await page.getByTestId('page-tree').evaluate((tree) => {
+      const after = getComputedStyle(tree, '::after');
+      return { position: after.position, image: after.backgroundImage };
+    });
+    expect(fade.position).toBe('sticky');
+    expect(fade.image).toContain('linear-gradient');
+    // Scrolled to the end, the last row is fully clear of the fade.
+    await page.getByTestId('page-tree').evaluate((tree) => tree.scrollTo(0, tree.scrollHeight));
+    const clear = await page.getByTestId('page-tree').evaluate((tree) => {
+      const row = tree.querySelector('[data-page-id="Note 39"]')!.getBoundingClientRect();
+      return tree.getBoundingClientRect().bottom - row.bottom;
+    });
+    expect(clear).toBeGreaterThanOrEqual(24);
+  });
+});

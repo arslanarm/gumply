@@ -706,7 +706,10 @@
     "today": "Open today's note",
     "todayWords": "",
     "pageTemplate": "New page from template…",
-    "pageTemplateWords": ""
+    "pageTemplateWords": "",
+    "exportWords": "",
+    "importWords": "",
+    "pdfWords": ""
   },
   "callout": {
     "types": {
@@ -767,7 +770,39 @@
     "title": "Settings",
     "language": "Language",
     "languageSystem": "Same as system",
-    "languageCommand": "Language…"
+    "languageCommand": "Language…",
+    "mcp": {
+      "open": "AI apps (MCP)…",
+      "title": "AI apps (MCP)",
+      "intro": "Let AI apps such as Claude Code and Claude Desktop use this vault through the Model Context Protocol. They run Gumply on this computer; nothing goes over the network.",
+      "enabled": "Let AI apps use this vault",
+      "access": "What AI apps may do",
+      "accessRead": "Read only",
+      "accessReadHint": "Search and read pages, tags, links and the graph.",
+      "accessAppend": "Read and add",
+      "accessAppendHint": "Also create pages, add to the end of a page, and add cards to boards. Never changes what's already written.",
+      "accessEdit": "Read and edit",
+      "accessEditHint": "Also change and trash pages. Every change is kept in history and can be undone, but a note with misleading text could trick an AI into editing other pages. Keep “Read and add” unless you need this.",
+      "restartNote": "After allowing more, restart the AI app's connection to Gumply. Allowing less takes effect at once.",
+      "setup": "Connect an AI app",
+      "claudeCode": "Claude Code",
+      "claudeCodeHint": "Run this in a terminal:",
+      "claudeDesktop": "Claude Desktop",
+      "claudeDesktopHint": "Add this to {{path}}, then quit Claude Desktop completely and open it again:",
+      "npmHint": "Needs the gumply command on your PATH.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "recent": "Recent activity",
+      "recentEmpty": "No changes by AI apps yet.",
+      "recentRow": "{{tool}} · {{client}}",
+      "loading": "Loading…",
+      "loadFailed": "Couldn't load the MCP settings: {{error}}",
+      "saveFailed": "Couldn't save the MCP settings: {{error}}",
+      "offNote": "AI apps can't use this vault while this is off.",
+      "raiseAppend": "Let AI apps add pages and text to this vault?",
+      "raiseEdit": "Let AI apps edit and trash pages in this vault?",
+      "allow": "Allow"
+    }
   },
   "desktop": {
     "menu": {
@@ -804,6 +839,8 @@
       "close": "Close Window",
       "help": "&Help",
       "about": "About Gumply",
+      "importNotion": "Import from Notion…",
+      "exportPdf": "Export as PDF…",
       "licences": "Open-Source Licences"
     },
     "about": {
@@ -1034,6 +1071,7 @@
     "label": "Daily note"
   },
   "properties": {
+    "editValue": "Edit {{property}}",
     "label": "Properties",
     "add": "Add property",
     "namePlaceholder": "Property name",
@@ -1279,18 +1317,6 @@
     "usedTimes_many": "Used {{count}} times, nested tags included; code stays as it is.",
     "usedTimes_other": "Used {{count}} times, nested tags included; code stays as it is."
   },
-  "math": {
-    "inlineHint": "Click to edit the formula",
-    "sourceLabel": "Formula source (LaTeX)",
-    "empty": "Empty formula. Click to write LaTeX.",
-    "error": "Can't render this formula"
-  },
-  "diagram": {
-    "clickToEdit": "Click to edit the diagram",
-    "empty": "Empty diagram. Click to write Mermaid.",
-    "failed": "The diagram couldn't be shown.",
-    "error": "Can't draw this diagram"
-  },
   "cover": {
     "add": "Add cover",
     "change": "Change cover",
@@ -1331,5 +1357,134 @@
   "background": {
     "button": "Background",
     "label": "Page background"
+  },
+  "export": {
+    "menuItem": "Export as HTML…",
+    "command": "Export page as HTML",
+    "dialogTitle": "Export as HTML",
+    "dialogHint": "One file with the page, its images and previews. It opens in any browser, offline.",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "Follow the system",
+    "links": "Links to other pages",
+    "linksText": "Plain text",
+    "linksFiles": "Links to sibling .html files",
+    "export": "Export",
+    "exporting": "Exporting…",
+    "failed": "Couldn't export the page: {{error}}",
+    "done": "Exported “{{name}}”",
+    "missingImage": "[Image not found: {{name}}]",
+    "remoteImage": "[Web image not included: {{url}}]",
+    "missingPage": "[Page not found: {{name}}]",
+    "loopPage": "[“{{name}}” includes itself]",
+    "tooDeep": "[“{{name}}”: previews nested too deep]",
+    "board": "Whiteboard",
+    "baseMissing": "This database view couldn't be loaded.",
+    "moreRows_one": "+{{count}} more row",
+    "moreRows_other": "+{{count}} more rows",
+    "rows_one": "{{count}} row",
+    "rows_other": "{{count}} rows",
+    "exportedFrom": "Exported from Gumply",
+    "pdf": {
+      "menuItem": "Export as PDF…",
+      "command": "Export page as PDF",
+      "dialogTitle": "Export as PDF",
+      "dialogHint": "The page on paper: the cover, title, images, math and diagrams, always in the light theme.",
+      "size": "Paper size",
+      "sizeA4": "A4",
+      "sizeLetter": "Letter",
+      "margins": "Margins",
+      "marginsNormal": "Normal",
+      "marginsNarrow": "Narrow"
+    }
+  },
+  "notionImport": {
+    "menuItem": "Import from Notion…",
+    "command": "Import from Notion…",
+    "title": "Import from Notion",
+    "howTo": "In Notion, open ⋯ → Export, choose “Markdown & CSV” with “Include subpages” on, and download the zip. Then pick it here.",
+    "drop": "Drop the Notion export zip here, or click to choose it",
+    "chosen": "{{name}} · {{size}}",
+    "change": "Choose another file",
+    "target": "Import into",
+    "targetRoot": "The vault's top level",
+    "targetHint": "A new “Notion import” folder is made there. Nothing that's already in the vault is changed.",
+    "start": "Import",
+    "cancel": "Cancel",
+    "close": "Close",
+    "open": "Open the folder",
+    "tryAgain": "Try again",
+    "notZip": "That isn't a zip file. Pick the .zip Notion downloaded.",
+    "step": {
+      "reading": "Reading the zip…",
+      "planning": "Working out pages and links…",
+      "writing": "Writing files…",
+      "done": "Done",
+      "failed": "Import failed"
+    },
+    "progress": "{{done}} of {{total}} files",
+    "doneTitle": "Imported into “{{folder}}”",
+    "reimportNote": "Your earlier import is unchanged.",
+    "pages_one": "{{count}} page",
+    "pages_other": "{{count}} pages",
+    "databases_one": "{{count}} database",
+    "databases_other": "{{count}} databases",
+    "rows_one": "{{count}} row",
+    "rows_other": "{{count}} rows",
+    "attachments_one": "{{count}} image or file",
+    "attachments_other": "{{count}} images and files",
+    "convertedTitle": "Converted",
+    "converted": {
+      "pageLinks": "Links between pages → [[links]]: {{count}}",
+      "mentions": "@-mentions → [[links]]: {{count}}",
+      "databaseEmbeds": "Inline databases → database views: {{count}}",
+      "databaseLinks": "Database links → links: {{count}}",
+      "attachmentLinks": "Image and file links: {{count}}",
+      "callouts": "Callouts (their icons aren't kept): {{count}}"
+    },
+    "skippedTitle_one": "Left out: {{count}} file",
+    "skippedTitle_other": "Left out: {{count}} files",
+    "missingTitle_one": "Links to a file missing from the zip: {{count}}",
+    "missingTitle_other": "Links to files missing from the zip: {{count}}",
+    "outsideTitle_one": "Links to a page that wasn't exported: {{count}}",
+    "outsideTitle_other": "Links to pages that weren't exported: {{count}}",
+    "inPage": "in {{page}}",
+    "lostTitle": "Not in Notion's export",
+    "lostHint": "Notion's Markdown & CSV export leaves these out, so they couldn't be imported:",
+    "lost": {
+      "views": "Database views: filters, sorts and layouts (the rows and their CSV files are imported; views come in a later version)",
+      "optionColours": "Colours of select options",
+      "textColours": "Text and background colours",
+      "toggles": "Toggles (they arrive as lists)",
+      "comments": "Comments",
+      "synced": "Synced blocks (they arrive as copies)",
+      "permissions": "Sharing and permissions",
+      "people": "Who people properties point to",
+      "embeds": "Embeds of other apps (they arrive as links)"
+    },
+    "reportFile": "The full report is saved as “Import report.md” in the new folder.",
+    "errors": {
+      "running": "An import is already running in this vault. Wait for it to finish, then try again.",
+      "tooLarge": "That file is too large to import (over {{limit}}).",
+      "notExport": "This doesn't look like a Notion “Markdown & CSV” export.",
+      "missingTarget": "The folder to import into no longer exists.",
+      "offline": "Couldn't reach Gumply. Check that it's still running.",
+      "other": "The import didn't work.",
+      "failed": "The import didn't finish: Gumply couldn't use this file as a Notion “Markdown & CSV” export."
+    },
+    "details": "Details: {{error}}"
+  },
+  "math": {
+    "inlineHint": "Click to edit the formula",
+    "sourceLabel": "Formula source (LaTeX)",
+    "empty": "Empty formula. Click to write LaTeX.",
+    "error": "Can't render this formula"
+  },
+  "diagram": {
+    "clickToEdit": "Click to edit the diagram",
+    "empty": "Empty diagram. Click to write Mermaid.",
+    "failed": "The diagram couldn't be shown.",
+    "error": "Can't draw this diagram"
   }
 }
