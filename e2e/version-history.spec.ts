@@ -179,8 +179,9 @@ test('a board\'s history: Preview draws the version; Changes marks cards added, 
   await expect(page.getByTestId('board-page')).toBeVisible();
   await openHistoryFromMenu(page, id);
   const dialog = page.getByTestId('history-dialog');
-  const version = dialog.getByTestId('history-item').filter({ hasNotText: 'Before restore' }).first();
-  await version.click();
+  // The version with the three earlier cards. (In dev, StrictMode's effect re-run can end the board's
+  // session at once, which adds an "End of editing" version equal to now: never the one to pick.)
+  await pickVersionWith(dialog, 'Remove me');
   const preview = dialog.getByTestId('history-board-preview').getByTestId('board-preview');
   await expect(preview).toHaveAttribute('data-nodes', '3');
   await expect(preview).toContainText('Remove me');
@@ -200,3 +201,16 @@ test('a board\'s history: Preview draws the version; Changes marks cards added, 
     .poll(async () => ((await (await request.get(`${API_URL}/api/boards/${encodeURIComponent(id)}`)).json()) as { board: { nodes: Array<{ id: string }> } }).board.nodes.map((node) => node.id))
     .toEqual(['a', 'b', 'c']);
 });
+
+/** Select the newest version whose preview shows `text` (it differs from now, so Restore is enabled). */
+async function pickVersionWith(dialog: ReturnType<Page['getByTestId']>, text: string) {
+  const items = dialog.getByTestId('history-item');
+  await expect(items.first()).toBeVisible();
+  const count = await items.count();
+  for (let index = 0; index < count; index += 1) {
+    await items.nth(index).click();
+    const preview = dialog.getByTestId('history-preview');
+    if (await preview.getByText(text, { exact: true }).first().isVisible({ timeout: 3_000 }).catch(() => false)) return;
+  }
+  throw new Error(`no version shows "${text}"`);
+}
