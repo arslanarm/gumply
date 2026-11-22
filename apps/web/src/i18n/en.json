@@ -412,6 +412,11 @@
       "title": "Inline equation",
       "hint": "A LaTeX formula in the text ($ … $)",
       "keywords": ""
+    },
+    "mermaid": {
+      "title": "Diagram",
+      "hint": "A Mermaid flowchart, sequence or other diagram",
+      "keywords": ""
     }
   },
   "keys": {
@@ -1268,5 +1273,11 @@
     "sourceLabel": "Formula source (LaTeX)",
     "empty": "Empty formula. Click to write LaTeX.",
     "error": "Can't render this formula"
+  },
+  "diagram": {
+    "clickToEdit": "Click to edit the diagram",
+    "empty": "Empty diagram. Click to write Mermaid.",
+    "failed": "The diagram couldn't be shown.",
+    "error": "Can't draw this diagram"
   }
 }

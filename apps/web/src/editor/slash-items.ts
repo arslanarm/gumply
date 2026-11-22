@@ -11,6 +11,9 @@ import { t } from "../i18n/index.js";
 import { requestEmbedPicker, requestPagePreviewPicker } from "./wikilink/suggestion-extension.js";
 import { requestPageTemplate } from "./page-template.js";
 
+/** F2: what /mermaid starts with: small, and shows how arrows and labels work. */
+const MERMAID_STARTER = "flowchart LR\n  A[Idea] --> B{Worth it?}\n  B -- yes --> C[Do it]\n  B -- no --> D[Park it]";
+
 /** Insert a math atom and open it for editing (its node view edits on click). */
 function insertMath(editor: Editor, range: Range, content: { type: string; attrs: Record<string, string> }): void {
   editor.chain().focus().deleteRange(range).insertContent(content).run();
@@ -241,6 +244,26 @@ export const SLASH_ITEMS: SlashItem[] = [
     },
     run: (editor, range) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+  },
+  {
+    // F2: a ```mermaid block with a small starter diagram, source open.
+    key: "mermaid",
+    get title() {
+      return t("slash.mermaid.title");
+    },
+    get hint() {
+      return t("slash.mermaid.hint");
+    },
+    get keywords() {
+      return withLocalKeywords(["mermaid", "diagram", "chart", "flowchart", "graph", "sequence"], t("slash.mermaid.keywords"));
+    },
+    run: (editor, range) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({ type: "codeBlock", attrs: { language: "mermaid" }, content: [{ type: "text", text: MERMAID_STARTER }] })
+        .run(),
   },
   {
     // F1: a `$$…$$` block, opened as source right away.

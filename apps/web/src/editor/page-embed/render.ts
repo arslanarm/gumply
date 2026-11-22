@@ -18,6 +18,7 @@ import { calloutStyle, defaultCalloutTitle } from "../callout/types.js";
 import { wikilinkMarkdownPlugin } from "../wikilink/markdown-plugin.js";
 import { parsePageEmbed } from "./markdown-plugin.js";
 import { mathMarkdownPlugin } from "../../lib/math-markdown.js";
+import { diagramMarkdownPlugin } from "../../lib/diagram-markdown.js";
 
 // markdown-it's types are an optional peer dependency (see the editor plugins).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -183,6 +184,8 @@ function createRenderer(): Any {
   md.core.ruler.push("text_decorations", textDecorations);
   // F1: math placeholders, typeset by the view (hydrateMath) with the editor's own detection rules.
   mathMarkdownPlugin(md as Any);
+  // F2: ```mermaid fences become diagram placeholders (drawn by hydrateDiagrams).
+  diagramMarkdownPlugin(md as Any);
   // Code keeps its language for the highlighter; content is escaped by markdown-it.
   return md;
 }

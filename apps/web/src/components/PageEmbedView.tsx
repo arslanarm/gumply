@@ -22,6 +22,7 @@ import { highlightToHtml } from "../editor/code/highlight-plugin.js";
 import { CHEVRON_ICON, calloutIcon, svgIcon } from "../editor/callout/types.js";
 import { renderEmbeddedMarkdown } from "../editor/page-embed/render.js";
 import { hydrateMath } from "../lib/math.js";
+import { hydrateDiagrams } from "../lib/diagram.js";
 import { useWikiLinkEnvironment, type WikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { useT } from "../i18n/index.js";
 import { isBoard } from "../lib/boards.js";
@@ -198,6 +199,8 @@ function EmbeddedContent({ target, part, chain, depth, env }: {
     );
     // F1: typeset `$…$` / `$$…$$` (KaTeX loads only when there is math).
     if (html.includes("data-math")) void hydrateMath(root);
+    // F2: ```mermaid diagrams (Mermaid loads only when there is one).
+    if (html.includes("data-mermaid")) void hydrateDiagrams(root);
   }, [html, page, env.pages, env.attachments, fileLinks, fileLinkVersion]);
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
