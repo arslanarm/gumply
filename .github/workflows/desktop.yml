@@ -7,6 +7,8 @@
 # - Every build is checked: the Electron fuses must be hardened in the shipped
 #   binary, and on Linux the desktop smoke tests run against the real app on a
 #   virtual display.
+# - The Linux .deb is installed for real and smoke-tested sandboxed, then
+#   purged (#s96835xj, scripts/deb-smoke.sh).
 # - Every installer is then inspected inside the build (#sj44x5ph,
 #   scripts/inspect-installers.mjs): names, versions, Windows FileDescription,
 #   .deb fields, fuses, app.asar contents, macOS signature, SHA-256. The job
@@ -121,6 +123,19 @@ jobs:
         shell: bash
         run: node scripts/inspect-installers.mjs --release release --version "${{ steps.version.outputs.version }}" --self-test
 
+      # #s96835xj: install the .deb for real and check it runs sandboxed on a
+      # stock Ubuntu 23.10+ setting (unprivileged user namespaces restricted
+      # by AppArmor): the profile is installed and loaded, the GUI and the
+      # `--mcp` snippet start without --no-sandbox, a copy outside /opt/Gumply
+      # aborts (the control), and purge removes the profile. It needs sudo,
+      # which the swarm server doesn't have, so it lives here.
+      - name: Install the .deb and smoke-test it sandboxed (Linux)
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop
+        env:
+          DEB_SMOKE_LOGS: ${{ github.workspace }}/test-results/deb-smoke
+        run: bash scripts/deb-smoke.sh release
+
       - uses: actions/upload-artifact@v7
         with:
           name: gumply-${{ runner.os }}
@@ -133,7 +148,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-test-results
-          path: test-results/desktop
+          path: |
+            test-results/desktop
+            test-results/deb-smoke
           if-no-files-found: ignore
 
   release:
