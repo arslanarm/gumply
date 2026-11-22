@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   ApiError,
   Attachment,
@@ -19,6 +20,7 @@ import type {
   TrashedDocument,
   TrashItem,
   BaseViewResult,
+  VaultImage,
 } from "@gumply/core";
 import { PAGE_LOOK_KEYS } from "@gumply/core";
 import { Hono, type Context } from "hono";
@@ -105,6 +107,10 @@ function isUploadedFile(value: unknown): value is UploadedFile {
     typeof (value as UploadedFile).arrayBuffer === "function"
   );
 }
+
+/** #3ht5gh6q: image files the cover picker offers. */
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+const MAX_LISTED_IMAGES = 2000;
 
 /** All `/api` routes; mounted by `createApp`. */
 export function createApiRoutes(store: VaultStore): Hono {
@@ -394,6 +400,29 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   api.get("/attachments", async (c) => {
     return c.json<Attachment[]>(await listAttachments(store.root));
+  });
+
+  // #3ht5gh6q: every image in the vault (the cover picker), from the
+  // #8k4ssrkb file index: never dot folders, `.trash` or `.gumply`. Newest
+  // first, then by path; read-only.
+  api.get("/files/images", async (c) => {
+    const paths = store.fileIndex.paths().filter((path) => IMAGE_FILE.test(path));
+    const found = await Promise.all(
+      paths.map(async (path) => {
+        try {
+          const info = await stat(join(store.root, path));
+          return info.isFile() ? { path, time: info.mtimeMs } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const images = found
+      .filter((item): item is { path: string; time: number } => item !== null)
+      .sort((a, b) => b.time - a.time || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+      .slice(0, MAX_LISTED_IMAGES)
+      .map(({ path, time }) => ({ path, name: path.slice(path.lastIndexOf("/") + 1), modified: new Date(time).toISOString() }));
+    return c.json<VaultImage[]>(images);
   });
 
   // #8k4ssrkb (spec/api-attachments-resolve): an Obsidian-style file link

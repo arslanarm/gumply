@@ -201,6 +201,16 @@ export interface HealthResponse {
   desktop?: boolean;
 }
 
+/** #3ht5gh6q: `GET /api/files/images`, an image anywhere in the vault. */
+export interface VaultImage {
+  /** Vault path, e.g. `att/photo.png`. */
+  path: string;
+  /** File name, e.g. `photo.png`. */
+  name: string;
+  /** Last modified, ISO. */
+  modified: string;
+}
+
 /** A file stored under `vault/attachments/` (D18). */
 export interface Attachment {
   /** Vault-relative path, e.g. `attachments/photo.png`. */
