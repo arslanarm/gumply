@@ -200,6 +200,27 @@ test.describe('making and editing columns (spec/columns §3)', () => {
     expect(text).toMatch(/^:::: \{\.columns\}\n::: \{\.column width="\d+%" style="x"\}\nLeft\n:::\n::: \{\.column width="\d+%"\}\nRight\n:::\n::::\n$/);
   });
 
+  test('a drag far past the edge stops at the 15% minimum, on either side', async ({ page, request, vault }) => {
+    void vault;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(page, request, ':::: {.columns}\n::: {.column}\nLeft\n:::\n::: {.column}\nRight\n:::\n::::\n');
+    const drag = async (dx: number) => {
+      const gutter = (await page.getByTestId('column-gutter').boundingBox())!;
+      await page.mouse.move(gutter.x + gutter.width / 2, gutter.y + gutter.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(gutter.x + gutter.width / 2 + dx, gutter.y + gutter.height / 2, { steps: 5 });
+      await page.mouse.up();
+      await saved(page);
+    };
+    const widths = async () => [...(await read()).matchAll(/width="(\d+)%"/g)].map((match) => Number(match[1]));
+    await drag(-2000);
+    await expect.poll(widths).toEqual([15, 85]);
+    await drag(4000);
+    await expect.poll(widths).toEqual([85, 15]);
+    // The narrow column still shows its text.
+    await expect(page.getByTestId('column').nth(1)).toContainText('Right');
+  });
+
   test('the resize gutter writes widths into the fences; a double-click resets them', async ({ page, request, vault }) => {
     void vault;
     await page.setViewportSize({ width: 1280, height: 800 });

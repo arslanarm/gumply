@@ -9,7 +9,8 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorView, NodeView } from "@tiptap/pm/view";
 import { t } from "../../i18n/index.js";
 
-const MIN_PERCENT = 10;
+/** A resize never makes a column narrower than this share of the row (@lead). */
+export const MIN_PERCENT = 15;
 
 interface Props {
   node: PMNode;
@@ -96,7 +97,9 @@ export function columnsView({ node: initial, view, getPos }: Props): NodeView {
       handle.classList.add("is-dragging");
       const onMove = (move: PointerEvent) => {
         const delta = ((move.clientX - startX) / rowWidth) * 100;
-        const left = Math.max(MIN_PERCENT, Math.min(pair - MIN_PERCENT, shares[i]! + delta));
+        // Each of the two keeps at least the minimum (or half the pair, if the pair is narrower than two minimums).
+        const floor = Math.min(MIN_PERCENT, pair / 2);
+        const left = Math.max(floor, Math.min(pair - floor, shares[i]! + delta));
         next = shares.map((share, k) => (k === i ? left : k === i + 1 ? pair - left : share));
         // Only the gutter line follows the pointer; the columns change once, on release.
         handle.style.left = `${startLeft + ((left - shares[i]!) / 100) * rowWidth}px`;
