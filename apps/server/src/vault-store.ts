@@ -111,6 +111,79 @@ import {
   type TrashItem,
 } from "@gumply/core";
 import { badRequest, conflict, notFound } from "./errors.js";
+import {
+  boardDiff,
+  budgetFor,
+  HISTORY_DIR,
+  historyDir,
+  historyKeys,
+  keyToId,
+  lineDiff,
+  moveHistory,
+  moveHistoryDir,
+  newestVersion,
+  pageKey,
+  pruneVault,
+  readHistory,
+  saveVersion,
+  setPinned,
+  sha256,
+  usage,
+  type DiffLine,
+  type HistoryEntry,
+  type HistoryMove,
+  type HistoryReason,
+  type HistorySource,
+  type HistoryUsage,
+} from "./history.js";
+
+/** One version in `GET /api/history/:id` (spec/version-history §7). */
+export interface HistoryItem {
+  file: string;
+  at: string;
+  source: HistorySource;
+  reason?: HistoryReason;
+  client?: string;
+  tool?: string;
+  bytes: number;
+  pinned: boolean;
+  restoredFrom?: string;
+  /** The page's title when this version was made, when it differs from now. */
+  title?: string;
+  /** Its folder then ("" for the top level), when it differs from now. */
+  folder?: string;
+}
+
+export interface HistoryList {
+  items: HistoryItem[];
+  /** Pass as `cursor` for the next (older) page of items. */
+  nextCursor?: string;
+  /** The file as it is now. */
+  current: { version: string; sha256: string | null };
+  /** Renames and moves, oldest first. */
+  moves: HistoryMove[];
+}
+
+export type HistoryDiff =
+  | { kind: "page"; lines: DiffLine[] }
+  | { kind: "whiteboard"; added: string[]; removed: string[]; changed: string[] };
+
+/** `GET /api/history-orphans`: the history of a page that no longer exists (§2.3). */
+export interface HistoryOrphan {
+  key: string;
+  /** The page's id at its last version. */
+  lastId: PageId;
+  title: string;
+  lastAt: string;
+  versions: number;
+  /** Its newest version's file (what "Restore" brings back by default). */
+  newest: string;
+}
+
+/** App versions while typing: at most one per 5 min (D41). */
+const HISTORY_COALESCE_MS = 5 * 60_000;
+/** An editing session ends 10 min after the last app save (D41). */
+const HISTORY_SESSION_MS = 10 * 60_000;
 import { PropertyTypesStore, readRawProperties, rewritePropertyLinks, typedProperties, type RawProperty } from "./properties.js";
 import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import {
@@ -527,12 +600,24 @@ export class VaultStore {
 
   /** v1.12 (D34): property types, shared with Obsidian when the vault has `.obsidian/`. */
   private readonly propertyTypes: PropertyTypesStore;
+  /**
+   * Version history (spec/version-history, D41): who this store writes for.
+   * The app's server is "app"; the MCP process is "mcp" (its versions are
+   * labelled as the AI app's, and it keeps no editing-session timer).
+   */
+  private readonly historySource: HistorySource;
+  /** The reason the current queued operation's writes get in history (default "edit"). */
+  private historyReason: HistoryReason | null = null;
+  /** Per page: the editing session's end (10 min without an app save). */
+  private readonly sessionTimers = new Map<PageId, ReturnType<typeof setTimeout>>();
+  private pruneTimer: ReturnType<typeof setTimeout> | null = null;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
   private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
 
-  constructor(root: string) {
+  constructor(root: string, options: { historySource?: HistorySource } = {}) {
     this.root = resolve(root);
     this.propertyTypes = new PropertyTypesStore(this.root);
+    this.historySource = options.historySource ?? "app";
   }
 
   async init(): Promise<void> {
@@ -546,6 +631,8 @@ export class VaultStore {
     this.watching = true;
     // Synchronous, so edits made right after start are already seen.
     this.syncDirectoryWatchers();
+    // The app that watches the vault also keeps its history in budget (§2.5).
+    this.schedulePrune();
   }
 
   /** Stop the vault watcher (used by tests and shutdown). */
@@ -557,6 +644,8 @@ export class VaultStore {
     }
     for (const watcher of this.directoryWatchers.values()) watcher.close();
     this.directoryWatchers.clear();
+    if (this.pruneTimer) clearTimeout(this.pruneTimer);
+    this.pruneTimer = null;
   }
 
   /** Every directory the index reads pages from (no dot dirs, attachments, node_modules). */
@@ -732,6 +821,8 @@ export class VaultStore {
 
     // External renames: remember where an open page went so stale URLs follow.
     const externalMoves: Array<{ from: PageId; to: PageId }> = [];
+    // D20: a page renamed outside Gumply, matched as below, keeps its history.
+    const historyMoves: Array<{ from: PageId; to: PageId }> = [];
     for (const [oldId, oldRecord] of this.pages) {
       if (next.has(oldId)) continue;
       // Pages keep their frontmatter title across a rename; a board's title
@@ -747,19 +838,29 @@ export class VaultStore {
       );
       if (!moved) continue;
       this.addRedirect(oldId, moved.id);
+      historyMoves.push({ from: oldId, to: moved.id });
       // Same file, moved: identical content (a rename that also edits it is
       // left alone, we can't tell what the other tool meant).
       if (moved.content === oldRecord.content) externalMoves.push({ from: oldId, to: moved.id });
     }
     for (const id of next.keys()) this.redirects.delete(id);
     // A re-read of our own last write (unchanged on disk) keeps knowing it.
+    // §3: a page or board changed outside Gumply (not our own write) gets its new bytes as a version.
+    const editedOutside: PageRecord[] = [];
     for (const [id, record] of next) {
-      const own = this.pages.get(id)?.ownWrite;
+      const previous = this.pages.get(id);
+      const own = previous?.ownWrite;
       if (own && own.version === record.updated) record.ownWrite = own;
+      else if (previous && this.recordSignature(previous) !== this.recordSignature(record)) editedOutside.push(record);
     }
 
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
+    for (const { from, to } of historyMoves) {
+      const record = this.pages.get(to);
+      if (record && (record.kind === "page" || record.kind === "whiteboard")) await this.followHistory(from, to);
+    }
+    for (const record of editedOutside) await this.versionFromOutside(record);
     // D23: a file moved to another folder outside Gumply keeps working
     // attachment links. Links the other tool already fixed are kept.
     await this.relinkMoved(externalMoves, { keepValidAtDestination: true });
@@ -1828,7 +1929,10 @@ export class VaultStore {
     const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       await mkdir(dirname(record.filePath), { recursive: true });
-      await writeFile(temporary, text ?? serializeCanvas(board), "utf8");
+      const next = text ?? serializeCanvas(board);
+      await writeFile(temporary, next, "utf8");
+      const previous = await readFile(record.filePath).catch(() => null);
+      if (previous !== null && !previous.equals(Buffer.from(next, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
@@ -2247,6 +2351,23 @@ export class VaultStore {
     options: { frontmatter?: boolean } = {},
   ): Promise<PageId[]> {
     const rewritten: PageId[] = [];
+    const reason = this.historyReason;
+    this.historyReason = reason ?? "rename";
+    try {
+      await this.rewriteEach(skip, rewriteText, boardNodes, options, rewritten);
+    } finally {
+      this.historyReason = reason;
+    }
+    return rewritten;
+  }
+
+  private async rewriteEach(
+    skip: ReadonlySet<PageId>,
+    rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
+    boardNodes: Omit<CanvasRewrite, "text">,
+    options: { frontmatter?: boolean },
+    rewritten: PageId[],
+  ): Promise<void> {
     for (const other of [...this.pages.values()]) {
       if (skip.has(other.id)) continue;
 
@@ -2265,7 +2386,6 @@ export class VaultStore {
       await this.writeRewrittenBody(other, result.content, yaml ?? undefined);
       rewritten.push(other.id);
     }
-    return rewritten;
   }
 
   /**
@@ -2555,6 +2675,10 @@ export class VaultStore {
       this.redirects.delete(value.id);
       this.addRedirect(oldId, value.id);
     }
+    // D20: each page's history follows it.
+    for (const { oldId, record: value } of moved) {
+      if (value.kind === "page" || value.kind === "whiteboard") await this.followHistory(oldId, value.id);
+    }
 
     await this.syncFolders();
 
@@ -2576,6 +2700,19 @@ export class VaultStore {
   ): Promise<PageId[]> {
     const relevant = moves.filter(({ from, to }) => noteFolder(from) !== noteFolder(to));
     if (relevant.length === 0) return [];
+    const reason = this.historyReason;
+    this.historyReason = reason ?? "move";
+    try {
+      return await this.relinkEach(relevant, options);
+    } finally {
+      this.historyReason = reason;
+    }
+  }
+
+  private async relinkEach(
+    relevant: ReadonlyArray<{ from: PageId; to: PageId }>,
+    options: RelinkOptions,
+  ): Promise<PageId[]> {
     const files = await this.attachmentFiles();
     const exists = (path: string) => files.has(path);
     const changed: PageId[] = [];
@@ -2653,6 +2790,12 @@ export class VaultStore {
       for (const deletedId of deleted) this.pages.delete(deletedId);
       this.reindexAll();
       return { trashId: "", deleted };
+    }
+
+    // §3: the last state of each page and board goes into history before the Trash.
+    for (const deletedId of deleted) {
+      const doomed = this.pages.get(deletedId);
+      if (doomed) await this.snapshotRecord(doomed, this.historySource, "trash");
     }
 
     const manifest: TrashManifest = {
@@ -3018,6 +3161,8 @@ export class VaultStore {
     const remap = (id: PageId) => (id === entry.id || id.startsWith(`${entry.id}/`) ? `${newId}${id.slice(entry.id.length)}` : id);
     if (newId !== entry.id) {
       const moves = entry.deleted.map((id) => ({ from: id, to: remap(id) })).filter(({ to }) => this.pages.has(to));
+      // D20: the history comes back with it, unless another page has that place (and history) now.
+      for (const { from, to } of moves) if (!this.pages.has(from)) await this.followHistory(from, to);
       // D23: in another folder now, so attachment links are rewritten.
       await this.relinkMoved(moves);
       // D25: board cards that pointed at its old place follow it, unless
@@ -3066,6 +3211,8 @@ export class VaultStore {
     const remap = (id: PageId) => (id === entry.id || id.startsWith(`${entry.id}/`) ? `${newId}${id.slice(entry.id.length)}` : id);
     if (newId !== entry.id) {
       const moves = entry.deleted.map((id) => ({ from: id, to: remap(id) })).filter(({ to }) => this.pages.has(to));
+      // D20: the history comes back with it, unless another page has that place (and history) now.
+      for (const { from, to } of moves) if (!this.pages.has(from)) await this.followHistory(from, to);
       await this.relinkMoved(moves);
       await this.rewriteBoardCards(moves.filter(({ from }) => !this.pages.has(from)));
       this.reindexAll();
@@ -3139,6 +3286,11 @@ export class VaultStore {
     await this.syncFolders();
 
     const moves = moved.map((value) => ({ from: `${id}${value.id.slice(newId.length)}`, to: value.id }));
+    // D20: each page's history follows it.
+    for (const { from, to } of moves) {
+      const record = this.pages.get(to);
+      if (record && (record.kind === "page" || record.kind === "whiteboard")) await this.followHistory(from, to);
+    }
     // D23: the moved page and its sub-pages are in another folder now.
     await this.relinkMoved(moves);
     // D25: board cards pointing at them follow.
@@ -3371,6 +3523,10 @@ export class VaultStore {
       this.redirects.delete(value.id);
       this.addRedirect(oldId, value.id);
     }
+    // D20: each page's history follows it.
+    for (const { oldId, record: value } of moved) {
+      if (value.kind === "page" || value.kind === "whiteboard") await this.followHistory(oldId, value.id);
+    }
     await this.syncFolders();
 
     const moves = moved.map(({ oldId, record: value }) => ({ from: oldId, to: value.id }));
@@ -3482,6 +3638,12 @@ export class VaultStore {
     const trashId = await this.freeTrashId();
     const trashDir = join(this.root, ".trash", trashId);
     const inTrash = join(trashDir, id);
+    // §3: the last state of each page and board goes into history before the Trash.
+    for (const deletedId of deleted) {
+      const doomed = this.pages.get(deletedId);
+      if (doomed) await this.snapshotRecord(doomed, this.historySource, "trash");
+    }
+
     const manifest: TrashManifest = {
       id,
       trashId,
@@ -3745,6 +3907,358 @@ export class VaultStore {
     return record;
   }
 
+  // --- version history (spec/version-history, D41) -----------------------
+
+  /** A page's or board's versions, newest first (§7). `:id` is the current id. */
+  listHistory(id: PageId, options: { limit?: number; cursor?: string } = {}): Promise<HistoryList> {
+    return this.enqueue(async () => {
+      const record = this.historyRecord(id);
+      const { entries, moves } = await readHistory(historyDir(this.root, record.id));
+      const current = await readFile(record.filePath).catch(() => null);
+      const newestFirst = [...entries].reverse();
+      const start = options.cursor ? newestFirst.findIndex((entry) => entry.file === options.cursor) + 1 : 0;
+      const limit = Math.min(Math.max(Math.floor(options.limit ?? 200), 1), 1000);
+      const page = newestFirst.slice(Math.max(start, 0), Math.max(start, 0) + limit);
+      const last = page[page.length - 1];
+      const more = last !== undefined && newestFirst.indexOf(last) < newestFirst.length - 1;
+      return {
+        items: page.map((entry) => this.historyItem(entry, record)),
+        ...(more && last ? { nextCursor: last.file } : {}),
+        current: { version: record.updated, sha256: current ? sha256(current) : null },
+        moves,
+      };
+    });
+  }
+
+  /** A version's exact bytes. */
+  readVersion(id: PageId, file: string): Promise<{ bytes: Buffer; kind: "page" | "whiteboard" }> {
+    return this.enqueue(async () => {
+      const record = this.historyRecord(id);
+      const entry = await this.historyEntry(record, file);
+      return { bytes: await this.versionBytes(record, entry), kind: record.kind as "page" | "whiteboard" };
+    });
+  }
+
+  /** A version against the current file (or another version): lines for pages, cards for boards. */
+  diffVersion(id: PageId, file: string, against = "current"): Promise<HistoryDiff> {
+    return this.enqueue(async () => {
+      const record = this.historyRecord(id);
+      const before = (await this.versionBytes(record, await this.historyEntry(record, file))).toString("utf8");
+      const after =
+        against === "current"
+          ? await readFile(record.filePath, "utf8").catch(() => "")
+          : (await this.versionBytes(record, await this.historyEntry(record, against))).toString("utf8");
+      if (record.kind === "whiteboard") return { kind: "whiteboard", ...boardDiff(before, after) };
+      return { kind: "page", lines: lineDiff(before, after) };
+    });
+  }
+
+  /**
+   * Restore a version (§4): the current bytes are saved first
+   * (`before-restore`, so it's undoable), then the version's bytes are
+   * written exactly into the current file. Never renames. 409 when the file
+   * changed since `expectedUpdated`.
+   */
+  restoreVersion(id: PageId, file: string, input: { expectedUpdated?: string; writer?: string } = {}): Promise<Page | BoardDocument> {
+    return this.enqueue(async () => {
+      const record = this.historyRecord(id);
+      const entry = await this.historyEntry(record, file);
+      const bytes = await this.versionBytes(record, entry);
+      const info = await stat(record.filePath).catch(() => null);
+      if (info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 || !versionMatches(record, input.expectedUpdated, input.writer)) {
+        throw conflict("This page changed on disk.");
+      }
+      const ext = record.kind === "whiteboard" ? "canvas" : "md";
+      const current = await readFile(record.filePath);
+      if (!current.equals(bytes)) {
+        await saveVersion(this.root, { id: record.id, ext, bytes: current, version: record.updated, source: "restore", reason: "before-restore" });
+        const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+        try {
+          await writeFile(temporary, bytes);
+          await rename(temporary, record.filePath);
+        } catch (error) {
+          await rm(temporary, { force: true }).catch(() => undefined);
+          throw error;
+        }
+        const fresh = await this.readRecord(record.filePath, record.id);
+        this.pages.set(record.id, fresh);
+        this.reindexAll();
+        await saveVersion(this.root, { id: record.id, ext, bytes, version: fresh.updated, source: "app", restoredFrom: entry.file });
+      }
+      return record.kind === "whiteboard" ? this.getBoard(record.id) : this.get(record.id);
+    });
+  }
+
+  /** Keep (pin) a version, or let it go again. */
+  pinVersion(id: PageId, file: string, pinned: boolean): Promise<HistoryItem> {
+    return this.enqueue(async () => {
+      const record = this.historyRecord(id);
+      const entry = await this.historyEntry(record, file);
+      await setPinned(this.root, record.id, entry.file, pinned);
+      return this.historyItem({ ...entry, pinned }, record);
+    });
+  }
+
+  /** Histories of pages that no longer exist (§2.3), newest first. Pages in Gumply's Trash aren't listed (D41). */
+  historyOrphans(): Promise<HistoryOrphan[]> {
+    return this.enqueue(() => this.historyOrphansNow());
+  }
+
+  /** Bring an orphan's version back as a new page at its old path (or `<name> 2`), never over another page. */
+  restoreOrphan(key: string, file?: string): Promise<Page | BoardDocument> {
+    return this.enqueue(async () => {
+      const orphan = (await this.historyOrphansNow()).find((item) => item.key === key);
+      if (!orphan) throw notFound("No such history");
+      const dir = join(this.root, HISTORY_DIR, key);
+      const { entries } = await readHistory(dir);
+      const entry = entries.find((item) => item.file === (file ?? orphan.newest));
+      if (!entry) throw notFound("No such version");
+      const bytes = await readFile(join(dir, entry.file));
+      const kind: PageKind = entry.file.endsWith(".canvas") ? "whiteboard" : "page";
+      const parent = parentOf(orphan.lastId);
+      const folder = parent !== null && (await this.folderExists(parent)) ? parent : null;
+      const name = orphan.lastId.split("/").pop() ?? orphan.lastId;
+      const stem = kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : name;
+      const taken = new Set([...this.pages.keys()].map(collisionKey));
+      const newId = await this.restoreTarget(folder, stem, false, taken, kind);
+      const target = this.filePathFor(newId);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, bytes, { flag: "wx" });
+      await moveHistoryDir(this.root, dir, orphan.lastId, newId, parentOf(newId) === parent ? "rename" : "move");
+      await this.rebuild();
+      const record = this.require(newId);
+      await saveVersion(this.root, { id: newId, ext: kind === "whiteboard" ? "canvas" : "md", bytes, version: record.updated, source: "app", restoredFrom: entry.file });
+      return kind === "whiteboard" ? this.getBoard(newId) : this.get(newId);
+    });
+  }
+
+  /** How much space history takes. */
+  historyUsage(): Promise<HistoryUsage> {
+    return this.enqueue(() => usage(this.root));
+  }
+
+  /** "Clear history older than…": every unpinned version older than that, except each page's newest. */
+  clearHistory(olderThanMs: number): Promise<HistoryUsage> {
+    return this.enqueue(async () => pruneVault(this.root, { budget: budgetFor(await this.vaultBytes()), olderThanMs }));
+  }
+
+  private async historyOrphansNow(): Promise<HistoryOrphan[]> {
+    const live = new Set([...this.pages.keys()].map(pageKey));
+    const trashed = new Set<string>();
+    for (const entry of await this.trashEntries().catch(() => [] as TrashEntry[])) {
+      for (const id of entry.deleted) trashed.add(pageKey(id));
+    }
+    const out: HistoryOrphan[] = [];
+    for (const key of await historyKeys(this.root)) {
+      if (live.has(key) || trashed.has(key)) continue;
+      const { entries } = await readHistory(join(this.root, HISTORY_DIR, key));
+      const newest = entries[entries.length - 1];
+      if (!newest) continue;
+      // The directory's name is the page's last id (renames move it), even when no version was saved since.
+      const lastId = keyToId(key);
+      out.push({ key, lastId, title: titleFromId(lastId).replace(/\.canvas$/i, ""), lastAt: newest.at, versions: entries.length, newest: newest.file });
+    }
+    return out.sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+  }
+
+  /** The page or board whose history is asked for (no `.base`, no folder, D41). */
+  private historyRecord(id: PageId): PageRecord {
+    const resolved = this.resolveId(id);
+    const record = this.require(resolved);
+    if (record.kind !== "page" && record.kind !== "whiteboard") throw notFound("Only pages and boards have history");
+    return record;
+  }
+
+  /** `file` must be an index entry's exact file name: never a path. */
+  private async historyEntry(record: PageRecord, file: string): Promise<HistoryEntry> {
+    const { entries } = await readHistory(historyDir(this.root, record.id));
+    const entry = typeof file === "string" ? entries.find((item) => item.file === file) : undefined;
+    if (!entry) throw notFound("No such version");
+    return entry;
+  }
+
+  private async versionBytes(record: PageRecord, entry: HistoryEntry): Promise<Buffer> {
+    try {
+      return await readFile(join(historyDir(this.root, record.id), entry.file));
+    } catch {
+      throw notFound("No such version");
+    }
+  }
+
+  private historyItem(entry: HistoryEntry, record: PageRecord): HistoryItem {
+    const strip = (id: string) => titleFromId(id).replace(/\.canvas$/i, "");
+    const title = entry.id && strip(entry.id) !== strip(record.id) ? strip(entry.id) : undefined;
+    const then = entry.id ? (parentOf(entry.id) ?? "") : undefined;
+    const folder = then !== undefined && then !== (parentOf(record.id) ?? "") ? then : undefined;
+    return {
+      file: entry.file,
+      at: entry.at,
+      source: entry.source,
+      ...(entry.reason ? { reason: entry.reason } : {}),
+      ...(entry.client ? { client: entry.client } : {}),
+      ...(entry.tool ? { tool: entry.tool } : {}),
+      bytes: entry.bytes,
+      pinned: entry.pinned === true,
+      ...(entry.restoredFrom ? { restoredFrom: entry.restoredFrom } : {}),
+      ...(title !== undefined ? { title } : {}),
+      ...(folder !== undefined ? { folder } : {}),
+    };
+  }
+
+  /** The page or board a file belongs to (pages and `.canvas` only: no `.base`, D41). */
+  private historyRecordFor(filePath: string): PageRecord | undefined {
+    for (const record of this.pages.values()) {
+      if (record.filePath === filePath) return record.kind === "page" || record.kind === "whiteboard" ? record : undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * The pre-write rule (§3): the bytes on disk go into history before a write
+   * replaces them, unless they're the newest entry already, or an app edit
+   * less than 5 min after the previous app version (coalescing). History
+   * never blocks a save: a failure is logged and the save goes on.
+   */
+  private async versionBeforeWrite(filePath: string, raw: string | Buffer | null): Promise<void> {
+    if (raw === null) return;
+    const record = this.historyRecordFor(filePath);
+    if (!record) return;
+    const bytes = typeof raw === "string" ? Buffer.from(raw, "utf8") : raw;
+    const reason = this.historyReason ?? "edit";
+    try {
+      if (this.historySource === "app" && reason === "edit") {
+        const newest = await newestVersion(this.root, record.id);
+        if (newest && newest.source === "app" && Date.now() - Date.parse(newest.at) < HISTORY_COALESCE_MS && newest.sha256 !== sha256(bytes)) {
+          this.armSession(record.id);
+          return;
+        }
+      }
+      await saveVersion(this.root, {
+        id: record.id,
+        ext: record.kind === "whiteboard" ? "canvas" : "md",
+        bytes,
+        version: record.updated,
+        source: this.historySource,
+        reason,
+      });
+    } catch (error) {
+      console.warn(`[gumply] history for ${record.id} not saved:`, error);
+    }
+    if (this.historySource === "app") this.armSession(record.id);
+  }
+
+  /** The editing session ends 10 min after the last app save: its result becomes a version. */
+  private armSession(id: PageId): void {
+    const previous = this.sessionTimers.get(id);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      this.sessionTimers.delete(id);
+      void this.checkpoint(id).catch(() => undefined);
+    }, HISTORY_SESSION_MS);
+    timer.unref?.();
+    this.sessionTimers.set(id, timer);
+  }
+
+  /**
+   * End a page's editing session now (the page was closed, the app quits):
+   * its current bytes become a version unless they're the newest already.
+   */
+  checkpoint(id: PageId): Promise<boolean> {
+    return this.enqueue(async () => {
+      const timer = this.sessionTimers.get(id);
+      if (timer) clearTimeout(timer);
+      this.sessionTimers.delete(id);
+      let record: PageRecord | undefined;
+      try {
+        record = this.pages.get(this.resolveId(id));
+      } catch {
+        return false;
+      }
+      if (!record || (record.kind !== "page" && record.kind !== "whiteboard")) return false;
+      return this.snapshotRecord(record, "app", "session");
+    });
+  }
+
+  /** End every open editing session (shutdown). */
+  async flushHistory(): Promise<void> {
+    for (const id of [...this.sessionTimers.keys()]) await this.checkpoint(id).catch(() => undefined);
+    if (this.pruneTimer) clearTimeout(this.pruneTimer);
+    this.pruneTimer = null;
+  }
+
+  /** The record's file as it is now, as a version (deduplicated). True when one was written. */
+  private async snapshotRecord(record: PageRecord, source: HistorySource, reason?: HistoryReason): Promise<boolean> {
+    if (record.kind !== "page" && record.kind !== "whiteboard") return false;
+    const bytes = await readFile(record.filePath).catch(() => null);
+    if (!bytes) return false;
+    try {
+      const before = await newestVersion(this.root, record.id);
+      const entry = await saveVersion(this.root, {
+        id: record.id,
+        ext: record.kind === "whiteboard" ? "canvas" : "md",
+        bytes,
+        version: record.updated,
+        source,
+        ...(reason ? { reason } : {}),
+      });
+      return entry.file !== before?.file;
+    } catch (error) {
+      console.warn(`[gumply] history for ${record.id} not saved:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * A file changed outside Gumply: its new bytes become an `external`
+   * version, at most one per 5 min. When an AI app (MCP, its own process)
+   * saved a version of this page in the last 30 s, the change is its.
+   */
+  private async versionFromOutside(record: PageRecord): Promise<void> {
+    if (record.kind !== "page" && record.kind !== "whiteboard") return;
+    if (this.historySource !== "app") return;
+    try {
+      const newest = await newestVersion(this.root, record.id);
+      const age = newest ? Date.now() - Date.parse(newest.at) : Infinity;
+      if (newest?.source === "mcp" && age < 30_000) {
+        await this.snapshotRecord(record, "mcp", "edit");
+        return;
+      }
+      if (newest?.source === "external" && age < HISTORY_COALESCE_MS) return;
+      await this.snapshotRecord(record, "external");
+    } catch (error) {
+      console.warn(`[gumply] history for ${record.id} not saved:`, error);
+    }
+  }
+
+  /** A page moved (D20): its history directory follows it. */
+  private async followHistory(from: PageId, to: PageId): Promise<void> {
+    try {
+      await moveHistory(this.root, from, to, parentOf(from) === parentOf(to) ? "rename" : "move");
+    } catch (error) {
+      console.warn(`[gumply] history of ${from} didn't follow it to ${to}:`, error);
+    }
+  }
+
+  /** The daily vault-wide prune (§2.4–2.5), a minute after start and then every day. */
+  private schedulePrune(delay = 60_000): void {
+    if (this.historySource !== "app" || this.pruneTimer) return;
+    this.pruneTimer = setTimeout(() => {
+      this.pruneTimer = null;
+      void this.enqueue(async () => {
+        await pruneVault(this.root, { budget: budgetFor(await this.vaultBytes()) });
+      }).catch(() => undefined);
+      this.schedulePrune(86_400_000);
+    }, delay);
+    this.pruneTimer.unref?.();
+  }
+
+  /** The vault's own size: every page and board file (for the history budget). */
+  private async vaultBytes(): Promise<number> {
+    let total = 0;
+    for (const record of this.pages.values()) total += (await stat(record.filePath).catch(() => null))?.size ?? 0;
+    return total;
+  }
+
   private async backupConflict(record: PageRecord): Promise<string | undefined> {
     let raw: string;
     try {
@@ -3758,6 +4272,8 @@ export class VaultStore {
     const extension = record.kind === "page" ? ".md" : idExtension(record.kind);
     const file = join(dir, `${safeId}-${Date.now()}${extension}`);
     await writeFile(file, raw, "utf8");
+    // §3: the other side of a conflict is a version too (pages and boards).
+    await this.snapshotRecord(record, "external", "conflict");
     const relativePath = relative(this.root, file).split(sep).join("/");
     console.warn(`[gumply] conflict backup for ${record.id}: ${file}`);
     return relativePath;
@@ -3784,8 +4300,11 @@ export class VaultStore {
     let template = null;
     // The file is already on disk (not a new page, not a template's seed).
     let existing = false;
+    // The bytes this write replaces: they go into history first (§3).
+    let previous: Buffer | null = null;
     try {
-      template = parseNoteTemplate(await readFile(filePath, "utf8"));
+      previous = await readFile(filePath);
+      template = parseNoteTemplate(previous.toString("utf8"));
       existing = true;
     } catch {
       // New file: write canonical frontmatter, or keep a template's layout.
@@ -3862,6 +4381,7 @@ export class VaultStore {
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       await writeFile(temporary, text, "utf8");
+      if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
       await rename(temporary, filePath);
       return {
         mtimeMs: (await stat(filePath)).mtimeMs,

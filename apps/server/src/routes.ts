@@ -255,6 +255,68 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   api.delete("/trash", async (c) => c.json({ deleted: await store.emptyTrash() }));
 
+  // --- version history (spec/version-history §7, D41; spec/api v1.28) ---
+  api.get("/history/:id", async (c) => {
+    const limit = Number(c.req.query("limit") ?? "");
+    const cursor = c.req.query("cursor");
+    return c.json(
+      await store.listHistory(c.req.param("id"), {
+        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+        ...(cursor ? { cursor } : {}),
+      }),
+    );
+  });
+
+  api.get("/history/:id/:file", async (c) => {
+    const { bytes, kind } = await store.readVersion(c.req.param("id"), c.req.param("file"));
+    return c.body(new Uint8Array(bytes), 200, {
+      "Content-Type": kind === "whiteboard" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+  });
+
+  api.get("/history/:id/:file/diff", async (c) =>
+    c.json(await store.diffVersion(c.req.param("id"), c.req.param("file"), c.req.query("against") || "current")),
+  );
+
+  api.post("/history/:id/:file/restore", async (c) => {
+    const body = await readJson(c);
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    const writer = optionalString(body, "writer");
+    const result = await store.restoreVersion(c.req.param("id"), c.req.param("file"), {
+      ...(expectedUpdated !== undefined ? { expectedUpdated } : {}),
+      ...(writer !== undefined ? { writer: writer.slice(0, 64) } : {}),
+    });
+    if ("board" in result) return c.json<BoardDocument>(result);
+    return c.json<Page>({ ...result, properties: (await store.pageProperties(result.id)) ?? [] });
+  });
+
+  api.put("/history/:id/:file/pin", async (c) => {
+    const body = await readJson(c);
+    if (typeof body.pinned !== "boolean") throw badRequest("pinned must be true or false");
+    return c.json(await store.pinVersion(c.req.param("id"), c.req.param("file"), body.pinned));
+  });
+
+  // The page was closed: its editing session ends now (D41 rule 6).
+  api.post("/history/:id/checkpoint", async (c) => c.json({ saved: await store.checkpoint(c.req.param("id")) }));
+
+  api.get("/history-orphans", async (c) => c.json(await store.historyOrphans()));
+
+  api.post("/history-orphans/:key/restore", async (c) => {
+    const body = await readJson(c);
+    const file = optionalString(body, "file");
+    const result = await store.restoreOrphan(c.req.param("key"), file);
+    return c.json("board" in result ? result : { ...result, properties: (await store.pageProperties(result.id)) ?? [] }, 201);
+  });
+
+  api.get("/history-usage", async (c) => c.json(await store.historyUsage()));
+
+  api.delete("/history-usage", async (c) => {
+    const days = Number(c.req.query("olderThan") ?? "");
+    if (!Number.isFinite(days) || days < 0) throw badRequest("olderThan must be a number of days");
+    return c.json(await store.clearHistory(days * 86_400_000));
+  });
+
   // #9bx3aznb: every tag with its counts (the tags pane).
   api.get("/tags", (c) => c.json(store.tags()));
 

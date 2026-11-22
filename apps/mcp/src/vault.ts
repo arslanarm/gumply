@@ -49,7 +49,8 @@ export class Vault {
   ready: Promise<void> = Promise.resolve();
 
   constructor(readonly root: string) {
-    this.store = new VaultStore(root);
+    // spec/version-history: what this store replaces is versioned as the AI app's.
+    this.store = new VaultStore(root, { historySource: "mcp" });
   }
 
   /** Start reading the vault. The server answers the handshake meanwhile. */
