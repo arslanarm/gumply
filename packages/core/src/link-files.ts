@@ -15,20 +15,13 @@
  * link resolves to, as in Obsidian; nothing is rewritten.
  */
 import { hasAttachmentExtension } from "./links.js";
+import { pickLinkTarget } from "./link-order.js";
 import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
 /** Whether a vault path may be a link target: an allowlisted file outside dot folders. */
 export function isLinkableFile(path: string): boolean {
   if (!hasAttachmentExtension(path)) return false;
   return !path.split("/").some((segment) => segment.startsWith(".") || segment.length === 0);
-}
-
-const collator = new Intl.Collator("en", { sensitivity: "base", numeric: false });
-
-function better(a: string, b: string): boolean {
-  if (a.length !== b.length) return a.length < b.length;
-  const order = collator.compare(a, b);
-  return order !== 0 ? order < 0 : a < b;
 }
 
 /**
@@ -79,13 +72,9 @@ export class LinkFileIndex {
     const name = lower.slice(lower.lastIndexOf("/") + 1);
     const suffix = `/${lower}`;
     const candidates = (this.byName.get(name) ?? []).filter((path) => path.toLowerCase().endsWith(suffix));
-    if (!candidates.length) return null;
-    const folder = fromNote && fromNote.includes("/") ? fromNote.slice(0, fromNote.lastIndexOf("/")).toLowerCase() : "";
-    const near = folder ? candidates.filter((path) => path.toLowerCase().startsWith(`${folder}/`)) : candidates;
-    const pool = near.length ? near : candidates;
-    let best = pool[0]!;
-    for (const path of pool) if (better(path, best)) best = path;
-    return best;
+    // 3. Under the note's folder, then shortest, then alphabetical: the rule
+    // shared with page links (link-order.ts).
+    return pickLinkTarget(candidates, (path) => path, fromNote);
   }
 }
 
