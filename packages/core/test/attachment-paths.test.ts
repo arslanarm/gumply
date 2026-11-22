@@ -114,5 +114,7 @@ describe("names with # or ? round-trip (#btgun63k)", () => {
       expect(resolveAttachmentHref("Notes/Day", href), href).toBe(path);
     }
     expect(attachmentHref("Notes/Day", "Files/a#b.png")).toBe("../Files/a%23b.png");
+    // #eg65ktng: `|` is encoded, so the link is safe inside a table cell.
+    expect(attachmentHref("Notes/Day", "Files/pipe|x.png")).toBe("../Files/pipe%7Cx.png");
   });
 });

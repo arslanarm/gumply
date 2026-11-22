@@ -38,7 +38,7 @@ export function normaliseVaultPath(path: string): string | null {
 
 /** Percent-encode what a CommonMark link destination can't hold as-is. */
 export function encodeHref(path: string): string {
-  return path.replace(/[%\s()<>#?\\]|[\u0000-\u001f\u007f]/g, (char) =>
+  return path.replace(/[%\s()<>#?\\|]|[\u0000-\u001f\u007f]/g, (char) =>
     Array.from(new TextEncoder().encode(char))
       .map((byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`)
       .join(""),

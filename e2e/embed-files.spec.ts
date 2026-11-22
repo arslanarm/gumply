@@ -115,7 +115,8 @@ test.describe('![[ offers vault files (#4usgpjh8)', () => {
 test.describe('![[ with file names a wikilink can\'t hold (#btgun63k)', () => {
   for (const [name, testid, bytes] of [
     ['my file [1].png', 'Files/my file [1].png', 'Start\n\n![my file \\[1\\]](Files/my%20file%20[1].png)\n'],
-    ['pipe|x.png', 'Files/pipe|x.png', 'Start\n\n![pipe|x](Files/pipe|x.png)\n'],
+    // #eg65ktng: `|` escaped in the alt and encoded in the path (safe in a table cell too).
+    ['pipe|x.png', 'Files/pipe|x.png', 'Start\n\n![pipe\\|x](Files/pipe%7Cx.png)\n'],
     ['a#b.png', 'Files/a#b.png', 'Start\n\n![a#b](Files/a%23b.png)\n'],
   ] as const) {
     test(`${name}: a Markdown image with a D23 link, which renders`, async ({ page, request, vault }) => {
@@ -124,8 +125,8 @@ test.describe('![[ with file names a wikilink can\'t hold (#btgun63k)', () => {
       await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Note');
       await page.goto('/#/Note');
       await expect(page.getByTestId('editor-content')).toBeVisible();
-      // `#` in a `![[` query asks for a page's headings, so search by the part after it.
-      await embedQuery(page, (name.includes('#') ? name.split('#')[1]! : name).slice(0, 4));
+      // #eg65ktng: `a#b` too: `#` asks for headings only when the part before it names a page.
+      await embedQuery(page, name.slice(0, 4));
       await page.getByTestId(`link-suggestion-file-${testid}`).click();
       const image = page.getByTestId('editor-content').locator('img').first();
       await expect(image).toBeVisible();
@@ -169,5 +170,39 @@ test.describe('![[ with file names a wikilink can\'t hold (#btgun63k)', () => {
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened))
       .toEqual(['/api/files/Files/notes%20%232.pdf']);
+  });
+
+  test('between two paragraphs the insert leaves no empty line (#eg65ktng)', async ({ page, request, vault }) => {
+    void vault;
+    await write({ 'Note.md': 'Start\n\nEnd\n', 'Files/a#b.png': PNG });
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Note');
+    await page.goto('/#/Note');
+    await expect(page.getByTestId('editor-content')).toBeVisible();
+    await embedQuery(page, 'a#b');
+    await page.getByTestId('link-suggestion-file-Files/a#b.png').click();
+    await expect(page.getByTestId('editor-content').locator('img').first()).toBeVisible();
+    await saved(page);
+    await expect.poll(() => read('Note.md')).toBe('Start\n\n![a#b](Files/a%23b.png)\n\nEnd\n');
+  });
+
+  test('in a table cell, a file with `|` in its name keeps the table intact (#eg65ktng)', async ({ page, request, vault }) => {
+    void vault;
+    const table = '| Name | File |\n| --- | --- |\n| one | cell |\n';
+    await write({ 'Note.md': `Start\n\n${table}`, 'Files/pipe|x.pdf': '%PDF-1.4\n' });
+    await expect.poll(async () => (await api.listPages(request)).map((meta) => meta.id)).toContain('Note');
+    await page.goto('/#/Note');
+    await expect(page.getByTestId('editor-content')).toBeVisible();
+    await page.getByTestId('editor-content').getByText('cell', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' ![[pipe');
+    await page.getByTestId('link-suggestion-file-Files/pipe|x.pdf').click();
+    await saved(page);
+    const bytes = `Start\n\n${table.replace('| cell |', '| cell [pipe\\|x.pdf](Files/pipe%7Cx.pdf) |')}`;
+    await expect.poll(() => read('Note.md')).toBe(bytes);
+    // It reads back as the same two-column table with the link in it.
+    await page.reload();
+    const cells = page.getByTestId('editor-content').locator('td');
+    await expect(cells).toHaveCount(2);
+    await expect(cells.nth(1).locator('a')).toHaveAttribute('href', 'Files/pipe%7Cx.pdf');
   });
 });

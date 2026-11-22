@@ -13,6 +13,9 @@ import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
+/** `|` escaped in a written label, so the link is safe inside a table cell too (#eg65ktng). */
+export const escapePipes = (text: string) => text.replace(/(?<!\\)\|/g, "\\|");
+
 /** Original Obsidian syntax, kept so an untouched embed is written back as-is. */
 const OBSIDIAN_ATTR = {
   default: null,
@@ -92,7 +95,7 @@ export const ImageBlock = Node.create({
           const href = node.attrs.obsidian ? hrefForAttachment(obsidianVaultPath(node.attrs.obsidian as string) ?? src) : src;
           const escaped = href.replace(/[()]/g, "\\$&");
           state.write(
-            `![${state.esc(alt)}](${escaped}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`,
+            `![${escapePipes(state.esc(alt))}](${escaped}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`,
           );
           state.closeBlock(node);
         },
@@ -166,7 +169,7 @@ export const FileAttachment = Node.create({
             return;
           }
           const name = String(node.attrs.name ?? path.split("/").pop() ?? path);
-          state.write(`[${state.esc(name)}](${path.replace(/[()]/g, "\\$&")})`);
+          state.write(`[${escapePipes(state.esc(name))}](${path.replace(/[()]/g, "\\$&")})`);
         },
       },
     };
