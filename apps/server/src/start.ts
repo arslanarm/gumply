@@ -103,9 +103,12 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
     close: () =>
       new Promise<void>((resolveClose) => {
         store.stopWatching();
-        server.close(() => resolveClose());
-        // Keep-alive sockets (the window) would hold close() open.
-        (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+        // D41: open editing sessions become versions on close.
+        void store.flushHistory().finally(() => {
+          server.close(() => resolveClose());
+          // Keep-alive sockets (the window) would hold close() open.
+          (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+        });
       }),
   };
 }

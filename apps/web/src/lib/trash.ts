@@ -28,8 +28,12 @@ export function trashLocation(item: TrashItem): string {
   return item.originalParentId.split("/").pop() ?? item.originalParentId;
 }
 
-/** Body of the "Delete forever" confirmation. */
+/** Body of the "Delete forever" confirmation; its version history goes too (D41). */
 export function deleteForeverBody(item: TrashItem): string {
+  return `${deleteForeverWhat(item)} ${t("history.deletedToo")}`;
+}
+
+function deleteForeverWhat(item: TrashItem): string {
   if (item.kind === "folder") {
     const parts = [t("counts.pagesOrBoards", { count: item.children.length })];
     if (item.otherFiles) parts.push(t("counts.otherFiles", { count: item.otherFiles }));
@@ -42,7 +46,7 @@ export function deleteForeverBody(item: TrashItem): string {
 
 /** Body of the "Empty trash" confirmation. */
 export function emptyTrashBody(items: readonly TrashItem[]): string {
-  return t("trash.emptyBody", { count: trashedCount(items) });
+  return `${t("trash.emptyBody", { count: trashedCount(items) })} ${t("history.deletedToo")}`;
 }
 
 /** The toast after a restore: where it went, and why if it isn't where it was. */

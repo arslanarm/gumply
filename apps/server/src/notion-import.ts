@@ -15,7 +15,7 @@
  * One import runs at a time per vault; a second request gets a 409 naming it.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { unzipSync } from "fflate";
 import {
@@ -33,6 +33,7 @@ import {
 
 type Skipped = NotionImportReport["skipped"][number];
 import { conflict, notFound } from "./errors.js";
+import { saveVersion, setAsideHistory } from "./history.js";
 import type { VaultStore } from "./vault-store.js";
 
 /** The limits live in core so the web app's messages use the same numbers (#bswmpt63). */
@@ -231,6 +232,7 @@ export class NotionImports {
     const root = this.store.root;
     const temp = join(root, IMPORT_TMP, job.id);
     let outcome: { state: "done" | "failed"; error?: string } = { state: "failed", error: "The import stopped." };
+    let imported: string[] = [];
     try {
       const { entries, skipped } = readNotionZip(zip);
       const parentDir = parentId ?? "";
@@ -282,9 +284,25 @@ export class NotionImports {
         }
         job.folder = folder;
         job.report = plan.report;
+        imported = plan.files.map((file) => file.path).filter((path) => /\.(md|canvas)$/i.test(path));
         break;
       }
       await this.store.rescan();
+      // spec/version-history §3: each imported page and board starts its history.
+      for (const path of imported) {
+        const canvas = /\.canvas$/i.test(path);
+        const bytes = await readFile(join(root, path)).catch(() => null);
+        if (!bytes) continue;
+        const id = canvas ? path : path.replace(/\.md$/i, "");
+        await setAsideHistory(root, id).catch(() => undefined);
+        await saveVersion(root, {
+          id,
+          ext: canvas ? "canvas" : "md",
+          bytes,
+          version: new Date().toISOString(),
+          source: "import",
+        }).catch(() => undefined);
+      }
       outcome = { state: "done" };
     } catch (error) {
       outcome = { state: "failed", error: error instanceof Error ? error.message : String(error) };

@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf" | "outline";
+  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf" | "outline" | "history";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -54,11 +54,12 @@ export interface SearchSections {
   importNotion?: SearchRow | null;
   /** G2: `Export page as PDF` ("pdf", "print"…). */
   exportPdf?: SearchRow | null;
+  history?: SearchRow | null;
 }
 
 /** Words for this language's command (English always counts), from a message. */
 function localWords(
-  key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords" | "search.pdfWords" | "search.outlineWords",
+  key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords" | "search.pdfWords" | "search.outlineWords" | "search.historyWords",
 ): string[] {
   return t(key).toLowerCase().split(/\s+/).filter(Boolean);
 }
@@ -105,6 +106,14 @@ export function wantsOutline(query: string): boolean {
   const needle = normalise(query);
   if (needle.length < 3) return false;
   const words = ["outline", "toggle outline", "table of contents", "contents", "headings", ...localWords("search.outlineWords")];
+  return words.some((word) => word.startsWith(needle));
+}
+
+/** Whether `query` asks for the open page's version history: "history", "versions", "page history"… (D41). */
+export function wantsHistory(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = ["history", "page history", "show page history", "version history", "versions", "restore version", ...localWords("search.historyWords")];
   return words.some((word) => word.startsWith(needle));
 }
 
@@ -318,7 +327,8 @@ export function searchSections(
   const importNotion = wantsImportNotion(query) ? { kind: "import-notion" as const, key: "import-notion", label: t("notionImport.command") } : null;
   const exportPdf = wantsExportPdf(query) ? { kind: "export-pdf" as const, key: "export-pdf", label: t("export.pdf.command") } : null;
   const outline = wantsOutline(query) ? { kind: "outline" as const, key: "outline", label: t("outline.toggle") } : null;
-  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion, exportPdf, outline };
+  const history = wantsHistory(query) ? { kind: "history" as const, key: "history", label: t("history.command") } : null;
+  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion, exportPdf, outline, history };
 }
 
 export interface SnippetPart {

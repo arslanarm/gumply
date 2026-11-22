@@ -3,7 +3,7 @@
  * and how much (`.gumply/mcp.json`), the setup snippets for Claude Code and
  * Claude Desktop, and the recent MCP writes from the audit log.
  */
-import type { McpAccess, McpSettingsPatch, McpSettingsResponse } from "@gumply/core";
+import type { McpAccess, McpAuditEntry, McpSettingsPatch, McpSettingsResponse } from "@gumply/core";
 import { useEffect, useId, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import { relativeTime, useT, type MessageKey } from "../i18n/index.js";
@@ -31,6 +31,8 @@ export interface McpSettingsDialogProps {
   onClose: () => void;
   /** A page named in the activity list. */
   onOpenPage: (id: string) => void;
+  /** D41: Undo on a row restored that page (the open page reloads). */
+  onRestored?: (id: string) => void;
 }
 
 /** A setup snippet: its heading with Copy, a hint, then the text. */
@@ -67,7 +69,7 @@ function Snippet({ id, title, hint, text }: { id: string; title: string; hint: s
   );
 }
 
-export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProps) {
+export function McpSettingsDialog({ onClose, onOpenPage, onRestored }: McpSettingsDialogProps) {
   const t = useT();
   const id = useId();
   const [settings, setSettings] = useState<McpSettingsResponse | null>(null);
@@ -76,6 +78,36 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
   /** A higher level waiting for "Allow". */
   const [raising, setRaising] = useState<Exclude<McpAccess, "read"> | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  /** D41: the row whose Undo is running, and what the last Undo did. */
+  const [undoing, setUndoing] = useState<McpAuditEntry | null>(null);
+  const [undoStatus, setUndoStatus] = useState<string | null>(null);
+
+  /**
+   * Undo an AI app's write (spec/version-history §6.1): restore the version it
+   * saved before writing, the history entry whose version is the row's `before`.
+   * It's an ordinary restore, so it can itself be undone in History.
+   */
+  const undo = async (row: McpAuditEntry) => {
+    setUndoing(row);
+    setUndoStatus(null);
+    try {
+      const list = await api.history(row.id);
+      const entry = list.items.find((item) => item.source === "mcp" && item.version === row.before);
+      if (!entry) {
+        setUndoStatus(t("history.undoNothing"));
+        return;
+      }
+      const result = await api.restoreVersion(row.id, entry.file, list.current.version);
+      const restoredId = "meta" in result ? result.meta.id : result.id;
+      const title = "meta" in result ? result.meta.title : result.title;
+      onRestored?.(restoredId);
+      setUndoStatus(t("history.undone", { title }));
+    } catch (caught) {
+      setUndoStatus(t("history.restoreFailed", { error: errorMessage(caught) }));
+    } finally {
+      setUndoing(null);
+    }
+  };
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -197,6 +229,11 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
 
             <section className="mcp-section">
               <h3>{t("settings.mcp.recent")}</h3>
+              {undoStatus ? (
+                <p className="mcp-note" role="status" data-testid="mcp-undo-status">
+                  {undoStatus}
+                </p>
+              ) : null}
               {settings.recent.length === 0 ? (
                 <p className="mcp-note" data-testid="mcp-recent-empty">
                   {t("settings.mcp.recentEmpty")}
@@ -220,6 +257,18 @@ export function McpSettingsDialog({ onClose, onOpenPage }: McpSettingsDialogProp
                       <time dateTime={row.at} title={row.at}>
                         {relativeTime(row.at)}
                       </time>
+                      {row.before !== null && row.after !== null ? (
+                        <button
+                          type="button"
+                          className="link-button mcp-recent-undo"
+                          title={t("history.undoTitle")}
+                          data-testid="mcp-recent-undo"
+                          disabled={undoing !== null}
+                          onClick={() => void undo(row)}
+                        >
+                          {t("history.undo")}
+                        </button>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

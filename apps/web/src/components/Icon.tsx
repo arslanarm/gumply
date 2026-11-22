@@ -69,7 +69,9 @@ export type IconName =
   // Property types (v0.7 A); "calendar" is shared with daily notes.
   | "hash"
   | "clock"
-  | "tag";
+  | "tag"
+  // A kept (pinned) version in History (D41).
+  | "pin";
 
 const ICONS: Record<IconName, ReactNode> = {
   // A database view: a table of pages (spec/api-bases).
@@ -357,6 +359,12 @@ const ICONS: Record<IconName, ReactNode> = {
     </>
   ),
   hash: <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />,
+  pin: (
+    <>
+      <path d="M12 17v5" />
+      <path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.7l-1.8-.9a2 2 0 0 1-1.1-1.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </>
+  ),
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />

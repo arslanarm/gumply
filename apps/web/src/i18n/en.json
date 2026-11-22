@@ -725,7 +725,8 @@
     "exportWords": "",
     "importWords": "",
     "pdfWords": "",
-    "outlineWords": ""
+    "outlineWords": "",
+    "historyWords": ""
   },
   "callout": {
     "types": {
@@ -1560,5 +1561,85 @@
     "empty": "Empty diagram. Click to write Mermaid.",
     "failed": "The diagram couldn't be shown.",
     "error": "Can't draw this diagram"
+  },
+  "history": {
+    "menuItem": "History…",
+    "command": "Show page history",
+    "title": "Version history",
+    "close": "Close",
+    "list": "Versions",
+    "previewLabel": "Selected version",
+    "current": "Current version",
+    "loading": "Loading…",
+    "failed": "Couldn't load the history: {{error}}",
+    "empty": "No earlier versions yet. Gumply keeps a version as you edit.",
+    "source": {
+      "app": "You",
+      "external": "Outside edit",
+      "mcp": "AI app ({{client}})",
+      "mcpUnnamed": "AI app",
+      "import": "Notion import",
+      "restore": "Before restore"
+    },
+    "reason": {
+      "session": "End of editing",
+      "trash": "Before the Trash",
+      "conflict": "Kept from a conflict",
+      "restoredFrom": "Restored the version from {{time}}"
+    },
+    "renamedFrom": "Renamed from “{{title}}”",
+    "movedFrom": "Moved from {{folder}}",
+    "topLevel": "the top level",
+    "deletedToo": "This also deletes its version history.",
+    "earlierPage": "From an earlier page with this name",
+    "otherTitle": "This version was named “{{title}}”. Restoring keeps the current name.",
+    "sameAsCurrent": "Same as the current version.",
+    "preview": "Preview",
+    "changes": "Changes",
+    "wholeFile": "Show whole file",
+    "changesOnly": "Show changes only",
+    "noChanges": "No changes from the current version.",
+    "added": "Added",
+    "removed": "Removed",
+    "boardObjects_one": "This version of the board has {{count}} object.",
+    "boardObjects_other": "This version of the board has {{count}} objects.",
+    "boardAdded": "Added since this version: {{count}}",
+    "boardRemoved": "Removed since this version: {{count}}",
+    "boardChanged": "Changed since this version: {{count}}",
+    "restore": "Restore this version",
+    "copy": "Copy text",
+    "keep": "Keep",
+    "kept": "Kept",
+    "keptHint": "Kept versions are never cleaned up. Click to stop keeping it.",
+    "copied": "Copied",
+    "restored": "Restored the version from {{time}}. Undo is at the top of the list.",
+    "changedOnDisk": "This page changed while you were looking. Check the list and try again.",
+    "restoreFailed": "Couldn't restore: {{error}}",
+    "orphans": "Earlier versions of deleted pages",
+    "orphanMeta_one": "{{count}} version, the last {{time}}",
+    "orphanMeta_other": "{{count}} versions, the last {{time}}",
+    "orphanRestore": "Restore as a page",
+    "orphanRestored": "“{{title}}” is back as a page.",
+    "undo": "Undo",
+    "undoTitle": "Put the page back to the version before this change",
+    "undone": "Undone: “{{title}}” is back to the version before this change.",
+    "undoNothing": "There's no saved version before this change.",
+    "settings": {
+      "size": "Version history uses {{size}}",
+      "clearOlder": "Clear history older than",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "clear": "Clear",
+      "cleared": "Cleared. History now uses {{size}}."
+    },
+    "size": {
+      "bytes": "{{n}} B",
+      "kb": "{{n}} KB",
+      "mb": "{{n}} MB",
+      "gb": "{{n}} GB"
+    },
+    "syncHint": "Using Syncthing? Add this line to the folder's .stignore, so each device keeps its own history.",
+    "syncHintOther": "Dropbox, iCloud and OneDrive can't skip it; history still works if it syncs.",
+    "copyLine": "Copy line"
   }
 }

@@ -42,28 +42,20 @@ describe("history layout (D35, shared with 0.9)", () => {
     ]);
   });
 
-  it("keeps the newest 50 or 30 days, whichever keeps more, never the newest", async () => {
+  it("keeps versions by age (D41): one a day to 90 days, never the newest", async () => {
     const root = temp();
     const dir = join(root, ".gumply/history/P");
     const day = 86_400_000;
     const start = Date.UTC(2026, 0, 1);
-    // 60 versions a day apart: the last 30 days hold 30, the newest 50 win.
-    for (let n = 0; n < 60; n += 1) {
+    // 120 versions a day apart: the last one is "now"; those over 90 days old go.
+    for (let n = 0; n < 120; n += 1) {
       await saveVersion(root, { id: "P", ext: "md", bytes: Buffer.from(`v${n}`), version: `v${n}`, tool: "t", client: "c", now: new Date(start + n * day) });
     }
-    let index = await readIndex(dir);
-    expect(index).toHaveLength(50);
-    expect(index[0]!.version).toBe("v10");
-    expect(readdirSync(dir).filter((name) => name.endsWith(".md"))).toHaveLength(50);
-    // 60 more within one day: all within 30 days, so all are kept with the recent ones.
-    const now = start + 70 * day;
-    for (let n = 0; n < 60; n += 1) {
-      await saveVersion(root, { id: "P", ext: "md", bytes: Buffer.from(`w${n}`), version: `w${n}`, tool: "t", client: "c", now: new Date(now + n * 1000) });
-    }
-    index = await readIndex(dir);
-    expect(index.filter((entry) => entry.version.startsWith("w"))).toHaveLength(60);
-    expect(index.some((entry) => entry.version === "v59")).toBe(true); // 11 days before: inside 30 days
-    expect(index.some((entry) => entry.version === "v30")).toBe(false); // 40 days before, not among the newest 50
+    const index = await readIndex(dir);
+    expect(index[index.length - 1]!.version).toBe("v119");
+    expect(index.some((entry) => entry.version === "v20")).toBe(false); // 99 days before the newest
+    expect(index.some((entry) => entry.version === "v40")).toBe(true); // 79 days before: one a day
+    expect(index).toHaveLength(readdirSync(dir).filter((name) => name.endsWith(".md")).length);
   });
 });
 

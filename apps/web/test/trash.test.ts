@@ -80,17 +80,17 @@ describe("trash helpers", () => {
 
   it("confirmation texts say what goes and that it can't be undone", () => {
     expect(deleteForeverBody(item())).toBe(
-      "This deletes this page and 2 sub-pages from your vault for good. You can't undo this.",
+      "This deletes this page and 2 sub-pages from your vault for good. You can't undo this. This also deletes its version history.",
     );
     expect(deleteForeverBody(item({ kind: "whiteboard", children: [] }))).toBe(
-      "This deletes this whiteboard from your vault for good. You can't undo this.",
+      "This deletes this whiteboard from your vault for good. You can't undo this. This also deletes its version history.",
     );
     expect(emptyTrashBody([item({ children: [] })])).toBe(
-      "This deletes 1 page or whiteboard from your vault for good. You can't undo this.",
+      "This deletes 1 page or whiteboard from your vault for good. You can't undo this. This also deletes its version history.",
     );
     expect(emptyTrashBody([item()])).toContain("3 pages and whiteboards");
     expect(deleteForeverBody(item({ kind: "folder", otherFiles: 5 }))).toBe(
-      "This deletes this folder with its 2 pages and whiteboards and 5 other files from your vault for good. You can't undo this.",
+      "This deletes this folder with its 2 pages and whiteboards and 5 other files from your vault for good. You can't undo this. This also deletes its version history.",
     );
   });
 

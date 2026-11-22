@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync, type Zippable } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
+import { historyDir, readHistory } from "../src/history";
 import { NOTION_IMPORT_LIMITS, NotionImports, cleanupStaleImports, readNotionZip, unsafeEntryName, zipSymlinks } from "../src/notion-import";
 import { addMissingTypes } from "../src/properties";
 import { cleanupVaults, createTestServer } from "./helpers";
@@ -54,6 +55,11 @@ describe("Notion import jobs (#znyztw3t)", () => {
     expect(store.list().map((meta) => meta.id)).toContain("Notion import/Private & Shared/Test page");
     // The temp folder is gone.
     expect(await readdir(join(dir, ".gumply/import")).catch(() => [])).toEqual([]);
+    // spec/version-history §3: each imported page starts its history with an `import` version of its bytes.
+    const id = "Notion import/Private & Shared/Test page";
+    const { entries } = await readHistory(historyDir(dir, id));
+    expect(entries.map((entry) => entry.source)).toEqual(["import"]);
+    expect((await readFile(join(historyDir(dir, id), entries[0]!.file))).equals(await readFile(join(dir, `${id}.md`)))).toBe(true);
   });
 
   it("re-importing makes Notion import 2 and leaves the first import byte-identical", async () => {
