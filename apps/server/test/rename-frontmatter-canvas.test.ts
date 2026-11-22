@@ -174,6 +174,31 @@ describe("frontmatter shapes from the repros (@opus-hunter, @graph-dev)", () => 
   });
 });
 
+describe("frontmatter links resolve from their own note, like the body (#35e42m7v)", () => {
+  it("renaming Projects/Sub/Three rewrites [[Three]] in Projects/A's frontmatter and body; Other/Three and its links stay byte-identical", async () => {
+    const A = '---\nrelated: "[[Three]]"\n---\nSee [[Three]].\n';
+    const B = '---\nrel: "[[Three]]"\n---\nAnd [[Three]].\n';
+    const OTHER = "## Goals\n\nIn Other.\n";
+    const { app, dir } = await vault({
+      "Projects/Sub/Three.md": "## Goals\n\nUnder Projects.\n",
+      "Other/Three.md": OTHER,
+      // From Projects/A, [[Three]] is Projects/Sub/Three (under the note's folder beats the shorter path)…
+      "Projects/A.md": A,
+      // …from the root it's the shorter Other/Three.
+      "B.md": B,
+    });
+    const before = { b: await stat(join(dir, "B.md")), other: await stat(join(dir, "Other/Three.md")) };
+    const response = await renamePage(app, "Projects/Sub/Three", "Four");
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { rewrittenPages: string[] }).rewrittenPages).toEqual(["Projects/A"]);
+    expect(await read(dir, "Projects/A.md")).toBe(A.replaceAll("[[Three]]", "[[Four]]"));
+    expect(await read(dir, "B.md")).toBe(B);
+    expect(await read(dir, "Other/Three.md")).toBe(OTHER);
+    expect((await stat(join(dir, "B.md"))).mtimeMs).toBe(before.b.mtimeMs);
+    expect((await stat(join(dir, "Other/Three.md"))).mtimeMs).toBe(before.other.mtimeMs);
+  });
+});
+
 describe("folder moves and heading renames (#3c86ify2)", () => {
   it("a folder rename rewrites path links in frontmatter values", async () => {
     const { app, dir } = await vault({
