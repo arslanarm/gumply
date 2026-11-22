@@ -171,6 +171,8 @@ test.describe('page cover and background (#385sexd6)', () => {
     await expect(page.getByTestId('cover-vault-att/mountain.png')).toBeVisible();
     await expect(page.locator('[data-testid^="cover-vault-.trash"]')).toHaveCount(0);
     // 33 images: the search box appears and filters by name or folder.
+    await page.getByTestId('cover-vault-search').fill('no such picture');
+    await expect(page.getByTestId('cover-vault-no-match')).toHaveText('No images match “no such picture”');
     await page.getByTestId('cover-vault-search').fill('mount');
     await expect(page.locator('.cover-vault-item')).toHaveCount(1);
     await page.getByTestId('cover-vault-att/mountain.png').click();

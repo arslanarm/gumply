@@ -394,6 +394,10 @@ function CoverPicker({ current, onPick, onClose, onError }: CoverPickerProps) {
           ) : null}
           {images === null ? null : images.length === 0 ? (
             <p className="cover-picker-note">{t("cover.noImages")}</p>
+          ) : shown(images, query).length === 0 ? (
+            <p className="cover-picker-note" data-testid="cover-vault-no-match">
+              {t("cover.noMatch", { query: query.trim() })}
+            </p>
           ) : (
             <div className="cover-vault-grid">
               {shown(images, query).map((item) => (
