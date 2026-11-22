@@ -168,6 +168,23 @@ describe.each(ERAS)("write tools (%s client)", (era) => {
     expect(codeOf(await mcp.call("trash_page", { id: "Projects", expectedUpdated: "x" }))).toBe("UNSUPPORTED");
   });
 
+  it("add_to_board (#3c86ify2): only the new node is inserted; history keeps the exact bytes read once", async () => {
+    // The fixture board in a layout of its own (spaces, a final newline), as another app might write it.
+    const original = `${JSON.stringify(JSON.parse(file("Map.canvas")), null, 2)}\n`;
+    writeFileSync(join(vault.dir, "Map.canvas"), original);
+    const result = await mcp.call("add_to_board", { boardId: "Map.canvas", item: { type: "text", text: "Inserted" } });
+    expect(result.isError).toBeFalsy();
+    const after = file("Map.canvas");
+    // Pure insertion: removing the inserted run gives back the original byte for byte.
+    let at = 0;
+    while (at < original.length && original[at] === after[at]) at += 1;
+    expect(after.slice(0, at) + after.slice(at + after.length - original.length)).toBe(original);
+    expect(after.slice(at)).toContain('"text":"Inserted"');
+    const [entry] = await historyOf("Map.canvas");
+    expect(entry).toMatchObject({ tool: "add_to_board", bytes: Buffer.byteLength(original) });
+    expect(readFileSync(join(vault.dir, ".gumply/history", pageKey("Map.canvas"), entry!.file), "utf8")).toBe(original);
+  });
+
   it("add_to_board: sticky beside a card, page card, http links only; unknown keys kept", async () => {
     const before = vaultHash(vault.dir);
     const sticky = await mcp.call("add_to_board", { boardId: "Map.canvas", item: { type: "sticky", text: "From the model", color: "4" }, near: "n1" });

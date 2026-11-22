@@ -55,8 +55,8 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
     if (Buffer.byteLength(text, "utf8") > max) throw new ToolError("TOO_LARGE", `${field} is over ${Math.round(max / 1024)} KB.`, { field });
   };
   /** Save the bytes about to be replaced (spec §4: before the write). */
-  const snapshot = async (id: string, version: string, toolName: string, client: string) => {
-    const bytes = await vault.bytesOf(id);
+  const snapshot = async (id: string, version: string, toolName: string, client: string, read?: Buffer | null) => {
+    const bytes = read === undefined ? await vault.bytesOf(id) : read;
     if (!bytes) return;
     await saveVersion(root, { id, ext: id.endsWith(".canvas") ? "canvas" : "md", bytes, version, tool: toolName, client });
   };
@@ -220,11 +220,18 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
         node.y = Math.max(...nodes.map((candidate) => candidate.y + candidate.height)) + 40;
       }
       ctx.limiter.take();
-      await snapshot(meta.id, doc.meta.updated, "add_to_board", client);
+      // #3c86ify2: the file is read once; the history keeps exactly these bytes and the write patches them.
+      const before = await vault.bytesOf(meta.id);
+      await snapshot(meta.id, doc.meta.updated, "add_to_board", client, before);
       try {
         // A new board object: the store's copy is never mutated in place. Unknown keys stay (D25).
-        // `minimal` (#3c86ify2): only the new node is added; the rest of the file keeps its bytes.
-        const saved = await vault.store.updateBoard(meta.id, { board: { ...doc.board, nodes: [...nodes, node] }, expectedUpdated: doc.meta.updated, writer, minimal: true });
+        // `minimal`: only the new node is added; the rest of the file keeps its bytes.
+        const saved = await vault.store.updateBoard(meta.id, {
+          board: { ...doc.board, nodes: [...nodes, node] },
+          expectedUpdated: doc.meta.updated,
+          writer,
+          minimal: before ? { base: before.toString("utf8") } : true,
+        });
         await audit(root, { tool: "add_to_board", id: saved.meta.id, before: doc.meta.updated, after: saved.meta.updated, client }, ctx.logMaxBytes);
         return ok({ boardId: saved.meta.id, nodeId, updated: saved.meta.updated }, `Added a ${item.type} card to "${saved.meta.title}" (node ${nodeId}).`);
       } catch (error) {

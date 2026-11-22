@@ -132,6 +132,48 @@ describe("renaming a page (#3c86ify2)", () => {
   });
 });
 
+describe("frontmatter shapes from the repros (@opus-hunter, @graph-dev)", () => {
+  it("nested-flow links, aliases in flow lists, two links in a value, other pages, mentions and escapes", async () => {
+    const yaml = [
+      "---",
+      "up: [[Target#Old heading]]",
+      'refs: ["[[Target|the t]]", other]',
+      'related: "[[Target]] and [[Target#Old heading]]"',
+      'elsewhere: "[[Other/Target]]"',
+      "place: Target",
+      // The YAML text "\\[[Target]]" decodes to \[[Target]]: an escaped opener, so text (as in the body).
+      'escaped: "\\\\[[Target]]"',
+      "list:",
+      "  - [[Target]]",
+      "  - text",
+      "---",
+      "Body.",
+      "",
+    ].join("\n");
+    const { app, dir } = await vault({
+      "Target.md": "## Old heading\n\nx\n",
+      "Other/Target.md": "Another page with the same name.\n",
+      "P.md": yaml,
+    });
+    expect((await renamePage(app, "Target", "Goal")).status).toBe(200);
+    expect(await read(dir, "P.md")).toBe(
+      yaml
+        .replace("up: [[Target#Old heading]]", "up: [[Goal#Old heading]]")
+        .replace('"[[Target|the t]]"', '"[[Goal|the t]]"')
+        .replace('"[[Target]] and [[Target#Old heading]]"', '"[[Goal]] and [[Goal#Old heading]]"')
+        .replace("  - [[Target]]", "  - [[Goal]]"),
+    );
+  });
+
+  it("a heading rename on a one-line board changes only the text and the card's subpath", async () => {
+    const board = '{"nodes":[{"id":"t","type":"text","text":"See [[Target#Old heading]]","x":0,"y":0,"width":1,"height":1},{"id":"c","type":"file","file":"Target.md","subpath":"#Old heading","x":0,"y":0,"width":1,"height":1}],"edges":[]}';
+    const { app, dir } = await vault({ "Target.md": "## Old heading\n\nx\n", "Board.canvas": board });
+    const response = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Target")}`, { content: "## New heading\n\nx\n" });
+    expect(response.status).toBe(200);
+    expect(await read(dir, "Board.canvas")).toBe(board.replace("See [[Target#Old heading]]", "See [[Target#New heading]]").replace('"#Old heading"', '"#New heading"'));
+  });
+});
+
 describe("folder moves and heading renames (#3c86ify2)", () => {
   it("a folder rename rewrites path links in frontmatter values", async () => {
     const { app, dir } = await vault({

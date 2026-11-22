@@ -172,9 +172,11 @@ export interface UpdateBoardInput {
   writer?: string;
   /**
    * #3c86ify2: write only what changed in the file's own layout (MCP
-   * `add_to_board` appends a node). Not part of the HTTP API.
+   * `add_to_board` appends a node). `base` is the file as the caller read it
+   * (MCP keeps those exact bytes as its history snapshot); without it the
+   * file is read here. Not part of the HTTP API.
    */
-  minimal?: boolean;
+  minimal?: boolean | { base: string };
 }
 
 /** D34 (spec/api-bases): a new database view, optionally sourced from a folder or tag. */
@@ -1739,7 +1741,10 @@ export class VaultStore {
     board = withBoardTitle(board, nextTitle, boardStem(targetId));
 
     const replaced = record.updated;
-    const repairBackup = await this.saveBoardRecord(record, board, { minimal: patch.minimal === true });
+    const repairBackup = await this.saveBoardRecord(record, board, {
+      minimal: patch.minimal !== undefined && patch.minimal !== false,
+      ...(typeof patch.minimal === "object" ? { base: patch.minimal.base } : {}),
+    });
     if (patch.writer) record.ownWrite = { version: record.updated, replaced, writer: patch.writer };
     else delete record.ownWrite;
 
@@ -1774,11 +1779,15 @@ export class VaultStore {
    * nodes) in the file's own layout. Anything else, a repaired board, or a
    * file that no longer matches the record, is written whole as before.
    */
-  private async saveBoardRecord(record: PageRecord, board: CanvasBoard, options: { minimal?: boolean } = {}): Promise<string | undefined> {
+  private async saveBoardRecord(
+    record: PageRecord,
+    board: CanvasBoard,
+    options: { minimal?: boolean; base?: string } = {},
+  ): Promise<string | undefined> {
     let repairBackup: string | undefined;
     let text: string | null = null;
     if (options.minimal && !record.boardRepaired && record.board) {
-      const raw = await readFile(record.filePath, "utf8").catch(() => null);
+      const raw = options.base ?? (await readFile(record.filePath, "utf8").catch(() => null));
       text = raw === null ? null : patchCanvasFile(raw, record.board, board);
     }
     if (record.boardRepaired) {
@@ -2199,6 +2208,7 @@ export class VaultStore {
    */
   private async rewriteEverywhere(
     skip: ReadonlySet<PageId>,
+    /** `source`: the page or board the text is in (links resolve from it, #35e42m7v). */
     rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
     boardNodes: Omit<CanvasRewrite, "text"> = {},
     /** #3c86ify2: also rewrite links inside frontmatter values (renames, folder moves, heading renames). */
@@ -2233,7 +2243,7 @@ export class VaultStore {
    */
   private async rewrittenFrontmatter(
     record: PageRecord,
-    rewriteText: (markdown: string) => { content: string; count: number },
+    rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
   ): Promise<string | null> {
     if (record.kind !== "page") return null;
     const properties = await this.rawPropertiesOf(record);
@@ -2245,7 +2255,8 @@ export class VaultStore {
       return null;
     }
     if (yaml === null) return null;
-    const result = rewritePropertyLinks(yaml, rewriteText);
+    // The same check as the body next to it, from the same note (#35e42m7v).
+    const result = rewritePropertyLinks(yaml, (text) => rewriteText(text, record.id));
     return result.count === 0 ? null : result.yaml;
   }
 

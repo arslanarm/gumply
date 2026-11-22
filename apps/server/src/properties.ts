@@ -13,6 +13,7 @@ import {
   type Property,
   type PropertyType,
   type PropertyValue,
+  WIKILINK_INNER,
 } from "@gumply/core";
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
 
@@ -179,44 +180,21 @@ function plainNeedsQuotes(value: string): boolean {
   );
 }
 
-/**
- * #3c86ify2: rewrite `[[links]]` inside frontmatter values (a rename, a folder
- * move, a heading rename), changing only the values that hold a matching link
- * (D37). Top-level text values and items of lists of text values are
- * rewritten, in their own quoting style:
- * - `"double"`: re-quoted as JSON (`"` and `\` escaped);
- * - `'single'`: `'` doubled;
- * - plain: kept plain unless the new text needs quotes, then double-quoted.
- * Gumply's header keys, `tags`, block scalars (`|`, `>`) and anything with
- * anchors or tags are left alone. Returns the YAML unchanged when nothing
- * matched, or when the result wouldn't read back as exactly the new values.
- */
-export function rewritePropertyLinks(
-  yaml: string,
-  rewrite: (text: string) => { content: string; count: number },
-): { yaml: string; count: number } {
-  const unchanged = { yaml, count: 0 };
-  if (!yaml.includes("[[")) return unchanged;
-  const document = parseDocument(yaml, { uniqueKeys: false, prettyErrors: false });
-  if (document.errors.length > 0 || !isMap(document.contents)) return unchanged;
+const WIKILINK_FLOW = new RegExp(String.raw`^\[\[${WIKILINK_INNER}+\]\]$`);
 
-  const edits: Array<{ start: number; end: number; text: string; value: string }> = [];
-  let count = 0;
-  const visit = (node: Node | null | undefined) => {
-    if (!simpleScalar(node) || typeof node.value !== "string" || !node.value.includes("[[")) return;
-    const range = (node as { range?: [number, number, number] }).range;
-    if (!range) return;
-    const result = rewrite(node.value);
-    if (result.count === 0 || result.content === node.value) return;
-    const value = result.content;
-    const type = (node as { type?: string }).type;
-    let text: string;
-    if (type === "QUOTE_SINGLE") text = `'${value.replace(/'/g, "''")}'`;
-    else if (type === "PLAIN" && !plainNeedsQuotes(value)) text = value;
-    else text = JSON.stringify(value);
-    edits.push({ start: range[0], end: range[1], text, value });
-    count += result.count;
-  };
+/** An unquoted `[[Target]]`: YAML reads it as a list in a list, Obsidian (and its users) as a link. */
+function wikilinkFlow(node: Node | null | undefined, yaml: string): string | null {
+  if (!isSeq(node) || !node.flow || node.anchor || node.tag) return null;
+  const range = (node as { range?: [number, number, number] }).range;
+  if (!range) return null;
+  const text = yaml.slice(range[0], range[1]);
+  return WIKILINK_FLOW.test(text) ? text : null;
+}
+
+/** The value nodes a link rewrite may touch, in file order: keys and list positions. */
+function linkTargets(document: ReturnType<typeof parseDocument>, source: string): Array<{ key: string; node: Node }> | null {
+  if (document.errors.length > 0 || !isMap(document.contents)) return null;
+  const out: Array<{ key: string; node: Node }> = [];
   const seen = new Set<string>();
   for (const pair of document.contents.items) {
     const keyNode = pair.key as Node | null;
@@ -225,32 +203,88 @@ export function rewritePropertyLinks(
     if (HEADER_KEYS.includes(key) || key === "tags" || seen.has(key)) continue;
     seen.add(key);
     const value = pair.value as Node | null;
-    if (isSeq(value)) {
-      if (value.anchor || value.tag) continue;
-      for (const item of value.items) visit(item as Node);
+    if (!value) continue;
+    if (isSeq(value) && !value.anchor && !value.tag && !wikilinkFlow(value, source)) {
+      for (const item of value.items) out.push({ key, node: item as Node });
     } else {
-      visit(value);
+      out.push({ key, node: value });
     }
   }
-  if (edits.length === 0) return unchanged;
+  return out;
+}
+
+/**
+ * #3c86ify2: rewrite `[[links]]` inside frontmatter values (a rename, a folder
+ * move, a heading rename), changing only the values that hold a matching link
+ * (D37). The rewrite runs on the **decoded** value (so `"\\[[X]]"`, an escaped
+ * opener, stays text, as in the body). Top-level text values and list items
+ * are rewritten in their own quoting style:
+ * - `"double"`: re-quoted as JSON (`"` and `\` escaped);
+ * - `'single'`: `'` doubled;
+ * - plain: kept plain unless the new text needs quotes, then double-quoted;
+ * - an unquoted `[[Target]]` (a list in a list to YAML): rewritten as written.
+ * Gumply's header keys, `tags`, block scalars (`|`, `>`), anchors and invalid
+ * YAML are left alone. The result is read back: the same keys and values,
+ * except exactly the rewritten ones, or the YAML is returned unchanged.
+ */
+export function rewritePropertyLinks(
+  yaml: string,
+  rewrite: (text: string) => { content: string; count: number },
+): { yaml: string; count: number } {
+  const unchanged = { yaml, count: 0 };
+  if (!yaml.includes("[[")) return unchanged;
+  const parse = (text: string) => parseDocument(text, { uniqueKeys: false, prettyErrors: false });
+  const targets = linkTargets(parse(yaml), yaml);
+  if (!targets) return unchanged;
+
+  /** Per target: the new source text, and what it must read back as. */
+  const edits = new Map<number, { start: number; end: number; text: string; check: (node: Node, source: string) => boolean }>();
+  let count = 0;
+  targets.forEach(({ node }, index) => {
+    const range = (node as { range?: [number, number, number] }).range;
+    if (!range) return;
+    const flow = wikilinkFlow(node, yaml);
+    if (flow !== null) {
+      const result = rewrite(flow);
+      if (result.count === 0 || result.content === flow) return;
+      const text = result.content;
+      edits.set(index, { start: range[0], end: range[1], text, check: (next, source) => wikilinkFlow(next, source) === text });
+      count += result.count;
+      return;
+    }
+    if (!simpleScalar(node) || typeof node.value !== "string" || !node.value.includes("[[")) return;
+    const result = rewrite(node.value);
+    if (result.count === 0 || result.content === node.value) return;
+    const value = result.content;
+    const type = (node as { type?: string }).type;
+    let text: string;
+    if (type === "QUOTE_SINGLE") text = `'${value.replace(/'/g, "''")}'`;
+    else if (type === "PLAIN" && !plainNeedsQuotes(value)) text = value;
+    else text = JSON.stringify(value);
+    edits.set(index, { start: range[0], end: range[1], text, check: (next) => simpleScalar(next) && next.value === value });
+    count += result.count;
+  });
+  if (edits.size === 0) return unchanged;
 
   let out = yaml;
-  for (const edit of [...edits].sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
-  // The result must read back as the same keys with only those values changed.
-  const before = readRawProperties(yaml);
-  const after = readRawProperties(out);
-  const expected = new Map(edits.map((edit) => [edit.value, true]));
-  if (before.length !== after.length) return unchanged;
-  for (let index = 0; index < before.length; index += 1) {
-    const a = before[index]!;
-    const b = after[index]!;
-    if (a.key !== b.key || a.editable !== b.editable) return unchanged;
-    const left = Array.isArray(a.value) ? a.value : [a.value];
-    const right = Array.isArray(b.value) ? b.value : [b.value];
-    if (Array.isArray(a.value) !== Array.isArray(b.value) || left.length !== right.length) return unchanged;
-    for (let at = 0; at < left.length; at += 1) {
-      if (left[at] !== right[at] && !(typeof right[at] === "string" && expected.has(right[at] as string))) return unchanged;
+  for (const edit of [...edits.values()].sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+
+  // Read it back: the same keys and value nodes; rewritten ones as intended, the rest as before.
+  const after = linkTargets(parse(out), out);
+  if (!after || after.length !== targets.length) return unchanged;
+  for (let index = 0; index < targets.length; index += 1) {
+    const was = targets[index]!;
+    const now = after[index]!;
+    if (was.key !== now.key) return unchanged;
+    const edit = edits.get(index);
+    if (edit) {
+      if (!edit.check(now.node, out)) return unchanged;
+    } else if (JSON.stringify((was.node as { toJSON?: () => unknown }).toJSON?.() ?? null) !== JSON.stringify((now.node as { toJSON?: () => unknown }).toJSON?.() ?? null)) {
+      return unchanged;
     }
+  }
+  if (JSON.stringify(readRawProperties(yaml).map((property) => property.key)) !== JSON.stringify(readRawProperties(out).map((property) => property.key))) {
+    return unchanged;
   }
   return { yaml: out, count };
 }
