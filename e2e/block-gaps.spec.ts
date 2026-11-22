@@ -74,6 +74,29 @@ const SHAPES: Record<string, string> = {
   'two blank lines, then touching blocks': 'First\n\n\n## Heading\nText',
   // Not a table in the source (a table can't interrupt a paragraph): raw text.
   'table-like lines right under a paragraph': 'Text\n| a | b |\n| - | - |\n| 1 | 2 |',
+  // #6rbi25wy: H4–H6 are headings too, kept byte-exact (they used to save as plain text).
+  'h4 alone': '#### Deep heading',
+  'h4 → text': '#### Deep heading\nText right under it.',
+  'h5 → h6 → text': '##### Five\n###### Six\nTouching text under six.',
+  'h1 → h2 → h3 → h4': '# One\n## Two\n### Three\n#### Four',
+  'h6 → list': '###### Six\n- item',
+  'text → h5': 'Some text\n##### Five',
+  'h4 inside a quote': '> #### Quoted four\n> text',
+  // ATX closing sequences stay as written, at every level.
+  'closed h2': '## Closed two ##',
+  'closed h4, uneven': '#### Closed four #######',
+  'closed h6 → text': '###### Six ###\nText under six.',
+  'closed h3 in a quote': '> ### Quoted ###\n> text',
+  'a # that is part of the title': '## Learn C#',
+  // All of a heading's bytes, as read (#6rbi25wy): spaces after the hashes, empty headings, indent.
+  'extra spaces after the hashes': '####   Extra spaces',
+  'a tab after the hash': '#\tTab after',
+  'closed with extra spaces': '> ##   Quoted spaces ##\n> text',
+  'empty h1': '#',
+  'empty h4 with its space': '#### ',
+  'empty heading that is only a closing': '### ###',
+  'indented heading': '   ## Indented two',
+  'a closing that is the whole title': '# Issue #',
 };
 
 test.describe('touching blocks stay touching (#54prcupx)', () => {
@@ -116,6 +139,49 @@ test.describe('touching blocks stay touching (#54prcupx)', () => {
     await saved(page);
     const text = await fs.readFile(file(), 'utf8');
     expect(text).toBe('Heading\n\nText under it.\n');
+  });
+});
+
+test.describe('H4–H6 are headings (#6rbi25wy)', () => {
+  // @opus-hunter's rc.1 heading fixtures (h46a–h46d, h13c), byte for byte; each ends in `Target paragraph.`.
+  const FIXTURES: Record<string, string> = {
+    h13c: "# Closed one #\n\n## Closed two ##\n\n### Closed three ###\nText.\n\nTarget paragraph.\n",
+    h46a: "#### Deep heading\nText.\n\n##### Five\n###### Six\nTouching text under six.\n\nTarget paragraph.\n",
+    h46b: "# One\n## Two\n### Three\n#### Four\n\nTarget paragraph.\n",
+    h46c: "#### Closed ####\n\n##### Closed five #####\n\n###### Six ###\nText.\n\nSetext one\n===\n\nSetext two\n---\n\n####   Extra spaces\n\n#### \n\nTarget paragraph.\n",
+    h46d: "- item\n#### Heading after list\n> quote\n\n##### Empty below\n\n######NoSpace is text\n\nTarget paragraph.\n",
+  };
+  for (const [name, text] of Object.entries(FIXTURES)) {
+    test(`fixture ${name} comes back byte-exact after a far edit`, async ({ page, request, vault }) => {
+      void vault;
+      await open(page, request, text);
+      await editTarget(page);
+      expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+    });
+  }
+
+  test('they render as h4, h5, h6 and an edit elsewhere keeps every byte', async ({ page, request, vault }) => {
+    void vault;
+    const text = '# One\n\n#### Four\n\nBody four.\n\n##### Five\n\n###### Six\n\nTarget paragraph.\n';
+    await open(page, request, text);
+    const content = page.getByTestId('editor-content');
+    await expect(content.locator('h4')).toHaveText('Four');
+    await expect(content.locator('h5')).toHaveText('Five');
+    await expect(content.locator('h6')).toHaveText('Six');
+    await editTarget(page);
+    expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+  });
+
+  test('typing #### and a space makes an H4, saved as such', async ({ page, request, vault }) => {
+    void vault;
+    await open(page, request, 'Target paragraph.\n');
+    await page.getByTestId('editor-content').getByText('Target paragraph.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('#### New four');
+    await expect(page.getByTestId('editor-content').locator('h4')).toHaveText('New four');
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('Target paragraph.\n\n#### New four\n');
   });
 });
 
