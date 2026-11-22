@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template";
+  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "outline";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -44,12 +44,14 @@ export interface SearchSections {
   language: SearchRow | null;
   /** v0.7 C: `Open today's note` ("today", "daily"…). */
   today: SearchRow | null;
+  /** v0.8 D1: `Toggle outline` ("outline", "table of contents"…). */
+  outline?: SearchRow | null;
   /** v0.7 C: `New page from template…` ("template", "new page from…"). */
   pageTemplate: SearchRow | null;
 }
 
 /** Words for this language's command (English always counts), from a message. */
-function localWords(key: "search.todayWords" | "search.pageTemplateWords"): string[] {
+function localWords(key: "search.todayWords" | "search.pageTemplateWords" | "search.outlineWords"): string[] {
   return t(key).toLowerCase().split(/\s+/).filter(Boolean);
 }
 
@@ -58,6 +60,14 @@ export function wantsToday(query: string): boolean {
   const needle = normalise(query);
   if (needle.length < 3) return false;
   const words = ["today", "daily", "daily note", "journal", ...localWords("search.todayWords")];
+  return words.some((word) => word.startsWith(needle));
+}
+
+/** Whether `query` asks for the outline: "outline", "toggle outline", "table of contents"… (v0.8 D1). */
+export function wantsOutline(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = ["outline", "toggle outline", "table of contents", "contents", "headings", ...localWords("search.outlineWords")];
   return words.some((word) => word.startsWith(needle));
 }
 
@@ -267,7 +277,8 @@ export function searchSections(
   const pageTemplate = wantsPageTemplate(query)
     ? { kind: "page-template" as const, key: "page-template", label: t("search.pageTemplate") }
     : null;
-  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate };
+  const outline = wantsOutline(query) ? { kind: "outline" as const, key: "outline", label: t("outline.toggle") } : null;
+  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, outline };
 }
 
 export interface SnippetPart {

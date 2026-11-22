@@ -124,3 +124,8 @@ export function hasChildren(entries: readonly { depth: number }[], index: number
   const next = entries[index + 1];
   return !!next && next.depth > entries[index]!.depth;
 }
+
+/** A board's frames as outline entries, in reading order (keyed by frame id). */
+export function framesOutline(frames: readonly FrameBox[]): OutlineEntry[] {
+  return framesInReadingOrder(frames).map((frame) => ({ level: 1, text: frame.title.trim(), key: frame.id, pos: 0, depth: 0 }));
+}
