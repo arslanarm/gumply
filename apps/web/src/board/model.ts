@@ -61,8 +61,9 @@ export function createSticky(rect: Rect, color: string = DEFAULT_STICKY_COLOR, t
   return orderedNode({ id: canvasId(), type: "text", text, gumply: { kind: "sticky" } }, rect, color);
 }
 
+/** Gumply's Text tool: marked, so it stays boxless text in Gumply (an unmarked text node is an Obsidian card, #jchhjepb). */
 export function createText(rect: Rect, text = ""): CanvasNode {
-  return orderedNode({ id: canvasId(), type: "text", text }, rect);
+  return orderedNode({ id: canvasId(), type: "text", text, gumply: { kind: "text" } }, rect);
 }
 
 export function createShape(rect: Rect, shape: GumplyShape, color?: string, text = ""): CanvasNode {

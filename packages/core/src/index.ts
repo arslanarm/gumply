@@ -132,6 +132,7 @@ export {
   canvasText,
   emptyCanvas,
   gumplyNodeData,
+  isGumplyBoard,
   isPresetColor,
   parseCanvas,
   rewriteCanvas,

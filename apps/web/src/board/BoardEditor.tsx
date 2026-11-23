@@ -5,7 +5,7 @@
  *
  * Lazy-loaded through `./index.ts` so page startup doesn't pay for it.
  */
-import { gumplyNodeData, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, type CanvasBoard, type CanvasNode, type GumplyShape, type InkPoint } from "@gumply/core";
+import { gumplyNodeData, isGumplyBoard, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, type CanvasBoard, type CanvasNode, type GumplyShape, type InkPoint } from "@gumply/core";
 import {
   Background,
   BackgroundVariant,
@@ -48,7 +48,7 @@ import { useBoardExport } from "./BoardExport.js";
 import { BoardMenu } from "./BoardMenu.js";
 import { ConnectorToolbar } from "./ConnectorToolbar.js";
 import { BOARD_DRAG_MIME } from "./constants.js";
-import { BoardActionsContext, BoardRenderersContext, type BoardActions, type BoardRenderers } from "./context.js";
+import { BoardActionsContext, BoardLookContext, BoardRenderersContext, type BoardActions, type BoardRenderers } from "./context.js";
 import { BoardContentContext, type BoardContent } from "./content/context.js";
 import { boardContentRenderers } from "./content/renderers.js";
 import { resolveBoardLink } from "./content/links.js";
@@ -474,6 +474,9 @@ function BoardCanvas(props: BoardEditorProps) {
 
   const [history, setHistory] = useState<BoardHistory>(() => createHistory(props.board));
   const board = history.present;
+  // D39 (#jchhjepb): decided from the board as it opened, so adding a sticky
+  // to an Obsidian board doesn't turn its cards into plain text mid-session.
+  const [look] = useState(() => ({ textCards: !isGumplyBoard(props.board) }));
   const boardRef = useRef(board);
   boardRef.current = board;
   // The Outline pane listens for document changes (v0.8 D1).
@@ -1655,6 +1658,7 @@ function BoardCanvas(props: BoardEditorProps) {
 
   return (
     <BoardActionsContext.Provider value={actions}>
+      <BoardLookContext.Provider value={look}>
       <BoardContentContext.Provider value={content}>
       <BoardRenderersContext.Provider value={renderers ?? boardContentRenderers}>
         <div
@@ -1956,6 +1960,7 @@ function BoardCanvas(props: BoardEditorProps) {
         </div>
       </BoardRenderersContext.Provider>
       </BoardContentContext.Provider>
+      </BoardLookContext.Provider>
     </BoardActionsContext.Provider>
   );
 }

@@ -31,6 +31,8 @@ export type InkPoint = [number, number, number];
 
 /** Gumply extras on a text node. Unknown keys are kept as they are. */
 export type GumplyNodeData =
+  /** Gumply's Text tool (#jchhjepb): plain, boxless text; an unmarked text node is an Obsidian card. */
+  | { kind: "text"; [key: string]: unknown }
   | { kind: "sticky"; [key: string]: unknown }
   | { kind: "shape"; shape: GumplyShape; [key: string]: unknown }
   | { kind: "ink"; points: InkPoint[]; width: number; [key: string]: unknown };
@@ -270,6 +272,7 @@ export function gumplyNodeData(node: CanvasNode): GumplyNodeData | null {
   if (node.type !== "text" || !isObject(node.gumply)) return null;
   const data = node.gumply;
   switch (data.kind) {
+    case "text":
     case "sticky":
       return data as GumplyNodeData;
     case "shape":
@@ -282,6 +285,17 @@ export function gumplyNodeData(node: CanvasNode): GumplyNodeData | null {
     default:
       return null;
   }
+}
+
+/**
+ * A board Gumply has written to: its own metadata, or Gumply data on any
+ * node (#jchhjepb, D39). On a board that isn't, an unmarked `text` node is
+ * drawn as Obsidian draws it (a card); on one that is, it stays the boxless
+ * text Gumply's Text tool made before nodes were marked.
+ */
+export function isGumplyBoard(board: CanvasBoard): boolean {
+  if (board.gumply !== undefined) return true;
+  return board.nodes.some((node) => node.gumply !== undefined);
 }
 
 /** What a node is, from a user's point of view. */
