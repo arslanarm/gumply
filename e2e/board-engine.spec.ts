@@ -413,6 +413,8 @@ test.describe('board engine (W1)', () => {
 
     // Drag the frame by an empty spot near its top-right corner.
     await drag(page, { x: 760, y: 280 }, { x: 860, y: 330 });
+    // The move lands a moment after mouseup under load: wait for it (#9a393rp5).
+    await expect.poll(async () => Math.abs(((await board(page)).nodes.find((node) => node.id === frame.id)?.x ?? frame.x) - frame.x)).toBeGreaterThan(50);
     const moved = await board(page);
     const frameAfter = moved.nodes.find((node) => node.id === frame.id);
     const insideAfter = moved.nodes.find((node) => node.id === inside.id);
@@ -427,10 +429,13 @@ test.describe('board engine (W1)', () => {
     // Nudge the selected frame (and its contents) with the arrow keys.
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Shift+ArrowDown');
-    const nudged = await board(page);
-    // #pujmbsyz: 8 px, Shift 40.
-    expect(nudged.nodes.find((node) => node.id === frame.id)).toMatchObject({ x: (frameAfter?.x ?? 0) + 8, y: (frameAfter?.y ?? 0) + 40 });
-    expect(nudged.nodes.find((node) => node.id === inside.id)).toMatchObject({ x: (insideAfter?.x ?? 0) + 8, y: (insideAfter?.y ?? 0) + 40 });
+    // #pujmbsyz: 8 px, Shift 40. Wait for both presses to land (#9a393rp5).
+    const position = async (id: string) => {
+      const node = (await board(page)).nodes.find((item) => item.id === id);
+      return { x: node?.x, y: node?.y };
+    };
+    await expect.poll(() => position(frame.id)).toEqual({ x: (frameAfter?.x ?? 0) + 8, y: (frameAfter?.y ?? 0) + 40 });
+    await expect.poll(() => position(inside.id)).toEqual({ x: (insideAfter?.x ?? 0) + 8, y: (insideAfter?.y ?? 0) + 40 });
   });
 
   test('undo and redo cover create, move, text edits, colour and delete', async ({ page }) => {

@@ -109,15 +109,19 @@ test('a dialog whose code fails to download shows a small error that Esc closes'
   await expect(page.getByTestId('editor-content')).toBeVisible();
   await page.getByTestId('sidebar').click({ position: { x: 5, y: 5 } });
 
+  // Both waits below are for a dialog's code to load (or fail to) under
+  // load, not for a dropped key: a single `?` each, with a 15 s ceiling
+  // (#9a393rp5; #gbq6i6iu showed no key is dropped).
   await page.keyboard.press('?');
   const error = page.getByTestId('dialog-load-error');
-  await expect(error).toContainText('Could not open this.');
+  await expect(error).toContainText('Could not open this.', { timeout: 15_000 });
   await page.keyboard.press('Escape');
   await expect(error).toHaveCount(0);
 
   await unblock();
   await page.keyboard.press('?');
-  await expect(page.getByTestId('shortcuts-dialog')).toBeVisible();
+  // The shortcuts part downloads its code now (the earlier fetch was blocked).
+  await expect(page.getByTestId('shortcuts-dialog')).toBeVisible({ timeout: 15_000 });
 });
 
 test('after a rebuild (graph chunk 404) the graph offers Reload, which brings it back (#fzfrkpta)', async ({

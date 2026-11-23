@@ -75,7 +75,9 @@ describe("bounded search (#g95wkd9y)", () => {
     }
     // 8x the matching pages: scoring is linear, the sort n·log n (about 11x here).
     expect(work[1]! / work[0]!).toBeLessThan(16);
-  });
+    // It builds two vaults (100 and 800 pages, 900 files in all): past vitest's 5 s default
+    // under parallel load (#9a393rp5). The count itself is deterministic.
+  }, 30_000);
 
   it("pages follow D13's ranking: concatenated, they are the whole ranked list", async () => {
     const store = await vaultOf(150, 20);
@@ -159,7 +161,9 @@ describe("bounded search with conflict copies (#3jkf2gf6, D43)", () => {
       work.push(countWork(() => store.search("roadmap")));
     }
     expect(work[1]! / work[0]!).toBeLessThan(16);
-  });
+    // It writes 1,800 files (900 pages and a copy of each): past vitest's 5 s default
+    // under parallel load (#9a393rp5). The count itself is deterministic.
+  }, 30_000);
 
   it("every copy comes right after its page in the whole ranked list, across page boundaries", async () => {
     const store = await vaultWithCopies(30);

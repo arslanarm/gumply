@@ -31,6 +31,11 @@ type Scope = { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string> };
 /** The store's watcher hooks, with the debounce timer switched off so a test drives each refresh. */
 function watcherOf(store: VaultStore) {
   const internals = store as unknown as Internals;
+  // These tests report watcher events by hand: the real watcher (started by
+  // init) would add its own, late, events for the test's writes, and enough of
+  // them count as a sync burst whose check runs a full refresh in the middle
+  // of the test (#9a393rp5). onWatchEvent still works with it stopped.
+  store.stopWatching();
   internals.scheduleRescan = () => {};
   return {
     internals,
@@ -268,7 +273,9 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
           else expect(content, `Note ${i}`).not.toContain("Edit");
         }
         expect(backlinkIds(store, "Hub")).toHaveLength(Math.max(mid, 150));
-      });
+        // 300 notes and up to 400 real writes: past vitest's 5 s default under
+        // parallel load (#9a393rp5). A ceiling, not a wait: it ends when done.
+      }, 30_000);
     }
 
     for (const when of ["before its stat", "between its stat and its read"] as const) {

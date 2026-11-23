@@ -298,7 +298,9 @@ describe("VaultStore index on start", () => {
   });
 });
 
-async function waitFor(predicate: () => boolean, timeout = 4000): Promise<void> {
+// A ceiling, not a wait: it returns as soon as the predicate holds. 4 s was
+// too tight for the watcher under parallel load (#9a393rp5).
+async function waitFor(predicate: () => boolean, timeout = 15_000): Promise<void> {
   const started = Date.now();
   while (Date.now() - started < timeout) {
     if (predicate()) return;
@@ -710,7 +712,12 @@ describe("watcher after the app's own atomic saves (#3ugdxhzu, Node 20/22)", () 
       await writeFile(join(dir, "Map.canvas"), JSON.stringify({ nodes: [{ id: "a", type: "text", text: "From outside", x: 0, y: 0, width: 100, height: 50 }], edges: [] }));
       await waitFor(() => store.search("From outside").length === 1);
     } finally {
+      // Drain before afterEach deletes the vault: an outside change's history
+      // version can still be on its way (ENOTEMPTY on .gumply/history, #9a393rp5).
+      // A rescan joins the serial write queue, so it returns after what's pending.
       store.stopWatching();
+      await store.flushHistory();
+      await store.rescan();
     }
   });
 });
