@@ -131,17 +131,17 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     await store.update("Hub", { title: "Hub renamed" });
     const first = start.content.replace(/^Intro (\d+)\./, "Intro $1, mine.");
     const kept = await store.update(target, { content: first, expectedUpdated: start.updated, force: true, writer: "w1" });
-    expect(kept).toMatchObject({ renameLinksKept: true });
+    expect(kept.renameLinksMerged).toEqual({ links: 1, titles: ["Hub renamed"] });
     // The editor didn't reload: it still has [[Hub]], and saves more typing from the version it got back.
     const next = await store.update(target, { content: `${first}More typing.\n`, expectedUpdated: kept.updated, writer: "w1" });
     const text = await readFile(join(dir, `${target}.md`), "utf8");
     expect(text).toContain("More typing.");
     expect(text).toContain("See [[Hub renamed]] for more.");
     expect(text).not.toContain("[[Hub]]");
-    expect(next).toMatchObject({ renameLinksKept: true });
+    expect(next.renameLinksMerged).toEqual({ links: 1, titles: ["Hub renamed"] });
     // A plain save with nothing to keep says nothing.
     const plain = await store.update(target, { content: text.replace(/^---[\s\S]*?---\n/, ""), expectedUpdated: next.updated, writer: "w2" });
-    expect(plain.renameLinksKept).toBeUndefined();
+    expect(plain.renameLinksMerged).toBeUndefined();
   });
 
   it("another editor session's save isn't touched by that follow-up", async () => {

@@ -323,3 +323,4 @@ export {
   type ConflictTool,
   type PossibleCopyName,
 } from "./sync-conflicts.js";
+export { mergeRenameLinks } from "./rename-merge.js";

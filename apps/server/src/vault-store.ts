@@ -8,6 +8,7 @@ import {
   HEADER_KEYS,
   inferPropertyType,
   isPropertyType,
+  mergeRenameLinks,
   isValidPropertyKey,
   YAML_EMPTY,
   type PropertiesPatch,
@@ -213,10 +214,6 @@ import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import { sweepTempFiles, tempPathBeside, writeAtomic } from "./temp-files.js";
 import { RenameJournal, RESUME_ANY_AFTER_MS, type PendingRename } from "./rename-journal.js";
 import { fixedInstanceId, type InstanceId } from "./instance-id.js";
-import { mergeRenameLinks } from "./rename-merge.js";
-
-/** N10 (#5pgmziyc): how long a rename's rewrite of a page is remembered for a later Keep mine. */
-const RENAME_MERGE_WINDOW_MS = 10 * 60 * 1000;
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -507,6 +504,27 @@ const SYNC_WINDOW_MS = 2000;
  * or this long, per batch.
  */
 const RENAME_BATCH_PAGES = 200;
+/** N10 (#5pgmziyc): how long a rename's rewrite of a page is remembered for a later Keep mine. */
+const RENAME_MERGE_WINDOW_MS = 10 * 60 * 1000;
+
+/** N10: one rename's rewrite of a page (its body before and after) and the rename's new title. */
+interface RenameMergePair {
+  before: string;
+  after: string;
+  title: string;
+}
+
+/** N10: the renames' link changes applied to `content` in order (lines the user didn't touch only). */
+function applyRenameMerges(pairs: readonly RenameMergePair[], content: string): { content: string; links: number } {
+  let merged = content;
+  let links = 0;
+  for (const pair of pairs) {
+    const result = mergeRenameLinks(pair.before, pair.after, merged);
+    merged = result.content;
+    links += result.applied;
+  }
+  return { content: merged, links };
+}
 const RENAME_BATCH_MS = 50;
 
 /** #xgnvipyd: a title rename's link rewrite, pinned when the rename itself is done and run in batches. */
@@ -969,13 +987,13 @@ export class VaultStore {
    * versions), for RENAME_MERGE_WINDOW_MS: a Keep mine from an editor that started before it gets
    * the rename's link changes on the lines it didn't touch.
    */
-  private renameRewrites = new Map<PageId, Array<{ before: string; after: string; versionBefore: string; versionAfter: string; at: number }>>();
+  private renameRewrites = new Map<PageId, Array<{ before: string; after: string; versionBefore: string; versionAfter: string; at: number; title: string }>>();
   /**
    * N10 (@polish-dev's question): after a merged Keep mine, that editor still shows `[[Old]]` until it
    * reloads; its next ordinary saves (same `writer`, from the version the merge wrote) get the same
    * rename changes again, within the same window, so they never undo the merge.
    */
-  private renameMergeSessions = new Map<PageId, { writer: string; version: string; pairs: Array<{ before: string; after: string }>; at: number }>();
+  private renameMergeSessions = new Map<PageId, { writer: string; version: string; pairs: RenameMergePair[]; at: number }>();
   /** N9-1: renames whose batches are running (their `touched` sets are filled). */
   private activeRenameJobs = new Set<RenameRewrite>();
   /** N9-1: inside a rename's own rewrite (its writes aren't "touched" by someone else). */
@@ -3350,7 +3368,7 @@ export class VaultStore {
   private async updateNow(
     id: PageId,
     patch: UpdatePageInput,
-  ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string; renameLinksKept?: true }> {
+  ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string; renameLinksMerged?: { links: number; titles: string[] } }> {
     if (this.folders.has(id)) return this.renameFolderNow(id, patch);
     let record = this.require(id);
     if (record.kind === "whiteboard") {
@@ -3391,24 +3409,30 @@ export class VaultStore {
     // N10 (#5pgmziyc, D22 note): Keep mine keeps the user's text, except a concurrent rename's link
     // changes on lines they didn't touch. The same editor's later saves (it still shows the old
     // link until it reloads) get them again, so they never undo it.
-    let mergePairs: Array<{ before: string; after: string }> = [];
+    let mergePairs: RenameMergePair[] = [];
     let mergeAt = 0;
+    let mergedLinks = 0;
     if (patch.content !== undefined) {
       if (patch.force && changedOnDisk) {
         const merged = this.mergeRecentRenames(record.id, patch.expectedUpdated, nextContent);
         nextContent = merged.content;
+        mergedLinks = merged.links;
         mergePairs = merged.pairs;
         mergeAt = merged.at;
       } else {
         const session = this.renameMergeSessions.get(record.id);
         if (session && session.writer === patch.writer && session.version === patch.expectedUpdated && Date.now() - session.at <= RENAME_MERGE_WINDOW_MS) {
-          for (const pair of session.pairs) nextContent = mergeRenameLinks(pair.before, pair.after, nextContent).content;
+          const merged = applyRenameMerges(session.pairs, nextContent);
+          nextContent = merged.content;
+          mergedLinks = merged.links;
           mergePairs = session.pairs;
           mergeAt = session.at;
         }
       }
     }
-    const renameLinksKept = patch.content !== undefined && nextContent !== patch.content;
+    // spec/api v1.35 (N10): the lines the server changed from what was sent, and the renames' new titles.
+    const renameLinksMerged =
+      mergedLinks > 0 ? { links: mergedLinks, titles: [...new Set(mergePairs.map((pair) => pair.title))] } : null;
     if (nextContent.length > MAX_CONTENT_LENGTH) throw badRequest("content is too large");
 
     let nextIcon = record.icon;
@@ -3527,8 +3551,8 @@ export class VaultStore {
       rewrittenPages,
       ...(conflictBackup ? { conflictBackup } : {}),
       // N10 (spec/api v1.35): the text written isn't exactly what was sent (a rename's link changes
-      // were kept); the client shows the page as written.
-      ...(renameLinksKept ? { renameLinksKept: true } : {}),
+      // were kept on lines the editor didn't touch); the client applies the same lines in place.
+      ...(renameLinksMerged ? { renameLinksMerged } : {}),
     };
   }
 
@@ -3777,7 +3801,7 @@ export class VaultStore {
     try {
       await apply();
       const after = this.pages.get(other.id);
-      if (before !== null && after && after.content !== before) this.rememberRenameRewrite(other.id, before, after.content, versionBefore, after.updated);
+      if (before !== null && after && after.content !== before) this.rememberRenameRewrite(other.id, before, after.content, versionBefore, after.updated, job.newTitle);
       return true;
     } catch (error) {
       job.failed.push(other.id);
@@ -3787,7 +3811,7 @@ export class VaultStore {
   }
 
   /** N10: remember a rename's rewrite of page `id` (pruned by age). */
-  private rememberRenameRewrite(id: PageId, before: string, after: string, versionBefore: string, versionAfter: string): void {
+  private rememberRenameRewrite(id: PageId, before: string, after: string, versionBefore: string, versionAfter: string, title: string): void {
     const now = Date.now();
     for (const [key, list] of this.renameRewrites) {
       const kept = list.filter((entry) => now - entry.at <= RENAME_MERGE_WINDOW_MS);
@@ -3795,7 +3819,7 @@ export class VaultStore {
       else if (kept.length !== list.length) this.renameRewrites.set(key, kept);
     }
     const list = this.renameRewrites.get(id) ?? [];
-    list.push({ before, after, versionBefore, versionAfter, at: now });
+    list.push({ before, after, versionBefore, versionAfter, at: now, title });
     this.renameRewrites.set(id, list);
   }
 
@@ -3808,22 +3832,20 @@ export class VaultStore {
     id: PageId,
     expected: string | undefined,
     content: string,
-  ): { content: string; pairs: Array<{ before: string; after: string }>; at: number } {
+  ): { content: string; links: number; pairs: RenameMergePair[]; at: number } {
     const list = this.renameRewrites.get(id);
-    if (!list || expected === undefined) return { content, pairs: [], at: 0 };
+    if (!list || expected === undefined) return { content, links: 0, pairs: [], at: 0 };
     const now = Date.now();
     let version = expected;
-    let merged = content;
-    const pairs: Array<{ before: string; after: string }> = [];
+    const pairs: RenameMergePair[] = [];
     let at = 0;
     for (const entry of list) {
       if (now - entry.at > RENAME_MERGE_WINDOW_MS || entry.versionBefore !== version) continue;
-      merged = mergeRenameLinks(entry.before, entry.after, merged).content;
-      pairs.push({ before: entry.before, after: entry.after });
+      pairs.push({ before: entry.before, after: entry.after, title: entry.title });
       at = at || entry.at;
       version = entry.versionAfter;
     }
-    return { content: merged, pairs, at };
+    return { ...applyRenameMerges(pairs, content), pairs, at };
   }
 
   /**

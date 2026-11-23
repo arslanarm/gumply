@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeRenameLinks } from "../src/rename-merge";
+import { mergeRenameLinks } from "../src/rename-merge.js";
 
 /** N10 (#5pgmziyc): the rename's link changes, applied to a forced save only where the user didn't touch. */
 describe("mergeRenameLinks", () => {

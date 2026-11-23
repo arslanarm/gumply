@@ -204,6 +204,8 @@ export interface UpdatePageInput {
 export type UpdatePageResult = Page & {
   rewrittenPages?: PageId[];
   conflictBackup?: string;
+  /** v1.35 (N10): a rename's link changes kept on `links` lines the editor didn't touch; the renames' new titles. */
+  renameLinksMerged?: { links: number; titles: string[] };
 };
 
 /** DELETE result: v1.1 returns a trash id; v1.0 returns 204 (no trash). */

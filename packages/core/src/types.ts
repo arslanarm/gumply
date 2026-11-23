@@ -69,6 +69,12 @@ export type PageUpdateResult = Page & {
   linksNotRewritten?: PageId[];
   /** Vault-relative backup path when "Keep mine" replaced an external edit. */
   conflictBackup?: string;
+  /**
+   * v1.35 (N10, #5pgmziyc, provisional): the text written isn't exactly what was sent. A rename's
+   * link changes were kept on `links` lines the editor didn't touch; `titles` are those renames' new
+   * titles, newest last. The client applies the same lines in place.
+   */
+  renameLinksMerged?: { links: number; titles: string[] };
 };
 
 /** `GET /api/boards/:id` (v1.7, D25): the tree item plus its JSON Canvas. */
