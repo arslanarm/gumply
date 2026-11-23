@@ -38,6 +38,7 @@ Double-click anything to write in it. Text on stickies, shapes and cards is Mark
 - **Duplicate** with `Ctrl/Cmd+D`, **copy and paste** with `Ctrl/Cmd+C` and `Ctrl/Cmd+V`.
 - **Bring to front / send to back:** `]` and `[`.
 - **Zoom:** `Ctrl/Cmd` + scroll, or pinch. `Shift+1` fits the whole board.
+<!-- TODO(#zkknytrs): once it is on main, say that zooming stays smooth on big boards (1,000+ objects). -->
 - **Delete:** `Delete` or `Backspace`. `Ctrl/Cmd+Z` undoes any change; `Ctrl/Cmd+Shift+Z` redoes it.
 
 ## Use a board from the keyboard

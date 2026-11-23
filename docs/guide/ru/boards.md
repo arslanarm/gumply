@@ -38,6 +38,7 @@
 - **Дублировать** — `Ctrl/Cmd+D`, **копировать и вставить** — `Ctrl/Cmd+C` и `Ctrl/Cmd+V`.
 - **На передний / на задний план:** `]` и `[`.
 - **Масштаб:** `Ctrl/Cmd` + колесо или щипок. `Shift+1` показывает всю доску.
+<!-- TODO(#zkknytrs): once it is on main, say that zooming stays smooth on big boards (1,000+ objects). -->
 - **Удалить:** `Delete` или `Backspace`. `Ctrl/Cmd+Z` отменяет любое изменение, `Ctrl/Cmd+Shift+Z` повторяет его.
 
 ## Доска с клавиатуры

@@ -42,6 +42,10 @@ Look in **Trash** at the bottom of the sidebar. A page deleted in another app ma
 
 Your sync tool kept both sides of an edit made on two devices. See [Sync with other apps](sync-with-other-apps.md).
 
+## A big vault: "Indexing links…" or "Arranging the graph…"
+
+Both are normal in a vault with thousands of notes and go away by themselves. Your pages open meanwhile. See [Big vaults](links-and-graph.md#big-vaults).
+
 ## An AI app can't connect
 
 See the troubleshooting section of [docs/mcp.md](../../mcp.md#troubleshooting). To see exactly what happens when an AI app starts Gumply, set `GUMPLY_MCP_TRACE=/path/to/trace.log` in the AI app's settings for Gumply; the file records each step.
