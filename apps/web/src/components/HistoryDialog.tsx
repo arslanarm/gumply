@@ -9,6 +9,7 @@ import { errorMessage } from "../lib/errors.js";
 import { flushAllSaves, hasUnsavedChanges } from "../lib/pending-saves.js";
 import { Editor } from "./Editor.js";
 import { Icon } from "./Icon.js";
+import { LineDiffView } from "./LineDiffView.js";
 
 /**
  * D41 / spec/version-history §6.2: a page's or board's versions beside a
@@ -42,24 +43,6 @@ function useHistorySourceLabel() {
     if (item.source === "mcp") return item.client ? t("history.source.mcp", { client: item.client }) : t("history.source.mcpUnnamed");
     return t(`history.source.${item.source}` as const);
   };
-}
-
-/** The diff lines to show: all of them, or the changes with two lines of context. */
-function visibleLines(lines: Array<{ op: "same" | "add" | "remove"; text: string }>, whole: boolean) {
-  if (whole) return lines.map((line) => ({ ...line, gap: false }));
-  const keep = new Set<number>();
-  lines.forEach((line, index) => {
-    if (line.op === "same") return;
-    for (let near = index - 2; near <= index + 2; near += 1) if (near >= 0 && near < lines.length) keep.add(near);
-  });
-  const out: Array<{ op: "same" | "add" | "remove"; text: string; gap: boolean }> = [];
-  let previous = -1;
-  for (const index of [...keep].sort((a, b) => a - b)) {
-    if (previous >= 0 && index > previous + 1) out.push({ op: "same", text: "", gap: true });
-    out.push({ ...lines[index]!, gap: false });
-    previous = index;
-  }
-  return out;
 }
 
 export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDialogProps) {
@@ -288,28 +271,7 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
     // The diff runs from this version to now: "add" is what now has and this version lacks.
     return (
       <>
-        <pre className="history-diff" data-testid="history-diff">
-          {visibleLines(diff.lines, whole).map((line, index) =>
-            line.gap ? (
-              <span key={index} className="history-diff-gap" aria-hidden="true">
-                ⋯{"\n"}
-              </span>
-            ) : (
-              <span
-                key={index}
-                className={`history-diff-line history-diff-${line.op}`}
-                data-op={line.op}
-                aria-label={line.op === "same" ? undefined : `${line.op === "add" ? t("history.added") : t("history.removed")}: ${line.text}`}
-              >
-                <span className="history-diff-marker" aria-hidden="true">
-                  {line.op === "add" ? "+" : line.op === "remove" ? "−" : " "}
-                </span>
-                {line.text}
-                {"\n"}
-              </span>
-            ),
-          )}
-        </pre>
+        <LineDiffView lines={diff.lines} whole={whole} testId="history-diff" />
       </>
     );
   };

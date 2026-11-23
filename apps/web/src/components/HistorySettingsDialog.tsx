@@ -10,8 +10,12 @@ import { Icon } from "./Icon.js";
  * Copy line button. Gumply never writes `.stignore` itself (D41).
  */
 
-/** The ignore line a Syncthing user adds to the folder's `.stignore`. */
-export const STIGNORE_LINE = ".gumply/history";
+/**
+ * The ignore lines a Syncthing user adds to the folder's `.stignore`: what each
+ * device keeps for itself (D41, extended by D43: the AI-app log, Keep-mine
+ * backups and import scratch too).
+ */
+export const STIGNORE_LINES = [".gumply/history", ".gumply/mcp-log.jsonl", ".gumply/conflicts", ".gumply/import"];
 
 const CLEAR_DAYS = [7, 30, 90] as const;
 
@@ -69,7 +73,7 @@ export function HistorySettingsDialog({ onClose }: { onClose: () => void }) {
 
   const copyLine = async () => {
     try {
-      await navigator.clipboard.writeText(STIGNORE_LINE);
+      await navigator.clipboard.writeText(`${STIGNORE_LINES.join("\n")}\n`);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch (error) {
@@ -113,7 +117,7 @@ export function HistorySettingsDialog({ onClose }: { onClose: () => void }) {
         <div className="history-sync-hint" data-testid="history-sync-hint">
           <p>{t("history.syncHint")}</p>
           <div className="history-sync-line">
-            <code data-testid="history-sync-line">{STIGNORE_LINE}</code>
+            <pre className="history-sync-lines" data-testid="history-sync-line">{STIGNORE_LINES.join("\n")}</pre>
             <button type="button" className="button-secondary" data-testid="history-copy-line" onClick={() => void copyLine()}>
               {copied ? t("history.copied") : t("history.copyLine")}
             </button>

@@ -7273,15 +7273,27 @@ input {
 
 .history-sync-line {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
 }
 
-.history-sync-line code {
+.history-sync-line code,
+.history-sync-lines {
   padding: 0.25rem 0.5rem;
   border-radius: 5px;
   background: var(--hover);
 }
+
+.history-sync-lines {
+  flex: 1;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}
+
 
 .trash-orphans {
   margin-top: 2rem;
@@ -7515,4 +7527,182 @@ input {
 
 .updates-link:hover {
   text-decoration: underline;
+}
+
+/* D43 (spec/sync-conflicts §4): sync conflict copies. */
+.page-conflict-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: 0.35rem;
+  border-radius: 50%;
+  background: var(--color-orange);
+}
+
+.conflict-banner {
+  position: static;
+  margin: 0 0 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-orange) 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-orange) 9%, var(--bg));
+  color: var(--text);
+}
+
+.conflict-banner > svg {
+  flex: none;
+  color: var(--color-orange);
+}
+
+.conflict-banner-note {
+  color: var(--muted);
+}
+
+.conflict-banner-actions {
+  display: flex;
+  flex: none;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.conflict-banner-actions button {
+  white-space: nowrap;
+}
+
+.modal.conflict-dialog {
+  width: min(960px, 100%);
+  height: min(720px, calc(100vh - 3rem));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.conflict-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+  margin: 0;
+  padding: 0.55rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.conflict-changes {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.8rem 1.2rem;
+}
+
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.2rem;
+  border-top: 1px solid var(--border);
+}
+
+.conflict-actions-spacer {
+  flex: 1;
+}
+
+.conflict-section-title {
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.conflict-possible summary {
+  cursor: pointer;
+}
+
+.conflict-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.conflict-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.65rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.conflict-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.conflict-row-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conflict-row-title:hover {
+  text-decoration: underline;
+}
+
+.conflict-row-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.conflict-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.conflict-copy-body {
+  min-height: 12rem;
+}
+
+.conflict-copy-base {
+  margin: 0;
+  padding: 0.8rem;
+  border-radius: 6px;
+  background: var(--hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.84rem;
+  white-space: pre-wrap;
+}
+
+.quick-switcher-conflict {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-orange) 14%, transparent);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.sidebar-syncing:empty {
+  display: none;
+}
+
+.sidebar-syncing {
+  padding: 0.3rem 0.85rem 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.conflicts-view .history-muted {
+  margin: 0.25rem 0 0.6rem;
 }

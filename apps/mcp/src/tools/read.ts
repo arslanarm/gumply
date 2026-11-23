@@ -93,7 +93,8 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
       const results: Array<z.infer<typeof searchHit>> = [];
       for await (const hit of ranked()) {
         if (results.length >= limit) break;
-        if (!wanted(hit.page) || !(await vault.inside(hit.page.id))) continue;
+        // D43: a conflict copy beside its page isn't offered to the AI app.
+        if (!wanted(hit.page) || typeof hit.page.conflictOf === "string" || !(await vault.inside(hit.page.id))) continue;
         results.push({ id: hit.page.id, title: hit.page.title, kind: kindOf(hit.page), snippet: hit.snippet, path: vault.pathOf(hit.page.id) });
       }
       const text = results.length

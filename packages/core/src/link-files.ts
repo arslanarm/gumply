@@ -60,6 +60,11 @@ export class LinkFileIndex {
     return this.byPath.size;
   }
 
+  /** Every indexed file, as spelled on disk (v1.29: attachment conflict copies). */
+  files(): string[] {
+    return [...this.byPath.values()];
+  }
+
   /** Every indexed file's vault path (#3ht5gh6q: the cover picker's image list). */
   paths(): string[] {
     return [...this.byPath.values()];

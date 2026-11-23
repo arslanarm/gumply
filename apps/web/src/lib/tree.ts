@@ -53,7 +53,9 @@ export function isSelfOrDescendant(id: PageId, candidate: PageId): boolean {
  * whose parent chain loops) become roots instead of disappearing.
  */
 export function buildPageTree(pages: readonly PageMeta[]): PageTreeNode[] {
-  const sorted = [...pages].sort(comparePages);
+  // D43: a sync conflict copy beside its page isn't in the tree; the page's
+  // badge and the Conflicts list lead to it. An orphan copy (null) stays.
+  const sorted = pages.filter((page) => typeof page.conflictOf !== "string").sort(comparePages);
   const nodes = new Map<PageId, PageTreeNode>();
   for (const page of sorted) nodes.set(page.id, { page, children: [] });
 

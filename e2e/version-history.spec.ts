@@ -99,8 +99,9 @@ test('Settings → Version history: the Syncthing line, and .stignore is never w
   await page.getByTestId('settings-history').click();
   const dialog = page.getByTestId('history-settings');
   await expect(dialog.getByTestId('history-usage')).toContainText('Version history uses');
-  await expect(dialog.getByTestId('history-sync-line')).toHaveText('.gumply/history');
-  await expect(dialog.getByTestId('history-copy-line')).toHaveText('Copy line');
+  // D43: the lines each device keeps for itself.
+  await expect(dialog.getByTestId('history-sync-line')).toHaveText('.gumply/history\n.gumply/mcp-log.jsonl\n.gumply/conflicts\n.gumply/import');
+  await expect(dialog.getByTestId('history-copy-line')).toHaveText('Copy lines');
   await expect(stat(path.join(E2E_VAULT, '.stignore'))).rejects.toThrow();
 });
 

@@ -69,6 +69,8 @@ function PageItemRow(props: PageItemProps) {
   const leaf = isBoard(page) || base;
   const board = isBoard(page);
   const folder = page.kind === "folder";
+  // D43: a page with sync conflict copies beside it, or an orphan copy.
+  const conflictLabel = page.conflicts ? t("conflicts.badge", { count: page.conflicts }) : page.conflictOf === null ? t("conflicts.orphan") : null;
   const hasChildren = node.children.length > 0;
   const isSelected = selectedId === page.id;
   const isRenaming = renamingId === page.id;
@@ -390,6 +392,9 @@ function PageItemRow(props: PageItemProps) {
             <span className="page-item-title" title={page.title}>
               {page.title}
             </span>
+            {conflictLabel ? (
+              <span className="page-conflict-dot" role="img" aria-label={conflictLabel} data-tooltip={conflictLabel} data-testid={`conflict-badge-${page.id}`} />
+            ) : null}
           </span>
         )}
 

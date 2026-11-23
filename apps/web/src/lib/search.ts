@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf" | "outline" | "history";
+  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf" | "outline" | "history" | "conflicts";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -55,11 +55,13 @@ export interface SearchSections {
   /** G2: `Export page as PDF` ("pdf", "print"…). */
   exportPdf?: SearchRow | null;
   history?: SearchRow | null;
+  /** D43: `Show conflicts`. */
+  conflicts?: SearchRow | null;
 }
 
 /** Words for this language's command (English always counts), from a message. */
 function localWords(
-  key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords" | "search.pdfWords" | "search.outlineWords" | "search.historyWords",
+  key: "search.todayWords" | "search.pageTemplateWords" | "search.exportWords" | "search.importWords" | "search.pdfWords" | "search.outlineWords" | "search.historyWords" | "conflicts.commandWords",
 ): string[] {
   return t(key).toLowerCase().split(/\s+/).filter(Boolean);
 }
@@ -114,6 +116,14 @@ export function wantsHistory(query: string): boolean {
   const needle = normalise(query);
   if (needle.length < 3) return false;
   const words = ["history", "page history", "show page history", "version history", "versions", "restore version", ...localWords("search.historyWords")];
+  return words.some((word) => word.startsWith(needle));
+}
+
+/** Whether `query` asks for the Conflicts list: "conflicts", "sync", "copies"… (D43). */
+export function wantsConflicts(query: string): boolean {
+  const needle = normalise(query);
+  if (needle.length < 3) return false;
+  const words = ["conflicts", "show conflicts", "sync conflicts", "conflicted copy", ...localWords("conflicts.commandWords")];
   return words.some((word) => word.startsWith(needle));
 }
 
@@ -328,7 +338,8 @@ export function searchSections(
   const exportPdf = wantsExportPdf(query) ? { kind: "export-pdf" as const, key: "export-pdf", label: t("export.pdf.command") } : null;
   const outline = wantsOutline(query) ? { kind: "outline" as const, key: "outline", label: t("outline.toggle") } : null;
   const history = wantsHistory(query) ? { kind: "history" as const, key: "history", label: t("history.command") } : null;
-  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion, exportPdf, outline, history };
+  const conflicts = wantsConflicts(query) ? { kind: "conflicts" as const, key: "conflicts", label: t("conflicts.command") } : null;
+  return { pages: pagesRows, text: textRows, create, createBoard, createBase, fromTemplate, language, today, pageTemplate, exportHtml, importNotion, exportPdf, outline, history, conflicts };
 }
 
 export interface SnippetPart {

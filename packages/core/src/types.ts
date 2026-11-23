@@ -37,6 +37,15 @@ export interface PageMeta {
    * such as PDFs and images. They go to the trash with the folder.
    */
   otherFiles?: number;
+  /**
+   * v1.29 (spec/sync-conflicts, D43): this file is a sync tool's conflict copy
+   * of the page with this id, or `null` when that original is gone (an orphan
+   * copy). Absent on everything else. Copies with an original are left out of
+   * the tree, graph, backlinks, tags, mentions and bases.
+   */
+  conflictOf?: PageId | null;
+  /** v1.29: on an original, how many conflict copies sit beside it. */
+  conflicts?: number;
 }
 
 /** Full page: metadata plus the Markdown body (without frontmatter). */
@@ -300,3 +309,70 @@ export interface LinkMentionsResult {
   linked: number;
   rewrittenPages: PageId[];
 }
+
+// --- v1.29: sync conflict copies (spec/sync-conflicts, D43) -----------------
+
+/** A sync tool's conflict copy of a page, board or base. */
+export interface ConflictCopy {
+  copyId: PageId;
+  /** The original's id, or null when it's gone (an orphan copy). */
+  originalId: PageId | null;
+  tool: "syncthing" | "nextcloud" | "obsidian" | "dropbox";
+  /** Device or user as the tool wrote it. */
+  device?: string;
+  /** The tool's own local time as written in the name (`YYYY-MM-DD[THH:MM[:SS]]`, no zone). */
+  at?: string;
+  kind: PageKind;
+  /** The copy's bytes equal the original's. */
+  same: boolean;
+  /** Versions for a conditional resolve. */
+  copyUpdated: string;
+  originalUpdated?: string;
+}
+
+/** An attachment's conflict copy: listed only, resolved by hand (D43). */
+export interface ConflictAttachment {
+  path: string;
+  originalPath: string | null;
+  tool: ConflictCopy["tool"];
+  device?: string;
+  at?: string;
+}
+
+/** A name that might be an iCloud / Google Drive / OneDrive copy, with mostly the same content. */
+export interface PossibleCopy {
+  copyId: PageId;
+  originalId: PageId;
+  /** Shared lines (or board card ids), 0–1. */
+  similarity: number;
+}
+
+export interface ConflictsList {
+  copies: ConflictCopy[];
+  attachments: ConflictAttachment[];
+  possible: PossibleCopy[];
+}
+
+export type ConflictKeep = "page" | "copy" | "both" | "delete" | "as-original";
+
+export interface ConflictResolveInput {
+  keep: ConflictKeep;
+  /** The versions Compare showed; a changed file is a 409. */
+  expected: { page?: string; copy: string };
+}
+
+export interface ConflictResolveResult {
+  keep: ConflictKeep;
+  /** The page or board kept, as it is now. */
+  page?: PageMeta;
+  /** The Trash entry the losing side went to (Undo: restore it). */
+  trashId?: string;
+  /** Keep copy: the history file holding the page's bytes before (Undo: restore it). */
+  beforeVersion?: string;
+  /** Keep both / as-original: the copy's new id. */
+  renamedTo?: PageId;
+}
+
+export type ConflictDiff =
+  | { kind: "text"; lines: Array<{ op: "same" | "add" | "remove"; text: string }> }
+  | { kind: "board"; added: string[]; removed: string[]; changed: string[] };

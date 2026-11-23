@@ -135,3 +135,81 @@ describe("bounded search (#g95wkd9y)", () => {
     expect((await plain.json()) as SearchResult[]).toHaveLength(SEARCH_LIMIT);
   });
 });
+
+/** D43 (#3jkf2gf6): `pages` notes mentioning "roadmap", each with a Syncthing conflict copy beside it. */
+async function vaultWithCopies(pages: number): Promise<VaultStore> {
+  for (let i = 0; i < pages; i++) {
+    const body = `${"The roadmap says more. ".repeat(1 + (i % 12))}\n`;
+    await writeFile(join(dir, `Note ${i}.md`), body);
+    await writeFile(join(dir, `Note ${i}.sync-conflict-20261122-143005-ABCDEFG.md`), `${body}Their line.\n`);
+  }
+  const store = new VaultStore(dir);
+  await store.init();
+  return store;
+}
+
+describe("bounded search with conflict copies (#3jkf2gf6, D43)", () => {
+  it("putting each copy right after its page stays linear: a copy-heavy vault grows with the vault, not faster", async () => {
+    const work: number[] = [];
+    for (const pages of [100, 800]) {
+      await rm(dir, { recursive: true, force: true });
+      dir = await mkdtemp(join(tmpdir(), "gumply-search-"));
+      const store = await vaultWithCopies(pages);
+      store.search("roadmap");
+      work.push(countWork(() => store.search("roadmap")));
+    }
+    expect(work[1]! / work[0]!).toBeLessThan(16);
+  });
+
+  it("every copy comes right after its page in the whole ranked list, across page boundaries", async () => {
+    const store = await vaultWithCopies(30);
+    const all: SearchResult[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = store.searchPage("roadmap", { limit: 7, ...(cursor ? { cursor } : {}) });
+      all.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(all).toHaveLength(60);
+    all.forEach((result, index) => {
+      if (typeof result.page.conflictOf === "string") expect(all[index - 1]?.page.id).toBe(result.page.conflictOf);
+    });
+  });
+
+  it("a copy whose page isn't a hit keeps its own rank, marked", async () => {
+    await writeFile(join(dir, "Alpha.md"), "Nothing about it here.\n");
+    await writeFile(join(dir, "Alpha.sync-conflict-20261122-143005-ABCDEFG.md"), "The zebra is only in the copy.\n");
+    await writeFile(join(dir, "Zebra facts.md"), "A zebra, and another zebra.\n");
+    const store = new VaultStore(dir);
+    await store.init();
+    const results = store.search("zebra");
+    expect(results.map((result) => result.page.id)).toEqual(["Zebra facts", "Alpha.sync-conflict-20261122-143005-ABCDEFG"]);
+    expect(results[1]!.page.conflictOf).toBe("Alpha");
+  });
+});
+
+describe("a conflict copy of a conflict copy (#3jkf2gf6, @graph-dev)", () => {
+  it("Note, its copy C1 and C1's copy C2 all match: every hit is returned once, across pages, each copy after its own original", async () => {
+    const c1 = "Note.sync-conflict-20261122-143005-ABCDEFG";
+    const c2 = `${c1}.sync-conflict-20261123-090000-BCDEFGH`;
+    await writeFile(join(dir, "Note.md"), "The roadmap.\n");
+    await writeFile(join(dir, `${c1}.md`), "The roadmap, theirs.\n");
+    await writeFile(join(dir, `${c2}.md`), "The roadmap, theirs again.\n");
+    for (let i = 0; i < 5; i++) await writeFile(join(dir, `Other ${i}.md`), `${"The roadmap. ".repeat(1 + i)}\n`);
+    const store = new VaultStore(dir);
+    await store.init();
+    expect(store.list().find((page) => page.id === c2)?.conflictOf).toBe(c1);
+    const all: SearchResult[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = store.searchPage("roadmap", { limit: 2, ...(cursor ? { cursor } : {}) });
+      all.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+    const ids = all.map((result) => result.page.id);
+    expect(ids).toHaveLength(8);
+    expect(new Set(ids).size).toBe(8);
+    expect(ids.indexOf(c1)).toBe(ids.indexOf("Note") + 1);
+    expect(ids.indexOf(c2)).toBe(ids.indexOf(c1) + 1);
+  });
+});
