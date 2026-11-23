@@ -186,6 +186,94 @@ describe("while the batches run, the old name still means the renamed page (#xgn
 });
 
 // Each builds hundreds of files: generous under a parallel full run.
+describe("@opus-editor's review cases (#xgnvipyd)", { timeout: 60_000 }, () => {
+  it("moving the renamed page's parent waits for the rename; links end on its final id, its own body untouched", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gumply-rename-yield-"));
+    dirs.push(dir);
+    await mkdir(join(dir, "Area"));
+    await writeFile(join(dir, "Area.md"), "The area.\n");
+    await writeFile(join(dir, "Area", "Hub.md"), "The hub, see [[Hub]] itself.\n");
+    await writeFile(join(dir, "Shelf.md"), "Shelf.\n");
+    await mkdir(join(dir, "L"));
+    for (let i = 0; i < 400; i++) await writeFile(join(dir, "L", `Linker ${i}.md`), `See [[Hub]] (${i}).\n`);
+    const store = new VaultStore(dir);
+    await store.init();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const order: string[] = [];
+    let move: Promise<unknown> | null = null;
+    store.afterRenameBatch = async () => {
+      move ??= store.move("Area", "Shelf").then(() => order.push("move"));
+    };
+    await store.update("Area/Hub", { title: "Hub renamed" }).then(() => order.push("rename"));
+    await move;
+    expect(order).toEqual(["rename", "move"]);
+    expect(store.get("Shelf/Area/Hub renamed").content).toContain("[[Hub]] itself"); // its own body isn't rewritten
+    expect(await readFile(join(dir, "L", "Linker 399.md"), "utf8")).toMatch(/\[\[(Shelf\/Area\/)?Hub renamed/);
+  });
+
+  it("a page that appears mid-rename with a link to the old name (a duplicate, a restore) gets the new link too", async () => {
+    const { dir, store } = await vault(400);
+    let created = false;
+    store.afterRenameBatch = async () => {
+      if (created) return;
+      created = true;
+      await store.create({ title: "Copy of a linker", content: "See [[Hub]] (copy)." });
+    };
+    const renamed = await store.update("Hub", { title: "Hub renamed" });
+    expect(await readFile(join(dir, "Copy of a linker.md"), "utf8")).toContain("[[Hub renamed]] (copy)");
+    expect(renamed.rewrittenPages).toContain("Copy of a linker");
+  });
+
+  it("a path-form link to the old id counts as a backlink during the window", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gumply-rename-yield-"));
+    dirs.push(dir);
+    await mkdir(join(dir, "Area"));
+    await writeFile(join(dir, "Area", "Hub.md"), "The hub.\n");
+    await writeFile(join(dir, "Hub.md"), "Another page titled Hub.\n");
+    await mkdir(join(dir, "L"));
+    for (let i = 0; i < 300; i++) await writeFile(join(dir, "L", `Linker ${i}.md`), `See [[Area/Hub|Hub]] (${i}).\n`);
+    const store = new VaultStore(dir);
+    await store.init();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let mid = -1;
+    store.afterRenameBatch = async () => {
+      if (mid < 0) mid = new Set(store.backlinks("Area/Hub renamed").map((link) => link.page.id)).size;
+    };
+    await store.update("Area/Hub", { title: "Hub renamed" });
+    expect(mid).toBe(300);
+    expect(new Set(store.backlinks("Area/Hub renamed").map((link) => link.page.id)).size).toBe(300);
+  });
+
+  it("a write error on one page is logged and skipped: the other pages still get their links, the rename succeeds", async () => {
+    const { dir, store } = await vault(300);
+    const internals = store as unknown as { writeRewrittenBody: (...args: unknown[]) => Promise<void> };
+    const real = internals.writeRewrittenBody.bind(store);
+    let failedOnce = false;
+    vi.spyOn(internals, "writeRewrittenBody").mockImplementation(async (...args: unknown[]) => {
+      const record = args[0] as { id: string };
+      if (!failedOnce && record.id === "L/Linker 10") {
+        failedOnce = true;
+        throw new Error("EACCES (test)");
+      }
+      return real(...args);
+    });
+    const renamed = await store.update("Hub", { title: "Hub renamed" });
+    expect(renamed.rewrittenPages).not.toContain("L/Linker 10");
+    expect(renamed.rewrittenPages).toHaveLength(299);
+    expect(await readFile(join(dir, "L", "Linker 11.md"), "utf8")).toContain("[[Hub renamed]]");
+    expect(await readFile(join(dir, "L", "Linker 10.md"), "utf8")).toContain("[[Hub]]");
+  });
+
+  it("settleRenames waits for a running rename, bounded", async () => {
+    const { store } = await vault(300);
+    expect(await store.settleRenames(10)).toBe(true); // nothing running
+    const rename = store.update("Hub", { title: "Hub renamed" });
+    await vi.waitFor(() => expect(store.renameBatchesRun).toBeGreaterThan(0), { timeout: 10_000, interval: 5 });
+    expect(await store.settleRenames(30_000)).toBe(true);
+    await rename;
+  });
+});
+
 describe("boards and bases rename in batches too (#xgnvipyd)", { timeout: 60_000 }, () => {
   it("a board's rename rewrites the links to it across batches", async () => {
     const { dir, store } = await vault(0);
