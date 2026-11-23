@@ -149,6 +149,8 @@ async function launch(env: Record<string, string> = {}): Promise<{ app: Electron
       ...base,
       GUMPLY_DESKTOP_USER_DATA: userData,
       GUMPLY_DESKTOP_PORT: String(port),
+      // N3: never fetch a real spellcheck dictionary in tests.
+      GUMPLY_SPELLCHECK_DICTIONARY_URL: 'http://127.0.0.1:9/',
       ...env,
     },
   });
@@ -176,6 +178,38 @@ async function launch(env: Record<string, string> = {}): Promise<{ app: Electron
     );
   }
 }
+
+test('spellcheck follows the app\'s language (1.0 N3)', async () => {
+  test.skip(process.platform === 'darwin', 'macOS uses the system spellchecker, which picks languages itself');
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' });
+  const languages = () => app.evaluate(({ session }) => session.defaultSession.getSpellCheckerLanguages());
+  // What the main process saw, for the failure message (the 92b6ff6 trial got ["en"]).
+  const seen = () =>
+    app
+      .evaluate(({ app: electronApp, session }) => ({
+        locale: electronApp.getLocale(),
+        available: session.defaultSession.availableSpellCheckerLanguages,
+        now: session.defaultSession.getSpellCheckerLanguages(),
+      }))
+      .then((value) => JSON.stringify(value));
+  const choose = async (language: string) => {
+    await window.getByTestId('settings-button').click();
+    await window.getByTestId('settings-language').selectOption(language);
+    await window.keyboard.press('Escape');
+  };
+  try {
+    await expectPageTitle(window, 'Welcome');
+    await expect.poll(languages, { message: `spellcheck languages, English app on en_US: ${await seen()}` }).toEqual(['en-US']);
+    // Russian in the app: Russian first, the system's English after it.
+    await choose('ru');
+    await expect.poll(languages, { message: `spellcheck languages, Russian app on en_US: ${await seen()}` }).toEqual(['ru', 'en-US']);
+  } finally {
+    // The settings are shared by the tests in this file: back to the default (the system's language).
+    await choose('system').catch(() => undefined);
+    await expect.poll(languages).toEqual(['en-US']).catch(() => undefined);
+    await app.close();
+  }
+});
 
 test('opens a new vault with the demo, saves typing to disk, opens a board', async () => {
   const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });

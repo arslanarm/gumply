@@ -32,6 +32,7 @@ import {
 import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downloads.js";
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
+import { spellcheckLanguages } from "./spellcheck.js";
 import { classifyNavigation, userGuideUrl, vaultFileAction } from "./urls.js";
 import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
@@ -173,9 +174,30 @@ const uiStateStore: UiStateStore = {
   },
 };
 
-// A new interface language in the app: the menu follows it (#7h5utv23).
+/**
+ * Spellcheck follows the app's language (1.0 N3): the interface language's
+ * dictionary first, then the system's own when it's another language. macOS
+ * uses the system spellchecker, which picks languages itself.
+ */
+function applySpellcheckLanguages(): void {
+  if (process.platform === "darwin" || !app.isReady()) return;
+  const spellcheck = session.defaultSession;
+  const ui = resolveDesktopLanguage(settings?.uiState[LANGUAGE_KEY], app.getLocale());
+  const languages = spellcheckLanguages(ui, app.getLocale(), spellcheck.availableSpellCheckerLanguages);
+  if (languages.length === 0) return;
+  try {
+    spellcheck.setSpellCheckerLanguages(languages);
+  } catch (error) {
+    console.error("[gumply-desktop] could not set the spellcheck languages:", error);
+  }
+}
+
+// A new interface language in the app: the menu and spellcheck follow it (#7h5utv23, N3).
 onUiStateChange((change) => {
-  if (change.set?.[LANGUAGE_KEY] !== undefined || change.remove?.includes(LANGUAGE_KEY)) buildMenu();
+  if (change.set?.[LANGUAGE_KEY] !== undefined || change.remove?.includes(LANGUAGE_KEY)) {
+    buildMenu();
+    applySpellcheckLanguages();
+  }
 });
 
 /**
@@ -405,6 +427,9 @@ function createWindow(): void {
   window.once("ready-to-show", () => window?.show());
 
   const contents = window.webContents;
+  // N3: Chromium starts its spellcheck service with the first page, and may set
+  // its own default languages then; ours are applied again once it has loaded.
+  contents.once("did-finish-load", () => applySpellcheckLanguages());
   const appOrigin = () => (server ? new URL(server.url).origin : "");
 
   const handle = (url: string): boolean => {
@@ -917,6 +942,11 @@ if (mcpMode) {
     session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
       callback(permission === "clipboard-sanitized-write"),
     );
+    // Tests only: never fetch a real dictionary (an unreachable URL; Chromium just keeps the list).
+    if (process.env.GUMPLY_SPELLCHECK_DICTIONARY_URL) {
+      session.defaultSession.setSpellCheckerDictionaryDownloadURL(process.env.GUMPLY_SPELLCHECK_DICTIONARY_URL);
+    }
+    applySpellcheckLanguages();
 
     // Board exports (spec/v0-6 §D) are browser downloads of blob URLs the app
     // made: they get the native Save dialog, starting in Downloads. Any other
