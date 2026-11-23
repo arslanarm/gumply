@@ -134,6 +134,40 @@ test.describe('boards from the keyboard (#pujmbsyz)', () => {
   });
 });
 
+test('a card\'s [[ suggestions: the textarea controls the listbox and points at the keyboard\'s option; cleared on Esc', async ({ page }) => {
+  await page.addInitScript(
+    ([key, value]) => window.localStorage.setItem(key, value),
+    ['gumply:board-lab:kb-links', JSON.stringify({ nodes: [{ id: 's1', type: 'text', text: '', x: 200, y: 150, width: 260, height: 200, gumply: { kind: 'sticky' } }], edges: [] })] as const,
+  );
+  await page.goto('/board-lab.html?id=kb-links&theme=light');
+  await expect(page.getByTestId('board')).toBeVisible();
+  await page.getByTestId('board-sticky').dblclick();
+  const area = page.getByTestId('board-text-editor');
+  await expect(area).toBeFocused();
+  for (const name of ['aria-controls', 'aria-activedescendant', 'aria-autocomplete']) await expect(area).not.toHaveAttribute(name, /.*/);
+
+  await page.keyboard.type('See [[');
+  const menu = page.getByTestId('board-link-menu');
+  await expect(menu).toBeVisible();
+  const listboxId = await menu.getAttribute('id');
+  expect(listboxId).toBeTruthy();
+  await expect(area).toHaveAttribute('aria-controls', listboxId!);
+  await expect(area).toHaveAttribute('aria-autocomplete', 'list');
+  // A textarea keeps its textbox role (HTML allows it no other).
+  await expect(area).not.toHaveAttribute('role', /.*/);
+  const selected = menu.locator('[role="option"][aria-selected="true"]');
+  const first = await selected.getAttribute('id');
+  await expect(area).toHaveAttribute('aria-activedescendant', first!);
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(() => selected.getAttribute('id')).not.toBe(first);
+  await expect(area).toHaveAttribute('aria-activedescendant', (await selected.getAttribute('id'))!);
+
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(area).toBeFocused();
+  for (const name of ['aria-controls', 'aria-activedescendant', 'aria-autocomplete']) await expect(area).not.toHaveAttribute(name, /.*/);
+});
+
 for (const [language, label] of [['en', 'Select the next / previous object'], ['ru', 'Выбрать следующий / предыдущий объект']] as const) {
   vaultTest(`the ? overlay lists the board keys (${language})`, async ({ page, vault }) => {
     await page.addInitScript((lang) => window.localStorage.setItem('gumply:language', lang), language);

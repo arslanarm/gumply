@@ -44,4 +44,17 @@ describe("the editor as a combobox while a suggestion menu is open (#5nykir64)",
     expect(Object.fromEntries(element.attrs)).toEqual({ "aria-label": "Page content" });
     for (const name of COMBOBOX_ATTRIBUTES) expect(element.attrs.has(name)).toBe(false);
   });
+
+  it("a textarea (board card text) keeps its textbox role and gets only textbox-valid attributes", () => {
+    const element = fakeElement({ "data-testid": "board-text-editor" });
+    applyCombobox(element, { listboxId: "b", activeId: optionId("b", 1) }, { textbox: true });
+    expect(Object.fromEntries(element.attrs)).toEqual({
+      "data-testid": "board-text-editor",
+      "aria-controls": "b",
+      "aria-activedescendant": "b-option-1",
+      "aria-autocomplete": "list",
+    });
+    applyCombobox(element, null, { textbox: true });
+    expect(Object.fromEntries(element.attrs)).toEqual({ "data-testid": "board-text-editor" });
+  });
 });

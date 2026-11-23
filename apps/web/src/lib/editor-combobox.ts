@@ -29,9 +29,29 @@ export function listboxIdFrom(base: string, menu: string): string {
   return `${base.replace(/[^A-Za-z0-9_-]/g, "")}-${menu}-listbox`;
 }
 
+export interface ComboboxOptions {
+  /**
+   * A `<textarea>` (a board card's text): HTML allows it no role but textbox,
+   * so it keeps that role and gets only what a textbox may carry
+   * (`aria-autocomplete`, `aria-controls`, `aria-activedescendant`), which is
+   * what makes a screen reader read the active option (#pujmbsyz).
+   */
+  textbox?: boolean;
+}
+
 /** What the editor root's combobox attributes are for `state` (null: removed). */
-export function comboboxAttributes(state: ComboboxState | null): Record<ComboboxAttribute, string | null> {
+export function comboboxAttributes(state: ComboboxState | null, options: ComboboxOptions = {}): Record<ComboboxAttribute, string | null> {
   if (!state) return { role: null, "aria-expanded": null, "aria-controls": null, "aria-activedescendant": null, "aria-autocomplete": null, "aria-haspopup": null };
+  if (options.textbox) {
+    return {
+      role: null,
+      "aria-expanded": null,
+      "aria-controls": state.listboxId,
+      "aria-activedescendant": state.activeId,
+      "aria-autocomplete": "list",
+      "aria-haspopup": null,
+    };
+  }
   return {
     role: "combobox",
     "aria-expanded": "true",
@@ -43,8 +63,12 @@ export function comboboxAttributes(state: ComboboxState | null): Record<Combobox
 }
 
 /** Set (or remove) them on the editor root. ProseMirror ignores attribute changes on its root. */
-export function applyCombobox(element: Pick<Element, "setAttribute" | "removeAttribute" | "getAttribute">, state: ComboboxState | null): void {
-  for (const [name, value] of Object.entries(comboboxAttributes(state))) {
+export function applyCombobox(
+  element: Pick<Element, "setAttribute" | "removeAttribute" | "getAttribute">,
+  state: ComboboxState | null,
+  options: ComboboxOptions = {},
+): void {
+  for (const [name, value] of Object.entries(comboboxAttributes(state, options))) {
     if (value === null) element.removeAttribute(name);
     else if (element.getAttribute(name) !== value) element.setAttribute(name, value);
   }
