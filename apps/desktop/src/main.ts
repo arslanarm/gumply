@@ -427,6 +427,9 @@ function createWindow(): void {
   window.once("ready-to-show", () => window?.show());
 
   const contents = window.webContents;
+  // N3: Chromium starts its spellcheck service with the first page, and may set
+  // its own default languages then; ours are applied again once it has loaded.
+  contents.once("did-finish-load", () => applySpellcheckLanguages());
   const appOrigin = () => (server ? new URL(server.url).origin : "");
 
   const handle = (url: string): boolean => {

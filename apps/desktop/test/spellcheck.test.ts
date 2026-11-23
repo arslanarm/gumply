@@ -15,8 +15,9 @@ describe("spellcheck follows the app's language (1.0 N3)", () => {
     expect(spellcheckLanguages("ru", "en-GB", CHROMIUM)).toEqual(["ru", "en-GB"]);
     // English on a German system.
     expect(spellcheckLanguages("en", "de-DE", CHROMIUM)).toEqual(["en-US", "de-DE"]);
-    // Same language, other region: the app's dictionary only.
-    expect(spellcheckLanguages("en", "en-GB", CHROMIUM)).toEqual(["en-US"]);
+    // Same language, other region: one dictionary, in the system's region.
+    expect(spellcheckLanguages("en", "en-GB", CHROMIUM)).toEqual(["en-GB"]);
+    expect(spellcheckLanguages("ru", "ru-RU", ["ru", "ru-RU"])).toEqual(["ru-RU"]);
   });
 
   it("falls back within the language, and never returns what Chromium doesn't offer", () => {
@@ -25,6 +26,15 @@ describe("spellcheck follows the app's language (1.0 N3)", () => {
     // A system language Chromium has no dictionary for is left out.
     expect(spellcheckLanguages("ru", "kk-KZ", CHROMIUM)).toEqual(["ru"]);
     expect(spellcheckLanguages("en", "en-US", [])).toEqual([]);
+  });
+
+  it("a bare `en` in Chromium's list never wins over a regional dictionary (the 92b6ff6 trial got [\"en\"])", () => {
+    const withBare = ["de", "en", "en-AU", "en-GB", "en-US", "ru"];
+    expect(spellcheckLanguages("en", "en-US", withBare)).toEqual(["en-US"]);
+    expect(spellcheckLanguages("en", "en", withBare)).toEqual(["en-US"]);
+    expect(spellcheckLanguages("ru", "en-US", withBare)).toEqual(["ru", "en-US"]);
+    // Only a bare `en` offered: that's still better than nothing.
+    expect(spellcheckLanguages("en", "en-US", ["en", "ru"])).toEqual(["en"]);
   });
 
   it("matches case-insensitively, keeps Chromium's spelling, and has no duplicates", () => {
