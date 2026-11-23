@@ -20,8 +20,11 @@
  *     and "Perf Long" (~2,000 lines): openTypical, openRich, openLong;
  *   - Hub's backlinks: opening the hub page → its "Linked from" rows;
  *   - local graph and global graph: the click → a painted canvas;
- *   - graphReady: the click → the global graph settled and fitted
- *     (`data-graph-ready`), and graphLongest: the longest single main-thread
+ *   - graphSettled: the click → the global graph settled and fitted
+ *     (`data-graph-ready`, and no `data-graph-arranging`). It replaces
+ *     graphReady, which before 38fc612 timed an early flip of the attribute
+ *     (~8 s into a 22-44 s layout on 10k); its old numbers aren't comparable.
+ *     And graphLongest: the longest single main-thread
  *     task in that time (what makes the page feel frozen while it lays out).
  */
 import { writeFileSync } from "node:fs";
@@ -154,7 +157,7 @@ try {
         throw new Error(`the global graph never got ready: ${JSON.stringify(state)}`, { cause: error });
       });
     const readyAt = await page.evaluate(() => performance.now());
-    result.graphReady = readyAt - clickedAt;
+    result.graphSettled = readyAt - clickedAt;
     result.graphLongest = await page.evaluate(
       ([from, to]) => Math.max(0, ...window.__longTaskLog.filter((task) => task.start >= from && task.start <= to).map((task) => task.duration)),
       [clickedAt, readyAt],
