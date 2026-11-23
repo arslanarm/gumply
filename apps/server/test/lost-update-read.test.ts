@@ -16,12 +16,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 let replaceAfterRead: { path: string; text: string } | null = null;
 let replaceAfterRename: { path: string; text: string } | null = null;
+// A file that never settles: every read of `path` (module or handle) is followed by another save.
+let replaceOnEveryRead: { path: string; texts: string[] } | null = null;
+let saveTime = 0;
 // A filesystem whose rename changes the reported mtime (SMB/NFS, cloud-sync, FAT):
 // after the store renames onto `path`, every stat of it reports the mtime shifted by `ms`.
 let shiftOnRename: { path: string; ms: number } | null = null;
 const shifted = new Map<string, number>();
 
 async function replaceNow(path: string, which: "read" | "rename" = "read"): Promise<void> {
+  if (which === "read" && replaceOnEveryRead?.path === path && replaceOnEveryRead.texts.length > 0) {
+    const real = await vi.importActual<typeof fsPromises>("node:fs/promises");
+    const temp = `${path}.other-program`;
+    await real.writeFile(temp, replaceOnEveryRead.texts.shift()!);
+    // Each save a distinct, later mtime (the guard treats mtimes within 1 ms as equal).
+    saveTime += 10;
+    await real.utimes(temp, saveTime, saveTime);
+    await real.rename(temp, path);
+    return;
+  }
   const pending = which === "read" ? replaceAfterRead : replaceAfterRename;
   if (!pending || pending.path !== path) return;
   if (which === "read") replaceAfterRead = null;
@@ -82,6 +95,7 @@ beforeEach(async () => {
 afterEach(async () => {
   replaceAfterRead = null;
   replaceAfterRename = null;
+  replaceOnEveryRead = null;
   shiftOnRename = null;
   shifted.clear();
   await rm(dir, { recursive: true, force: true });
@@ -176,4 +190,26 @@ describe("a read racing another program's atomic save keeps text and mtime toget
       }
     });
   }
+
+  // From @opus-editor's review: a file that changes on every read. Whatever the store keeps,
+  // its text and mtime belong to one file, so a save based on it is a 409 and the disk is untouched.
+  it("a page whose file changes on every read: the conditional save is a conflict, never an overwrite", async () => {
+    const file = join(dir, "Plan.md");
+    saveTime = Math.floor(Date.now() / 1000) - 1_000;
+    await writeFile(file, "# Plan\n\nFirst.\n");
+    await utimes(file, saveTime, saveTime);
+    const store = new VaultStore(dir);
+    await store.init();
+    await writeFile(file, "# Plan\n\nEdited outside.\n");
+    saveTime += 10;
+    await utimes(file, saveTime, saveTime);
+    replaceOnEveryRead = { path: file, texts: ["one", "two", "three", "four", "five"].map((line) => `# Plan\n\n${line}\n`) };
+    await store.rescan();
+    expect(replaceOnEveryRead.texts.length).toBeLessThan(5); // the saves really happened
+    replaceOnEveryRead = null;
+    const page = store.get("Plan");
+    const onDisk = await readFile(file, "utf8");
+    await expect(store.update("Plan", { content: `${page.content}\nModel line.\n`, expectedUpdated: page.updated, writer: "mcp" })).rejects.toMatchObject({ status: 409 });
+    expect(await readFile(file, "utf8")).toBe(onDisk);
+  });
 });
