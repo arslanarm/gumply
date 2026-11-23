@@ -260,6 +260,8 @@ describe("@opus-editor's review cases (#xgnvipyd)", { timeout: 60_000 }, () => {
     const renamed = await store.update("Hub", { title: "Hub renamed" });
     expect(renamed.rewrittenPages).not.toContain("L/Linker 10");
     expect(renamed.rewrittenPages).toHaveLength(299);
+    // v1.35: named in the answer, not only in the log.
+    expect((renamed as { linksNotRewritten?: string[] }).linksNotRewritten).toEqual(["L/Linker 10"]);
     expect(await readFile(join(dir, "L", "Linker 11.md"), "utf8")).toContain("[[Hub renamed]]");
     expect(await readFile(join(dir, "L", "Linker 10.md"), "utf8")).toContain("[[Hub]]");
   });

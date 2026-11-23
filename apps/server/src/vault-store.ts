@@ -2387,7 +2387,12 @@ export class VaultStore {
         // Every link says the new name now: resolve as usual again.
         this.renameAliases.delete(newId);
         this.reindexAll();
-        return { ...result, rewrittenPages: rewritten.sort((a, b) => a.localeCompare(b)) };
+        return {
+          ...result,
+          rewrittenPages: rewritten.sort((a, b) => a.localeCompare(b)),
+          // v1.35: the pages whose rewrite failed (a write error) are named in the answer too.
+          ...(job.failed.length > 0 ? { linksNotRewritten: [...job.failed].sort((a, b) => a.localeCompare(b)) } : {}),
+        };
       });
     } finally {
       for (const key of held) {
@@ -3473,6 +3478,10 @@ export class VaultStore {
       };
     const rewriteText = rewriteWith(beforeMetas, new Set([oldId]));
     const skip = new Set([oldId, record.id]);
+    // #xgnvipyd: when deferred, the rename's own step (phase A) must not do anything that can fail
+    // for real (I/O) after this point: a failure there drops the captured rewrite, and the page would
+    // be renamed on disk with no link rewritten. If such a step is ever added after the rewrite in
+    // updateNow / updateBoardNow / updateBaseNow, run the captured job on failure instead of dropping it.
     if (this.deferRewrites) {
       // #xgnvipyd: pinned now (the link snapshot is beforeMetas/afterMetas above), run in batches after.
       const aliased = oldId !== record.id || previousTitle !== record.title;

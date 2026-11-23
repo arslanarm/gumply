@@ -65,6 +65,8 @@ export interface Page extends PageMeta {
 /** Response of `PUT /api/pages/:id`; `rewrittenPages` is set on a rename. */
 export type PageUpdateResult = Page & {
   rewrittenPages?: PageId[];
+  /** v1.35 (#xgnvipyd): a rename's link rewrite failed to write these pages (logged); they still link the old name. */
+  linksNotRewritten?: PageId[];
   /** Vault-relative backup path when "Keep mine" replaced an external edit. */
   conflictBackup?: string;
 };
@@ -81,6 +83,8 @@ export interface BoardDocument {
 export type BoardUpdateResult = BoardDocument & {
   /** Pages/boards whose links were rewritten by a rename (D12). */
   rewrittenPages?: PageId[];
+  /** v1.35 (#xgnvipyd): pages a rename couldn't rewrite (a write error, logged); they still link the old name. */
+  linksNotRewritten?: PageId[];
   /** Backup of the version "Keep mine" replaced (D22). */
   conflictBackup?: string;
   /**
