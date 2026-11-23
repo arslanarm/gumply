@@ -64,13 +64,15 @@ describe.skipIf(!hasGit)("a git checkout in the vault (#35q6kt6e)", () => {
             const now = ids();
             return [now.has("Repo/New 0"), now.has("Repo/Sub renamed/S 0"), now.has("Repo/Sub/S 0"), now.has("Repo/Doc 35"), now.has("Repo/Moved 3")];
           },
-          { timeout: 10_000, interval: 100 },
+          // Generous: under a loaded test run a checkout plus its rescans can take seconds.
+          { timeout: 30_000, interval: 100 },
         )
         .toEqual([onTwo, onTwo, !onTwo, !onTwo, onTwo]);
     }
-    // Links follow the tree: on branch one, Doc 1 links to Doc 2 again.
-    expect(store.backlinks("Repo/Doc 2").map((item) => item.page.id)).toContain("Repo/Doc 1");
-  }, 60_000);
+    // Links follow the tree: on branch one, Doc 1 links to Doc 2 again. Polled:
+    // a refresh lists its pages before it recomputes their links.
+    await expect.poll(() => store!.backlinks("Repo/Doc 2").map((item) => item.page.id), { timeout: 30_000, interval: 100 }).toContain("Repo/Doc 1");
+  }, 150_000);
 
 });
 
