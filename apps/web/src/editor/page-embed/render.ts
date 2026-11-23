@@ -18,6 +18,7 @@ import { calloutStyle, defaultCalloutTitle } from "../callout/types.js";
 import { parseColorTag } from "../color.js";
 import { columnsMarkdownPlugin } from "../columns/markdown.js";
 import { wikilinkMarkdownPlugin } from "../wikilink/markdown-plugin.js";
+import { imageAltMarkdownPlugin } from "../raw-markdown/markdown-plugin.js";
 import { parsePageEmbed } from "./markdown-plugin.js";
 import { mathMarkdownPlugin } from "../../lib/math-markdown.js";
 import { diagramMarkdownPlugin } from "../../lib/diagram-markdown.js";
@@ -221,6 +222,8 @@ export function stripBlockIds(markdown: string): string {
 function createRenderer(): Any {
   const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
   wikilinkMarkdownPlugin(md as Any);
+  // #3zpgenmw: `\|`, `\_`, `&amp;` stay in an image's alt, as in the editor.
+  imageAltMarkdownPlugin(md as Any);
   md.block.ruler.before("blockquote", "callout", calloutRule(md), { alt: ["paragraph", "reference", "blockquote", "list"] });
   md.block.ruler.before("paragraph", "nested_embed", nestedEmbedRule);
   md.core.ruler.push("task_list", taskListRule);

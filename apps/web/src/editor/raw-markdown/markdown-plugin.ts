@@ -332,6 +332,31 @@ function entityRule(state: any): void {
 }
 
 /**
+ * Escapes and entities in an image's alt text (#3zpgenmw, D37). markdown-it
+ * turns `\|` or `&amp;` into a `text_special` token, and its `text_join` rule
+ * makes those text again, but only at the top level: inside an image's own
+ * children they stay `text_special`, and the alt renderer skips that type. So
+ * `![A\|300](a.png)` read as alt "A300", and `![my\_photo](…)` (as Gumply
+ * writes the caption "my_photo") as "myphoto". Here they become text, so the
+ * alt has the character itself, as CommonMark says. The image's source is kept
+ * as written elsewhere (`data-md-raw`), so an untouched image keeps its bytes.
+ */
+export function imageAltRule(state: any): void {
+  const fix = (tokens: any[] | null | undefined): void => {
+    for (const token of tokens ?? []) {
+      if (token.type !== "image") continue;
+      for (const child of token.children ?? []) {
+        if (child.type === "text_special") child.type = "text";
+      }
+      fix(token.children);
+    }
+  };
+  for (const block of state.tokens as any[]) {
+    if (block.type === "inline") fix(block.children);
+  }
+}
+
+/**
  * Tabs inside text (#ftx3awn7, D37): the editor's HTML parse collapses
  * whitespace, so `two⇥⇥tabs` came back as `two tabs`. Each tab becomes a raw
  * `tab` atom, written back as is and shown at a tab's width. Indentation is
@@ -530,6 +555,18 @@ function wrapLinkRules(md: any): void {
 
 const INSTALLED = Symbol.for("gumply.rawMarkdown");
 
+const IMAGE_ALT = Symbol.for("gumply.imageAlt");
+
+/**
+ * #3zpgenmw: only the image alt fix, for the other Markdown renderers (page
+ * embeds, board cards), so a caption reads the same everywhere. Idempotent.
+ */
+export function imageAltMarkdownPlugin(md: any): void {
+  if (md[IMAGE_ALT]) return;
+  md[IMAGE_ALT] = true;
+  md.core.ruler.after("inline", "gumply_image_alt", imageAltRule);
+}
+
 export function rawMarkdownPlugin(md: any): void {
   if (md[INSTALLED]) return;
   md[INSTALLED] = true;
@@ -544,6 +581,8 @@ export function rawMarkdownPlugin(md: any): void {
   md.core.ruler.after("gumply_list_source", "gumply_block_joins", blockJoinRule);
   md.core.ruler.after("inline", "gumply_break_style", breakStyleRule);
   md.core.ruler.after("gumply_break_style", "gumply_inline_images", inlineImageRule);
+  if (!md[IMAGE_ALT]) md.core.ruler.after("gumply_inline_images", "gumply_image_alt", imageAltRule);
+  md[IMAGE_ALT] = true;
   if (md.core.ruler.__find__("text_join") !== -1) {
     md.core.ruler.before("text_join", "gumply_entities", entityRule);
     md.core.ruler.after("text_join", "gumply_tabs", tabRule);
