@@ -20,7 +20,7 @@ When several pages share a name, a link means the one in the linking page's own 
 - **Rename a page:** links to it in other pages and on boards are updated to the new title. Only the links change; nothing else in those files does.
 - **Rename a heading:** links to that heading (`[[Page#Old]]`) are updated too.
 - **Move a page** to another folder: its links keep working, and links to its images and files are adjusted.
-- **Renamed in another app** (Obsidian, a file manager): the sidebar shows the new name within a moment, and the links that app rewrote work as they are.
+- **Renamed in another app** (Obsidian, a file manager): the sidebar shows the new name within a moment, and the links that app rewrote work as they are. If the page is open, it stays open under the new name, with anything you were typing, and its [history](version-history.md) moves with it.
 
 ## See what links here
 
