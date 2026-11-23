@@ -69,7 +69,7 @@ Gumply keeps its own data (version history, conflict backups) in a `.gumply` fol
 ## Find your way around
 
 - **The sidebar** lists your pages and boards. Drag them to reorder or nest them. Hover a row for **+** (add a page inside) and **⋯** (more actions).
-- **Search** (`Ctrl+K`, or `Cmd+K` on a Mac) finds pages by title and text. It also runs commands: type "today", "template", "history" or "export".
+- **Search** (`Ctrl+K`, or `Cmd+K` on a Mac) finds pages by title and text, and runs commands such as "today", "template", "history" or "export". Type **>** first to list every command: for this page (rename, move, export, history…), new pages and boards, **Insert: …** and **Turn into: …** in the editor, board tools and zoom, theme, font and page width, and help.
 - **`?`** shows every keyboard shortcut.
 - **The gear** at the top right opens Settings: language, theme, AI apps, version history and updates.
 

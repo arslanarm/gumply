@@ -45,6 +45,11 @@ Choose **Graph** in the sidebar to see every page as a dot and every link as a l
 
 On any page, the **Local graph** button in the header shows just that page and its neighbours, one or two links away, in a column beside the page.
 
+### Big vaults
+
+- **Right after opening** a vault with thousands of notes, the sidebar and your pages are there at once, while Gumply still reads the links between them. For that moment the graph and **Linked from** say **Indexing links…**, then fill in. Nothing is missing once they do.
+- **A graph of more than 5,000 notes** first shows its starting layout dimmed, with **Arranging the graph… 40%** counting up, and appears once it has settled. That can take a while on a slow computer; the rest of the app stays usable meanwhile.
+
 ## The outline
 
 **Outline** (`Ctrl/Cmd+Shift+O`) lists the page's headings beside the page, or a board's frames. Click one to jump to it. It shares the side column with the local graph.

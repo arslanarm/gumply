@@ -34,7 +34,7 @@ Press `?` anywhere (outside a text field) to see them all. `Ctrl` is `Cmd` on a 
 
 | Keys | Does |
 |---|---|
-| `Ctrl+K` | Search pages and run commands |
+| `Ctrl+K` | Search pages and run commands (type `>` for all of them) |
 | `Ctrl+\` | Show or hide the sidebar |
 | `Ctrl+Shift+D` | Open today's note |
 | `Ctrl+Shift+O` (or `Ctrl+Alt+O`) | Show or hide the outline |
