@@ -92,6 +92,8 @@ describe("Notion import planner (#znyztw3t, spec/notion-import)", () => {
     expect(plan.report.sharedAttachments).toEqual([
       { file: "attachments/Notion import/diagram with spaces.png", names: ["diagram with spaces.png", "Схема проекта.png"] },
     ]);
+    // Every row found its page, the stripped `Q3: plan?` too (no rowWithoutPage).
+    expect(plan.report.rows).toBe(5);
     expect(plan.report.missing).toEqual([]);
     expect(plan.report.outside).toEqual([]);
     expect(plan.report.skipped).toEqual([]);
@@ -253,6 +255,25 @@ describe("Notion import planner: constructs the lorem fixture doesn't show (synt
     expect(content(result, "Notion import/Root/Section 1 1.md")).toBe("---\ntitle: Section 1.1\n---\n\nText.\n");
     expect(content(result, "Notion import/Root/Notes.md")).toBe("# Notes on Q3\n\nBody.\n");
     expect(content(result, "Notion import/Root/Plain.md")).toBe("Body.\n");
+  });
+
+  it("rows: a CSV title Notion stripped from the file name still finds its page, and an exact title wins first (#inwiay4m)", () => {
+    const E = "e".repeat(32);
+    const result = plan([
+      page(`Root/Home ${A}.md`, `# Home\n\n[Tasks](Home/Tasks%20${B}.csv)`),
+      // "Q3: plan?" comes first in the CSV, but the page named exactly "Q3 plan" belongs to the later row.
+      page(`Root/Home/Tasks ${B}.csv`, "\uFEFFName,Status\r\nQ3: plan?,Doing\r\nQ3 plan,Done"),
+      page(`Root/Home/Tasks/Q3 plan ${C}.md`, "# Q3: plan?\n\nStatus: Doing\n\nStripped."),
+      page(`Root/Home/Tasks/Q3 plan ${D}.md`, "# Q3 plan\n\nStatus: Done\n\nExact."),
+      page(`Root/Home/Tasks/Other ${E}.md`, "# Other\n\nNo row."),
+    ]);
+    const files = result.files.filter((file) => file.path.startsWith("Notion import/Root/Home/Tasks/")).map((file) => [file.path, file.content]);
+    expect(Object.fromEntries(files)).toEqual({
+      "Notion import/Root/Home/Tasks/Q3 plan.md": '---\ntitle: "Q3: plan?"\nStatus: Doing\n---\n\nStripped.\n',
+      "Notion import/Root/Home/Tasks/Q3 plan 2.md": "---\nStatus: Done\n---\n\nExact.\n",
+      "Notion import/Root/Home/Tasks/Other.md": "No row.\n",
+    });
+    expect(result.report.skipped).toEqual([]);
   });
 
   it("titles: a case change is a real difference; a row page's title goes before its properties", () => {

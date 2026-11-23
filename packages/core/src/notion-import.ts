@@ -211,6 +211,21 @@ function attachmentName(raw: string): string {
   return `${stem || "file"}${extension}`;
 }
 
+const FIRST_HEADING = /^# (.*)\n(?:\n|$)?/;
+
+/**
+ * The page's first heading when it differs from the file name only by
+ * characters a file name can't hold (Notion strips them from its names:
+ * `Q3: plan?` → `Q3 plan`, `Section 1.1` → `Section 1 1`): the real title,
+ * for `title:` (D20's exception, docs/file-format.md). Null otherwise (#inwiay4m).
+ */
+function strippedTitle(markdown: string, fileTitle: string): string | null {
+  const heading = FIRST_HEADING.exec(markdown.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n"));
+  const h1 = heading?.[1]!.trim() ?? "";
+  const raw = fileTitle.trim();
+  return h1 && h1 !== raw && titleLetters(h1) === titleLetters(raw) ? h1 : null;
+}
+
 /** A title's letters and digits only: what survives any file-name cleaning (#inwiay4m). */
 function titleLetters(title: string): string {
   return title.normalize("NFC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -307,6 +322,8 @@ interface PageInfo {
   title: string;
   /** The title as the export wrote it (before D20 cleaning), for the H1 check. */
   rawTitle: string;
+  /** The first heading when it is the title Notion stripped from the file name (`Q3: plan?`), else null (#inwiay4m). */
+  realTitle: string | null;
   id: string | null;
   database: NotionPlannedDatabase | null;
 }
@@ -409,7 +426,8 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     const dir = vaultDir(zipDir);
     const title = claim(dir, pageSegment(name), ".md");
     const database = databaseByRowsDir.get(zipDir) ?? null;
-    const info: PageInfo = { zipPath: path, vaultPath: `${dir}/${title}.md`, title, rawTitle: name, id, database };
+    const realTitle = strippedTitle(decoder.decode(byPath.get(path)!.data), name);
+    const info: PageInfo = { zipPath: path, vaultPath: `${dir}/${title}.md`, title, rawTitle: name, realTitle, id, database };
     pages.set(path, info);
     if (id) pageById.set(id, info);
     if (database) database.rows.push(info.vaultPath);
@@ -501,14 +519,25 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
       else if (existing === undefined && found !== "text") types[column.key] = found;
     }
 
-    // Rows → pages by title, in CSV order when titles repeat.
+    // Rows → pages by title, in CSV order when titles repeat. A title Notion
+    // stripped from the file name (`Q3: plan?` → `Q3 plan`) is matched by its
+    // letters and digits when no page has it exactly (#inwiay4m).
     const queue = new Map<string, PageInfo[]>();
+    const looseQueue = new Map<string, PageInfo[]>();
     for (const vaultPath of database.rows) {
       const page = [...pages.values()].find((candidate) => candidate.vaultPath === vaultPath);
       if (!page) continue;
-      const key = page.rawTitle.trim();
+      const key = page.realTitle ?? page.rawTitle.trim();
       queue.set(key, [...(queue.get(key) ?? []), page]);
+      const loose = titleLetters(key);
+      looseQueue.set(loose, [...(looseQueue.get(loose) ?? []), page]);
     }
+    const taken = new Set<PageInfo>();
+    const take = (list: PageInfo[] | undefined): PageInfo | undefined => {
+      const page = list?.find((candidate) => !taken.has(candidate));
+      if (page) taken.add(page);
+      return page;
+    };
     const link = (row: PageInfo) => (item: RelationItem) => {
       const target = pageById.get(item.id.toLowerCase());
       if (target) {
@@ -519,10 +548,13 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
       else report.missing.push({ page: row.vaultPath, link: item.ref });
       return item.title;
     };
-    for (const row of rows) {
-      if (row.every((cell) => cell.trim() === "")) continue;
-      const title = (row[0] ?? "").trim();
-      const page = queue.get(title)?.shift();
+    const filled = rows.filter((row) => !row.every((cell) => cell.trim() === ""));
+    const titleOf = (row: string[]) => (row[0] ?? "").trim();
+    // Exact titles first, so a stripped one never takes another row's page.
+    const exact = filled.map((row) => take(queue.get(titleOf(row))));
+    for (const [index, row] of filled.entries()) {
+      const title = titleOf(row);
+      const page = exact[index] ?? take(looseQueue.get(titleLetters(title)));
       if (!page) {
         report.skipped.push({ path: csvPath, ...skipEntry("rowWithoutPage", { title }) });
         continue;
@@ -567,21 +599,11 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     let text = decoder.decode(byPath.get(page.zipPath)!.data).replace(/^﻿/, "").replace(/\r\n/g, "\n");
     const noteId = page.vaultPath.replace(/\.md$/, "");
 
-    // The leading `# Title` repeats the file name (decision 3). When it differs
-    // only by characters a file name can't hold (Notion strips them from its
-    // names: `Q3: plan?` → `Q3 plan`), it is the real title: kept as `title:`
-    // (D20's exception, docs/file-format.md) and dropped too (#inwiay4m).
-    let realTitle: string | null = null;
-    const heading = /^# (.*)\n(?:\n|$)?/.exec(text);
-    if (heading) {
-      const h1 = heading[1]!.trim();
-      const raw = page.rawTitle.trim();
-      if (h1 === raw) text = text.slice(heading[0].length);
-      else if (h1 && titleLetters(h1) === titleLetters(raw)) {
-        realTitle = h1;
-        text = text.slice(heading[0].length);
-      }
-    }
+    // The leading `# Title` repeats the file name (decision 3), or is the real
+    // title Notion stripped from it: kept as `title:` (#inwiay4m). Dropped either way.
+    const { realTitle } = page;
+    const heading = FIRST_HEADING.exec(text);
+    if (heading && (heading[1]!.trim() === page.rawTitle.trim() || heading[1]!.trim() === realTitle)) text = text.slice(heading[0].length);
 
     // A row page's `Key: value` lines are Notion's dump of its properties (§6).
     const database = page.database as (NotionPlannedDatabase & { headers: string[] }) | null;
