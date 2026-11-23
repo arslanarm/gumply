@@ -20,9 +20,15 @@ export interface ZoomVarElement {
  * (tracked from pointer events): matching `:hover` in a query can make the
  * browser bring styles up to date first, on every step.
  */
-export function zoomVarTargets(root: Element, wholeBoard: boolean, hovered: Element | null = null): HTMLElement[] {
+export function zoomVarTargets(
+  root: Element,
+  wholeBoard: boolean,
+  hovered: Element | null = null,
+  /** The selected objects when the caller already has them (a hover change needn't query the board again). */
+  selected?: readonly HTMLElement[],
+): HTMLElement[] {
   if (wholeBoard) return [root as HTMLElement];
-  const targets = [...root.querySelectorAll<HTMLElement>(".react-flow__node.selected")];
+  const targets = selected ? [...selected] : [...root.querySelectorAll<HTMLElement>(".react-flow__node.selected")];
   if (hovered && hovered.isConnected && root.contains(hovered) && !targets.includes(hovered as HTMLElement)) targets.push(hovered as HTMLElement);
   return targets;
 }

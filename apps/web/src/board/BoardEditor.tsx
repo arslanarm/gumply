@@ -1069,12 +1069,24 @@ function BoardCanvas(props: BoardEditorProps) {
   const hoveredNode = useRef<Element | null>(null);
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   /** #zkknytrs: `--board-zoom` on the elements whose dots can show (zoom-var.ts), not the whole board. */
-  const placeZoomVar = useCallback(() => {
-    const root = rootRef.current;
-    // Compensate down to the minimum zoom, so dots keep a ~10 px screen
-    // target however far out you are (#zk6etvae).
-    if (root) zoomVar.sync(zoomVarTargets(root, connectorTool.current || connecting.current, hoveredNode.current), Math.max(MIN_ZOOM, zoomNow.current));
-  }, [zoomVar]);
+  const selectedNodeElements = useRef<HTMLElement[]>([]);
+  /**
+   * `full` looks up the selected objects again (zoom, selection, tool, rest);
+   * a hover change reuses them, so objects sliding under the pointer during a
+   * pan cost two style writes, not a query over the whole board.
+   */
+  const placeZoomVar = useCallback(
+    (full = true) => {
+      const root = rootRef.current;
+      if (!root) return;
+      if (full) selectedNodeElements.current = [...root.querySelectorAll<HTMLElement>(".react-flow__node.selected")];
+      // Compensate down to the minimum zoom, so dots keep a ~10 px screen
+      // target however far out you are (#zk6etvae).
+      const targets = zoomVarTargets(root, connectorTool.current || connecting.current, hoveredNode.current, selectedNodeElements.current);
+      zoomVar.sync(targets, Math.max(MIN_ZOOM, zoomNow.current));
+    },
+    [zoomVar],
+  );
   /** placeZoomVar in the next frame, at most once per frame. */
   const zoomVarFrame = useRef(0);
   const placeZoomVarSoon = useCallback(() => {
@@ -1813,14 +1825,14 @@ function BoardCanvas(props: BoardEditorProps) {
             const node = event.target instanceof Element ? event.target.closest(".react-flow__node") : null;
             if (node === hoveredNode.current) return;
             hoveredNode.current = node;
-            placeZoomVar();
+            placeZoomVar(false);
           }}
           onPointerLeave={() => {
             pointerRef.current = null;
             lastPointer.current = null;
             if (hoveredNode.current) {
               hoveredNode.current = null;
-              placeZoomVar();
+              placeZoomVar(false);
             }
           }}
           onDoubleClick={onDoubleClick}
