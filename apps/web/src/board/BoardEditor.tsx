@@ -1080,7 +1080,12 @@ function BoardCanvas(props: BoardEditorProps) {
     (full = true) => {
       const root = rootRef.current;
       if (!root) return;
-      if (full) selectedNodeElements.current = [...root.querySelectorAll<HTMLElement>(".react-flow__node.selected")];
+      if (full) {
+        // From our selection, not React Flow's `selected` class, which can land a render later.
+        const ids = new Set(selectedRef.current.nodes);
+        selectedNodeElements.current =
+          ids.size === 0 ? [] : [...root.querySelectorAll<HTMLElement>(".react-flow__node")].filter((element) => ids.has(element.dataset.id ?? ""));
+      }
       // Compensate down to the minimum zoom, so dots keep a ~10 px screen
       // target however far out you are (#zk6etvae).
       const targets = zoomVarTargets(root, connectorTool.current || connecting.current, hoveredNode.current, selectedNodeElements.current);
