@@ -32,6 +32,7 @@ describe("Import from Notion dialog helpers (B4)", () => {
       databases: 0,
       rows: 0,
       attachments: 1,
+      sharedAttachments: [],
       converted: { pageLinks: 2, mentions: 0, databaseEmbeds: 1, databaseLinks: 0, attachmentLinks: 1, callouts: 0, relations: 4 },
       databaseDetails: [],
       renamedKeys: [],

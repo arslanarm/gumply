@@ -87,6 +87,17 @@ describe("Notion import planner (#znyztw3t, spec/notion-import)", () => {
       ["Tasks", "Status", null],
     ]);
   });
+  it("the synthetic export (1.0 N5, #inwiay4m): callouts, toggles, a shared image, both kinds of database, stripped titles (the golden in synthetic.expected/)", () => {
+    const plan = expectGolden("synthetic");
+    expect(plan.report.sharedAttachments).toEqual([
+      { file: "attachments/Notion import/diagram with spaces.png", names: ["diagram with spaces.png", "Схема проекта.png"] },
+    ]);
+    // Every row found its page, the stripped `Q3: plan?` too (no rowWithoutPage).
+    expect(plan.report.rows).toBe(5);
+    expect(plan.report.missing).toEqual([]);
+    expect(plan.report.outside).toEqual([]);
+    expect(plan.report.skipped).toEqual([]);
+  });
 });
 
 describe("Notion import planner: constructs the lorem fixture doesn't show (synthetic, unverified)", () => {
@@ -213,6 +224,67 @@ describe("Notion import planner: constructs the lorem fixture doesn't show (synt
     const stored = result.files.filter((file) => file.path.startsWith("attachments/")).map((file) => file.path);
     expect(stored.sort()).toEqual(["attachments/Notion import/image-1.png", "attachments/Notion import/image.png"]);
     expect(result.report.missing).toEqual([{ page: "Notion import/Root/A.md", link: "A/missing.pdf" }]);
+    // #inwiay4m: the merge is reported, with the export's names, in every language.
+    expect(result.report.sharedAttachments).toEqual([{ file: "attachments/Notion import/image.png", names: ["image.png", "copy.png"] }]);
+    expect(notionReportMarkdown(result.report, "Notion import")).toContain(
+      "- 2 attachments\n  - 2 identical files share one copy (`attachments/Notion import/image.png`): image.png, copy.png\n",
+    );
+    expect(notionReportMarkdown(result.report, "Notion import", "ru")).toContain(
+      "- Вложений: 2\n  - Одинаковых файлов в одной копии (`attachments/Notion import/image.png`): 2 — image.png, copy.png\n",
+    );
+  });
+
+  it("a report without shared copies has no such line", () => {
+    const result = plan([page(`Root/A ${A}.md`, "# A\n\n![x](A/one.png)"), { path: "Root/A/one.png", data: new Uint8Array([1]) }]);
+    expect(result.report.sharedAttachments).toEqual([]);
+    expect(notionReportMarkdown(result.report, "Notion import")).not.toContain("share one copy");
+  });
+
+  it("titles: a first heading that differs from the file name only by what a file name can't hold becomes `title:` (#inwiay4m, D20)", () => {
+    const result = plan([
+      // Notion stripped `:` and `?` from the file name.
+      page(`Root/Q3 plan ${A}.md`, "# Q3: plan?\n\nGoals."),
+      // ...and the dot.
+      page(`Root/Section 1 1 ${B}.md`, "# Section 1.1\n\nText."),
+      // A heading that really differs stays, and there's no title.
+      page(`Root/Notes ${C}.md`, "# Notes on Q3\n\nBody."),
+      // A plain match is dropped, as before.
+      page(`Root/Plain ${D}.md`, "# Plain\n\nBody."),
+    ]);
+    expect(content(result, "Notion import/Root/Q3 plan.md")).toBe('---\ntitle: "Q3: plan?"\n---\n\nGoals.\n');
+    expect(content(result, "Notion import/Root/Section 1 1.md")).toBe("---\ntitle: Section 1.1\n---\n\nText.\n");
+    expect(content(result, "Notion import/Root/Notes.md")).toBe("# Notes on Q3\n\nBody.\n");
+    expect(content(result, "Notion import/Root/Plain.md")).toBe("Body.\n");
+  });
+
+  it("rows: a CSV title Notion stripped from the file name still finds its page, and an exact title wins first (#inwiay4m)", () => {
+    const E = "e".repeat(32);
+    const result = plan([
+      page(`Root/Home ${A}.md`, `# Home\n\n[Tasks](Home/Tasks%20${B}.csv)`),
+      // "Q3: plan?" comes first in the CSV, but the page named exactly "Q3 plan" belongs to the later row.
+      page(`Root/Home/Tasks ${B}.csv`, "\uFEFFName,Status\r\nQ3: plan?,Doing\r\nQ3 plan,Done"),
+      page(`Root/Home/Tasks/Q3 plan ${C}.md`, "# Q3: plan?\n\nStatus: Doing\n\nStripped."),
+      page(`Root/Home/Tasks/Q3 plan ${D}.md`, "# Q3 plan\n\nStatus: Done\n\nExact."),
+      page(`Root/Home/Tasks/Other ${E}.md`, "# Other\n\nNo row."),
+    ]);
+    const files = result.files.filter((file) => file.path.startsWith("Notion import/Root/Home/Tasks/")).map((file) => [file.path, file.content]);
+    expect(Object.fromEntries(files)).toEqual({
+      "Notion import/Root/Home/Tasks/Q3 plan.md": '---\ntitle: "Q3: plan?"\nStatus: Doing\n---\n\nStripped.\n',
+      "Notion import/Root/Home/Tasks/Q3 plan 2.md": "---\nStatus: Done\n---\n\nExact.\n",
+      "Notion import/Root/Home/Tasks/Other.md": "No row.\n",
+    });
+    expect(result.report.skipped).toEqual([]);
+  });
+
+  it("titles: a case change is a real difference; a row page's title goes before its properties", () => {
+    const result = plan([
+      page(`Root/Plan ${A}.md`, "# plan\n\nBody."),
+      page(`Root/Home ${B}.md`, `# Home\n\n[Tasks](Home/Tasks%20${C}.csv)`),
+      page(`Root/Home/Tasks ${C}.csv`, "\uFEFFName,Status\r\nWhat now,Doing"),
+      page(`Root/Home/Tasks/What now ${D}.md`, "# What now?\n\nStatus: Doing\n\nBody."),
+    ]);
+    expect(content(result, "Notion import/Root/Plan.md")).toBe("# plan\n\nBody.\n");
+    expect(content(result, "Notion import/Root/Home/Tasks/What now.md")).toBe('---\ntitle: What now?\nStatus: Doing\n---\n\nBody.\n');
   });
 
   it("links that climb out of the export resolve to nothing (reported, never followed)", () => {
