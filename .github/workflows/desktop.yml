@@ -84,6 +84,12 @@ jobs:
         shell: bash
         run: node scripts/set-version.mjs --check "${GITHUB_REF_NAME#v}"
 
+      # D44: a release must carry the owner's two update-signing public keys;
+      # with none, its auto-update would silently skip the signature check.
+      - name: Update keys are built in
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/check-update-keys.mjs --require
+
       - name: Install dependencies
         run: npm ci
 
@@ -281,9 +287,21 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # D44: the signing key is a secret of the protected "release" environment.
+    # If the owner set required reviewers there, this job waits for their
+    # approval before anything is signed or uploaded.
+    environment: release
     permissions:
       contents: write
     steps:
+      # The signing scripts (Node built-ins only; no npm ci).
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - uses: actions/download-artifact@v8
         with:
           pattern: gumply-*
@@ -295,6 +313,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          GUMPLY_SIGNING_KEY: ${{ secrets.GUMPLY_SIGNING_KEY }}
         run: |
           ls -la dist
           cd dist
@@ -311,6 +330,16 @@ jobs:
           fi
           { echo "### Release assets"; echo; echo '```'; cat SHA256SUMS.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cd ..
+          # D44: sign the sums (the key never leaves the env var, and the script
+          # never prints it), then check the .sig exactly as the app will, with
+          # the keys built into this release. dist/* then uploads the .sig too.
+          if [[ -z "$GUMPLY_SIGNING_KEY" ]]; then
+            echo "::error::GUMPLY_SIGNING_KEY isn't set: add it to the 'release' environment (see the wiki page dev/owner-update-signing-keys)."
+            exit 1
+          fi
+          node scripts/sign-sums.mjs dist/SHA256SUMS.txt
+          verified=$(node scripts/check-update-keys.mjs --verify dist/SHA256SUMS.txt)
+          echo "$verified" | tee -a "$GITHUB_STEP_SUMMARY"
           # A tag with a suffix (v0.5.0-rc.1, -beta…) is a pre-release.
           prerelease=()
           if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
@@ -319,5 +348,5 @@ jobs:
           else
             gh release create "$TAG" dist/* --draft "${prerelease[@]}" --verify-tag \
               --title "Gumply $TAG" \
-              --notes "Desktop installers for $TAG (unsigned: Windows SmartScreen and macOS Gatekeeper will warn). Checksums in SHA256SUMS.txt."
+              --notes "Desktop installers for $TAG (unsigned: Windows SmartScreen and macOS Gatekeeper will warn). Checksums in SHA256SUMS.txt; SHA256SUMS.txt.sig is Gumply's update signature over them, checked by the app before it installs an update."
           fi
