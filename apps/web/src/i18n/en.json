@@ -158,7 +158,8 @@
     "localGraph": "Local graph",
     "rename": "Rename page",
     "updated": "Updated {{time}}",
-    "contentLabel": "Page content"
+    "contentLabel": "Page content",
+    "waitingForServer": "This page opens as soon as Gumply's local server is back."
   },
   "empty": {
     "noPages": "No pages yet.",
@@ -1751,7 +1752,9 @@
     },
     "syncHint": "Using Syncthing? Add these lines to the folder's .stignore, so each device keeps its own history and logs.",
     "syncHintOther": "Dropbox, iCloud and OneDrive can't skip it; history still works if it syncs.",
-    "copyLine": "Copy lines"
+    "copyLine": "Copy lines",
+    "versionFailed": "Couldn't load this version: {{error}}",
+    "changesFailed": "Couldn't load the changes: {{error}}"
   },
   "conflicts": {
     "title": "Conflicts",

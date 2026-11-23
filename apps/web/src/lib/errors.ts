@@ -24,3 +24,12 @@ export function errorMessage(error: unknown): string {
   }
   return t("errors.generic");
 }
+
+/**
+ * #2xx3uae4: only a real 404 from a server that answered means a page doesn't
+ * exist. A failed fetch, a timeout or a 5xx (the dev server's proxy answers 5xx
+ * while the local server is down) means it couldn't be reached.
+ */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 404;
+}

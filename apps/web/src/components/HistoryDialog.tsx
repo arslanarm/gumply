@@ -24,6 +24,11 @@ export interface HistoryDialogProps {
   onClose: () => void;
   /** A restore wrote the file: the open page reloads from the result. */
   onRestored: (result: Page | BoardDocument) => void;
+  /**
+   * #2xx3uae4: bumped when Gumply's local server answers again after it was
+   * down. Whatever failed to load (the list, a version, its changes) loads again.
+   */
+  reconnectKey?: number;
 }
 
 /** `null` = the current version. */
@@ -47,7 +52,7 @@ function useHistorySourceLabel() {
   };
 }
 
-export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDialogProps) {
+export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey = 0 }: HistoryDialogProps) {
   // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
   const modalRef = useRef<HTMLDivElement | null>(null);
   useModal(modalRef);
@@ -64,6 +69,14 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   const text = loadedText && loadedText.for === selected ? loadedText.value : null;
   const [loadedDiff, setLoadedDiff] = useState<{ for: Selection; value: HistoryDiff } | null>(null);
   const diff = loadedDiff && loadedDiff.for === selected ? loadedDiff.value : null;
+  // #2xx3uae4: a version or its changes that couldn't be loaded say so, with a Retry;
+  // never an empty text shown as if it were the version's content.
+  const [textError, setTextError] = useState<{ for: Selection; message: string } | null>(null);
+  const [diffError, setDiffError] = useState<{ for: Selection; message: string } | null>(null);
+  const versionError = textError && textError.for === selected ? textError.message : null;
+  const changesError = diffError && diffError.for === selected ? diffError.message : null;
+  /** Bumped by Retry, or when the server is back: everything that failed loads again. */
+  const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<"preview" | "changes">("preview");
   const [whole, setWhole] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -97,7 +110,14 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, attempt]);
+
+  // The server answers again: retry what failed (not what loaded fine).
+  const failedRef = useRef(false);
+  failedRef.current = loadError !== null || versionError !== null || changesError !== null;
+  useEffect(() => {
+    if (reconnectKey > 0 && failedRef.current) setAttempt((value) => value + 1);
+  }, [reconnectKey]);
 
   useEffect(() => {
     listRef.current?.focus();
@@ -125,13 +145,25 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
           : api.getPage(target.id).then((page) => page.content)
         : api.historyText(target.id, selected);
     textRequest
-      .then((value) => !cancelled && setLoadedText({ for: version, value }))
-      .catch(() => !cancelled && setLoadedText({ for: version, value: "" }));
-    if (selected !== null) api.historyDiff(target.id, selected).then((value) => !cancelled && setLoadedDiff({ for: version, value })).catch(() => undefined);
+      .then((value) => {
+        if (cancelled) return;
+        setLoadedText({ for: version, value });
+        setTextError(null);
+      })
+      .catch((error: unknown) => !cancelled && setTextError({ for: version, message: errorMessage(error) }));
+    if (selected !== null)
+      api
+        .historyDiff(target.id, selected)
+        .then((value) => {
+          if (cancelled) return;
+          setLoadedDiff({ for: version, value });
+          setDiffError(null);
+        })
+        .catch((error: unknown) => !cancelled && setDiffError({ for: version, message: errorMessage(error) }));
     return () => {
       cancelled = true;
     };
-  }, [selected, target.id, board, list]);
+  }, [selected, target.id, board, list, attempt]);
 
   useEffect(() => {
     if (!board) return;
@@ -143,7 +175,7 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
     return () => {
       cancelled = true;
     };
-  }, [board, target.id, list]);
+  }, [board, target.id, list, attempt]);
 
   /** The selected version as a board (null while loading, or for a page). */
   const versionBoard = useMemo<CanvasBoard | null>(() => {
@@ -249,7 +281,21 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
     return null;
   };
 
+  const retry = (testId: string) => (
+    <button type="button" className="button-secondary" data-testid={testId} onClick={() => setAttempt((value) => value + 1)}>
+      {t("common.retry")}
+    </button>
+  );
+
   const preview = () => {
+    if (versionError !== null && text === null) {
+      return (
+        <div className="history-error" role="alert" data-testid="history-version-error">
+          <p>{t("history.versionFailed", { error: versionError })}</p>
+          {retry("history-version-retry")}
+        </div>
+      );
+    }
     if (text === null) return <p className="history-muted">{t("history.loading")}</p>;
     if (board) {
       if (!versionBoard) return <p className="history-muted">{t("history.loading")}</p>;
@@ -274,6 +320,14 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   };
 
   const changes = () => {
+    if (changesError !== null && !diff) {
+      return (
+        <div className="history-error" role="alert" data-testid="history-changes-error">
+          <p>{t("history.changesFailed", { error: changesError })}</p>
+          {retry("history-changes-retry")}
+        </div>
+      );
+    }
     if (!diff) return <p className="history-muted">{t("history.loading")}</p>;
     if (diff.kind === "whiteboard") {
       if (diff.added.length + diff.removed.length + diff.changed.length === 0) return <p className="history-muted">{t("history.noChanges")}</p>;
@@ -369,9 +423,10 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
           </ul>
           <section className="history-preview" aria-label={t("history.previewLabel")} data-testid="history-preview">
             {loadError ? (
-              <p className="history-error" role="alert">
-                {t("history.failed", { error: loadError })}
-              </p>
+              <div className="history-error" role="alert" data-testid="history-list-error">
+                <p>{t("history.failed", { error: loadError })}</p>
+                {retry("history-list-retry")}
+              </div>
             ) : list !== null && items.length === 0 ? (
               <div className="empty-state history-empty" data-testid="history-empty">
                 <span className="empty-state-icon" aria-hidden="true">

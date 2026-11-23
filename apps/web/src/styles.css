@@ -7237,6 +7237,18 @@ input {
   color: var(--danger);
 }
 
+/* #2xx3uae4: a load that failed, with its Retry under it. */
+div.history-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+div.history-error > p {
+  margin: 0;
+}
+
 .history-content {
   flex: 1;
   min-height: 0;

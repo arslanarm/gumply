@@ -101,6 +101,17 @@ export class DemoApp {
     await this.startServer();
   }
 
+  /** #2xx3uae4: stop the API only (the web app stays up), to see what the app does while it's away. */
+  async stopServer(): Promise<void> {
+    await this.stopChild(this.server);
+    this.server = null;
+  }
+
+  /** …and start it again on the same vault. */
+  async startApi(): Promise<void> {
+    await this.startServer();
+  }
+
   /** Restart the API on an emptied vault: a second first run (#93yv3ban). */
   async freshVault(): Promise<void> {
     await this.stopChild(this.server);
