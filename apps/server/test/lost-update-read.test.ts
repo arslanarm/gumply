@@ -16,6 +16,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 let replaceAfterRead: { path: string; text: string } | null = null;
 let replaceAfterRename: { path: string; text: string } | null = null;
+// A filesystem whose rename changes the reported mtime (SMB/NFS, cloud-sync, FAT):
+// after the store renames onto `path`, every stat of it reports the mtime shifted by `ms`.
+let shiftOnRename: { path: string; ms: number } | null = null;
+const shifted = new Map<string, number>();
 
 async function replaceNow(path: string, which: "read" | "rename" = "read"): Promise<void> {
   const pending = which === "read" ? replaceAfterRead : replaceAfterRename;
@@ -40,8 +44,18 @@ vi.mock("node:fs/promises", async () => {
       if (typeof args[0] === "string") await replaceNow(args[0]);
       return result;
     },
+    stat: async (...args: Parameters<typeof real.stat>) => {
+      const stats = await real.stat(...args);
+      const ms = shifted.get(String(args[0]));
+      if (ms === undefined) return stats;
+      const copy = Object.assign(Object.create(Object.getPrototypeOf(stats)), stats);
+      copy.mtimeMs = stats.mtimeMs + ms;
+      copy.mtime = new Date(copy.mtimeMs);
+      return copy;
+    },
     rename: async (...args: Parameters<typeof real.rename>) => {
       await real.rename(...args);
+      if (shiftOnRename && shiftOnRename.path === String(args[1])) shifted.set(shiftOnRename.path, shiftOnRename.ms);
       await replaceNow(String(args[1]), "rename");
     },
     open: async (...args: Parameters<typeof real.open>) => {
@@ -68,6 +82,8 @@ beforeEach(async () => {
 afterEach(async () => {
   replaceAfterRead = null;
   replaceAfterRename = null;
+  shiftOnRename = null;
+  shifted.clear();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -130,6 +146,34 @@ describe("a read racing another program's atomic save keeps text and mtime toget
         await expect(store.updateBoard("Map.canvas", { board: { nodes: [], edges: [] }, expectedUpdated: saved.meta.updated })).rejects.toMatchObject({ status: 409 });
       }
       expect(await readFile(file, "utf8")).toBe(theirs);
+    });
+  }
+
+  // The other side of that choice: when the path still holds our file (same inode) but the
+  // filesystem reports a different mtime after the rename, the store keeps the path's mtime,
+  // so the next save is not a false "changed on disk" conflict.
+  for (const [kind, name, first] of [
+    ["page", "Plan.md", "# Plan\n\nIntro.\n"],
+    ["board", "Map.canvas", '{"nodes":[],"edges":[]}'],
+  ] as const) {
+    it(`a ${kind}: a rename that changes the reported mtime of our own file is not a conflict on the next save`, async () => {
+      const file = join(dir, name);
+      await writeFile(file, first);
+      const store = new VaultStore(dir);
+      await store.init();
+      shiftOnRename = { path: file, ms: 2_000 };
+      if (kind === "page") {
+        const saved = await store.update("Plan", { content: "# Plan\n\nIntro.\n\nOne.\n", expectedUpdated: store.get("Plan").updated });
+        expect(shifted.has(file)).toBe(true); // the stub really applied
+        await store.update("Plan", { content: "# Plan\n\nIntro.\n\nOne.\n\nTwo.\n", expectedUpdated: saved.updated });
+        expect(await readFile(file, "utf8")).toContain("Two.");
+      } else {
+        const card = (id: string) => ({ id, type: "text", text: id, x: 0, y: 0, width: 100, height: 50 });
+        const saved = await store.updateBoard("Map.canvas", { board: { nodes: [card("one")], edges: [] } as never, expectedUpdated: store.getBoard("Map.canvas").meta.updated });
+        expect(shifted.has(file)).toBe(true);
+        await store.updateBoard("Map.canvas", { board: { nodes: [card("one"), card("two")], edges: [] } as never, expectedUpdated: saved.meta.updated });
+        expect(await readFile(file, "utf8")).toContain('"two"');
+      }
     });
   }
 });
