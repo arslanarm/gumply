@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { preloadGraph } from "../lazy-parts.js";
 import { buildPageTree, pageTrail } from "../lib/tree.js";
@@ -13,6 +13,8 @@ export interface SidebarFocusTarget {
 }
 
 export interface SidebarProps {
+  /** Below the Trash row: the desktop app's update notice (spec/auto-update). */
+  footer?: ReactNode;
   pages: readonly PageMeta[];
   selectedId: PageId | null;
   status: "loading" | "ready" | "error";
@@ -415,6 +417,7 @@ export function Sidebar(props: SidebarProps) {
           ) : null}
         </button>
       ) : null}
+      {props.footer ?? null}
     </aside>
   );
 }

@@ -39,6 +39,10 @@ await build({
   format: "esm",
   target: "node22",
   external: ["electron"],
+  // spec/auto-update §8: CI's update tests build with GUMPLY_BUILD_TEST_FEED=1,
+  // which keeps the `TEST_FEED:` block (GUMPLY_UPDATE_FEED points the app at a
+  // 127.0.0.1 feed). Every other build drops it (the inspector checks).
+  ...(process.env.GUMPLY_BUILD_TEST_FEED === "1" ? {} : { dropLabels: ["TEST_FEED"] }),
   // A map file for local debugging, but no `sourceMappingURL` in the shipped
   // bundle: the map itself is never packaged.
   sourcemap: "external",

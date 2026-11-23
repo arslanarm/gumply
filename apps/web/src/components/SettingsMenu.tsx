@@ -24,6 +24,7 @@ export function SettingsMenu({
   onOpenChange,
   onOpenMcp,
   onOpenHistory,
+  onOpenUpdates,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -31,6 +32,8 @@ export function SettingsMenu({
   onOpenMcp?: () => void;
   /** D41: Settings → Version history (size, clear, the Syncthing hint). */
   onOpenHistory?: () => void;
+  /** spec/auto-update: Settings → Updates… (desktop installs that update or are told). */
+  onOpenUpdates?: () => void;
 }) {
   const t = useT();
   // Re-render when the language changes (the selected option moves).
@@ -155,6 +158,21 @@ export function SettingsMenu({
             >
               <Icon name="clock" size={15} />
               <span>{t("history.title")}</span>
+              <Icon name="chevronRight" size={14} />
+            </button>
+          ) : null}
+          {onOpenUpdates ? (
+            <button
+              type="button"
+              className="settings-link"
+              data-testid="settings-updates"
+              onClick={() => {
+                onOpenChange(false);
+                onOpenUpdates();
+              }}
+            >
+              <Icon name="download" size={15} />
+              <span>{t("settings.updates.open")}</span>
               <Icon name="chevronRight" size={14} />
             </button>
           ) : null}

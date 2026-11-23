@@ -81,7 +81,9 @@ so your notes are still plain Markdown files in a folder you choose.
 - **Installer inspection:** after packaging, every CI build unpacks its own installers and checks
   them (`apps/desktop/scripts/inspect-installers.mjs`): the file and app names, the version stamped
   everywhere, the Windows description, the `.deb` fields and checksums, the fuses of the binary
-  inside, the app archive (no `node_modules`, source maps or secrets) and the macOS signature. The
+  inside, the app archive (no `node_modules`, source maps or secrets), the macOS signature, and the
+  update files (`latest*.yml` with the version and every file's sha512, the Windows blockmap, and each
+  app's `app-update.yml` pointing at this repo's GitHub Releases). The
   results are in the job summary, and the release job checks the uploaded files against the
   SHA-256 sums the build computed. Locally: `node apps/desktop/scripts/inspect-installers.mjs
   --release apps/desktop/release --version <version>` (Node 24 or later). Each build then installs

@@ -18,6 +18,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
 import { startGumplyServer, type RunningServer } from "../../server/src/start.js";
+import type { DesktopUpdates } from "../../server/src/desktop-updates.js";
 import { applyUiStateChange, type UiState, type UiStateChange, type UiStateStore } from "../../server/src/ui-state.js";
 import {
   loadSettings,
@@ -33,6 +34,7 @@ import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { classifyNavigation, vaultFileAction } from "./urls.js";
 import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
+import { installKind, listWindowsProcesses, UpdateController, type UpdaterLike } from "./updates.js";
 
 /**
  * Launch phases with the process's age in ms (#tcw8r7vc), kept for the
@@ -119,6 +121,10 @@ let vaultPath: string | null = null;
 let window: BrowserWindow | null = null;
 /** Set once the pages are flushed and the app may really quit (#3t6v62cb). */
 let quitting = false;
+/** Auto-update (spec/auto-update, D42); null in development, unpacked and `--mcp` runs. */
+let updates: UpdateController | null = null;
+/** "Restart now": install at this quit, then start again. */
+let restartAfterQuit = false;
 
 /**
  * The menu and dialog language (#7h5utv23): the app's `gumply:language`
@@ -258,6 +264,8 @@ async function openVault(path: string): Promise<void> {
     version: app.getVersion(),
     desktop: true,
     uiState: uiStateStore,
+    // spec/auto-update: Settings → Updates and the notice (only when this install can update or be told).
+    ...(updates ? { updates: updatesForServer(updates) } : {}),
     // A3: Settings → MCP shows AI apps how to start this app's --mcp mode.
     mcpCommand: mcpLaunchCommand({
       execPath: process.execPath,
@@ -669,6 +677,9 @@ function buildMenu(): void {
             });
           },
         },
+        ...(updates
+          ? ([{ id: "check-updates", label: tr("menu.checkUpdates"), click: () => void checkForUpdatesNow() }] as MenuItemConstructorOptions[])
+          : []),
         {
           id: "about",
           label: tr("menu.about"),
@@ -678,6 +689,133 @@ function buildMenu(): void {
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// --- auto-update (spec/auto-update, D42) ------------------------------------
+
+function readResource(name: string): string | null {
+  try {
+    return readFileSync(join(process.resourcesPath, name), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** The updater, for installs that can update or be told about it. Never in `--mcp` mode. */
+async function setUpUpdates(): Promise<void> {
+  const kind = installKind({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    appImage: process.env.APPIMAGE,
+    packageType: readResource("package-type"),
+    hasUpdateConfig: app.isPackaged && existsSync(join(process.resourcesPath, "app-update.yml")),
+  });
+  if (kind === "none") return;
+  // Loaded only here: development, unpacked and `--mcp` runs never load it.
+  const { autoUpdater } = await import("electron-updater");
+  let firstCheckDelayMs: number | undefined;
+  // spec/auto-update §8, test builds only: scripts/build.mjs drops this labelled
+  // block from every other build. A feed on 127.0.0.1 instead of GitHub, and a
+  // sooner first check.
+  TEST_FEED: {
+    const feed = process.env.GUMPLY_UPDATE_FEED ?? "";
+    if (/^http:\/\/127\.0\.0\.1:\d+\/$/.test(feed)) autoUpdater.setFeedURL({ provider: "generic", url: feed });
+    const delay = Number(process.env.GUMPLY_UPDATE_FIRST_CHECK_MS);
+    if (Number.isFinite(delay) && delay >= 0) firstCheckDelayMs = delay;
+  }
+  updates = new UpdateController({
+    kind,
+    currentVersion: app.getVersion(),
+    updater: autoUpdater as unknown as UpdaterLike,
+    load: () => settings.updates,
+    save: (next) => persist({ ...settings, updates: next }),
+    appImagePath: process.env.APPIMAGE,
+    installDir: dirname(process.execPath),
+    listProcesses: process.platform === "win32" ? () => listWindowsProcesses() : undefined,
+    log: (message) => console.error(message),
+    ...(firstCheckDelayMs !== undefined ? { firstCheckDelayMs } : {}),
+    // The window's notice and Settings follow every change.
+    onChange: (state) => {
+      if (!window || window.isDestroyed()) return;
+      void window.webContents
+        .executeJavaScript(`window.dispatchEvent(new CustomEvent("gumply:updates", { detail: ${JSON.stringify(state)} }))`)
+        .catch(() => undefined);
+    },
+  });
+  updates.start();
+  buildMenu();
+}
+
+/** The update controller as the in-process server's routes use it. */
+function updatesForServer(controller: UpdateController): DesktopUpdates {
+  return {
+    get: () => controller.getState(),
+    check: async () => {
+      await controller.check(true);
+      return controller.getState();
+    },
+    setMode: (mode) => controller.setMode(mode),
+    restart: () => {
+      restartAfterQuit = true;
+      app.quit();
+    },
+  };
+}
+
+/** Help → Check for Updates…: check now and say what was found. */
+async function checkForUpdatesNow(): Promise<void> {
+  if (!updates) return;
+  await updates.check(true);
+  const state = updates.getState();
+  const version = state.version ?? state.currentVersion;
+  const show = (message: string, buttons: string[], detail?: string) => {
+    const options = { type: "info" as const, message, buttons, defaultId: 0, cancelId: buttons.length - 1, ...(detail ? { detail } : {}) };
+    return window && !window.isDestroyed() ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options);
+  };
+  switch (state.status) {
+    case "up-to-date":
+      await show(tr("update.upToDate", { version: state.currentVersion }), [tr("update.ok")]);
+      return;
+    case "available": {
+      const hint = state.kind === "deb" ? tr("update.debHint") : state.kind === "mac" ? tr("update.macHint") : undefined;
+      const { response } = await show(tr("update.available", { version }), [tr("update.download"), tr("update.later")], hint);
+      if (response === 0 && state.releaseUrl) void shell.openExternal(state.releaseUrl);
+      return;
+    }
+    case "downloading":
+      await show(tr("update.downloading", { version }), [tr("update.ok")]);
+      return;
+    case "ready": {
+      const { response } = await show(tr("update.ready", { version }), [tr("update.restart"), tr("update.later")]);
+      if (response === 0) {
+        restartAfterQuit = true;
+        app.quit();
+      }
+      return;
+    }
+    case "pending-running":
+      await show(tr("update.pendingRunning"), [tr("update.ok")]);
+      return;
+    default:
+      await show(tr("update.failed"), [tr("update.ok")]);
+  }
+}
+
+/** At quit, after the flush: install a downloaded update if it's safe (D42). */
+function installUpdateOnQuit(): void {
+  if (!updates) return;
+  const outcome = updates.installOnQuit(restartAfterQuit);
+  // The AppImage was replaced in place: start it again if asked. (NSIS restarts itself with --force-run.)
+  if (!restartAfterQuit) return;
+  // The AppImage starts again from its file (its mount goes away with us);
+  // NSIS starts the app itself after installing (--force-run).
+  // app.relaunch starts it once this process has exited (the single-instance lock is free by then).
+  if (updates.getState().kind === "appimage" && process.env.APPIMAGE) {
+    app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
+  } else if (outcome !== "installed") {
+    // Nothing installed (pending, failed): still start again, as asked.
+    app.relaunch();
+  }
 }
 
 // --- lifecycle ------------------------------------------------------------
@@ -798,6 +936,8 @@ if (mcpMode) {
 
     settings = loadSettings(app.getPath("userData"));
     buildMenu();
+    // Before the vault opens, so its server serves /api/desktop/updates.
+    await setUpUpdates().catch((error: unknown) => console.error("[gumply] updates unavailable:", error));
 
     const fromEnv = process.env.GUMPLY_DESKTOP_VAULT;
     let vault: string | null = fromEnv ? resolve(fromEnv) : settings.lastVault;
@@ -825,11 +965,13 @@ if (mcpMode) {
       // Save the last edits while the server still runs (#3t6v62cb).
       if (!(await flushRenderer()) && !(await confirmUnsaved("quit"))) {
         closing = false;
+        restartAfterQuit = false;
         return;
       }
       quitting = true;
       await server?.close().catch(() => undefined);
       server = null;
+      installUpdateOnQuit();
       app.quit();
     })();
   });

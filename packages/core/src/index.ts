@@ -253,6 +253,16 @@ export {
 } from "./mcp-settings.js";
 
 export {
+  isUpdateMode,
+  UPDATE_MODES,
+  type DesktopUpdatesSettingsPatch,
+  type DesktopUpdatesState,
+  type UpdateInstallKind,
+  type UpdateMode,
+  type UpdateStatus,
+} from "./desktop-updates.js";
+
+export {
   NOTION_IMPORT_LIMITS,
   formatImportLimit,
   notionReportMarkdown,

@@ -75,6 +75,8 @@ import { HistoryDialog } from "./components/HistoryDialog.js";
 import { HistorySettingsDialog } from "./components/HistorySettingsDialog.js";
 import { pageLeaveTracker } from "./lib/page-leave.js";
 import { McpSettingsDialog } from "./components/McpSettingsDialog.js";
+import { UpdateNotice } from "./components/UpdateNotice.js";
+import { UpdatesDialog, useDesktopUpdates } from "./components/UpdatesDialog.js";
 import { NotionImportDialog } from "./components/NotionImportDialog.js";
 
 type ListStatus = "loading" | "ready" | "error";
@@ -190,6 +192,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** A3: Settings → AI apps (MCP). */
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
   /** B4: "Import from Notion…" is open, importing into this page or folder by default (null: the top level). */
   const [notionImport, setNotionImport] = useState<{ target: PageMeta | null } | null>(null);
   /** The default target, for the desktop File menu's command (set each render). */
@@ -242,6 +245,8 @@ export function App() {
   >(null);
   // The desktop app offers "Show in file manager" (GET /api/health, v1.9).
   const [desktop, setDesktop] = useState(false);
+  // spec/auto-update: the desktop app's update state (null in the browser).
+  const [updates, setUpdates] = useDesktopUpdates(desktop);
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   // v0.7 F (#385sexd6): bumped by "Add cover" to open the cover picker.
   const [coverPickerSignal, setCoverPickerSignal] = useState(0);
@@ -1917,6 +1922,7 @@ export function App() {
           onOpenChange={setSettingsOpen}
           onOpenMcp={() => setMcpOpen(true)}
           onOpenHistory={() => setHistorySettingsOpen(true)}
+          {...(updates ? { onOpenUpdates: () => setUpdatesOpen(true) } : {})}
         />
         <button
           type="button"
@@ -1934,6 +1940,7 @@ export function App() {
         className={`layout${!graphOpen && showingPage && rightPanel ? " layout-with-panel" : ""}`}
       >
         <Sidebar
+          footer={<UpdateNotice state={updates} />}
           onCreateBoard={closingSidebar((parentId: PageId | null) => setGalleryParent({ parentId }))}
           onCreateBase={(parentId) => void handleCreateBase(parentId)}
           pages={pages}
@@ -2477,6 +2484,7 @@ export function App() {
           }}
         />
       ) : null}
+      {updatesOpen && updates ? <UpdatesDialog state={updates} onChange={setUpdates} onClose={() => setUpdatesOpen(false)} /> : null}
 
       {shortcutsOpen ? <ShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}
     </div>

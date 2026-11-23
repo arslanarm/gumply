@@ -7,6 +7,7 @@ import { mkdirSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { serve, type ServerType } from "@hono/node-server";
 import { createApp } from "./app.js";
+import type { DesktopUpdates } from "./desktop-updates.js";
 import type { UiStateStore } from "./ui-state.js";
 import type { McpLaunchCommand } from "@gumply/core";
 import { isLoopbackName } from "./security.js";
@@ -34,6 +35,8 @@ export interface StartOptions {
   uiState?: UiStateStore;
   /** A3: how an AI app starts this app's MCP mode (desktop: its own executable with `--mcp`). */
   mcpCommand?: McpLaunchCommand;
+  /** Desktop only (spec/auto-update): the update controller behind `/api/desktop/updates`. */
+  updates?: DesktopUpdates;
   log?: (message: string) => void;
 }
 
@@ -76,6 +79,7 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
     ...(options.desktop ? { desktop: true } : {}),
     ...(options.uiState ? { uiState: options.uiState } : {}),
     ...(options.mcpCommand ? { mcpCommand: options.mcpCommand } : {}),
+    ...(options.updates ? { updates: options.updates } : {}),
     ...(options.printToken ? { printToken: options.printToken } : {}),
   });
 

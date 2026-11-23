@@ -824,7 +824,37 @@
       "raiseEdit": "Let AI apps edit and trash pages in this vault?",
       "raiseEditBody": "Every change is kept in history and can be undone, but a note with misleading text could trick an AI into editing other pages.",
       "allow": "Allow"
+    },
+    "updates": {
+      "open": "Updates…",
+      "title": "Updates",
+      "current": "You have Gumply {{version}}.",
+      "modeTitle": "When there's a new version",
+      "auto": "Download and install updates automatically",
+      "notify": "Only tell me when there's a new version",
+      "off": "Don't check for updates",
+      "checkNow": "Check now",
+      "checking": "Checking…",
+      "upToDate": "Gumply {{version}} is up to date.",
+      "lastChecked": "Last checked {{time}}",
+      "failed": "Couldn't check for updates. Are you online?",
+      "saveFailed": "Couldn't save the setting. Try again.",
+      "pendingRunning": "Update ready, will install when Gumply and AI apps using it are closed.",
+      "privacy": "Checks ask GitHub for the latest release. GitHub sees your IP address; nothing else is sent."
     }
+  },
+  "update": {
+    "ready": "Gumply {{version}} is ready. It installs when you quit.",
+    "downloading": "Gumply {{version}} is downloading. It installs when you quit.",
+    "restart": "Restart now",
+    "later": "Later",
+    "available": "Gumply {{version}} is available.",
+    "download": "Download",
+    "whatsNew": "What's new",
+    "installFailed": "The update couldn't be installed. Download it from the release page.",
+    "debHint": "Installed from a .deb: update with your package manager or the new .deb.",
+    "macHint": "Download the new version and replace Gumply in Applications.",
+    "readOnly": "Gumply can't replace its own file here. Download the new version."
   },
   "desktop": {
     "menu": {
@@ -863,7 +893,8 @@
       "about": "About Gumply",
       "importNotion": "Import from Notion…",
       "exportPdf": "Export as PDF…",
-      "licences": "Open-Source Licences"
+      "licences": "Open-Source Licences",
+      "checkUpdates": "Check for Updates…"
     },
     "about": {
       "detail": "Notes as plain Markdown, with links, a graph and whiteboards."
@@ -897,6 +928,22 @@
     },
     "export": {
       "saveTitle": "Export board"
+    },
+    "update": {
+      "upToDate": "Gumply {{version}} is up to date.",
+      "available": "Gumply {{version}} is available.",
+      "downloading": "Gumply {{version}} is downloading. It installs when you quit.",
+      "ready": "Gumply {{version}} is ready. It installs when you quit.",
+      "pendingRunning": "Update ready, will install when Gumply and AI apps using it are closed.",
+      "failed": "Couldn't check for updates. Are you online?",
+      "installFailed": "The update couldn't be installed. Download it from the release page.",
+      "readOnly": "Gumply can't replace its own file here. Download the new version.",
+      "debHint": "Installed from a .deb: update with your package manager or the new .deb.",
+      "macHint": "Download the new version and replace Gumply in Applications.",
+      "download": "Download",
+      "restart": "Restart now",
+      "later": "Later",
+      "ok": "OK"
     }
   },
   "pageEmbed": {

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   debianVersion,
   expectedInstallers,
+  expectedUpdateFiles,
   inspectAsar,
+  inspectUpdateConfig,
+  inspectUpdateInfo,
+  parseFlatYaml,
   parseDebControl,
   parseDesktopEntry,
   peVersionString,
@@ -147,5 +151,52 @@ describe("installer inspection (#sj44x5ph)", () => {
     expect(md).toMatch(/^### ❌ t: 1 passed, 1 failed/);
     expect(md).toContain("x\\|y");
     expect(md).toContain("abc  a");
+  });
+});
+
+describe("update files (spec/auto-update)", () => {
+  it("names the yml and blockmaps each platform ships", () => {
+    expect(expectedUpdateFiles("win", "0.9.0")).toEqual({ yml: "latest.yml", blockmaps: ["Gumply-Setup-0.9.0-x64.exe.blockmap"] });
+    expect(expectedUpdateFiles("linux", "0.9.0")).toEqual({ yml: "latest-linux.yml", blockmaps: [] });
+    expect(expectedUpdateFiles("mac", "0.9.0")).toEqual({ yml: "latest-mac.yml", blockmaps: [] });
+  });
+
+  const assets = { "Gumply-Setup-0.9.0-x64.exe": { sha512: "abc==", size: 10 } };
+  const info = {
+    version: "0.9.0",
+    files: [{ url: "Gumply-Setup-0.9.0-x64.exe", sha512: "abc==", size: 10 }],
+    path: "Gumply-Setup-0.9.0-x64.exe",
+    sha512: "abc==",
+  };
+
+  it("passes when the version is the tag and every listed file matches", () => {
+    expect(inspectUpdateInfo("latest.yml", info, "0.9.0", assets).every((r) => r.ok)).toBe(true);
+  });
+
+  it("fails a wrong version, a missing file, or a changed file", () => {
+    const failed = (results: ReturnType<typeof inspectUpdateInfo>) => results.filter((r) => !r.ok).map((r) => r.check);
+    expect(failed(inspectUpdateInfo("latest.yml", info, "0.9.1", assets))).toEqual(["update info version"]);
+    expect(failed(inspectUpdateInfo("latest.yml", info, "0.9.0", {}))).toEqual(["Gumply-Setup-0.9.0-x64.exe: in the release", "update info path in the release"]);
+    expect(failed(inspectUpdateInfo("latest.yml", info, "0.9.0", { "Gumply-Setup-0.9.0-x64.exe": { sha512: "xyz==", size: 10 } }))).toEqual([
+      "Gumply-Setup-0.9.0-x64.exe: sha512 and size",
+    ]);
+    expect(failed(inspectUpdateInfo("latest.yml", { version: "0.9.0", files: [] }, "0.9.0", assets))).toEqual(["update info lists files"]);
+  });
+
+  it("app-update.yml must point at GitHub arslanarm/gumply", () => {
+    const github = "owner: arslanarm\nrepo: gumply\nprovider: github\nreleaseType: release\nupdaterCacheDirName: gumply-updater\n";
+    expect(parseFlatYaml(github)).toMatchObject({ provider: "github", owner: "arslanarm", repo: "gumply" });
+    expect(inspectUpdateConfig("x", github).ok).toBe(true);
+    expect(inspectUpdateConfig("x", "provider: generic\nurl: http://127.0.0.1:9/\n").ok).toBe(false);
+    expect(inspectUpdateConfig("x", null)).toMatchObject({ ok: false, detail: "missing" });
+  });
+});
+
+describe("no update test feed in a release (spec/auto-update §8)", () => {
+  it("fails an app whose bundle can be pointed at another feed", () => {
+    const check = (code: string) =>
+      inspectAsar(readAsar(makeAsar({ "/package.json": '{"version":"0.9.0"}', "/dist/main.mjs": code })), "0.9.0", "x").find((r) => r.check === "asar: no update test feed")!;
+    expect(check("const updater = 1;").ok).toBe(true);
+    expect(check('const feed = process.env.GUMPLY_UPDATE_FEED ?? "";')).toMatchObject({ ok: false, detail: "GUMPLY_UPDATE_FEED in /dist/main.mjs" });
   });
 });
