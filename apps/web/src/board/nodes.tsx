@@ -117,7 +117,12 @@ function TextEditor({ node, className, placeholder, onHeight }: {
     if (links.onKeyDown(event)) return;
     if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) {
       event.preventDefault();
+      // #pujmbsyz: leaving the text from the keyboard puts focus back on the object.
+      const card = ref.current?.closest<HTMLElement>(".react-flow__node");
       finish();
+      requestAnimationFrame(() => {
+        if (card?.isConnected) card.focus({ preventScroll: true });
+      });
     }
   };
 
