@@ -1,5 +1,6 @@
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   blockAt,
@@ -53,6 +54,19 @@ export interface BlockGutterProps {
 /** A block's element sits directly in the editor or in a column (spec/columns). */
 const isBlockParent = (view: EditorView, element: Element | null) =>
   element === view.dom || (element instanceof HTMLElement && element.classList.contains("md-column"));
+
+/**
+ * #e9bd64bb (#n6cy66ib): the position under the pointer. Over a block atom (an
+ * image, an embed, a divider) `pos` can land just after it; `inside` is the
+ * atom itself, so use the position right before it.
+ */
+function pointedPos(doc: ProseMirrorNode, found: { pos: number; inside: number }): number {
+  if (found.inside >= 0) {
+    const node = doc.nodeAt(found.inside);
+    if (node && node.isBlock && node.isAtom) return found.inside;
+  }
+  return found.pos;
+}
 
 function domForBlock(view: EditorView, block: BlockRef): HTMLElement | null {
   try {
@@ -167,7 +181,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
       const found = editor.view.posAtCoords({ left, top: event.clientY });
       if (!found) return;
 
-      const block = blockAt(editor.state.doc, found.pos);
+      const block = blockAt(editor.state.doc, pointedPos(editor.state.doc, found));
       const dom = block ? domForBlock(editor.view, block) : null;
       if (!block || !dom) {
         clear();
@@ -324,7 +338,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
   const run = (action: (block: BlockRef) => void) => {
     const current = menuRef.current;
     if (!current) return;
-    const block = blockAt(editor.state.doc, current.block.from + 1);
+    // Inside the block, or right before it for an atom (an image has no inside).
+    const block = blockAt(editor.state.doc, current.block.node.isAtom ? current.block.from : current.block.from + 1);
     setMenu(null);
     if (block) action(block);
     editor.view.focus();
@@ -347,7 +362,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     const left = Math.min(Math.max(event.clientX, editorRect.left + 4), editorRect.right - 4);
     const found = editor.view.posAtCoords({ left, top: event.clientY });
     if (!found) return null;
-    const block = blockAt(editor.state.doc, found.pos);
+    const block = blockAt(editor.state.doc, pointedPos(editor.state.doc, found));
     if (!block) return null;
 
     const sourceIsItem = source.node.type.name === "listItem" || source.node.type.name === "taskItem";
