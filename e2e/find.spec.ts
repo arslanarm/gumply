@@ -69,6 +69,23 @@ test.describe('search and quick switcher', () => {
     await expect(page.getByTestId('quick-switcher')).toHaveCount(0);
   });
 
+  test('a common word with 60 title matches still shows its text hits (#g95wkd9y)', async ({ page, vault }) => {
+    // The server returns one page of results; title matches rank first, so the
+    // switcher asks for enough of them to reach the text hits below.
+    await vault.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Meeting ${String(i).padStart(2, '0')}`, content: 'Agenda.' })));
+    const [textHit] = await vault.seed([{ title: 'Weekly review', content: 'The meeting ran long again.' }]);
+
+    await page.goto('/');
+    await openSwitcher(page);
+    await page.keyboard.type('meeting');
+
+    await expect(page.getByText('Pages', { exact: true })).toBeVisible();
+    await expect(page.getByText('Text', { exact: true })).toBeVisible();
+    const textRow = page.getByTestId(`search-result-${textHit.id}`);
+    await expect(textRow).toBeVisible();
+    await expect(textRow.locator('mark')).toHaveText('meeting');
+  });
+
   test('title matches rank before body matches, snippets highlight, and keyboard opens a text hit', async ({
     page,
     vault,

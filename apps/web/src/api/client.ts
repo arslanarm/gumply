@@ -277,9 +277,12 @@ export const api = {
   linkMentions: (id: PageId, input: LinkMentionsInput): Promise<LinkMentionsResult> =>
     mutate(() => request(`${pagePath(id)}/mentions/link`, { method: "POST", body: JSON.stringify(input) })),
 
-  /** Full-text search (D13): title and body matches, ranked by the server. */
-  search: (query: string): Promise<SearchResult[]> =>
-    request(`/search?q=${encodeURIComponent(query)}`),
+  /**
+   * Full-text search (D13): title and body matches, ranked by the server, one
+   * page of `limit` (v1.31: the server's default is 50, at most 200).
+   */
+  search: (query: string, limit?: number): Promise<SearchResult[]> =>
+    request(`/search?q=${encodeURIComponent(query)}${limit ? `&limit=${limit}` : ""}`),
 
   /** D18: files in `vault/attachments/`, sorted by name. */
   listAttachments: (): Promise<Attachment[]> => request("/attachments"),

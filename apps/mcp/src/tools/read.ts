@@ -4,11 +4,33 @@
  * by Gumply id or title, never by path.
  */
 import type { McpServer } from "@modelcontextprotocol/server";
-import { canvasNodeKind, canvasText, extractWikilinks, resolveWikilink, tagMatches, type CanvasBoard, type PageMeta, type WikiLink } from "@gumply/core";
+import { canvasNodeKind, canvasText, extractWikilinks, resolveWikilink, tagMatches, type CanvasBoard, type PageMeta, type SearchResult, type WikiLink } from "@gumply/core";
 import * as z from "zod";
 import { ToolError } from "../errors.js";
 import type { Vault } from "../vault.js";
-import { SEARCH_LIMIT_MAX } from "../../../server/src/vault-store.js";
+import { SEARCH_LIMIT_MAX, type SearchOptions, type VaultStore } from "../../../server/src/vault-store.js";
+
+/** Store pages of search results the tool looks through at most. */
+export const MAX_SEARCH_PAGES = 20;
+
+/**
+ * The store's ranked hits, one page of 200 at a time (#g95wkd9y), so only
+ * as many results are built as the tool looks at. A hard stop at 20 pages: a
+ * filter that keeps nothing (every hit outside the vault) can't walk on.
+ */
+export function* searchHits(
+  store: Pick<VaultStore, "searchPage">,
+  query: string,
+  kinds: NonNullable<SearchOptions["kinds"]>,
+): Generator<SearchResult> {
+  let cursor: string | undefined;
+  for (let pages = 0; pages < MAX_SEARCH_PAGES; pages += 1) {
+    const page = store.searchPage(query, { limit: SEARCH_LIMIT_MAX, kinds, ...(cursor ? { cursor } : {}) });
+    yield* page.items;
+    cursor = page.nextCursor;
+    if (!cursor) return;
+  }
+}
 import { kindOf, metaKind, ok, provenance, READ_ANNOTATIONS, tool } from "./common.js";
 
 const MAX_LIST = 500;
@@ -65,16 +87,7 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
             .map((page) => ({ page, snippet: "" }));
           return;
         }
-        let cursor: string | undefined;
-        do {
-          const page = vault.store.searchPage(trimmed, {
-            limit: SEARCH_LIMIT_MAX,
-            kinds: kind === "any" ? ["page", "whiteboard"] : [kind],
-            ...(cursor ? { cursor } : {}),
-          });
-          yield* page.items;
-          cursor = page.nextCursor;
-        } while (cursor);
+        yield* searchHits(vault.store, trimmed, kind === "any" ? ["page", "whiteboard"] : [kind]);
       }
       // Check containment only until the limit is filled.
       const results: Array<z.infer<typeof searchHit>> = [];

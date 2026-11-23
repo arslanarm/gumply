@@ -18,6 +18,9 @@ import {
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
 
+/** Results the switcher asks for (the server's maximum, spec/api v1.31). */
+const SWITCHER_SEARCH_LIMIT = 200;
+
 export interface QuickSwitcherProps {
   pages: readonly PageMeta[];
   onOpen: (id: PageId) => void;
@@ -99,7 +102,9 @@ export function QuickSwitcher({
 
     const timer = window.setTimeout(() => {
       api
-        .search(needle)
+        // #g95wkd9y: the most the server returns. Title matches rank first, so a
+        // common word ("meeting") needs room past them for the Text section.
+        .search(needle, SWITCHER_SEARCH_LIMIT)
         .then((items) => {
           if (requestRef.current !== token) return;
           setResults(items);
