@@ -94,6 +94,14 @@ describe("a page's property types from its own keys only (N11)", () => {
       "L.md": "No frontmatter.\n",
       // A key with a quote in it goes to the full index.
       "M.md": "---\n\"it's\": 1\n'it''s': 2\n---\nM\n",
+      // Keys a substring check can't see, where they decide the type (1 text, 2 numbers → number):
+      // escaped in double quotes, and folded over two lines in an explicit key.
+      "N1.md": "---\nesc: x\n---\nN1\n",
+      "N2.md": '---\n"\\u0065sc": 1\n---\nN2\n',
+      "N3.md": '---\n"\\x65sc": 2\n---\nN3\n',
+      "O1.md": "---\nq k: x\n---\nO1\n",
+      "O2.md": '---\n? "q\n  k"\n: 1\n---\nO2\n',
+      "O3.md": "---\n? q\n  k\n: 2\n---\nO3\n",
       // A conflict copy's values never count.
       "A.sync-conflict-20261122-143005-ABCDEFG.md": "---\nscore: copy\nstatus: copy\n---\nA\n",
     });
