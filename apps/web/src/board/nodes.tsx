@@ -120,9 +120,24 @@ function TextEditor({ node, className, placeholder, onHeight }: {
       // #pujmbsyz: leaving the text from the keyboard puts focus back on the object.
       const card = ref.current?.closest<HTMLElement>(".react-flow__node");
       finish();
-      requestAnimationFrame(() => {
-        if (card?.isConnected) card.focus({ preventScroll: true });
-      });
+      // #uksjci7s: in the next frame, or at once if a key comes first. Never
+      // late: a key already handled (Esc Esc must end deselected) or a newly
+      // opened editor (a quick double-click elsewhere) would lose to it.
+      const board = card?.closest<HTMLElement>(".board-root");
+      const stop = (): void => {
+        cancelAnimationFrame(frame);
+        window.removeEventListener("keydown", focusCard, true);
+        window.removeEventListener("pointerdown", stop, true);
+      };
+      function focusCard(): void {
+        stop();
+        const active = document.activeElement;
+        const free = active === null || active === document.body || active === board;
+        if (free && card?.isConnected) card.focus({ preventScroll: true });
+      }
+      const frame = requestAnimationFrame(focusCard);
+      window.addEventListener("keydown", focusCard, true);
+      window.addEventListener("pointerdown", stop, true);
     }
   };
 
