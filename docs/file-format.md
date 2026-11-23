@@ -90,7 +90,7 @@ All of these are hidden, and none of them are your notes. When Gumply replaces o
 | `.trash/<id>/` | Deleted pages, boards and folders, with `meta.json` (what was deleted, when). Restore moves them back. | Yes (or use Empty trash). |
 | `.gumply/conflicts/` | When you choose **Keep mine**, the other program's version is kept here as text. The exact copy is in the page's history. | Yes. |
 | `.gumply/mcp.json` | AI app access for this vault: `{"enabled": true, "access": "read"}` (`read`, `append` or `edit`). Missing means read-only. | Yes. AI apps go back to read-only. |
-| `.gumply/mcp-log.jsonl` (+ `.1`, `.2`) | One line per change an AI app made (which page, before and after versions, which app). No note text. Rotated at 5 MB. | Yes. |
+| `.gumply/mcp-log.jsonl` (+ `.1`, `.2`) | One line per change an AI app made: when, which tool, which page, the before and after versions, and which app. No note text. Rotated at 5 MB. | Yes. |
 | `.gumply/types.json` | Property types, when the vault has no `.obsidian/` folder. | Yes. Types are guessed from values again. |
 | `.gumply/graph.json` | Graph colour groups and filters. | Yes. |
 | `.gumply/sync-dismissed.json` | Pages you marked **Not a copy**. | Yes. They may be flagged again. |
