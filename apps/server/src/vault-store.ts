@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync, watch, type FSWatcher } from "node:fs";
-import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
   coercePropertyValue,
@@ -426,6 +426,24 @@ function matchesTitleSegment(segment: string, title: string): boolean {
  */
 function noteBody(content: string): string {
   return content.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+}
+
+/**
+ * The text and the stat of one file, through one open handle: a read and a
+ * separate stat of the path could pair the old text with the mtime of a file
+ * another program saved in between, and the D22 check would then let the next
+ * save erase that program's write (#a76d3php). No exclusive flags, so other
+ * programs can still save over it (on Windows, Node opens with FILE_SHARE_DELETE).
+ */
+async function readConsistent(absolute: string): Promise<{ raw: string; stats: import("node:fs").Stats }> {
+  const handle = await open(absolute, "r");
+  try {
+    const stats = await handle.stat();
+    const raw = await handle.readFile("utf8");
+    return { raw, stats };
+  } finally {
+    await handle.close();
+  }
 }
 
 function mtimeVersion(mtimeMs: number): string {
@@ -1826,15 +1844,19 @@ export class VaultStore {
       record.boardRepaired = false;
     }
     const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+    let stats: import("node:fs").Stats;
     try {
       await mkdir(dirname(record.filePath), { recursive: true });
       await writeFile(temporary, text ?? serializeCanvas(board), "utf8");
+      // The mtime of the file just written, taken from the temp file before the
+      // rename (a rename keeps the inode and its mtime): a stat of the path after
+      // it could be another program's file that replaced ours in between (#a76d3php).
+      stats = await stat(temporary);
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    const stats = await stat(record.filePath);
     const meta = canvasMeta(board);
     record.board = board;
     record.content = canvasText(board);
@@ -1994,14 +2016,18 @@ export class VaultStore {
 
   private async writeBaseFile(record: PageRecord, text: string): Promise<void> {
     const temporary = `${record.filePath}.${process.pid}.${Date.now()}.tmp`;
+    let stats: import("node:fs").Stats;
     try {
       await writeFile(temporary, text, "utf8");
+      // The mtime of the file just written, taken from the temp file before the
+      // rename (a rename keeps the inode and its mtime): a stat of the path after
+      // it could be another program's file that replaced ours in between (#a76d3php).
+      stats = await stat(temporary);
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    const stats = await stat(record.filePath);
     record.baseSource = text;
     record.fileMtimeMs = stats.mtimeMs;
     record.updated = mtimeVersion(stats.mtimeMs);
@@ -2009,8 +2035,7 @@ export class VaultStore {
 
   /** A `.base` file (D34): title = file name, dates from the file, kept as text. */
   private async readBaseRecord(absolute: string, id: PageId): Promise<PageRecord> {
-    const raw = await readFile(absolute, "utf8");
-    const stats = await stat(absolute);
+    const { raw, stats } = await readConsistent(absolute);
     return {
       id,
       title: baseStem(id),
@@ -3665,9 +3690,8 @@ export class VaultStore {
   private async readRecord(absolute: string, id: PageId): Promise<PageRecord> {
     if (isBoardId(absolute)) return this.readBoardRecord(absolute, id);
     if (isBaseId(absolute)) return this.readBaseRecord(absolute, id);
-    const raw = await readFile(absolute, "utf8");
+    const { raw, stats } = await readConsistent(absolute);
     const { frontmatter, content } = parseFrontmatter(raw);
-    const stats = await stat(absolute);
 
     const created = toIso(frontmatter.created) ?? stats.birthtime.toISOString();
     const mtime = mtimeVersion(stats.mtimeMs);
@@ -3709,8 +3733,7 @@ export class VaultStore {
    * without a backup: saving it backs up the original first.
    */
   private async readBoardRecord(absolute: string, id: PageId): Promise<PageRecord> {
-    const raw = await readFile(absolute, "utf8");
-    const stats = await stat(absolute);
+    const { raw, stats } = await readConsistent(absolute);
     let board: CanvasBoard;
     let repaired = false;
     try {
@@ -3862,9 +3885,13 @@ export class VaultStore {
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       await writeFile(temporary, text, "utf8");
+      // The mtime of the file just written, taken from the temp file before the
+      // rename (a rename keeps the inode and its mtime): a stat of the path after
+      // it could be another program's file that replaced ours in between (#a76d3php).
+      const written = await stat(temporary);
       await rename(temporary, filePath);
       return {
-        mtimeMs: (await stat(filePath)).mtimeMs,
+        mtimeMs: written.mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
         // caller uses the file time (`mtimeVersion`), as for plain notes.
         frontmatter: !plain && versionKey,
