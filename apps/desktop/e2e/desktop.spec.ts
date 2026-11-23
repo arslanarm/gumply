@@ -523,7 +523,10 @@ test('a big graph is laid out by the worker under the app\'s CSP and settles (#g
     await expect(window.getByTestId('page-item-Note 0')).toBeVisible({ timeout: 60_000 });
     await window.getByTestId('sidebar-graph').click();
     const canvas = window.getByTestId('graph-canvas');
-    await expect(canvas).toHaveAttribute('data-graph-layout', 'worker');
+    // The graph view is a lazy chunk and 2,000 notes of data: after a run of
+    // desktop launches on a loaded machine, more than the default 5 s (@lead).
+    await expect(canvas).toBeVisible({ timeout: 60_000 });
+    await expect(canvas).toHaveAttribute('data-graph-layout', 'worker', { timeout: 30_000 });
     // "stopped" on the worker path comes only from the worker's own "done"
     // (the fallback timer marks the view ready, never the engine stopped).
     await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 120_000 });

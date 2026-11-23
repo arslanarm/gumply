@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   LAYOUT_SETTINGS,
   LAYOUT_WORKER_THRESHOLD,
+  STREAM_MAX_NODES,
   createLayout,
+  streamsPositions,
   engineTicks,
   layoutInputFor,
   postInterval,
@@ -112,5 +114,30 @@ describe("graph layout off the main thread (#g95wkd9y)", () => {
     expect(postInterval(5_000)).toBe(500);
     expect(postInterval(10_020)).toBe(1000);
     expect(postInterval(50_000)).toBe(1000);
+  });
+
+  it("above 5,000 nodes (or with reduced motion) the graph is drawn once, settled, not streamed", () => {
+    expect(STREAM_MAX_NODES).toBe(5000);
+    expect(streamsPositions(STREAM_MAX_NODES, false)).toBe(true);
+    expect(streamsPositions(STREAM_MAX_NODES + 1, false)).toBe(false);
+    expect(streamsPositions(10_020, false)).toBe(false);
+    expect(streamsPositions(2000, true)).toBe(false);
+    expect(input(400).stream).toBe(true);
+    const { nodes, links } = graph(40);
+    expect(layoutInputFor(nodes, links, { centerId: null, width: 800, height: 600, reducedMotion: true }).stream).toBe(false);
+  });
+
+  it("progress rises from 0 to exactly 1 when the layout has settled (the status's percentage)", () => {
+    const layout = createLayout(input(300));
+    expect(layout.progress()).toBe(0);
+    let last = 0;
+    let done = false;
+    while (!done) {
+      done = layout.tick();
+      const now = layout.progress();
+      expect(now).toBeGreaterThanOrEqual(last);
+      last = now;
+    }
+    expect(layout.progress()).toBe(1);
   });
 });

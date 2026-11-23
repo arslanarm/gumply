@@ -62,6 +62,8 @@
     "dismissError": "Скрыть ошибку",
     "filterByTag": "Фильтр по тегу",
     "loading": "Загрузка графа…",
+    "arranging": "Граф раскладывается…",
+    "arrangingProgress": "Граф раскладывается… {{percent}}%",
     "empty": "Граф пока пуст.",
     "emptyHintBefore": "Создайте страницу и свяжите её с другой через ",
     "emptyHintAfter": ".",
