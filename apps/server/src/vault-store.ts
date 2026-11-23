@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdirSync, watch, type FSWatcher } from "node:fs";
+import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
@@ -377,6 +377,51 @@ interface FolderRecord {
 /** Directories met while scanning, with the non-page files directly in each. */
 type DirectoryScan = Map<PageId, number>;
 
+/**
+ * What a refresh re-reads (#g95wkd9y): everything (still served from the read
+ * cache while a file's stat is unchanged), or a set of files the watcher
+ * reported, which are always read again.
+ */
+type RefreshScope = { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string> };
+
+/** More touched paths than this in one burst: refresh "all" (the read cache still applies). */
+const MAX_REFRESH_PATHS = 200;
+/** A watcher rescan that failed is tried again (as a full rescan) this many times in a row. */
+const RESCAN_RETRIES = 3;
+
+/** #35q6kt6e: a read that failed for this file only (the rest of a rescan goes on). */
+const UNREADABLE = Symbol("unreadable");
+
+/** This file can't be read right now (permissions, a lock, a folder where a file was). */
+function isPerFileError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "EACCES" || code === "EPERM" || code === "EBUSY" || code === "EISDIR";
+}
+
+/** A file or folder that went away under us: removed, or a parent replaced by a file. */
+function isGoneError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+/** A folder named like a file ("v1.2") that appeared: not watched yet, so only a stat tells. */
+function isDirectorySync(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A file's identity for the read cache. mtime and size alone miss a same-size
+ * edit within the mtime granularity (2 s on FAT/exFAT, coarse on some network
+ * and sync mounts); ctime moves on any write and ino on an atomic replace.
+ */
+function statKey(stats: { mtimeMs: number; size: number; ino: number; ctimeMs: number }): string {
+  return `${stats.mtimeMs}:${stats.size}:${stats.ino}:${stats.ctimeMs}`;
+}
+
 /** Folders have no timestamps of their own (no file, no extra stat per folder). */
 const FOLDER_TIME = new Date(0).toISOString();
 
@@ -684,6 +729,12 @@ export class VaultStore {
   private watchFirstEventAt: number | null = null;
   /** Recent watcher event times, for the "Syncing changes…" state (§8). */
   private watchEventTimes: number[] = [];
+  /** The check after a burst (#35q6kt6e), armed while "Syncing" is on. */
+  private burstCheckTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Test hook: arm the burst check even with no directory watchers. */
+  private burstCheckWithoutWatchers = false;
+  /** Ids the last refresh added, changed or removed (the burst check reports them). */
+  private lastRefreshChanges: PageId[] = [];
   private syncingUntil = 0;
   /** Queued tasks that aren't rescans: a pending rescan waits for them (save priority, §8). */
   private pendingWrites = 0;
@@ -713,6 +764,20 @@ export class VaultStore {
   private sessionBytesTotal = 0;
   private readonly sessionBytesCap: number;
   private pruneTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * #g95wkd9y: the record last read from each file (absolute path), reused by
+   * a refresh while the file's `statKey` is unchanged: a 10,000-note rescan
+   * is then a directory walk plus stats, not 10,000 reads and parses.
+   */
+  private readCache = new Map<string, { key: string; id: PageId; record: PageRecord }>();
+  /** Files the watcher reported since the last refresh (absolute paths). */
+  private readonly pendingPaths = new Set<string>();
+  /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
+  private pendingFull = false;
+  /** Files that couldn't be read, already logged once (#35q6kt6e); cleared when one reads again. */
+  private readonly unreadableLogged = new Set<string>();
+  /** Watcher rescans that failed in a row (reset by one that succeeds). */
+  private rescanFailures = 0;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
   private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
 
@@ -751,6 +816,10 @@ export class VaultStore {
       clearTimeout(this.watchTimer);
       this.watchTimer = null;
     }
+    if (this.burstCheckTimer !== null) {
+      clearTimeout(this.burstCheckTimer);
+      this.burstCheckTimer = null;
+    }
     for (const watcher of this.directoryWatchers.values()) watcher.close();
     this.directoryWatchers.clear();
     if (this.pruneTimer) clearTimeout(this.pruneTimer);
@@ -775,9 +844,13 @@ export class VaultStore {
     return found;
   }
 
-  /** Watch new directories and stop watching removed ones. */
-  private syncDirectoryWatchers(): void {
-    if (!this.watching) return;
+  /**
+   * Watch new directories and stop watching removed ones. Returns how many
+   * directories it started watching.
+   */
+  private syncDirectoryWatchers(): number {
+    if (!this.watching) return 0;
+    let added = 0;
     const wanted = new Set(this.vaultDirectories());
     for (const [dir, watcher] of this.directoryWatchers) {
       if (wanted.has(dir)) continue;
@@ -791,25 +864,34 @@ export class VaultStore {
         watcher.on("error", () => {
           watcher.close();
           this.directoryWatchers.delete(dir);
+          this.pendingFull = true;
           this.scheduleRescan();
         });
         this.directoryWatchers.set(dir, watcher);
+        added += 1;
       } catch {
         // Gone already (or no permission): the next rescan settles it.
       }
     }
+    return added;
   }
 
   private onWatchEvent(dir: string, filename: string | Buffer | null): void {
     const name = filename === null ? "" : String(filename);
     // Unknown name (some platforms): rescan to be safe.
-    if (name.length === 0) return this.scheduleRescan();
+    if (name.length === 0) {
+      this.pendingFull = true;
+      return this.scheduleRescan();
+    }
     if (name.startsWith(".") || name.endsWith(".tmp") || name === "node_modules") return;
-    // A page/board changed, or a folder appeared or went away.
-    // #8k4ssrkb: an attachment added, renamed or removed changes what links resolve to.
-    if (ITEM_FILE.test(name) || hasAttachmentExtension(name) || !name.includes(".")) this.scheduleRescan();
-    else if (this.directoryWatchers.has(join(dir, name))) this.scheduleRescan();
+    // A page/board changed: re-read that file (#g95wkd9y).
+    if (ITEM_FILE.test(name)) this.pendingPaths.add(join(dir, name));
+    // #8k4ssrkb: an attachment added, renamed or removed changes what links resolve to;
+    // a folder appeared or went away. Both are settled by a full walk.
+    else if (hasAttachmentExtension(name) || !name.includes(".") || this.directoryWatchers.has(join(dir, name)) || isDirectorySync(join(dir, name)))
+      this.pendingFull = true;
     else return;
+    this.scheduleRescan();
     this.noteWatchEvent();
   }
 
@@ -817,7 +899,57 @@ export class VaultStore {
   private noteWatchEvent(now = Date.now()): void {
     this.watchEventTimes.push(now);
     while (this.watchEventTimes.length > 0 && now - this.watchEventTimes[0]! > SYNC_WINDOW_MS) this.watchEventTimes.shift();
-    if (this.watchEventTimes.length > SYNC_BURST_EVENTS) this.syncingUntil = now + SYNC_WINDOW_MS;
+    if (this.watchEventTimes.length > SYNC_BURST_EVENTS) {
+      this.syncingUntil = now + SYNC_WINDOW_MS;
+      this.armBurstCheck();
+    }
+  }
+
+  /**
+   * #35q6kt6e: when a burst ends ("Syncing" turns off), one full stat walk
+   * checks the watcher's work. Network shares and sync mounts can drop events;
+   * anything this walk changes is a change the watcher missed, and it is
+   * logged by path, so a gap shows up in logs and tests instead of staying
+   * silent. It waits for the watcher's own pending rescans first, so it never
+   * reports a change those were about to pick up.
+   */
+  private armBurstCheck(delay = Math.max(0, this.syncingUntil - Date.now()) + 50): void {
+    if (!this.watching && !this.burstCheckWithoutWatchers) return;
+    if (this.burstCheckTimer !== null) clearTimeout(this.burstCheckTimer);
+    this.burstCheckTimer = setTimeout(() => {
+      this.burstCheckTimer = null;
+      void this.runBurstCheck().catch((error: unknown) => console.warn("[gumply] the check after a burst of outside changes failed:", error));
+    }, delay);
+    this.burstCheckTimer.unref?.();
+  }
+
+  private watcherBusy(): boolean {
+    return this.watchTimer !== null || this.pendingFull || this.pendingPaths.size > 0;
+  }
+
+  private async runBurstCheck(): Promise<void> {
+    if (this.syncing) return this.armBurstCheck();
+    if (this.watcherBusy()) return this.armBurstCheck(RESCAN_QUIET_MS + 100);
+    await this.enqueue(
+      async () => {
+        // Events that came in since: let their own rescan run first, then check again.
+        if (this.watcherBusy() || this.syncing) {
+          this.armBurstCheck(RESCAN_QUIET_MS + 100);
+          return;
+        }
+        await this.refreshFromDisk({ kind: "all" });
+        const missed = this.lastRefreshChanges;
+        if (missed.length > 0) {
+          const shown = missed.slice(0, 10).join(", ");
+          console.warn(`[gumply] watcher missed ${missed.length} change${missed.length === 1 ? "" : "s"}: ${shown}${missed.length > 10 ? ", …" : ""}`);
+        }
+        if (this.syncDirectoryWatchers() > 0) {
+          this.pendingFull = true;
+          this.scheduleRescan();
+        }
+      },
+      { rescan: true },
+    );
   }
 
   /** v1.29 (§8): another app (a sync tool) is changing many files right now. */
@@ -827,7 +959,16 @@ export class VaultStore {
 
   /** Re-read the vault and return whether the page index actually changed. */
   rescan(): Promise<boolean> {
-    return this.enqueue(() => this.refreshFromDisk());
+    return this.enqueue(() => this.refreshFromDisk({ kind: "all" }));
+  }
+
+  /** What the watcher reported since the last refresh, as a scope (and cleared). */
+  private takePendingScope(): RefreshScope {
+    const full = this.pendingFull || this.pendingPaths.size === 0 || this.pendingPaths.size > MAX_REFRESH_PATHS;
+    const scope: RefreshScope = full ? { kind: "all" } : { kind: "paths", paths: new Set(this.pendingPaths) };
+    this.pendingFull = false;
+    this.pendingPaths.clear();
+    return scope;
   }
 
   private scheduleRescan(): void {
@@ -839,7 +980,20 @@ export class VaultStore {
     this.watchTimer = setTimeout(() => {
       this.watchTimer = null;
       this.watchFirstEventAt = null;
-      void this.runScheduledRescan();
+      // #g95wkd9y: a rescan the watcher started must never end the process (an
+      // unhandled rejection exits Node). A failure is logged, and a full rescan
+      // tried again, at most RESCAN_RETRIES times in a row.
+      this.runScheduledRescan().then(
+        () => {
+          this.rescanFailures = 0;
+        },
+        (error: unknown) => {
+          this.rescanFailures += 1;
+          console.warn(`[gumply] rescan after outside changes failed (${this.rescanFailures}):`, error);
+          this.pendingFull = true;
+          if (this.rescanFailures <= RESCAN_RETRIES) this.scheduleRescan();
+        },
+      );
     }, Math.max(0, Math.min(RESCAN_QUIET_MS, deadline - now)));
   }
 
@@ -858,9 +1012,19 @@ export class VaultStore {
     }
     return this.enqueue(
       async () => {
-        const changed = await this.refreshFromDisk();
+        // #g95wkd9y: the scope is taken when the job runs, so events that came in
+        // while it waited for saves are part of it.
+        const changed = await this.refreshFromDisk(this.takePendingScope());
         // Folders may have appeared or gone: keep one watcher per directory.
-        this.syncDirectoryWatchers();
+        // #35q6kt6e: a folder watched only now may have got files after this
+        // refresh walked it and before its watcher existed (a repo created, a
+        // folder a git checkout re-creates): those made no events. One more full
+        // rescan picks them up; anything later makes events. It settles, since
+        // the next sync finds no new folder.
+        if (this.syncDirectoryWatchers() > 0) {
+          this.pendingFull = true;
+          this.scheduleRescan();
+        }
         return changed;
       },
       { rescan: true },
@@ -872,11 +1036,13 @@ export class VaultStore {
    * boards keep `.canvas`. A page whose id would equal a board's (a file
    * `Map.canvas.md` next to `Map.canvas`) keeps its `.md` so both stay.
    */
-  private async scanRecords(): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
+  private async scanRecords(reread?: ReadonlySet<string>): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
     const next = new Map<PageId, PageRecord>();
+    const nextCache = new Map<string, { key: string; id: PageId; record: PageRecord }>();
     const directories: DirectoryScan = new Map();
     const others: string[] = [];
-    const files = (await this.scan(this.root, directories, others)).map((absolute) => ({
+    const unreadableDirs: string[] = [];
+    const files = (await this.scan(this.root, directories, others, unreadableDirs)).map((absolute) => ({
       absolute,
       rel: relative(this.root, absolute).split(sep).join("/"),
     }));
@@ -885,16 +1051,122 @@ export class VaultStore {
       let id = keepsExtension(rel) ? rel : pathToPageId(rel);
       if (!keepsExtension(rel) && boards.has(id.toLowerCase())) id = rel;
       if (!isValidPageId(id)) continue;
-      const record = await this.readRecord(absolute, id);
-      this.refreshTags(record);
+      let stats;
+      try {
+        stats = await stat(absolute);
+      } catch (error) {
+        // #35q6kt6e: listed but can't be looked at now (a folder without search
+        // permission): it keeps the record it had, logged once. Otherwise gone
+        // since the listing.
+        if (isPerFileError(error)) {
+          this.noteUnreadable(absolute, error);
+          const previous = this.pages.get(id);
+          if (previous) next.set(id, previous);
+        }
+        continue;
+      }
+      const key = statKey(stats);
+      const cached = this.readCache.get(absolute);
+      // #g95wkd9y: an unchanged file keeps its record; a file the watcher named is always read.
+      let record: PageRecord;
+      if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) record = cached.record;
+      else {
+        const read = await this.readIfPresent(absolute, id);
+        if (read === null) continue; // Deleted between the stat and the read.
+        if (read === UNREADABLE) {
+          // #35q6kt6e: this one file can't be read right now (permissions, a lock
+          // held by antivirus or a sync tool). It keeps the record it had, if any,
+          // and isn't cached, so the next rescan tries it again; the rest of the
+          // rescan goes on.
+          const previous = this.pages.get(id);
+          if (previous) next.set(id, previous);
+          continue;
+        }
+        record = read;
+        this.refreshTags(record);
+      }
+      nextCache.set(absolute, { key, id, record });
       next.set(id, record);
     }
+    // #35q6kt6e: a folder that couldn't be listed keeps the pages and boards it
+    // had (they aren't deleted, just out of reach), with their cached reads.
+    if (unreadableDirs.length > 0) {
+      const inside = (absolute: string) => unreadableDirs.some((dir) => absolute.startsWith(dir + sep));
+      for (const [id, record] of this.pages) {
+        if (next.has(id) || !inside(record.filePath)) continue;
+        next.set(id, record);
+        const cached = this.readCache.get(record.filePath);
+        if (cached) nextCache.set(record.filePath, cached);
+      }
+    }
+    this.readCache = nextCache;
     const folders = VaultStore.foldersFrom(directories, next);
     VaultStore.assignParents(next, folders);
     const linkIndex = new LinkFileIndex([...others, ...(await this.attachmentFiles())]);
     if (!linkIndex.sameFiles(this.linkIndex)) this.fileIndexEpoch += 1;
     this.linkIndex = linkIndex;
     return { pages: next, folders };
+  }
+
+  /**
+   * #g95wkd9y: the watcher named only files the index already has, and they
+   * all still exist (edits, the usual case): re-read just those, without
+   * walking the vault. Anything else (a new or deleted file, a name the
+   * index doesn't know) returns null, and the caller walks.
+   */
+  private async rereadKnownFiles(paths: ReadonlySet<string>): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> } | null> {
+    const reads: Array<{ absolute: string; id: PageId; key: string }> = [];
+    for (const absolute of paths) {
+      const cached = this.readCache.get(absolute);
+      if (!cached || !this.pages.has(cached.id)) return null;
+      try {
+        reads.push({ absolute, id: cached.id, key: statKey(await stat(absolute)) });
+      } catch {
+        return null; // Deleted: the walk settles ids, parents and folders.
+      }
+    }
+    const next = new Map(this.pages);
+    for (const { absolute, id, key } of reads) {
+      const record = await this.readIfPresent(absolute, id);
+      if (record === null) return null; // Deleted after its stat: the walk settles it.
+      // #35q6kt6e: unreadable right now: it keeps its record (already in `next`).
+      if (record === UNREADABLE) continue;
+      this.refreshTags(record);
+      // The layout didn't change, so neither did the parent.
+      record.parentId = this.pages.get(id)!.parentId;
+      next.set(id, record);
+      this.readCache.set(absolute, { key, id, record });
+    }
+    return { pages: next, folders: this.folders };
+  }
+
+  /**
+   * `readRecord`, or null when the file is gone (deleted mid-refresh), or
+   * UNREADABLE when this one file can't be read now (#35q6kt6e: EACCES, EPERM,
+   * EBUSY, EISDIR), logged once per file until it reads again. Anything else
+   * (EMFILE: the process is out of handles) fails the rescan, which retries.
+   */
+  private async readIfPresent(absolute: string, id: PageId): Promise<PageRecord | null | typeof UNREADABLE> {
+    try {
+      const record = await this.readRecord(absolute, id);
+      this.unreadableLogged.delete(absolute);
+      return record;
+    } catch (error) {
+      // Gone, or its folder was replaced by a file, since the walk listed it.
+      if (isGoneError(error)) return null;
+      if (isPerFileError(error)) {
+        this.noteUnreadable(absolute, error);
+        return UNREADABLE;
+      }
+      throw error;
+    }
+  }
+
+  /** Log a file that can't be read, once until it reads again (#35q6kt6e). */
+  private noteUnreadable(absolute: string, error: unknown): void {
+    if (this.unreadableLogged.has(absolute)) return;
+    this.unreadableLogged.add(absolute);
+    console.warn(`[gumply] can't read ${relative(this.root, absolute)} (${(error as NodeJS.ErrnoException).code}); keeping what was there and reading the rest`);
   }
 
   /**
@@ -949,19 +1221,23 @@ export class VaultStore {
     return JSON.stringify([...folders.values()].map((folder) => [folder.id, folder.parentId]).sort());
   }
 
-  private async refreshFromDisk(): Promise<boolean> {
-    const { pages: next, folders } = await this.scanRecords();
+  private async refreshFromDisk(scope: RefreshScope = { kind: "all" }): Promise<boolean> {
+    const epochBefore = this.fileIndexEpoch;
+    const { pages: next, folders } =
+      (scope.kind === "paths" ? await this.rereadKnownFiles(scope.paths) : null) ??
+      (await this.scanRecords(scope.kind === "paths" ? scope.paths : undefined));
 
-    let changed = next.size !== this.pages.size;
-    if (!changed) {
-      for (const [id, record] of next) {
-        const current = this.pages.get(id);
-        if (!current || this.recordSignature(current) !== this.recordSignature(record)) {
-          changed = true;
-          break;
-        }
-      }
+    // #g95wkd9y: which records differ (a reused record is the same object: no compare).
+    const changedIds: PageId[] = [];
+    for (const [id, record] of next) {
+      const current = this.pages.get(id);
+      if (current !== record && (!current || this.recordSignature(current) !== this.recordSignature(record))) changedIds.push(id);
     }
+    const removedIds: PageId[] = [];
+    for (const id of this.pages.keys()) if (!next.has(id)) removedIds.push(id);
+    const removed = removedIds.length > 0;
+    this.lastRefreshChanges = [...changedIds, ...removedIds];
+    const changed = changedIds.length > 0 || removed;
     const foldersChanged = VaultStore.folderSignature(folders) !== VaultStore.folderSignature(this.folders);
     this.folders = folders;
     if (!changed) return foldersChanged;
@@ -1002,6 +1278,7 @@ export class VaultStore {
     }
 
     const previousIds = new Set(this.pages.keys());
+    const previous = new Map(this.pages);
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
     for (const { from, to } of historyMoves) {
@@ -1026,7 +1303,20 @@ export class VaultStore {
     // D23: a file moved to another folder outside Gumply keeps working
     // attachment links. Links the other tool already fixed are kept.
     await this.relinkMoved(externalMoves, { keepValidAtDestination: true });
-    this.reindexAll();
+    // #g95wkd9y: a change that leaves every link target where it was (same ids,
+    // titles and kinds, same linkable files) only changes the changed pages'
+    // own links. Anything else can change what other pages' links resolve to.
+    const targetsMoved =
+      removed ||
+      externalMoves.length > 0 ||
+      this.fileIndexEpoch !== epochBefore ||
+      changedIds.some((id) => {
+        const before = previous.get(id);
+        const after = this.pages.get(id);
+        return !before || !after || before.title !== after.title || before.kind !== after.kind;
+      });
+    if (targetsMoved) this.reindexAll();
+    else this.recomputeSources(changedIds);
     return true;
   }
 
@@ -3992,6 +4282,19 @@ export class VaultStore {
     }
   }
 
+  /** Recompute the link edges of these sources only (one page list for all of them). */
+  private recomputeSources(ids: readonly PageId[]): void {
+    if (ids.length === 0) return;
+    const metas = this.pageMetas();
+    // D43: a conflict copy beside its original holds no links (as recomputeSource).
+    const copies = this.copyIds();
+    for (const id of ids) {
+      const record = this.pages.get(id);
+      if (record && !copies.has(id)) this.edgesBySource.set(id, this.edgesFor(record, metas));
+      else this.edgesBySource.delete(id);
+    }
+  }
+
   private recomputeSource(id: PageId): void {
     const record = this.pages.get(id);
     if (!record || this.copyIds().has(id)) {
@@ -5011,8 +5314,35 @@ export class VaultStore {
    * each directory walked (vault path → non-page files directly in it), so
    * D33 folders come from the same single walk.
    */
-  private async scan(dir: string, directories?: DirectoryScan, others?: string[]): Promise<string[]> {
-    const entries = await readdir(dir, { withFileTypes: true });
+  private async scan(dir: string, directories?: DirectoryScan, others?: string[], unreadable?: string[]): Promise<string[]> {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+      this.unreadableLogged.delete(dir);
+    } catch (error) {
+      // #g95wkd9y: a folder removed or renamed while the walk was under way (a
+      // git checkout, a sync tool) holds nothing now; the next rescan sees where
+      // it went. The vault itself missing is a real error.
+      if (dir !== this.root && isGoneError(error)) return [];
+      // #35q6kt6e: a folder that can't be listed now (permissions, a lock) is
+      // out of reach, not empty: the caller keeps what it had, and so do the
+      // plain folders under it; the rest of the walk goes on. Logged once.
+      if (dir !== this.root && isPerFileError(error)) {
+        if (!this.unreadableLogged.has(dir)) {
+          this.unreadableLogged.add(dir);
+          console.warn(`[gumply] can't list ${relative(this.root, dir)}/ (${(error as NodeJS.ErrnoException).code}); keeping what was there and reading the rest`);
+        }
+        unreadable?.push(dir);
+        if (directories) {
+          const key = relative(this.root, dir).split(sep).join("/");
+          for (const folder of this.folders.values()) {
+            if (folder.id === key || folder.id.startsWith(`${key}/`)) directories.set(folder.id, 0);
+          }
+        }
+        return [];
+      }
+      throw error;
+    }
     const files: string[] = [];
     let otherFiles = 0;
 
@@ -5023,7 +5353,7 @@ export class VaultStore {
       if (entry.isSymbolicLink()) continue;
 
       const absolute = join(dir, entry.name);
-      if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories, others)));
+      if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories, others, unreadable)));
       else if (entry.isFile() && ITEM_FILE.test(entry.name)) files.push(absolute);
       else if (entry.isFile()) {
         otherFiles += 1;

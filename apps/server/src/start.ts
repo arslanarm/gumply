@@ -10,6 +10,7 @@ import { createApp } from "./app.js";
 import type { DesktopUpdates } from "./desktop-updates.js";
 import type { UiStateStore } from "./ui-state.js";
 import type { McpLaunchCommand } from "@gumply/core";
+import { logUnhandledRejections } from "./last-resort.js";
 import { isLoopbackName } from "./security.js";
 import { VaultStore } from "./vault-store.js";
 
@@ -79,6 +80,8 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
   const log = options.log ?? ((message: string) => console.log(message));
   mkdirSync(options.vaultPath, { recursive: true });
 
+  // #35q6kt6e: a stray rejection is logged, never the end of the server.
+  logUnhandledRejections();
   const store = new VaultStore(options.vaultPath);
   await store.init();
 
@@ -133,11 +136,13 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
       new Promise<void>((resolveClose) => {
         store.stopWatching();
         // D41: open editing sessions become versions on close.
-        void flushWithin(() => store.flushHistory(), options.historyFlushTimeoutMs ?? HISTORY_FLUSH_TIMEOUT_MS).finally(() => {
-          server.close(() => resolveClose());
-          // Keep-alive sockets (the window) would hold close() open.
-          (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
-        });
+        void flushWithin(() => store.flushHistory(), options.historyFlushTimeoutMs ?? HISTORY_FLUSH_TIMEOUT_MS)
+          .catch((error: unknown) => console.error("[gumply] history flush on close failed:", error))
+          .finally(() => {
+            server.close(() => resolveClose());
+            // Keep-alive sockets (the window) would hold close() open.
+            (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+          });
       }),
   };
 }
