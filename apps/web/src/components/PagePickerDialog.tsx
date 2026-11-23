@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { useT } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 import { comparePages, pageTrail } from "../lib/tree.js";
 import { useActiveOptionVisible } from "./use-active-option.js";
 import { Icon } from "./Icon.js";
@@ -21,6 +22,9 @@ export interface PagePickerDialogProps {
 const LIMIT = 200;
 
 export function PagePickerDialog({ pages, label, placeholder, noMatch, onCancel, onSelect }: PagePickerDialogProps) {
+  // Focus in on open, Tab kept on the input, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef, { ownsTab: true });
   const t = useT();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
@@ -75,7 +79,7 @@ export function PagePickerDialog({ pages, label, placeholder, noMatch, onCancel,
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="quick-switcher move-dialog" role="dialog" aria-modal="true" aria-label={label} data-testid="page-picker" onKeyDown={onKeyDown}>
+      <div ref={modalRef} className="quick-switcher move-dialog" role="dialog" aria-modal="true" aria-label={label} data-testid="page-picker" onKeyDown={onKeyDown}>
         <p className="page-picker-heading">{label}</p>
         <div className="quick-switcher-input-row">
           <span className="quick-switcher-input-icon" aria-hidden="true">
