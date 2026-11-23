@@ -14,7 +14,10 @@
  *   - long tasks: the main thread's blocked time until 2 s after the editor;
  *   - Cmd+K: typing "roadmap" → more than one result row;
  *   - Hub's backlinks: opening the hub page → its "Linked from" rows;
- *   - local graph and global graph: the click → a painted canvas.
+ *   - local graph and global graph: the click → a painted canvas;
+ *   - graphReady: the click → the global graph settled and fitted
+ *     (`data-graph-ready`), and graphLongest: the longest single main-thread
+ *     task in that time (what makes the page feel frozen while it lays out).
  */
 import { writeFileSync } from "node:fs";
 import { chromium } from "@playwright/test";
@@ -37,8 +40,12 @@ const median = (values) => {
 const probe = () => {
   const marks = { longTasks: 0 };
   window.__perfMarks = marks;
+  window.__longTaskLog = [];
   new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) if (!marks.settled) marks.longTasks += entry.duration;
+    for (const entry of list.getEntries()) {
+      if (!marks.settled) marks.longTasks += entry.duration;
+      window.__longTaskLog.push({ start: entry.startTime, duration: entry.duration });
+    }
   }).observe({ type: "longtask", buffered: true });
   new MutationObserver(() => {
     if (marks.editor === undefined && document.querySelector('[data-testid="editor-content"]')) marks.editor = performance.now();
@@ -100,9 +107,26 @@ try {
     result.localGraph = (await marks()).localGraph;
     await page.getByTestId("local-graph-toggle").click();
     await page.evaluate(() => window.__until(() => document.querySelector('[data-testid="graph-canvas"] canvas') !== null, "graph"));
+    const clickedAt = await page.evaluate(() => performance.now());
     await page.getByTestId("sidebar-graph").click();
     await wait("graph");
     result.graph = (await marks()).graph;
+    // Settled and fitted, and the longest task on the way there.
+    await page
+      .waitForFunction(() => document.querySelector('[data-testid="graph-canvas"]')?.getAttribute("data-graph-ready") === "true", null, { timeout: 300_000 })
+      .catch(async (error) => {
+        const state = await page.evaluate(() => {
+          const canvas = document.querySelector('[data-testid="graph-canvas"]');
+          return canvas ? Object.fromEntries([...canvas.attributes].filter((a) => a.name.startsWith("data-")).map((a) => [a.name, a.value])) : "no graph canvas";
+        });
+        throw new Error(`the global graph never got ready: ${JSON.stringify(state)}`, { cause: error });
+      });
+    const readyAt = await page.evaluate(() => performance.now());
+    result.graphReady = readyAt - clickedAt;
+    result.graphLongest = await page.evaluate(
+      ([from, to]) => Math.max(0, ...window.__longTaskLog.filter((task) => task.start >= from && task.start <= to).map((task) => task.duration)),
+      [clickedAt, readyAt],
+    );
 
     results.push(result);
     console.log(`run ${run + 1}: ${JSON.stringify(Object.fromEntries(Object.entries(result).map(([k, v]) => [k, Math.round(v)])))}`);

@@ -30,6 +30,8 @@ import {
   type FitItem,
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
+import { engineTicks, layoutInputFor } from "./layout-forces.js";
+import { startLayout } from "./layout-client.js";
 import { t, useT } from "../i18n/index.js";
 
 export type CanvasNode = GraphNode | GhostNode;
@@ -278,7 +280,7 @@ function measureLabel(text: string): number {
   return measureContext ? measureContext.measureText(text).width : text.length * LABEL_FONT_PX * 0.56;
 }
 
-type PositionedNode = CanvasNode & { x?: number; y?: number; fx?: number; fy?: number };
+type PositionedNode = CanvasNode & { x?: number; y?: number; vx?: number; vy?: number; fx?: number; fy?: number };
 
 interface DragState {
   node: PositionedNode;
@@ -324,6 +326,13 @@ export function GraphCanvas({
   const [fitReason, setFitReason] = useState("");
   /** The physics engine has stopped since the data last changed (tests wait for it). */
   const [engineStopped, setEngineStopped] = useState(false);
+  /**
+   * #g95wkd9y: big graphs are laid out in a worker (force-graph's own engine is
+   * off); small ones keep force-graph's engine, unchanged.
+   */
+  const engine = engineTicks(nodes.length, reducedMotion);
+  /** Bumped when the worker sends positions: requests a redraw. */
+  const [layoutFrame, setLayoutFrame] = useState(0);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   /** Set once the user zooms, pans or drags: auto-fit then stops moving the camera. */
@@ -660,8 +669,10 @@ export function GraphCanvas({
       "y",
       capAlpha(axisForce("y", centerStrength * stretchY) as never, alphaCapRef) as never,
     );
-    graph.d3ReheatSimulation();
-  }, [dataKey, hasSize, nodes, centerId]);
+    // The worker lays out big graphs: reheating force-graph's engine would run
+    // its ticks on the main thread (#g95wkd9y).
+    if (!engine.worker) graph.d3ReheatSimulation();
+  }, [dataKey, hasSize, nodes, centerId, engine.worker]);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -890,8 +901,9 @@ export function GraphCanvas({
   const hideBuiltInNodes = useMemo(() => {
     void drawNodes;
     void nodeStyles;
+    void layoutFrame;
     return () => false;
-  }, [drawNodes, nodeStyles]);
+  }, [drawNodes, nodeStyles, layoutFrame]);
 
   const handleNodeClick = useCallback(
     (node: CanvasNode) => {
@@ -1091,7 +1103,7 @@ export function GraphCanvas({
     };
   }, []);
 
-  const handleEngineStop = useCallback(() => {
+  const settleLayout = useCallback(() => {
     clearSettleTimer();
     alphaCapRef.current = Number.POSITIVE_INFINITY;
     // Never yank the camera after the user zoomed, panned or dragged a node.
@@ -1099,6 +1111,36 @@ export function GraphCanvas({
     setReady(true);
     setEngineStopped(true);
   }, [clearSettleTimer, autoFit, reducedMotion]);
+
+  // With the worker laying the graph out, force-graph's engine (0 ticks)
+  // "stops" at once: that isn't the layout settling.
+  const handleEngineStop = useCallback(() => {
+    if (!engine.worker) settleLayout();
+  }, [engine.worker, settleLayout]);
+
+  // #g95wkd9y: big graphs: the worker lays them out from where the nodes are
+  // now (force-graph's start positions, or the last layout before a filter
+  // change, so nothing jumps) and streams positions into the shared nodes.
+  // Reduced motion: one update, when it has settled.
+  const settleLayoutRef = useRef(settleLayout);
+  settleLayoutRef.current = settleLayout;
+  useEffect(() => {
+    if (!engine.worker || !hasSize) return;
+    const drawn = nodes as PositionedNode[];
+    const { width, height } = sizeRef.current;
+    const cancel = startLayout(layoutInputFor(drawn, links, { centerId, width, height, reducedMotion }), (update) => {
+      for (let i = 0; i < drawn.length; i += 1) {
+        const node = drawn[i]!;
+        node.x = update.x[i];
+        node.y = update.y[i];
+        node.vx = 0;
+        node.vy = 0;
+      }
+      setLayoutFrame((frame) => frame + 1);
+      if (update.done) settleLayoutRef.current();
+    });
+    return cancel;
+  }, [dataKey, engine.worker, hasSize, centerId, reducedMotion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // force-graph/d3 rewrite `link.source/target` from ids into node objects.
   // Hand it copies: the model's links must keep their string ids, or the next
@@ -1190,6 +1232,7 @@ export function GraphCanvas({
         data-graph-fit={String(fitGeneration)}
         data-graph-fit-reason={fitReason}
         data-graph-engine={engineStopped ? "stopped" : "running"}
+        data-graph-layout={engine.worker ? "worker" : "engine"}
         role="img"
         aria-label={ariaLabel}
       >
@@ -1207,8 +1250,8 @@ export function GraphCanvas({
             linkWidth={linkWidth}
             linkLineDash={linkLineDash}
             onEngineStop={handleEngineStop}
-            cooldownTicks={reducedMotion ? 2 : 140}
-            warmupTicks={reducedMotion ? 90 : 40}
+            cooldownTicks={engine.cooldownTicks}
+            warmupTicks={engine.warmupTicks}
             d3AlphaDecay={reducedMotion ? 0.1 : 0.03}
             d3VelocityDecay={0.38}
             minZoom={0.06}

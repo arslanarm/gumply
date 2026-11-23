@@ -28,7 +28,7 @@ import type {
   VaultImage,
   LinkableFile,
 } from "@gumply/core";
-import { PAGE_LOOK_KEYS, formatImportLimit, notionReportLanguage } from "@gumply/core";
+import { PAGE_LOOK_KEYS, formatImportLimit, indexGraphLinks, notionReportLanguage, type IndexedGraphData } from "@gumply/core";
 import { Hono, type Context } from "hono";
 import {
   listAttachments,
@@ -504,7 +504,11 @@ export function createApiRoutes(store: VaultStore): Hono {
     // v1.19 (E1): `include=attachments` adds each page's attachment links.
     const include = (c.req.query("include") ?? "").split(",").map((item) => item.trim());
     if (include.includes("attachments")) options.attachments = true;
-    return c.json<GraphData>(store.graph(options));
+    // v1.32 (#g95wkd9y): `links=index` sends links as [sourceIndex, targetIndex]
+    // into `nodes` (11 MB → ~1 MB on a 10k vault). The default is unchanged.
+    const graph = store.graph(options);
+    if (c.req.query("links") === "index") return c.json<IndexedGraphData>(indexGraphLinks(graph));
+    return c.json<GraphData>(graph);
   });
 
   // v1.19 (E1, spec/api-graph-groups): colour groups and filters, per vault.
