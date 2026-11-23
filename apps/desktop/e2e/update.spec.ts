@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { appendFileSync, chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -26,6 +26,12 @@ import { chromium, expect, test, type Browser, type Page } from '@playwright/tes
  * Windows (NSIS per user): with an AI app's Gumply.exe --mcp running, neither
  * the app nor the installer's `--updated` run installs or kills it; once it's
  * gone, the next quit installs N+1.
+ *
+ * Update signing (option B): the feed also serves N+1's SHA256SUMS.txt and
+ * its `.sig`, signed with a TEST key pair generated here for this run (its
+ * public key goes to the app as GUMPLY_UPDATE_FEED_PUBKEY, which only test
+ * builds read). A good signature installs; a missing `.sig` or one made with
+ * another key is `verify-failed`, and N stays as it was.
  */
 const oldApp = process.env.GUMPLY_UPDATE_OLD ? resolve(process.env.GUMPLY_UPDATE_OLD) : '';
 const oldVersion = process.env.GUMPLY_UPDATE_OLD_VERSION ?? '';
@@ -51,6 +57,30 @@ function record(check: string, detail: string): void {
 
 const sha512 = (file: string) => createHash('sha512').update(readFileSync(file)).digest('base64');
 
+// --- the test signing keys ----------------------------------------------------------
+
+/** Throwaway test keys, this run only: the one the app trusts, and another. */
+function testKeyPair(): { privateKey: KeyObject; spki: Buffer; id: string } {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const spki = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+  return { privateKey, spki, id: createHash('sha256').update(spki).digest('hex').slice(0, 16) };
+}
+const trustedKey = testKeyPair();
+const otherKey = testKeyPair();
+
+type SigMode = 'good' | 'missing' | 'other-key';
+let sigMode: SigMode = 'good';
+/** N+1's SHA256SUMS.txt, as the release job writes it (`sha256sum *`). */
+let sumsFile = Buffer.alloc(0);
+
+function sigLine(): string {
+  // 'other-key': a signature by a key the app doesn't have, under the trusted key's id.
+  const key = sigMode === 'other-key' ? otherKey : trustedKey;
+  return `gumply-sig v1 key=${trustedKey.id} sig=${sign(null, sumsFile, key.privateKey).toString('base64')}\n`;
+}
+
+const isSignatureRequest = (name: string) => name === 'SHA256SUMS.txt' || name === 'SHA256SUMS.txt.sig';
+
 // --- the feed ------------------------------------------------------------------
 
 type FeedMode = 'real' | 'tampered' | 'old';
@@ -65,6 +95,15 @@ function startFeed(): Promise<void> {
   feed = createServer((request, response) => {
     const name = decodeURIComponent(new URL(request.url ?? '/', 'http://x').pathname.slice(1));
     feedRequests.push(name);
+    if (name === 'SHA256SUMS.txt') {
+      response.writeHead(200, { 'content-type': 'text/plain' }).end(sumsFile);
+      return;
+    }
+    if (name === 'SHA256SUMS.txt.sig') {
+      if (sigMode === 'missing') response.writeHead(404).end();
+      else response.writeHead(200, { 'content-type': 'text/plain' }).end(sigLine());
+      return;
+    }
     const file = join(feedDir, basename(name));
     if (!name || name.includes('/') || !existsSync(file) || !statSync(file).isFile()) {
       response.writeHead(404).end();
@@ -120,6 +159,8 @@ function appEnv(extra: Record<string, string> = {}): Record<string, string> {
     GUMPLY_DESKTOP_USER_DATA: join(scratch, 'user-data'),
     GUMPLY_UPDATE_FEED: feedUrl,
     GUMPLY_UPDATE_FIRST_CHECK_MS: '500',
+    // The TEST public key (test builds only): signing is on for this whole spec.
+    GUMPLY_UPDATE_FEED_PUBKEY: trustedKey.spki.toString('base64'),
     ...extra,
   };
 }
@@ -244,6 +285,10 @@ test.beforeAll(async () => {
   vault = join(scratch, 'vault');
   mkdirSync(vault, { recursive: true });
   writeFileSync(join(vault, 'Plan.md'), '# Plan\n\nShip the update.\n');
+  const assets = readdirSync(feedDir)
+    .filter((name) => statSync(join(feedDir, name)).isFile())
+    .sort();
+  sumsFile = Buffer.from(assets.map((name) => `${createHash('sha256').update(readFileSync(join(feedDir, name))).digest('hex')}  ${name}\n`).join(''));
   await startFeed();
   if (isLinux) {
     // A versioned name, as downloaded: the update must keep exactly this path.
@@ -289,10 +334,13 @@ test('Off: no request to the feed at all', async () => {
 test('a feed offering N itself: nothing to install', async () => {
   writeMode('auto');
   feedMode = 'old';
+  feedRequests = [];
   await startApp();
   expect(await checkNow(/is up to date/)).toContain(oldVersion);
   await quitApp();
-  record('same version', 'up to date');
+  // Signing adds nothing to a check: the sums are only fetched after a download.
+  expect(feedRequests.filter(isSignatureRequest)).toEqual([]);
+  record('same version', `up to date; requests: ${feedRequests.join(', ')}`);
 });
 
 test('a file that fails its sha512: never installed, N untouched', async () => {
@@ -311,6 +359,34 @@ test('a file that fails its sha512: never installed, N untouched', async () => {
   record('tampered', `downloaded (${feedRequests.filter((name) => /\.(AppImage|exe)$/.test(name)).length} request(s)), refused, N unchanged`);
 });
 
+for (const [mode, why] of [
+  ['missing', 'no SHA256SUMS.txt.sig'],
+  ['other-key', 'signed by a key the app doesn\'t have'],
+] as const) {
+  test(`signing: ${why}: verify-failed, never installed, N untouched`, async () => {
+    feedMode = 'real';
+    sigMode = mode;
+    const before = sha512(installed);
+    try {
+      await startApp();
+      feedRequests = [];
+      await checkNow(/couldn't be verified/);
+      // It downloaded N+1 (the first time; then electron-updater reuses its
+      // cached copy), then fetched exactly the sums and the .sig.
+      if (mode === 'missing') expect(feedRequests.some((name) => /\.(AppImage|exe)$/.test(name))).toBe(true);
+      expect(feedRequests.filter(isSignatureRequest).sort()).toEqual(['SHA256SUMS.txt', 'SHA256SUMS.txt.sig']);
+      await expect(page.getByTestId('update-notice')).toHaveAttribute('data-status', 'verify-failed');
+      expect(appLog).toMatch(/not verified: /);
+      await quitApp();
+    } finally {
+      sigMode = 'good';
+    }
+    expect(sha512(installed)).toBe(before);
+    if (isWindows) expect(installedVersion()).toBe(oldVersion);
+    record(`signing: ${mode}`, `verify-failed, N unchanged; requests: ${feedRequests.join(', ')}`);
+  });
+}
+
 if (isLinux) {
   test('AppImage: N+1 at quit, at the same path, while an AI app on the old file keeps working; the next start is N+1', async () => {
     feedMode = 'real';
@@ -318,7 +394,10 @@ if (isLinux) {
     try {
       await startApp();
       expect((await health()).version).toBe(oldVersion);
+      feedRequests = [];
       await checkNow(/is ready/);
+      // A good signature (the test key): verified before "ready".
+      expect(feedRequests.filter(isSignatureRequest).sort()).toEqual(['SHA256SUMS.txt', 'SHA256SUMS.txt.sig']);
       await quitApp();
 
       const newFile = readdirSync(feedDir).find((name) => name.endsWith('.AppImage'))!;

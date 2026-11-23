@@ -10,7 +10,7 @@ import { api } from "../api/client.js";
 import { useT } from "../i18n/index.js";
 import { Icon } from "./Icon.js";
 
-const SHOWN: ReadonlySet<DesktopUpdatesState["status"]> = new Set(["available", "ready", "pending-running", "read-only", "install-failed"]);
+const SHOWN: ReadonlySet<DesktopUpdatesState["status"]> = new Set(["available", "ready", "pending-running", "read-only", "install-failed", "verify-failed"]);
 
 /**
  * What the notice is about (`version:status`), or null when it has nothing to
@@ -38,7 +38,9 @@ export function UpdateNotice({ state, hidden, onHide }: { state: DesktopUpdatesS
           ? t("update.readOnly")
           : state.status === "install-failed"
             ? t("update.installFailed")
-            : t("update.available", { version: state.version });
+            : state.status === "verify-failed"
+              ? t("update.verifyFailed")
+              : t("update.available", { version: state.version });
   const hint = state.status === "available" ? (state.kind === "deb" ? t("update.debHint") : state.kind === "mac" ? t("update.macHint") : null) : null;
 
   return (

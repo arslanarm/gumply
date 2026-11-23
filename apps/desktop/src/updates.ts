@@ -12,12 +12,17 @@
  *   unlinks before it moves, so we replace the file ourselves, atomically.
  * - **Windows never installs while another Gumply process from the install
  *   folder runs** (an AI app's `Gumply.exe --mcp`): the update stays pending.
+ * - **Update signing (option B), when main.ts passes `verify`:** a download
+ *   becomes `ready` only once its signed SHA256SUMS.txt checks out, else
+ *   `verify-failed` and nothing is installed; at quit the file is hashed again
+ *   and must still match.
  */
 import { spawnSync } from "node:child_process";
 import * as nodeFs from "node:fs";
 import { basename, dirname, join, sep, win32 } from "node:path";
 import type { DesktopUpdatesState, UpdateInstallKind, UpdateMode, UpdateStatus } from "@gumply/core";
 import type { UpdateSettings } from "./settings.js";
+import { sha256FileSync } from "./update-signature.js";
 
 export type InstallKind = UpdateInstallKind;
 export type { UpdateStatus };
@@ -211,13 +216,25 @@ export interface ControllerDeps {
   log?(message: string): void;
   /** Test builds only: the first check's delay (default 30 s). */
   firstCheckDelayMs?: number;
+  /**
+   * Update signing (option B): check a finished download. Absent means no
+   * signature check (no keys built in). Must never throw; a rejection counts
+   * as a failure.
+   */
+  verify?(download: { version: string; downloadedFile: string }): Promise<{ ok: true; sha256: string } | { ok: false; reason: string }>;
+  /** The re-hash at quit (default: sha256 of the file). */
+  hashFileSync?(path: string): string;
 }
 
-export type QuitInstall = "nothing" | "installed" | "pending-running" | "read-only" | "failed";
+export type QuitInstall = "nothing" | "installed" | "pending-running" | "read-only" | "failed" | "verify-failed";
 
 export class UpdateController {
   private state: UpdateState;
   private downloadedFile: string | null = null;
+  /** With signing: the sha256 the download verified with (checked again at quit). */
+  private verifiedSha256: string | null = null;
+  /** With signing: a version whose download didn't verify; not downloaded again automatically. */
+  private failedVersion: string | null = null;
   private timer: unknown = null;
   private checking: Promise<void> | null = null;
 
@@ -244,8 +261,12 @@ export class UpdateController {
     updater.on("update-available", ((info: { version: string }) => this.onAvailable(info.version)) as (arg: never) => void);
     updater.on("update-not-available", (() => this.set({ status: "up-to-date", version: null, releaseUrl: null, error: null })) as (arg: never) => void);
     updater.on("update-downloaded", ((info: { version: string; downloadedFile: string }) => {
-      this.downloadedFile = info.downloadedFile;
-      this.set({ status: "ready", version: info.version, releaseUrl: releaseUrl(info.version), error: null });
+      if (!this.deps.verify) {
+        this.downloadedFile = info.downloadedFile;
+        this.set({ status: "ready", version: info.version, releaseUrl: releaseUrl(info.version), error: null });
+        return;
+      }
+      void this.verifyDownload(info);
     }) as (arg: never) => void);
     updater.on("error", ((error: Error) => {
       this.deps.log?.(`[gumply] update: ${error?.message ?? String(error)}`);
@@ -253,6 +274,32 @@ export class UpdateController {
       if (this.state.status === "downloading") this.set({ status: "available", error: error?.message ?? String(error) });
       else if (this.state.status !== "ready") this.set({ status: "error", error: error?.message ?? String(error) });
     }) as (arg: never) => void);
+  }
+
+  /** Signing: the download stays "downloading" until it checks out; only then "ready". */
+  private async verifyDownload(info: { version: string; downloadedFile: string }): Promise<void> {
+    let result: { ok: true; sha256: string } | { ok: false; reason: string };
+    try {
+      result = await this.deps.verify!(info);
+    } catch (error) {
+      result = { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+    if (result.ok) {
+      this.downloadedFile = info.downloadedFile;
+      this.verifiedSha256 = result.sha256;
+      this.failedVersion = null;
+      this.set({ status: "ready", version: info.version, releaseUrl: releaseUrl(info.version), error: null });
+      return;
+    }
+    this.failVerification(info.version, result.reason);
+  }
+
+  private failVerification(version: string | null, reason: string): void {
+    this.deps.log?.(`[gumply] update ${version ?? "?"} not verified: ${reason}`);
+    this.downloadedFile = null;
+    this.verifiedSha256 = null;
+    this.failedVersion = version;
+    this.set({ status: "verify-failed", version, releaseUrl: version ? releaseUrl(version) : null, error: reason });
   }
 
   getState(): UpdateState {
@@ -310,6 +357,14 @@ export class UpdateController {
   installOnQuit(restart = false): QuitInstall {
     if (this.state.status !== "ready" && this.state.status !== "pending-running") return "nothing";
     try {
+      // Signing: the file must still be the one that verified (the cache folder is the user's).
+      if (this.deps.verify) {
+        const hash = this.downloadedFile && this.verifiedSha256 ? (this.deps.hashFileSync ?? sha256FileSync)(this.downloadedFile) : null;
+        if (hash === null || hash !== this.verifiedSha256) {
+          this.failVerification(this.state.version, "the downloaded file changed after it was verified");
+          return "verify-failed";
+        }
+      }
       if (this.state.kind === "appimage") {
         if (!this.downloadedFile || !this.deps.appImagePath) return "nothing";
         const replace = this.deps.replace ?? replaceAppImage;
@@ -346,6 +401,11 @@ export class UpdateController {
   }
 
   private onAvailable(version: string): void {
+    // A version that didn't verify isn't fetched again; a newer one is.
+    if (version === this.failedVersion) {
+      this.set({ status: "verify-failed", version, releaseUrl: releaseUrl(version) });
+      return;
+    }
     this.set({ status: "available", version, releaseUrl: releaseUrl(version), error: null });
     if (this.state.mode === "auto" && canInstall(this.state.kind)) void this.download();
   }
