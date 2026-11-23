@@ -77,6 +77,20 @@ export function isVaultSyncing(): boolean {
   return vaultSyncing;
 }
 
+let unreachableSeen = false;
+
+/**
+ * #2xx3uae4: one-shot. Whether any request since the last call couldn't reach
+ * the local server (a failed fetch, or a 5xx, which the dev server's proxy
+ * answers while it's down). The poll asks after it succeeds: what failed in
+ * between (a dialog's load, even in an outage shorter than a poll) loads again.
+ */
+export function takeUnreachableSeen(): boolean {
+  const seen = unreachableSeen;
+  unreachableSeen = false;
+  return seen;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -86,7 +100,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`/api${path}`, { ...init, headers });
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, { ...init, headers });
+  } catch (error) {
+    unreachableSeen = true;
+    throw error;
+  }
+  if (response.status >= 500) unreachableSeen = true;
 
   // First-run signal from the server: open this page once, then forget it.
   const firstPage = response.headers.get("x-gumply-new-vault");

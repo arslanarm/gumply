@@ -115,11 +115,14 @@ describe("VaultStore index on start", () => {
 
     const updated = await store.update("imported", { content: "New body." });
     const written = await readFile(join(dir, `${updated.id}.md`), "utf8");
+    const key = /^updated: (.+)$/m.exec(written)?.[1] ?? "";
     expect(written).toBe(
       original
         .replace("Old body.", "New body.")
-        .replace("2026-01-01T00:00:00.000Z", updated.updated),
+        .replace("2026-01-01T00:00:00.000Z", key),
     );
+    // The answer is the version a read reports: the key, or the file's mtime if that's a ms later (#2xx3uae4).
+    expect(updated.updated >= key).toBe(true);
   });
 
   it("keeps unknown keys, order, comments and flow tags when the title changes", async () => {
@@ -162,7 +165,9 @@ describe("VaultStore index on start", () => {
 
     const updated = await store.update("win", { content: "Body" });
     const written = await readFile(join(dir, `${updated.id}.md`), "utf8");
-    expect(written).toBe(original.replace("old", updated.updated));
+    const key = /^updated: ([^\r\n]+)\r$/m.exec(written)?.[1] ?? "";
+    expect(written).toBe(original.replace("old", key));
+    expect(updated.updated >= key).toBe(true);
     expect(written.endsWith("\n")).toBe(false);
   });
 

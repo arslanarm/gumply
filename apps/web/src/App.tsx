@@ -15,7 +15,7 @@ import {
   type DailyNoteSettings,
 } from "@gumply/core";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, type BaseDocument } from "./api/client.js";
+import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -50,7 +50,8 @@ import { isBase, isBaseId, newBaseTitle } from "./lib/bases.js";
 import { BaseView } from "./bases/BaseView.js";
 import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
-import { errorMessage, serverDownMessage } from "./lib/errors.js";
+import { errorMessage, isNotFound, serverDownMessage } from "./lib/errors.js";
+import { freshRetrySchedule, takeRetry } from "./lib/save-retry.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
@@ -103,7 +104,8 @@ import { UpdatesDialog, useDesktopUpdates } from "./components/UpdatesDialog.js"
 import { NotionImportDialog } from "./components/NotionImportDialog.js";
 
 type ListStatus = "loading" | "ready" | "error";
-type PageStatus = "idle" | "loading" | "ready" | "error";
+/** `unreachable` (#2xx3uae4): the page couldn't be fetched (the local server is down); it loads again once the server answers. `error` is only a real 404. */
+type PageStatus = "idle" | "loading" | "ready" | "error" | "unreachable";
 
 interface PendingDelete {
   page: PageMeta;
@@ -251,9 +253,20 @@ export function App() {
   /** v0.7 C: daily-note settings (folder and format) for ‹ › and Today. */
   const [dailySettings, setDailySettings] = useState<DailyNoteSettings | null>(null);
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
+  const pageStatusRef = useRef<PageStatus>("idle");
+  pageStatusRef.current = pageStatus;
+  /** #2xx3uae4: bumped by the first good poll after any request couldn't reach the server (dialogs reload what failed). */
+  const [reconnectKey, setReconnectKey] = useState(0);
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  // #2xx3uae4: read by the poll; the retry schedule starts over once saves work again.
+  const saveStateRef = useRef<SaveState>("idle");
+  saveStateRef.current = saveState;
+  const saveRetry = useRef(freshRetrySchedule());
+  useEffect(() => {
+    if (saveState !== "error") saveRetry.current = freshRetrySchedule();
+  }, [saveState]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletedOnDisk, setDeletedOnDisk] = useState<Page | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -596,6 +609,37 @@ export function App() {
   }, []);
 
   /**
+   * #2xx3uae4: load a page that couldn't be fetched again (Retry, or the server
+   * answering again). If focus was lost meanwhile (on <body>, or on this Retry,
+   * which unmounts while it loads), it goes to the page once it opens, or back
+   * to Retry if it still can't. Focus somewhere else is never taken.
+   */
+  const reconnectFocus = useRef(false);
+  const reloadUnreachable = useCallback(() => {
+    const active = document.activeElement;
+    const lost = active === null || active === document.body || (active instanceof HTMLElement && active.closest('[data-testid="page-unreachable"]') !== null);
+    if (lost) {
+      reconnectFocus.current = true;
+      focusBodyAfterOpen.current = !isBoardId(selectedRef.current);
+    }
+    requestPageReload();
+  }, [requestPageReload]);
+  useEffect(() => {
+    if (!reconnectFocus.current) return;
+    if (pageStatus === "unreachable") {
+      reconnectFocus.current = false;
+      focusBodyAfterOpen.current = false;
+      document.querySelector<HTMLElement>('[data-testid="page-unreachable-retry"]')?.focus();
+    } else if (pageStatus === "ready") {
+      reconnectFocus.current = false;
+      // A note's editor takes focus as it mounts (focusBodyAfterOpen); a board's root here.
+      if (isBoardId(selectedRef.current)) {
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true }));
+      }
+    }
+  }, [pageStatus]);
+
+  /**
    * D43 (spec/sync-conflicts §4.4): Keep page / copy / both, Delete copy, Keep
    * as original. Conditional on both files; a 409 says so and refreshes the list.
    * Then the tree, the open page and every conflict view follow, with an Undo toast.
@@ -787,6 +831,18 @@ export function App() {
       return;
     }
     setVaultSyncing(isVaultSyncing());
+    // #2xx3uae4: the server answers again. A page that couldn't be fetched loads now,
+    // and a failed save is tried again (with growing gaps). A conflict (409) waits
+    // for the user's choice: only the "Couldn't save" state retries by itself.
+    if (takeUnreachableSeen()) {
+      setReconnectKey((value) => value + 1);
+    }
+    if (pageStatusRef.current === "unreachable") reloadUnreachable();
+    if (saveStateRef.current === "error") {
+      const step = takeRetry(saveRetry.current, Date.now());
+      saveRetry.current = step.schedule;
+      if (step.retry) void documentControls()?.flush();
+    }
     if (epoch !== renameEpoch.current || renamesInFlight.current.size > 0) return;
     // A save landed while this list was on its way: it is older than what we
     // hold (#m6ppcam2). The next poll brings the current one.
@@ -853,7 +909,7 @@ export function App() {
           : null;
       requestPageReload();
     }
-  }, [applySavedPage, navigate, requestPageReload]);
+  }, [applySavedPage, navigate, reloadUnreachable, requestPageReload]);
 
   useEffect(() => {
     const timer = window.setInterval(() => void refreshFromDisk(), 2000);
@@ -1018,11 +1074,11 @@ export function App() {
           setPage(boardAsPage(loaded.meta));
           setPageStatus("ready");
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (cancelled) return;
           setPage(null);
           setBaseDoc(null);
-          setPageStatus("error");
+          setPageStatus(isNotFound(error) ? "error" : "unreachable");
         });
       return () => {
         cancelled = true;
@@ -1048,11 +1104,11 @@ export function App() {
             setEditorRevision((value) => value + 1);
           }
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (cancelled) return;
           setPage(null);
           setBoardDoc(null);
-          setPageStatus("error");
+          setPageStatus(isNotFound(error) ? "error" : "unreachable");
         });
       return () => {
         cancelled = true;
@@ -1079,10 +1135,10 @@ export function App() {
           setEditorRevision((value) => value + 1);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
         setPage(null);
-        setPageStatus("error");
+        setPageStatus(isNotFound(error) ? "error" : "unreachable");
       });
 
     return () => {
@@ -2043,7 +2099,15 @@ export function App() {
     [],
   );
 
+  /** #2xx3uae4: Retry gives the keys back to the editor first (as Keep mine does), then saves. */
   const handleRetrySave = useCallback(() => {
+    const editor = isBoardId(selectedRef.current) ? null : editorControls.current;
+    if (editor) {
+      const selection = editor.getSelection();
+      editor.focusAt(selection ? selection.to : 0);
+    } else {
+      document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true });
+    }
     void documentControls()?.flush();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2741,6 +2805,19 @@ export function App() {
                     }}
                   />
                 </>
+              ) : pageStatus === "unreachable" ? (
+                <div className="empty-state" data-testid="page-unreachable">
+                  <span className="empty-state-icon" aria-hidden="true">
+                    <Icon name="monitor" size={26} />
+                  </span>
+                  <div role="status">
+                    <h2>{serverDownMessage()}</h2>
+                    <p>{t("page.waitingForServer")}</p>
+                  </div>
+                  <button type="button" className="button-primary" data-testid="page-unreachable-retry" onClick={reloadUnreachable}>
+                    {t("common.retry")}
+                  </button>
+                </div>
               ) : pageStatus === "error" ? (
                 <div className="empty-state" data-testid="page-not-found">
                   <span className="empty-state-icon" aria-hidden="true">
@@ -2937,6 +3014,7 @@ export function App() {
         <HistoryDialog
           target={historyTarget}
           pages={pages}
+          reconnectKey={reconnectKey}
           onClose={() => setHistoryTarget(null)}
           onRestored={(result) => {
             void loadPages();
