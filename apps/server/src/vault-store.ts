@@ -464,6 +464,8 @@ const RESCAN_MAX_WAIT_MS = 2000;
 /** More watcher events than this within the window is a sync burst ("Syncing changes…"). */
 const SYNC_BURST_EVENTS = 50;
 const SYNC_WINDOW_MS = 2000;
+/** #im3em6tq: how long a path Gumply itself wrote or moved doesn't count toward a sync burst. */
+const OWN_WRITE_MS = 5000;
 
 /** A validated `.trash/<trashId>/` entry. */
 interface TrashEntry {
@@ -844,6 +846,12 @@ export class VaultStore {
   /** Ids the last refresh added, changed or removed (the burst check reports them). */
   private lastRefreshChanges: PageId[] = [];
   private syncingUntil = 0;
+  /**
+   * #im3em6tq: paths Gumply itself just wrote or moved (absolute → until when).
+   * Their watcher events still queue a re-read, but never count toward
+   * "Syncing changes…": a rename's 2,000 link rewrites are ours, not a sync.
+   */
+  private ownPaths = new Map<string, number>();
   /** Queued tasks that aren't rescans: a pending rescan waits for them (save priority, §8). */
   private pendingWrites = 0;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
@@ -1047,7 +1055,26 @@ export class VaultStore {
       this.pendingFull = true;
     else return;
     this.scheduleRescan();
-    this.noteWatchEvent();
+    // Our own writes and moves are re-read like any change, but aren't a sync.
+    if (!this.isOwnWrite(join(dir, name))) this.noteWatchEvent();
+  }
+
+  /** #im3em6tq: note paths this store is about to write or move (see `ownPaths`). */
+  private markOwnWrite(...paths: string[]): void {
+    const until = Date.now() + OWN_WRITE_MS;
+    for (const path of paths) this.ownPaths.set(resolve(path), until);
+    if (this.ownPaths.size > 10_000) {
+      const now = Date.now();
+      for (const [path, end] of this.ownPaths) if (end < now) this.ownPaths.delete(path);
+    }
+  }
+
+  private isOwnWrite(path: string, now = Date.now()): boolean {
+    const until = this.ownPaths.get(resolve(path));
+    if (until === undefined) return false;
+    if (until >= now) return true;
+    this.ownPaths.delete(resolve(path));
+    return false;
   }
 
   /** §8: over `SYNC_BURST_EVENTS` events within `SYNC_WINDOW_MS`, the vault is "syncing" until it settles. */
@@ -2707,6 +2734,7 @@ export class VaultStore {
       const previous = await readFile(record.filePath).catch(() => null);
       if (previous !== null && !previous.equals(Buffer.from(next, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
       if (previous === null) await this.freshHistory(record.filePath);
+      this.markOwnWrite(record.filePath);
       await rename(temporary, record.filePath);
       await this.rememberWrite(record.filePath, next);
     } catch (error) {
@@ -2881,6 +2909,7 @@ export class VaultStore {
       // Stat the temp before the rename: the path's stat after it could be
       // another program's file (see statAfterRename, #a76d3php).
       stats = await stat(temporary);
+      this.markOwnWrite(record.filePath);
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
@@ -3444,6 +3473,7 @@ export class VaultStore {
 
     const newFile = this.movedFilePath(record, newId);
     await mkdir(dirname(newFile), { recursive: true });
+    this.markOwnWrite(record.filePath, newFile, ...(hasChildren ? [oldDir, newDir] : []));
     if (hasChildren) {
       await mkdir(dirname(newDir), { recursive: true });
       await rename(oldDir, newDir);
@@ -4056,6 +4086,7 @@ export class VaultStore {
     const hasChildren = [...this.pages.keys()].some((key) => key.startsWith(`${id}/`));
 
     await mkdir(dirname(newFile), { recursive: true });
+    this.markOwnWrite(record.filePath, newFile, ...(hasChildren ? [oldDir, newDir] : []));
     if (hasChildren) {
       await mkdir(dirname(newDir), { recursive: true });
       await rename(oldDir, newDir);
@@ -4831,6 +4862,7 @@ export class VaultStore {
         const temporary = tempPathBeside(record.filePath);
         try {
           await writeFile(temporary, bytes);
+          this.markOwnWrite(record.filePath);
           await rename(temporary, record.filePath);
         } catch (error) {
           await rm(temporary, { force: true }).catch(() => undefined);
@@ -5604,6 +5636,7 @@ export class VaultStore {
       const written = await stat(temporary);
       if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
       if (previous === null) await this.freshHistory(filePath);
+      this.markOwnWrite(filePath);
       await rename(temporary, filePath);
       await this.rememberWrite(filePath, text);
       return {

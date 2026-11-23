@@ -56,6 +56,8 @@ export interface SidebarProps {
   onTrash?: () => void;
   /** D43 §8: a sync tool is changing many files right now. */
   syncing?: boolean;
+  /** #im3em6tq: a rename in flight (its link rewrites are ours, not a sync). */
+  renaming?: { title: string; count: number | null } | null;
   /** D43: the Conflicts row, shown only while sync conflict copies exist. */
   conflictsActive?: boolean;
   conflictsCount?: number;
@@ -540,7 +542,13 @@ export function Sidebar(props: SidebarProps) {
         </button>
       ) : null}
       <div className="sidebar-syncing" role="status" data-testid="sidebar-syncing">
-        {props.syncing ? t("conflicts.syncing") : null}
+        {props.renaming
+          ? props.renaming.count
+            ? t("sidebar.renamingCount", { title: props.renaming.title, count: props.renaming.count })
+            : t("sidebar.renaming", { title: props.renaming.title })
+          : props.syncing
+            ? t("conflicts.syncing")
+            : null}
       </div>
       {props.footer ?? null}
     </aside>

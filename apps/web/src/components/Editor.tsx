@@ -136,6 +136,12 @@ export interface EditorProps {
   onSaveState: (state: SaveState) => void;
   /** After a save: the server's page and the id it was saved under. */
   onSaved?: (page: Page, savedId: string) => void;
+  /**
+   * #im3em6tq: a rename of this page (or its parent) in flight, if any: a save
+   * waits for it, then goes to the new id (and, for the page itself, the
+   * rename's version) instead of meeting the rename as a 409.
+   */
+  waitForRename?: (id: string) => Promise<{ id: string; updated: string | null } | null> | null;
   onConflictBackup?: (path: string) => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
@@ -205,6 +211,7 @@ export function Editor({
   pages,
   onSaveState,
   onSaved,
+  waitForRename,
   onConflictBackup,
   onReady,
   onOpenLink,
@@ -233,6 +240,8 @@ export function Editor({
   onSaveStateRef.current = onSaveState;
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const waitForRenameRef = useRef(waitForRename);
+  waitForRenameRef.current = waitForRename;
   const onConflictBackupRef = useRef(onConflictBackup);
   onConflictBackupRef.current = onConflictBackup;
   const onHeadingResultRef = useRef(onHeadingResult);
@@ -277,6 +286,15 @@ export function Editor({
       save: async (content) => {
         const force = forceRef.current;
         try {
+          const renaming = waitForRenameRef.current?.(pageIdRef.current);
+          if (renaming) {
+            const renamed = await renaming;
+            if (renamed) {
+              pageIdRef.current = renamed.id;
+              // The rename is the newest write of this page (our edits were flushed before it).
+              if (renamed.updated) versionRef.current = renamed.updated;
+            }
+          }
           const savedId = pageIdRef.current;
           const updated = await api.updatePage(savedId, {
             content,

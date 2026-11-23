@@ -61,6 +61,32 @@ describe("the watcher during a sync burst (§8)", () => {
     }
   }, 20_000);
 
+  it("#im3em6tq: our own rename's link rewrites (80 pages) are never \"syncing\"; outside writes still are", async () => {
+    const { dir } = await createTestServer();
+    await writeFile(join(dir, "Hub.md"), "The hub.\n", "utf8");
+    for (let i = 0; i < 80; i++) await writeFile(join(dir, `Linker ${i}.md`), `See [[Hub]] (${i}).\n`, "utf8");
+    const store = new VaultStore(dir);
+    await store.init();
+    store.startWatching();
+    try {
+      let seen = false;
+      const watch = setInterval(() => (seen ||= store.syncing), 25);
+      const renamed = await store.update("Hub", { title: "Hub renamed" });
+      expect(renamed.rewrittenPages).toHaveLength(80);
+      expect(await readFile(join(dir, "Linker 7.md"), "utf8")).toContain("[[Hub renamed]]");
+      // The watcher's events for those 80 writes (and the move) arrive meanwhile and after.
+      await sleep(2500);
+      clearInterval(watch);
+      expect(seen, "Syncing changes… for our own rewrites").toBe(false);
+      // The flag itself still works: 80 outside writes are a sync. (Other files: the
+      // ones we just wrote are ours for a few seconds, OWN_WRITE_MS.)
+      await Promise.all(Array.from({ length: 80 }, (_, i) => writeFile(join(dir, `Outside ${i}.md`), `Synced in ${i}.\n`, "utf8")));
+      await expect.poll(() => store.syncing, { timeout: 5000 }).toBe(true);
+    } finally {
+      store.stopWatching();
+    }
+  }, 20_000);
+
   it("a save during a burst on the same file: written once, never interleaved with a running rescan, D22 intact", async () => {
     const { dir } = await createTestServer();
     await writeFile(join(dir, "Note.md"), "Before.\n", "utf8");
