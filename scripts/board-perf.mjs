@@ -11,17 +11,22 @@
  *   Markdown and [[links]], shapes, text, every 10th a live page card) and
  *   0.6·N connectors, every 5th labelled. The view is fitted, so every object
  *   is on screen (the worst case).
- * - Gestures: drag 1 object, drag 50 selected, drag all (Ctrl+A), pan (wheel),
- *   zoom (Ctrl+wheel); 60 pointer/wheel events about 16 ms apart.
+ * - Gestures: drag 1 object (clicked), drag 50 (a selection box over at least
+ *   50 objects), drag all (Ctrl+A), pan (wheel), zoom (Ctrl+wheel); 60
+ *   pointer/wheel events about 16 ms apart. Objects are grabbed at a point
+ *   that moves them: never a connection handle (at a fitted 1,000-object
+ *   board, ~20×12 px objects, a corner point hit the handle), link or button.
  * - fps / p95 come from a requestAnimationFrame loop during the gesture; a
- *   busy main thread shows up as long frames. "moved" checks that the drag
- *   really moved that many objects.
+ *   busy main thread shows up as long frames. "moved/selected" checks that the
+ *   drag really moved what it selected (read once the drop is committed).
  * - `--throttle 4` slows the CPU 4× through CDP (a mid-range laptop).
  * - `--gpu` turns on GPU rasterisation in headless Chromium (closer to a real
  *   browser; software rendering is the default and the more pessimistic).
  * - `--zoom 0.15` opens every board at that fixed zoom (a remembered view)
  *   instead of fitting it, so two builds are compared at an identical zoom.
- * - `--check` exits non-zero when drag-all of 500 at 1× drops below 50 fps.
+ * - The run exits non-zero when a drag moved nothing or not what it selected
+ *   (or "drag 50" selected fewer than 30): those rows measured the wrong thing.
+ * - `--check` also exits non-zero when drag-all of 500 at 1× drops below 50 fps.
  * - "ms" is the wall time of the whole gesture: the 60 paced (16 ms) mouse
  *   or wheel steps take longer when the page can't keep up.
  */
@@ -74,6 +79,34 @@ const browser = await chromium.launch({
 
 async function openBoard(seed, throttle) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript(() => {
+    /**
+     * A point on an object that grabs (or selects) the object itself. #g95wkd9y:
+     * at a fitted 1,000-object board (zoom 0.1) objects are about 20×12 px, and
+     * a fixed point near the corner landed on a connection handle (`.nodrag`),
+     * which starts a connector instead: those drags moved nothing. Links and
+     * buttons are skipped too (a [[link]] opens instead of selecting), and so
+     * is anything covering the object (toolbars, the minimap).
+     */
+    window.__perfPointOn = (el, forSelection = false) => {
+      const r = el.getBoundingClientRect();
+      // For Shift-click selection, only the lower body: a click near an
+      // object's top (a card's header, say) can select that object alone and
+      // drop the rest of the selection.
+      const spots = [[0.3, 0.6], [0.7, 0.6], [0.5, 0.75]];
+      if (!forSelection) spots.push([0.25, 0.35], [0.75, 0.35], [0.5, 0.5]);
+      for (const [fx, fy] of spots) {
+        const x = r.x + r.width * fx;
+        const y = r.y + r.height * fy;
+        const hit = document.elementFromPoint(x, y);
+        // After a box selection React Flow lays its selection rectangle over the
+        // selected objects; grabbing that is how such a selection is dragged.
+        const onSelectionRect = el.classList.contains("selected") && hit?.closest(".react-flow__nodesselection-rect");
+        if (hit && (onSelectionRect || (el.contains(hit) && !hit.closest("a, .wiki-link, button, .nodrag, .react-flow__handle")))) return { x, y };
+      }
+      return null;
+    };
+  });
   const id = `perf-${seed}-${Date.now()}`;
   if (fixedZoom !== null) {
     await page.addInitScript(
@@ -133,30 +166,38 @@ const positions = (page) =>
 async function select(page, count) {
   if (count === Infinity) {
     await page.keyboard.press("Control+a");
-  } else {
-    const centres = await page.evaluate((n) => {
-      const out = [];
-      // Row by row from the top: the context toolbar sits above the selection,
-      // so it never covers the next object to click.
+  } else if (count === 1) {
+    const point = await page.evaluate(() => {
       for (const el of document.querySelectorAll(".react-flow__node")) {
-        const r = el.getBoundingClientRect();
-        // Near the top-left inner edge, not the centre: text there may be a
-        // [[link]], and clicking a link opens it instead of selecting.
-        const x = r.x + Math.min(6, r.width / 4);
-        const y = r.y + Math.min(6, r.height / 4);
-        const hit = document.elementFromPoint(x, y);
-        // Only objects nothing else (toolbars, minimap) covers.
-        if (r.y > 120 && y < 860 && el.contains(hit) && !hit.closest("a, .wiki-link, button")) out.push({ x, y });
-        if (out.length >= n) break;
+        const point = window.__perfPointOn(el, true);
+        if (point && point.y > 120 && point.y < 860) return point;
       }
-      return out;
+      return null;
+    });
+    if (point) await page.mouse.click(point.x, point.y);
+  } else {
+    // #g95wkd9y: a selection box dragged from the empty canvas left of the
+    // board, down until at least `count` objects are inside it (the board
+    // selects what the box touches). Shift-clicking that many objects one by one at a fitted
+    // 1,000-object board (objects ~20×12 px, a toolbar following the
+    // selection) kept losing the selection part-way.
+    const box = await page.evaluate((n) => {
+      // Below the app's top bar and the board toolbar (the fitted board starts
+      // under them), in the empty margin left of the leftmost object.
+      const top = 125;
+      const rects = [...document.querySelectorAll(".react-flow__node")].map((el) => el.getBoundingClientRect()).filter((r) => r.bottom > top);
+      const left = Math.min(...rects.map((r) => r.left)) - 6;
+      const right = Math.max(...rects.map((r) => r.right)) + 6;
+      const bottoms = rects.map((r) => r.bottom).sort((a, b) => a - b);
+      return { left, top, right, bottom: Math.min(860, (bottoms[Math.min(n, bottoms.length) - 1] ?? top) + 2) };
     }, count);
-    // React Flow tracks Shift through keydown, not the click's shiftKey.
-    for (const [index, point] of centres.entries()) {
-      if (index === 1) await page.keyboard.down("Shift");
-      await page.mouse.click(point.x, point.y);
+    // The select tool draws a selection box on a plain drag over empty canvas.
+    await page.mouse.move(box.left, box.top);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) {
+      await page.mouse.move(box.left + ((box.right - box.left) * i) / 10, box.top + ((box.bottom - box.top) * i) / 10);
     }
-    await page.keyboard.up("Shift");
+    await page.mouse.up();
   }
   await page.waitForTimeout(300);
   // Grab the selected object nearest the middle: starting near the edge of the
@@ -164,16 +205,37 @@ async function select(page, count) {
   return page.evaluate(() => {
     let best = null;
     for (const el of document.querySelectorAll(".react-flow__node.selected")) {
-      const r = el.getBoundingClientRect();
-      const x = r.x + Math.min(6, r.width / 4);
-      const y = r.y + Math.min(6, r.height / 4);
-      const hit = document.elementFromPoint(x, y);
-      if (!el.contains(hit) || hit.closest("a, .wiki-link, button")) continue;
-      const distance = Math.hypot(x - 720, y - 450);
-      if (!best || distance < best.distance) best = { x, y, distance };
+      const point = window.__perfPointOn(el);
+      if (!point) continue;
+      const distance = Math.hypot(point.x - 720, point.y - 450);
+      if (!best || distance < best.distance) best = { ...point, distance };
     }
     return { ...best, selected: document.querySelectorAll(".react-flow__node.selected").length };
+  }).then((start) => {
+    if (start.x === undefined) throw new Error(`no selected object to grab (${start.selected} selected)`);
+    return start;
   });
+}
+
+/**
+ * #g95wkd9y: wait until the drop is committed. A big selection moves with CSS
+ * offsets (or the viewport transform) during the drag and its positions are
+ * written once on drop; at 1,000 objects that commit can take longer than a
+ * fixed wait, which read as "moved 0".
+ */
+async function settled(page, before, timeout = 15_000) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    const state = await page.evaluate(() => ({
+      temporary:
+        [...document.querySelectorAll(".react-flow__node")].some((el) => el.style.translate !== "") ||
+        (document.querySelector(".react-flow__viewport")?.style.translate ?? "") !== "",
+      nodes: Object.fromEntries(window.__board.get().nodes.map((n) => [n.id, `${n.x},${n.y}`])),
+    }));
+    const moved = Object.keys(state.nodes).filter((id) => state.nodes[id] !== before[id]).length;
+    if ((!state.temporary && moved > 0) || Date.now() > until) return moved;
+    await page.waitForTimeout(100);
+  }
 }
 
 async function drag(page, count) {
@@ -188,9 +250,7 @@ async function drag(page, count) {
     }
     await page.mouse.up();
   });
-  await page.waitForTimeout(300);
-  const after = await positions(page);
-  const moved = Object.keys(after).filter((id) => after[id] !== before[id]).length;
+  const moved = await settled(page, before);
   return { ...result, moved, selected: start.selected };
 }
 
@@ -216,6 +276,7 @@ const gestures = [
 ];
 
 const rows = [];
+const noOps = [];
 let failed = false;
 try {
   for (const seed of seeds) {
@@ -224,7 +285,14 @@ try {
         const page = await openBoard(seed, throttle);
         const r = await run(page);
         await page.close();
-        const moved = r.moved === undefined ? "" : `${r.moved}`;
+        // #g95wkd9y: a drag that moved nothing, or not what it selected, measured a
+        // no-op (or the wrong gesture): the row is marked and the run fails.
+        const bad = r.moved !== undefined && (r.moved === 0 || r.moved !== r.selected || (name === "drag 50" && r.selected < 30));
+        if (bad) {
+          noOps.push(`${seed} ${throttle}× ${name}: ${r.moved} moved of ${r.selected} selected`);
+          failed = true;
+        }
+        const moved = r.moved === undefined ? "" : `${r.moved}/${r.selected}${bad ? " FAILED" : ""}`;
         rows.push(`| ${seed} | ${throttle}× | ${name} | ${r.fps} | ${r.p95} | ${r.worst} | ${r.wall} | ${moved} |`);
         console.error(`${seed} ${throttle}× ${name}: ${JSON.stringify(r)}`);
         if (check && seed === 500 && throttle === 1 && name === "drag all" && r.fps < 50) failed = true;
@@ -241,10 +309,11 @@ try {
 console.log(
   `Board perf — ${gpu ? "GPU" : "software"} rendering, 1440×900, ${fixedZoom === null ? "whole board visible" : `zoom ${Math.round(fixedZoom * 100)}%`}\n`,
 );
-console.log("| objects | CPU | gesture | fps | p95 frame ms | worst frame ms | gesture ms | moved |");
+console.log("| objects | CPU | gesture | fps | p95 frame ms | worst frame ms | gesture ms | moved/selected |");
 console.log("|---|---|---|---|---|---|---|---|");
 for (const row of rows) console.log(row);
+for (const line of noOps) console.error(`drag didn't move its selection: ${line}`);
 if (failed) {
-  console.error("drag all (500 objects, 1× CPU) is below 50 fps");
+  if (check) console.error("--check: drag all (500 objects, 1× CPU) must reach 50 fps, and every drag must move its selection");
   process.exit(1);
 }
