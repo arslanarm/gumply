@@ -52,6 +52,8 @@
     "dismissError": "Dismiss error",
     "filterByTag": "Filter by tag",
     "loading": "Loading graph…",
+    "arranging": "Arranging the graph…",
+    "arrangingProgress": "Arranging the graph… {{percent}}%",
     "empty": "Your graph is empty.",
     "emptyHintBefore": "Create a page and link it with ",
     "emptyHintAfter": ".",

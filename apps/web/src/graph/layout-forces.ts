@@ -13,6 +13,19 @@ import { forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-fo
 /** Above this many nodes the layout runs in a worker (and force-graph's engine is off). */
 export const LAYOUT_WORKER_THRESHOLD = 1500;
 
+/**
+ * Up to this many nodes the worker streams positions as it goes. Above it
+ * (@lead, #g95wkd9y), every repaint costs ~2 s on a slow laptop, so the graph
+ * is drawn once, when it has settled: the page stays responsive meanwhile,
+ * behind a dimmed start layout and an "Arranging the graph…" status.
+ */
+export const STREAM_MAX_NODES = 5000;
+
+/** Whether positions are streamed while the layout runs (else: once, when settled). */
+export function streamsPositions(count: number, reducedMotion: boolean): boolean {
+  return !reducedMotion && count <= STREAM_MAX_NODES;
+}
+
 /** The settings GraphCanvas uses (link spring, charge reach, decay). */
 export const LAYOUT_SETTINGS = {
   linkDistance: 52,
@@ -40,6 +53,8 @@ export interface LayoutInput {
   centerStrengthX: number;
   centerStrengthY: number;
   reducedMotion: boolean;
+  /** Post positions as the layout runs (else only progress, then the settled layout). */
+  stream: boolean;
 }
 
 /** Charge and centring as GraphCanvas sets them for `count` nodes. */
@@ -73,6 +88,8 @@ interface SimNode {
 export interface Layout {
   tick(): boolean;
   readonly ticks: number;
+  /** How far along it is, 0–1 (an estimate from the ticks run; 1 once settled). */
+  progress(): number;
   /** Current positions, written into the given arrays (or new ones). */
   positions(x?: Float32Array, y?: Float32Array): { x: Float32Array; y: Float32Array };
 }
@@ -120,6 +137,12 @@ export function createLayout(input: LayoutInput): Layout {
     get ticks() {
       return ticks;
     },
+    progress() {
+      if (ticks >= maxTicks || simulation.alpha() < s.alphaMin) return 1;
+      // Alpha decays geometrically to alphaMin; the tick cap may come first.
+      const byAlpha = Math.log(Math.max(simulation.alpha(), s.alphaMin)) / Math.log(s.alphaMin);
+      return Math.min(1, Math.max(ticks / maxTicks, byAlpha));
+    },
     positions(x = new Float32Array(count), y = new Float32Array(count)) {
       for (let i = 0; i < count; i += 1) {
         x[i] = nodes[i]!.x ?? 0;
@@ -164,6 +187,7 @@ export function layoutInputFor(
     pinned: options.centerId === null ? -1 : (index.get(options.centerId) ?? -1),
     ...forceStrengths(nodes.length, { local: options.centerId !== null, width: options.width, height: options.height }),
     reducedMotion: options.reducedMotion,
+    stream: streamsPositions(nodes.length, options.reducedMotion),
   };
 }
 

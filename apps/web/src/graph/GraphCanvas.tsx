@@ -333,6 +333,8 @@ export function GraphCanvas({
   const engine = engineTicks(nodes.length, reducedMotion);
   /** Bumped when the worker sends positions: requests a redraw. */
   const [layoutFrame, setLayoutFrame] = useState(0);
+  /** A big graph being laid out without streaming: its progress (0–1), else null. */
+  const [arranging, setArranging] = useState<number | null>(null);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   /** Set once the user zooms, pans or drags: auto-fit then stops moving the camera. */
@@ -1128,7 +1130,15 @@ export function GraphCanvas({
     if (!engine.worker || !hasSize) return;
     const drawn = nodes as PositionedNode[];
     const { width, height } = sizeRef.current;
-    const cancel = startLayout(layoutInputFor(drawn, links, { centerId, width, height, reducedMotion }), (update) => {
+    const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion });
+    // Above STREAM_MAX_NODES (or with reduced motion) the graph is drawn once,
+    // settled; meanwhile its start layout shows dimmed with a status.
+    setArranging(input.stream ? null : 0);
+    const cancel = startLayout(input, (update) => {
+      if (update.type === "progress") {
+        setArranging(update.progress);
+        return;
+      }
       for (let i = 0; i < drawn.length; i += 1) {
         const node = drawn[i]!;
         node.x = update.x[i];
@@ -1137,9 +1147,15 @@ export function GraphCanvas({
         node.vy = 0;
       }
       setLayoutFrame((frame) => frame + 1);
-      if (update.done) settleLayoutRef.current();
+      if (update.done) {
+        setArranging(null);
+        settleLayoutRef.current();
+      }
     });
-    return cancel;
+    return () => {
+      cancel();
+      setArranging(null);
+    };
   }, [dataKey, engine.worker, hasSize, centerId, reducedMotion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // force-graph/d3 rewrite `link.source/target` from ids into node objects.
@@ -1226,13 +1242,14 @@ export function GraphCanvas({
 
       <div
         ref={containerRef}
-        className="graph-canvas"
+        className={arranging === null ? "graph-canvas" : "graph-canvas graph-canvas--arranging"}
         data-testid={testId}
         data-graph-ready={ready ? "true" : "false"}
         data-graph-fit={String(fitGeneration)}
         data-graph-fit-reason={fitReason}
         data-graph-engine={engineStopped ? "stopped" : "running"}
         data-graph-layout={engine.worker ? "worker" : "engine"}
+        data-graph-arranging={arranging === null ? undefined : "true"}
         role="img"
         aria-label={ariaLabel}
       >
@@ -1261,6 +1278,11 @@ export function GraphCanvas({
           />
         ) : null}
         <div ref={tooltipRef} className="graph-tooltip" role="presentation" hidden />
+        {arranging !== null ? (
+          <div className="graph-arranging" role="status" data-testid="graph-arranging">
+            {arranging > 0 ? t("graph.arrangingProgress", { percent: Math.round(arranging * 100) }) : t("graph.arranging")}
+          </div>
+        ) : null}
       </div>
     </div>
   );
