@@ -31,10 +31,10 @@ type Scope = { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string> };
 /** The store's watcher hooks, with the debounce timer switched off so a test drives each refresh. */
 function watcherOf(store: VaultStore) {
   const internals = store as unknown as Internals;
-  // These tests report watcher events by hand: the real watcher (started by
-  // init) would add its own, late, events for the test's writes, and enough of
-  // them count as a sync burst whose check runs a full refresh in the middle
-  // of the test (#9a393rp5). onWatchEvent still works with it stopped.
+  // These tests report watcher events by hand. init() doesn't start a watcher
+  // here; stopping it anyway makes sure no real watcher (and so no sync-burst
+  // check with its full refresh) can run in the middle of a test (#9a393rp5).
+  // onWatchEvent still works with it stopped.
   store.stopWatching();
   internals.scheduleRescan = () => {};
   return {
