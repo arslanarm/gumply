@@ -100,3 +100,13 @@ export function systemPrefersDark(): boolean {
     ? window.matchMedia("(prefers-color-scheme: dark)").matches
     : false;
 }
+
+/**
+ * Apply, save and announce a theme choice (Settings, Cmd+K #snuin2ja): the
+ * topbar toggle reads the same storage and listens for the event.
+ */
+export function chooseTheme(next: ThemePreference): void {
+  applyThemePreference(next, systemPrefersDark());
+  saveThemePreference(browserStorage(), next);
+  window.dispatchEvent(new CustomEvent("gumply:theme-changed"));
+}

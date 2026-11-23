@@ -8,6 +8,7 @@ import { canMovePage, type PageTreeNode } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { placeMenu, type MenuPlacement } from "../lib/menu-placement.js";
 import { useT } from "../i18n/index.js";
+import { commandApplies, menuLabel, ROW_MENU, ROW_TEST_IDS, type PageCommandId } from "../lib/commands.js";
 
 export interface PageItemProps {
   node: PageTreeNode;
@@ -187,75 +188,50 @@ function PageItemRow(props: PageItemProps) {
   }, [menu, placed]);
 
   /** One menu row: closes the menu, then runs the action. */
-  const menuItem = (testId: string, label: string, action: () => void, extra: { title?: string; danger?: boolean } = {}) => (
+  const menuItem = (id: PageCommandId, action: () => void) => (
     <button
-      key={testId}
+      key={id}
       type="button"
       role="menuitem"
-      className={extra.danger ? "menu-danger" : undefined}
-      data-testid={`${testId}-${page.id}`}
-      title={extra.title}
+      className={id === "page.delete" ? "menu-danger" : undefined}
+      data-testid={`${ROW_TEST_IDS[id]}-${page.id}`}
+      title={id === "page.duplicate" && !leaf && hasChildren ? t("sidebar.subPagesNotCopied") : undefined}
       onClick={(event) => {
         event.stopPropagation();
         setMenuOpen(false);
         action();
       }}
     >
-      {label}
+      {menuLabel(id, page)}
     </button>
   );
 
+  // What each row does for this page; a missing handler leaves its row out.
+  const rowActions: Record<PageCommandId, (() => void) | undefined> = {
+    "page.rename": () => props.onStartRename(page.id, page.title),
+    "page.duplicate": () => props.onDuplicate(page.id),
+    "page.copy-link": () => props.onCopyLink(page.id),
+    "page.move": () => props.onStartMove(page.id),
+    "page.add-board": () => props.onCreateBoardChild(page.id),
+    "page.add-base": props.onCreateBaseChild ? () => props.onCreateBaseChild?.(page.id) : undefined,
+    "page.new-from-template": () => props.onNewFromTemplate(page.id),
+    "page.import-notion": props.onImportNotion ? () => props.onImportNotion?.(page.id) : undefined,
+    "page.export-html": props.onExportHtml ? () => props.onExportHtml?.(page.id) : undefined,
+    "page.export-pdf": props.onExportPdf ? () => props.onExportPdf?.(page.id) : undefined,
+    "page.history": props.onShowHistory ? () => props.onShowHistory?.(page.id) : undefined,
+    "page.delete": () => props.onDelete(page.id),
+  };
+
   // Notion-style groups, separated by a line (#sjts42ue): edit, add inside,
-  // import/export, delete. Groups with no item for this row are left out.
-  const menuGroups: ReactNode[][] = [
-    [
-      menuItem("rename-page", t("sidebar.rename"), () => props.onStartRename(page.id, page.title)),
-      folder
-        ? null
-        : menuItem("duplicate-page", t("sidebar.duplicate"), () => props.onDuplicate(page.id), {
-            title: !leaf && hasChildren ? t("sidebar.subPagesNotCopied") : undefined,
-          }),
-      folder ? null : menuItem("copy-link", t("sidebar.copyLink"), () => props.onCopyLink(page.id)),
-      menuItem("move-page", t("sidebar.moveTo"), () => props.onStartMove(page.id)),
-    ],
-    [
-      leaf ? null : menuItem("add-board", t("sidebar.addBoardInside"), () => props.onCreateBoardChild(page.id)),
-      leaf || !props.onCreateBaseChild
-        ? null
-        : menuItem("add-base", t("bases.addBaseInside"), () => props.onCreateBaseChild?.(page.id)),
-      board ? null : menuItem("new-from-template", t("sidebar.newFromTemplate"), () => props.onNewFromTemplate(page.id)),
-    ],
-    [
-      leaf || !props.onImportNotion
-        ? null
-        : menuItem("import-notion", t("notionImport.menuItem"), () => props.onImportNotion?.(page.id)),
-      leaf || folder || !props.onExportHtml
-        ? null
-        : menuItem("export-html", t("export.menuItem"), () => props.onExportHtml?.(page.id)),
-      leaf || folder || !props.onExportPdf
-        ? null
-        : menuItem("export-pdf", t("export.pdf.menuItem"), () => props.onExportPdf?.(page.id)),
-      folder || base || !props.onShowHistory
-        ? null
-        : menuItem("page-history", t("history.menuItem"), () => props.onShowHistory?.(page.id)),
-    ],
-    [
-      menuItem(
-        "delete-page",
-        board
-          ? t("sidebar.deleteBoard")
-          : base
-            ? t("bases.deleteBase")
-            : folder
-              ? t("sidebar.deleteFolder")
-              : t("sidebar.deletePage"),
-        () => props.onDelete(page.id),
-        { danger: true },
-      ),
-    ],
-  ]
-    .map((group) => group.filter((item) => item !== null))
-    .filter((group) => group.length > 0);
+  // import/export, delete. The rows and when they apply come from the command
+  // registry (#snuin2ja), the same as Cmd+K's page commands.
+  const rowContext = { page, editor: false, board: false, desktop: false };
+  const menuGroups: ReactNode[][] = ROW_MENU.map((group) =>
+    group.flatMap((id) => {
+      const action = rowActions[id];
+      return action && commandApplies(id, rowContext) ? [menuItem(id, action)] : [];
+    }),
+  ).filter((group) => group.length > 0);
 
   /** Right-click or Shift+F10 / the context-menu key: the same menu as ⋯, placed by `placeMenu`. */
   const openMenuAt = (x: number, y: number, focus: boolean) => {

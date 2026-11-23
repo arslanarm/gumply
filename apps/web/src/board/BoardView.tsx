@@ -27,6 +27,9 @@ export interface BoardViewControls {
   frames: BoardEditorControls["frames"];
   subscribe: BoardEditorControls["subscribe"];
   zoomToFrame: BoardEditorControls["zoomToFrame"];
+  /** #snuin2ja: Cmd+K's board tools and view actions. */
+  setTool: BoardEditorControls["setTool"];
+  view: BoardEditorControls["view"];
 }
 
 export interface BoardViewProps {
@@ -207,6 +210,8 @@ export function BoardView(props: BoardViewProps) {
         frames: () => editorRef.current?.frames() ?? [],
         subscribe: (listener) => editorRef.current?.subscribe(listener) ?? (() => undefined),
         zoomToFrame: (id) => editorRef.current?.zoomToFrame(id),
+        setTool: (tool) => editorRef.current?.setTool(tool),
+        view: (action) => editorRef.current?.view(action),
       });
     },
     [autosave, load],

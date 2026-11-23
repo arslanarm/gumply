@@ -139,6 +139,10 @@ export interface BoardEditorControls {
   subscribe: (listener: () => void) => () => void;
   /** Zoom so a frame fills the view. */
   zoomToFrame: (id: string) => void;
+  /** #snuin2ja (Cmd+K): pick a tool, as its toolbar button does. */
+  setTool: (tool: BoardTool) => void;
+  /** #snuin2ja (Cmd+K): fit, zoom in or out, or 100%, as the zoom panel does. */
+  view: (action: "fit" | "in" | "out" | "reset") => void;
 }
 
 export interface BoardFrame {
@@ -749,8 +753,13 @@ function BoardCanvas(props: BoardEditorProps) {
     [addAndSelect, toFlow, uploadFile, viewCentre],
   );
 
+  // #snuin2ja: tool and view actions for Cmd+K, defined further down.
+  const paletteRef = useRef<{ setTool: (tool: BoardTool) => void; view: (action: "fit" | "in" | "out" | "reset") => void } | null>(null);
+
   useEffect(() => {
     onReady?.({
+      setTool: (tool) => paletteRef.current?.setTool(tool),
+      view: (action) => paletteRef.current?.view(action),
       getBoard: () => boardRef.current,
       replaceBoard: (next) => {
         setEditing(null);
@@ -1223,6 +1232,16 @@ function BoardCanvas(props: BoardEditorProps) {
     setShapeMenu(false);
     setPagePicker(false);
   }, []);
+
+  paletteRef.current = {
+    setTool: chooseTool,
+    view: (action) => {
+      if (action === "fit") fit();
+      else if (action === "in") void flow.zoomIn({ duration: 150 });
+      else if (action === "out") void flow.zoomOut({ duration: 150 });
+      else void flow.zoomTo(1, { duration: 150 });
+    },
+  };
 
   /* ---------------- keyboard ---------------- */
 

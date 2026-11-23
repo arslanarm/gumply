@@ -567,7 +567,8 @@ async function printToPdf(htmlPath: string, name: string, scratchDir: string): P
   }
 }
 
-function sendCommand(command: "new-page" | "new-whiteboard" | "search" | "import-notion" | "export-pdf"): void {
+/** #snuin2ja: the web app's command ids (lib/commands.ts), so the menu and Cmd+K run the same action. */
+function sendCommand(command: "new.page" | "new.board" | "view.search" | "page.import-notion" | "page.export-pdf"): void {
   if (!window || window.isDestroyed()) return;
   void window.webContents.executeJavaScript(
     `window.dispatchEvent(new CustomEvent("gumply:command", { detail: ${JSON.stringify(command)} }))`,
@@ -591,13 +592,13 @@ function buildMenu(): void {
     {
       label: tr("menu.file"),
       submenu: [
-        { id: "new-page", label: tr("menu.newPage"), accelerator: "CmdOrCtrl+N", click: () => sendCommand("new-page") },
-        { id: "new-whiteboard", label: tr("menu.newBoard"), accelerator: "CmdOrCtrl+Shift+N", click: () => sendCommand("new-whiteboard") },
+        { id: "new-page", label: tr("menu.newPage"), accelerator: "CmdOrCtrl+N", click: () => sendCommand("new.page") },
+        { id: "new-whiteboard", label: tr("menu.newBoard"), accelerator: "CmdOrCtrl+Shift+N", click: () => sendCommand("new.board") },
         { type: "separator" },
         // B4: the in-app "Import from Notion…" dialog.
-        { id: "import-notion", label: tr("menu.importNotion"), click: () => sendCommand("import-notion") },
+        { id: "import-notion", label: tr("menu.importNotion"), click: () => sendCommand("page.import-notion") },
         // G2: the open page as PDF (the web app's dialog, then printToPDF here).
-        { id: "export-pdf", label: tr("menu.exportPdf"), click: () => sendCommand("export-pdf") },
+        { id: "export-pdf", label: tr("menu.exportPdf"), click: () => sendCommand("page.export-pdf") },
         { type: "separator" },
         { id: "open-vault", label: tr("menu.openVault"), accelerator: "CmdOrCtrl+O", click: () => void openVaultFromMenu("open") },
         { label: tr("menu.createVault"), click: () => void openVaultFromMenu("create") },
@@ -644,7 +645,7 @@ function buildMenu(): void {
     {
       label: tr("menu.view"),
       submenu: [
-        { id: "search", label: tr("menu.search"), accelerator: "CmdOrCtrl+K", click: () => sendCommand("search") },
+        { id: "search", label: tr("menu.search"), accelerator: "CmdOrCtrl+K", click: () => sendCommand("view.search") },
         { type: "separator" },
         { role: "resetZoom", label: tr("menu.resetZoom") },
         { role: "zoomIn", label: tr("menu.zoomIn") },

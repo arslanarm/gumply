@@ -49,6 +49,9 @@ export interface TagsPaneProps {
  * first (or by name), `#a/b` nested under `#a`. Click a tag to list its
  * pages; ✎ or right-click to rename it everywhere.
  */
+/** #snuin2ja: a window event that opens the tags pane (Cmd+K → Show tags). */
+export const SHOW_TAGS_EVENT = "gumply:show-tags";
+
 export function TagsPane({ pages, onOpenTag, onRenameTag }: TagsPaneProps) {
   const t = useT();
   const [open, setOpen] = useState(() => read(OPEN_KEY) === "open");
@@ -77,6 +80,17 @@ export function TagsPane({ pages, onOpenTag, onRenameTag }: TagsPaneProps) {
   }, [open, pages]);
 
   const tree = useMemo(() => (tags ? buildTagTree(tags, sort) : []), [tags, sort]);
+
+  // #snuin2ja: Cmd+K → Show tags opens the pane and puts focus on its header.
+  useEffect(() => {
+    const onShow = () => {
+      setOpen(true);
+      write(OPEN_KEY, "open");
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="tags-pane-toggle"]')?.focus());
+    };
+    window.addEventListener(SHOW_TAGS_EVENT, onShow);
+    return () => window.removeEventListener(SHOW_TAGS_EVENT, onShow);
+  }, []);
 
   const toggleOpen = () => {
     setOpen(!open);

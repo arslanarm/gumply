@@ -27,7 +27,8 @@ import {
 import { ImageBlock, FileAttachment } from "../editor/attachments/nodes.js";
 import { InlineImage } from "../editor/attachments/inline-image.js";
 import { setAttachmentPicker } from "../editor/attachments/store.js";
-import { BlockEditing } from "../editor/block-editing.js";
+import { BlockEditing, turnInto as turnIntoBlock, type TurnIntoKind } from "../editor/block-editing.js";
+import { blockAt } from "../lib/blocks.js";
 import { NotionCodeBlock } from "../editor/code-block.js";
 import { pastedTablesToMarkdown } from "../editor/paste-table.js";
 import { EmptyLineParagraph } from "../editor/empty-lines.js";
@@ -73,7 +74,7 @@ import { MarkdownBulletList, MarkdownTaskList, setListStyle } from "../editor/ra
 import { MarkdownTaskListFix, TaskListTight } from "../editor/markdown-task-list-fix.js";
 import { ShortcutHistory } from "../editor/shortcut-history.js";
 import { createSlashExtension, type SlashHandlers } from "../editor/slash-extension.js";
-import type { SlashItem } from "../editor/slash-items.js";
+import { SLASH_ITEMS, type SlashItem } from "../editor/slash-items.js";
 import { AccessibleTaskItem } from "../editor/task-item.js";
 import { TaskShortcut } from "../editor/task-shortcut.js";
 import { setWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
@@ -119,6 +120,13 @@ export interface EditorControls {
   headingElement: (pos: number) => HTMLElement | null;
   /** Scroll a heading near the top of the page, caret at its end, focus in the editor. */
   revealHeading: (pos: number) => void;
+  /**
+   * #snuin2ja (Cmd+K → Insert: …): run a `/` menu item at the caret, in the
+   * empty block the caret is in, else in a new one right below its block.
+   */
+  insertBlock: (key: string) => boolean;
+  /** #snuin2ja (Cmd+K → Turn into: …): the block at the caret. */
+  turnInto: (kind: TurnIntoKind) => boolean;
 }
 
 export interface EditorProps {
@@ -891,6 +899,28 @@ export function Editor({
         editor.view.focus();
         const dom = editor.view.nodeDOM(pos);
         if (dom instanceof HTMLElement) revealNearTop(dom);
+      },
+      insertBlock: (key) => {
+        const item = SLASH_ITEMS.find((candidate) => candidate.key === key);
+        if (!item) return false;
+        const { $from } = editor.state.selection;
+        const emptyText = $from.parent.isTextblock && $from.parent.content.size === 0 && $from.parent.type.name === "paragraph";
+        if (!emptyText) {
+          const block = blockAt(editor.state.doc, $from.pos);
+          const paragraph = editor.state.schema.nodes.paragraph;
+          if (!block || !paragraph) return false;
+          const tr = editor.state.tr.insert(block.to, paragraph.create());
+          tr.setSelection(TextSelection.create(tr.doc, block.to + 1));
+          editor.view.dispatch(tr);
+        }
+        editor.view.focus();
+        const at = editor.state.selection.from;
+        item.run(editor, { from: at, to: at });
+        return true;
+      },
+      turnInto: (kind) => {
+        const block = blockAt(editor.state.doc, editor.state.selection.from);
+        return block ? turnIntoBlock(editor, block, kind) : false;
       },
       flush: () => autosave.flush(),
       pageId: page.id,
