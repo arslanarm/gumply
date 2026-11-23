@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -714,6 +714,11 @@ async function statAfterRename(path: string, temp: import("node:fs").Stats, writ
   } finally {
     await handle?.close().catch(() => undefined);
   }
+}
+
+/** #2wjvk3br: a file's exact bytes, for "only the stat moved" (never the record's parsed fields). */
+function bytesHash(bytes: string | Buffer): string {
+  return createHash("sha256").update(bytes).digest("base64");
 }
 
 function mtimeVersion(mtimeMs: number): string {
@@ -1485,9 +1490,14 @@ export class VaultStore {
       const current = this.pages.get(id);
       if (current === record) continue;
       if (!current || this.recordSignature(current) !== this.recordSignature(record)) changedIds.push(id);
-      // #2wjvk3br: the same content with a moved stat (a same-bytes rewrite or a touch):
-      // take the new time and version now, whether or not anything else changed.
-      else this.adoptSameBytes(current, record);
+      else if (current.fileMtimeMs !== record.fileMtimeMs || current.updated !== record.updated) {
+        // #2wjvk3br: the very same bytes with a moved stat (a same-bytes rewrite or a touch):
+        // take the new time and version now, silently. Other bytes the record doesn't show
+        // (an unknown frontmatter key, YAML spacing, line endings) are a change: the new
+        // record replaces this one, so its version moves and a stale save is refused.
+        if (this.sameBytesOnDisk(current, record)) this.adoptSameBytes(current, record);
+        else changedIds.push(id);
+      }
     }
     const removedIds: PageId[] = [];
     for (const id of this.pages.keys()) if (!next.has(id)) removedIds.push(id);
@@ -1640,8 +1650,31 @@ export class VaultStore {
     }
     fresh.parentId = record.parentId;
     if (this.recordSignature(fresh) !== this.recordSignature(record)) return false;
+    if (!this.sameBytesOnDisk(record, fresh)) return false;
     this.adoptSameBytes(record, fresh);
     return true;
+  }
+
+  /**
+   * #2wjvk3br: the hash of a file's bytes at each of its last few stats, from
+   * every read and every write of ours. Unknown means "not the same".
+   */
+  private readonly bytesAt = new Map<string, Array<{ mtimeMs: number; hash: string }>>();
+
+  private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer): void {
+    const hash = bytesHash(bytes);
+    const kept = (this.bytesAt.get(filePath) ?? []).filter((entry) => entry.mtimeMs !== mtimeMs);
+    kept.push({ mtimeMs, hash });
+    this.bytesAt.set(filePath, kept.slice(-3));
+  }
+
+  /** Did `current`'s file and `fresh`'s (the same path, re-read) hold exactly the same bytes? */
+  private sameBytesOnDisk(current: PageRecord, fresh: PageRecord): boolean {
+    if (current.filePath !== fresh.filePath) return false;
+    const seen = this.bytesAt.get(current.filePath) ?? [];
+    const before = seen.find((entry) => entry.mtimeMs === current.fileMtimeMs);
+    const now = seen.find((entry) => entry.mtimeMs === fresh.fileMtimeMs);
+    return before !== undefined && now !== undefined && before.hash === now.hash;
   }
 
   private recordSignature(record: PageRecord): string {
@@ -2864,6 +2897,7 @@ export class VaultStore {
       throw error;
     }
     stats = await statAfterRename(record.filePath, stats, next);
+    this.noteBytes(record.filePath, stats.mtimeMs, next);
     const meta = canvasMeta(board);
     record.board = board;
     record.content = canvasText(board);
@@ -3039,6 +3073,7 @@ export class VaultStore {
       throw error;
     }
     stats = await statAfterRename(record.filePath, stats, text);
+    this.noteBytes(record.filePath, stats.mtimeMs, text);
     record.baseSource = text;
     record.fileMtimeMs = stats.mtimeMs;
     record.updated = mtimeVersion(stats.mtimeMs);
@@ -3047,6 +3082,7 @@ export class VaultStore {
   /** A `.base` file (D34): title = file name, dates from the file, kept as text. */
   private async readBaseRecord(absolute: string, id: PageId): Promise<PageRecord> {
     const { raw, stats } = await readConsistent(absolute);
+    this.noteBytes(absolute, stats.mtimeMs, raw);
     return {
       id,
       title: baseStem(id),
@@ -4846,6 +4882,7 @@ export class VaultStore {
     if (isBoardId(absolute)) return this.readBoardRecord(absolute, id);
     if (isBaseId(absolute)) return this.readBaseRecord(absolute, id);
     const { raw, stats } = await readConsistent(absolute);
+    this.noteBytes(absolute, stats.mtimeMs, raw);
     const { frontmatter, content } = parseFrontmatter(raw);
 
     const created = toIso(frontmatter.created) ?? stats.birthtime.toISOString();
@@ -4893,6 +4930,7 @@ export class VaultStore {
    */
   private async readBoardRecord(absolute: string, id: PageId): Promise<PageRecord> {
     const { raw, stats } = await readConsistent(absolute);
+    this.noteBytes(absolute, stats.mtimeMs, raw);
     let board: CanvasBoard;
     let repaired = false;
     try {
@@ -5774,8 +5812,10 @@ export class VaultStore {
       this.markOwnWrite(filePath);
       await rename(temporary, filePath);
       await this.rememberWrite(filePath, text);
+      const { mtimeMs } = await statAfterRename(filePath, written, text);
+      this.noteBytes(filePath, mtimeMs, text);
       return {
-        mtimeMs: (await statAfterRename(filePath, written, text)).mtimeMs,
+        mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
         // caller uses the file time (`mtimeVersion`), as for plain notes.
         frontmatter: !plain && versionKey,

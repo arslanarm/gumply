@@ -91,6 +91,29 @@ describe("a same-bytes rewrite or a touch is never a conflict (#2wjvk3br)", () =
     }
   });
 
+  it("other bytes the record doesn't show (an unknown frontmatter key, CRLF) are still a conflict, never overwritten", async () => {
+    const edits: Array<[string, (text: string) => string]> = [
+      ["an unknown frontmatter key", (text) => text.replace(/^---\n/, "---\nreviewed: yes\n")],
+      ["line endings", (text) => text.replace(/\n/g, "\r\n")],
+    ];
+    for (const [what, edit] of edits) {
+      for (const refresh of [false, true]) {
+        const { dir, store } = await vault();
+        const page = await store.create({ title: "Notes", content: "One." });
+        const file = join(dir, "Notes.md");
+        const before = await readFile(file, "utf8");
+        expect(before.startsWith("---\n"), "the page has frontmatter").toBe(true);
+        const theirs = edit(before);
+        await writeFile(file, theirs);
+        const later = new Date(Date.now() + 9_000);
+        await utimes(file, later, later);
+        if (refresh) await store.rescan();
+        await expect(store.update(page.id, { content: "Mine.", expectedUpdated: page.updated }), `${what}, refresh=${refresh}`).rejects.toMatchObject({ status: 409 });
+        expect(await readFile(file, "utf8"), `${what}, refresh=${refresh}`).toBe(theirs);
+      }
+    }
+  });
+
   it("an old version is accepted only while nothing else was written: after a later save it's a conflict again", async () => {
     const { dir, store } = await vault();
     const page = await store.create({ title: "Notes", content: "One." });
