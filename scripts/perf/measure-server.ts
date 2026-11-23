@@ -78,6 +78,10 @@ function markdownFiles(root: string): string[] {
     answers.push(performance.now() - start);
     await store.whenIndexed();
     indexed.push(performance.now() - start);
+    // One store at a time, as in the app: stop this one's background cache
+    // warm-up, or it competes with the next open.
+    store.stopWatching();
+    await store.warmed;
   }
   const rest = (times: number[]) => `first run; then ${times.slice(1).map((t) => t.toFixed(0)).join(", ")} ms (OS cache warm)`;
   report("cold open: VaultStore.init (scan + index)", indexed[0]!, rest(indexed));
