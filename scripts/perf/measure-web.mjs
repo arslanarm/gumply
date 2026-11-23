@@ -137,7 +137,15 @@ try {
     result.graph = (await marks()).graph;
     // Settled and fitted, and the longest task on the way there.
     await page
-      .waitForFunction(() => document.querySelector('[data-testid="graph-canvas"]')?.getAttribute("data-graph-ready") === "true", null, { timeout: 300_000 })
+      .waitForFunction(
+        () => {
+          const canvas = document.querySelector('[data-testid="graph-canvas"]');
+          // Settled: ready, and no worker layout still arranging (@opus-editor, #xb4b54gr).
+          return canvas?.getAttribute("data-graph-ready") === "true" && !canvas.hasAttribute("data-graph-arranging");
+        },
+        null,
+        { timeout: 300_000 },
+      )
       .catch(async (error) => {
         const state = await page.evaluate(() => {
           const canvas = document.querySelector('[data-testid="graph-canvas"]');
