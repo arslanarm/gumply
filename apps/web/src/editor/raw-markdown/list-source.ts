@@ -139,7 +139,7 @@ export const MarkdownListSource = Extension.create({
 
 /**
  * The numbers to write for an ordered list: as recorded when every item has
- * one, they rise, and the first is the list's start; otherwise null
+ * one, they never fall, and the first is the list's start; otherwise null
  * (renumber).
  */
 export function recordedNumbers(node: PMNode, start: number): string[] | null {
@@ -151,7 +151,9 @@ export function recordedNumbers(node: PMNode, start: number): string[] | null {
   if (recorded.length !== node.childCount || recorded.length === 0) return null;
   const values = recorded.map((value) => Number(value.trim()));
   if (values[0] !== start) return null;
-  for (let i = 1; i < values.length; i += 1) if (!(values[i]! > values[i - 1]!)) return null;
+  // Never falling: equal neighbours are kept as written (`1.` `1.` `1.`, or an item dropped in
+  // with its neighbour's number, #2kafk39m), as CommonMark renders them in sequence anyway.
+  for (let i = 1; i < values.length; i += 1) if (!(values[i]! >= values[i - 1]!)) return null;
   // Keep padding relative to the least-indented number.
   const least = Math.min(...recorded.map((value) => value.length - value.trimStart().length));
   return recorded.map((value) => value.slice(least));

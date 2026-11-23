@@ -97,6 +97,111 @@ export function moveBlockTo(
   return tr.setMeta(BLOCK_MOVE_META, true);
 }
 
+/**
+ * #2kafk39m: a drop `moveBlockTo` refuses because the block can't stand there as it is, converted
+ * the way Notion does, changing only the moved block's lines (D37):
+ * - a list item dropped where a list item can't go (top level, a column, a callout) becomes its own
+ *   one-item list of the same kind, its own lines byte for byte;
+ * - a paragraph dropped between the items of a list becomes an item of that list: a to-do (unchecked)
+ *   in a task list, else a list item; in a numbered list it takes the number its neighbours imply,
+ *   and the other items keep theirs.
+ * Anything else (a heading, code, table, image… into a list) is null: the caller shows no drop.
+ */
+export function moveBlockConverting(
+  state: EditorState,
+  block: BlockRef,
+  targetPos: number,
+): Transaction | null {
+  if (targetPos >= block.from && targetPos <= block.to) return null;
+  const name = block.node.type.name;
+  const { parent: sourceParent } = parentInfo(state.doc, block);
+
+  // The range to take out: a list's only item takes its (then empty) list with it.
+  let from = block.from;
+  let to = block.to;
+  if (ITEM_NAMES.has(name) && LIST_NAMES.has(sourceParent.type.name) && sourceParent.childCount === 1) {
+    const $before = state.doc.resolve(block.from);
+    from = $before.before($before.depth);
+    to = $before.after($before.depth);
+    if (targetPos >= from && targetPos <= to) return null;
+  }
+
+  const tr = state.tr.delete(from, to);
+  const mapped = tr.mapping.map(targetPos, targetPos > to ? -1 : 1);
+  const $target = tr.doc.resolve(mapped);
+  const at = $target.index();
+  const into = $target.parent;
+
+  let node: ProseMirrorNode | null = null;
+  if (ITEM_NAMES.has(name) && LIST_NAMES.has(sourceParent.type.name) && !LIST_NAMES.has(into.type.name)) {
+    // A list item out of its list: its own one-item list of the same kind.
+    const list = sourceParent.type.createAndFill(null, block.node);
+    if (list && into.canReplaceWith(at, at, list.type)) node = list;
+  } else if (name === "paragraph" && LIST_NAMES.has(into.type.name)) {
+    const itemType = into.type.name === "taskList" ? state.schema.nodes.taskItem : state.schema.nodes.listItem;
+    if (itemType) {
+      const attrs: Record<string, unknown> = {};
+      if (itemType.name === "taskItem") attrs.checked = false;
+      if (into.type.name === "orderedList") {
+        const number = impliedNumber(into, at);
+        if (number !== null) attrs.markdownNumber = number;
+      }
+      const item = itemType.createAndFill(attrs, withoutSourceIndent(block.node));
+      if (item && into.canReplaceWith(at, at, item.type)) node = item;
+    }
+  }
+  if (!node) return null;
+
+  tr.insert(mapped, node);
+  tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(mapped + 2, tr.doc.content.size))));
+  return keepDocValid(tr, state).setMeta(BLOCK_MOVE_META, true);
+}
+
+/**
+ * A paragraph that becomes a list item: its soft breaks forget the indent their next line had where
+ * the paragraph came from (#iatezw4m's `lead`, and a quote's own prefix), keeping the whitespace
+ * around the newline. The serializer then indents those lines as the item requires, so they stay
+ * inside it (only the moved block's lines change, #2kafk39m).
+ */
+function withoutSourceIndent(paragraph: ProseMirrorNode): ProseMirrorNode {
+  let changed = false;
+  const children: ProseMirrorNode[] = [];
+  paragraph.forEach((child) => {
+    const space = child.attrs.markdownSpace as string[] | null | undefined;
+    if (Array.isArray(space) && space.length > 2) {
+      changed = true;
+      children.push(child.type.create({ ...child.attrs, markdownSpace: space.slice(0, 2) }, child.content, child.marks));
+    } else children.push(child);
+  });
+  return changed ? paragraph.type.create(paragraph.attrs, children, paragraph.marks) : paragraph;
+}
+
+/**
+ * The number a new item at `index` of an ordered list should be written with, so that no other item
+ * is renumbered (list-source `recordedNumbers` keeps numbers that never fall): the one before it
+ * plus one (never past the one after it), or the first item's own number at the top; all-ones lists
+ * stay all ones. Null when the list has no recorded numbers (it is renumbered anyway).
+ */
+export function impliedNumber(list: ProseMirrorNode, index: number): string | null {
+  const numbers: string[] = [];
+  list.forEach((child) => {
+    if (typeof child.attrs.markdownNumber === "string") numbers.push(child.attrs.markdownNumber);
+  });
+  if (numbers.length !== list.childCount || numbers.length === 0) return null;
+  const values = numbers.map((value) => Number(value.trim()));
+  const pad = (n: number, like: string) => {
+    const lead = like.length - like.trimStart().length;
+    const width = like.trim().length;
+    return " ".repeat(Math.max(0, lead + width - String(n).length)) + String(n);
+  };
+  if (values.every((value) => value === 1)) return pad(1, numbers[0]!);
+  if (index === 0) return pad(values[0]!, numbers[0]!);
+  const previous = values[index - 1]!;
+  let n = previous + 1;
+  if (index < values.length && n > values[index]!) n = values[index]!;
+  return pad(n, numbers[index - 1]!);
+}
+
 /** Move the block one sibling up or down (top level or inside its list). */
 export function moveBlock(
   state: EditorState,
