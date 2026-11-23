@@ -11,6 +11,8 @@ import { FileAttachmentView } from "../../components/FileAttachmentView.js";
 import { ImageBlockView } from "../../components/ImageBlockView.js";
 import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
+import { NodeSelection } from "@tiptap/pm/state";
+import { embedWidth, imageWidthOf, splitAltWidth, steppedWidth, widthPatch } from "./image-width.js";
 import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
 /** `|` escaped in a written label, so the link is safe inside a table cell too (#eg65ktng). */
@@ -69,6 +71,28 @@ export const ImageBlock = Node.create({
     return ReactNodeViewRenderer(ImageBlockView);
   },
 
+  addKeyboardShortcuts() {
+    // #e9bd64bb: with an image block selected, Shift+←/→ step its width through
+    // 25/50/75/100% of the column (100% writes no size). One undo step each.
+    const step = (direction: 1 | -1) => () => {
+      const { state, view } = this.editor;
+      const selection = state.selection;
+      if (!(selection instanceof NodeSelection) || selection.node.type.name !== this.name) return false;
+      const dom = view.nodeDOM(selection.from) as HTMLElement | null;
+      const column = dom?.clientWidth ?? 0;
+      if (column <= 0) return false;
+      const current = imageWidthOf(selection.node.attrs);
+      const next = steppedWidth(current, column, direction);
+      if (next === current) return true;
+      const attrs = { ...selection.node.attrs, ...widthPatch(selection.node.attrs, next) };
+      const tr = state.tr.setNodeMarkup(selection.from, undefined, attrs);
+      tr.setSelection(NodeSelection.create(tr.doc, selection.from));
+      view.dispatch(tr);
+      return true;
+    };
+    return { "Shift-ArrowLeft": step(-1), "Shift-ArrowRight": step(1) };
+  },
+
   addStorage() {
     return {
       markdown: {
@@ -94,8 +118,13 @@ export const ImageBlock = Node.create({
           // #8k4ssrkb: the file it resolves to, wherever it lives (else the old guess).
           const href = node.attrs.obsidian ? hrefForAttachment(obsidianVaultPath(node.attrs.obsidian as string) ?? src) : src;
           const escaped = href.replace(/[()]/g, "\\$&");
+          // #e9bd64bb (D46): the width ends the alt, `![Caption|300](…)`, unescaped; an
+          // embed's `|300` comes along when it becomes Markdown.
+          const { text, size } = splitAltWidth(alt);
+          const embedded = node.attrs.obsidian ? embedWidth(node.attrs.obsidian as string) : null;
+          const sizeText = size ?? (embedded === null ? null : String(embedded));
           state.write(
-            `![${escapePipes(state.esc(alt))}](${escaped}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`,
+            `![${escapePipes(state.esc(text))}${sizeText === null ? "" : `|${sizeText}`}](${escaped}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`,
           );
           state.closeBlock(node);
         },

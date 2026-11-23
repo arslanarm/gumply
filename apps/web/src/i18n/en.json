@@ -691,7 +691,10 @@
     "saving": "Saving…",
     "save": "Save to vault",
     "captionPlaceholder": "Add a caption",
-    "captionLabel": "Image caption"
+    "captionLabel": "Image caption",
+    "resizeHint": "Drag to resize: snaps to 25, 50, 75 or 100% of the page (Alt: any width). With the image selected, Shift+← and Shift+→ too.",
+    "widthAnnounce": "Image width {{percent}}%",
+    "unavailable": "Image unavailable · {{name}}"
   },
   "table": {
     "insertRowAbove": "Insert row above",

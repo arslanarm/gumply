@@ -3987,6 +3987,44 @@ input {
   outline-offset: 2px;
 }
 
+/* #e9bd64bb (D46): a block image's width (Obsidian's `|N`), and side handles
+   on the selected image that resize it. */
+.image-frame {
+  position: relative;
+  max-width: 100%;
+}
+
+.image-frame img {
+  width: 100%;
+}
+
+.image-frame:not([style]) img {
+  width: auto;
+}
+
+.image-resize-handle {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: min(48px, 40%);
+  min-height: 24px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  border: 1px solid var(--panel);
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.image-resize-handle.is-left {
+  left: 6px;
+}
+
+.image-resize-handle.is-right {
+  right: 6px;
+}
+
 .image-caption {
   border: 0;
   background: transparent;
