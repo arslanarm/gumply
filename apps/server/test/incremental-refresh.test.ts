@@ -537,4 +537,58 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
       });
     }
   });
+
+  describe("the check when a burst ends (#35q6kt6e)", () => {
+    /**
+     * A burst of `count` outside edits to known notes the watcher reports (so
+     * its refreshes take the scoped path and walk nothing), plus new files in
+     * `missed` it never hears of.
+     */
+    async function burst(count: number, missed: string[]) {
+      const store = await vaultOf(count);
+      const internals = store as unknown as Internals & { burstCheckWithoutWatchers: boolean };
+      internals.burstCheckWithoutWatchers = true;
+      const refresh = internals.refreshFromDisk;
+      const fullAfterBurst: number[] = [];
+      internals.refreshFromDisk = async function (this: unknown, scope) {
+        if (scope.kind === "all" && !store.syncing) fullAfterBurst.push(Date.now());
+        return refresh.call(this, scope);
+      };
+      for (let i = 0; i < count; i++) {
+        await writeFile(join(dir, `Note ${i}.md`), `Synced edit ${i}.\n`);
+        internals.onWatchEvent(dir, `Note ${i}.md`);
+      }
+      expect(store.syncing).toBe(true);
+      for (const name of missed) await writeFile(join(dir, `${name}.md`), "No event was ever sent for this.\n");
+      return { store, fullAfterBurst, restore: () => (internals.refreshFromDisk = refresh) };
+    }
+
+    it("a change the watcher missed is picked up, and logged by name", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { store, restore } = await burst(60, ["Missed"]);
+      try {
+        await expect.poll(() => store.list().some((meta) => meta.id === "Missed"), { timeout: 10_000, interval: 100 }).toBe(true);
+        expect(store.get("Note 59").content).toContain("Synced edit 59");
+        expect(warn).toHaveBeenCalledWith("[gumply] watcher missed 1 change: Missed");
+      } finally {
+        warn.mockRestore();
+        restore();
+        store.stopWatching();
+      }
+    }, 20_000);
+
+    it("a burst the watcher saw completely: the check runs and logs nothing", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { store, fullAfterBurst, restore } = await burst(60, []);
+      try {
+        await expect.poll(() => fullAfterBurst.length, { timeout: 10_000, interval: 100 }).toBeGreaterThan(0);
+        expect(store.get("Note 59").content).toContain("Synced edit 59");
+        expect(warn.mock.calls.some((call) => String(call[0]).includes("watcher missed"))).toBe(false);
+      } finally {
+        warn.mockRestore();
+        restore();
+        store.stopWatching();
+      }
+    }, 20_000);
+  });
 });

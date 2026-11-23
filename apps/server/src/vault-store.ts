@@ -729,6 +729,12 @@ export class VaultStore {
   private watchFirstEventAt: number | null = null;
   /** Recent watcher event times, for the "Syncing changes…" state (§8). */
   private watchEventTimes: number[] = [];
+  /** The check after a burst (#35q6kt6e), armed while "Syncing" is on. */
+  private burstCheckTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Test hook: arm the burst check even with no directory watchers. */
+  private burstCheckWithoutWatchers = false;
+  /** Ids the last refresh added, changed or removed (the burst check reports them). */
+  private lastRefreshChanges: PageId[] = [];
   private syncingUntil = 0;
   /** Queued tasks that aren't rescans: a pending rescan waits for them (save priority, §8). */
   private pendingWrites = 0;
@@ -810,6 +816,10 @@ export class VaultStore {
       clearTimeout(this.watchTimer);
       this.watchTimer = null;
     }
+    if (this.burstCheckTimer !== null) {
+      clearTimeout(this.burstCheckTimer);
+      this.burstCheckTimer = null;
+    }
     for (const watcher of this.directoryWatchers.values()) watcher.close();
     this.directoryWatchers.clear();
     if (this.pruneTimer) clearTimeout(this.pruneTimer);
@@ -889,7 +899,57 @@ export class VaultStore {
   private noteWatchEvent(now = Date.now()): void {
     this.watchEventTimes.push(now);
     while (this.watchEventTimes.length > 0 && now - this.watchEventTimes[0]! > SYNC_WINDOW_MS) this.watchEventTimes.shift();
-    if (this.watchEventTimes.length > SYNC_BURST_EVENTS) this.syncingUntil = now + SYNC_WINDOW_MS;
+    if (this.watchEventTimes.length > SYNC_BURST_EVENTS) {
+      this.syncingUntil = now + SYNC_WINDOW_MS;
+      this.armBurstCheck();
+    }
+  }
+
+  /**
+   * #35q6kt6e: when a burst ends ("Syncing" turns off), one full stat walk
+   * checks the watcher's work. Network shares and sync mounts can drop events;
+   * anything this walk changes is a change the watcher missed, and it is
+   * logged by path, so a gap shows up in logs and tests instead of staying
+   * silent. It waits for the watcher's own pending rescans first, so it never
+   * reports a change those were about to pick up.
+   */
+  private armBurstCheck(delay = Math.max(0, this.syncingUntil - Date.now()) + 50): void {
+    if (!this.watching && !this.burstCheckWithoutWatchers) return;
+    if (this.burstCheckTimer !== null) clearTimeout(this.burstCheckTimer);
+    this.burstCheckTimer = setTimeout(() => {
+      this.burstCheckTimer = null;
+      void this.runBurstCheck().catch((error: unknown) => console.warn("[gumply] the check after a burst of outside changes failed:", error));
+    }, delay);
+    this.burstCheckTimer.unref?.();
+  }
+
+  private watcherBusy(): boolean {
+    return this.watchTimer !== null || this.pendingFull || this.pendingPaths.size > 0;
+  }
+
+  private async runBurstCheck(): Promise<void> {
+    if (this.syncing) return this.armBurstCheck();
+    if (this.watcherBusy()) return this.armBurstCheck(RESCAN_QUIET_MS + 100);
+    await this.enqueue(
+      async () => {
+        // Events that came in since: let their own rescan run first, then check again.
+        if (this.watcherBusy() || this.syncing) {
+          this.armBurstCheck(RESCAN_QUIET_MS + 100);
+          return;
+        }
+        await this.refreshFromDisk({ kind: "all" });
+        const missed = this.lastRefreshChanges;
+        if (missed.length > 0) {
+          const shown = missed.slice(0, 10).join(", ");
+          console.warn(`[gumply] watcher missed ${missed.length} change${missed.length === 1 ? "" : "s"}: ${shown}${missed.length > 10 ? ", …" : ""}`);
+        }
+        if (this.syncDirectoryWatchers() > 0) {
+          this.pendingFull = true;
+          this.scheduleRescan();
+        }
+      },
+      { rescan: true },
+    );
   }
 
   /** v1.29 (§8): another app (a sync tool) is changing many files right now. */
@@ -1173,13 +1233,10 @@ export class VaultStore {
       const current = this.pages.get(id);
       if (current !== record && (!current || this.recordSignature(current) !== this.recordSignature(record))) changedIds.push(id);
     }
-    let removed = false;
-    for (const id of this.pages.keys()) {
-      if (!next.has(id)) {
-        removed = true;
-        break;
-      }
-    }
+    const removedIds: PageId[] = [];
+    for (const id of this.pages.keys()) if (!next.has(id)) removedIds.push(id);
+    const removed = removedIds.length > 0;
+    this.lastRefreshChanges = [...changedIds, ...removedIds];
     const changed = changedIds.length > 0 || removed;
     const foldersChanged = VaultStore.folderSignature(folders) !== VaultStore.folderSignature(this.folders);
     this.folders = folders;
