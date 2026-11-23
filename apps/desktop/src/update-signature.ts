@@ -167,6 +167,30 @@ export async function verifyDownload(
   return { ok: true, sha256: actual, keyId: result.keyId };
 }
 
+/** The most a sums or `.sig` body may be (the real ones are a few hundred bytes). */
+export const MAX_SIGNED_FILE_BYTES = 256 * 1024;
+/** How long each of the two GETs may take. */
+export const SIGNED_FILE_TIMEOUT_MS = 30_000;
+
+/** Read a response body, refusing more than `max` bytes. */
+export async function readCapped(body: ReadableStream<Uint8Array> | null, max = MAX_SIGNED_FILE_BYTES): Promise<Buffer> {
+  if (!body) return Buffer.alloc(0);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  const reader = body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error(`more than ${max} bytes`);
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
 /** The two files next to a release's installers. */
 export const SUMS_FILE = "SHA256SUMS.txt";
 export const SIG_FILE = "SHA256SUMS.txt.sig";
@@ -175,7 +199,7 @@ export interface VerifierDeps {
   keys: readonly UpdatePublicKey[];
   /** Where a version's release files live, ending in "/" (GitHub: `…/releases/download/v<version>/`). */
   baseUrl(version: string): string;
-  /** A GET: the body, or a rejection (a non-2xx status rejects too). */
+  /** A GET: the body, or a rejection (a non-2xx status rejects with an `HttpStatusError`). */
   get(url: string): Promise<Buffer>;
   /** The installer's exact release file name for a version (see `installerName`). */
   installerName(version: string): string | null;
@@ -186,9 +210,28 @@ export interface VerifierDeps {
  * The controller's `verify` for main.ts, or null when no key is configured
  * (no keys: no signature check, so no extra requests). It fetches the sums
  * and the `.sig` (2 GETs, after a download only) and checks the file. A fetch
- * that fails (network, 404) is a failure, never a pass.
+ * that fails is never a pass: a 4xx fails verification, anything else
+ * (network, timeout, 5xx) is `retry`.
  */
-export function makeVerifier(deps: VerifierDeps): ((download: { version: string; downloadedFile: string }) => Promise<{ ok: true; sha256: string } | { ok: false; reason: string }>) | null {
+/** A GET answered with a non-2xx status. */
+export class HttpStatusError extends Error {
+  constructor(
+    readonly status: number,
+    what: string,
+  ) {
+    super(`${status} for ${what}`);
+  }
+}
+
+/**
+ * What the controller gets back. `retry`: the signed files couldn't be fetched
+ * for a passing reason (network, timeout, a 5xx): not installed either, but
+ * tried again at the next check instead of being marked as failing
+ * verification. A 4xx (e.g. a release without a `.sig`) is a real failure.
+ */
+export type VerifyOutcome = { ok: true; sha256: string } | { ok: false; reason: string; retry?: boolean };
+
+export function makeVerifier(deps: VerifierDeps): ((download: { version: string; downloadedFile: string }) => Promise<VerifyOutcome>) | null {
   if (deps.keys.length === 0) return null;
   return async ({ version, downloadedFile }) => {
     const base = deps.baseUrl(version);
@@ -197,7 +240,8 @@ export function makeVerifier(deps: VerifierDeps): ((download: { version: string;
     try {
       [sums, sig] = await Promise.all([deps.get(`${base}${SUMS_FILE}`), deps.get(`${base}${SIG_FILE}`)]);
     } catch (error) {
-      return { ok: false, reason: `couldn't fetch the signed checksums: ${error instanceof Error ? error.message : String(error)}` };
+      const missing = error instanceof HttpStatusError && error.status >= 400 && error.status < 500;
+      return { ok: false, ...(missing ? {} : { retry: true }), reason: `couldn't fetch the signed checksums: ${error instanceof Error ? error.message : String(error)}` };
     }
     const name = deps.installerName(version);
     if (!name) return { ok: false, reason: "no installer name for this kind of install" };
