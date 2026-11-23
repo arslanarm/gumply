@@ -65,6 +65,12 @@ export function consumeNewVaultPage(): PageId | null {
 }
 
 let vaultSyncing = false;
+let vaultIndexing = false;
+
+/** Whether the last page list said the vault's links are still being indexed (#g95wkd9y, spec/api v1.33). */
+export function isVaultIndexing(): boolean {
+  return vaultIndexing;
+}
 
 /** Whether the last page list said a sync tool is changing many files (spec/sync-conflicts §8). */
 export function isVaultSyncing(): boolean {
@@ -95,7 +101,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const files = response.headers.get("x-gumply-files");
   if (files !== null) noteFileIndexVersion(files);
   // v1.29 (D43): the page list says whether a sync tool is changing many files.
-  if (path === "/pages" || path.startsWith("/pages?")) vaultSyncing = response.headers.get("x-gumply-syncing") === "1";
+  if (path === "/pages" || path.startsWith("/pages?")) {
+    vaultSyncing = response.headers.get("x-gumply-syncing") === "1";
+    vaultIndexing = response.headers.get("x-gumply-indexing") === "1";
+  }
 
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
