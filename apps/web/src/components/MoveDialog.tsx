@@ -93,20 +93,25 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
         data-testid="move-dialog"
         onKeyDown={onKeyDown}
       >
-        <input
-          ref={inputRef}
-          className="quick-switcher-input"
-          data-testid="move-input"
-          type="text"
-          value={query}
-          placeholder={t("move.placeholder", { title: page.title })}
-          aria-label={t("move.inputLabel", { title: page.title })}
-          aria-controls="move-results"
-          aria-activedescendant={activeIndex >= 0 ? `move-option-${activeIndex}` : undefined}
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <div className="quick-switcher-input-row">
+          <span className="quick-switcher-input-icon" aria-hidden="true">
+            <Icon name="search" size={16} />
+          </span>
+          <input
+            ref={inputRef}
+            className="quick-switcher-input"
+            data-testid="move-input"
+            type="text"
+            value={query}
+            placeholder={t("move.placeholder", { title: page.title })}
+            aria-label={t("move.inputLabel", { title: page.title })}
+            aria-controls="move-results"
+            aria-activedescendant={activeIndex >= 0 ? `move-option-${activeIndex}` : undefined}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
 
         <div
           className="quick-switcher-results"
