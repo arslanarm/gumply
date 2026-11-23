@@ -109,23 +109,19 @@ test('a dialog whose code fails to download shows a small error that Esc closes'
   await expect(page.getByTestId('editor-content')).toBeVisible();
   await page.getByTestId('sidebar').click({ position: { x: 5, y: 5 } });
 
-  // `?` is read by a window listener that React re-subscribes after each
-  // dialog state change; a press that lands before that re-subscribe is
-  // ignored (#9a393rp5). Wait on the outcome: press until the dialog shows.
+  // Both waits below are for a dialog's code to load (or fail to) under
+  // load, not for a dropped key: a single `?` each, with a 15 s ceiling
+  // (#9a393rp5; #gbq6i6iu showed no key is dropped).
+  await page.keyboard.press('?');
   const error = page.getByTestId('dialog-load-error');
-  await expect(async () => {
-    await page.keyboard.press('?');
-    await expect(error).toContainText('Could not open this.', { timeout: 1_000 });
-  }).toPass();
+  await expect(error).toContainText('Could not open this.', { timeout: 15_000 });
   await page.keyboard.press('Escape');
   await expect(error).toHaveCount(0);
 
   await unblock();
-  const shortcuts = page.getByTestId('shortcuts-dialog');
-  await expect(async () => {
-    await page.keyboard.press('?');
-    await expect(shortcuts).toBeVisible({ timeout: 1_000 });
-  }).toPass();
+  await page.keyboard.press('?');
+  // The shortcuts part downloads its code now (the earlier fetch was blocked).
+  await expect(page.getByTestId('shortcuts-dialog')).toBeVisible({ timeout: 15_000 });
 });
 
 test('after a rebuild (graph chunk 404) the graph offers Reload, which brings it back (#fzfrkpta)', async ({
