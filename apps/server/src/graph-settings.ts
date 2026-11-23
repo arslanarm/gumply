@@ -3,7 +3,8 @@
  *
  * Without it, a vault Obsidian set up starts from `.obsidian/graph.json`
  * (colour groups, search and the four filters), read on each `GET` until the
- * first `PUT` writes `.gumply/graph.json`. Gumply never writes `.obsidian/`.
+ * first `PUT` writes `.gumply/graph.json`. Gumply never writes `.obsidian/`
+ * except a property type change to `types.json` (D34; spec/file-format §4).
  */
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
