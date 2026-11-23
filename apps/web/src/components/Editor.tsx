@@ -43,6 +43,7 @@ import { linkTargetFor } from "@gumply/core";
 import { PageEmbed } from "../editor/page-embed/node.js";
 import { BlockIdChips } from "../editor/page-embed/block-ids.js";
 import { setTagOpener, TagChips } from "../editor/tag-chip.js";
+import { PlainSplitBold, PlainSplitItalic, PlainSplitStrike } from "../editor/plain-new-line.js";
 import { Highlight, InnermostCode } from "../editor/highlight.js";
 import { ColorMarks } from "../editor/color.js";
 import { LinkShortcut } from "../editor/formatting.js";
@@ -726,7 +727,14 @@ export function Editor({
         blockquote: false,
         // Registered below as the innermost mark (editor/highlight.ts).
         code: false,
+        // Registered below: a new line after them starts plain (#hz23dqif).
+        bold: false,
+        italic: false,
+        strike: false,
       }),
+      PlainSplitBold,
+      PlainSplitItalic,
+      PlainSplitStrike,
       InnermostCode,
       NotionCodeBlock,
       MarkdownBulletList,

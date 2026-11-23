@@ -225,6 +225,8 @@ function colorMark(name: string, kind: ColorKind, wrap: boolean, priority: numbe
   return Mark.create({
     name,
     priority,
+    // #hz23dqif: Enter (and Shift+Enter) starts the new line plain, as Notion does.
+    keepOnSplit: false,
 
     addAttributes() {
       return {
