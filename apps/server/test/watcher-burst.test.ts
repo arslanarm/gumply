@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
@@ -56,6 +56,37 @@ describe("the watcher during a sync burst (§8)", () => {
       expect((await app.request("/api/pages")).headers.get("X-Gumply-Syncing")).toBe("1");
       await expect.poll(() => store.syncing, { timeout: 6000, interval: 200 }).toBe(false);
       expect((await app.request("/api/pages")).headers.get("X-Gumply-Syncing")).toBeNull();
+    } finally {
+      store.stopWatching();
+    }
+  }, 20_000);
+
+  it("a save during a burst on the same file: written once, never interleaved with a running rescan, D22 intact", async () => {
+    const { dir } = await createTestServer();
+    await writeFile(join(dir, "Note.md"), "Before.\n", "utf8");
+    const store = new VaultStore(dir);
+    await store.init();
+    store.startWatching();
+    try {
+      // Outside writes to the same file and others keep coming…
+      const burst = (async () => {
+        for (let i = 0; i < 30; i++) {
+          await writeFile(join(dir, `Other ${i}.md`), `Other ${i}.\n`, "utf8");
+          await sleep(30);
+        }
+      })();
+      await sleep(100);
+      // …the app saves the version it loaded: it lands, and the rescan that follows keeps it.
+      const loaded = store.get("Note").updated;
+      await store.update("Note", { content: "Mine.\n", expectedUpdated: loaded });
+      expect(await readFile(join(dir, "Note.md"), "utf8")).toBe("Mine.\n");
+      // An outside change to that file mid-burst: the next save with the old version is a 409 (D22), nothing overwritten.
+      const mine = store.get("Note").updated;
+      await writeFile(join(dir, "Note.md"), "Theirs.\n", "utf8");
+      await expect.poll(() => store.get("Note").content, { timeout: 5000 }).toContain("Theirs.");
+      await expect(store.update("Note", { content: "Stale.\n", expectedUpdated: mine })).rejects.toMatchObject({ status: 409 });
+      expect(await readFile(join(dir, "Note.md"), "utf8")).toBe("Theirs.\n");
+      await burst;
     } finally {
       store.stopWatching();
     }
