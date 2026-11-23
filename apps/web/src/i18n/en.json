@@ -196,7 +196,10 @@
       "pan": "Pan",
       "zoom": "Zoom",
       "fitToScreen": "Fit to screen",
-      "nudgeBy110": "Nudge by 1 / 10",
+      "nudgeBy840": "Move by 8 / 40 px",
+      "selectNextPrevious": "Select the next / previous object",
+      "placeAtCentre": "With a tool chosen: place it in the middle of the view",
+      "stopEditingDeselect": "Stop editing, then deselect",
       "duplicate": "Duplicate",
       "copyPaste": "Copy / paste",
       "bringToFrontSendToBack": "Bring to front / send to back",
@@ -441,6 +444,23 @@
     "arrows": "Arrows"
   },
   "board": {
+    "a11y": {
+      "kinds": {
+        "drawing": "Drawing",
+        "page": "Page card",
+        "board": "Board card",
+        "image": "Image",
+        "file": "File",
+        "link": "Link",
+        "object": "Object"
+      },
+      "selected": "Selected: {{label}}",
+      "moved": "Moved: {{label}}",
+      "placed": "Added: {{label}}",
+      "deleted_one": "Deleted {{count}} object",
+      "deleted_other": "Deleted {{count}} objects",
+      "label": "Board. Tab moves between objects, Enter edits, arrows move the selection."
+    },
     "tools": {
       "select": "Select",
       "hand": "Hand",

@@ -4,12 +4,13 @@
  * a click inserts the link Gumply writes (`[[Title]]`, `[[file|Title]]`, or
  * `[[Map.canvas|Map]]` for boards). Esc closes the menu only.
  */
-import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { BoardPageOption } from "../BoardEditor.js";
 import { BoardIcon } from "../icons.js";
 import { isBoardPath, wikiLinkFor } from "./links.js";
 import { t } from "../../i18n/index.js";
+import { applyCombobox, listboxIdFrom, optionId } from "../../lib/editor-combobox.js";
 
 const MAX_ITEMS = 8;
 
@@ -146,11 +147,28 @@ export function useLinkAutocomplete(ref: RefObject<HTMLTextAreaElement | null>, 
   // Close when the editor goes away.
   useLayoutEffect(() => () => setOpen(null), []);
 
+  // #pujmbsyz: while the menu shows, the textarea controls it and points at the keyboard's option.
+  const listboxId = listboxIdFrom(useId(), "board-link");
+  const shown = open !== null && items.length > 0;
+  const activeId = shown ? optionId(listboxId, Math.min(open.index, items.length - 1)) : null;
+  useEffect(() => {
+    const area = ref.current;
+    if (!area) return;
+    applyCombobox(area, shown && activeId ? { listboxId, activeId } : null, { textbox: true });
+  }, [ref, shown, listboxId, activeId]);
+  useEffect(() => {
+    const area = ref.current;
+    return () => {
+      if (area) applyCombobox(area, null, { textbox: true });
+    };
+  }, [ref]);
+
   const popup =
     open && items.length > 0
       ? createPortal(
           <div
             className="board-link-menu"
+            id={listboxId}
             role="listbox"
             aria-label={t("board.linkPage")}
             data-testid="board-link-menu"
@@ -162,6 +180,7 @@ export function useLinkAutocomplete(ref: RefObject<HTMLTextAreaElement | null>, 
                 key={page.path}
                 type="button"
                 role="option"
+                id={optionId(listboxId, index)}
                 aria-selected={index === open.index}
                 className={`board-link-item${index === open.index ? " is-active" : ""}`}
                 data-testid={`board-link-option-${page.path}`}

@@ -106,6 +106,7 @@ import {
 import { NODE_TYPES } from "./nodes.js";
 import { Palette } from "./Swatch.js";
 import { t, useT } from "../i18n/index.js";
+import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -1124,6 +1125,39 @@ function BoardCanvas(props: BoardEditorProps) {
     apply((current) => deleteElements(current, new Set(nodeIds), new Set(edgeIds)));
   }, [apply]);
 
+  /* ---------------- the keyboard (#pujmbsyz, a11y audit P2 4) ---------------- */
+
+  /** What the live region says (a repeat gets a no-break space so it's announced again). */
+  const [announcement, setAnnouncement] = useState("");
+  const announce = useCallback((message: string) => {
+    setAnnouncement((current) => (current === message ? `${message}\u00a0` : message));
+  }, []);
+  const describe = useCallback((id: string): string => {
+    const node = boardRef.current.nodes.find((candidate) => candidate.id === id);
+    return node ? describeNode(node, t) : "";
+  }, []);
+  /** Set during a pointer press: focus that follows a click doesn't re-select (Shift+click keeps its set). */
+  const pointerFocus = useRef(false);
+  const nodeElement = useCallback(
+    (id: string): HTMLElement | null => rootRef.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"]`) ?? null,
+    [],
+  );
+  /** Select an object and focus it, bringing it into view first when it's off screen. */
+  const focusNode = useCallback(
+    (id: string) => {
+      const node = boardRef.current.nodes.find((candidate) => candidate.id === id);
+      if (!node) return;
+      select([id]);
+      const element = nodeElement(id);
+      const root = rootRef.current?.getBoundingClientRect();
+      const box = element?.getBoundingClientRect();
+      const visible = !!(element && root && box && box.right > root.left && box.left < root.right && box.bottom > root.top && box.top < root.bottom);
+      if (!visible) void flow.setCenter(node.x + node.width / 2, node.y + node.height / 2, { zoom: flow.getZoom(), duration: 0 });
+      requestAnimationFrame(() => nodeElement(id)?.focus({ preventScroll: true }));
+    },
+    [flow, nodeElement, select],
+  );
+
   const duplicateSelection = useCallback(() => {
     const ids = new Set(selectedRef.current.nodes);
     if (ids.size === 0) return;
@@ -1224,6 +1258,19 @@ function BoardCanvas(props: BoardEditorProps) {
       }
       if (mod || event.altKey) return;
 
+      // Tab / Shift+Tab: the next object in reading order; past either end, out of the board.
+      if (key === "Tab") {
+        const root = rootRef.current;
+        if (!root || tool !== "select" || !(event.target instanceof Element) || !root.contains(event.target)) return;
+        const focused = event.target.closest<HTMLElement>(".react-flow__node");
+        const current = focused?.dataset.id ?? (selectedRef.current.nodes.length === 1 ? (selectedRef.current.nodes[0] ?? null) : null);
+        const next = nextInOrder(readingOrder(boardRef.current.nodes), current, event.shiftKey);
+        if (!next) return;
+        event.preventDefault();
+        focusNode(next);
+        return;
+      }
+
       if (key === "Escape") {
         if (tool !== "select") chooseTool("select");
         else select([]);
@@ -1231,10 +1278,26 @@ function BoardCanvas(props: BoardEditorProps) {
       }
       if (key === "Delete" || key === "Backspace") {
         event.preventDefault();
+        const count = selectedRef.current.nodes.length + selectedRef.current.edges.length;
         deleteSelection();
+        if (count > 0) {
+          announce(t("board.a11y.deleted", { count }));
+          // The focused object is gone: keep the keyboard on the board.
+          rootRef.current?.focus({ preventScroll: true });
+        }
         return;
       }
       if (key === "Enter") {
+        // With a tool chosen: place the object in the middle of the view and start typing in it.
+        if (tool === "sticky" || tool === "text" || tool === "shape" || tool === "frame") {
+          event.preventDefault();
+          const rect = rootRef.current?.getBoundingClientRect();
+          const client = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: 0, y: 0 };
+          const at = viewCentre();
+          createFromDraft({ tool, start: at, startClient: client, current: at, currentClient: client });
+          announce(t("board.a11y.placed", { label: t(`board.tools.${tool}` as const) }));
+          return;
+        }
         const [only] = selectedRef.current.nodes;
         if (selectedRef.current.nodes.length === 1 && only) {
           event.preventDefault();
@@ -1249,11 +1312,13 @@ function BoardCanvas(props: BoardEditorProps) {
         const ids = new Set(selectedRef.current.nodes);
         if (ids.size === 0) return;
         event.preventDefault();
-        const step = event.shiftKey ? 10 : 1;
+        const step = event.shiftKey ? 40 : 8;
         const dx = key === "ArrowLeft" ? -step : key === "ArrowRight" ? step : 0;
         const dy = key === "ArrowUp" ? -step : key === "ArrowDown" ? step : 0;
         const followers = frameFollowers(boardRef.current, ids);
         apply((current) => nudgeNodes(current, new Set([...ids, ...followers]), dx, dy));
+        const [first] = selectedRef.current.nodes;
+        if (first) announce(t("board.a11y.moved", { label: ids.size === 1 ? describe(first) : String(ids.size) }));
         return;
       }
       if (key === "!" || (event.shiftKey && event.code === "Digit1")) {
@@ -1291,7 +1356,7 @@ function BoardCanvas(props: BoardEditorProps) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [actions, apply, chooseTool, deleteSelection, doRedo, doUndo, duplicateSelection, fit, ownsEvent, reorder, select, tool]);
+  }, [actions, announce, apply, chooseTool, createFromDraft, deleteSelection, describe, doRedo, doUndo, duplicateSelection, fit, focusNode, ownsEvent, reorder, select, tool, viewCentre]);
 
   /* ---------------- clipboard ---------------- */
 
@@ -1592,6 +1657,24 @@ function BoardCanvas(props: BoardEditorProps) {
           tabIndex={-1}
           data-testid="board"
           data-tool={tool}
+          role="region"
+          aria-label={t("board.a11y.label")}
+          onPointerDownCapture={() => {
+            pointerFocus.current = true;
+            window.setTimeout(() => {
+              pointerFocus.current = false;
+            }, 0);
+          }}
+          onFocus={(event) => {
+            // #pujmbsyz: keyboard focus on an object selects it (React Flow's own keyboard mode stays off).
+            if (pointerFocus.current || editing) return;
+            const element = event.target instanceof Element ? event.target.closest<HTMLElement>(".react-flow__node") : null;
+            const id = element?.dataset.id;
+            if (!id) return;
+            const { nodes: selected } = selectedRef.current;
+            if (!(selected.length === 1 && selected[0] === id)) select([id]);
+            announce(t("board.a11y.selected", { label: describe(id) }));
+          }}
           onPointerDown={() => {
             if (!editing && document.activeElement !== rootRef.current && !isTypingTarget(document.activeElement)) {
               rootRef.current?.focus({ preventScroll: true });
@@ -1607,6 +1690,9 @@ function BoardCanvas(props: BoardEditorProps) {
           onDragOver={onDragOver}
           onDrop={onDrop}
         >
+          <div className="visually-hidden" role="status" aria-live="polite" data-testid="board-announcer">
+            {announcement}
+          </div>
           <ReactFlow<BoardFlowNode, BoardFlowEdge>
             nodes={nodes}
             edges={edges}

@@ -427,8 +427,9 @@ test.describe('board engine (W1)', () => {
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Shift+ArrowDown');
     const nudged = await board(page);
-    expect(nudged.nodes.find((node) => node.id === frame.id)).toMatchObject({ x: (frameAfter?.x ?? 0) + 1, y: (frameAfter?.y ?? 0) + 10 });
-    expect(nudged.nodes.find((node) => node.id === inside.id)).toMatchObject({ x: (insideAfter?.x ?? 0) + 1, y: (insideAfter?.y ?? 0) + 10 });
+    // #pujmbsyz: 8 px, Shift 40.
+    expect(nudged.nodes.find((node) => node.id === frame.id)).toMatchObject({ x: (frameAfter?.x ?? 0) + 8, y: (frameAfter?.y ?? 0) + 40 });
+    expect(nudged.nodes.find((node) => node.id === inside.id)).toMatchObject({ x: (insideAfter?.x ?? 0) + 8, y: (insideAfter?.y ?? 0) + 40 });
   });
 
   test('undo and redo cover create, move, text edits, colour and delete', async ({ page }) => {
