@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { EmojiEntry } from "../lib/emoji/data.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
+import { optionId } from "../lib/editor-combobox.js";
 
 export interface EmojiMenuProps {
   items: readonly EmojiEntry[];
@@ -10,10 +11,12 @@ export interface EmojiMenuProps {
   top: number;
   onSelect: (item: EmojiEntry) => void;
   onHover: (index: number) => void;
+  /** The listbox id the editor's combobox attributes point at (#5nykir64). */
+  id: string;
 }
 
 /** Floating `:roc` emoji suggestions (#6v8tyxfd). */
-export function EmojiMenu({ items, index, left, top, onSelect, onHover }: EmojiMenuProps) {
+export function EmojiMenu({ items, index, left, top, onSelect, onHover, id }: EmojiMenuProps) {
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -24,6 +27,7 @@ export function EmojiMenu({ items, index, left, top, onSelect, onHover }: EmojiM
       ref={menuRef}
       className="slash-menu emoji-menu"
       data-testid="emoji-menu"
+      id={id}
       role="listbox"
       aria-label={t("emoji.label")}
       style={{ left, top }}
@@ -35,6 +39,7 @@ export function EmojiMenu({ items, index, left, top, onSelect, onHover }: EmojiM
             key={item.emoji}
             type="button"
             role="option"
+            id={optionId(id, itemIndex)}
             aria-selected={itemIndex === index}
             className={`slash-menu-item emoji-menu-item${itemIndex === index ? " is-active" : ""}`}
             data-testid={`emoji-suggestion-${code ?? item.name}`}
