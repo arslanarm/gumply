@@ -21,7 +21,9 @@
  *   browser; software rendering is the default and the more pessimistic).
  * - `--zoom 0.15` opens every board at that fixed zoom (a remembered view)
  *   instead of fitting it, so two builds are compared at an identical zoom.
- * - `--check` exits non-zero when drag-all of 500 at 1× drops below 50 fps.
+ * - The run exits non-zero when a drag moved nothing or not what it selected
+ *   (or "drag 50" selected fewer than 30): those rows measured the wrong thing.
+ * - `--check` also exits non-zero when drag-all of 500 at 1× drops below 50 fps.
  * - "ms" is the wall time of the whole gesture: the 60 paced (16 ms) mouse
  *   or wheel steps take longer when the page can't keep up.
  */
@@ -216,8 +218,6 @@ async function drag(page, count) {
     await page.mouse.up();
   });
   const moved = await settled(page, before);
-  // A drag that didn't move what it selected measures nothing: say so loudly.
-  if (moved !== start.selected) console.error(`warning: ${start.selected} selected but ${moved} moved`);
   return { ...result, moved, selected: start.selected };
 }
 
@@ -243,6 +243,7 @@ const gestures = [
 ];
 
 const rows = [];
+const noOps = [];
 let failed = false;
 try {
   for (const seed of seeds) {
@@ -251,7 +252,14 @@ try {
         const page = await openBoard(seed, throttle);
         const r = await run(page);
         await page.close();
-        const moved = r.moved === undefined ? "" : `${r.moved}/${r.selected}`;
+        // #g95wkd9y: a drag that moved nothing, or not what it selected, measured a
+        // no-op (or the wrong gesture): the row is marked and the run fails.
+        const bad = r.moved !== undefined && (r.moved === 0 || r.moved !== r.selected || (name === "drag 50" && r.selected < 30));
+        if (bad) {
+          noOps.push(`${seed} ${throttle}× ${name}: ${r.moved} moved of ${r.selected} selected`);
+          failed = true;
+        }
+        const moved = r.moved === undefined ? "" : `${r.moved}/${r.selected}${bad ? " FAILED" : ""}`;
         rows.push(`| ${seed} | ${throttle}× | ${name} | ${r.fps} | ${r.p95} | ${r.worst} | ${r.wall} | ${moved} |`);
         console.error(`${seed} ${throttle}× ${name}: ${JSON.stringify(r)}`);
         if (check && seed === 500 && throttle === 1 && name === "drag all" && r.fps < 50) failed = true;
@@ -271,7 +279,8 @@ console.log(
 console.log("| objects | CPU | gesture | fps | p95 frame ms | worst frame ms | gesture ms | moved/selected |");
 console.log("|---|---|---|---|---|---|---|---|");
 for (const row of rows) console.log(row);
+for (const line of noOps) console.error(`drag didn't move its selection: ${line}`);
 if (failed) {
-  console.error("drag all (500 objects, 1× CPU) is below 50 fps");
+  if (check) console.error("--check: drag all (500 objects, 1× CPU) must reach 50 fps, and every drag must move its selection");
   process.exit(1);
 }
