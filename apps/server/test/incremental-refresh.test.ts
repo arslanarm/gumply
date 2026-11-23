@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VaultStore } from "../src/vault-store";
 
 /**
@@ -313,5 +313,73 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
     const edges = (store as unknown as { edgesBySource: Map<string, unknown> }).edgesBySource;
     expect(edges.has(copy)).toBe(false);
     expect(backlinkIds(store, "Hub")).toEqual(["Note 3"]);
+  });
+
+  describe("files and folders vanishing mid-rescan (a git checkout, @opus-hunter's P1)", () => {
+    it("a folder removed between its parent's listing and its own drops out; the rescan completes", async () => {
+      await mkdir(join(dir, "Sub"));
+      await writeFile(join(dir, "Sub", "Inner.md"), "Points at [[Hub]].\n");
+      const store = await vaultOf(5);
+      const internals = store as unknown as { scan: (dir: string, ...rest: unknown[]) => Promise<string[]> };
+      const scan = internals.scan;
+      internals.scan = async function (this: unknown, folder: string, ...rest: unknown[]) {
+        if (folder === join(dir, "Sub")) await rm(folder, { recursive: true, force: true });
+        return scan.call(this, folder, ...rest);
+      };
+      try {
+        await expect(store.rescan()).resolves.toBe(true);
+      } finally {
+        internals.scan = scan;
+      }
+      expect(store.list().some((page) => page.id === "Sub/Inner")).toBe(false);
+      expect(backlinkIds(store, "Hub")).toEqual([]);
+    });
+
+    it("a file whose folder became a file mid-read (ENOTDIR) drops out; the rescan completes", async () => {
+      await mkdir(join(dir, "Sub"));
+      const file = join(dir, "Sub", "Inner.md");
+      await writeFile(file, "Points at [[Hub]].\n");
+      const store = await vaultOf(5);
+      await writeFile(file, "Edited: points at [[Hub]] twice. [[Hub]]\n");
+      const internals = store as unknown as Internals;
+      const readRecord = internals.readRecord;
+      internals.readRecord = async function (this: unknown, ...args) {
+        if (args[0] === file) {
+          await rm(join(dir, "Sub"), { recursive: true, force: true });
+          await writeFile(join(dir, "Sub"), "now a file\n");
+        }
+        return readRecord.apply(this, args as [string, string]);
+      };
+      try {
+        await expect(store.rescan()).resolves.toBe(true);
+      } finally {
+        internals.readRecord = readRecord;
+      }
+      expect(store.list().some((page) => page.id === "Sub/Inner")).toBe(false);
+    });
+
+    it("a watcher rescan that fails is logged and tried again, and never rejects unhandled", async () => {
+      const store = await vaultOf(5);
+      const internals = store as unknown as Internals;
+      const refresh = internals.refreshFromDisk;
+      let calls = 0;
+      internals.refreshFromDisk = async function (this: unknown, scope) {
+        calls += 1;
+        if (calls === 1) throw Object.assign(new Error("ENOENT: gone mid-scan"), { code: "EIO" });
+        return refresh.call(this, scope);
+      };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await writeFile(join(dir, "Late.md"), "Points at [[Hub]].\n");
+        internals.onWatchEvent(dir, "Late.md");
+        // Vitest fails the run on an unhandled rejection; the retry settles the index.
+        await expect.poll(() => backlinkIds(store, "Hub"), { timeout: 5000 }).toEqual(["Late"]);
+        expect(calls).toBe(2);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("rescan after outside changes failed (1)"), expect.anything());
+      } finally {
+        warn.mockRestore();
+        internals.refreshFromDisk = refresh;
+      }
+    });
   });
 });

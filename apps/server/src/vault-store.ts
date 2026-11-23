@@ -386,6 +386,14 @@ type RefreshScope = { kind: "all" } | { kind: "paths"; paths: ReadonlySet<string
 
 /** More touched paths than this in one burst: refresh "all" (the read cache still applies). */
 const MAX_REFRESH_PATHS = 200;
+/** A watcher rescan that failed is tried again (as a full rescan) this many times in a row. */
+const RESCAN_RETRIES = 3;
+
+/** A file or folder that went away under us: removed, or a parent replaced by a file. */
+function isGoneError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
 
 /** A folder named like a file ("v1.2") that appeared: not watched yet, so only a stat tells. */
 function isDirectorySync(path: string): boolean {
@@ -751,6 +759,8 @@ export class VaultStore {
   private readonly pendingPaths = new Set<string>();
   /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
   private pendingFull = false;
+  /** Watcher rescans that failed in a row (reset by one that succeeds). */
+  private rescanFailures = 0;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
   private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
 
@@ -893,7 +903,20 @@ export class VaultStore {
     this.watchTimer = setTimeout(() => {
       this.watchTimer = null;
       this.watchFirstEventAt = null;
-      void this.runScheduledRescan();
+      // #g95wkd9y: a rescan the watcher started must never end the process (an
+      // unhandled rejection exits Node). A failure is logged, and a full rescan
+      // tried again, at most RESCAN_RETRIES times in a row.
+      this.runScheduledRescan().then(
+        () => {
+          this.rescanFailures = 0;
+        },
+        (error: unknown) => {
+          this.rescanFailures += 1;
+          console.warn(`[gumply] rescan after outside changes failed (${this.rescanFailures}):`, error);
+          this.pendingFull = true;
+          if (this.rescanFailures <= RESCAN_RETRIES) this.scheduleRescan();
+        },
+      );
     }, Math.max(0, Math.min(RESCAN_QUIET_MS, deadline - now)));
   }
 
@@ -1006,7 +1029,8 @@ export class VaultStore {
     try {
       return await this.readRecord(absolute, id);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      // Gone, or its folder was replaced by a file, since the walk listed it.
+      if (isGoneError(error)) return null;
       throw error;
     }
   }
@@ -5160,7 +5184,16 @@ export class VaultStore {
    * D33 folders come from the same single walk.
    */
   private async scan(dir: string, directories?: DirectoryScan, others?: string[]): Promise<string[]> {
-    const entries = await readdir(dir, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      // #g95wkd9y: a folder removed or renamed while the walk was under way (a
+      // git checkout, a sync tool) holds nothing now; the next rescan sees where
+      // it went. The vault itself missing is a real error.
+      if (dir !== this.root && isGoneError(error)) return [];
+      throw error;
+    }
     const files: string[] = [];
     let otherFiles = 0;
 
