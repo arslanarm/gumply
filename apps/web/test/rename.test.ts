@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openPageNeedsReload, plannedTitleRename } from "../src/lib/rename.js";
+import { openPageNeedsReload, plannedTitleRename, reloadDecision } from "../src/lib/rename.js";
 
 describe("plannedTitleRename", () => {
   it("sends a title the user actually changed", () => {
@@ -40,5 +40,23 @@ describe("openPageNeedsReload", () => {
   it("falls back to reloading when the server omits rewrittenPages", () => {
     expect(openPageNeedsReload(undefined, "source", "target")).toBe(true);
     expect(openPageNeedsReload(undefined, null, "target")).toBe(false);
+  });
+});
+
+describe("reloadDecision (#iihi4dg7): a reload never drops unsaved text", () => {
+  it("a clean page reloads, whatever asked for it", () => {
+    for (const kind of ["auto", "replace", "refresh"] as const) expect(reloadDecision(kind, false), kind).toBe("reload");
+  });
+
+  it("a rename's or tag rename's rewrite leaves a page with unsaved text alone", () => {
+    expect(reloadDecision("auto", true)).toBe("leave");
+  });
+
+  it("a restore, an Undo or a resolved copy keeps the unsaved text in History first", () => {
+    expect(reloadDecision("replace", true)).toBe("keep-then-reload");
+  });
+
+  it("clicking the open page again saves the typing first", () => {
+    expect(reloadDecision("refresh", true)).toBe("flush-then-reload");
   });
 });

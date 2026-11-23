@@ -53,7 +53,7 @@ import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, isNotFound, serverDownMessage } from "./lib/errors.js";
 import { freshRetrySchedule, takeRetry } from "./lib/save-retry.js";
 import { moveToastMessage } from "./lib/move.js";
-import { openPageNeedsReload } from "./lib/rename.js";
+import { openPageNeedsReload, reloadDecision, type ReloadKind } from "./lib/rename.js";
 import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
 import { TagRenameDialog } from "./components/TagRenameDialog.js";
 import { SHOW_TAGS_EVENT, type TagRenameRequest } from "./components/TagsPane.js";
@@ -607,6 +607,12 @@ export function App() {
     reloadEditorAfterFetch.current = true;
     setPageReload((value) => value + 1);
   }, []);
+  /**
+   * #iihi4dg7: reload the open page, never dropping unsaved text (see
+   * `reloadDecision`). Every reload that isn't the user's own "Reload anyway"
+   * goes through this. A ref, so callbacks defined above its body can use it.
+   */
+  const reloadOpenPage = useRef<(kind: ReloadKind) => Promise<void>>(async () => requestPageReload());
 
   /**
    * #2xx3uae4: load a page that couldn't be fetched again (Retry, or the server
@@ -660,7 +666,7 @@ export function App() {
         const open = selectedRef.current;
         await refresh();
         if (open === copy.copyId) navigate(result.renamedTo ?? copy.originalId ?? null, true);
-        else if (open !== null && open === copy.originalId) requestPageReload();
+        else if (open !== null && open === copy.originalId) void reloadOpenPage.current("replace");
         setToast({
           message: toastInfo.message,
           icon: "info",
@@ -669,7 +675,7 @@ export function App() {
                 undo: async () => {
                   await toastInfo.undo!();
                   await refresh();
-                  if (selectedRef.current === copy.originalId) requestPageReload();
+                  if (selectedRef.current === copy.originalId) void reloadOpenPage.current("replace");
                 },
               }
             : {}),
@@ -786,10 +792,16 @@ export function App() {
    * reloading: the user asked to reload, not to lose text with no way back.
    */
   const [reloadNotKept, setReloadNotKept] = useState(false);
-  const handleConflictReload = useCallback(async () => {
+  reloadOpenPage.current = async (kind: ReloadKind) => {
     const id = selectedRef.current;
     const controls = documentControls();
-    if (id !== null && controls?.isDirty()) {
+    const decision = reloadDecision(kind, id !== null && (controls?.isDirty() ?? false));
+    if (decision === "leave") return;
+    if (decision === "flush-then-reload") {
+      await controls?.flush().catch(() => undefined);
+      if (documentControls()?.isDirty()) return;
+    }
+    if (decision === "keep-then-reload" && id !== null) {
       const board = isBoardId(id) ? (boardControls.current?.getBoard() ?? null) : null;
       const input = isBoardId(id) ? (board ? { board } : null) : editorControls.current ? { content: editorControls.current.getMarkdown() } : null;
       if (input) {
@@ -802,8 +814,10 @@ export function App() {
       }
     }
     requestPageReload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestPageReload]);
+  };
+  const handleConflictReload = useCallback(async () => {
+    await reloadOpenPage.current("replace");
+  }, []);
 
   /** #chbpc9yb (F2): after "Keep mine", the keys go back to where the user was typing. */
   const handleConflictKeepMine = useCallback(async () => {
@@ -1204,8 +1218,8 @@ export function App() {
       setDeletedOnDisk(null);
       if (window.innerWidth <= 900) setSidebarOpen(false);
       if (id === selectedRef.current) {
-        // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere).
-        requestPageReload();
+        // Re-clicking the open page refreshes it (e.g. links rewritten elsewhere), typing saved first.
+        void reloadOpenPage.current("refresh");
         return;
       }
       rememberCaret();
@@ -1610,7 +1624,7 @@ export function App() {
       setPendingHeading(
         link.heading.length > 0 ? { pageId: resolved.id, heading: link.heading } : null,
       );
-      if (resolved.id === selectedRef.current) requestPageReload();
+      if (resolved.id === selectedRef.current) void reloadOpenPage.current("refresh");
       else navigate(resolved.id);
     },
     [documentPages, page, loadPages, navigate, requestPageReload],
@@ -1650,8 +1664,11 @@ export function App() {
       showTitle(title);
       try {
         // Flush body edits first: a pending autosave could otherwise overwrite
-        // the server's link rewrite with stale `[[Old Title]]` text.
+        // the server's link rewrite with stale `[[Old Title]]` text. Any open
+        // page, not only the renamed one: the rewrite may change it too, and its
+        // unsaved typing must be on disk before it does.
         if (id === selectedRef.current) await documentControls()?.flush();
+        else await documentControls()?.flush().catch(() => undefined);
 
         renamesInFlight.current.add(id);
         renameEpoch.current += 1;
@@ -1697,9 +1714,10 @@ export function App() {
           open !== null && open.startsWith(`${id}/`)
             ? `${updated.id}${open.slice(id.length)}`
             : open;
-        // The renamed page itself is the live editor: never reload it.
+        // The renamed page itself is the live editor: never reload it. Nor one
+        // with unsaved text (typed during the rename): a reload would drop it.
         if (open !== id && openPageNeedsReload(updated.rewrittenPages, openNow, updated.id)) {
-          requestPageReload();
+          void reloadOpenPage.current("auto");
         }
       } catch (error) {
         if (previousTitle !== null) showTitle(previousTitle);
@@ -1968,7 +1986,7 @@ export function App() {
       try {
         const result = await api.renameTag(from, to, !saved && open !== null ? [open] : []);
         await loadPages();
-        if (open !== null && result.rewrittenPages.includes(open)) requestPageReload();
+        if (open !== null && result.rewrittenPages.includes(open)) void reloadOpenPage.current("auto");
         const skipped = result.skippedPages.length;
         setToast({
           message: [
@@ -3019,7 +3037,7 @@ export function App() {
           onRestored={(result) => {
             void loadPages();
             const restoredId = "meta" in result ? result.meta.id : result.id;
-            if (restoredId === selectedRef.current) requestPageReload();
+            if (restoredId === selectedRef.current) void reloadOpenPage.current("replace");
           }}
         />
       ) : null}
@@ -3062,7 +3080,7 @@ export function App() {
           onOpenPage={(id) => handleOpen(id)}
           onRestored={(id) => {
             void loadPages();
-            if (id === selectedRef.current) requestPageReload();
+            if (id === selectedRef.current) void reloadOpenPage.current("replace");
           }}
         />
       ) : null}

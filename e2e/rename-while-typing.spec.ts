@@ -114,3 +114,83 @@ test('a rename that fails: the typing held behind it still saves, to the old fil
   expect(states).not.toContain('conflict');
   expect(decodeURIComponent(new URL(page.url()).hash.replace(/^#\//, ''))).toBe('Solo');
 });
+
+test('renaming a page the open page links to, right after typing in it: the typing is saved, never dropped by the reload', async ({ page, vault }) => {
+  // A small vault: the rename itself is fast; the typing is still in the editor's autosave delay.
+  await vault.seed([
+    { title: 'Hub', content: 'The hub.' },
+    { title: 'Writer', content: 'Notes about [[Hub]].' },
+  ]);
+  await page.goto('/#/Writer');
+  await expect(page.getByTestId('editor-content')).toContainText('Notes about');
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' Typed just before the rename.');
+  // At once, before the autosave fires: rename Hub from the sidebar.
+  await page.getByTestId('page-item-Hub').hover();
+  await page.getByTestId('page-menu-button-Hub').click();
+  await page.getByTestId('rename-page-Hub').click();
+  await page.getByTestId('page-rename-input-Hub').fill('Hub renamed');
+  await page.keyboard.press('Enter');
+
+  await expect(page.getByTestId('page-item-Hub renamed')).toBeVisible();
+  // Flushed before the rename, so the page reloads clean (a fresh editor says "idle"); never a conflict.
+  await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
+  // The typing is on disk, and the rename rewrote the link in it.
+  await expect
+    .poll(() => fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8'), { timeout: 15_000 })
+    .toContain('Typed just before the rename.');
+  const text = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
+  expect(text).toContain('[[Hub renamed]]');
+  await expect(page.getByTestId('editor-content')).toContainText('Typed just before the rename.');
+  // Saved first, so the page was clean and reloaded: the editor shows the rewritten link, not a stale one.
+  await expect(page.getByTestId('editor-content')).toContainText('Hub renamed');
+  await expect(page.getByTestId('editor-content')).not.toContainText('may have been deleted');
+});
+
+test('typing in a linking page during a 1,200-link rename (#iihi4dg7): never dropped; a "changed on disk" conflict, and Keep mine keeps the typing with the old link', async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await fs.mkdir(path.join(E2E_VAULT, 'Linkers'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Hub.md'), 'The hub.\n');
+  for (let i = 0; i < LINKERS; i += 100) {
+    await Promise.all(
+      Array.from({ length: Math.min(100, LINKERS - i) }, (_, j) => fs.writeFile(path.join(E2E_VAULT, 'Linkers', `Linker ${i + j}.md`), `See [[Hub]] (${i + j}).\n`)),
+    );
+  }
+  await fs.writeFile(path.join(E2E_VAULT, 'Writer.md'), 'Notes about [[Hub]].\n');
+  await expect
+    .poll(async () => (await api.listPages(request)).filter((meta) => meta.id.startsWith('Linkers/')).length, { timeout: 60_000 })
+    .toBe(LINKERS);
+  await expect.poll(async () => (await request.get(`${API_URL}/api/pages`)).headers()['x-gumply-syncing'] ?? 'off', { timeout: 15_000 }).toBe('off');
+
+  // The user is writing in a page that links Hub, and renames Hub from the sidebar.
+  await page.goto('/#/Writer');
+  await expect(page.getByTestId('editor-content')).toContainText('Notes about');
+  await page.getByTestId('page-item-Hub').hover();
+  await page.getByTestId('page-menu-button-Hub').click();
+  await page.getByTestId('rename-page-Hub').click();
+  await page.getByTestId('page-rename-input-Hub').fill('Hub renamed');
+  await page.keyboard.press('Enter');
+
+  // Keep typing through the whole rename, so a save lands after Writer's batch rewrote it.
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  const renaming = page.getByTestId('sidebar-syncing');
+  for (let i = 0; i < 400; i++) {
+    await page.keyboard.type(` w${i}`, { delay: 15 });
+    if (i > 5 && !((await renaming.textContent()) ?? '').startsWith('Renaming')) break;
+  }
+  await page.keyboard.type(' last', { delay: 15 });
+
+  // Pinned (@lead, 2026-11-23): the batch moved Writer's version, so the next save is a conflict…
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'conflict', { timeout: 30_000 });
+  // …and Keep mine keeps the typing, with the editor's own (old) link text.
+  await page.getByTestId('conflict-keep-mine').click();
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 30_000 });
+  const text = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
+  expect(text).toContain(' last');
+  expect(text).toContain('[[Hub]]');
+  expect(text).not.toContain('[[Hub renamed]]');
+  // Every other linker has the new link.
+  expect(await fs.readFile(path.join(E2E_VAULT, 'Linkers', 'Linker 7.md'), 'utf8')).toContain('[[Hub renamed]]');
+});

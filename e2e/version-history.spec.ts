@@ -243,3 +243,48 @@ test('Changes says so plainly when only Gumply\'s own dates changed; Show whole 
   await dialog.getByTestId('history-whole-file').click();
   await expect(dialog.getByTestId('history-diff')).toContainText('updated:');
 });
+
+test('#iihi4dg7: restoring a version right after typing: the restored bytes win, and the typing is kept in History, never written back', async ({ page, vault, request }) => {
+  const [note] = await vault.seed([{ title: 'Ledger', content: 'First line.' }]);
+  const id = note!.id;
+  const file = path.join(E2E_VAULT, 'Ledger.md');
+  await page.goto(`/#/${encodeURIComponent(id)}`);
+  await expectPageTitle(page, 'Ledger');
+  const original = await readFile(file);
+  await page.getByTestId('editor-content').getByText('First line.', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Second thought.');
+  await expect.poll(() => pageText(request, id), { timeout: 10_000 }).toBe('First line. Second thought.');
+
+  // Typing, then History and Restore at once: no waiting for the autosave.
+  await page.keyboard.type(' Unsaved words.');
+  await openHistoryFromMenu(page, id);
+  const dialog = page.getByTestId('history-dialog');
+  await pickVersionWith(dialog, 'First line.');
+  await expect(dialog.getByTestId('history-restore')).toBeEnabled();
+  await dialog.getByTestId('history-restore').click();
+  const status = dialog.getByTestId('history-status');
+  await expect(status).toContainText(/Undo is at the top of the list|changed while you were looking/);
+  if ((await status.textContent())?.includes('changed while you were looking')) {
+    // A restore straight after typing is refused once on main too (a separate bug, reported with
+    // #iihi4dg7): the typing was saved first; the user tries again, as the message says.
+    await pickVersionWith(dialog, 'First line.');
+    await dialog.getByTestId('history-restore').click();
+  }
+  await expect(status).toContainText('Undo is at the top of the list');
+
+  // The restore wins, byte for byte, and the page shows it.
+  await expect.poll(async () => (await readFile(file)).equals(original)).toBe(true);
+  await expect(page.getByTestId('editor').getByTestId('editor-content')).toHaveText('First line.');
+  // The typing the restore replaced is in History (saved before the restore, or kept as "Before reload").
+  const items = (await (await request.get(`${API_URL}/api/history/${encodeURIComponent(id)}`)).json()) as { items: Array<{ file: string; reason?: string }> };
+  const texts = await Promise.all(
+    items.items.map(async (item) => (await request.get(`${API_URL}/api/history/${encodeURIComponent(id)}/${encodeURIComponent(item.file)}`)).text()),
+  );
+  expect(texts.some((text) => text.includes('Unsaved words.')), 'the typing is in a version').toBe(true);
+  // And nothing writes it back over the restore.
+  await dialog.getByTestId('history-close').click();
+  await page.waitForTimeout(3_000);
+  expect((await readFile(file)).equals(original)).toBe(true);
+  await expect(page.getByTestId('editor-content')).toHaveText('First line.');
+});
