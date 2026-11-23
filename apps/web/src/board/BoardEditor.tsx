@@ -1064,12 +1064,15 @@ function BoardCanvas(props: BoardEditorProps) {
   const connectorTool = useRef(false);
   connectorTool.current = tool === "connector";
   const connecting = useRef(false);
+  /** The object under the pointer, and where the pointer last was (client px). */
+  const hoveredNode = useRef<Element | null>(null);
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
   /** #zkknytrs: `--board-zoom` on the elements whose dots can show (zoom-var.ts), not the whole board. */
   const placeZoomVar = useCallback(() => {
     const root = rootRef.current;
     // Compensate down to the minimum zoom, so dots keep a ~10 px screen
     // target however far out you are (#zk6etvae).
-    if (root) zoomVar.sync(zoomVarTargets(root, connectorTool.current || connecting.current), Math.max(MIN_ZOOM, zoomNow.current));
+    if (root) zoomVar.sync(zoomVarTargets(root, connectorTool.current || connecting.current, hoveredNode.current), Math.max(MIN_ZOOM, zoomNow.current));
   }, [zoomVar]);
   /** placeZoomVar in the next frame, at most once per frame. */
   const zoomVarFrame = useRef(0);
@@ -1083,13 +1086,23 @@ function BoardCanvas(props: BoardEditorProps) {
   const syncZoomVar = useCallback((zoom: number) => {
     const root = rootRef.current;
     if (!root) return;
-    zoomNow.current = zoom;
-    placeZoomVar();
-    // Objects that come into view mount after this step, and the hovered one
-    // changes under a still cursor once the gesture rests: place it again then.
-    placeZoomVarSoon();
+    // A pan (same zoom) changes no dot size: only objects that come into view
+    // need it, which the rest pass below covers.
+    if (zoom !== zoomNow.current) {
+      zoomNow.current = zoom;
+      placeZoomVar();
+      // Objects that come into view mount after this step: place it on them too.
+      placeZoomVarSoon();
+    }
+    // Once the gesture rests: newly mounted objects, and the object now under
+    // a pointer that didn't move (no pointer event tells us).
     window.clearTimeout(zoomRest.current);
-    zoomRest.current = window.setTimeout(placeZoomVar, 150);
+    zoomRest.current = window.setTimeout(() => {
+      const at = lastPointer.current;
+      const under = at ? document.elementFromPoint(at.x, at.y)?.closest(".react-flow__node") ?? null : null;
+      if (at) hoveredNode.current = under && rootRef.current?.contains(under) ? under : null;
+      placeZoomVar();
+    }, 150);
     // Level of detail: unreadably small text is drawn as bars (lod.ts).
     const level = lodLevel(zoom, lod.current);
     if (level !== lod.current || !root.dataset.lod) {
@@ -1783,13 +1796,22 @@ function BoardCanvas(props: BoardEditorProps) {
           }}
           onPointerMove={(event) => {
             pointerRef.current = toFlow({ x: event.clientX, y: event.clientY });
+            lastPointer.current = { x: event.clientX, y: event.clientY };
           }}
           onPointerOver={(event) => {
-            // Hover shows an object's dots: give it `--board-zoom` (once its :hover applies).
-            if (event.target instanceof Element && event.target.closest(".react-flow__node")) placeZoomVarSoon();
+            // Hover shows an object's dots: give it `--board-zoom` when the pointer moves onto another object.
+            const node = event.target instanceof Element ? event.target.closest(".react-flow__node") : null;
+            if (node === hoveredNode.current) return;
+            hoveredNode.current = node;
+            placeZoomVar();
           }}
           onPointerLeave={() => {
             pointerRef.current = null;
+            lastPointer.current = null;
+            if (hoveredNode.current) {
+              hoveredNode.current = null;
+              placeZoomVar();
+            }
           }}
           onDoubleClick={onDoubleClick}
           onDragOver={onDragOver}

@@ -350,12 +350,16 @@ test.describe('board engine (W1)', () => {
   });
 
   test('connection dots stay ~11 px at 10% and 200%: hovered, selected, with the connector tool and after a zoom (#zkknytrs)', async ({ page }) => {
-    const seed = {
-      nodes: [
-        { id: 'dddd000000000001', type: 'text', text: 'A', gumply: { kind: 'sticky' }, x: 0, y: 0, width: 100, height: 100, color: '3' },
-        { id: 'dddd000000000002', type: 'text', text: 'B', gumply: { kind: 'sticky' }, x: 200, y: 0, width: 100, height: 100, color: '3' },
-      ],
-      edges: [],
+    // About 60 px on screen at either zoom, so a visible 11 px dot never covers an object's middle.
+    const seedAt = (zoom: number) => {
+      const size = Math.round(60 / zoom);
+      return {
+        nodes: [
+          { id: 'dddd000000000001', type: 'text', text: 'A', gumply: { kind: 'sticky' }, x: 0, y: 0, width: size, height: size, color: '3' },
+          { id: 'dddd000000000002', type: 'text', text: 'B', gumply: { kind: 'sticky' }, x: size * 3, y: 0, width: size, height: size, color: '3' },
+        ],
+        edges: [],
+      };
     };
     const dotWidth = async (index: number) => {
       const box = await page.getByTestId('board-sticky').nth(index).locator('xpath=..').getByTestId('board-handle-right').boundingBox();
@@ -373,7 +377,7 @@ test.describe('board engine (W1)', () => {
           window.localStorage.setItem('gumply:board-lab:dots', value);
           window.localStorage.setItem('gumply:board-view:lab:dots', JSON.stringify({ x: 300, y: 250, zoom: z }));
         },
-        { value: JSON.stringify(seed), z: zoom },
+        { value: JSON.stringify(seedAt(zoom)), z: zoom },
       );
       await page.goto('/board-lab.html?id=dots&theme=light');
       await expect(page.getByTestId('board-zoom-value')).toHaveText(`${Math.round(zoom * 100)}%`);
@@ -383,7 +387,7 @@ test.describe('board engine (W1)', () => {
       await expectDot(0);
       // Selected, with the pointer away from it.
       await page.getByTestId('board-sticky').first().click();
-      await page.mouse.move(1200, 800);
+      await page.mouse.move(900, 550); // empty board, clear of the zoom panel
       await expectDot(0);
       // Selected, after a Ctrl+wheel zoom (the step and the rest after it place it again).
       await page.keyboard.down('Control');
@@ -407,7 +411,7 @@ test.describe('board engine (W1)', () => {
       // The connector tool shows every dot: B, neither hovered nor selected.
       await page.keyboard.press('Escape');
       await page.getByTestId('board-tool-connector').click();
-      await page.mouse.move(1200, 800);
+      await page.mouse.move(900, 550); // empty board, clear of the zoom panel
       await expectDot(1);
       // Leaving it takes the value off the board again.
       await page.getByTestId('board-tool-select').click();

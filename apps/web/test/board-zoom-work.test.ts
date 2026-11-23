@@ -43,12 +43,17 @@ function fakeBoard(objects: number) {
   const nodes: FakeNode[] = Array.from({ length: objects }, () => fakeElement(1 + DOTS));
   const root = Object.assign(fakeElement(1 + objects * (1 + DOTS)), {
     querySelectorAll(selector: string) {
-      expect(selector).toBe(".react-flow__node.selected, .react-flow__node:hover");
-      return nodes.filter((node) => node.selected || node.hover);
+      // No `:hover` in the query: it can bring styles up to date on every step.
+      expect(selector).toBe(".react-flow__node.selected");
+      return nodes.filter((node) => node.selected);
     },
+    contains: (element: unknown) => nodes.includes(element as FakeNode),
   });
   return { root, nodes };
 }
+
+/** The hovered object, as BoardEditor tracks it from pointer events. */
+const hovered = (nodes: FakeNode[]) => (nodes.find((node) => node.hover) ?? null) as unknown as Element | null;
 
 /** Elements restyled by the writes since the last call. */
 function restyled(elements: Array<{ writes: number; subtree: number }>): number {
@@ -79,8 +84,8 @@ describe("a zoom step restyles only where connection dots show (#zkknytrs)", () 
     const all = [root, ...nodes];
     for (const zoom of zoomGesture(0.1)) {
       // What BoardEditor does per viewport change, plus its next-frame pass.
-      zoomVar.sync(zoomVarTargets(root as unknown as Element, false) as unknown as FakeNode[], zoom);
-      zoomVar.sync(zoomVarTargets(root as unknown as Element, false) as unknown as FakeNode[], zoom);
+      zoomVar.sync(zoomVarTargets(root as unknown as Element, false, hovered(nodes)) as unknown as FakeNode[], zoom);
+      zoomVar.sync(zoomVarTargets(root as unknown as Element, false, hovered(nodes)) as unknown as FakeNode[], zoom);
       expect(restyled(all)).toBeLessThanOrEqual(1 + DOTS);
     }
     expect(root.writes).toBe(0);
@@ -93,7 +98,7 @@ describe("a zoom step restyles only where connection dots show (#zkknytrs)", () 
     const all = [root, ...nodes];
     let total = 0;
     for (const zoom of zoomGesture(0.1)) {
-      zoomVar.sync(zoomVarTargets(root as unknown as Element, false) as unknown as FakeNode[], zoom);
+      zoomVar.sync(zoomVarTargets(root as unknown as Element, false, hovered(nodes)) as unknown as FakeNode[], zoom);
       total += restyled(all);
     }
     expect(total).toBe(60 * 3 * (1 + DOTS));
@@ -103,7 +108,7 @@ describe("a zoom step restyles only where connection dots show (#zkknytrs)", () 
     const { root, nodes } = fakeBoard(1000);
     nodes[1]!.selected = true;
     const zoomVar = createZoomVar<FakeNode>();
-    const targets = () => zoomVarTargets(root as unknown as Element, false) as unknown as FakeNode[];
+    const targets = () => zoomVarTargets(root as unknown as Element, false, hovered(nodes)) as unknown as FakeNode[];
     zoomVar.sync(targets(), 0.5);
     restyled([root, ...nodes]);
     zoomVar.sync(targets(), 0.5);
@@ -113,7 +118,7 @@ describe("a zoom step restyles only where connection dots show (#zkknytrs)", () 
   it("moves with the hover and the selection, clearing what is no longer shown", () => {
     const { root, nodes } = fakeBoard(10);
     const zoomVar = createZoomVar<FakeNode>();
-    const targets = () => zoomVarTargets(root as unknown as Element, false) as unknown as FakeNode[];
+    const targets = () => zoomVarTargets(root as unknown as Element, false, hovered(nodes)) as unknown as FakeNode[];
     nodes[0]!.hover = true;
     zoomVar.sync(targets(), 0.5);
     expect(nodes[0]!.writes).toBe(1);
@@ -128,9 +133,9 @@ describe("a zoom step restyles only where connection dots show (#zkknytrs)", () 
   it("goes on the whole board only with the connector tool (every dot shows), and comes off it after", () => {
     const { root, nodes } = fakeBoard(1000);
     const zoomVar = createZoomVar<FakeNode>();
-    zoomVar.sync(zoomVarTargets(root as unknown as Element, true) as unknown as FakeNode[], 0.4);
+    zoomVar.sync(zoomVarTargets(root as unknown as Element, true, hovered(nodes)) as unknown as FakeNode[], 0.4);
     expect(root.writes).toBe(1);
-    zoomVar.sync(zoomVarTargets(root as unknown as Element, false) as unknown as FakeNode[], 0.4);
+    zoomVar.sync(zoomVarTargets(root as unknown as Element, false, hovered(nodes)) as unknown as FakeNode[], 0.4);
     expect(root.writes).toBe(2);
     expect(nodes.every((node) => node.writes === 0)).toBe(true);
   });
