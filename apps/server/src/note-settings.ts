@@ -3,7 +3,8 @@
  *
  * An Obsidian vault already carries them: `.obsidian/templates.json` and
  * `.obsidian/daily-notes.json`, written by Obsidian's core plugins. Gumply
- * never writes into `.obsidian/`. Without those files, `.gumply/` holds the
+ * never writes these (it writes nothing into `.obsidian/` except a property
+ * type change to `types.json`, D34; spec/file-format §4). Without those files, `.gumply/` holds the
  * same shapes; without either, the defaults apply.
  *
  * As in Obsidian, a settings file that leaves a key out (or empty) means that

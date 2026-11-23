@@ -3,7 +3,8 @@
  *
  * Without it, a vault Obsidian set up starts from `.obsidian/graph.json`
  * (colour groups, search and the four filters), read on each `GET` until the
- * first `PUT` writes `.gumply/graph.json`. Gumply never writes `.obsidian/`.
+ * first `PUT` writes `.gumply/graph.json`. Gumply never writes `.obsidian/`
+ * except a property type change to `types.json` (D34; spec/file-format §4).
  *
  * A save keeps the file's keys Gumply doesn't know (#reynggre); a file that
  * isn't a JSON object (a bad hand edit) is moved aside as

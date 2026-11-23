@@ -11,6 +11,8 @@ How to use Gumply, from installing it to boards, version history and sync:
 **[User guide (English)](docs/guide/en/README.md)** · **[Руководство (русский)](docs/guide/ru/README.md)**.
 The desktop app opens it from **Help → User Guide**.
 
+Every file Gumply reads or writes in a vault, and what it never touches, is in **[the file format](docs/file-format.md)**.
+
 ## Stack
 
 - TypeScript everywhere, npm workspaces monorepo

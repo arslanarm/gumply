@@ -54,3 +54,4 @@ iCloud, OneDrive and Google Drive name their copies like ordinary pages (`Trip p
 - Copies don't appear in the graph, backlinks, tags or database views. Search finds them, marked **Conflicting copy**.
 - When many files change at once (a sync, a `git checkout`), the sidebar shows **Syncing changes…** until Gumply has caught up. Your own saves come first.
 - Conflicting copies of images and other files are listed, but you resolve those in your file manager.
+- Which of Gumply's files are safe to sync or delete, and every name it recognises as a conflicting copy: [Gumply's file format](../../file-format.md).
