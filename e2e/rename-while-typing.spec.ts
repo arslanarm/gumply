@@ -134,7 +134,8 @@ test('renaming a page the open page links to, right after typing in it: the typi
   await page.keyboard.press('Enter');
 
   await expect(page.getByTestId('page-item-Hub renamed')).toBeVisible();
-  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 30_000 });
+  // Flushed before the rename, so the page reloads clean (a fresh editor says "idle"); never a conflict.
+  await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
   // The typing is on disk, and the rename rewrote the link in it.
   await expect
     .poll(() => fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8'), { timeout: 15_000 })
@@ -142,6 +143,9 @@ test('renaming a page the open page links to, right after typing in it: the typi
   const text = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
   expect(text).toContain('[[Hub renamed]]');
   await expect(page.getByTestId('editor-content')).toContainText('Typed just before the rename.');
+  // Saved first, so the page was clean and reloaded: the editor shows the rewritten link, not a stale one.
+  await expect(page.getByTestId('editor-content')).toContainText('Hub renamed');
+  await expect(page.getByTestId('editor-content')).not.toContainText('may have been deleted');
 });
 
 test('typing in a linking page during a 1,200-link rename (#iihi4dg7): never dropped; a "changed on disk" conflict, and Keep mine keeps the typing with the old link', async ({ page, request }) => {
