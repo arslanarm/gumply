@@ -9,6 +9,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import { relativeTime, useT, type MessageKey } from "../i18n/index.js";
 import { Icon } from "./Icon.js";
+import { useModal } from "../lib/modal.js";
 
 /** The desktop app's update state: null in the browser and in development (no route). */
 export function useDesktopUpdates(desktop: boolean): [DesktopUpdatesState | null, (next: DesktopUpdatesState) => void] {
@@ -75,6 +76,9 @@ export interface UpdatesDialogProps {
 }
 
 export function UpdatesDialog({ state, onChange, onClose }: UpdatesDialogProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   const t = useT();
   const id = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -124,7 +128,7 @@ export function UpdatesDialog({ state, onChange, onClose }: UpdatesDialogProps) 
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="modal mcp-dialog updates-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-testid="updates-settings">
+      <div className="modal mcp-dialog updates-dialog" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="updates-settings">
         <div className="mcp-dialog-head">
           <h2 id={`${id}-title`}>{t("settings.updates.title")}</h2>
           <button type="button" className="icon-button" aria-label={t("common.close")} data-testid="updates-close" onClick={onClose} ref={closeRef}>

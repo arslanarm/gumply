@@ -6,6 +6,7 @@ import { conflictSource } from "../lib/conflicts.js";
 import { errorMessage } from "../lib/errors.js";
 import { Icon } from "./Icon.js";
 import { LineDiffView } from "./LineDiffView.js";
+import { useModal } from "../lib/modal.js";
 
 /** What Compare opens on: a conflict copy, or a possible copy (§3). */
 export type CompareTarget = { copy: ConflictCopy } | { possible: PossibleCopy };
@@ -27,6 +28,9 @@ export interface ConflictCompareDialogProps {
  * + only in the copy), with the resolve actions.
  */
 export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNotACopy, onShowHistory }: ConflictCompareDialogProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   const t = useT();
   const id = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -93,7 +97,7 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
         if (event.target === event.currentTarget && !busy) onClose();
       }}
     >
-      <div className="modal conflict-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-testid="conflict-compare">
+      <div className="modal conflict-dialog" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="conflict-compare">
         <header className="history-header">
           <h2 id={`${id}-title`}>
             {t("conflicts.compareTitle")} <span className="history-page-title">{titleOf(originalId)}</span>

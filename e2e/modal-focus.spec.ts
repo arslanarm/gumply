@@ -230,3 +230,49 @@ test('a toast showing when a modal opens, and a status raised while it is open, 
   await page.keyboard.press('Escape');
   await expect.poll(() => exposedTexts(page)).toContain('New whiteboard');
 });
+
+test('Conflict Compare (from the banner): Tab kept in, Esc returns to Compare', async ({ page, vault, request }) => {
+  const { writeFile } = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { E2E_VAULT } = await import('./support/env');
+  const [note] = await vault.seed([{ title: 'Note', content: 'Mine.' }]);
+  const copy = 'Note.sync-conflict-20261122-143005-ABCDEFG';
+  await writeFile(path.join(E2E_VAULT, `${copy}.md`), 'Theirs.\n', 'utf8');
+  await expect
+    .poll(async () => ((await (await request.get(`${API_URL}/api/pages`)).json()) as { id: string }[]).some((meta) => meta.id === copy), { timeout: 10_000 })
+    .toBe(true);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  const compare = page.getByTestId('conflict-banner').getByTestId('conflict-banner-compare');
+  await compare.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByTestId('conflict-compare');
+  await expectTabStaysIn(page, dialog);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expectFocusIn(compare);
+});
+
+test('Settings → Updates (desktop): Tab kept in, Esc returns to the Settings button', async ({ page, vault }) => {
+  await page.route('**/api/health', async (route) => {
+    try {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), desktop: true } });
+    } catch {
+      // The page closed while the request was in flight.
+    }
+  });
+  await page.route('**/api/desktop/updates**', (route) =>
+    route.fulfill({ json: { kind: 'nsis', mode: 'auto', modes: ['auto', 'notify', 'off'], status: 'idle', currentVersion: '0.9.0', version: null, releaseUrl: null, lastChecked: null, error: null } }),
+  );
+  await openNote(page, vault);
+  const settings = page.getByTestId('settings-button');
+  await settings.focus();
+  await page.keyboard.press('Enter');
+  await page.getByTestId('settings-updates').focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByTestId('updates-settings');
+  await expectTabStaysIn(page, dialog);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expectFocusIn(settings);
+});
