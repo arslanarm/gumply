@@ -31,7 +31,7 @@ import {
 import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downloads.js";
 import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
-import { classifyNavigation, vaultFileAction } from "./urls.js";
+import { classifyNavigation, userGuideUrl, vaultFileAction } from "./urls.js";
 import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
 import { installKind, listWindowsProcesses, UpdateController, type UpdaterLike } from "./updates.js";
@@ -668,6 +668,13 @@ function buildMenu(): void {
       role: "help",
       label: tr("menu.help"),
       submenu: [
+        {
+          // #6ka8s7mf: the guide on GitHub, in the app's language.
+          id: "user-guide",
+          label: tr("menu.userGuide"),
+          click: () => void shell.openExternal(userGuideUrl(resolveDesktopLanguage(settings?.uiState[LANGUAGE_KEY], app.getLocale()))),
+        },
+        { type: "separator" },
         {
           id: "licences",
           label: tr("menu.licences"),

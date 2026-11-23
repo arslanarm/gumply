@@ -345,6 +345,30 @@ test('the native menu runs the in-app commands (New Page, New Whiteboard, Search
   }
 });
 
+test('Help → User Guide opens the guide on GitHub in the app\'s language (#6ka8s7mf)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    const item = await app.evaluate(({ Menu }) => {
+      const help = Menu.getApplicationMenu()!.items.find((entry) => entry.role === 'help');
+      return { first: help?.submenu?.items[0]?.id ?? null, label: Menu.getApplicationMenu()!.getMenuItemById('user-guide')?.label ?? null };
+    });
+    expect(item).toEqual({ first: 'user-guide', label: 'User Guide' });
+    // Record the URL instead of opening a browser on the test machine.
+    await app.evaluate(({ shell }) => {
+      (globalThis as { openedUrl?: string }).openedUrl = '';
+      shell.openExternal = async (url: string) => {
+        (globalThis as { openedUrl?: string }).openedUrl = url;
+      };
+    });
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('user-guide')!.click());
+    const opened = await app.evaluate(() => (globalThis as { openedUrl?: string }).openedUrl ?? '');
+    expect(opened).toBe('https://github.com/arslanarm/gumply/blob/main/docs/guide/en/README.md');
+  } finally {
+    await app.close();
+  }
+});
+
 test('Help → Open-Source Licences opens THIRD_PARTY_NOTICES (#mbim529b)', async () => {
   const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
   try {
