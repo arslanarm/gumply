@@ -14,4 +14,4 @@ export const LazyBoardEditor = lazy(() => import("./BoardEditor.js"));
 
 /** Read-only, fitted view of a board for `![[Board.canvas]]` in pages (D30). */
 export const LazyBoardPreview = lazy(() => import("./BoardPreview.js"));
-export type { BoardPreviewProps } from "./BoardPreview.js";
+export type { BoardDiffMark, BoardPreviewProps } from "./BoardPreview.js";

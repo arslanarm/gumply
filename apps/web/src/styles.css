@@ -7303,3 +7303,120 @@ input {
     border-bottom: 1px solid var(--border);
   }
 }
+
+/* --- Version history: boards (#fr5baurg) ------------------------------------ */
+
+.history-board-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  height: 100%;
+}
+
+.history-board {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-canvas, var(--surface-page));
+}
+
+.history-board .board-root {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The embed's preview ignores the pointer so the page scrolls; here the board pans and zooms. */
+.history-board .board-root.board-preview .react-flow__renderer {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.history-board-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.history-board-legend,
+.history-board-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.history-board-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  color: var(--text);
+}
+
+.history-board-legend li,
+.history-board-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.history-board-list-title {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.history-board-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+[data-mark="added"] > .history-board-swatch {
+  color: rgb(var(--color-green-rgb));
+  border: 2px solid rgb(var(--color-green-rgb));
+}
+
+[data-mark="removed"] > .history-board-swatch {
+  color: rgb(var(--color-red-rgb));
+  border: 2px dashed rgb(var(--color-red-rgb));
+}
+
+[data-mark="changed"] > .history-board-swatch {
+  color: rgb(var(--color-orange-rgb));
+  border: 2px solid rgb(var(--color-orange-rgb));
+}
+
+/* On the board: added outlined green, removed ghosted with a dashed red line, changed amber. */
+.history-board .react-flow__node.board-diff-added {
+  outline: calc(3px / var(--board-zoom, 1)) solid rgb(var(--color-green-rgb));
+  outline-offset: calc(4px / var(--board-zoom, 1));
+  border-radius: 6px;
+}
+
+.history-board .react-flow__node.board-diff-removed {
+  opacity: 0.4;
+  outline: calc(3px / var(--board-zoom, 1)) dashed rgb(var(--color-red-rgb));
+  outline-offset: calc(4px / var(--board-zoom, 1));
+  border-radius: 6px;
+}
+
+.history-board .react-flow__node.board-diff-changed {
+  outline: calc(3px / var(--board-zoom, 1)) solid rgb(var(--color-orange-rgb));
+  outline-offset: calc(4px / var(--board-zoom, 1));
+  border-radius: 6px;
+}

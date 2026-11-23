@@ -73,6 +73,7 @@ import { t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
 import { HistoryDialog } from "./components/HistoryDialog.js";
 import { HistorySettingsDialog } from "./components/HistorySettingsDialog.js";
+import { pageLeaveTracker } from "./lib/page-leave.js";
 import { McpSettingsDialog } from "./components/McpSettingsDialog.js";
 import { NotionImportDialog } from "./components/NotionImportDialog.js";
 
@@ -269,14 +270,12 @@ export function App() {
   selectedRef.current = selectedId;
 
   // D41: leaving a page ends its editing session; the server keeps its last state as a version
-  // (only when it was edited). Queued after the page's own last save.
+  // (only when it was edited). Queued after the page's own last save. Only a real change of page
+  // counts: StrictMode's double effect run on mount must not end the session of the page opened.
+  const trackPageLeave = useRef(pageLeaveTracker((left) => void api.historyCheckpoint(left).catch(() => undefined))).current;
   useEffect(() => {
-    if (!selectedId) return;
-    const closed = selectedId;
-    return () => {
-      void api.historyCheckpoint(closed).catch(() => undefined);
-    };
-  }, [selectedId]);
+    trackPageLeave(selectedId);
+  }, [selectedId, trackPageLeave]);
   const pageRef = useRef<Page | null>(page);
   pageRef.current = page;
   // D20: stable identity of an open page across renames (new id → first id).

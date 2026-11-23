@@ -163,3 +163,56 @@ async function undoFromSettings(page: Page, id: string, bytes: string) {
   await page.getByTestId('mcp-close').click();
   await expect(page.getByTestId('editor-content')).toHaveText('Written by me, before the AI app.');
 }
+
+test('a board\'s history: Preview draws the version; Changes marks cards added, removed and changed (#fr5baurg)', async ({ page, request }) => {
+  const created = await request.post(`${API_URL}/api/boards`, { data: { title: 'Plan board' } });
+  expect(created.status()).toBe(201);
+  const id = ((await created.json()) as { meta: { id: string } }).meta.id;
+  const card = (cardId: string, text: string, x: number) => ({ id: cardId, type: 'text', text, x, y: 0, width: 200, height: 80 });
+  const put = (nodes: unknown[]) => request.put(`${API_URL}/api/boards/${encodeURIComponent(id)}`, { data: { board: { nodes, edges: [] } } });
+  expect((await put([card('a', 'Keep me', 0), card('b', 'Remove me', 260), card('c', 'Old words', 520)])).ok()).toBe(true);
+  // Closing the board ends the session: that board becomes a version (the next save is coalesced).
+  expect((await request.post(`${API_URL}/api/history/${encodeURIComponent(id)}/checkpoint`)).ok()).toBe(true);
+  expect((await put([card('a', 'Keep me', 0), card('c', 'New words', 520), card('d', 'Added later', 780)])).ok()).toBe(true);
+
+  await page.goto(`/#/${encodeURIComponent(id)}`);
+  await expect(page.getByTestId('board-page')).toBeVisible();
+  await openHistoryFromMenu(page, id);
+  const dialog = page.getByTestId('history-dialog');
+  // Opening the board added no version (no "End of editing" equal to now, even under StrictMode in dev):
+  // the empty board before the first save, and the three cards kept when the session ended.
+  await expect(dialog.getByTestId('history-item')).toHaveCount(2);
+  // The version with the three earlier cards (by its content, not its row position).
+  await pickVersionWith(dialog, 'Remove me');
+  const preview = dialog.getByTestId('history-board-preview').getByTestId('board-preview');
+  await expect(preview).toHaveAttribute('data-nodes', '3');
+  await expect(preview).toContainText('Remove me');
+
+  await dialog.getByTestId('history-view-changes').click();
+  const changes = dialog.getByTestId('history-board-changes');
+  await expect(changes.locator('.react-flow__node.board-diff-added')).toHaveCount(1);
+  await expect(changes.locator('.react-flow__node.board-diff-removed')).toHaveCount(1);
+  await expect(changes.locator('.react-flow__node.board-diff-changed')).toHaveCount(1);
+  const list = changes.getByTestId('history-board-list');
+  await expect(list.locator('li')).toHaveText(['+Added: Added later', '−Removed: Remove me', '~Changed: New words']);
+
+  // Restore stays byte-exact: the board file gets the version's bytes back.
+  await dialog.getByTestId('history-restore').click();
+  await expect(dialog.getByTestId('history-status')).toContainText('Undo is at the top of the list');
+  await expect
+    .poll(async () => ((await (await request.get(`${API_URL}/api/boards/${encodeURIComponent(id)}`)).json()) as { board: { nodes: Array<{ id: string }> } }).board.nodes.map((node) => node.id))
+    .toEqual(['a', 'b', 'c']);
+});
+
+/** Select the newest version whose preview shows `text` (it differs from now, so Restore is enabled). */
+async function pickVersionWith(dialog: ReturnType<Page['getByTestId']>, text: string) {
+  const items = dialog.getByTestId('history-item');
+  await expect(items.first()).toBeVisible();
+  const count = await items.count();
+  for (let index = 0; index < count; index += 1) {
+    await items.nth(index).click();
+    const preview = dialog.getByTestId('history-preview');
+    if (await preview.getByText(text, { exact: true }).first().isVisible({ timeout: 3_000 }).catch(() => false)) return;
+  }
+  throw new Error(`no version shows "${text}"`);
+}

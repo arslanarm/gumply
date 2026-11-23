@@ -1,5 +1,8 @@
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { parseFrontmatter, type BoardDocument, type Page, type PageMeta } from "@gumply/core";
+import { Fragment, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { parseCanvas, parseFrontmatter, type BoardDocument, type CanvasBoard, type Page, type PageMeta } from "@gumply/core";
+import { LazyBoardPreview, type BoardPageOption } from "../board/index.js";
+import { boardCardLabel, boardDiffView, type BoardDiffMark } from "../lib/board-diff.js";
+import { vaultPathOf } from "../lib/boards.js";
 import { api, ApiRequestError, type HistoryDiff, type HistoryItem, type HistoryList } from "../api/client.js";
 import { dateFormat, relativeTime, useT } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
@@ -75,6 +78,18 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   const [status, setStatus] = useState<{ kind: "info" | "error"; message: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const listRef = useRef<HTMLUListElement | null>(null);
+  /** Boards: the board as it is now (Changes draws the version's removed cards onto it). */
+  const [currentBoard, setCurrentBoard] = useState<CanvasBoard | null>(null);
+  const boardPages = useMemo<BoardPageOption[]>(
+    () =>
+      pages.map((item) => ({
+        path: vaultPathOf(item),
+        title: item.title,
+        updated: item.updated,
+        ...(item.icon ? { icon: item.icon } : {}),
+      })),
+    [pages],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -124,6 +139,28 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
       cancelled = true;
     };
   }, [selected, target.id, board, list]);
+
+  useEffect(() => {
+    if (!board) return;
+    let cancelled = false;
+    api
+      .getBoard(target.id)
+      .then((doc) => !cancelled && setCurrentBoard(doc.board))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [board, target.id, list]);
+
+  /** The selected version as a board (null while loading, or for a page). */
+  const versionBoard = useMemo<CanvasBoard | null>(() => {
+    if (!board || text === null) return null;
+    try {
+      return parseCanvas(text);
+    } catch {
+      return null;
+    }
+  }, [board, text]);
 
   const items = list?.items ?? [];
   const item = selected === null ? null : (items.find((entry) => entry.file === selected) ?? null);
@@ -219,18 +256,15 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   const preview = () => {
     if (text === null) return <p className="history-muted">{t("history.loading")}</p>;
     if (board) {
-      let count = 0;
-      try {
-        count = ((JSON.parse(text) as { nodes?: unknown[] }).nodes ?? []).length;
-      } catch {
-        count = 0;
-      }
+      if (!versionBoard) return <p className="history-muted">{t("history.loading")}</p>;
       return (
-        <div className="empty-state history-board-note">
-          <span className="empty-state-icon" aria-hidden="true">
-            <Icon name="board" size={26} />
-          </span>
-          <p>{t("history.boardObjects", { count })}</p>
+        <div className="history-board-wrap">
+          <div className="history-board" data-testid="history-board-preview" aria-label={t("history.boardObjects", { count: versionBoard.nodes.length })} role="img">
+            <Suspense fallback={null}>
+              <LazyBoardPreview key={selected ?? "current"} board={versionBoard} pages={boardPages} interactive />
+            </Suspense>
+          </div>
+          <p className="history-board-caption">{t("history.boardObjects", { count: versionBoard.nodes.length })}</p>
         </div>
       );
     }
@@ -246,13 +280,9 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   const changes = () => {
     if (!diff) return <p className="history-muted">{t("history.loading")}</p>;
     if (diff.kind === "whiteboard") {
-      return (
-        <ul className="history-board-changes" data-testid="history-board-changes">
-          <li>{t("history.boardAdded", { count: diff.added.length })}</li>
-          <li>{t("history.boardRemoved", { count: diff.removed.length })}</li>
-          <li>{t("history.boardChanged", { count: diff.changed.length })}</li>
-        </ul>
-      );
+      if (diff.added.length + diff.removed.length + diff.changed.length === 0) return <p className="history-muted">{t("history.noChanges")}</p>;
+      if (!versionBoard || !currentBoard) return <p className="history-muted">{t("history.loading")}</p>;
+      return <BoardChanges version={versionBoard} current={currentBoard} diff={diff} pages={boardPages} />;
     }
     if (!diff.lines.some((line) => line.op !== "same")) return <p className="history-muted">{t("history.noChanges")}</p>;
     // The diff runs from this version to now: "add" is what now has and this version lacks.
@@ -434,3 +464,60 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   );
 }
 
+
+const MARK_SYMBOL: Record<BoardDiffMark, string> = { added: "+", removed: "−", changed: "~" };
+
+/**
+ * A board's Changes (#fr5baurg): the board as it is now, with the cards added
+ * since this version outlined green, the ones it had and now lacks ghosted
+ * red, and changed ones amber. The legend pairs each colour with a symbol and
+ * a word; the list below names every card that changed.
+ */
+function BoardChanges({ version, current, diff, pages }: {
+  version: CanvasBoard;
+  current: CanvasBoard;
+  diff: { added: string[]; removed: string[]; changed: string[] };
+  pages: BoardPageOption[];
+}) {
+  const t = useT();
+  const view = useMemo(() => boardDiffView(version, current, diff), [version, current, diff]);
+  const nodeById = useMemo(() => new Map(view.board.nodes.map((node) => [node.id, node])), [view]);
+  const legend: Array<[BoardDiffMark, string]> = [
+    ["added", t("history.boardAdded", { count: diff.added.length })],
+    ["removed", t("history.boardRemoved", { count: diff.removed.length })],
+    ["changed", t("history.boardChanged", { count: diff.changed.length })],
+  ];
+  const word: Record<BoardDiffMark, string> = { added: t("history.added"), removed: t("history.removed"), changed: t("history.changed") };
+  const rows = [...view.marks].sort((a, b) => ["added", "removed", "changed"].indexOf(a[1]) - ["added", "removed", "changed"].indexOf(b[1]));
+  return (
+    <div className="history-board-wrap" data-testid="history-board-changes">
+      <ul className="history-board-legend">
+        {legend.map(([mark, label]) => (
+          <li key={mark} className={`history-board-legend-${mark}`} data-mark={mark}>
+            <span className="history-board-swatch" aria-hidden="true">
+              {MARK_SYMBOL[mark]}
+            </span>
+            {label}
+          </li>
+        ))}
+      </ul>
+      <div className="history-board" aria-hidden="true">
+        <Suspense fallback={null}>
+          <LazyBoardPreview board={view.board} pages={pages} interactive highlight={view.marks} />
+        </Suspense>
+      </div>
+      <h3 className="history-board-list-title">{t("history.boardChangesList")}</h3>
+      <ul className="history-board-list" data-testid="history-board-list">
+        {rows.map(([id, mark]) => (
+          <li key={id} data-mark={mark}>
+            <span className="history-board-swatch" aria-hidden="true">
+              {MARK_SYMBOL[mark]}
+            </span>
+            <span className="visually-hidden">{word[mark]}: </span>
+            {boardCardLabel(nodeById.get(id)) ?? t("history.boardCardUntitled")}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
