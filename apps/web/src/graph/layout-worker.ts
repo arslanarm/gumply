@@ -5,13 +5,13 @@
  * (with reduced motion: once, when it has settled). A newer `start` or a
  * `stop` abandons the current run.
  */
-import { createLayout, type LayoutInput } from "./layout-forces.js";
+import { createLayout, postInterval, type LayoutInput } from "./layout-forces.js";
 
 export type LayoutRequest = { type: "start"; id: number; input: LayoutInput } | { type: "stop"; id: number };
 export type LayoutUpdate = { type: "positions"; id: number; x: Float32Array; y: Float32Array; done: boolean; ticks: number };
 
 const SLICE_MS = 40;
-const POST_EVERY_MS = 100;
+
 
 let current = 0;
 
@@ -21,6 +21,7 @@ self.onmessage = (event: MessageEvent<LayoutRequest>) => {
   if (message.type === "stop") return;
   const { id, input } = message;
   const layout = createLayout(input);
+  const postEvery = postInterval(input.x.length);
   let lastPost = 0;
   const post = (done: boolean) => {
     const { x, y } = layout.positions();
@@ -34,7 +35,7 @@ self.onmessage = (event: MessageEvent<LayoutRequest>) => {
     while (!done && performance.now() < until) done = layout.tick();
     const now = performance.now();
     if (done) return post(true);
-    if (!input.reducedMotion && now - lastPost >= POST_EVERY_MS) {
+    if (!input.reducedMotion && now - lastPost >= postEvery) {
       lastPost = now;
       post(false);
     }

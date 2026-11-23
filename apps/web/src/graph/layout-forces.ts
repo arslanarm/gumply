@@ -172,3 +172,12 @@ export function engineTicks(count: number, reducedMotion: boolean): { warmupTick
   if (count > LAYOUT_WORKER_THRESHOLD) return { warmupTicks: 0, cooldownTicks: 0, worker: true };
   return reducedMotion ? { warmupTicks: 90, cooldownTicks: 2, worker: false } : { warmupTicks: 40, cooldownTicks: 140, worker: false };
 }
+
+/**
+ * How often positions are posted: every repaint of a big graph is costly on
+ * the main thread (10k nodes, 120k links), so the bigger the graph, the
+ * fewer the updates: 100 ms at the threshold, up to 1 s at 10,000 nodes.
+ */
+export function postInterval(count: number): number {
+  return Math.min(1000, Math.max(100, Math.round(count / 10)));
+}

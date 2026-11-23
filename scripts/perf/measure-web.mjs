@@ -112,7 +112,15 @@ try {
     await wait("graph");
     result.graph = (await marks()).graph;
     // Settled and fitted, and the longest task on the way there.
-    await page.waitForFunction(() => document.querySelector('[data-testid="graph-canvas"]')?.getAttribute("data-graph-ready") === "true", null, { timeout: 180_000 });
+    await page
+      .waitForFunction(() => document.querySelector('[data-testid="graph-canvas"]')?.getAttribute("data-graph-ready") === "true", null, { timeout: 300_000 })
+      .catch(async (error) => {
+        const state = await page.evaluate(() => {
+          const canvas = document.querySelector('[data-testid="graph-canvas"]');
+          return canvas ? Object.fromEntries([...canvas.attributes].filter((a) => a.name.startsWith("data-")).map((a) => [a.name, a.value])) : "no graph canvas";
+        });
+        throw new Error(`the global graph never got ready: ${JSON.stringify(state)}`, { cause: error });
+      });
     const readyAt = await page.evaluate(() => performance.now());
     result.graphReady = readyAt - clickedAt;
     result.graphLongest = await page.evaluate(

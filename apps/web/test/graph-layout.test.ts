@@ -5,6 +5,7 @@ import {
   createLayout,
   engineTicks,
   layoutInputFor,
+  postInterval,
   type LayoutInput,
 } from "../src/graph/layout-forces";
 
@@ -103,5 +104,13 @@ describe("graph layout off the main thread (#g95wkd9y)", () => {
     const fromSettled = moved(resumed.x, resumed.y, settled.x, settled.y);
     const fromScratch = moved(scratch.x, scratch.y, settled.x, settled.y);
     expect(fromSettled).toBeLessThan(fromScratch / 10);
+  });
+
+  it("the bigger the graph, the fewer position updates (each repaint is costly): 100 ms to 1 s", () => {
+    expect(postInterval(LAYOUT_WORKER_THRESHOLD)).toBe(150);
+    expect(postInterval(500)).toBe(100);
+    expect(postInterval(5_000)).toBe(500);
+    expect(postInterval(10_020)).toBe(1000);
+    expect(postInterval(50_000)).toBe(1000);
   });
 });
