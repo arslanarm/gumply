@@ -21,7 +21,8 @@ import Code from "@tiptap/extension-code";
  * outer marks, and comes last in the schema (lower priority) so it's always
  * opened innermost.
  */
-export const InnermostCode = Code.extend({ priority: 90, excludes: "" });
+// #hz23dqif: Enter (and Shift+Enter) starts the new line plain, as Notion does.
+export const InnermostCode = Code.extend({ priority: 90, excludes: "", keepOnSplit: false });
 
 /* markdown-it is untyped here (see the wikilink plugin). */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -111,6 +112,8 @@ export function highlightMarkdownPlugin(md: any): void {
 
 export const Highlight = Mark.create({
   name: "highlight",
+  // #hz23dqif: Enter (and Shift+Enter) starts the new line plain, as Notion does.
+  keepOnSplit: false,
 
   parseHTML() {
     return [{ tag: "mark" }];
