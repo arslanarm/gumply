@@ -632,13 +632,14 @@ async function readConsistent(absolute: string): Promise<{ raw: string; stats: i
  * because on some filesystems (SMB/NFS shares, cloud-sync folders, FAT/exFAT with
  * 2 s mtimes) a rename can change the reported mtime, and keeping the temp's would
  * make every next save a false "changed on disk" 409. If the inode and device are
- * the same and non-zero, it is our file, so use the path's stat. Otherwise another
- * program replaced it in between: keep the temp's, so the next conditional save
+ * the same and non-zero and the size is the one we wrote, it is our file, so use
+ * the path's stat. Otherwise another program replaced it in between, or rewrote it
+ * in place (same inode, other size): keep the temp's, so the next conditional save
  * sees that change instead of erasing it.
  */
 async function statAfterRename(path: string, temp: import("node:fs").Stats): Promise<import("node:fs").Stats> {
   const now = await stat(path).catch(() => null);
-  if (now !== null && now.ino !== 0 && now.ino === temp.ino && now.dev === temp.dev) return now;
+  if (now !== null && now.ino !== 0 && now.ino === temp.ino && now.dev === temp.dev && now.size === temp.size) return now;
   return temp;
 }
 

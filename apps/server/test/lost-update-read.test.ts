@@ -22,6 +22,8 @@ let saveTime = 0;
 // A filesystem whose rename changes the reported mtime (SMB/NFS, cloud-sync, FAT):
 // after the store renames onto `path`, every stat of it reports the mtime shifted by `ms`.
 let shiftOnRename: { path: string; ms: number } | null = null;
+// Another program that rewrites the file in place (truncate + write: same inode) right after our rename.
+let rewriteAfterRename: { path: string; text: string } | null = null;
 const shifted = new Map<string, number>();
 
 async function replaceNow(path: string, which: "read" | "rename" = "read"): Promise<void> {
@@ -69,6 +71,13 @@ vi.mock("node:fs/promises", async () => {
     rename: async (...args: Parameters<typeof real.rename>) => {
       await real.rename(...args);
       if (shiftOnRename && shiftOnRename.path === String(args[1])) shifted.set(shiftOnRename.path, shiftOnRename.ms);
+      if (rewriteAfterRename && rewriteAfterRename.path === String(args[1])) {
+        const { path, text } = rewriteAfterRename;
+        rewriteAfterRename = null;
+        await real.writeFile(path, text);
+        const later = new Date(Date.now() + 5_000);
+        await real.utimes(path, later, later);
+      }
       await replaceNow(String(args[1]), "rename");
     },
     open: async (...args: Parameters<typeof real.open>) => {
@@ -97,6 +106,7 @@ afterEach(async () => {
   replaceAfterRename = null;
   replaceOnEveryRead = null;
   shiftOnRename = null;
+  rewriteAfterRename = null;
   shifted.clear();
   await rm(dir, { recursive: true, force: true });
 });
@@ -212,4 +222,30 @@ describe("a read racing another program's atomic save keeps text and mtime toget
     await expect(store.update("Plan", { content: `${page.content}\nModel line.\n`, expectedUpdated: page.updated, writer: "mcp" })).rejects.toMatchObject({ status: 409 });
     expect(await readFile(file, "utf8")).toBe(onDisk);
   });
+
+  // An in-place rewrite keeps the inode, so the inode alone can't tell it from our file:
+  // the size differs, and the store keeps the temp's stat, so the next save is a conflict.
+  for (const [kind, name, first, theirs] of [
+    ["page", "Plan.md", "# Plan\n\nIntro.\n", "# Plan\n\nIntro.\n\nUser line, rewritten in place.\n"],
+    ["board", "Map.canvas", '{"nodes":[],"edges":[]}', '{"nodes":[{"id":"u","type":"text","text":"User card, rewritten in place","x":0,"y":0,"width":100,"height":50}],"edges":[]}'],
+  ] as const) {
+    it(`a ${kind}: another program rewriting it in place (same inode, other size) after our save makes the next save a conflict`, async () => {
+      const file = join(dir, name);
+      await writeFile(file, first);
+      const store = new VaultStore(dir);
+      await store.init();
+      rewriteAfterRename = { path: file, text: theirs };
+      if (kind === "page") {
+        const saved = await store.update("Plan", { content: "# Plan\n\nIntro.\n\nModel line.\n", expectedUpdated: store.get("Plan").updated });
+        expect(rewriteAfterRename).toBeNull(); // the rewrite really happened
+        await expect(store.update("Plan", { content: "# Plan\n\nIntro.\n\nModel line 2.\n", expectedUpdated: saved.updated })).rejects.toMatchObject({ status: 409 });
+      } else {
+        const card = { id: "m", type: "text", text: "Model card", x: 0, y: 0, width: 100, height: 50 };
+        const saved = await store.updateBoard("Map.canvas", { board: { nodes: [card], edges: [] } as never, expectedUpdated: store.getBoard("Map.canvas").meta.updated });
+        expect(rewriteAfterRename).toBeNull();
+        await expect(store.updateBoard("Map.canvas", { board: { nodes: [], edges: [] }, expectedUpdated: saved.meta.updated })).rejects.toMatchObject({ status: 409 });
+      }
+      expect(await readFile(file, "utf8")).toBe(theirs);
+    });
+  }
 });
