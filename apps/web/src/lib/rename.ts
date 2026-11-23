@@ -31,17 +31,22 @@ export function openPageNeedsReload(
 }
 
 /**
- * What to do with the open page after a rename rewrote it: reload it, or, when
- * its editor holds unsaved text, leave it. A reload would drop that text with
- * no trace; left alone, its next save meets the usual "changed on disk" bar,
- * where Reload keeps the text as "Before reload" and Keep mine keeps it.
+ * #iihi4dg7: how to reload the open page without ever dropping its unsaved text.
+ * - `auto`: the server changed it and the user didn't ask to see it (a rename's
+ *   or a tag rename's link rewrite). A page with unsaved text is left alone: its
+ *   next save meets the usual "changed on disk" bar.
+ * - `replace`: the user asked for the file's version (History restore, AI apps
+ *   Undo, resolving a sync copy). As the conflict bar's Reload (#chbpc9yb): the
+ *   unsaved text is kept in History ("Before reload") first, or the user is asked.
+ * - `refresh`: nothing changed on the server (the open page clicked again, a
+ *   link to itself): save the typing first, then reload; if it can't be saved,
+ *   leave the page.
  */
-export function openPageAfterRename(
-  rewritten: readonly PageId[] | undefined,
-  openId: PageId | null,
-  renamedId: PageId,
-  openHasUnsavedText: boolean,
-): "reload" | "keep" | "nothing" {
-  if (!openPageNeedsReload(rewritten, openId, renamedId)) return "nothing";
-  return openHasUnsavedText ? "keep" : "reload";
+export type ReloadKind = "auto" | "replace" | "refresh";
+
+export function reloadDecision(kind: ReloadKind, dirty: boolean): "reload" | "leave" | "keep-then-reload" | "flush-then-reload" {
+  if (!dirty) return "reload";
+  if (kind === "auto") return "leave";
+  if (kind === "replace") return "keep-then-reload";
+  return "flush-then-reload";
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openPageAfterRename, openPageNeedsReload, plannedTitleRename } from "../src/lib/rename.js";
+import { openPageNeedsReload, plannedTitleRename, reloadDecision } from "../src/lib/rename.js";
 
 describe("plannedTitleRename", () => {
   it("sends a title the user actually changed", () => {
@@ -43,19 +43,20 @@ describe("openPageNeedsReload", () => {
   });
 });
 
-describe("openPageAfterRename: never drop unsaved text", () => {
-  it("a rewritten open page with unsaved text is kept, not reloaded", () => {
-    expect(openPageAfterRename(["Writer"], "Writer", "Hub renamed", true)).toBe("keep");
-    expect(openPageAfterRename(undefined, "Writer", "Hub renamed", true)).toBe("keep");
+describe("reloadDecision (#iihi4dg7): a reload never drops unsaved text", () => {
+  it("a clean page reloads, whatever asked for it", () => {
+    for (const kind of ["auto", "replace", "refresh"] as const) expect(reloadDecision(kind, false), kind).toBe("reload");
   });
 
-  it("a clean rewritten open page is reloaded, as before", () => {
-    expect(openPageAfterRename(["Writer"], "Writer", "Hub renamed", false)).toBe("reload");
+  it("a rename's or tag rename's rewrite leaves a page with unsaved text alone", () => {
+    expect(reloadDecision("auto", true)).toBe("leave");
   });
 
-  it("nothing to do when the open page wasn't rewritten, or is the renamed page", () => {
-    expect(openPageAfterRename(["Other"], "Writer", "Hub renamed", true)).toBe("nothing");
-    expect(openPageAfterRename(["Writer"], "Hub renamed", "Hub renamed", false)).toBe("nothing");
-    expect(openPageAfterRename(["Writer"], null, "Hub renamed", false)).toBe("nothing");
+  it("a restore, an Undo or a resolved copy keeps the unsaved text in History first", () => {
+    expect(reloadDecision("replace", true)).toBe("keep-then-reload");
+  });
+
+  it("clicking the open page again saves the typing first", () => {
+    expect(reloadDecision("refresh", true)).toBe("flush-then-reload");
   });
 });
