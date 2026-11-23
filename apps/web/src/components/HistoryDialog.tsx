@@ -57,8 +57,12 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   const [list, setList] = useState<HistoryList | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
-  const [text, setText] = useState<string | null>(null);
-  const [diff, setDiff] = useState<HistoryDiff | null>(null);
+  // #n6skhe6p: each loaded text and diff remembers which version it's for, so the render right
+  // after a click never shows the previous version's content under the new row.
+  const [loadedText, setLoadedText] = useState<{ for: Selection; value: string } | null>(null);
+  const text = loadedText && loadedText.for === selected ? loadedText.value : null;
+  const [loadedDiff, setLoadedDiff] = useState<{ for: Selection; value: HistoryDiff } | null>(null);
+  const diff = loadedDiff && loadedDiff.for === selected ? loadedDiff.value : null;
   const [view, setView] = useState<"preview" | "changes">("preview");
   const [whole, setWhole] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -112,16 +116,17 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   // The selected version's text, and its changes against now.
   useEffect(() => {
     let cancelled = false;
-    setText(null);
-    setDiff(null);
+    const version = selected;
     const textRequest =
       selected === null
         ? board
           ? api.getBoard(target.id).then((doc) => JSON.stringify(doc.board))
           : api.getPage(target.id).then((page) => page.content)
         : api.historyText(target.id, selected);
-    textRequest.then((value) => !cancelled && setText(value)).catch(() => !cancelled && setText(""));
-    if (selected !== null) api.historyDiff(target.id, selected).then((value) => !cancelled && setDiff(value)).catch(() => undefined);
+    textRequest
+      .then((value) => !cancelled && setLoadedText({ for: version, value }))
+      .catch(() => !cancelled && setLoadedText({ for: version, value: "" }));
+    if (selected !== null) api.historyDiff(target.id, selected).then((value) => !cancelled && setLoadedDiff({ for: version, value })).catch(() => undefined);
     return () => {
       cancelled = true;
     };
