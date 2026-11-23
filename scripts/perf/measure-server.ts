@@ -66,14 +66,23 @@ function markdownFiles(root: string): string[] {
 
 // --- cold open ---------------------------------------------------------------
 {
-  const times: number[] = [];
+  // #g95wkd9y: the server opens in the background: it answers once the files
+  // are read, and the links are indexed right after. "scan + index" keeps its
+  // meaning (until fully indexed); "answers" is when the app can show pages.
+  const answers: number[] = [];
+  const indexed: number[] = [];
   for (let i = 0; i < 3; i++) {
     const start = performance.now();
     const store = new VaultStore(vault);
-    await store.init();
-    times.push(performance.now() - start);
+    await store.init({ background: true });
+    answers.push(performance.now() - start);
+    await store.whenIndexed();
+    indexed.push(performance.now() - start);
   }
-  report("cold open: VaultStore.init (scan + index)", times[0]!, `first run; then ${times.slice(1).map((t) => t.toFixed(0)).join(", ")} ms (OS cache warm)`);
+  const rest = (times: number[]) => `first run; then ${times.slice(1).map((t) => t.toFixed(0)).join(", ")} ms (OS cache warm)`;
+  report("cold open: VaultStore.init (scan + index)", indexed[0]!, rest(indexed));
+  report("cold open: answers (files read)", answers[0]!, rest(answers));
+  report("cold open: indexed (links)", indexed[0]!, rest(indexed));
 }
 
 const store = new VaultStore(vault);
