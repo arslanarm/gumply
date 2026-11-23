@@ -1,0 +1,12 @@
+filters:
+  and:
+    - file.folder == "Notion import/Workspace/Handbook/Projects"
+views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - Status
+      - Owner pages
+      - Task count
+      - Due

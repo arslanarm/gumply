@@ -111,6 +111,8 @@ export interface NotionImportReport {
   databases: number;
   rows: number;
   attachments: number;
+  /** Byte-identical files stored once (#inwiay4m): the vault file and the export's names for it, in export order. */
+  sharedAttachments: Array<{ file: string; names: string[] }>;
   converted: {
     pageLinks: number;
     mentions: number;
@@ -207,6 +209,11 @@ function attachmentName(raw: string): string {
     .slice(0, 100);
   const extension = (dot > 0 ? base.slice(dot) : "").replace(/[^\p{L}\p{N}.]/gu, "").slice(0, 20).toLowerCase();
   return `${stem || "file"}${extension}`;
+}
+
+/** A title's letters and digits only: what survives any file-name cleaning (#inwiay4m). */
+function titleLetters(title: string): string {
+  return title.normalize("NFC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
@@ -311,6 +318,7 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     databases: 0,
     rows: 0,
     attachments: 0,
+    sharedAttachments: [],
     converted: { pageLinks: 0, mentions: 0, databaseEmbeds: 0, databaseLinks: 0, attachmentLinks: 0, callouts: 0, relations: 0 },
     databaseDetails: [],
     renamedKeys: [],
@@ -414,7 +422,7 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
 
   // Attachments: everything else, deduped by name within the folder and by content.
   const attachments = new Map<string, string>();
-  const stored: Array<{ vaultPath: string; data: Uint8Array }> = [];
+  const stored: Array<{ vaultPath: string; data: Uint8Array; names: string[] }> = [];
   const files: NotionPlannedFile[] = [];
   const attachmentNames = new Set<string>();
   for (const path of paths) {
@@ -423,6 +431,7 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     const same = stored.find((item) => sameBytes(item.data, data));
     if (same) {
       attachments.set(path, same.vaultPath);
+      same.names.push(posixBasename(path));
       continue;
     }
     const name = attachmentName(posixBasename(path));
@@ -434,10 +443,11 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     attachmentNames.add(candidate.toLowerCase());
     const vaultPath = `${options.attachmentsFolder}/${candidate}`;
     attachments.set(path, vaultPath);
-    stored.push({ vaultPath, data });
+    stored.push({ vaultPath, data, names: [posixBasename(path)] });
     files.push({ path: vaultPath, content: data });
   }
   report.attachments = stored.length;
+  report.sharedAttachments = stored.filter((item) => item.names.length > 1).map((item) => ({ file: item.vaultPath, names: item.names }));
 
   // Link targets: the title when unique in the vault, else the path.
   const titleCounts = new Map<string, number>();
@@ -458,7 +468,7 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
   };
 
   // Databases (§6): frontmatter for each row page, and the `.base`.
-  const frontmatter = new Map<string, string>();
+  const frontmatter = new Map<string, Array<readonly [string, unknown]>>();
   const types: Record<string, PropertyType> = {};
   const keptTypes = new Map<string, NotionImportReport["keptTypes"][number]>();
   // Obsidian matches property names case-insensitively (`Due` is `due`), so types are looked up that way too.
@@ -518,8 +528,7 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
         continue;
       }
       const entries = columns.map((column) => [column.key, columnValue(column.kind, row[column.index] ?? "", link(page))] as const);
-      const yaml = orderedFrontmatterYaml(entries);
-      if (yaml) frontmatter.set(page.vaultPath, yaml);
+      frontmatter.set(page.vaultPath, entries);
     }
 
     // Views: a table in the exported view's order; a board where the view leaves out a select-like column.
@@ -558,9 +567,21 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     let text = decoder.decode(byPath.get(page.zipPath)!.data).replace(/^﻿/, "").replace(/\r\n/g, "\n");
     const noteId = page.vaultPath.replace(/\.md$/, "");
 
-    // The leading `# Title` repeats the file name (decision 3).
+    // The leading `# Title` repeats the file name (decision 3). When it differs
+    // only by characters a file name can't hold (Notion strips them from its
+    // names: `Q3: plan?` → `Q3 plan`), it is the real title: kept as `title:`
+    // (D20's exception, docs/file-format.md) and dropped too (#inwiay4m).
+    let realTitle: string | null = null;
     const heading = /^# (.*)\n(?:\n|$)?/.exec(text);
-    if (heading && heading[1]!.trim() === page.rawTitle.trim()) text = text.slice(heading[0].length);
+    if (heading) {
+      const h1 = heading[1]!.trim();
+      const raw = page.rawTitle.trim();
+      if (h1 === raw) text = text.slice(heading[0].length);
+      else if (h1 && titleLetters(h1) === titleLetters(raw)) {
+        realTitle = h1;
+        text = text.slice(heading[0].length);
+      }
+    }
 
     // A row page's `Key: value` lines are Notion's dump of its properties (§6).
     const database = page.database as (NotionPlannedDatabase & { headers: string[] }) | null;
@@ -636,7 +657,10 @@ export function planNotionImport(entries: readonly NotionEntry[], options: Notio
     text = out + text.slice(last);
 
     text = text.replace(/\n+$/, "");
-    const yaml = frontmatter.get(page.vaultPath);
+    const entries = frontmatter.get(page.vaultPath) ?? [];
+    const yaml = orderedFrontmatterYaml(
+      realTitle !== null && !entries.some(([key]) => key.toLowerCase() === "title") ? [["title", realTitle], ...entries] : entries,
+    );
     // As Gumply writes a note: the block, a blank line, the body (serializeNote).
     const body = text.length ? `${text}\n` : "";
     files.push({ path: page.vaultPath, content: yaml ? `---\n${yaml}---\n${body ? `\n${body}` : ""}` : body });
@@ -667,6 +691,7 @@ export function notionReportMarkdown(report: NotionImportReport, folder: string,
     `- ${words.pages(report.pages)}`,
     `- ${words.databases(report.databases, report.rows)}`,
     `- ${words.attachments(report.attachments)}`,
+    ...(report.sharedAttachments ?? []).map((item) => `  - ${words.sharedCopy(item.names.length, item.names.join(", "), item.file)}`),
     "",
     words.convertedTitle,
     "",

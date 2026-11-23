@@ -1,0 +1,10 @@
+filters:
+  and:
+    - file.folder == "Notion import/Workspace/Handbook/Reading list"
+views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - Author
+      - Read

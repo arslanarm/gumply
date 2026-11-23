@@ -30,6 +30,8 @@ export interface NotionReportStrings {
   pages: (n: number) => string;
   databases: (databases: number, rows: number) => string;
   attachments: (n: number) => string;
+  /** Byte-identical files in the export, stored once (#inwiay4m). */
+  sharedCopy: (n: number, names: string, file: string) => string;
   convertedTitle: string;
   links: (links: number, mentions: number) => string;
   databaseEmbeds: (embeds: number, links: number) => string;
@@ -65,6 +67,7 @@ const EN: NotionReportStrings = {
   pages: (n) => en1(n, "page", "pages"),
   databases: (databases, rows) => `${en1(databases, "database", "databases")} with ${en1(rows, "row", "rows")}`,
   attachments: (n) => en1(n, "attachment", "attachments"),
+  sharedCopy: (n, names, file) => `${n} identical files share one copy (\`${file}\`): ${names}`,
   convertedTitle: "## Converted",
   links: (links, mentions) => `${en1(links, "link", "links")} and ${en1(mentions, "mention", "mentions")} to wiki links`,
   databaseEmbeds: (embeds, links) => `${en1(embeds, "database", "databases")} embedded as live views, ${en1(links, "database link", "database links")}`,
@@ -109,6 +112,7 @@ const RU: NotionReportStrings = {
   pages: (n) => `Страниц: ${n}`,
   databases: (databases, rows) => `Баз данных: ${databases}, строк в них: ${rows}`,
   attachments: (n) => `Вложений: ${n}`,
+  sharedCopy: (n, names, file) => `Одинаковых файлов в одной копии (\`${file}\`): ${n} — ${names}`,
   convertedTitle: "## Преобразовано",
   links: (links, mentions) => `Ссылок: ${links} и упоминаний: ${mentions} — стали вики-ссылками`,
   databaseEmbeds: (embeds, links) => `Баз данных встроено живыми представлениями: ${embeds}, ссылок на базы: ${links}`,

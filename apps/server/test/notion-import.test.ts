@@ -130,6 +130,34 @@ describe("Notion import jobs (#znyztw3t)", () => {
     await imports.settled(imports.start(zip, null).id);
   });
 
+  it("the synthetic export (1.0 N5, #inwiay4m): no unresolved links, the vault's note untouched, a re-save of each page changes no bytes", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Existing.md"), "Untouched note.\n");
+    await store.rescan();
+    const before = await readFile(join(dir, "Existing.md"));
+    const imports = new NotionImports(store);
+    const job = await imports.settled(imports.start(await fixtureZip("synthetic"), null).id);
+    expect(job.state, job.error).toBe("done");
+    await store.rescan();
+
+    expect((await readFile(join(dir, "Existing.md"))).equals(before)).toBe(true);
+    expect(store.graph().unresolved ?? []).toEqual([]);
+    // The title Notion stripped from the file name is the page's title.
+    expect(store.get("Notion import/Workspace/Handbook/Chapter one/Section 1 1").title).toBe("Section 1.1");
+    expect(store.get("Notion import/Workspace/Handbook/Q3 plan").title).toBe("Q3: plan?");
+
+    const churn: string[] = [];
+    for (const meta of store.list()) {
+      if (meta.kind !== "page" || !meta.id.startsWith("Notion import/")) continue;
+      const file = join(dir, `${meta.id}.md`);
+      const bytes = await readFile(file);
+      const page = store.get(meta.id);
+      await store.update(meta.id, { content: page.content, expectedUpdated: page.updated });
+      if (!(await readFile(file)).equals(bytes)) churn.push(meta.id);
+    }
+    expect(churn).toEqual([]);
+  });
+
   it("removes job folders a restarted server left behind, after an hour", async () => {
     const { dir } = await createTestServer();
     const old = join(dir, ".gumply/import/old-job");
