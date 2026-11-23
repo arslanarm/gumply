@@ -617,10 +617,39 @@ async function pathExists(path: string): Promise<boolean> {
  * interleave file writes. The index is rebuilt on start (scan) and kept in
  * sync on every create/update/delete/move.
  */
+/**
+ * The store's page index. `generation` moves only when the set of files
+ * changes (a new id, a removed one, or a record now at another path), never
+ * for a content update, so what is derived from file names alone (the
+ * conflict-copy map, D43) is computed once per generation (#3jkf2gf6).
+ */
+class PageIndex extends Map<PageId, PageRecord> {
+  generation = 0;
+
+  override set(id: PageId, record: PageRecord): this {
+    const previous = super.get(id);
+    if (!previous || previous.filePath !== record.filePath) this.generation = (this.generation ?? 0) + 1;
+    return super.set(id, record);
+  }
+
+  override delete(id: PageId): boolean {
+    const removed = super.delete(id);
+    if (removed) this.generation += 1;
+    return removed;
+  }
+
+  override clear(): void {
+    if (this.size > 0) this.generation += 1;
+    super.clear();
+  }
+}
+
 export class VaultStore {
   readonly root: string;
 
-  private readonly pages = new Map<PageId, PageRecord>();
+  private readonly pages = new PageIndex();
+  /** The conflict-copy map of one `pages.generation` (D43). */
+  private conflictCache: { generation: number; names: ReadonlyMap<PageId, { of: PageId | null; name: ConflictCopyName }>; copies: ReadonlySet<PageId> } | null = null;
   /**
    * #8k4ssrkb: every linkable non-page file (images, PDFs… outside dot
    * folders, root `attachments/` included), for Obsidian-style `![[x.png]]`
@@ -1246,24 +1275,33 @@ export class VaultStore {
    * a sync tool's conflict copy, with the id of its original in the same
    * folder, or null when that's gone (an orphan copy, treated as a page).
    */
-  private conflictNames(): Map<PageId, { of: PageId | null; name: ConflictCopyName }> {
-    const byPath = new Map<string, PageId>();
-    for (const record of this.pages.values()) byPath.set(record.filePath, record.id);
-    const copies = new Map<PageId, { of: PageId | null; name: ConflictCopyName }>();
-    for (const record of this.pages.values()) {
-      const name = conflictCopyOf(basename(record.filePath));
-      if (!name) continue;
-      const of = byPath.get(join(dirname(record.filePath), name.originalName)) ?? null;
-      copies.set(record.id, { of: of === record.id ? null : of, name });
-    }
-    return copies;
+  private conflictNames(): ReadonlyMap<PageId, { of: PageId | null; name: ConflictCopyName }> {
+    return this.conflictState().names;
   }
 
   /** Ids of conflict copies whose original is beside them: never indexed or rewritten (D37, D43). */
-  private copyIds(): Set<PageId> {
-    const ids = new Set<PageId>();
-    for (const [id, { of }] of this.conflictNames()) if (of !== null) ids.add(id);
-    return ids;
+  private copyIds(): ReadonlySet<PageId> {
+    return this.conflictState().copies;
+  }
+
+  /** Computed once per set of files (`pages.generation`): every caller, in any loop, reads the same map. */
+  private conflictState(): { names: ReadonlyMap<PageId, { of: PageId | null; name: ConflictCopyName }>; copies: ReadonlySet<PageId> } {
+    const generation = this.pages.generation;
+    if (this.conflictCache && this.conflictCache.generation === generation) return this.conflictCache;
+    const byPath = new Map<string, PageId>();
+    for (const record of this.pages.values()) byPath.set(record.filePath, record.id);
+    const names = new Map<PageId, { of: PageId | null; name: ConflictCopyName }>();
+    const copies = new Set<PageId>();
+    for (const record of this.pages.values()) {
+      const name = conflictCopyOf(basename(record.filePath));
+      if (!name) continue;
+      const found = byPath.get(join(dirname(record.filePath), name.originalName)) ?? null;
+      const of = found === record.id ? null : found;
+      names.set(record.id, { of, name });
+      if (of !== null) copies.add(record.id);
+    }
+    this.conflictCache = { generation, names, copies };
+    return this.conflictCache;
   }
 
   // --- properties (v0.7 A, D34, spec/api v1.12) ----------------------------
