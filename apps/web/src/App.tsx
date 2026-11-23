@@ -14,7 +14,7 @@ import {
   type TrashItem,
   type DailyNoteSettings,
 } from "@gumply/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
@@ -78,7 +78,7 @@ import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.
 import { ConflictCompareDialog, type CompareTarget } from "./components/ConflictCompareDialog.js";
 import { ConflictsView, fileNameOf } from "./components/ConflictsView.js";
 import { resolvedToast } from "./lib/conflicts.js";
-import { BoardPreview } from "./board/BoardPreview.js";
+import { LazyBoardPreview } from "./board/index.js";
 import type { ConflictCopy, ConflictKeep, PossibleCopy } from "@gumply/core";
 import { HistorySettingsDialog } from "./components/HistorySettingsDialog.js";
 import { pageLeaveTracker } from "./lib/page-leave.js";
@@ -2208,7 +2208,10 @@ export function App() {
                   <h1 className="page-title">{fileNameOf(selectedMeta.id)}</h1>
                   <div className="conflict-copy-body">
                     {showingBoard && boardDoc ? (
-                      <BoardPreview board={boardDoc.board} />
+                      // Lazy, like embeds and History: the board engine stays out of page startup (#evh35bn7).
+                      <Suspense fallback={null}>
+                        <LazyBoardPreview board={boardDoc.board} />
+                      </Suspense>
                     ) : showingNote ? (
                       <Editor
                         key={`copy:${page.id}:${page.updated}`}

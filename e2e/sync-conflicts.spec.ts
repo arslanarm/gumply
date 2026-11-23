@@ -146,3 +146,14 @@ test('a sync burst shows "Syncing changes…" in the sidebar, gone once the vaul
   await expect(page.getByTestId('sidebar-syncing')).toBeEmpty({ timeout: 10_000 });
   await expect(page.getByTestId('page-item-Synced 4-39')).toBeVisible();
 });
+
+test('a board copy opens read-only with its board drawn (the board engine loads only then)', async ({ page, request }) => {
+  const board = (text: string) =>
+    `${JSON.stringify({ nodes: [{ id: 'a', type: 'text', text, x: 0, y: 0, width: 220, height: 80 }], edges: [] })}\n`;
+  await writeFile(path.join(E2E_VAULT, 'Plan.canvas'), board('Ours'), 'utf8');
+  const copy = 'Plan.sync-conflict-20261122-143005-ABCDEFG.canvas';
+  await syncIn(request, { [copy]: board('Theirs on the copy') });
+  await page.goto(`/#/${encodeURIComponent(copy)}`);
+  await expect(page.getByTestId('conflict-copy-banner')).toBeVisible();
+  await expect(page.getByTestId('conflict-copy-page')).toContainText('Theirs on the copy', { timeout: 10_000 });
+});
