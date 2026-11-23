@@ -20,7 +20,13 @@
  *   tags, status, due, priority, done, related: "[[x]]";
  * - `.obsidian/types.json`, 24 images under attachments/ referenced by ~10%;
  * - 5 `.base` views and 5 boards: four of 60 objects, one of <board> objects
- *   (stickies, text, page cards, 0.6×N connectors).
+ *   (stickies, text, page cards, 0.6×N connectors);
+ * - three fixed pages for "open a page" (#7giyynna), written last and without
+ *   the random source, so the rest of the vault is the same as before:
+ *   "Perf Typical" (a short note with links and a tag), "Perf Rich" (tables,
+ *   math, Mermaid, a code block) and "Perf Long" (~2,000 lines). Each ends
+ *   with a marker line (TYPICAL-END, RICH-END, LONG-END) that measure-web
+ *   waits for.
  */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -225,6 +231,50 @@ function board(objects) {
 }
 for (let b = 0; b < 4; b++) write(`Boards/Board ${b}.canvas`, board(60));
 write(`Boards/Big board.canvas`, board(BOARD));
+
+// Fixed pages for "open a page from the sidebar" (#7giyynna): no random draws here.
+write(
+  "Perf Typical.md",
+  [
+    "---",
+    "tags: [perf]",
+    "status: active",
+    "---",
+    "# Perf Typical",
+    "",
+    "A short note like most in a vault: a few sentences, a list, links to [[Hub]] and [[Perf Rich]], and a #perf tag.",
+    "",
+    "- first point, with **bold** text",
+    "- second point, with *italic* text",
+    "",
+    "TYPICAL-END",
+    "",
+  ].join("\n"),
+);
+const perfTable = (rows) => ["| a | b | c | d |", "|---|---|---|---|", ...Array.from({ length: rows }, (_, i) => `| ${i} | cell ${i} | **x** | [[Hub]] |`)];
+write(
+  "Perf Rich.md",
+  [
+    "# Perf Rich",
+    "",
+    ...Array.from({ length: 4 }, (_, k) => [`## Table ${k}`, "", ...perfTable(25), ""]).flat(),
+    ...Array.from({ length: 10 }, (_, k) => [`Inline $a_${k}^2 + b^2 = c^2$ and a block:`, "", `$$\\int_0^${k + 1} x^2\\,dx = \\frac{${(k + 1) ** 3}}{3}$$`, ""]).flat(),
+    ...Array.from({ length: 3 }, (_, k) => ["```mermaid", `graph TD; A${k}-->B${k}; B${k}-->C${k}; C${k}-->A${k};`, "```", ""]).flat(),
+    "```ts",
+    ...Array.from({ length: 60 }, (_, i) => `const v${i}: number = ${i} * 2; // code`),
+    "```",
+    "",
+    "RICH-END",
+    "",
+  ].join("\n"),
+);
+const longLines = [];
+for (let i = 0; i < 2000; i++) {
+  if (i % 40 === 0) longLines.push(`## Section ${i / 40}`, "");
+  else if (i % 7 === 0) longLines.push(`- item ${i} with [[Hub]] and #tag${i % 9}`);
+  else longLines.push(`Line ${i}: the quick brown fox jumps over the lazy dog, again and again, with **bold** and *italic* words.`, "");
+}
+write("Perf Long.md", ["---", "status: draft", "---", "# Perf Long", "", ...longLines, "LONG-END", ""].join("\n"));
 
 console.log(
   JSON.stringify({ dir, seed: SEED, notes: NOTES, links, dangling, tags: TAGS.length, images: IMAGES.length, bases: 5, boards: 5, bigBoard: BOARD }),
