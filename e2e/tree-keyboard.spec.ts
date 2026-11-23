@@ -123,6 +123,8 @@ test('the tree is one Tab stop; arrows, Home/End, →/← and type-ahead move in
   // Type-ahead.
   await page.keyboard.type('ch');
   expect(await focusedId(page)).toBe('Cherry');
+  // A pause ends the typed prefix ("chk" would match nothing); "k" starts a new one.
+  await page.waitForTimeout(800);
   await page.keyboard.press('k');
   expect(await focusedId(page)).toBe('Kiwi');
 
@@ -135,9 +137,13 @@ test('the tree is one Tab stop; arrows, Home/End, →/← and type-ahead move in
   await page.getByTestId('add-page-Kiwi').click();
   await expect.poll(async () => (await vault.pages()).some((meta) => meta.parentId === 'Kiwi')).toBe(true);
 
-  // → expands and enters a parent, ← goes back to it and collapses it.
-  await row(page, 'Kiwi').focus();
+  // → expands and enters a parent, ← goes back to it and collapses it. (The new
+  // sub-page opened with its title focused; back on Kiwi before using the tree.)
   const child = (await vault.pages()).find((meta) => meta.parentId === 'Kiwi')!;
+  await expectPageTitle(page, child.title);
+  await page.goto('/#/Kiwi');
+  await expectPageTitle(page, 'Kiwi');
+  await row(page, 'Kiwi').focus();
   await expect(row(page, 'Kiwi')).toHaveAttribute('aria-expanded', 'true');
   await expect(row(page, 'Kiwi')).toHaveAttribute('aria-level', '1');
   await expect(row(page, child.id)).toHaveAttribute('aria-level', '2');

@@ -350,8 +350,13 @@ export function App() {
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
   const reloadEditorAfterFetch = useRef(false);
-  /** Focus the next editor when ready: true = the start of its body, "caret" = its last caret (Cmd+K, #ifcn6pvx). */
-  const focusBodyAfterOpen = useRef<boolean | "caret">(false);
+  const focusBodyAfterOpen = useRef(false);
+  /**
+   * #ifcn6pvx: Cmd+K opened this note: its editor gets focus when ready (at its
+   * last caret, else the body's start). For that page only, and briefly, so a
+   * later open (a tree click) never pulls focus into the editor.
+   */
+  const paletteFocus = useRef<{ id: PageId; until: number } | null>(null);
   const focusBaseAfterOpen = useRef<PageId | null>(null);
   const restoreSelection = useRef<{ from: number; to: number } | null>(null);
   const backlinksRequest = useRef(0);
@@ -1047,9 +1052,11 @@ export function App() {
     const check = () => {
       frames += 1;
       const active = document.activeElement;
-      if (active && active !== document.body) return;
-      if (frames < 4) {
-        window.requestAnimationFrame(check);
+      // Focus can still sit on what the command is replacing (the editor of the
+      // page it leaves) for a few frames: keep watching for about half a second.
+      const lost = !active || active === document.body || !active.isConnected;
+      if (!lost || frames < 4) {
+        if (frames < 30) window.requestAnimationFrame(check);
         return;
       }
       const main = document.querySelector<HTMLElement>("main.content");
@@ -1383,15 +1390,17 @@ export function App() {
       else if (!isBoardId(id)) {
         const controls = editorControls.current;
         if (id === selectedRef.current && controls?.pageId === id) {
-          // Already open: back to its caret, as Esc does.
+          // The page that is open: back into it at its caret, as Esc does. No
+          // reload (that's a tree re-click's job): it would reset the caret.
           const selection = controls.getSelection();
           window.requestAnimationFrame(() => (selection ? controls.focusAt(selection.to) : controls.focusBody()));
+          return;
         }
-        else focusBodyAfterOpen.current = "caret";
+        paletteFocus.current = { id, until: Date.now() + 3000 };
       }
       handleOpen(id);
     },
-    [dismissSearch, handleOpen],
+    [dismissSearch, handleOpen, rememberCaret],
   );
 
   // A base opened from the palette: its first control, once the view is drawn.
@@ -1911,12 +1920,16 @@ export function App() {
   const handleEditorReady = useCallback((controls: EditorControls) => {
     editorControls.current = controls;
     setOutlineTick((value) => value + 1);
-    if (focusBodyAfterOpen.current) {
-      const where = focusBodyAfterOpen.current;
+    const fromPalette = paletteFocus.current;
+    if (fromPalette && fromPalette.id === controls.pageId && Date.now() < fromPalette.until) {
+      paletteFocus.current = null;
       focusBodyAfterOpen.current = false;
-      const caret = where === "caret" ? lastCaret.current.get(controls.pageId) : undefined;
+      const caret = lastCaret.current.get(controls.pageId);
       if (caret !== undefined) controls.focusAt(caret);
       else controls.focusBody();
+    } else if (focusBodyAfterOpen.current) {
+      focusBodyAfterOpen.current = false;
+      controls.focusBody();
     } else if (restoreSelection.current) {
       const position = restoreSelection.current.to;
       restoreSelection.current = null;
