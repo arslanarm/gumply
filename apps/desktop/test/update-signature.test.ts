@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { UPDATE_PUBLIC_KEYS } from "../src/update-keys.js";
 import {
   formatSigLine,
+  installerName,
   keyIdOf,
   makeVerifier,
   parseSigLine,
@@ -154,7 +155,74 @@ describe("verifyDownload and the file hash", () => {
 describe("makeVerifier (what main.ts gives the controller)", () => {
   it("no keys: no verifier, so no check and no extra requests (today's behaviour)", () => {
     expect(UPDATE_PUBLIC_KEYS).toEqual([]);
-    expect(makeVerifier({ keys: UPDATE_PUBLIC_KEYS, baseUrl: () => "x/", get: async () => Buffer.alloc(0) })).toBeNull();
+    expect(makeVerifier({ keys: UPDATE_PUBLIC_KEYS, baseUrl: () => "x/", installerName: () => "x", get: async () => Buffer.alloc(0) })).toBeNull();
+  });
+
+  it("the installer's exact name per version, as package.json's artifactName makes it", () => {
+    expect(installerName("appimage", "0.9.1", "x64")).toBe("Gumply-0.9.1-x86_64.AppImage");
+    expect(installerName("appimage", "0.9.1", "arm64")).toBe("Gumply-0.9.1-arm64.AppImage");
+    expect(installerName("nsis", "0.9.1-rc.2", "x64")).toBe("Gumply-Setup-0.9.1-rc.2-x64.exe");
+    expect(installerName("deb", "0.9.1", "x64")).toBeNull();
+  });
+
+  /** A release folder served by a fake GET; returns the verifier and what was fetched. */
+  function release(files: Record<string, Buffer | Error>) {
+    const get = vi.fn(async (url: string) => {
+      const body = files[url];
+      if (body instanceof Error) throw body;
+      if (!body) throw new Error(`404 for ${url.split("/").pop()}`);
+      return body;
+    });
+    const verify = makeVerifier({
+      keys,
+      baseUrl: (version) => `https://example.test/v${version}/`,
+      installerName: (version) => installerName("appimage", version, "x64"),
+      get,
+    })!;
+    return { verify, get };
+  }
+
+  it("replay: an older, validly signed installer offered as a newer version fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "gumply-sig-"));
+    try {
+      // 0.9.0's real installer and its real signed sums...
+      const old = Buffer.from("Gumply 0.9.0, an old build with a known bug");
+      const oldSums = Buffer.from(`${sha(old)}  Gumply-0.9.0-x86_64.AppImage\n`);
+      const oldSig = Buffer.from(signWith(primary.privateKey, oldSums, primary.entry.id));
+      // ...served as "0.9.1" (latest.yml edited), under either file name.
+      for (const cached of ["Gumply-0.9.0-x86_64.AppImage", "Gumply-0.9.1-x86_64.AppImage"]) {
+        const downloadedFile = join(dir, cached);
+        writeFileSync(downloadedFile, old);
+        const { verify } = release({ "https://example.test/v0.9.1/SHA256SUMS.txt": oldSums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": oldSig });
+        expect(await verify({ version: "0.9.1", downloadedFile }), cached).toMatchObject({ ok: false, reason: "Gumply-0.9.1-x86_64.AppImage is not in SHA256SUMS.txt" });
+      }
+      // Signed sums that list 0.9.1's name, but the old file under it: the hash differs.
+      const newSums = Buffer.from(`${sha(installer)}  Gumply-0.9.1-x86_64.AppImage\n`);
+      writeFileSync(join(dir, "Gumply-0.9.1-x86_64.AppImage"), old);
+      const { verify } = release({
+        "https://example.test/v0.9.1/SHA256SUMS.txt": newSums,
+        "https://example.test/v0.9.1/SHA256SUMS.txt.sig": Buffer.from(signWith(primary.privateKey, newSums, primary.entry.id)),
+      });
+      expect(await verify({ version: "0.9.1", downloadedFile: join(dir, "Gumply-0.9.1-x86_64.AppImage") })).toMatchObject({ ok: false, reason: expect.stringMatching(/sha256 mismatch/) });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a sums or .sig fetch that fails (network or 404) is a failure, never a pass", async () => {
+    const sig = Buffer.from(signWith(primary.privateKey, sums, primary.entry.id));
+    const cases: Array<[string, Record<string, Buffer | Error>]> = [
+      ["sums 404", { "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }],
+      ["sig 404", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums }],
+      ["network", { "https://example.test/v0.9.1/SHA256SUMS.txt": new Error("net::ERR_CONNECTION_RESET"), "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }],
+    ];
+    for (const [what, files] of cases) {
+      const { verify } = release(files);
+      expect(await verify({ version: "0.9.1", downloadedFile: "/nowhere/Gumply-0.9.1-x86_64.AppImage" }), what).toMatchObject({
+        ok: false,
+        reason: expect.stringMatching(/^couldn't fetch the signed checksums: /),
+      });
+    }
   });
 
   it("fetches exactly the sums and the .sig from the release, then checks the cached file by its name", async () => {
@@ -171,13 +239,10 @@ describe("makeVerifier (what main.ts gives the controller)", () => {
         if (!body) throw new Error(`404 for ${url}`);
         return body;
       });
-      const verify = makeVerifier({ keys, baseUrl: (version) => `https://example.test/v${version}/`, get })!;
+      const verify = makeVerifier({ keys, baseUrl: (version) => `https://example.test/v${version}/`, installerName: (version) => installerName("appimage", version, "x64"), get })!;
       expect(await verify({ version: "0.9.1", downloadedFile })).toEqual({ ok: true, sha256: sha(installer) });
       expect(get.mock.calls.map(([url]) => url).sort()).toEqual(Object.keys(served).sort());
 
-      // A missing .sig: not verified.
-      delete served["https://example.test/v0.9.1/SHA256SUMS.txt.sig"];
-      expect(await verify({ version: "0.9.1", downloadedFile })).toMatchObject({ ok: false, reason: expect.stringMatching(/couldn't fetch/) });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
