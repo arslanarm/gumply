@@ -285,3 +285,95 @@ describe("UpdateController at quit", () => {
     expect(updater.checkForUpdates).not.toHaveBeenCalled();
   });
 });
+
+describe("UpdateController with update signing (option B)", () => {
+  type Verify = NonNullable<ConstructorParameters<typeof UpdateController>[0]["verify"]>;
+  async function downloaded(verify: Verify, extra: Partial<ConstructorParameters<typeof UpdateController>[0]> = {}) {
+    const replace = vi.fn(() => "installed" as const);
+    const log = vi.fn();
+    const made = controller("appimage", undefined, { appImagePath: "/home/u/Apps/Gumply.AppImage", replace, verify, log, ...extra });
+    made.updater.checkForUpdates.mockImplementation(async () => {
+      made.updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    await made.instance.check(true);
+    made.updater.emit("update-downloaded", { version: "0.9.1", downloadedFile: "/cache/Gumply-0.9.1-x86_64.AppImage" });
+    await vi.waitFor(() => expect(made.instance.getState().status).not.toBe("downloading"));
+    return { ...made, replace, log };
+  }
+
+  it("a download that doesn't verify never becomes ready, installs nothing, and says why", async () => {
+    const { instance, replace, log } = await downloaded(async () => ({ ok: false, reason: "bad signature" }));
+    expect(instance.getState()).toMatchObject({ status: "verify-failed", version: "0.9.1", releaseUrl: releaseUrl("0.9.1"), error: "bad signature" });
+    expect(instance.installOnQuit()).toBe("nothing");
+    expect(replace).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("not verified: bad signature"));
+  });
+
+  it("a verify that throws counts as a failure", async () => {
+    const { instance } = await downloaded(async () => {
+      throw new Error("offline");
+    });
+    expect(instance.getState()).toMatchObject({ status: "verify-failed", error: "offline" });
+  });
+
+  it("the same version isn't downloaded again after a failure; a newer one is", async () => {
+    const { instance, updater } = await downloaded(async () => ({ ok: false, reason: "bad signature" }));
+    updater.downloadUpdate.mockClear();
+    await instance.check(true);
+    expect(instance.getState().status).toBe("verify-failed");
+    expect(updater.downloadUpdate).not.toHaveBeenCalled();
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.2" });
+      return undefined;
+    });
+    await instance.check(true);
+    expect(updater.downloadUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("a verified download is ready and installs after the re-hash matches", async () => {
+    const hashFileSync = vi.fn(() => "a".repeat(64));
+    const { instance, replace } = await downloaded(async () => ({ ok: true, sha256: "a".repeat(64) }), { hashFileSync });
+    expect(instance.getState().status).toBe("ready");
+    expect(instance.installOnQuit()).toBe("installed");
+    expect(hashFileSync).toHaveBeenCalledWith("/cache/Gumply-0.9.1-x86_64.AppImage");
+    expect(replace).toHaveBeenCalledTimes(1);
+  });
+
+  it("a file changed after it verified: the re-hash fails at quit, nothing installed", async () => {
+    const { instance, replace } = await downloaded(async () => ({ ok: true, sha256: "a".repeat(64) }), { hashFileSync: () => "b".repeat(64) });
+    expect(instance.installOnQuit()).toBe("verify-failed");
+    expect(instance.getState()).toMatchObject({ status: "verify-failed", error: expect.stringMatching(/changed after/) });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("Windows: the installer is re-hashed before it starts", async () => {
+    const dir = "C:\\Programs\\Gumply";
+    const self: ProcessInfo = { pid: 10, parentPid: 1, path: `${dir}\\Gumply.exe` };
+    const made = controller("nsis", undefined, {
+      installDir: dir,
+      selfPid: 10,
+      listProcesses: () => [self],
+      verify: async () => ({ ok: true, sha256: "a".repeat(64) }),
+      hashFileSync: () => "c".repeat(64),
+    });
+    made.updater.checkForUpdates.mockImplementation(async () => {
+      made.updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    await made.instance.check(true);
+    made.updater.emit("update-downloaded", { version: "0.9.1", downloadedFile: "C:\\cache\\Gumply-Setup-0.9.1.exe" });
+    await vi.waitFor(() => expect(made.instance.getState().status).toBe("ready"));
+    expect(made.instance.installOnQuit()).toBe("verify-failed");
+    expect(made.updater.install).not.toHaveBeenCalled();
+  });
+
+  it("without signing (no verify): ready at once, no hashing (today's behaviour)", async () => {
+    const hashFileSync = vi.fn(() => "x");
+    const made = controller("appimage", undefined, { appImagePath: "/a.AppImage", replace: () => "installed", hashFileSync });
+    made.updater.emit("update-downloaded", { version: "0.9.1", downloadedFile: "/cache/x.AppImage" });
+    expect(made.instance.getState().status).toBe("ready");
+    expect(made.instance.installOnQuit()).toBe("installed");
+    expect(hashFileSync).not.toHaveBeenCalled();
+  });
+});

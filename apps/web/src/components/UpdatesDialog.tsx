@@ -62,6 +62,8 @@ export function updateStatusText(t: ReturnType<typeof useT>, state: DesktopUpdat
       return t("update.readOnly");
     case "install-failed":
       return t("update.installFailed");
+    case "verify-failed":
+      return t("update.verifyFailed");
     case "error":
       return t("settings.updates.failed");
     default:
@@ -168,12 +170,12 @@ export function UpdatesDialog({ state, onChange, onClose }: UpdatesDialogProps) 
             ) : null}
           </div>
           {status ? (
-            <p className={`mcp-note${state.status === "error" || state.status === "install-failed" ? " mcp-error" : ""}`} data-testid="updates-status" role="status">
+            <p className={`mcp-note${state.status === "error" || state.status === "install-failed" || state.status === "verify-failed" ? " mcp-error" : ""}`} data-testid="updates-status" role="status">
               {status}
             </p>
           ) : null}
           {hint ? <p className="mcp-note" data-testid="updates-hint">{hint}</p> : null}
-          {state.status === "ready" || (state.releaseUrl && ["available", "read-only", "install-failed"].includes(state.status)) ? (
+          {state.status === "ready" || (state.releaseUrl && ["available", "read-only", "install-failed", "verify-failed"].includes(state.status)) ? (
             <div className="updates-status-row updates-actions">
               {state.status === "ready" ? (
                 <button type="button" className="button-primary" data-testid="updates-restart" onClick={() => void api.restartForUpdate()}>
