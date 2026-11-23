@@ -8,6 +8,7 @@ import {
   duplicateBlock,
   moveBlock,
   moveBlockTo,
+  moveBlockConverting,
   type BlockRef,
 } from "../lib/blocks.js";
 import { insertBlockBelow, TURN_INTO, turnInto } from "../editor/block-editing.js";
@@ -40,6 +41,8 @@ interface DropState {
   top: number;
   width: number;
   targetPos: number;
+  /** #2kafk39m: nothing can be dropped here (no line; the cursor says so). */
+  illegal?: boolean;
   /** spec/columns: dropped on a block's side edge, beside it (a vertical guide). */
   side?: { target: BlockRef; side: "left" | "right"; height: number };
 }
@@ -223,10 +226,10 @@ export function BlockGutter({ editor }: BlockGutterProps) {
       // dragged data as text as well as moving the block.
       event.preventDefault();
       event.stopPropagation();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
       const next = computeDrop(event, source);
+      if (event.dataTransfer) event.dataTransfer.dropEffect = next?.illegal ? "none" : "move";
       dropRef.current = next;
-      setDrop(next);
+      setDrop(next?.illegal ? null : next);
     };
     const onDrop = (event: DragEvent) => {
       const source = draggingRef.current;
@@ -238,10 +241,10 @@ export function BlockGutter({ editor }: BlockGutterProps) {
       dropRef.current = null;
       setDragging(null);
       setDrop(null);
-      if (!target) return;
+      if (!target || target.illegal) return;
       const tr = target.side
         ? dropBeside(editor.state, source, target.side.target, target.side.side)
-        : moveBlockTo(editor.state, source, target.targetPos);
+        : (moveBlockTo(editor.state, source, target.targetPos) ?? moveBlockConverting(editor.state, source, target.targetPos));
       if (tr) {
         editor.view.dispatch(tr);
         editor.view.focus();
@@ -367,7 +370,8 @@ export function BlockGutter({ editor }: BlockGutterProps) {
 
     const sourceIsItem = source.node.type.name === "listItem" || source.node.type.name === "taskItem";
     const targetIsItem = block.node.type.name === "listItem" || block.node.type.name === "taskItem";
-    if (sourceIsItem !== targetIsItem) return null;
+    // #2kafk39m: an item dropped among blocks, or a paragraph among items, is converted (see
+    // moveBlockConverting); a spot where neither works shows no line and refuses the drop.
 
     const dom = domForBlock(editor.view, block);
     if (!dom) return null;
@@ -388,7 +392,10 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     const before = event.clientY < rect.top + rect.height / 2;
     const targetPos = before ? block.from : block.to;
     if (targetPos === source.from || targetPos === source.to) return null;
+    const legal =
+      moveBlockTo(editor.state, source, targetPos) !== null || moveBlockConverting(editor.state, source, targetPos) !== null;
     return {
+      illegal: legal ? undefined : true,
       left: rect.left,
       width: rect.width,
       top: before ? rect.top - 1 : rect.bottom - 1,
