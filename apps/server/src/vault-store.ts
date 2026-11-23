@@ -495,6 +495,22 @@ const RESCAN_MAX_WAIT_MS = 2000;
 /** More watcher events than this within the window is a sync burst ("Syncing changes…"). */
 const SYNC_BURST_EVENTS = 50;
 const SYNC_WINDOW_MS = 2000;
+/**
+ * #xgnvipyd: a title rename rewrites the links to it in batches, each its own
+ * queued task, so other saves run in between: at most this many pages visited,
+ * or this long, per batch.
+ */
+const RENAME_BATCH_PAGES = 200;
+const RENAME_BATCH_MS = 50;
+
+/** #xgnvipyd: a title rename's link rewrite, pinned when the rename itself is done and run in batches. */
+interface RenameRewrite {
+  skip: ReadonlySet<PageId>;
+  rewriteText: (markdown: string, source: PageId) => { content: string; count: number };
+  /** Every page and board id at the rename, in order; each batch resolves them again (a page renamed meanwhile is followed). */
+  ids: PageId[];
+}
+
 /** #im3em6tq: how long a path Gumply itself wrote or moved doesn't count toward a sync burst. */
 const OWN_WRITE_MS = 5000;
 
@@ -908,6 +924,18 @@ export class VaultStore {
    * "Syncing changes…": a rename's 2,000 link rewrites are ours, not a sync.
    */
   private ownPaths = new Map<string, number>();
+  /**
+   * #xgnvipyd: while a title rename's own queued task runs, `rewriteLinksTo`
+   * captures its link rewrite here instead of running it; `renameInBatches`
+   * then runs it in batches, letting other saves through.
+   */
+  private deferRewrites = false;
+  private deferredRewrite: RenameRewrite | null = null;
+  /** #xgnvipyd: a page being renamed (its old and new ids) → when the rename, batches included, ends. */
+  private renamesRunning = new Map<PageId, Promise<void>>();
+  /** Test hooks (#xgnvipyd): rename batches run so far, and a callback after each one. */
+  renameBatchesRun = 0;
+  afterRenameBatch: (() => Promise<void>) | null = null;
   /** Queued tasks that aren't rescans: a pending rescan waits for them (save priority, §8). */
   private pendingWrites = 0;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
@@ -2234,8 +2262,76 @@ export class VaultStore {
     return this.enqueue(() => this.createNow(input));
   }
 
-  update(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
+  async update(id: PageId, patch: UpdatePageInput): Promise<Page & { rewrittenPages: PageId[] }> {
+    await this.renameSettled(this.resolveId(id));
+    // #xgnvipyd: a plain title rename lets other saves through while it rewrites the links to it.
+    if (patch.title !== undefined && patch.content === undefined) {
+      return this.renameInBatches(this.resolveId(id), () => this.updateNow(this.resolveId(id), patch), (page) => page.id);
+    }
     return this.enqueue(() => this.updateNow(this.resolveId(id), patch));
+  }
+
+  /** #xgnvipyd: wait while `id` (old or new) is being renamed, so nothing else changes it mid-rename. */
+  private async renameSettled(id: PageId): Promise<void> {
+    for (let running = this.renamesRunning.get(id); running; running = this.renamesRunning.get(this.resolveId(id))) {
+      await running.catch(() => undefined);
+    }
+  }
+
+  /**
+   * #xgnvipyd: a title rename in three steps, the answer coming after all of
+   * them as before.
+   * 1. One queued task, atomic as always: the checks, the title write, the
+   *    file and sub-page folder move. Its link rewrite is only captured
+   *    (`deferRewrites`), with the link snapshot it resolves against.
+   * 2. The rewrite in batches, each its own queued task (`rewriteBatch`):
+   *    saves to other pages run in between.
+   * 3. One queued task: the link index rebuilt.
+   * Meanwhile the renamed page is held (`renamesRunning`): its own saves,
+   * moves, deletes and a second rename wait for this one.
+   */
+  private async renameInBatches<T extends { rewrittenPages: PageId[] }>(
+    id: PageId,
+    renameNow: () => Promise<T>,
+    idOf: (result: T) => PageId,
+  ): Promise<T> {
+    let finished!: () => void;
+    const running = new Promise<void>((resolve) => (finished = resolve));
+    const held = [id];
+    this.renamesRunning.set(id, running);
+    try {
+      const { result, job } = await this.enqueue(async () => {
+        this.deferRewrites = true;
+        this.deferredRewrite = null;
+        try {
+          const result = await renameNow();
+          // Set by rewriteLinksTo during renameNow (TS narrows the field to null across the await).
+          return { result, job: this.deferredRewrite as RenameRewrite | null };
+        } finally {
+          this.deferRewrites = false;
+          this.deferredRewrite = null;
+        }
+      });
+      if (!job) return result;
+      const newId = idOf(result);
+      if (newId !== id) {
+        this.renamesRunning.set(newId, running);
+        held.push(newId);
+      }
+      const rewritten: PageId[] = [...result.rewrittenPages];
+      for (let at = 0; at < job.ids.length; ) {
+        at = await this.enqueue(() => this.rewriteBatch(job, at, rewritten));
+        this.renameBatchesRun += 1;
+        await this.afterRenameBatch?.();
+      }
+      return await this.enqueue(async () => {
+        this.reindexAll();
+        return { ...result, rewrittenPages: rewritten.sort((a, b) => a.localeCompare(b)) };
+      });
+    } finally {
+      for (const key of held) if (this.renamesRunning.get(key) === running) this.renamesRunning.delete(key);
+      finished();
+    }
   }
 
   /**
@@ -2248,7 +2344,8 @@ export class VaultStore {
     return this.enqueue(() => this.renameTagNow(from, to, skip));
   }
 
-  remove(id: PageId): Promise<DeletePageResult> {
+  async remove(id: PageId): Promise<DeletePageResult> {
+    await this.renameSettled(this.resolveId(id));
     return this.enqueue(() => this.removeNow(this.resolveId(id)));
   }
 
@@ -2301,7 +2398,8 @@ export class VaultStore {
     });
   }
 
-  move(id: PageId, parentId: PageId | null): Promise<Page> {
+  async move(id: PageId, parentId: PageId | null): Promise<Page> {
+    await this.renameSettled(this.resolveId(id));
     return this.enqueue(() => this.moveNow(this.resolveId(id), parentId));
   }
 
@@ -2318,10 +2416,14 @@ export class VaultStore {
     return this.enqueue(() => this.createBoardNow(input));
   }
 
-  updateBoard(
+  async updateBoard(
     id: PageId,
     patch: UpdateBoardInput,
   ): Promise<BoardDocument & { rewrittenPages: PageId[]; conflictBackup?: string; repairBackup?: string }> {
+    await this.renameSettled(this.resolveId(id));
+    if (patch.title !== undefined && patch.board === undefined) {
+      return this.renameInBatches(this.resolveId(id), () => this.updateBoardNow(this.resolveId(id), patch), (doc) => doc.meta.id);
+    }
     return this.enqueue(() => this.updateBoardNow(this.resolveId(id), patch));
   }
 
@@ -2939,7 +3041,11 @@ export class VaultStore {
     return this.enqueue(() => this.createBaseNow(input));
   }
 
-  updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
+  async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
+    await this.renameSettled(this.resolveId(id));
+    if (patch.title !== undefined && patch.config === undefined) {
+      return this.renameInBatches(this.resolveId(id), () => this.updateBaseNow(this.resolveId(id), patch), (doc) => doc.meta.id);
+    }
     return this.enqueue(() => this.updateBaseNow(this.resolveId(id), patch));
   }
 
@@ -3297,7 +3403,13 @@ export class VaultStore {
         ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
         : rewriteWikilinkTargets(markdown, isTarget, record.title);
     };
-    return this.rewriteEverywhere(new Set([oldId, record.id]), rewriteText, {}, { frontmatter: true });
+    const skip = new Set([oldId, record.id]);
+    if (this.deferRewrites) {
+      // #xgnvipyd: pinned now (the link snapshot is beforeMetas/afterMetas above), run in batches after.
+      this.deferredRewrite = { skip, rewriteText, ids: [...this.pages.keys()] };
+      return [];
+    }
+    return this.rewriteEverywhere(skip, rewriteText, {}, { frontmatter: true });
   }
 
   /**
@@ -3354,22 +3466,75 @@ export class VaultStore {
     const copies = this.copyIds();
     for (const other of [...this.pages.values()]) {
       if (skip.has(other.id) || copies.has(other.id)) continue;
-
-      if (other.board) {
-        const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other.id).content });
-        if (result.count === 0) continue;
-        await this.saveBoardRecord(other, result.board, { minimal: true });
-        rewritten.push(other.id);
-        continue;
-      }
-
-      const result = rewriteText(other.content, other.id);
-      const yaml = options.frontmatter ? await this.rewrittenFrontmatter(other, rewriteText) : null;
-      if (result.count === 0 && yaml === null) continue;
-
-      await this.writeRewrittenBody(other, result.content, yaml ?? undefined);
+      const apply = await this.planRewrite(other, rewriteText, boardNodes, options);
+      if (!apply) continue;
+      await apply();
       rewritten.push(other.id);
     }
+  }
+
+  /** One page's or board's link rewrite, computed from its current text: the write to do, or null when nothing changes. */
+  private async planRewrite(
+    other: PageRecord,
+    rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
+    boardNodes: Omit<CanvasRewrite, "text">,
+    options: { frontmatter?: boolean },
+  ): Promise<(() => Promise<void>) | null> {
+    if (other.board) {
+      const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other.id).content });
+      if (result.count === 0) return null;
+      return async () => {
+        await this.saveBoardRecord(other, result.board, { minimal: true });
+      };
+    }
+    const result = rewriteText(other.content, other.id);
+    const yaml = options.frontmatter ? await this.rewrittenFrontmatter(other, rewriteText) : null;
+    if (result.count === 0 && yaml === null) return null;
+    return () => this.writeRewrittenBody(other, result.content, yaml ?? undefined);
+  }
+
+  /**
+   * #xgnvipyd: one batch of a title rename's link rewrite, as its own queued
+   * task: from `start`, pages and boards until RENAME_BATCH_PAGES or
+   * RENAME_BATCH_MS. Each one is looked up again (a rename meanwhile is
+   * followed through the redirects) and rewritten from its current text, so a
+   * save that landed between batches is kept. A file changed on disk since it
+   * was read (an outside edit not yet rescanned) is re-read first, never
+   * overwritten (D22/D37). Returns where the next batch starts.
+   */
+  private async rewriteBatch(job: RenameRewrite, start: number, rewritten: PageId[]): Promise<number> {
+    const started = performance.now();
+    const reason = this.historyReason;
+    // The rewrite's versions say "rename"; a save between batches is an ordinary edit.
+    this.historyReason = reason ?? "rename";
+    const copies = this.copyIds();
+    let at = start;
+    try {
+      for (let visited = 0; at < job.ids.length; at++, visited++) {
+        if (visited >= RENAME_BATCH_PAGES || performance.now() - started > RENAME_BATCH_MS) break;
+        const id = this.resolveId(job.ids[at]!);
+        if (job.skip.has(id) || copies.has(id)) continue;
+        let other = this.pages.get(id);
+        if (!other) continue;
+        let apply = await this.planRewrite(other, job.rewriteText, {}, { frontmatter: true });
+        if (!apply) continue;
+        const info = await stat(other.filePath).catch(() => null);
+        if (!info) continue;
+        if (Math.abs(info.mtimeMs - other.fileMtimeMs) > 1) {
+          // Changed outside since it was read: take the file as it is now, then rewrite that.
+          await this.refreshFromDisk({ kind: "paths", paths: new Set([other.filePath]) });
+          other = this.pages.get(this.resolveId(id));
+          if (!other || copies.has(other.id)) continue;
+          apply = await this.planRewrite(other, job.rewriteText, {}, { frontmatter: true });
+          if (!apply) continue;
+        }
+        await apply();
+        if (!rewritten.includes(other.id)) rewritten.push(other.id);
+      }
+    } finally {
+      this.historyReason = reason;
+    }
+    return at;
   }
 
   /**
