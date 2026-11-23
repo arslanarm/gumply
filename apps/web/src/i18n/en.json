@@ -1701,6 +1701,7 @@
     "wholeFile": "Show whole file",
     "changesOnly": "Show changes only",
     "noChanges": "No changes from the current version.",
+    "onlyDates": "No changes to the text; only Gumply’s dates changed. “Show whole file” shows them.",
     "added": "Added",
     "removed": "Removed",
     "boardObjects_one": "This version of the board has {{count}} object.",

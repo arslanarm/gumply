@@ -279,7 +279,11 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
     }
     // #h4tyk92t: Gumply's own `updated:`/`created:` changes are hidden unless the whole file is shown.
     const lines = whole ? diff.lines : hideManagedKeyChanges(diff.lines);
-    if (!lines.some((line) => line.op !== "same")) return <p className="history-muted">{t("history.noChanges")}</p>;
+    if (!lines.some((line) => line.op !== "same")) {
+      // Said plainly when only those dates differ, so it doesn't look like an empty diff.
+      const onlyDates = diff.lines.some((line) => line.op !== "same");
+      return onlyDates ? <p className="history-muted" data-testid="history-only-dates">{t("history.onlyDates")}</p> : <p className="history-muted">{t("history.noChanges")}</p>;
+    }
     // The diff runs from this version to now: "add" is what now has and this version lacks.
     return (
       <>
