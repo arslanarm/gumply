@@ -335,3 +335,48 @@ describe("boards and bases rename in batches too (#xgnvipyd)", { timeout: 60_000
     expect(await readFile(join(dir, "Home.md"), "utf8")).toContain("![[Todo.base");
   });
 });
+
+/** The linking page the rewrite reaches first (in the store's own order). */
+const firstLinker = (store: VaultStore) => [...(store as unknown as { pages: Map<string, unknown> }).pages.keys()].filter((id) => id.startsWith("L/"))[0]!;
+
+describe("@opus-hunter's review cases (#xgnvipyd, N9-1 and N9-2)", { timeout: 60_000 }, () => {
+  it("N9-1: a link to the old name added to a page whose batch already ran is rewritten in the final pass", async () => {
+    const { dir, store } = await vault(600);
+    const target = firstLinker(store);
+    let added = false;
+    store.afterRenameBatch = async () => {
+      if (added) return;
+      added = true;
+      const page = store.get(target);
+      expect(page.content).toContain("[[Hub renamed]]"); // its batch has run
+      // Meanwhile `[[Hub]]` still means the renamed page (the alias): someone links it again.
+      await store.update(target, { content: `${page.content}\nAdded mid-rename: [[Hub]].\n`, expectedUpdated: page.updated });
+    };
+    const renamed = await store.update("Hub", { title: "Hub renamed" });
+    const text = await readFile(join(dir, `${target}.md`), "utf8");
+    expect(text).toContain("Added mid-rename: [[Hub renamed]].");
+    expect(text).not.toContain("[[Hub]]");
+    expect(renamed.rewrittenPages).toContain(target);
+    expect(store.backlinks("Hub renamed").map((link) => link.page.id)).toContain(target);
+  });
+
+  it("N9-2: after a real page takes the old name, a link added for it isn't rewritten to the renamed page", async () => {
+    const { dir, store } = await vault(600);
+    const target = lastLinker(store);
+    let done = false;
+    store.afterRenameBatch = async () => {
+      if (done) return;
+      done = true;
+      await store.create({ title: "Hub", content: "A new page that took the old name." });
+      const page = store.get(target);
+      expect(page.content).toContain("[[Hub]]"); // its batch hasn't run yet
+      await store.update(target, { content: `${page.content}\nAbout the new one: [[Hub]].\n`, expectedUpdated: page.updated });
+    };
+    await store.update("Hub", { title: "Hub renamed" });
+    const text = await readFile(join(dir, `${target}.md`), "utf8");
+    expect(text).toContain("About the new one: [[Hub]].");
+    expect(text).not.toContain("About the new one: [[Hub renamed]]");
+    // Pages untouched since the capture still follow the snapshot rule (their link meant the renamed page).
+    expect(await readFile(join(dir, `${firstLinker(store)}.md`), "utf8")).toContain("[[Hub renamed]]");
+  });
+});

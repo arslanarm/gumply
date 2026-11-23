@@ -521,6 +521,13 @@ interface RenameRewrite {
   failed: PageId[];
   /** The renamed page's id before the rename. */
   oldId: PageId;
+  /**
+   * N9-1 (@opus-hunter's review): pages whose links were recomputed outside the
+   * rename's own rewrite while it ran (a save, an AI app's write, an outside
+   * edit). One may have gained `[[Old]]` after its batch ran: the final pass
+   * plans them again.
+   */
+  touched: Set<PageId>;
 }
 
 /** #im3em6tq: how long a path Gumply itself wrote or moved doesn't count toward a sync burst. */
@@ -943,6 +950,10 @@ export class VaultStore {
    */
   private deferRewrites = false;
   private deferredRewrite: RenameRewrite | null = null;
+  /** N9-1: renames whose batches are running (their `touched` sets are filled). */
+  private activeRenameJobs = new Set<RenameRewrite>();
+  /** N9-1: inside a rename's own rewrite (its writes aren't "touched" by someone else). */
+  private inRenameRewrite = 0;
   /** #xgnvipyd: a page being renamed (its old and new ids) → when the rename, batches included, ends. */
   private renamesRunning = new Map<PageId, Promise<void>>();
   /** Test hooks (#xgnvipyd): rename batches run so far, and a callback after each one. */
@@ -2377,6 +2388,7 @@ export class VaultStore {
         held.push(newId);
       }
       const rewritten: PageId[] = [...result.rewrittenPages];
+      this.activeRenameJobs.add(job);
       for (let at = 0; at < job.ids.length; ) {
         at = await this.enqueue(() => this.rewriteBatch(job, at, rewritten));
         this.renameBatchesRun += 1;
@@ -2397,6 +2409,9 @@ export class VaultStore {
         };
       });
     } finally {
+      this.activeRenameJobs.forEach((active) => {
+        if (active.oldId === id) this.activeRenameJobs.delete(active);
+      });
       for (const key of held) {
         if (this.renamesRunning.get(key) === running) this.renamesRunning.delete(key);
         if (this.renameAliases.delete(key)) this.reindexAll();
@@ -3487,7 +3502,7 @@ export class VaultStore {
     if (this.deferRewrites) {
       // #xgnvipyd: pinned now (the link snapshot is beforeMetas/afterMetas above), run in batches after.
       const aliased = oldId !== record.id || previousTitle !== record.title;
-      this.deferredRewrite = { skip, rewriteText, rewriteWith, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null, failed: [], oldId };
+      this.deferredRewrite = { skip, rewriteText, rewriteWith, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null, failed: [], oldId, touched: new Set() };
       if (aliased) this.renameAliases.set(record.id, { fromId: oldId, fromTitle: previousTitle });
       return [];
     }
@@ -3602,13 +3617,16 @@ export class VaultStore {
     // Only a link that still means the old page counts: one resolving to its old id through the
     // alias. A link already to the new name is left alone, and so is the old id once a real page
     // holds it (that page won the name; @opus-editor's review).
-    if (!job.aliasKey || !this.renameAliases.has(job.aliasKey) || this.pages.has(job.oldId)) return;
+    if (!job.aliasKey || !this.renameAliases.has(job.aliasKey) || this.oldIdTakenOver(job)) return;
     const known = new Set(job.ids.map((id) => this.resolveId(id)));
+    // N9-1: a known page touched mid-rename may have gained `[[Old]]` after its batch: plan it again.
+    for (const id of job.touched) known.delete(this.resolveId(id));
     const skip = new Set([...job.skip, renamedId].map((id) => this.resolveId(id)));
     const copies = this.copyIds();
     const late = job.rewriteWith(this.linkMetas(), new Set([job.oldId]));
     const reason = this.historyReason;
     this.historyReason = reason ?? "rename";
+    this.inRenameRewrite += 1;
     try {
       for (const other of [...this.pages.values()]) {
         if (known.has(other.id) || skip.has(other.id) || copies.has(other.id)) continue;
@@ -3616,6 +3634,7 @@ export class VaultStore {
         if (apply && (await this.applyRenameRewrite(job, other, apply)) && !rewritten.includes(other.id)) rewritten.push(other.id);
       }
     } finally {
+      this.inRenameRewrite -= 1;
       this.historyReason = reason;
     }
   }
@@ -3637,12 +3656,19 @@ export class VaultStore {
     const copies = this.copyIds();
     // The renamed page's ids as they are now (an outside rename of it is followed too).
     const skip = new Set([...job.skip].map((id) => this.resolveId(id)));
+    // N9-2 (@opus-hunter's review): another, real page took the old id meanwhile. A page untouched
+    // since the capture still says what it said then (its `[[Old]]` meant the renamed page: the
+    // snapshot rule, as before). A page touched mid-rename may hold a `[[Old]]` written for the new
+    // page: it is left as it is, resolving against the page list as it is now.
+    const takenOver = this.oldIdTakenOver(job);
+    const touched = takenOver ? new Set([...job.touched].map((id) => this.resolveId(id))) : null;
     let at = start;
+    this.inRenameRewrite += 1;
     try {
       for (let visited = 0; at < job.ids.length; at++, visited++) {
         if (visited >= RENAME_BATCH_PAGES || performance.now() - started > RENAME_BATCH_MS) break;
         const id = this.resolveId(job.ids[at]!);
-        if (skip.has(id) || copies.has(id)) continue;
+        if (skip.has(id) || copies.has(id) || touched?.has(id)) continue;
         let other = this.pages.get(id);
         if (!other) continue;
         let apply = await this.planRewrite(other, job.rewriteText, {}, { frontmatter: true });
@@ -3653,13 +3679,15 @@ export class VaultStore {
           // Changed outside since it was read: take the file as it is now, then rewrite that.
           await this.refreshFromDisk({ kind: "paths", paths: new Set([other.filePath]) });
           other = this.pages.get(this.resolveId(id));
-          if (!other || copies.has(other.id)) continue;
+          // N9-2: changed outside after a takeover: like a page touched mid-rename, left as it is.
+          if (!other || copies.has(other.id) || takenOver) continue;
           apply = await this.planRewrite(other, job.rewriteText, {}, { frontmatter: true });
           if (!apply) continue;
         }
         if (await this.applyRenameRewrite(job, other, apply) && !rewritten.includes(other.id)) rewritten.push(other.id);
       }
     } finally {
+      this.inRenameRewrite -= 1;
       this.historyReason = reason;
     }
     return at;
@@ -5074,8 +5102,26 @@ export class VaultStore {
   }
 
   /** Recompute the link edges of these sources only (one page list for all of them). */
+  /**
+   * N9-2: another, real page holds the renamed page's old id now (created, or renamed to that
+   * name, mid-rename). The renamed page's own id is `aliasKey` (its new id); a title-only rename
+   * keeps its id, and then the page at the old id is the renamed one itself.
+   */
+  private oldIdTakenOver(job: RenameRewrite): boolean {
+    if (!this.pages.has(job.oldId)) return false;
+    const renamedNow = job.aliasKey === null ? job.oldId : this.resolveId(job.aliasKey);
+    return renamedNow !== job.oldId;
+  }
+
+  /** N9-1: a page's links recomputed outside a running rename's own rewrite. */
+  private noteTouched(ids: readonly PageId[]): void {
+    if (this.activeRenameJobs.size === 0 || this.inRenameRewrite > 0) return;
+    for (const job of this.activeRenameJobs) for (const id of ids) job.touched.add(id);
+  }
+
   private recomputeSources(ids: readonly PageId[]): void {
     if (ids.length === 0) return;
+    this.noteTouched(ids);
     const metas = this.linkMetas();
     // D43: a conflict copy beside its original holds no links (as recomputeSource).
     const copies = this.copyIds();
@@ -5087,6 +5133,7 @@ export class VaultStore {
   }
 
   private recomputeSource(id: PageId): void {
+    this.noteTouched([id]);
     const record = this.pages.get(id);
     if (!record || this.copyIds().has(id)) {
       this.edgesBySource.delete(id);
