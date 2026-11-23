@@ -11,8 +11,11 @@
  *   Markdown and [[links]], shapes, text, every 10th a live page card) and
  *   0.6·N connectors, every 5th labelled. The view is fitted, so every object
  *   is on screen (the worst case).
- * - Gestures: drag 1 object, drag 50 selected, drag all (Ctrl+A), pan (wheel),
- *   zoom (Ctrl+wheel); 60 pointer/wheel events about 16 ms apart.
+ * - Gestures: drag 1 object (clicked), drag 50 (a selection box over at least
+ *   50 objects), drag all (Ctrl+A), pan (wheel), zoom (Ctrl+wheel); 60
+ *   pointer/wheel events about 16 ms apart. Objects are grabbed at a point
+ *   that moves them: never a connection handle (at a fitted 1,000-object
+ *   board, ~20×12 px objects, a corner point hit the handle), link or button.
  * - fps / p95 come from a requestAnimationFrame loop during the gesture; a
  *   busy main thread shows up as long frames. "moved/selected" checks that the
  *   drag really moved what it selected (read once the drop is committed).
@@ -76,6 +79,34 @@ const browser = await chromium.launch({
 
 async function openBoard(seed, throttle) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript(() => {
+    /**
+     * A point on an object that grabs (or selects) the object itself. #g95wkd9y:
+     * at a fitted 1,000-object board (zoom 0.1) objects are about 20×12 px, and
+     * a fixed point near the corner landed on a connection handle (`.nodrag`),
+     * which starts a connector instead: those drags moved nothing. Links and
+     * buttons are skipped too (a [[link]] opens instead of selecting), and so
+     * is anything covering the object (toolbars, the minimap).
+     */
+    window.__perfPointOn = (el, forSelection = false) => {
+      const r = el.getBoundingClientRect();
+      // For Shift-click selection, only the lower body: a click near an
+      // object's top (a card's header, say) can select that object alone and
+      // drop the rest of the selection.
+      const spots = [[0.3, 0.6], [0.7, 0.6], [0.5, 0.75]];
+      if (!forSelection) spots.push([0.25, 0.35], [0.75, 0.35], [0.5, 0.5]);
+      for (const [fx, fy] of spots) {
+        const x = r.x + r.width * fx;
+        const y = r.y + r.height * fy;
+        const hit = document.elementFromPoint(x, y);
+        // After a box selection React Flow lays its selection rectangle over the
+        // selected objects; grabbing that is how such a selection is dragged.
+        const onSelectionRect = el.classList.contains("selected") && hit?.closest(".react-flow__nodesselection-rect");
+        if (hit && (onSelectionRect || (el.contains(hit) && !hit.closest("a, .wiki-link, button, .nodrag, .react-flow__handle")))) return { x, y };
+      }
+      return null;
+    };
+  });
   const id = `perf-${seed}-${Date.now()}`;
   if (fixedZoom !== null) {
     await page.addInitScript(
@@ -135,33 +166,38 @@ const positions = (page) =>
 async function select(page, count) {
   if (count === Infinity) {
     await page.keyboard.press("Control+a");
+  } else if (count === 1) {
+    const point = await page.evaluate(() => {
+      for (const el of document.querySelectorAll(".react-flow__node")) {
+        const point = window.__perfPointOn(el, true);
+        if (point && point.y > 120 && point.y < 860) return point;
+      }
+      return null;
+    });
+    if (point) await page.mouse.click(point.x, point.y);
   } else {
-    // #g95wkd9y: the next object is picked from the page as it is *now*, after
-    // each click. The context toolbar appears over the selection and DOM order
-    // isn't screen order, so points worked out up front were often under the
-    // toolbar: the clicks hit its buttons and only one object got selected.
-    const nextPoint = () =>
-      page.evaluate(() => {
-        for (const el of document.querySelectorAll(".react-flow__node:not(.selected)")) {
-          const r = el.getBoundingClientRect();
-          // Near the top-left inner edge, not the centre: text there may be a
-          // [[link]], and clicking a link opens it instead of selecting.
-          const x = r.x + Math.min(6, r.width / 4);
-          const y = r.y + Math.min(6, r.height / 4);
-          const hit = document.elementFromPoint(x, y);
-          // Only objects nothing else (toolbars, minimap) covers right now.
-          if (r.y > 120 && y < 860 && hit && el.contains(hit) && !hit.closest("a, .wiki-link, button")) return { x, y };
-        }
-        return null;
-      });
-    // React Flow tracks Shift through keydown, not the click's shiftKey.
-    for (let index = 0; index < count; index += 1) {
-      const point = await nextPoint();
-      if (!point) break;
-      if (index === 1) await page.keyboard.down("Shift");
-      await page.mouse.click(point.x, point.y);
+    // #g95wkd9y: a selection box dragged from the empty canvas left of the
+    // board, down until at least `count` objects are inside it (the board
+    // selects what the box touches). Shift-clicking that many objects one by one at a fitted
+    // 1,000-object board (objects ~20×12 px, a toolbar following the
+    // selection) kept losing the selection part-way.
+    const box = await page.evaluate((n) => {
+      // Below the app's top bar and the board toolbar (the fitted board starts
+      // under them), in the empty margin left of the leftmost object.
+      const top = 125;
+      const rects = [...document.querySelectorAll(".react-flow__node")].map((el) => el.getBoundingClientRect()).filter((r) => r.bottom > top);
+      const left = Math.min(...rects.map((r) => r.left)) - 6;
+      const right = Math.max(...rects.map((r) => r.right)) + 6;
+      const bottoms = rects.map((r) => r.bottom).sort((a, b) => a - b);
+      return { left, top, right, bottom: Math.min(860, (bottoms[Math.min(n, bottoms.length) - 1] ?? top) + 2) };
+    }, count);
+    // The select tool draws a selection box on a plain drag over empty canvas.
+    await page.mouse.move(box.left, box.top);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) {
+      await page.mouse.move(box.left + ((box.right - box.left) * i) / 10, box.top + ((box.bottom - box.top) * i) / 10);
     }
-    await page.keyboard.up("Shift");
+    await page.mouse.up();
   }
   await page.waitForTimeout(300);
   // Grab the selected object nearest the middle: starting near the edge of the
@@ -169,13 +205,10 @@ async function select(page, count) {
   return page.evaluate(() => {
     let best = null;
     for (const el of document.querySelectorAll(".react-flow__node.selected")) {
-      const r = el.getBoundingClientRect();
-      const x = r.x + Math.min(6, r.width / 4);
-      const y = r.y + Math.min(6, r.height / 4);
-      const hit = document.elementFromPoint(x, y);
-      if (!el.contains(hit) || hit.closest("a, .wiki-link, button")) continue;
-      const distance = Math.hypot(x - 720, y - 450);
-      if (!best || distance < best.distance) best = { x, y, distance };
+      const point = window.__perfPointOn(el);
+      if (!point) continue;
+      const distance = Math.hypot(point.x - 720, point.y - 450);
+      if (!best || distance < best.distance) best = { ...point, distance };
     }
     return { ...best, selected: document.querySelectorAll(".react-flow__node.selected").length };
   }).then((start) => {
