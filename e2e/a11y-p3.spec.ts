@@ -171,3 +171,29 @@ test('focus visible (2.4.7): a focused property input shows an accent border, â‰
   await page.getByTestId('property-value-tags').locator('input').focus();
   await page.getByTestId('property-row-tags').screenshot({ path: test.info().outputPath('tags-focus.png') });
 });
+
+test('focus order (2.4.3): after editing a base cell with the keyboard, focus is back on the cell', async ({ page, request }) => {
+  writeFileSync(path.join(E2E_VAULT, 'One.md'), '---\nstatus: Active\n---\n\nOne.\n');
+  writeFileSync(path.join(E2E_VAULT, 'Cells.base'), 'views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - status\n');
+  await expect
+    .poll(async () => ((await (await request.get(`${API_URL}/api/pages`)).json()) as { id: string }[]).some((meta) => meta.id === 'Cells.base'), { timeout: 10_000 })
+    .toBe(true);
+  await page.goto(`/#/${encodeURIComponent('Cells.base')}`);
+  const cell = page.getByTestId('base-cell-One-note.status');
+  await expect(cell).toHaveText('Active');
+
+  // Escape: nothing saved, focus back on the cell.
+  await cell.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('base-cell-editor-One-note.status')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(cell).toBeFocused();
+
+  // Enter in the editor saves and gives focus back too.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('Done');
+  await page.keyboard.press('Enter');
+  await expect(cell).toHaveText('Done');
+  await expect(cell).toBeFocused();
+});
