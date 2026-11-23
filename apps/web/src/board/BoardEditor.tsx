@@ -1301,7 +1301,18 @@ function BoardCanvas(props: BoardEditorProps) {
         const focused = event.target.closest<HTMLElement>(".react-flow__node");
         const current = focused?.dataset.id ?? (selectedRef.current.nodes.length === 1 ? (selectedRef.current.nodes[0] ?? null) : null);
         const next = nextInOrder(readingOrder(boardRef.current.nodes), current, event.shiftKey);
-        if (!next) return;
+        if (!next) {
+          // Past either end: out of the board. The browser's own Tab would walk
+          // the other objects in creation order, so take them out of it for this key.
+          const stops = [...root.querySelectorAll<HTMLElement>(".react-flow__node, .react-flow__edge")]
+            .filter((el) => el.tabIndex >= 0)
+            .map((el) => [el, el.tabIndex] as const);
+          for (const [el] of stops) el.tabIndex = -1;
+          window.setTimeout(() => {
+            for (const [el, tabIndex] of stops) if (el.isConnected) el.tabIndex = tabIndex;
+          }, 0);
+          return;
+        }
         event.preventDefault();
         focusNode(next);
         return;

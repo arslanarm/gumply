@@ -70,6 +70,26 @@ test.describe('boards from the keyboard (#pujmbsyz)', () => {
     await expect(announcer(page)).toHaveText('Selected: Sticky note: B');
   });
 
+  test('#uksjci7s: Esc Esc from the text ends deselected, and Tab past the reading order leaves the objects', async ({ page }) => {
+    await openLab(page);
+    const { a } = await threeStickies(page);
+    // Typed fast: the focus back on the object must not select it again after the second Esc.
+    const c = (await board(page)).nodes.find((node) => node.text === 'C')!.id;
+    await page.locator(`.react-flow__node[data-id="${c}"]`).dblclick();
+    await expect(page.getByTestId('board-text-editor')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100);
+    expect(await selectedIds(page)).toEqual([]);
+
+    // A is first in reading order but second in creation order: Shift+Tab leaves the objects instead of landing on B.
+    await page.getByTestId('board').focus();
+    await page.keyboard.press('Tab');
+    await expect.poll(() => focusedNodeId(page)).toBe(a);
+    await page.keyboard.press('Shift+Tab');
+    await expect.poll(() => focusedNodeId(page)).toBeNull();
+  });
+
   test('Enter edits the text; Esc leaves it with focus back on the object', async ({ page }) => {
     await openLab(page);
     const { a, b } = await threeStickies(page);
