@@ -68,15 +68,24 @@ function testKeyPair(): { privateKey: KeyObject; spki: Buffer; id: string } {
 const trustedKey = testKeyPair();
 const otherKey = testKeyPair();
 
-type SigMode = 'good' | 'missing' | 'other-key';
+type SigMode = 'good' | 'missing' | 'other-key' | 'old-sums';
 let sigMode: SigMode = 'good';
 /** N+1's SHA256SUMS.txt, as the release job writes it (`sha256sum *`). */
 let sumsFile = Buffer.alloc(0);
 
+/**
+ * The sums served: N+1's, or for 'old-sums' an older release's validly signed
+ * sums (the entries carry N's file names), as if latest.yml had been edited
+ * to offer an old signed build as N+1.
+ */
+function servedSums(): Buffer {
+  return sigMode === 'old-sums' ? Buffer.from(sumsFile.toString('utf8').split(newVersion).join(oldVersion)) : sumsFile;
+}
+
 function sigLine(): string {
   // 'other-key': a signature by a key the app doesn't have, under the trusted key's id.
   const key = sigMode === 'other-key' ? otherKey : trustedKey;
-  return `gumply-sig v1 key=${trustedKey.id} sig=${sign(null, sumsFile, key.privateKey).toString('base64')}\n`;
+  return `gumply-sig v1 key=${trustedKey.id} sig=${sign(null, servedSums(), key.privateKey).toString('base64')}\n`;
 }
 
 const isSignatureRequest = (name: string) => name === 'SHA256SUMS.txt' || name === 'SHA256SUMS.txt.sig';
@@ -96,7 +105,7 @@ function startFeed(): Promise<void> {
     const name = decodeURIComponent(new URL(request.url ?? '/', 'http://x').pathname.slice(1));
     feedRequests.push(name);
     if (name === 'SHA256SUMS.txt') {
-      response.writeHead(200, { 'content-type': 'text/plain' }).end(sumsFile);
+      response.writeHead(200, { 'content-type': 'text/plain' }).end(servedSums());
       return;
     }
     if (name === 'SHA256SUMS.txt.sig') {
@@ -362,6 +371,7 @@ test('a file that fails its sha512: never installed, N untouched', async () => {
 for (const [mode, why] of [
   ['missing', 'no SHA256SUMS.txt.sig'],
   ['other-key', 'signed by a key the app doesn\'t have'],
+  ['old-sums', 'an older release\'s validly signed sums offered as N+1 (replay)'],
 ] as const) {
   test(`signing: ${why}: verify-failed, never installed, N untouched`, async () => {
     feedMode = 'real';

@@ -133,9 +133,23 @@ export function sha256FileSync(path: string): string {
 }
 
 /**
- * The whole check for one downloaded file: the signature, then the file's
- * name in the sums, then its sha256. On success, the verified sha256 (the
- * re-hash at quit compares against it).
+ * The installer's exact release file name for `version` (apps/desktop/package.json
+ * `artifactName`s; electron-builder calls x64 "x86_64" for the AppImage). Null
+ * for formats Gumply doesn't install itself.
+ */
+export function installerName(kind: string, version: string, arch: string): string | null {
+  if (kind === "appimage") return `Gumply-${version}-${arch === "x64" ? "x86_64" : arch}.AppImage`;
+  if (kind === "nsis") return `Gumply-Setup-${version}-${arch}.exe`;
+  return null;
+}
+
+/**
+ * The whole check for one downloaded file: the signature, then the signed
+ * entry for `file.name` (the installer's exact name FOR THE VERSION BEING
+ * INSTALLED, not the downloaded file's name), then the downloaded file's
+ * sha256 against that entry. So an older, validly signed installer offered
+ * under a newer version fails: its signed entry carries the older name.
+ * On success, the verified sha256 (the re-hash at quit compares against it).
  */
 export async function verifyDownload(
   file: { path: string; name: string },
@@ -163,13 +177,16 @@ export interface VerifierDeps {
   baseUrl(version: string): string;
   /** A GET: the body, or a rejection (a non-2xx status rejects too). */
   get(url: string): Promise<Buffer>;
+  /** The installer's exact release file name for a version (see `installerName`). */
+  installerName(version: string): string | null;
   hash?(path: string): Promise<string>;
 }
 
 /**
  * The controller's `verify` for main.ts, or null when no key is configured
  * (no keys: no signature check, so no extra requests). It fetches the sums
- * and the `.sig` (2 GETs, after a download only) and checks the file.
+ * and the `.sig` (2 GETs, after a download only) and checks the file. A fetch
+ * that fails (network, 404) is a failure, never a pass.
  */
 export function makeVerifier(deps: VerifierDeps): ((download: { version: string; downloadedFile: string }) => Promise<{ ok: true; sha256: string } | { ok: false; reason: string }>) | null {
   if (deps.keys.length === 0) return null;
@@ -182,8 +199,8 @@ export function makeVerifier(deps: VerifierDeps): ((download: { version: string;
     } catch (error) {
       return { ok: false, reason: `couldn't fetch the signed checksums: ${error instanceof Error ? error.message : String(error)}` };
     }
-    // electron-updater keeps the asset's own file name in its cache folder.
-    const name = downloadedFile.split(/[\\/]/).pop() ?? downloadedFile;
+    const name = deps.installerName(version);
+    if (!name) return { ok: false, reason: "no installer name for this kind of install" };
     const result = await verifyDownload({ path: downloadedFile, name }, sums, sig.toString("utf8"), deps.keys, deps.hash).catch(
       (error: unknown) => ({ ok: false as const, reason: error instanceof Error ? error.message : String(error) }),
     );

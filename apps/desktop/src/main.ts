@@ -37,7 +37,7 @@ import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, 
 import { runMcp } from "../../mcp/src/run.js";
 import { installKind, listWindowsProcesses, REQUEST_HEADERS, RELEASES_URL, UpdateController, type UpdaterLike } from "./updates.js";
 import { UPDATE_PUBLIC_KEYS } from "./update-keys.js";
-import { makeVerifier, publicKeyEntry } from "./update-signature.js";
+import { installerName, makeVerifier, publicKeyEntry } from "./update-signature.js";
 
 /**
  * Launch phases with the process's age in ms (#tcw8r7vc), kept for the
@@ -751,6 +751,7 @@ async function setUpUpdates(): Promise<void> {
   const verify = makeVerifier({
     keys: updateKeys,
     baseUrl: releaseFiles,
+    installerName: (version) => installerName(kind, version, process.arch),
     get: async (url) => {
       const response = await net.fetch(url, { headers: { ...REQUEST_HEADERS } });
       if (!response.ok) throw new Error(`${response.status} for ${url.split("/").pop()}`);
