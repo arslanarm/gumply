@@ -185,7 +185,8 @@ test('Help: the user guide opens in a new tab, in the app\'s language', async ({
     }) as typeof window.open;
   });
   await run(page, '> user guide', 'command-help.guide');
-  expect(await page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([
+  // #dcd579sc: a picked command runs a frame after the palette closes (App.tsx onCommand), so wait for it.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([
     ['https://github.com/arslanarm/gumply/blob/main/docs/guide/en/README.md', '_blank', 'noopener'],
   ]);
   // Plain typing never offers Insert / Turn into (they're for `>`).
