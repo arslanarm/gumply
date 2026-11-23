@@ -501,7 +501,9 @@ img.board-card-image {
   transform: translate(50%, -50%) scale(1.3);
 }
 
-.board-tool-select:not(.is-dragging) .react-flow__node:hover .board-handle,
+/* #zkknytrs: a hovered object's dots show once it carries --board-zoom (zoom-var.ts),
+   so they never appear at the wrong size while the view moves under the pointer. */
+.board-tool-select:not(.is-dragging) .react-flow__node[data-board-zoom]:hover .board-handle,
 .board-tool-select .react-flow__node.selected .board-handle,
 .board-tool-connector .board-handle,
 .board-root .react-flow__handle.board-handle.connectingfrom,

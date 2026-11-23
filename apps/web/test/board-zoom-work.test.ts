@@ -35,6 +35,7 @@ function fakeElement(subtree: number) {
         return "";
       },
     },
+    toggleAttribute: (_name: string, force: boolean) => force,
   };
   return element;
 }

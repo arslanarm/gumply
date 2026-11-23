@@ -1060,6 +1060,7 @@ function BoardCanvas(props: BoardEditorProps) {
   const zoomNow = useRef(1);
   const viewRestFrame = useRef(0);
   const viewQuietFrames = useRef(0);
+  const viewMoving = useRef(false);
   // Every dot can show with the connector tool, and while a connection is
   // dragged (the target's dots appear under the pointer): the whole board then.
   const connectorTool = useRef(false);
@@ -1111,6 +1112,7 @@ function BoardCanvas(props: BoardEditorProps) {
     // frames are): newly mounted objects, and the object now under a pointer
     // that didn't move (no pointer event tells us). Once per gesture, never per step.
     viewQuietFrames.current = 0;
+    viewMoving.current = true;
     if (!viewRestFrame.current) {
       const watch = (): void => {
         viewQuietFrames.current += 1;
@@ -1119,6 +1121,7 @@ function BoardCanvas(props: BoardEditorProps) {
           return;
         }
         viewRestFrame.current = 0;
+        viewMoving.current = false;
         const board = rootRef.current;
         if (board && lastPointer.current) hoveredNode.current = board.querySelector(".react-flow__node:hover");
         placeZoomVar();
@@ -1825,7 +1828,8 @@ function BoardCanvas(props: BoardEditorProps) {
             const node = event.target instanceof Element ? event.target.closest(".react-flow__node") : null;
             if (node === hoveredNode.current) return;
             hoveredNode.current = node;
-            placeZoomVar(false);
+            // While the view moves, objects slide under a still pointer: the rest pass places the last one.
+            if (!viewMoving.current) placeZoomVar(false);
           }}
           onPointerLeave={() => {
             pointerRef.current = null;

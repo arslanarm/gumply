@@ -12,7 +12,16 @@
 export interface ZoomVarElement {
   readonly isConnected: boolean;
   style: { setProperty(name: string, value: string): void; removeProperty(name: string): string };
+  toggleAttribute(name: string, force: boolean): boolean;
 }
+
+/**
+ * Marks an element that carries `--board-zoom`, so CSS can show a hovered
+ * object's dots only once they are sized (board.css): while the view moves,
+ * the hovered object is placed when it rests, not on every object the
+ * pointer crosses.
+ */
+export const ZOOM_VAR_ATTRIBUTE = "data-board-zoom";
 
 /**
  * Where dots can show: the whole board with the connector tool, else the
@@ -46,12 +55,17 @@ export function createZoomVar<E extends ZoomVarElement = HTMLElement>() {
       for (const element of [...written.keys()]) {
         if (next.has(element)) continue;
         written.delete(element);
-        if (element.isConnected) element.style.removeProperty("--board-zoom");
+        if (element.isConnected) {
+          element.style.removeProperty("--board-zoom");
+          element.toggleAttribute(ZOOM_VAR_ATTRIBUTE, false);
+        }
       }
       for (const element of next) {
-        if (written.get(element) === value) continue;
+        const before = written.get(element);
+        if (before === value) continue;
         written.set(element, value);
         element.style.setProperty("--board-zoom", value);
+        if (before === undefined) element.toggleAttribute(ZOOM_VAR_ATTRIBUTE, true);
       }
     },
   };
