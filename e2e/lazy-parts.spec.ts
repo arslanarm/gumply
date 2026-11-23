@@ -109,15 +109,23 @@ test('a dialog whose code fails to download shows a small error that Esc closes'
   await expect(page.getByTestId('editor-content')).toBeVisible();
   await page.getByTestId('sidebar').click({ position: { x: 5, y: 5 } });
 
-  await page.keyboard.press('?');
+  // `?` is read by a window listener that React re-subscribes after each
+  // dialog state change; a press that lands before that re-subscribe is
+  // ignored (#9a393rp5). Wait on the outcome: press until the dialog shows.
   const error = page.getByTestId('dialog-load-error');
-  await expect(error).toContainText('Could not open this.');
+  await expect(async () => {
+    await page.keyboard.press('?');
+    await expect(error).toContainText('Could not open this.', { timeout: 1_000 });
+  }).toPass();
   await page.keyboard.press('Escape');
   await expect(error).toHaveCount(0);
 
   await unblock();
-  await page.keyboard.press('?');
-  await expect(page.getByTestId('shortcuts-dialog')).toBeVisible();
+  const shortcuts = page.getByTestId('shortcuts-dialog');
+  await expect(async () => {
+    await page.keyboard.press('?');
+    await expect(shortcuts).toBeVisible({ timeout: 1_000 });
+  }).toPass();
 });
 
 test('after a rebuild (graph chunk 404) the graph offers Reload, which brings it back (#fzfrkpta)', async ({
