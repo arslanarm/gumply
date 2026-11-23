@@ -1,8 +1,9 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from './fixtures';
+import { updatePage } from './support/api';
 import { contrastFailures } from './support/contrast';
-import { E2E_VAULT } from './support/env';
+import { API_URL, E2E_VAULT } from './support/env';
 
 /**
  * #3nnx98m4 (v0.9 a11y audit #6–7): text contrast ≥ 4.5:1 on the audited
@@ -41,7 +42,7 @@ const SAMPLE = [
 ].join('\n');
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`text contrast ≥ 4.5:1 on the page, Settings and AI apps (${scheme})`, async ({ page, vault }) => {
+  test(`text contrast ≥ 4.5:1 on the page, Settings and AI apps (${scheme})`, async ({ page, vault, request }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await vault.seed([{ title: 'Other', content: 'Other.' }, { title: 'Sample', content: SAMPLE }]);
     await page.goto('/#/Sample');
@@ -59,6 +60,23 @@ for (const scheme of ['light', 'dark'] as const) {
     await expect(dialog).toBeVisible();
     await page.waitForTimeout(300);
     expect(await contrastFailures(dialog)).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    // The History panel's read-only preview: callouts on the dialog's surface, not the page's.
+    // The seeded text becomes a version once the session ends and the page changes again.
+    expect((await request.post(`${API_URL}/api/history/Sample/checkpoint`)).ok()).toBe(true);
+    await updatePage(request, 'Sample', { content: `${SAMPLE}\n\nLater.` });
+    await page.getByTestId('page-item-Sample').hover();
+    await page.getByTestId('page-menu-button-Sample').click();
+    await page.getByTestId('page-history-Sample').click();
+    const history = page.getByTestId('history-dialog');
+    await expect(history).toBeVisible();
+    await history.getByTestId('history-item').first().click();
+    await expect(history.getByTestId('history-item').first()).toHaveAttribute('aria-selected', 'true');
+    await expect(history.getByTestId('history-preview').getByText('Quote title', { exact: true })).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(await contrastFailures(history)).toEqual([]);
   });
 }
 

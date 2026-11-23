@@ -52,7 +52,8 @@
 }
 
 :root[data-theme="dark"] {
-  --callout-title-keep: 85%;
+  /* 75%: 4.7:1 or more on the lightest surface a callout sits on (#242424 dialogs, e.g. the History preview). */
+  --callout-title-keep: 75%;
   color-scheme: dark;
   --code-keyword: #ff7b72;
   --code-string: #a5d6ff;
