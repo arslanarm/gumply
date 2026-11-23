@@ -18,6 +18,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from "electron";
 import { startGumplyServer, type RunningServer } from "../../server/src/start.js";
+import { logUnhandledRejections } from "../../server/src/last-resort.js";
 import type { DesktopUpdates } from "../../server/src/desktop-updates.js";
 import { applyUiStateChange, type UiState, type UiStateChange, type UiStateStore } from "../../server/src/ui-state.js";
 import {
@@ -64,6 +65,9 @@ export function noticesPath(): string {
 
 // One settings folder in dev and packaged builds: ~/.config/Gumply on Linux
 // (dev would otherwise use the package name, "@gumply/desktop").
+// #35q6kt6e: a rejection nothing handled (in the shell or the in-process
+// server) is logged, never the end of the app. Installed once per process.
+logUnhandledRejections();
 app.setName("Gumply");
 // Tests (and anyone who wants a separate profile) can move the settings.
 if (process.env.GUMPLY_DESKTOP_USER_DATA) app.setPath("userData", resolve(process.env.GUMPLY_DESKTOP_USER_DATA));

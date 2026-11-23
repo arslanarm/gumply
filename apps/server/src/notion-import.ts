@@ -201,7 +201,7 @@ export class NotionImports {
     /** Test hook: runs right before the target folders are claimed. */
     private readonly beforeClaim?: (folder: string) => Promise<void>,
   ) {
-    void cleanupStaleImports(store.root);
+    void cleanupStaleImports(store.root).catch((error: unknown) => console.error("[gumply] stale import cleanup failed:", error));
   }
 
   get(id: string): NotionImportJob | undefined {
@@ -215,7 +215,7 @@ export class NotionImports {
     const job: NotionImportJob = { id: randomUUID(), state: "reading", done: 0, total: 0 };
     this.jobs.set(job.id, job);
     this.running = job;
-    void this.run(job, zip, parentId, language);
+    void this.run(job, zip, parentId, language).catch((error: unknown) => console.error("[gumply] Notion import failed:", error));
     return job;
   }
 
