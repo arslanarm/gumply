@@ -1889,12 +1889,20 @@ export class VaultStore {
       }
     }
     const ordered: typeof hits = [];
+    // Emit a hit, then its copies, then their copies (a copy of a copy, #3jkf2gf6): every hit once.
+    const emit = (root: (typeof hits)[number]) => {
+      const stack = [root];
+      while (stack.length > 0) {
+        const hit = stack.pop()!;
+        ordered.push(hit);
+        const own = copiesOf.get(hit.record.id);
+        if (own) for (let index = own.length - 1; index >= 0; index -= 1) stack.push(own[index]!);
+      }
+    };
     for (const hit of hits) {
       const of = copies.get(hit.record.id)?.of;
       if (typeof of === "string" && hitIds.has(of)) continue;
-      ordered.push(hit);
-      const own = copiesOf.get(hit.record.id);
-      if (own) for (const copy of own) ordered.push(copy);
+      emit(hit);
     }
 
     const start = Math.max(0, Math.floor(Number(options.cursor ?? 0)) || 0);

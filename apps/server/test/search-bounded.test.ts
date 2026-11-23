@@ -187,3 +187,29 @@ describe("bounded search with conflict copies (#3jkf2gf6, D43)", () => {
     expect(results[1]!.page.conflictOf).toBe("Alpha");
   });
 });
+
+describe("a conflict copy of a conflict copy (#3jkf2gf6, @graph-dev)", () => {
+  it("Note, its copy C1 and C1's copy C2 all match: every hit is returned once, across pages, each copy after its own original", async () => {
+    const c1 = "Note.sync-conflict-20261122-143005-ABCDEFG";
+    const c2 = `${c1}.sync-conflict-20261123-090000-BCDEFGH`;
+    await writeFile(join(dir, "Note.md"), "The roadmap.\n");
+    await writeFile(join(dir, `${c1}.md`), "The roadmap, theirs.\n");
+    await writeFile(join(dir, `${c2}.md`), "The roadmap, theirs again.\n");
+    for (let i = 0; i < 5; i++) await writeFile(join(dir, `Other ${i}.md`), `${"The roadmap. ".repeat(1 + i)}\n`);
+    const store = new VaultStore(dir);
+    await store.init();
+    expect(store.list().find((page) => page.id === c2)?.conflictOf).toBe(c1);
+    const all: SearchResult[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = store.searchPage("roadmap", { limit: 2, ...(cursor ? { cursor } : {}) });
+      all.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+    const ids = all.map((result) => result.page.id);
+    expect(ids).toHaveLength(8);
+    expect(new Set(ids).size).toBe(8);
+    expect(ids.indexOf(c1)).toBe(ids.indexOf("Note") + 1);
+    expect(ids.indexOf(c2)).toBe(ids.indexOf(c1) + 1);
+  });
+});
