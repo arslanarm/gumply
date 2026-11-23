@@ -57,6 +57,7 @@ A **callout** is a coloured box with a title, for a note, a tip or a warning. A 
 
 - **Tables:** `/table`, then type. Hover a table's edge to add or remove rows and columns.
 - **Images and files:** drag them onto the page, paste them, or use `/image` and `/file`. Gumply saves them in the vault's `attachments` folder and links them from the page.
+- **Image size:** click an image, then drag the handle on either side. It snaps to a quarter, half, three quarters or the full width of the page (hold `Alt` for any width). With the image selected, `Shift+←` and `Shift+→` do the same from the keyboard. The width is saved the way Obsidian writes it (`![[pic.png|300]]`), so the image is the same size there. Move an image like any block, with `⋮⋮`.
 
 ## Give a page a look
 
