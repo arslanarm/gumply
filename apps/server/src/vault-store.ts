@@ -688,6 +688,19 @@ function mtimeVersion(mtimeMs: number): string {
 }
 
 /**
+ * The version of a note Gumply just wrote with an `updated:` key: the same rule
+ * as reading it back (`readRecord`), the newer of that key and the file time.
+ * The file time is usually a millisecond or more after the `updated:` written
+ * into it, so taking the key alone gave a version that a later read (a server
+ * restart, another process) didn't match: the open editor's next save was a
+ * false "changed on disk" (#2xx3uae4).
+ */
+function writtenVersion(frontmatterUpdated: string, mtimeMs: number): string {
+  const mtime = mtimeVersion(mtimeMs);
+  return frontmatterUpdated > mtime ? frontmatterUpdated : mtime;
+}
+
+/**
  * Does a save's `expectedUpdated` match the file as it is? The current
  * version, or — for the editor that made our last write, while the file is
  * still exactly that write — the version that write replaced.
@@ -3021,7 +3034,7 @@ export class VaultStore {
     record.content = noteBody(nextContent);
     // A plain note has no `updated:` key; its version is the file time.
     const replaced = record.updated;
-    record.updated = written.frontmatter ? updated : mtimeVersion(fileMtimeMs);
+    record.updated = written.frontmatter ? writtenVersion(updated, fileMtimeMs) : mtimeVersion(fileMtimeMs);
     record.fileMtimeMs = fileMtimeMs;
     if (patch.writer) record.ownWrite = { version: record.updated, replaced, writer: patch.writer };
     else delete record.ownWrite;
@@ -3215,7 +3228,7 @@ export class VaultStore {
     );
     other.content = noteBody(content);
     other.updated = otherWritten.frontmatter
-      ? rewrittenAt
+      ? writtenVersion(rewrittenAt, otherWritten.mtimeMs)
       : mtimeVersion(otherWritten.mtimeMs);
     other.fileMtimeMs = otherWritten.mtimeMs;
     this.setPropertyLinks(other, otherWritten.text);
@@ -3534,7 +3547,7 @@ export class VaultStore {
         titleFromId(record.id),
       );
       record.content = noteBody(next);
-      record.updated = written.frontmatter ? at : mtimeVersion(written.mtimeMs);
+      record.updated = written.frontmatter ? writtenVersion(at, written.mtimeMs) : mtimeVersion(written.mtimeMs);
       record.fileMtimeMs = written.mtimeMs;
       changed.push(record.id);
     }
@@ -4393,7 +4406,7 @@ export class VaultStore {
         );
         record.content = content;
         record.fmTags = tags;
-        record.updated = hasUpdated && written.frontmatter ? at : mtimeVersion(written.mtimeMs);
+        record.updated = hasUpdated && written.frontmatter ? writtenVersion(at, written.mtimeMs) : mtimeVersion(written.mtimeMs);
         record.fileMtimeMs = written.mtimeMs;
         this.refreshTags(record);
       }
