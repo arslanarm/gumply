@@ -155,9 +155,21 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
       await store.rescan();
       const old = await stat(file);
       // Same length, other text; then the old mtime forced back (FAT, sync mounts).
-      await writeFile(file, "Links to [[Note 9]].\n".padEnd(old.size, " ").slice(0, old.size));
-      await utimes(file, second, second);
-      const now = await stat(file);
+      // #6afsf6cm: what tells such a rewrite apart is the change time, which the kernel
+      // stamps from a coarse clock. A rewrite in the same tick as the previous change
+      // (here: our own utimes, a millisecond before) has an identical stat, and no stat
+      // check can see it. That needs another program to rewrite in place, at the same
+      // size, restore the mtime, all within ~1 ms of the file's last change, which
+      // isn't a real case. So the rewrite this test means is one in a later tick: redo
+      // it after a short wait until ctime moved (no `expect` weakened).
+      let now = old;
+      for (let attempt = 0; attempt < 50 && now.ctimeMs === old.ctimeMs; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5));
+        await writeFile(file, "Links to [[Note 9]].\n".padEnd(old.size, " ").slice(0, old.size));
+        await utimes(file, second, second);
+        now = await stat(file);
+      }
+      expect(now.ctimeMs, "the rewrite has a later change time").not.toBe(old.ctimeMs);
       expect([now.size, now.mtimeMs]).toEqual([old.size, old.mtimeMs]);
       const internals = store as unknown as Internals;
       if (scope === "all") await store.rescan();
