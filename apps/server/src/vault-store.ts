@@ -519,6 +519,8 @@ interface RenameRewrite {
   rewriteWith: (metas: readonly PageMeta[], targets: ReadonlySet<PageId>) => (markdown: string, source: PageId) => { content: string; count: number };
   /** Pages whose rewrite failed (a write error): logged, the rest carry on. */
   failed: PageId[];
+  /** The renamed page's id before the rename. */
+  oldId: PageId;
 }
 
 /** #im3em6tq: how long a path Gumply itself wrote or moved doesn't count toward a sync burst. */
@@ -3485,7 +3487,7 @@ export class VaultStore {
     if (this.deferRewrites) {
       // #xgnvipyd: pinned now (the link snapshot is beforeMetas/afterMetas above), run in batches after.
       const aliased = oldId !== record.id || previousTitle !== record.title;
-      this.deferredRewrite = { skip, rewriteText, rewriteWith, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null, failed: [] };
+      this.deferredRewrite = { skip, rewriteText, rewriteWith, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null, failed: [], oldId };
       if (aliased) this.renameAliases.set(record.id, { fromId: oldId, fromTitle: previousTitle });
       return [];
     }
@@ -3563,6 +3565,8 @@ export class VaultStore {
     if (other.board) {
       const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other.id).content });
       if (result.count === 0) return null;
+      // A match whose new form is what's already there writes nothing (D37).
+      if (JSON.stringify(result.board) === JSON.stringify(other.board)) return null;
       return async () => {
         await this.saveBoardRecord(other, result.board, { minimal: true });
       };
@@ -3570,6 +3574,8 @@ export class VaultStore {
     const result = rewriteText(other.content, other.id);
     const yaml = options.frontmatter ? await this.rewrittenFrontmatter(other, rewriteText) : null;
     if (result.count === 0 && yaml === null) return null;
+    // Links matched but their new form is what's already written: nothing to write (D37).
+    if (result.content === other.content && yaml === null) return null;
     return () => this.writeRewrittenBody(other, result.content, yaml ?? undefined);
   }
 
@@ -3593,11 +3599,14 @@ export class VaultStore {
    * on, so `[[Old]]` means the renamed page unless a real page took that name).
    */
   private async rewriteLatePages(job: RenameRewrite, renamedId: PageId, rewritten: PageId[]): Promise<void> {
+    // Only a link that still means the old page counts: one resolving to its old id through the
+    // alias. A link already to the new name is left alone, and so is the old id once a real page
+    // holds it (that page won the name; @opus-editor's review).
+    if (!job.aliasKey || !this.renameAliases.has(job.aliasKey) || this.pages.has(job.oldId)) return;
     const known = new Set(job.ids.map((id) => this.resolveId(id)));
-    const skip = new Set([...job.skip].map((id) => this.resolveId(id)));
+    const skip = new Set([...job.skip, renamedId].map((id) => this.resolveId(id)));
     const copies = this.copyIds();
-    const oldIds = new Set([...job.skip, renamedId]);
-    const late = job.rewriteWith(this.linkMetas(), oldIds);
+    const late = job.rewriteWith(this.linkMetas(), new Set([job.oldId]));
     const reason = this.historyReason;
     this.historyReason = reason ?? "rename";
     try {

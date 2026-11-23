@@ -224,6 +224,45 @@ describe("@opus-editor's review cases (#xgnvipyd)", { timeout: 60_000 }, () => {
     expect(renamed.rewrittenPages).toContain("Copy of a linker");
   });
 
+  it("the last pass leaves a page that already links the new name byte for byte (D37)", async () => {
+    const { dir, store } = await vault(300);
+    let bytes: Buffer | null = null;
+    store.afterRenameBatch = async () => {
+      if (bytes) return;
+      await store.create({ title: "Late", content: "See [[hub renamed]] already, and [[Hub renamed|the hub]]." });
+      bytes = await readFile(join(dir, "Late.md"));
+    };
+    const renamed = await store.update("Hub", { title: "Hub renamed" });
+    expect(Buffer.compare(await readFile(join(dir, "Late.md")), bytes!)).toBe(0);
+    expect(renamed.rewrittenPages).not.toContain("Late");
+  });
+
+  it("the last pass leaves a link to a real page that took the old id", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gumply-rename-yield-"));
+    dirs.push(dir);
+    await mkdir(join(dir, "Area"));
+    await writeFile(join(dir, "Area.md"), "The area.\n");
+    await writeFile(join(dir, "Area", "Hub.md"), "The hub.\n");
+    await mkdir(join(dir, "L"));
+    for (let i = 0; i < 300; i++) await writeFile(join(dir, "L", `Linker ${i}.md`), `See [[Area/Hub|Hub]] (${i}).\n`);
+    const store = new VaultStore(dir);
+    await store.init();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let made = false;
+    store.afterRenameBatch = async () => {
+      if (made) return;
+      made = true;
+      // A new, real page takes the old id, and a page made after it links it.
+      await store.create({ title: "Hub", parentId: "Area", content: "A new hub." });
+      await store.create({ title: "Late", content: "See [[Area/Hub|Hub]], the new one." });
+    };
+    await store.update("Area/Hub", { title: "Hub renamed" });
+    expect(store.list().some((meta) => meta.id === "Area/Hub")).toBe(true);
+    expect(await readFile(join(dir, "Late.md"), "utf8")).toContain("[[Area/Hub|Hub]], the new one");
+    // The links written before the rename still follow the renamed page.
+    expect(await readFile(join(dir, "L", "Linker 299.md"), "utf8")).toContain("Hub renamed");
+  });
+
   it("a path-form link to the old id counts as a backlink during the window", async () => {
     const dir = await mkdtemp(join(tmpdir(), "gumply-rename-yield-"));
     dirs.push(dir);
