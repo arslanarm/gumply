@@ -74,7 +74,9 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
   const [textError, setTextError] = useState<{ for: Selection; message: string } | null>(null);
   const [diffError, setDiffError] = useState<{ for: Selection; message: string } | null>(null);
   const versionError = textError && textError.for === selected ? textError.message : null;
-  const changesError = diffError && diffError.for === selected ? diffError.message : null;
+  // A board's Changes also need the current board; its failure is a Changes failure too (#2xx3uae4 P3).
+  const [currentBoardError, setCurrentBoardError] = useState<string | null>(null);
+  const changesError = diffError && diffError.for === selected ? diffError.message : currentBoardError;
   /** Bumped by Retry, or when the server is back: everything that failed loads again. */
   const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<"preview" | "changes">("preview");
@@ -170,8 +172,12 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
     let cancelled = false;
     api
       .getBoard(target.id)
-      .then((doc) => !cancelled && setCurrentBoard(doc.board))
-      .catch(() => undefined);
+      .then((doc) => {
+        if (cancelled) return;
+        setCurrentBoard(doc.board);
+        setCurrentBoardError(null);
+      })
+      .catch((error: unknown) => !cancelled && setCurrentBoardError(errorMessage(error)));
     return () => {
       cancelled = true;
     };
@@ -281,8 +287,24 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
     return null;
   };
 
+  // After a Retry that works, its button goes away: the keys go to the version list, not <body> (#2xx3uae4 P3).
+  const focusListAfterRetry = useRef(false);
+  const anyFailed = loadError !== null || versionError !== null || changesError !== null;
+  useEffect(() => {
+    if (anyFailed || !focusListAfterRetry.current) return;
+    focusListAfterRetry.current = false;
+    if (document.activeElement === null || document.activeElement === document.body) listRef.current?.focus();
+  }, [anyFailed, list]);
   const retry = (testId: string) => (
-    <button type="button" className="button-secondary" data-testid={testId} onClick={() => setAttempt((value) => value + 1)}>
+    <button
+      type="button"
+      className="button-secondary"
+      data-testid={testId}
+      onClick={() => {
+        focusListAfterRetry.current = true;
+        setAttempt((value) => value + 1);
+      }}
+    >
       {t("common.retry")}
     </button>
   );
@@ -320,7 +342,7 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
   };
 
   const changes = () => {
-    if (changesError !== null && !diff) {
+    if (changesError !== null && (!diff || (diff.kind === "whiteboard" && !currentBoard))) {
       return (
         <div className="history-error" role="alert" data-testid="history-changes-error">
           <p>{t("history.changesFailed", { error: changesError })}</p>
