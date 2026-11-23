@@ -101,3 +101,13 @@ test('target size (2.5.8): every Export radio row is a ≥ 24 px target, radios 
     await expect(dialog).toHaveCount(0);
   }
 });
+
+test('status messages (4.1.3): "Can\'t reach Gumply\'s local server" is announced', async ({ page }) => {
+  // Boot normally (the fixture's goto waits for the page tree), then lose the server.
+  await page.goto('/');
+  await page.route((url) => url.pathname.startsWith('/api/'), (route) => route.abort());
+  await page.evaluate(() => window.location.reload());
+  const alert = page.getByRole('alert').filter({ hasText: "Can't reach Gumply's local server." });
+  await expect(alert).toHaveCount(1);
+  await expect(page.getByTestId('server-error').getByRole('button', { name: 'Retry' })).toBeVisible();
+});
