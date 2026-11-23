@@ -55,6 +55,23 @@ export function formatWikilink(
 }
 
 /**
+ * #im3em6tq: a rename rewrites links in every page that has one (1,982 for a
+ * big vault's hub), always to the same page against the same list, and
+ * `linkTargetFor` scans the whole list (10k pages) each time. So the rewrite
+ * computes it once per list: keyed by the list object (each rename passes one
+ * fresh list), then by the page's id and title.
+ */
+const rewriteTargets = new WeakMap<readonly PageMeta[], Map<string, LinkTarget>>();
+function rewriteTargetFor(page: PageMeta, pages: readonly PageMeta[]): LinkTarget {
+  let byPage = rewriteTargets.get(pages);
+  if (!byPage) rewriteTargets.set(pages, (byPage = new Map()));
+  const key = `${page.id}\u0000${page.title}`;
+  let found = byPage.get(key);
+  if (!found) byPage.set(key, (found = linkTargetFor(page, pages)));
+  return found;
+}
+
+/**
  * D12/D20 rename: rewrite links that resolve to the renamed page (`isTarget`)
  * to its new link form. A user alias is kept; an alias that only repeated the
  * old title is replaced (or dropped when title and file name agree again).
@@ -68,7 +85,7 @@ export function rewriteLinksToPage(
 ): { content: string; count: number } {
   const links = extractWikilinks(markdown).filter(isTarget);
   if (links.length === 0) return { content: markdown, count: 0 };
-  const { target, alias: autoAlias } = linkTargetFor(page, pages);
+  const { target, alias: autoAlias } = rewriteTargetFor(page, pages);
   let content = markdown;
   for (const link of [...links].reverse()) {
     // #5dpxwac4: a page preview keeps its `!`, `#Heading`/`#^block` and alias.
