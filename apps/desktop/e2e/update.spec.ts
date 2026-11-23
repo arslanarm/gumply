@@ -413,6 +413,36 @@ for (const [mode, why] of [
   });
 }
 
+/** electron-updater's cached download of N+1 (`<cache>/<app>-updater/pending/<installer>`), if any. */
+function cachedInstaller(): string | undefined {
+  const base = isWindows ? (process.env.LOCALAPPDATA ?? '') : join(home, '.cache');
+  const name = readdirSync(feedDir).find((entry) => /\.(AppImage|exe)$/.test(entry))!;
+  if (!existsSync(base)) return undefined;
+  for (const dir of readdirSync(base).filter((entry) => entry.endsWith('-updater'))) {
+    const file = join(base, dir, 'pending', name);
+    if (existsSync(file)) return file;
+  }
+  return undefined;
+}
+
+test('signing: the download changed after it verified: the re-hash at quit refuses it, N untouched', async () => {
+  feedMode = 'real';
+  sigMode = 'good';
+  const before = sha512(installed);
+  await startApp();
+  await checkNow(/is ready/);
+  // The very file the installer (AppImage replace, or electron-updater's NSIS install) would use.
+  const cached = await poll('The cached download', cachedInstaller, 10_000);
+  appendFileSync(cached, Buffer.from('tampered after verification'));
+  await quitApp();
+  expect(appLog).toMatch(/not verified: the downloaded file changed after it was verified/);
+  // Windows: give a wrongly started installer time to show itself.
+  if (isWindows) await new Promise((done) => setTimeout(done, 15_000));
+  expect(sha512(installed)).toBe(before);
+  if (isWindows) expect(installedVersion()).toBe(oldVersion);
+  record('signing: tampered after verify', `re-hash refused ${basename(cached)} at quit; N unchanged`);
+});
+
 if (isLinux) {
   test('AppImage: N+1 at quit, at the same path, while an AI app on the old file keeps working; the next start is N+1', async () => {
     feedMode = 'real';

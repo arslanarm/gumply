@@ -22,7 +22,7 @@ import * as nodeFs from "node:fs";
 import { basename, dirname, join, sep, win32 } from "node:path";
 import type { DesktopUpdatesState, UpdateInstallKind, UpdateMode, UpdateStatus } from "@gumply/core";
 import type { UpdateSettings } from "./settings.js";
-import { sha256FileSync } from "./update-signature.js";
+import { sha256FileSync, type VerifyOutcome } from "./update-signature.js";
 
 export type InstallKind = UpdateInstallKind;
 export type { UpdateStatus };
@@ -221,7 +221,7 @@ export interface ControllerDeps {
    * signature check (no keys built in). Must never throw; a rejection counts
    * as a failure.
    */
-  verify?(download: { version: string; downloadedFile: string }): Promise<{ ok: true; sha256: string } | { ok: false; reason: string }>;
+  verify?(download: { version: string; downloadedFile: string }): Promise<VerifyOutcome>;
   /** The re-hash at quit (default: sha256 of the file). */
   hashFileSync?(path: string): string;
 }
@@ -278,7 +278,7 @@ export class UpdateController {
 
   /** Signing: the download stays "downloading" until it checks out; only then "ready". */
   private async verifyDownload(info: { version: string; downloadedFile: string }): Promise<void> {
-    let result: { ok: true; sha256: string } | { ok: false; reason: string };
+    let result: VerifyOutcome;
     try {
       result = await this.deps.verify!(info);
     } catch (error) {
@@ -289,6 +289,15 @@ export class UpdateController {
       this.verifiedSha256 = result.sha256;
       this.failedVersion = null;
       this.set({ status: "ready", version: info.version, releaseUrl: releaseUrl(info.version), error: null });
+      return;
+    }
+    if (result.retry) {
+      // Couldn't fetch the signed files (offline, timeout): nothing installed, and
+      // like a failed download the update stays on offer, tried again at the next check.
+      this.deps.log?.(`[gumply] update ${info.version} not verified yet: ${result.reason}`);
+      this.downloadedFile = null;
+      this.verifiedSha256 = null;
+      this.set({ status: "available", version: info.version, releaseUrl: releaseUrl(info.version), error: result.reason });
       return;
     }
     this.failVerification(info.version, result.reason);

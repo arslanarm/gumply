@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { UPDATE_PUBLIC_KEYS } from "../src/update-keys.js";
 import {
   formatSigLine,
+  HttpStatusError,
+  readCapped,
   installerName,
   keyIdOf,
   makeVerifier,
@@ -170,7 +172,7 @@ describe("makeVerifier (what main.ts gives the controller)", () => {
     const get = vi.fn(async (url: string) => {
       const body = files[url];
       if (body instanceof Error) throw body;
-      if (!body) throw new Error(`404 for ${url.split("/").pop()}`);
+      if (!body) throw new HttpStatusError(404, url.split("/").pop()!);
       return body;
     });
     const verify = makeVerifier({
@@ -219,18 +221,34 @@ describe("makeVerifier (what main.ts gives the controller)", () => {
 
   it("a sums or .sig fetch that fails (network or 404) is a failure, never a pass", async () => {
     const sig = Buffer.from(signWith(primary.privateKey, sums, primary.entry.id));
-    const cases: Array<[string, Record<string, Buffer | Error>]> = [
-      ["sums 404", { "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }],
-      ["sig 404", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums }],
-      ["network", { "https://example.test/v0.9.1/SHA256SUMS.txt": new Error("net::ERR_CONNECTION_RESET"), "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }],
+    const cases: Array<[string, Record<string, Buffer | Error>, boolean]> = [
+      // A 4xx: the release really lacks the file, so verification fails.
+      ["sums 404", { "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }, false],
+      ["sig 404", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums }, false],
+      // Passing trouble: not installed either, tried again at the next check.
+      ["network", { "https://example.test/v0.9.1/SHA256SUMS.txt": new Error("net::ERR_CONNECTION_RESET"), "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }, true],
+      ["timeout", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": new DOMException("The operation timed out.", "TimeoutError") as unknown as Error }, true],
+      ["server error", { "https://example.test/v0.9.1/SHA256SUMS.txt": new HttpStatusError(503, "SHA256SUMS.txt"), "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }, true],
     ];
-    for (const [what, files] of cases) {
+    for (const [what, files, retry] of cases) {
       const { verify } = release(files);
-      expect(await verify({ version: "0.9.1", downloadedFile: "/nowhere/Gumply-0.9.1-x86_64.AppImage" }), what).toMatchObject({
-        ok: false,
-        reason: expect.stringMatching(/^couldn't fetch the signed checksums: /),
-      });
+      const result = await verify({ version: "0.9.1", downloadedFile: "/nowhere/Gumply-0.9.1-x86_64.AppImage" });
+      expect(result, what).toMatchObject({ ok: false, reason: expect.stringMatching(/^couldn't fetch the signed checksums: /) });
+      expect(result.ok === false && result.retry === true, what).toBe(retry);
     }
+  });
+
+  it("a signed file's body is capped", async () => {
+    const stream = (sizes: number[]) =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const size of sizes) controller.enqueue(new Uint8Array(size));
+          controller.close();
+        },
+      });
+    expect(await readCapped(stream([100, 200]), 1024)).toHaveLength(300);
+    await expect(readCapped(stream([600, 600]), 1024)).rejects.toThrow(/more than 1024 bytes/);
+    expect(await readCapped(null)).toHaveLength(0);
   });
 
   it("fetches exactly the sums and the .sig from the release, then checks the cached file by its name", async () => {

@@ -377,3 +377,29 @@ describe("UpdateController with update signing (option B)", () => {
     expect(hashFileSync).not.toHaveBeenCalled();
   });
 });
+
+describe("UpdateController: signed files that couldn't be fetched", () => {
+  it("offline or a timeout: nothing installed, not marked as failing; the next check tries again", async () => {
+    let outcome: { ok: false; reason: string; retry?: boolean } | { ok: true; sha256: string } = { ok: false, retry: true, reason: "couldn't fetch the signed checksums: timeout" };
+    const replace = vi.fn(() => "installed" as const);
+    const made = controller("appimage", undefined, { appImagePath: "/a/Gumply.AppImage", replace, verify: async () => outcome, hashFileSync: () => "a".repeat(64) });
+    made.updater.checkForUpdates.mockImplementation(async () => {
+      made.updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    await made.instance.check(true);
+    made.updater.emit("update-downloaded", { version: "0.9.1", downloadedFile: "/cache/Gumply-0.9.1-x86_64.AppImage" });
+    await vi.waitFor(() => expect(made.instance.getState().status).toBe("available"));
+    expect(made.instance.getState().error).toMatch(/timeout/);
+    expect(made.instance.installOnQuit()).toBe("nothing");
+    expect(replace).not.toHaveBeenCalled();
+    // Online again: the same version downloads and verifies.
+    outcome = { ok: true, sha256: "a".repeat(64) };
+    made.updater.downloadUpdate.mockClear();
+    await made.instance.check(true);
+    expect(made.updater.downloadUpdate).toHaveBeenCalledTimes(1);
+    made.updater.emit("update-downloaded", { version: "0.9.1", downloadedFile: "/cache/Gumply-0.9.1-x86_64.AppImage" });
+    await vi.waitFor(() => expect(made.instance.getState().status).toBe("ready"));
+    expect(made.instance.installOnQuit()).toBe("installed");
+  });
+});

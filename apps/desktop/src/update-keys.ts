@@ -18,5 +18,9 @@ import type { UpdatePublicKey } from "./update-signature.js";
  *
  * Public keys only, `{ id: keyIdOf(spkiDer), spki: spkiDer.toString("base64") }`.
  * Never put a private key, or a test key, in this file.
+ *
+ * WHEN THE KEYS GO IN: also pin their ids in test/update-signature.test.ts
+ * (and keep the length at 2 or more), so a build that accidentally empties
+ * this list, which silently turns verification off, fails CI.
  */
 export const UPDATE_PUBLIC_KEYS: readonly UpdatePublicKey[] = [];
