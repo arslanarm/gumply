@@ -53,10 +53,19 @@ async function fullIndexTypes(dir: string): Promise<Map<string, unknown>> {
  * pages open, so the early pages see a cold cache, the later ones a partly
  * warm one), then again after the warm-up; both must equal the full index.
  */
-async function expectEquivalent(dir: string) {
+async function expectEquivalent(dir: string, options: { firstOpenEach?: boolean } = {}) {
   const expected = await fullIndexTypes(dir);
-  const { store, release } = await held(dir);
   const ids = [...expected.keys()];
+  // Each page as the very first open after a start (a fresh store each: nothing warm yet).
+  if (options.firstOpenEach) {
+    for (const id of ids) {
+      const first = await held(dir);
+      expect(await first.store.pageProperties(id), `first open: ${id}`).toEqual(expected.get(id));
+      first.release();
+      await first.store.warmed;
+    }
+  }
+  const { store, release } = await held(dir);
   for (const id of ids) expect(await store.pageProperties(id), `cold: ${id}`).toEqual(expected.get(id));
   expect(store.indexing).toBe(true);
   release();
@@ -105,7 +114,7 @@ describe("a page's property types from its own keys only (N11)", () => {
       // A conflict copy's values never count.
       "A.sync-conflict-20261122-143005-ABCDEFG.md": "---\nscore: copy\nstatus: copy\n---\nA\n",
     });
-    await expectEquivalent(dir);
+    await expectEquivalent(dir, { firstOpenEach: true });
   });
 
   it("a stored type wins; a page edited after the scan is read as it is now", async () => {
