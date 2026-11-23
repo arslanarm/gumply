@@ -229,6 +229,10 @@ describe("makeVerifier (what main.ts gives the controller)", () => {
       ["network", { "https://example.test/v0.9.1/SHA256SUMS.txt": new Error("net::ERR_CONNECTION_RESET"), "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }, true],
       ["timeout", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": new DOMException("The operation timed out.", "TimeoutError") as unknown as Error }, true],
       ["server error", { "https://example.test/v0.9.1/SHA256SUMS.txt": new HttpStatusError(503, "SHA256SUMS.txt"), "https://example.test/v0.9.1/SHA256SUMS.txt.sig": sig }, true],
+      // 408 and 429 are passing too (GitHub rate-limits); other 4xx are not.
+      ["408", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": new HttpStatusError(408, "SHA256SUMS.txt.sig") }, true],
+      ["429", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": new HttpStatusError(429, "SHA256SUMS.txt.sig") }, true],
+      ["403", { "https://example.test/v0.9.1/SHA256SUMS.txt": sums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": new HttpStatusError(403, "SHA256SUMS.txt.sig") }, false],
     ];
     for (const [what, files, retry] of cases) {
       const { verify } = release(files);

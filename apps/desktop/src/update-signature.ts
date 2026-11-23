@@ -225,9 +225,9 @@ export class HttpStatusError extends Error {
 
 /**
  * What the controller gets back. `retry`: the signed files couldn't be fetched
- * for a passing reason (network, timeout, a 5xx): not installed either, but
- * tried again at the next check instead of being marked as failing
- * verification. A 4xx (e.g. a release without a `.sig`) is a real failure.
+ * for a passing reason (network, timeout, a 5xx, 408, 429): not installed
+ * either, but tried again at the next check instead of being marked as failing
+ * verification. Any other 4xx (e.g. a release without a `.sig`) is a real failure.
  */
 export type VerifyOutcome = { ok: true; sha256: string } | { ok: false; reason: string; retry?: boolean };
 
@@ -240,7 +240,8 @@ export function makeVerifier(deps: VerifierDeps): ((download: { version: string;
     try {
       [sums, sig] = await Promise.all([deps.get(`${base}${SUMS_FILE}`), deps.get(`${base}${SIG_FILE}`)]);
     } catch (error) {
-      const missing = error instanceof HttpStatusError && error.status >= 400 && error.status < 500;
+      // A 4xx means the release lacks the file, except 408 and 429 (a timeout, a rate limit).
+      const missing = error instanceof HttpStatusError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
       return { ok: false, ...(missing ? {} : { retry: true }), reason: `couldn't fetch the signed checksums: ${error instanceof Error ? error.message : String(error)}` };
     }
     const name = deps.installerName(version);
