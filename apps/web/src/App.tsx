@@ -53,7 +53,7 @@ import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, isNotFound, serverDownMessage } from "./lib/errors.js";
 import { freshRetrySchedule, takeRetry } from "./lib/save-retry.js";
 import { moveToastMessage } from "./lib/move.js";
-import { openPageNeedsReload } from "./lib/rename.js";
+import { openPageAfterRename } from "./lib/rename.js";
 import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
 import { TagRenameDialog } from "./components/TagRenameDialog.js";
 import { SHOW_TAGS_EVENT, type TagRenameRequest } from "./components/TagsPane.js";
@@ -1650,8 +1650,11 @@ export function App() {
       showTitle(title);
       try {
         // Flush body edits first: a pending autosave could otherwise overwrite
-        // the server's link rewrite with stale `[[Old Title]]` text.
+        // the server's link rewrite with stale `[[Old Title]]` text. Any open
+        // page, not only the renamed one: the rewrite may change it too, and its
+        // unsaved typing must be on disk before it does.
         if (id === selectedRef.current) await documentControls()?.flush();
+        else await documentControls()?.flush().catch(() => undefined);
 
         renamesInFlight.current.add(id);
         renameEpoch.current += 1;
@@ -1697,8 +1700,9 @@ export function App() {
           open !== null && open.startsWith(`${id}/`)
             ? `${updated.id}${open.slice(id.length)}`
             : open;
-        // The renamed page itself is the live editor: never reload it.
-        if (open !== id && openPageNeedsReload(updated.rewrittenPages, openNow, updated.id)) {
+        // The renamed page itself is the live editor: never reload it. Nor one
+        // with unsaved text (typed during the rename): a reload would drop it.
+        if (open !== id && openPageAfterRename(updated.rewrittenPages, openNow, updated.id, documentControls()?.isDirty() ?? false) === "reload") {
           requestPageReload();
         }
       } catch (error) {

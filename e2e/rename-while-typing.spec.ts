@@ -114,3 +114,32 @@ test('a rename that fails: the typing held behind it still saves, to the old fil
   expect(states).not.toContain('conflict');
   expect(decodeURIComponent(new URL(page.url()).hash.replace(/^#\//, ''))).toBe('Solo');
 });
+
+test('renaming a page the open page links to, right after typing in it: the typing is saved, never dropped by the reload', async ({ page, vault }) => {
+  // A small vault: the rename itself is fast; the typing is still in the editor's autosave delay.
+  await vault.seed([
+    { title: 'Hub', content: 'The hub.' },
+    { title: 'Writer', content: 'Notes about [[Hub]].' },
+  ]);
+  await page.goto('/#/Writer');
+  await expect(page.getByTestId('editor-content')).toContainText('Notes about');
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' Typed just before the rename.');
+  // At once, before the autosave fires: rename Hub from the sidebar.
+  await page.getByTestId('page-item-Hub').hover();
+  await page.getByTestId('page-menu-button-Hub').click();
+  await page.getByTestId('rename-page-Hub').click();
+  await page.getByTestId('page-rename-input-Hub').fill('Hub renamed');
+  await page.keyboard.press('Enter');
+
+  await expect(page.getByTestId('page-item-Hub renamed')).toBeVisible();
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 30_000 });
+  // The typing is on disk, and the rename rewrote the link in it.
+  await expect
+    .poll(() => fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8'), { timeout: 15_000 })
+    .toContain('Typed just before the rename.');
+  const text = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
+  expect(text).toContain('[[Hub renamed]]');
+  await expect(page.getByTestId('editor-content')).toContainText('Typed just before the rename.');
+});

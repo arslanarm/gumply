@@ -29,3 +29,19 @@ export function openPageNeedsReload(
   if (rewritten === undefined) return true;
   return rewritten.includes(openId);
 }
+
+/**
+ * What to do with the open page after a rename rewrote it: reload it, or, when
+ * its editor holds unsaved text, leave it. A reload would drop that text with
+ * no trace; left alone, its next save meets the usual "changed on disk" bar,
+ * where Reload keeps the text as "Before reload" and Keep mine keeps it.
+ */
+export function openPageAfterRename(
+  rewritten: readonly PageId[] | undefined,
+  openId: PageId | null,
+  renamedId: PageId,
+  openHasUnsavedText: boolean,
+): "reload" | "keep" | "nothing" {
+  if (!openPageNeedsReload(rewritten, openId, renamedId)) return "nothing";
+  return openHasUnsavedText ? "keep" : "reload";
+}

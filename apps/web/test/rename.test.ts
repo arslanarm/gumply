@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openPageNeedsReload, plannedTitleRename } from "../src/lib/rename.js";
+import { openPageAfterRename, openPageNeedsReload, plannedTitleRename } from "../src/lib/rename.js";
 
 describe("plannedTitleRename", () => {
   it("sends a title the user actually changed", () => {
@@ -40,5 +40,22 @@ describe("openPageNeedsReload", () => {
   it("falls back to reloading when the server omits rewrittenPages", () => {
     expect(openPageNeedsReload(undefined, "source", "target")).toBe(true);
     expect(openPageNeedsReload(undefined, null, "target")).toBe(false);
+  });
+});
+
+describe("openPageAfterRename: never drop unsaved text", () => {
+  it("a rewritten open page with unsaved text is kept, not reloaded", () => {
+    expect(openPageAfterRename(["Writer"], "Writer", "Hub renamed", true)).toBe("keep");
+    expect(openPageAfterRename(undefined, "Writer", "Hub renamed", true)).toBe("keep");
+  });
+
+  it("a clean rewritten open page is reloaded, as before", () => {
+    expect(openPageAfterRename(["Writer"], "Writer", "Hub renamed", false)).toBe("reload");
+  });
+
+  it("nothing to do when the open page wasn't rewritten, or is the renamed page", () => {
+    expect(openPageAfterRename(["Other"], "Writer", "Hub renamed", true)).toBe("nothing");
+    expect(openPageAfterRename(["Writer"], "Hub renamed", "Hub renamed", false)).toBe("nothing");
+    expect(openPageAfterRename(["Writer"], null, "Hub renamed", false)).toBe("nothing");
   });
 });
