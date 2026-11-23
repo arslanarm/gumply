@@ -17,6 +17,7 @@ import {
 } from "../lib/search.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 
 /** Results the switcher asks for (the server's maximum, spec/api v1.31). */
 const SWITCHER_SEARCH_LIMIT = 200;
@@ -74,6 +75,9 @@ export function QuickSwitcher({
   onClose,
   initialQuery = "",
 }: QuickSwitcherProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef, { ownsTab: true });
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState(initialQuery);
@@ -361,7 +365,7 @@ export function QuickSwitcher({
     >
       <div
         className="quick-switcher"
-        role="dialog"
+        role="dialog" ref={modalRef}
         aria-modal="true"
         aria-label={t("search.label")}
         data-testid="quick-switcher"

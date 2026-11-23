@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { currentModifierLabel, shortcutGroups } from "../lib/shortcuts.js";
 import { useT } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 
 export interface ShortcutsDialogProps {
   onClose: () => void;
@@ -11,17 +12,12 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
   const t = useT();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const returnFocus = useRef<HTMLElement | null>(null);
   const groups = useMemo(() => shortcutGroups(currentModifierLabel()), []);
+  // Focus trap and focus return (#vefk9dwg).
+  useModal(dialogRef);
 
   useEffect(() => {
-    const active = document.activeElement;
-    returnFocus.current = active instanceof HTMLElement ? active : null;
     closeRef.current?.focus();
-    return () => {
-      const target = returnFocus.current;
-      if (target?.isConnected) target.focus();
-    };
   }, []);
 
   useEffect(() => {
@@ -29,24 +25,6 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
-        return;
-      }
-      if (event.key !== "Tab" || !dialogRef.current) return;
-
-      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
       }
     };
 

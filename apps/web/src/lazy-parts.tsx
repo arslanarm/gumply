@@ -13,6 +13,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useRef,
   useState,
   type ComponentProps,
   type ComponentType,
@@ -23,6 +24,7 @@ import { Icon } from "./components/Icon.js";
 // graph panel lives there, and the loading shells below use them too.
 import "./graph/graph.css";
 import { t } from "./i18n/index.js";
+import { useModal } from "./lib/modal.js";
 
 export interface LazyPart<P> {
   /** The real component once its code has loaded, else a suspending stand-in. */
@@ -342,6 +344,8 @@ export function LocalGraphPanel(props: LocalGraphPanelProps) {
 /** Small modal shown when a dialog's code could not load. */
 function DialogLoadError({ onClose, failure }: { onClose: () => void; failure: PartFailure }) {
   const text = failureText(failure, "dialog");
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -359,6 +363,7 @@ function DialogLoadError({ onClose, failure }: { onClose: () => void; failure: P
       <div
         className="modal"
         role="alertdialog"
+        ref={modalRef}
         aria-modal="true"
         aria-labelledby="part-error-title"
         data-testid="dialog-load-error"

@@ -2,6 +2,7 @@ import { isValidTagName } from "@gumply/core";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/index.js";
 import type { TagRenameRequest } from "./TagsPane.js";
+import { useModal } from "../lib/modal.js";
 
 export interface TagRenameDialogProps extends TagRenameRequest {
   onCancel: () => void;
@@ -12,7 +13,7 @@ export interface TagRenameDialogProps extends TagRenameRequest {
  * Rename a tag everywhere (#9bx3aznb): the new name, then "Rename #a to #b
  * in N pages?" (pages are what the user decides about; occurrences are the
  * detail), and a note when it merges into an existing tag. The input is
- * focused; Escape and a click outside cancel; Tab stays inside (D15).
+ * focused; Escape and a click outside cancel; Tab stays inside (D15, useModal).
  */
 export function TagRenameDialog({ tag, pages, count, exists, onCancel, onRename }: TagRenameDialogProps) {
   const t = useT();
@@ -25,6 +26,8 @@ export function TagRenameDialog({ tag, pages, count, exists, onCancel, onRename 
   const changed = name !== tag;
   const merges = valid && name.toLowerCase() !== tag.toLowerCase() && exists(name);
 
+  useModal(dialogRef);
+
   useEffect(() => {
     inputRef.current?.select();
   }, []);
@@ -34,19 +37,6 @@ export function TagRenameDialog({ tag, pages, count, exists, onCancel, onRename 
       if (event.key === "Escape") {
         event.preventDefault();
         onCancel();
-        return;
-      }
-      if (event.key !== "Tab" || !dialogRef.current) return;
-      const focusable = dialogRef.current.querySelectorAll<HTMLElement>("input, button:not([disabled])");
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
       }
     };
     document.addEventListener("keydown", onKeyDown);

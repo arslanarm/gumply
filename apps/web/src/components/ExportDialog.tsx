@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ExportLinks, ExportOptions, ExportTheme, PageSize, PrintMargins, PrintOptions } from "../export/html-export.js";
 import { useT, type MessageKey } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 
 /** The last choices, per device (`gumply:` so the desktop app keeps them). */
 const KEY = "gumply:export-html";
@@ -66,6 +67,9 @@ const LINKS: Array<[ExportLinks, MessageKey]> = [
 
 /** G1: Export as HTML: theme and link style, then Export. Escape or a click outside cancels. */
 export function ExportDialog({ title, format = "html", onExport, onClose }: ExportDialogProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   const t = useT();
   const id = useId();
   const [options, setOptions] = useState<ExportOptions>(savedOptions);
@@ -127,7 +131,7 @@ export function ExportDialog({ title, format = "html", onExport, onClose }: Expo
         if (event.target === event.currentTarget && !busy) onClose();
       }}
     >
-      <div className="modal export-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-testid="export-dialog">
+      <div className="modal export-dialog" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="export-dialog">
         <h2 id={`${id}-title`}>{t(pdf ? "export.pdf.dialogTitle" : "export.dialogTitle")}</h2>
         <p>
           <strong className="export-dialog-page">{title}</strong> — {t(pdf ? "export.pdf.dialogHint" : "export.dialogHint")}

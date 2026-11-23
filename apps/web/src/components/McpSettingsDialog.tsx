@@ -11,6 +11,7 @@ import { errorMessage } from "../lib/errors.js";
 import { claudeCodeSnippet, claudeDesktopConfigPath, claudeDesktopSnippet } from "../lib/mcp-snippets.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 import { Icon } from "./Icon.js";
+import { useModal } from "../lib/modal.js";
 
 const RANK: Record<McpAccess, number> = { read: 0, append: 1, edit: 2 };
 
@@ -70,6 +71,9 @@ function Snippet({ id, title, hint, text }: { id: string; title: string; hint: s
 }
 
 export function McpSettingsDialog({ onClose, onOpenPage, onRestored }: McpSettingsDialogProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   const t = useT();
   const id = useId();
   const [settings, setSettings] = useState<McpSettingsResponse | null>(null);
@@ -156,7 +160,7 @@ export function McpSettingsDialog({ onClose, onOpenPage, onRestored }: McpSettin
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="modal mcp-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-testid="mcp-settings">
+      <div className="modal mcp-dialog" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="mcp-settings">
         <div className="mcp-dialog-head">
           <h2 id={`${id}-title`}>{t("settings.mcp.title")}</h2>
           <button type="button" className="icon-button" aria-label={t("common.close")} data-testid="mcp-close" onClick={onClose} ref={closeRef}>

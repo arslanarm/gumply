@@ -16,6 +16,7 @@ import {
   type ThemePreference,
 } from "../lib/theme.js";
 import { Icon } from "./Icon.js";
+import { useModal } from "../lib/modal.js";
 
 const THEMES: readonly ThemePreference[] = ["system", "light", "dark"];
 
@@ -42,6 +43,10 @@ export function SettingsMenu({
   const [theme, setTheme] = useState<ThemePreference>(() => loadThemePreference(browserStorage()));
   const ref = useRef<HTMLDivElement>(null);
   const firstRef = useRef<HTMLSelectElement>(null);
+  // A popover, not a modal: focus moves in on open and back to the Settings
+  // button on Escape (#vefk9dwg); Tab may leave it.
+  const popoverRef = useRef<HTMLDivElement>(null);
+  useModal(popoverRef, { active: open, modal: false });
 
   useEffect(() => {
     if (!open) return;
@@ -89,7 +94,7 @@ export function SettingsMenu({
         <Icon name="settings" size={16} />
       </button>
       {open ? (
-        <div className="settings-popover" role="dialog" aria-label={t("settings.title")} data-testid="settings-popover">
+        <div className="settings-popover" ref={popoverRef} role="dialog" aria-label={t("settings.title")} data-testid="settings-popover">
           <label className="settings-row">
             <span className="settings-label">{t("settings.language")}</span>
             <select

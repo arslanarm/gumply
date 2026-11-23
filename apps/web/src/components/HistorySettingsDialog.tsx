@@ -3,6 +3,7 @@ import { api, type HistoryUsage } from "../api/client.js";
 import { currentLanguage, useT } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
 import { Icon } from "./Icon.js";
+import { useModal } from "../lib/modal.js";
 
 /**
  * Settings → Version history (spec/version-history §2.5, §5; D41): how much
@@ -31,6 +32,9 @@ export function useFormatSize() {
 }
 
 export function HistorySettingsDialog({ onClose }: { onClose: () => void }) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   const t = useT();
   const id = useId();
   const formatSize = useFormatSize();
@@ -88,7 +92,7 @@ export function HistorySettingsDialog({ onClose }: { onClose: () => void }) {
         if (event.target === event.currentTarget && !busy) onClose();
       }}
     >
-      <div className="modal history-settings" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-testid="history-settings">
+      <div className="modal history-settings" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="history-settings">
         <header className="history-header">
           <h2 id={`${id}-title`}>{t("history.title")}</h2>
           <button type="button" className="icon-button" aria-label={t("history.close")} data-testid="history-settings-close" ref={closeRef} onClick={onClose}>

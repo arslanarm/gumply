@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useT } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 
 export interface ConfirmDialogProps {
   heading: ReactNode;
@@ -16,7 +17,8 @@ export interface ConfirmDialogProps {
 
 /**
  * In-app confirmation for something destructive (D15). Cancel is focused by
- * default; Escape and a click outside cancel; Tab stays inside.
+ * default; Escape and a click outside cancel; Tab stays inside and focus
+ * goes back to the opener (useModal, #vefk9dwg).
  */
 export function ConfirmDialog({
   heading,
@@ -32,6 +34,7 @@ export function ConfirmDialog({
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const id = useId();
+  useModal(dialogRef);
 
   useEffect(() => {
     cancelRef.current?.focus();
@@ -42,22 +45,6 @@ export function ConfirmDialog({
       if (event.key === "Escape") {
         event.preventDefault();
         onCancel();
-        return;
-      }
-      if (event.key !== "Tab" || !dialogRef.current) return;
-
-      const focusable = dialogRef.current.querySelectorAll<HTMLElement>("button:not([disabled])");
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
       }
     };
 
