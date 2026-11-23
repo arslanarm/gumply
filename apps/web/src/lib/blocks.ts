@@ -146,7 +146,7 @@ export function moveBlockConverting(
         const number = impliedNumber(into, at);
         if (number !== null) attrs.markdownNumber = number;
       }
-      const item = itemType.createAndFill(attrs, block.node);
+      const item = itemType.createAndFill(attrs, withoutSourceIndent(block.node));
       if (item && into.canReplaceWith(at, at, item.type)) node = item;
     }
   }
@@ -155,6 +155,25 @@ export function moveBlockConverting(
   tr.insert(mapped, node);
   tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(mapped + 2, tr.doc.content.size))));
   return keepDocValid(tr, state).setMeta(BLOCK_MOVE_META, true);
+}
+
+/**
+ * A paragraph that becomes a list item: its soft breaks forget the indent their next line had where
+ * the paragraph came from (#iatezw4m's `lead`, and a quote's own prefix), keeping the whitespace
+ * around the newline. The serializer then indents those lines as the item requires, so they stay
+ * inside it (only the moved block's lines change, #2kafk39m).
+ */
+function withoutSourceIndent(paragraph: ProseMirrorNode): ProseMirrorNode {
+  let changed = false;
+  const children: ProseMirrorNode[] = [];
+  paragraph.forEach((child) => {
+    const space = child.attrs.markdownSpace as string[] | null | undefined;
+    if (Array.isArray(space) && space.length > 2) {
+      changed = true;
+      children.push(child.type.create({ ...child.attrs, markdownSpace: space.slice(0, 2) }, child.content, child.marks));
+    } else children.push(child);
+  });
+  return changed ? paragraph.type.create(paragraph.attrs, children, paragraph.marks) : paragraph;
 }
 
 /**

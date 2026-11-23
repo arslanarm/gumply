@@ -14,9 +14,10 @@ const body = async (title: string) => {
   return text.split('\n').filter((line) => line.trim() !== '');
 };
 
-async function drag(page: Page, from: string, onto: string, where: 'above' | 'below') {
+async function drag(page: Page, from: string | RegExp, onto: string, where: 'above' | 'below') {
   const editor = page.getByTestId('editor-content');
-  await editor.getByText(from, { exact: true }).hover();
+  // A soft break renders without a space ("Line oneline two"), so a two-line block is found by a pattern.
+  await (typeof from === 'string' ? editor.getByText(from, { exact: true }) : editor.getByText(from)).hover();
   await expect(page.getByTestId('block-gutter')).toBeVisible();
   const target = editor.getByText(onto, { exact: true });
   const box = (await target.boundingBox())!;
@@ -60,7 +61,7 @@ test.describe('a refused block drop is converted or refused (#2kafk39m)', () => 
   test('a multi-line paragraph keeps its lines inside the item, and the next save changes nothing', async ({ page, vault }) => {
     await vault.seed([{ title: 'Two lines', content: 'Line one\nline two\n\n- a\n- b' }]);
     await open(page, 'Two lines');
-    await drag(page, 'Line one', 'a', 'below');
+    await drag(page, /^Line one/, 'a', 'below');
     await saved(page);
     await expect.poll(() => body('Two lines')).toEqual(['- a', '- Line one', '  line two', '- b']);
     const after = await readFile(path.join(E2E_VAULT, 'Two lines.md'), 'utf8');
@@ -70,9 +71,12 @@ test.describe('a refused block drop is converted or refused (#2kafk39m)', () => 
     await b.click();
     await page.keyboard.press('End');
     await page.keyboard.type('x');
+    await expect.poll(() => readFile(path.join(E2E_VAULT, 'Two lines.md'), 'utf8'), { timeout: 10_000 }).toContain('- bx');
     await page.keyboard.press('Backspace');
-    await saved(page);
-    expect(await readFile(path.join(E2E_VAULT, 'Two lines.md'), 'utf8')).toBe(after);
+    // the re-parsed item writes back exactly as it was: the same bytes as right after the move
+    // (apart from the frontmatter's `updated:`, which every save sets)
+    const sansUpdated = (text: string) => text.replace(/^updated: .*\n/m, '');
+    await expect.poll(async () => sansUpdated(await readFile(path.join(E2E_VAULT, 'Two lines.md'), 'utf8')), { timeout: 10_000 }).toBe(sansUpdated(after));
   });
 
   test('a heading dragged onto a list is refused: the file is untouched', async ({ page, vault }) => {
