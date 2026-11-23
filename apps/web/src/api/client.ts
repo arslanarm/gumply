@@ -552,10 +552,18 @@ export const api = {
     request(`${historyPath(id)}/${encodeURIComponent(file)}/diff`),
 
   /** Restore a version into the current file (byte-exact, never renames); 409 when the page changed. */
-  restoreVersion: (id: PageId, file: string, expectedUpdated: string): Promise<Page | BoardDocument> =>
+  /** `why` (spec/api v1.34): "undo-keep-copy" when this restore undoes a conflict's Keep copy. */
+  restoreVersion: (id: PageId, file: string, expectedUpdated: string, why?: "undo-keep-copy"): Promise<Page | BoardDocument> =>
     mutate(() =>
-      request(`${historyPath(id)}/${encodeURIComponent(file)}/restore`, { method: "POST", body: JSON.stringify({ expectedUpdated }) }),
+      request(`${historyPath(id)}/${encodeURIComponent(file)}/restore`, { method: "POST", body: JSON.stringify({ expectedUpdated, ...(why ? { why } : {}) }) }),
     ),
+
+  /**
+   * spec/api v1.34 (#chbpc9yb): keep text about to be dropped (a save conflict's
+   * Reload) as a "Before reload" version. Never writes the page file.
+   */
+  keepUnsaved: (id: PageId, input: { content: string } | { board: unknown }): Promise<{ file: string; at: string } | { saved: false }> =>
+    mutate(() => request(`${historyPath(id)}/unsaved`, { method: "POST", body: JSON.stringify(input) })),
 
   pinVersion: (id: PageId, file: string, pinned: boolean): Promise<HistoryItem> =>
     mutate(() => request(`${historyPath(id)}/${encodeURIComponent(file)}/pin`, { method: "PUT", body: JSON.stringify({ pinned }) })),
@@ -579,7 +587,7 @@ export const api = {
 const historyPath = (id: PageId): string => `/history/${encodeURIComponent(id)}`;
 
 export type HistorySource = "app" | "external" | "mcp" | "import" | "restore";
-export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict";
+export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict" | "before-reload";
 
 /** One version in `GET /history/:id` (spec/api-version-history). */
 export interface HistoryItem {
@@ -595,6 +603,8 @@ export interface HistoryItem {
   version: string;
   pinned: boolean;
   restoredFrom?: string;
+  /** spec/api v1.34: this restore was an Undo of "Keep copy". */
+  undid?: "keep-copy";
   /** The title then, when it differs from now. */
   title?: string;
   /** The folder then ("" = top level), when it differs. */

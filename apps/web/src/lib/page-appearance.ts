@@ -124,6 +124,28 @@ export function saveLastPage(vault: string, id: string, storage: ThemeStorage | 
 }
 
 /**
+ * #chbpc9yb: `id` after the page `from` became `to` (a rename or a move; ids
+ * are paths, so a sub-page's id changes with its parent's).
+ */
+export function remapPageId(id: string, from: string, to: string): string {
+  if (id === from) return to;
+  if (id.startsWith(`${from}/`)) return `${to}${id.slice(from.length)}`;
+  return id;
+}
+
+/**
+ * #chbpc9yb: the chosen startup page and the last opened page follow a rename
+ * or move, as links do. Returns the startup page's id now (null when none).
+ */
+export function followPageInStorage(vault: string, from: string, to: string, storage: ThemeStorage | null = browserStorage()): string | null {
+  const chosen = loadStartupPage(vault, storage);
+  if (chosen !== null && remapPageId(chosen, from, to) !== chosen) saveStartupPage(vault, remapPageId(chosen, from, to), storage);
+  const last = loadLastPage(vault, storage);
+  if (last !== null && remapPageId(last, from, to) !== last) saveLastPage(vault, remapPageId(last, from, to), storage);
+  return loadStartupPage(vault, storage);
+}
+
+/**
  * What to open when the app starts without a page in the URL (#if236h9k).
  * A new vault's welcome page wins; then the setting: today's daily note, the
  * chosen page (if it still exists, else the last one), the last opened page (if

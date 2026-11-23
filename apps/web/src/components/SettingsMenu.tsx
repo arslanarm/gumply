@@ -44,7 +44,8 @@ export function SettingsMenu({
   /** spec/auto-update: Settings → Updates… (desktop installs that update or are told). */
   onOpenUpdates?: () => void;
   /** v0.9 F: the page chosen for startup in this vault (its title, or null), and how to pick one. */
-  startupPage?: { title: string | null; onChoose: () => void };
+  /** `missing`: a page was chosen but is no longer in the vault (#chbpc9yb). */
+  startupPage?: { title: string | null; missing?: boolean; onChoose: () => void };
 }) {
   const t = useT();
   // Re-render when the language changes (the selected option moves).
@@ -209,7 +210,9 @@ export function SettingsMenu({
             startupPage.onChoose();
           }}
         >
-          <span className="settings-startup-page-title">{startupPage.title ?? t("settings.startup.none")}</span>
+          <span className={`settings-startup-page-title${startupPage.missing ? " is-missing" : ""}`} data-testid="settings-startup-page-title">
+            {startupPage.title ?? (startupPage.missing ? t("settings.startup.gone") : t("settings.startup.none"))}
+          </span>
           <span className="settings-startup-page-action">{t("settings.startup.choose")}</span>
         </button>
       ) : null}
