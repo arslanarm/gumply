@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -71,4 +71,34 @@ describe.skipIf(!hasGit)("a git checkout in the vault (#35q6kt6e)", () => {
     // Links follow the tree: on branch one, Doc 1 links to Doc 2 again.
     expect(store.backlinks("Repo/Doc 2").map((item) => item.page.id)).toContain("Repo/Doc 1");
   }, 60_000);
+
+});
+
+describe("a folder that starts being watched late (#35q6kt6e, @opus-hunter's scenario B)", () => {
+  it("files written into a new folder after the walk, before its watcher exists, still come in", async () => {
+    const root = mkdtempSync(join(tmpdir(), "gumply-late-"));
+    vault = root;
+    store = new VaultStore(root);
+    await store.init();
+    store.startWatching();
+    // Right after a refresh walks the vault (and before the new folder's watcher
+    // is attached), a file lands in the new folder: no event can report it.
+    const internals = store as unknown as { refreshFromDisk: (...args: unknown[]) => Promise<boolean> };
+    const refresh = internals.refreshFromDisk;
+    let wroteLate = false;
+    internals.refreshFromDisk = async function (this: unknown, ...args: unknown[]) {
+      const result = await refresh.apply(this, args);
+      if (!wroteLate && existsSync(join(root, "Repo"))) {
+        wroteLate = true;
+        writeFileSync(join(root, "Repo", "Late.md"), "Written between the walk and the watcher.\n");
+      }
+      return result;
+    };
+    mkdirSync(join(root, "Repo"));
+    writeFileSync(join(root, "Repo", "Early.md"), "Here before the walk.\n");
+    await expect
+      .poll(() => store!.list().map((meta) => meta.id).filter((id) => id.startsWith("Repo/")).sort(), { timeout: 10_000, interval: 100 })
+      .toEqual(["Repo/Early", "Repo/Late"]);
+    expect(wroteLate).toBe(true);
+  }, 30_000);
 });

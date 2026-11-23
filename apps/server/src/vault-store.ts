@@ -834,9 +834,13 @@ export class VaultStore {
     return found;
   }
 
-  /** Watch new directories and stop watching removed ones. */
-  private syncDirectoryWatchers(): void {
-    if (!this.watching) return;
+  /**
+   * Watch new directories and stop watching removed ones. Returns how many
+   * directories it started watching.
+   */
+  private syncDirectoryWatchers(): number {
+    if (!this.watching) return 0;
+    let added = 0;
     const wanted = new Set(this.vaultDirectories());
     for (const [dir, watcher] of this.directoryWatchers) {
       if (wanted.has(dir)) continue;
@@ -854,10 +858,12 @@ export class VaultStore {
           this.scheduleRescan();
         });
         this.directoryWatchers.set(dir, watcher);
+        added += 1;
       } catch {
         // Gone already (or no permission): the next rescan settles it.
       }
     }
+    return added;
   }
 
   private onWatchEvent(dir: string, filename: string | Buffer | null): void {
@@ -950,7 +956,15 @@ export class VaultStore {
         // while it waited for saves are part of it.
         const changed = await this.refreshFromDisk(this.takePendingScope());
         // Folders may have appeared or gone: keep one watcher per directory.
-        this.syncDirectoryWatchers();
+        // #35q6kt6e: a folder watched only now may have got files after this
+        // refresh walked it and before its watcher existed (a repo created, a
+        // folder a git checkout re-creates): those made no events. One more full
+        // rescan picks them up; anything later makes events. It settles, since
+        // the next sync finds no new folder.
+        if (this.syncDirectoryWatchers() > 0) {
+          this.pendingFull = true;
+          this.scheduleRescan();
+        }
         return changed;
       },
       { rescan: true },
