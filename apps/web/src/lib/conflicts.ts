@@ -22,13 +22,22 @@ export function conflictTime(at: string | undefined): string | null {
   return at.length === 10 ? dateFormat({ dateStyle: "medium" }).format(date) : dateFormat({ dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-/** "Syncthing ABCDEFG, 22 Nov 2026, 14:30 (time on ABCDEFG)". */
+/**
+ * Where a copy came from, as its name says:
+ * - Syncthing, Obsidian Sync, Nextcloud: "Syncthing ABCDEFG, 22 Nov 2026, 14:30 (time on ABCDEFG)",
+ *   the device's own clock, so it's labelled as such;
+ * - Dropbox: "Dropbox, Ann's copy, 21 Nov 2026": a person or computer and a date only, never a time.
+ */
 export function conflictSource(copy: Pick<ConflictCopy, "tool" | "device" | "at">): string {
   const tool = conflictToolName(copy.tool);
   const time = conflictTime(copy.at);
+  if (copy.tool === "dropbox") {
+    return [tool, copy.device ? t("conflicts.dropboxCopy", { who: copy.device }) : null, time].filter(Boolean).join(", ");
+  }
   const who = copy.device ? `${tool} ${copy.device}` : tool;
   if (!time) return who;
-  return `${who}, ${copy.device ? t("conflicts.localTime", { date: time, device: copy.device }) : time}`;
+  const hasClock = (copy.at ?? "").length > 10;
+  return `${who}, ${hasClock && copy.device ? t("conflicts.localTime", { date: time, device: copy.device }) : time}`;
 }
 
 /** The toast after a resolve, and what its Undo puts back. */

@@ -1799,6 +1799,7 @@
     "sidebarWithCount_one": "Конфликты, {{count}} копия",
     "sidebarWithCount_few": "Конфликты, {{count}} копии",
     "sidebarWithCount_many": "Конфликты, {{count}} копий",
-    "sidebarWithCount_other": "Конфликты, {{count}} копии"
+    "sidebarWithCount_other": "Конфликты, {{count}} копии",
+    "dropboxCopy": "копия {{who}}"
   }
 }

@@ -1758,6 +1758,7 @@
     "sidebarWithCount_one": "Conflicts, {{count}} copy",
     "sidebarWithCount_few": "Conflicts, {{count}} copies",
     "sidebarWithCount_many": "Conflicts, {{count}} copies",
-    "sidebarWithCount_other": "Conflicts, {{count}} copies"
+    "sidebarWithCount_other": "Conflicts, {{count}} copies",
+    "dropboxCopy": "{{who}}'s copy"
   }
 }
