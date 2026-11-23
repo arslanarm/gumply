@@ -276,3 +276,33 @@ test('Settings → Updates (desktop): Tab kept in, Esc returns to the Settings b
   await expect(dialog).toHaveCount(0);
   await expectFocusIn(settings);
 });
+
+test('Settings → startup page picker (#if236h9k): Tab stays on the input, Esc gives focus back to Settings', async ({ page, vault }) => {
+  await openNote(page, vault);
+  const settings = page.getByTestId('settings-button');
+  await settings.focus();
+  await page.keyboard.press('Enter');
+  // Choosing "A page I choose" with no page chosen yet opens the picker.
+  await page.getByTestId('settings-startup').selectOption('page');
+  const picker = page.getByTestId('page-picker');
+  await expect(picker).toBeVisible();
+  const input = page.getByTestId('page-picker-input');
+  await expectFocusIn(input);
+  await page.keyboard.press('Tab');
+  await expectFocusIn(input);
+  await page.keyboard.press('Shift+Tab');
+  await expectFocusIn(input);
+  await page.keyboard.press('Escape');
+  await expect(picker).toHaveCount(0);
+  // The popover closed when the picker opened, so focus goes back to the Settings button (as for AI apps).
+  await expectFocusIn(settings);
+
+  // The same from the "Choose…" button.
+  await page.keyboard.press('Enter');
+  await page.getByTestId('settings-startup-choose').focus();
+  await page.keyboard.press('Enter');
+  await expectFocusIn(input);
+  await page.keyboard.press('Escape');
+  await expect(picker).toHaveCount(0);
+  await expectFocusIn(settings);
+});
