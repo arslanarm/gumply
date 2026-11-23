@@ -245,3 +245,42 @@ test('read-only (4.1.2): task boxes in the History preview are not offered as co
     await expect(box).toHaveAttribute('tabindex', '-1');
   }
 });
+
+test('target size (2.5.8): editor controls under 24 px keep a free 24 px circle (tasks, code block), no menu open', async ({ page }) => {
+  // #366bqpvy: axe flagged the task checkboxes (15 px) and the code block's language button
+  // (22 px tall) only while a suggestion menu was open: then the menu covers them (slash), or the
+  // editor itself is role=combobox (#5nykir64), one big target around them. With no menu open
+  // they pass by WCAG 2.5.8's spacing rule; this keeps it so.
+  writeFileSync(
+    path.join(E2E_VAULT, 'Targets.md'),
+    '# Targets\n\nSome text.\n\n- [ ] Write the brief\n- [x] Book the room\n- [ ] Third\n\n```js\nconst answer = 42;\n```\n\nAfter.\n',
+  );
+  await page.goto('/#/Targets');
+  await expectPageTitle(page, 'Targets');
+  await expect(page.getByTestId('editor-content').getByRole('checkbox')).toHaveCount(3);
+  const problems = await page.getByTestId('editor-content').evaluate((root) => {
+    const selector = 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"]';
+    const targets = [...root.querySelectorAll<HTMLElement>(selector)]
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0 && r.height > 0);
+    const centre = (r: DOMRect) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    // Distance from a point to a rectangle (0 inside it).
+    const distance = (p: { x: number; y: number }, r: DOMRect) => Math.hypot(Math.max(r.left - p.x, 0, p.x - r.right), Math.max(r.top - p.y, 0, p.y - r.bottom));
+    const out: string[] = [];
+    for (const { el, r } of targets) {
+      if (r.width >= 24 && r.height >= 24) continue;
+      const c = centre(r);
+      for (const other of targets) {
+        if (other.el === el || other.el.contains(el) || el.contains(other.el)) continue;
+        const o = other.r;
+        // WCAG 2.5.8: a 24 px circle on an undersized target must not touch another target,
+        // nor another undersized target's circle.
+        const small = o.width < 24 || o.height < 24;
+        const limit = small ? Math.hypot(c.x - centre(o).x, c.y - centre(o).y) < 24 : distance(c, o) < 12;
+        if (limit) out.push(`${el.getAttribute('aria-label') ?? el.className} (${Math.round(r.width)}×${Math.round(r.height)}) too close to ${other.el.getAttribute('aria-label') ?? other.el.className}`);
+      }
+    }
+    return out;
+  });
+  expect(problems).toEqual([]);
+});
