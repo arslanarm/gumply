@@ -3530,7 +3530,11 @@ export class VaultStore {
       const age = Date.now() - Date.parse(entry.startedAt);
       if (entry.instance !== this.instanceId) {
         // Another device's, recent: it finishes it at its next start (two would write the same pages).
-        if (!(age > RESUME_ANY_AFTER_MS)) continue;
+        // Logged at every start that skips it, so it's never silent; after 7 days any installation may.
+        if (!(age > RESUME_ANY_AFTER_MS)) {
+          console.warn(`[gumply] a rename another installation started (“${entry.oldTitle}” → “${entry.newTitle}”, ${entry.startedAt}) is left for it to finish; after 7 days this one will`);
+          continue;
+        }
         console.warn(`[gumply] finishing a rename another installation left ${Math.floor(age / 86_400_000)} days ago: “${entry.oldTitle}” → “${entry.newTitle}”`);
       }
       const titleOnly = entry.oldId === entry.newId;

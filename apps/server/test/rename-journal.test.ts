@@ -164,8 +164,10 @@ describe("a rename survives a crash (D47, #xhdjpaev)", { timeout: 60_000 }, () =
     const dir = await vault();
     await crashedRename(dir, "Hub", "Hub 2");
     const files = await markdown(dir);
-    // Another device (same synced vault) starts: a recent foreign entry is not its to finish.
+    // Another device (same synced vault) starts: a recent foreign entry is not its to finish, and it says so.
     await open(dir, "install-b");
+    const warned = vi.mocked(console.warn).mock.calls.map((call) => String(call[0]));
+    expect(warned.some((line) => line.includes("another installation started") && line.includes("“Hub” → “Hub 2”"))).toBe(true);
     expect(await markdown(dir)).toEqual(files);
     expect((await journal(dir)).renames).toHaveLength(1);
     // Eight days later the origin never came back: any installation finishes it.
@@ -181,6 +183,31 @@ describe("a rename survives a crash (D47, #xhdjpaev)", { timeout: 60_000 }, () =
     const dir = await vault();
     const store = await open(dir);
     await store.update("Hub", { title: "Hub 2" });
+    expect(await journalGone(dir)).toBe(true);
+  });
+
+  it("a title-only rename (the file keeps its id): resumed, and every [[Old title]] rewritten", async () => {
+    // As @opus-hunter's n9-3c: Hub.md is titled "Central" and linked as [[Central]]; renamed to "Hub", its file stays.
+    const make = async () => {
+      const dir = await mkdtemp(join(tmpdir(), "gumply-rename-journal-"));
+      dirs.push(dir);
+      await writeFile(join(dir, "Hub.md"), "---\ntitle: Central\n---\nThe hub.\n");
+      await mkdir(join(dir, "L"));
+      for (let i = 0; i < LINKERS; i++) await writeFile(join(dir, "L", `Linker ${i}.md`), `See [[Central]] (${i}).\n`);
+      return dir;
+    };
+    const control = await make();
+    await (await open(control)).update("Hub", { title: "Hub" });
+    const expected = await markdown(control);
+    expect(Object.values(expected).some((text) => text.includes("[[Central]]"))).toBe(false);
+
+    const dir = await make();
+    await crashedRename(dir, "Hub", "Hub");
+    const left = await journal(dir);
+    expect(left.renames[0]).toMatchObject({ oldId: "Hub", newId: "Hub", oldTitle: "Central", newTitle: "Hub" });
+    expect(Object.values(await markdown(dir)).filter((text) => text.includes("[[Central]]")).length).toBeGreaterThan(100);
+    await open(dir);
+    expect(await markdown(dir)).toEqual(expected);
     expect(await journalGone(dir)).toBe(true);
   });
 });
