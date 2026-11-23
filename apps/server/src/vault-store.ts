@@ -2536,7 +2536,8 @@ export class VaultStore {
       tags: [],
       parentId,
       created: now,
-      updated: now,
+      // #2xx3uae4: what a later read of this file reports, not `now` alone.
+      updated: writtenVersion(now, fileMtimeMs),
       content: noteBody(content),
       filePath,
       fileMtimeMs,
@@ -3919,7 +3920,8 @@ export class VaultStore {
     );
     record.title = name;
     record.fileMtimeMs = written.mtimeMs;
-    if (!written.frontmatter) record.updated = mtimeVersion(written.mtimeMs);
+    // #2xx3uae4: `updated:` is kept, but the file's time moved; a later read reports the newer.
+    record.updated = written.frontmatter ? writtenVersion(record.updated, written.mtimeMs) : mtimeVersion(written.mtimeMs);
   }
 
   /**

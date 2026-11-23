@@ -35,4 +35,20 @@ describe("a save's version is the version a fresh read gives", () => {
     expect(next.content).toContain("Third.");
     restarted.stopWatching();
   });
+
+  it("a new page: the first save after a server restart, with the version it was created with, isn't a conflict", async () => {
+    const { store, dir } = await createTestServer();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2020-01-01T00:00:00.000Z"));
+    const created = await store.create({ title: "Fresh", content: "First." });
+    vi.useRealTimers();
+    store.stopWatching();
+
+    const restarted = new VaultStore(dir);
+    await restarted.init();
+    expect(restarted.get(created.id).updated).toBe(created.updated);
+    const next = await restarted.update(created.id, { content: "Second.", expectedUpdated: created.updated });
+    expect(next.content).toContain("Second.");
+    restarted.stopWatching();
+  });
 });
