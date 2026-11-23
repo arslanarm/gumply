@@ -337,6 +337,13 @@ interface PageRecord extends Omit<Page, "childCount"> {
    * flight, e.g. on page exit); nobody else may.
    */
   ownWrite?: { version: string; replaced: string; writer: string };
+  /**
+   * #2wjvk3br: another program rewrote or touched the file with the same bytes.
+   * `from` are the versions it had before (newest last, a few), all naming the
+   * very bytes on disk now, so a save sent with one of them loses nothing.
+   * Valid only while the record is still at version `now`: any write moves on.
+   */
+  sameBytes?: { from: string[]; now: string };
   /** File mtime at the last read/write, for conditional saves. */
   fileMtimeMs: number;
   /** Frontmatter tags only; `tags` is this plus inline tags. */
@@ -731,8 +738,15 @@ function writtenVersion(frontmatterUpdated: string, mtimeMs: number): string {
  * version, or — for the editor that made our last write, while the file is
  * still exactly that write — the version that write replaced.
  */
-function versionMatches(record: { updated: string; ownWrite?: { version: string; replaced: string; writer: string } }, expected: string | undefined, writer: string | undefined): boolean {
+function versionMatches(
+  record: { updated: string; ownWrite?: { version: string; replaced: string; writer: string }; sameBytes?: { from: string[]; now: string } },
+  expected: string | undefined,
+  writer: string | undefined,
+): boolean {
   if (expected === undefined || expected === record.updated) return true;
+  // #2wjvk3br: a version from before a same-bytes rewrite or touch names exactly what's on disk.
+  const same = record.sameBytes;
+  if (same && same.now === record.updated && same.from.includes(expected)) return true;
   const own = record.ownWrite;
   return own !== undefined && writer !== undefined && own.writer === writer && own.version === record.updated && own.replaced === expected;
 }
@@ -1469,7 +1483,11 @@ export class VaultStore {
     const changedIds: PageId[] = [];
     for (const [id, record] of next) {
       const current = this.pages.get(id);
-      if (current !== record && (!current || this.recordSignature(current) !== this.recordSignature(record))) changedIds.push(id);
+      if (current === record) continue;
+      if (!current || this.recordSignature(current) !== this.recordSignature(record)) changedIds.push(id);
+      // #2wjvk3br: the same content with a moved stat (a same-bytes rewrite or a touch):
+      // take the new time and version now, whether or not anything else changed.
+      else this.adoptSameBytes(current, record);
     }
     const removedIds: PageId[] = [];
     for (const id of this.pages.keys()) if (!next.has(id)) removedIds.push(id);
@@ -1522,6 +1540,8 @@ export class VaultStore {
     for (const [id, record] of next) {
       const previous = this.pages.get(id);
       const own = previous?.ownWrite;
+      // #2wjvk3br: an unchanged record keeps what the adopt step above learned.
+      if (previous && previous !== record && previous.sameBytes && previous.sameBytes.now === record.updated) record.sameBytes = previous.sameBytes;
       if (own && own.version === record.updated) record.ownWrite = own;
       else if (previous && this.recordSignature(previous) !== this.recordSignature(record)) editedOutside.push(record);
     }
@@ -1586,6 +1606,42 @@ export class VaultStore {
       if (inode && Number(inode) > 0) out.set(id, `${inode}:${mtime}`);
     }
     return out;
+  }
+
+  /**
+   * #2wjvk3br: `fresh` is `current`'s file re-read with the same content (same
+   * signature), but its stat moved: another program rewrote it with the same
+   * bytes, or touched it. Take its time and version, silently (not an outside
+   * edit: no history version, no reindex), and remember the version it had, so
+   * a save still sent with it is accepted. Returns whether anything moved.
+   */
+  private adoptSameBytes(current: PageRecord, fresh: PageRecord): boolean {
+    if (current.fileMtimeMs === fresh.fileMtimeMs && current.updated === fresh.updated) return false;
+    if (current.updated !== fresh.updated) {
+      const valid = current.sameBytes && current.sameBytes.now === current.updated ? current.sameBytes.from : [];
+      current.sameBytes = { from: [...valid, current.updated].slice(-5), now: fresh.updated };
+    }
+    current.fileMtimeMs = fresh.fileMtimeMs;
+    current.updated = fresh.updated;
+    return true;
+  }
+
+  /**
+   * #2wjvk3br: a save's guard found the file's mtime moved since our last
+   * read. Re-read just this file: when only the stat moved (the same content),
+   * adopt it and let the save go on. Returns true when the file is unchanged.
+   */
+  private async adoptIfSameBytes(record: PageRecord): Promise<boolean> {
+    let fresh: PageRecord;
+    try {
+      fresh = await this.readRecord(record.filePath, record.id);
+    } catch {
+      return false;
+    }
+    fresh.parentId = record.parentId;
+    if (this.recordSignature(fresh) !== this.recordSignature(record)) return false;
+    this.adoptSameBytes(record, fresh);
+    return true;
   }
 
   private recordSignature(record: PageRecord): string {
@@ -2686,7 +2742,8 @@ export class VaultStore {
     } catch {
       info = null;
     }
-    const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
+    // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
+    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     let conflictBackup: string | undefined;
     if (mtimeChanged || versionChanged) {
@@ -2911,7 +2968,8 @@ export class VaultStore {
     } catch {
       info = null;
     }
-    const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
+    // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
+    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     let conflictBackup: string | undefined;
     if (mtimeChanged || versionChanged) {
@@ -3029,7 +3087,8 @@ export class VaultStore {
     } catch {
       info = null;
     }
-    const mtimeChanged = info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1;
+    // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
+    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     const changedOnDisk = mtimeChanged || versionChanged;
 
@@ -4926,7 +4985,8 @@ export class VaultStore {
       const entry = await this.historyEntry(record, file);
       const bytes = await this.versionBytes(record, entry);
       const info = await stat(record.filePath).catch(() => null);
-      if (info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 || !versionMatches(record, input.expectedUpdated, input.writer)) {
+      const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+      if (mtimeChanged || !versionMatches(record, input.expectedUpdated, input.writer)) {
         throw conflict("This page changed on disk.");
       }
       const ext = record.kind === "whiteboard" ? "canvas" : "md";
@@ -5256,7 +5316,8 @@ export class VaultStore {
   private async assertUnchanged(record: PageRecord, expected: string | undefined): Promise<void> {
     if (typeof expected !== "string") throw badRequest("expected versions are required");
     const info = await stat(record.filePath).catch(() => null);
-    if (info === null || Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 || expected !== record.updated) {
+    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    if (mtimeChanged || !versionMatches(record, expected, undefined)) {
       throw conflict("This changed while you were comparing. Check again.");
     }
   }
