@@ -15,11 +15,13 @@ Gumply keeps earlier versions of every page and board. You can see who changed w
 - **Outside edit:** another app changed the file (Obsidian, a text editor, git, a sync tool).
 - **AI app (…):** an AI app changed it through [Gumply's MCP server](ai-apps.md).
 - **Notion import**, **Before restore**, and **Renamed from / Moved from** when the page had another name or folder then.
+- **Before reload:** the text you hadn't saved yet when you chose **Reload** in a save conflict.
+- **Undid Keep copy:** the page's text put back when you undid **Keep copy** on a [conflicting copy](sync-with-other-apps.md).
 
 **On the right**, the selected version:
 
 - **Preview** shows it as the page looked then. For a board, it's the board itself; you can pan and zoom it.
-- **Changes** shows what's different from now: added lines in green with **+**, removed lines in red with **−**. **Show whole file** shows the lines around them too. For a board, Changes marks cards added (green outline), removed (faded, dashed red) and changed (amber), with a list of those cards below.
+- **Changes** shows what's different from now: added lines in green with **+**, removed lines in red with **−**. **Show whole file** shows the lines around them too. For a board, Changes marks cards added (green outline), removed (faded, dashed red) and changed (amber), with a list of those cards below. Gumply's own `updated` and `created` dates are left out unless you show the whole file; if they're all that changed, it says **No changes to the text; only Gumply's dates changed.**
 
 ## Restore a version
 
@@ -39,6 +41,7 @@ If the page changed in another app while you were looking, Gumply asks you to ch
 - **When you stop:** after 10 minutes without typing, when you open another page, or when you quit, your last state is kept as **End of editing**.
 - **When another app changes the file:** what you last saved here and what the other app wrote are both kept.
 - **When a page goes to the Trash.**
+- **When you choose Reload** in a save conflict: your unsaved text first, as **Before reload**.
 
 **How long they're kept:** every version for a day, then one per hour for a week, then one per day for 90 days. The newest version and the ones you keep always stay.
 

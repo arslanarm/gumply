@@ -4,9 +4,9 @@ Gumply is meant to work with the keyboard alone, with a screen reader, and at la
 
 ## Use it from the keyboard
 
-- **Search and commands:** `Ctrl/Cmd+K` opens pages and runs commands (today's note, templates, history, export, conflicts, language).
+- **Search and commands:** `Ctrl/Cmd+K` opens pages and runs commands (today's note, templates, history, export, conflicts, language). A page opened from it gets the cursor straight away, where you left it.
 - **Shortcuts:** `?` lists them all. See [Settings and keyboard shortcuts](settings-and-shortcuts.md).
-- **Sidebar:** move between rows with `Tab`, open a row with `Enter`, rename it with `F2`, and open its menu with `Shift+F10` or the menu key. In the menu, the arrow keys move between items.
+- **Sidebar:** the page list is a single `Tab` stop. Inside it, `↑`/`↓` move between rows, `→` opens a row's sub-pages (or goes into them) and `←` closes them (or goes up to the parent), `Home`/`End` jump to the first and last row, and typing the first letters of a title jumps to it. `Enter` opens a row, `F2` renames it, and `Shift+F10` or the menu key opens its menu, which also has **New sub-page** (**New page inside** for a folder). In the menu, the arrow keys move between items.
 - **Pages:** everything in the editor has a key: blocks with `/`, links with `[[`, moving blocks with `Ctrl/Cmd+Shift+↑/↓`.
 - **Boards:** `Tab` goes from object to object, `Enter` edits, arrows move, and a tool's key plus `Enter` adds an object. See [Boards](boards.md#use-a-board-from-the-keyboard).
 - **Dialogs** keep the keyboard inside them while open, start on their first control, close with `Esc`, and put focus back where it was.

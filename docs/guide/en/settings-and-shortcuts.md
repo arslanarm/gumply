@@ -7,7 +7,7 @@ Open them with the gear at the top right.
 ![Settings: language, what opens on startup, appearance, AI apps and version history](../img/settings.en.png)
 
 - **Language:** English or Russian, or the same as your system. Menus in the desktop app follow it.
-- **On startup, open:** the **Last opened page**, **A page I choose** (pick it with **Choose…**), or **Today's daily note**.
+- **On startup, open:** the **Last opened page**, **A page I choose** (pick it with **Choose…**), or **Today's daily note**. The chosen page stays chosen when you rename or move it; if it's deleted, Settings says **The chosen page was deleted**.
 - **Appearance:**
   - **Theme:** System, Light or Dark. The sun or moon button next to the gear switches it too.
   - **Font** for your pages: **Default**, **Serif** or **Mono**.
@@ -66,6 +66,8 @@ Press `?` anywhere (outside a text field) to see them all. `Ctrl` is `Cmd` on a 
 | `Enter` in the title | Go to the page's text |
 | `F2`, or double-click in the sidebar | Rename the page |
 | `Shift+F10` or the menu key on a sidebar row | Open the row's menu |
+| `↑` `↓` `←` `→`, `Home` / `End` in the sidebar | Move between pages; open and close sub-pages |
+| Typing in the sidebar | Jump to the page whose title starts with it |
 
 ### Boards
 
