@@ -166,9 +166,17 @@
 }
 
 /* #g95wkd9y: a big graph laid out in the background: its start layout dimmed,
-   with a quiet status, until the settled graph is drawn once. */
-.graph-canvas--arranging canvas {
-  opacity: 0.35;
+   with a quiet status, until the settled graph is drawn once.
+   #3jep576p: dimmed by a veil over the canvas, never by the canvas's own
+   opacity: toggling a big canvas layer's opacity in the same frame as its first
+   full repaint stalled a frame commit for ~16 s in headless Chromium. The veil
+   is a translucent colour (no opacity), so the layer tree doesn't change. */
+.graph-arranging-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  pointer-events: none;
 }
 
 .graph-arranging {
