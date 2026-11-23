@@ -299,4 +299,19 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
       }
     }
   });
+
+  it("a conflict copy edited outside gets no links, and its original still does (D43)", async () => {
+    const store = await vaultOf(10);
+    const copy = "Note 3.sync-conflict-20261122-143005-ABCDEFG";
+    await writeFile(join(dir, `${copy}.md`), "Theirs.\n");
+    await store.rescan();
+    await writeFile(join(dir, `${copy}.md`), "Theirs, now pointing at [[Hub]].\n");
+    await writeFile(join(dir, "Note 3.md"), "Mine, pointing at [[Hub]] too.\n");
+    const work = await counted(store, () => store.rescan());
+    // Both files re-read; only the original's links recomputed (the copy is skipped).
+    expect(work).toEqual({ reads: 2, edges: 1 });
+    const edges = (store as unknown as { edgesBySource: Map<string, unknown> }).edgesBySource;
+    expect(edges.has(copy)).toBe(false);
+    expect(backlinkIds(store, "Hub")).toEqual(["Note 3"]);
+  });
 });
