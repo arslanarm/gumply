@@ -8,11 +8,16 @@
  * server started on the big vault (scripts/perf/make-vault.mjs). Every run
  * uses a fresh browser context (cold cache) with the CPU throttled via CDP,
  * as scripts/measure-startup.mjs does, and reports medians of:
- *   - editor visible: navigation → the page body is in the DOM;
+ *   - editor visible ("app start, warm server" on the budget page): navigation
+ *     → the landing page's body is in the DOM, in a fresh context;
  *   - sidebar ready: navigation → the page tree has rows (and how many rows
  *     are in the DOM, to see whether it's virtualised);
  *   - long tasks: the main thread's blocked time until 2 s after the editor;
  *   - Cmd+K: typing "roadmap" → more than one result row;
+ *   - open a page from the sidebar (#7giyynna): the route a tree click takes →
+ *     the page's last line in the editor and one frame painted, for
+ *     make-vault's "Perf Typical", "Perf Rich" (tables, math, Mermaid, code)
+ *     and "Perf Long" (~2,000 lines): openTypical, openRich, openLong;
  *   - Hub's backlinks: opening the hub page → its "Linked from" rows;
  *   - local graph and global graph: the click → a painted canvas;
  *   - graphReady: the click → the global graph settled and fitted
@@ -91,6 +96,25 @@ try {
     await wait("cmdk");
     result.cmdk = (await marks()).cmdk;
     await page.keyboard.press("Escape");
+
+    // Open a page from the sidebar (#7giyynna): the hash route a tree click
+    // takes, until the page's end marker is in the editor and a frame painted.
+    for (const [key, id, marker] of [
+      ["openTypical", "Perf Typical", "TYPICAL-END"],
+      ["openRich", "Perf Rich", "RICH-END"],
+      ["openLong", "Perf Long", "LONG-END"],
+    ]) {
+      await page.waitForTimeout(2500);
+      await page.evaluate(
+        ([key, id, marker]) => {
+          window.__until(() => document.querySelector('[data-testid="editor-content"]')?.textContent.includes(marker) === true, key);
+          location.hash = `#/${encodeURIComponent(id)}`;
+        },
+        [key, id, marker],
+      );
+      await wait(key);
+      result[key] = (await marks())[key];
+    }
 
     // The hub page and its backlinks.
     await page.evaluate(() => {
