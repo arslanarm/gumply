@@ -333,6 +333,22 @@ export function App() {
   // Pages whose rename request is in flight. The disk poll may already see the
   // new file name; it must not treat the open page as deleted meanwhile.
   const renamesInFlight = useRef(new Set<PageId>());
+  // #im3em6tq: each rename in flight, settling with the renamed page (null if it
+  // failed). A save of that page, or of a page under it, waits for it and then
+  // goes to the new id with the new version, never against the rename (a 409).
+  const renameWaits = useRef(new Map<PageId, Promise<Page | null>>());
+  const waitForRename = useCallback((id: PageId): Promise<{ id: PageId; updated: string | null } | null> | null => {
+    for (const [renamed, settled] of renameWaits.current) {
+      if (id === renamed) return settled.then((page) => (page ? { id: page.id, updated: page.updated } : null));
+      if (id.startsWith(`${renamed}/`)) {
+        // A sub-page moves with its parent: a new id, the same version.
+        return settled.then((page) => (page ? { id: `${page.id}${id.slice(renamed.length)}`, updated: null } : null));
+      }
+    }
+    return null;
+  }, []);
+  // #im3em6tq: "Renaming “Hub”: updating links in 1,982 pages…" in the sidebar meanwhile.
+  const [renaming, setRenaming] = useState<{ id: PageId; title: string; count: number | null } | null>(null);
   // Bumped when a rename starts and ends: a poll that began before then has a
   // list that may disagree with the ids the client now uses.
   const renameEpoch = useRef(0);
@@ -1583,6 +1599,17 @@ export function App() {
 
         renamesInFlight.current.add(id);
         renameEpoch.current += 1;
+        let settle: (page: Page | null) => void = () => undefined;
+        renameWaits.current.set(id, new Promise<Page | null>((resolve) => (settle = resolve)));
+        setRenaming({ id, title: previousTitle ?? title, count: null });
+        // How many pages link here (the link rewrites the server is doing), for the status.
+        void api
+          .backlinks(id)
+          .then((links) => {
+            const count = new Set(links.map((link) => link.page.id)).size;
+            setRenaming((current) => (current && current.id === id ? { ...current, count } : current));
+          })
+          .catch(() => undefined);
         let updated: Page & { rewrittenPages?: PageId[] };
         try {
           if (isBoardId(id)) {
@@ -1598,7 +1625,11 @@ export function App() {
             updated = await api.updatePage(id, { title });
           }
           applySavedPage(id, updated);
+          settle(updated);
         } finally {
+          settle(null);
+          renameWaits.current.delete(id);
+          setRenaming((current) => (current && current.id === id ? null : current));
           renamesInFlight.current.delete(id);
           renameEpoch.current += 1;
         }
@@ -1639,7 +1670,11 @@ export function App() {
   }, []);
   savePropertiesRef.current = async (queued: QueuedPatch): Promise<boolean> => {
     {
-      const id = selectedRef.current;
+      // #im3em6tq: never against a rename of this page in flight; after it, the id and version are the new ones.
+      // React may not have re-rendered yet, so use the rename's own id and version.
+      const renaming = selectedRef.current ? waitForRename(selectedRef.current) : null;
+      const renamed = renaming ? await renaming : null;
+      const id = renamed?.id ?? selectedRef.current;
       if (!id || isBoardId(id)) return false;
       const patch = typeof queued === "function" ? queued() : queued;
       if (!patch) return true;
@@ -1647,9 +1682,11 @@ export function App() {
       try {
         await editorControls.current?.flush();
         const current = pageRef.current;
+        // A sub-page moved with its parent keeps its version (renamed.updated is null then).
+        const expectedUpdated = renamed ? (renamed.updated ?? current?.updated) : current?.id === id ? current.updated : undefined;
         const updated = await api.updatePage(id, {
           properties: patch,
-          ...(current?.id === id ? { expectedUpdated: current.updated } : {}),
+          ...(expectedUpdated ? { expectedUpdated } : {}),
         });
         applySavedPage(id, updated);
         // The next queued save reads the new version from here before React re-renders.
@@ -2378,6 +2415,7 @@ export function App() {
           trashCount={trashItems ? trashedCount(trashItems) : 0}
           onTrash={closingSidebar(() => navigateTrash())}
           syncing={vaultSyncing}
+          renaming={renaming ? { title: renaming.title, count: renaming.count } : null}
           conflictsActive={conflictsOpen}
           conflictsCount={conflictCount}
           onConflicts={closingSidebar(navigateConflicts)}
@@ -2675,6 +2713,7 @@ export function App() {
                     pages={documentPages}
                     onSaveState={setSaveState}
                     onSaved={handlePageSaved}
+                    waitForRename={waitForRename}
                     onConflictBackup={handleConflictBackup}
                     onReady={handleEditorReady}
                     onOpenLink={handleOpenLink}
