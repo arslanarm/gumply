@@ -423,9 +423,9 @@ const UNREADABLE = Symbol("unreadable");
 /** This file can't be read right now (permissions, a lock, a folder where a file was). */
 function isPerFileError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
-  // #g95wkd9y (@lead): out of file handles (EMFILE/ENFILE) is treated like
-  // any unreadable file: that file is skipped, the scan goes on.
-  return code === "EACCES" || code === "EPERM" || code === "EBUSY" || code === "EISDIR" || code === "EMFILE" || code === "ENFILE";
+  // Not EMFILE/ENFILE (out of file handles): that's temporary and not about
+  // this file; the scan fails and the next one retries (#35q6kt6e, @lead).
+  return code === "EACCES" || code === "EPERM" || code === "EBUSY" || code === "EISDIR";
 }
 
 /** A file or folder that went away under us: removed, or a parent replaced by a file. */
@@ -1156,7 +1156,7 @@ export class VaultStore {
       const read = await this.readIfPresent(absolute, id);
       if (read === null) return { kind: "gone" }; // Deleted between the stat and the read.
       // #35q6kt6e: this one file can't be read right now (permissions, a lock
-      // held by antivirus or a sync tool, or out of file handles). It keeps the
+      // held by antivirus or a sync tool). It keeps the
       // record it had, if any, and isn't cached, so the next rescan tries it
       // again; the rest of the rescan goes on.
       if (read === UNREADABLE) return { kind: "keep" };
