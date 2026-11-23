@@ -320,6 +320,8 @@ export function GraphCanvas({
   sizeRef.current = size;
   const colors = useThemeColors();
   const [ready, setReady] = useState(false);
+  /** A worker layout is running (its end, not the settle timer, makes the view ready). */
+  const workerRunning = useRef(false);
   /** Bumped on every applied fit; lets tests (and debugging) observe refits. */
   const [fitGeneration, setFitGeneration] = useState(0);
   /** Why the last fit happened (data, resize, settle, engine, button); for tests and debugging. */
@@ -609,7 +611,9 @@ export function GraphCanvas({
     settleTimer.current = window.setTimeout(() => {
       settleTimer.current = null;
       autoFit(0, "settle");
-      setReady(true);
+      // A worker layout still running hasn't settled: it marks ready itself when done
+      // (else `data-graph-ready` said true ~8 s into a 30 s layout on the 10k vault).
+      if (!workerRunning.current) setReady(true);
     }, newData ? 4000 : 600);
 
     return () => {
@@ -1128,6 +1132,7 @@ export function GraphCanvas({
   settleLayoutRef.current = settleLayout;
   useEffect(() => {
     if (!engine.worker || !hasSize) return;
+    workerRunning.current = true;
     const drawn = nodes as PositionedNode[];
     const { width, height } = sizeRef.current;
     const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion });
@@ -1148,11 +1153,13 @@ export function GraphCanvas({
       }
       setLayoutFrame((frame) => frame + 1);
       if (update.done) {
+        workerRunning.current = false;
         setArranging(null);
         settleLayoutRef.current();
       }
     });
     return () => {
+      workerRunning.current = false;
       cancel();
       setArranging(null);
     };
