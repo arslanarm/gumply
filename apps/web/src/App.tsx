@@ -78,6 +78,8 @@ import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.
 import { ConflictCompareDialog, type CompareTarget } from "./components/ConflictCompareDialog.js";
 import { ConflictsView, fileNameOf } from "./components/ConflictsView.js";
 import { resolvedToast } from "./lib/conflicts.js";
+import { loadLastPage, loadStartupMode, loadStartupPage, saveLastPage, saveStartupMode, saveStartupPage, startupTarget } from "./lib/page-appearance.js";
+import { PagePickerDialog } from "./components/PagePickerDialog.js";
 import { LazyBoardPreview } from "./board/index.js";
 import type { ConflictCopy, ConflictKeep, PossibleCopy } from "@gumply/core";
 import { HistorySettingsDialog } from "./components/HistorySettingsDialog.js";
@@ -103,6 +105,9 @@ interface ToastState {
   icon?: IconName;
   undo?: () => Promise<void>;
 }
+
+/** v0.9 F: today's note opens at most once per launch, however often the vault list reloads. */
+let startupDailyDone = false;
 
 /** D43: a read-only conflict copy saves nothing and creates no pages. */
 const noopSaveState = () => undefined;
@@ -290,6 +295,8 @@ export function App() {
   const [pendingHeading, setPendingHeading] = useState<PendingHeading | null>(null);
 
   const selectedRef = useRef<PageId | null>(selectedId);
+  /** v0.9 F: the startup effect runs before `openToday` is declared; it reaches it through this. */
+  const openTodayRef = useRef<(() => Promise<void>) | null>(null);
   selectedRef.current = selectedId;
 
   // D41: leaving a page ends its editing session; the server keeps its last state as a version
@@ -345,6 +352,12 @@ export function App() {
 
   // "<Page> — <Vault folder> — Gumply" (#ux5cukze); the desktop window shows it.
   const [vaultPath, setVaultPath] = useState<string | null>(null);
+  /** v0.9 F: the page chosen to open on startup in this vault, and its picker. */
+  const [startupPageId, setStartupPageId] = useState<PageId | null>(null);
+  const [startupPickerOpen, setStartupPickerOpen] = useState(false);
+  useEffect(() => {
+    if (vaultPath) setStartupPageId(loadStartupPage(vaultPath));
+  }, [vaultPath]);
   useEffect(() => {
     void api
       .health()
@@ -779,7 +792,25 @@ export function App() {
         return;
       }
 
-      const target = chooseLandingPage(list, newVaultPage);
+      // v0.9 F (#if236h9k): what opens on startup is a per-device setting, per vault.
+      const vault = await api.health().then((health) => health.vaultPath, () => "");
+      const choice = startupTarget({
+        ids: new Set(list.filter((item) => item.kind !== "folder").map((item) => item.id)),
+        newVaultPage,
+        mode: loadStartupMode(),
+        chosen: vault ? loadStartupPage(vault) : null,
+        last: vault ? loadLastPage(vault) : null,
+        fallback: chooseLandingPage(list, null),
+      });
+      if (choice.kind === "daily") {
+        // Opened interactively, once per launch: today's note, made if missing (as Obsidian does).
+        if (!startupDailyDone) {
+          startupDailyDone = true;
+          await openTodayRef.current?.();
+          return;
+        }
+      }
+      const target = choice.kind === "page" ? choice.id : chooseLandingPage(list, newVaultPage);
       if (!target) return;
       // Only a page is prefetched: a board or a database view loads through
       // its own endpoint, and `GET /pages/<id>` would 404 (#39mbij4a).
@@ -793,6 +824,13 @@ export function App() {
       navigate(target, true);
     })();
   }, [loadPages, navigate]);
+
+  // v0.9 F: remember the last opened page or board, per device and vault, for startup.
+  useEffect(() => {
+    if (!vaultPath || !selectedId) return;
+    if (!pagesRef.current.some((item) => item.id === selectedId && item.kind !== "folder")) return;
+    saveLastPage(vaultPath, selectedId);
+  }, [vaultPath, selectedId, pages]);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -1133,6 +1171,7 @@ export function App() {
       setActionError(errorMessage(error));
     }
   }, [loadPages, navigate]);
+  openTodayRef.current = openToday;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2020,6 +2059,10 @@ export function App() {
           onOpenMcp={() => setMcpOpen(true)}
           onOpenHistory={() => setHistorySettingsOpen(true)}
           {...(updates ? { onOpenUpdates: () => setUpdatesOpen(true) } : {})}
+          startupPage={{
+            title: startupPageId ? (pages.find((item) => item.id === startupPageId)?.title ?? null) : null,
+            onChoose: () => setStartupPickerOpen(true),
+          }}
         />
         <button
           type="button"
@@ -2623,6 +2666,22 @@ export function App() {
       ) : null}
 
       {historySettingsOpen ? <HistorySettingsDialog onClose={() => setHistorySettingsOpen(false)} /> : null}
+
+      {startupPickerOpen ? (
+        <PagePickerDialog
+          pages={pages}
+          label={t("settings.startup.pickerLabel")}
+          placeholder={t("settings.startup.pickerPlaceholder")}
+          noMatch={(query) => t("settings.startup.pickerNoMatch", { query })}
+          onCancel={() => setStartupPickerOpen(false)}
+          onSelect={(id) => {
+            if (vaultPath) saveStartupPage(vaultPath, id);
+            saveStartupMode("page");
+            setStartupPageId(id);
+            setStartupPickerOpen(false);
+          }}
+        />
+      ) : null}
 
       {compareTarget ? (
         <ConflictCompareDialog

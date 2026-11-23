@@ -7711,3 +7711,113 @@ input {
 .conflicts-view .history-muted {
   margin: 0.25rem 0 0.6rem;
 }
+
+/* v0.9 F (#if236h9k): page font and width, per device (lib/page-appearance.ts). Page content only. */
+:root {
+  --page-font-serif: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Times New Roman", serif;
+  --page-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root[data-page-font="serif"] .editor-pane .page-title,
+:root[data-page-font="serif"] .editor-pane .page-title-input,
+:root[data-page-font="serif"] .editor-pane .gumply-editor {
+  font-family: var(--page-font-serif);
+}
+
+:root[data-page-font="mono"] .editor-pane .page-title,
+:root[data-page-font="mono"] .editor-pane .page-title-input,
+:root[data-page-font="mono"] .editor-pane .gumply-editor {
+  font-family: var(--page-font-mono);
+}
+
+.editor-pane:not(.is-board):not(.is-base) {
+  transition: max-width 180ms ease;
+}
+
+:root[data-page-width="wide"] .editor-pane:not(.is-board):not(.is-base) {
+  max-width: 1120px;
+}
+
+:root[data-page-width="full"] .editor-pane:not(.is-board):not(.is-base) {
+  max-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-pane:not(.is-board):not(.is-base) {
+    transition: none;
+  }
+}
+
+.settings-section-title {
+  margin: 0.35rem 0 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.settings-segment.is-font-sample {
+  display: grid;
+  justify-items: center;
+  gap: 0.05rem;
+  line-height: 1.1;
+}
+
+.settings-segment .font-sample {
+  font-size: 1.05rem;
+}
+
+.settings-segment .font-sample.is-serif {
+  font-family: var(--page-font-serif);
+}
+
+.settings-segment .font-sample.is-mono {
+  font-family: var(--page-font-mono);
+}
+
+.settings-segment .font-name {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.settings-startup-page {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.83rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-startup-page:hover {
+  background: var(--hover);
+}
+
+.settings-startup-page-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-startup-page-action {
+  flex: none;
+  color: var(--accent);
+}
+
+.page-picker-heading {
+  margin: 0;
+  padding: 0.75rem 1rem 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}

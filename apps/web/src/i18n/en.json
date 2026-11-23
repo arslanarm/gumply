@@ -861,6 +861,30 @@
       "saveFailed": "Couldn't save the setting. Try again.",
       "pendingRunning": "Update ready, will install when Gumply and AI apps using it are closed.",
       "privacy": "Checks ask GitHub for the latest release. GitHub sees your IP address; nothing else is sent."
+    },
+    "appearance": "Appearance",
+    "font": {
+      "title": "Font",
+      "default": "Default",
+      "serif": "Serif",
+      "mono": "Mono"
+    },
+    "width": {
+      "title": "Page width",
+      "normal": "Normal",
+      "wide": "Wide",
+      "full": "Full"
+    },
+    "startup": {
+      "title": "On startup, open",
+      "last": "Last opened page",
+      "page": "A page I choose",
+      "daily": "Today's daily note",
+      "choose": "Choose…",
+      "none": "No page chosen",
+      "pickerLabel": "Choose the page to open on startup",
+      "pickerPlaceholder": "Find a page…",
+      "pickerNoMatch": "No page matches “{{query}}”"
     }
   },
   "update": {
