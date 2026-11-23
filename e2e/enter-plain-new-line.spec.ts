@@ -50,7 +50,9 @@ for (const [kind, content] of BLOCKS) {
     const title = `Plain ${kind}`;
     await vault.seed([{ title, content }]);
     await open(page, title);
-    await caretAtEnd(page);
+    // Click the text itself (a task item's checkbox would otherwise take the keys), then End.
+    await page.getByTestId('editor-content').getByText('Bold', { exact: true }).click();
+    await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await page.keyboard.type('plain words');
     const saved = await savedWith(request, title, 'plain words');
