@@ -405,6 +405,12 @@ const RESCAN_RETRIES = 3;
 
 /** #g95wkd9y: pages per batch when warming the mention and search caches. */
 const WARM_BATCH = 200;
+/**
+ * #rz3iukrp: the background link index runs in slices of about this long, then
+ * yields, so a request after a start waits at most one slice (not the ~3 s of
+ * a whole 10k-page index).
+ */
+const INDEX_SLICE_MS = 15;
 
 /**
  * #kguq5bc5: a page's frontmatter YAML exactly as `parseNoteTemplate(raw).yaml`
@@ -1053,6 +1059,14 @@ export class VaultStore {
   warmed: Promise<void> = Promise.resolve();
   /** Test hook: runs (and may wait) right before the background index. */
   private beforeIndex: (() => Promise<void>) | undefined;
+  /** #rz3iukrp: the background index's slice length (tests set 0: one page per slice). */
+  private indexSliceMs = INDEX_SLICE_MS;
+  /**
+   * #rz3iukrp: bumped by every full `reindexAll()`. A full reindex is complete
+   * against the page list of its moment, so a sliced index still running
+   * stops when it sees a newer one (its snapshot of the page list may be stale).
+   */
+  private indexGeneration = 0;
   /** Files a scan reads at once (#g95wkd9y); tests set 1 for a sequential baseline. */
   private scanConcurrency = SCAN_CONCURRENCY;
   /** Files that couldn't be read, already logged once (#35q6kt6e); cleared when one reads again. */
@@ -1099,14 +1113,14 @@ export class VaultStore {
       await this.readAll();
       this.indexingNow = true;
       // Not in the store's queue: a page read (its properties go through the
-      // queue) must not wait for the index. `reindexAll` is synchronous, so it
-      // runs as one block over the records as they are then; a save or rescan
-      // that ran before it recomputed its own links, and it recomputes them all.
+      // queue) must not wait for the index. #rz3iukrp: it runs in short slices
+      // over the records as they are at each slice, yielding in between, so
+      // requests are answered meanwhile (see `indexInSlices`).
       // Scheduled after `init` returns, so the server starts answering first.
       this.indexDone = new Promise<void>((resolve) => setImmediate(resolve)).then(async () => {
         try {
           await this.beforeIndex?.();
-          this.reindexAll();
+          await this.indexInSlices();
         } catch (error) {
           // Never stuck: logged, and links are recomputed by the next change.
           console.error("[gumply] indexing the vault's links failed:", error);
@@ -5331,6 +5345,37 @@ export class VaultStore {
   }
 
   /**
+   * #rz3iukrp: the background index after a cold open, in slices of about
+   * `indexSliceMs`, yielding between them. It gives exactly `reindexAll()`'s
+   * index:
+   * - each page is indexed from its record as it is at its slice, against the
+   *   link page list of the start (`linkMetas()`, as `reindexAll()` uses: during
+   *   a rename's batches it also names the old title; link resolution reads only
+   *   ids and titles);
+   * - a save meanwhile recomputes its own links with the current list, the
+   *   same result as its slice, in either order;
+   * - anything that moves link targets (a create, delete, rename, an outside
+   *   title change or move, a new linkable file) runs a full `reindexAll()`,
+   *   complete for the new list: this loop then stops (`indexGeneration`).
+   */
+  private async indexInSlices(): Promise<void> {
+    const generation = this.indexGeneration;
+    const metas = this.linkMetas();
+    const pages = this.pageMetas();
+    let at = 0;
+    while (at < pages.length) {
+      if (this.stopped || this.indexGeneration !== generation) return;
+      const until = performance.now() + this.indexSliceMs;
+      do {
+        const record = this.pages.get(pages[at]!.id);
+        if (record) this.edgesBySource.set(record.id, this.edgesFor(record, metas));
+        at += 1;
+      } while (at < pages.length && performance.now() < until);
+      if (at < pages.length) await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+
+  /**
    * The page list links resolve against: `pageMetas()`, plus, while a rename's
    * batches run, its old title as another name of the renamed page (after the
    * real pages, so a page really called that still wins).
@@ -5357,6 +5402,7 @@ export class VaultStore {
   }
 
   private reindexAll(): void {
+    this.indexGeneration += 1;
     const metas = this.linkMetas();
     this.edgesBySource.clear();
     for (const meta of this.pageMetas()) {
