@@ -17,7 +17,8 @@ test.use({ baseURL: DEMO_WEB_URL });
 
 let app: DemoApp;
 
-test.describe.configure({ mode: 'serial' });
+// Each test waits for the server to stop and start, sometimes twice: more than the default 30 s.
+test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(150_000);

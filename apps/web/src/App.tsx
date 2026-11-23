@@ -15,7 +15,7 @@ import {
   type DailyNoteSettings,
 } from "@gumply/core";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, type BaseDocument } from "./api/client.js";
+import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -255,8 +255,7 @@ export function App() {
   const [pageStatus, setPageStatus] = useState<PageStatus>("idle");
   const pageStatusRef = useRef<PageStatus>("idle");
   pageStatusRef.current = pageStatus;
-  /** #2xx3uae4: the last poll failed; the next success bumps `reconnectKey` (dialogs reload what failed). */
-  const pollFailed = useRef(false);
+  /** #2xx3uae4: bumped by the first good poll after any request couldn't reach the server (dialogs reload what failed). */
   const [reconnectKey, setReconnectKey] = useState(0);
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
@@ -813,15 +812,13 @@ export function App() {
     try {
       list = await api.listPages();
     } catch {
-      pollFailed.current = true;
       return;
     }
     setVaultSyncing(isVaultSyncing());
     // #2xx3uae4: the server answers again. A page that couldn't be fetched loads now,
     // and a failed save is tried again (with growing gaps). A conflict (409) waits
     // for the user's choice: only the "Couldn't save" state retries by itself.
-    if (pollFailed.current) {
-      pollFailed.current = false;
+    if (takeUnreachableSeen()) {
       setReconnectKey((value) => value + 1);
     }
     if (pageStatusRef.current === "unreachable") reloadUnreachable();
