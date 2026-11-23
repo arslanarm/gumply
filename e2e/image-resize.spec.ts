@@ -131,3 +131,21 @@ test('an image block moves with ⋮⋮ like any block', async ({ page, request, 
   });
   await saved(request, 'Image drag', (text) => text === '![Pic](attachments/wide.svg)\n\nFirst\n\nLast');
 });
+
+test('dragging the image itself never leaves a copy (#n6cy66ib)', async ({ page, request, vault }) => {
+  addImage();
+  await vault.seed([{ title: 'Image self drag', content: 'First\n\n![Pic](attachments/wide.svg)\n\nLast' }]);
+  await open(page, 'Image self drag');
+  const img = page.getByTestId('image-block-img');
+  await expect(img).toBeVisible();
+  // A real mouse drag of the picture onto "Last" (not the ⋮⋮ handle).
+  await img.dragTo(page.getByTestId('editor-content').getByText('Last', { exact: true }), { targetPosition: { x: 20, y: 30 } });
+  await page.keyboard.type('');
+  await page.getByTestId('editor-content').getByText('First', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('!');
+  const after = await saved(request, 'Image self drag', (text) => text.startsWith('First!'));
+  // Moved or left in place, but exactly one image either way.
+  expect(after.match(/!\[Pic\]\(attachments\/wide\.svg\)/g)).toHaveLength(1);
+  await expect(page.getByTestId('image-block')).toHaveCount(1);
+});
