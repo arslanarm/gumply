@@ -69,3 +69,35 @@ test('roles (1.3.1): a base tablist holds only tabs, its table only rows of cell
   });
   expect(problems).toEqual([]);
 });
+
+test('target size (2.5.8): every Export radio row is a ≥ 24 px target, radios ≥ 24 px apart', async ({ page, vault }) => {
+  const [note] = await vault.seed([{ title: 'Note', content: 'Text.' }]);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Note');
+  for (const [query, row] of [['html', 'search-export-html'], ['pdf', 'search-export-pdf']] as const) {
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+    await page.keyboard.type(query);
+    await page.getByTestId(row).click();
+    const dialog = page.getByTestId('export-dialog');
+    await expect(dialog).toBeVisible();
+    const sizes = await dialog.evaluate((el) =>
+      [...el.querySelectorAll<HTMLInputElement>('input[type="radio"]')].map((radio) => {
+        const label = radio.closest('label')!.getBoundingClientRect();
+        const box = radio.getBoundingClientRect();
+        return { name: radio.dataset.testid, rowHeight: label.height, centre: box.top + box.height / 2, group: radio.name };
+      }),
+    );
+    expect(sizes.length).toBeGreaterThan(1);
+    for (const size of sizes) expect(size.rowHeight, `${size.name} row`).toBeGreaterThanOrEqual(24);
+    for (let i = 1; i < sizes.length; i++) {
+      if (sizes[i]!.group !== sizes[i - 1]!.group) continue;
+      expect(sizes[i]!.centre - sizes[i - 1]!.centre, `${sizes[i]!.name} spacing`).toBeGreaterThanOrEqual(24);
+    }
+    // Clicking the label text (not the radio) picks it.
+    const last = sizes[sizes.length - 1]!.name!;
+    await dialog.getByTestId(last).locator('xpath=..').locator('span').click();
+    await expect(dialog.getByTestId(last)).toBeChecked();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  }
+});
