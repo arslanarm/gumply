@@ -183,3 +183,50 @@ test('Palettes (Cmd+K, Move to…): Tab stays on the input, Esc gives focus back
   // The ⋯ menu hands focus to its page's row when an item is picked; focus is back on that row.
   await expectFocusIn(page.getByRole('treeitem').filter({ has: page.getByTestId(`page-item-${note.id}`) }).or(page.getByTestId(`page-item-${note.id}`)).first());
 });
+
+/**
+ * `inert` hides content from assistive tech too: live regions (toasts, the
+ * save status) must stay in the accessibility tree while a modal is open,
+ * and the rest of the page must not. Read from Chrome's accessibility tree.
+ */
+async function exposedTexts(page: Page): Promise<string> {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = (await cdp.send('Accessibility.getFullAXTree')) as { nodes: { ignored?: boolean; name?: { value?: string } }[] };
+  await cdp.detach();
+  return nodes.filter((node) => !node.ignored).map((node) => node.name?.value ?? '').join('\n');
+}
+
+test('a toast showing when a modal opens, and a status raised while it is open, stay announced', async ({ page, vault }) => {
+  const [, other] = await vault.seed([{ title: 'Note', content: 'Some text here.' }, { title: 'Old draft', content: 'Draft text.' }]);
+  await page.goto(`/#/${encodeURIComponent(other!.id)}`);
+  await expectPageTitle(page, 'Old draft');
+  await page.getByTestId('delete-page-button-page').click();
+  if (await page.getByTestId('delete-confirm').isVisible().catch(() => false)) await page.getByTestId('delete-confirm').click();
+  await expect(page.getByTestId('undo-toast')).toContainText('Page deleted');
+
+  await page.keyboard.press(`${MOD}+k`);
+  await page.keyboard.type('html');
+  await page.getByTestId('search-export-html').click();
+  await expect(page.getByTestId('export-dialog')).toBeVisible();
+  await expect(page.getByTestId('undo-toast')).toBeVisible();
+
+  // The dialog and the toast are exposed; the sidebar behind the dialog isn't.
+  await expect.poll(() => exposedTexts(page)).toContain('Export as HTML');
+  const exposed = await exposedTexts(page);
+  expect(exposed).toContain('Page deleted');
+  expect(exposed).not.toContain('New whiteboard');
+
+  // A status that appears inside the inert page while the dialog is open is exposed too.
+  await page.evaluate(() => {
+    const status = document.createElement('div');
+    status.setAttribute('role', 'status');
+    status.textContent = 'Raised while the dialog is open';
+    document.querySelector('.topbar')!.appendChild(status);
+  });
+  await expect.poll(() => exposedTexts(page)).toContain('Raised while the dialog is open');
+  expect(await exposedTexts(page)).not.toContain('New whiteboard');
+
+  // Closing the dialog gives the whole page back.
+  await page.keyboard.press('Escape');
+  await expect.poll(() => exposedTexts(page)).toContain('New whiteboard');
+});

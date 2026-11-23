@@ -106,25 +106,71 @@ trackFocus();
 
 /* ---------------- inert ---------------- */
 
+/** Toasts, status lines and alerts: they must stay announced while a modal is open. */
+const LIVE_REGION = '[aria-live]:not([aria-live="off"]),[role="status"],[role="alert"],[role="log"]';
+
+/** The path from `<body>`'s child down to `element`, top first. */
+function chainOf(element: Element): HTMLElement[] {
+  const chain: HTMLElement[] = [];
+  for (let node: Element | null = element; node && node !== document.body; node = node.parentElement) {
+    if (node instanceof HTMLElement) chain.unshift(node);
+  }
+  return chain;
+}
+
 /**
  * Make everything outside `dialog` inert: each sibling on the way up to
- * `<body>`. Returns the undo, which only touches what this call changed, so
- * nested dialogs restore in order.
+ * `<body>`. `inert` also hides content from assistive tech, so live regions
+ * (a toast, the save status) are cut out of it: the inert container is split
+ * around them, now and for any that appear while the dialog is open.
+ * Returns the undo, which only touches what this call changed, so nested
+ * dialogs restore in order.
  */
 function inertOutside(dialog: HTMLElement): () => void {
-  const changed: HTMLElement[] = [];
-  let node: HTMLElement = dialog;
-  while (node.parentElement && node !== document.body) {
-    const parent: HTMLElement = node.parentElement;
-    for (const sibling of parent.children) {
-      if (sibling === node || !(sibling instanceof HTMLElement) || sibling.inert) continue;
-      if (sibling.tagName === "SCRIPT" || sibling.tagName === "STYLE") continue;
-      sibling.inert = true;
-      changed.push(sibling);
-    }
-    node = parent;
+  const changed = new Set<HTMLElement>();
+  const makeInert = (element: Element) => {
+    if (!(element instanceof HTMLElement) || element.inert) return;
+    if (element.tagName === "SCRIPT" || element.tagName === "STYLE" || element.matches(LIVE_REGION)) return;
+    element.inert = true;
+    changed.add(element);
+  };
+  for (const node of chainOf(dialog)) {
+    for (const sibling of node.parentElement?.children ?? []) if (sibling !== node) makeInert(sibling);
   }
+  // Keep `region` exposed: lift the inert we set on its ancestor and make
+  // that ancestor's other branches inert instead, level by level.
+  const expose = (region: Element): boolean => {
+    if (dialog.contains(region)) return false;
+    const chain = chainOf(region);
+    const top = chain.findIndex((node) => changed.has(node));
+    if (top === -1) return false;
+    chain[top]!.inert = false;
+    changed.delete(chain[top]!);
+    for (let level = top; level < chain.length - 1; level++) {
+      for (const child of chain[level]!.children) if (child !== chain[level + 1]) makeInert(child);
+    }
+    return true;
+  };
+  // Splitting around one region can make another one's branch inert: repeat until stable.
+  const exposeAll = (root: ParentNode) => {
+    for (let pass = 0; pass < 10; pass++) {
+      let moved = false;
+      for (const region of root.querySelectorAll(LIVE_REGION)) moved = expose(region) || moved;
+      if (!moved) return;
+    }
+  };
+  exposeAll(document);
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const added of record.addedNodes) {
+        if (!(added instanceof Element)) continue;
+        if (added.matches(LIVE_REGION) || added.querySelector(LIVE_REGION)) exposeAll(document);
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
   return () => {
+    observer.disconnect();
     for (const element of changed) element.inert = false;
   };
 }
