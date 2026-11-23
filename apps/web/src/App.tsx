@@ -1601,7 +1601,7 @@ export function App() {
         renameEpoch.current += 1;
         let settle: (page: Page | null) => void = () => undefined;
         renameWaits.current.set(id, new Promise<Page | null>((resolve) => (settle = resolve)));
-        setRenaming({ id, title, count: null });
+        setRenaming({ id, title: previousTitle ?? title, count: null });
         // How many pages link here (the link rewrites the server is doing), for the status.
         void api
           .backlinks(id)
