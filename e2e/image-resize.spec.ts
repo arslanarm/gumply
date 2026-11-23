@@ -138,9 +138,14 @@ test('dragging the image itself never leaves a copy (#n6cy66ib)', async ({ page,
   await open(page, 'Image self drag');
   const img = page.getByTestId('image-block-img');
   await expect(img).toBeVisible();
-  // A real mouse drag of the picture onto "Last" (not the ⋮⋮ handle).
-  await img.dragTo(page.getByTestId('editor-content').getByText('Last', { exact: true }), { targetPosition: { x: 20, y: 30 } });
-  await page.keyboard.type('');
+  // A real mouse drag of the picture onto "Last" (not the ⋮⋮ handle): press,
+  // move in steps, release, as a hand would.
+  const from = (await img.boundingBox())!;
+  const to = (await page.getByTestId('editor-content').getByText('Last', { exact: true }).boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 20, to.y + to.height + 4, { steps: 12 });
+  await page.mouse.up();
   await page.getByTestId('editor-content').getByText('First', { exact: true }).click();
   await page.keyboard.press('End');
   await page.keyboard.type('!');
