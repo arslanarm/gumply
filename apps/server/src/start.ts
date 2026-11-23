@@ -83,7 +83,9 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
   // #35q6kt6e: a stray rejection is logged, never the end of the server.
   logUnhandledRejections();
   const store = new VaultStore(options.vaultPath);
-  await store.init();
+  // #g95wkd9y: answer once the files are read; the links are indexed next, in
+  // the background (whatever reads links waits for it).
+  await store.init({ background: true });
 
   // #93yv3ban: seeded on the first GET /pages, in the language it asks for.
   if (options.seedDemo ?? true) store.armDemo(log);

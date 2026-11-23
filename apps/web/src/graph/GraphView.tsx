@@ -1,6 +1,6 @@
 import type { GraphData, GraphNode, GraphSettings, PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiRequestError, fileUrl } from "../api/client.js";
+import { api, ApiRequestError, fileUrl, isVaultIndexing } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import { GraphControls } from "./GraphControls.js";
@@ -269,7 +269,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
       <div className="graph-body">
         {status === "loading" || !settings ? (
           <div className="graph-state graph-state-loading" data-testid="graph-loading">
-            <p>{t("graph.loading")}</p>
+            {/* #g95wkd9y: a vault just opened is still indexing its links; the graph waits for them. */}
+            <p>{isVaultIndexing() ? t("graph.indexing") : t("graph.loading")}</p>
           </div>
         ) : status === "error" ? (
           <div className="empty-state" data-testid="graph-error">

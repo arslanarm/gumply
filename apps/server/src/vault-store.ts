@@ -389,12 +389,42 @@ const MAX_REFRESH_PATHS = 200;
 /** A watcher rescan that failed is tried again (as a full rescan) this many times in a row. */
 const RESCAN_RETRIES = 3;
 
+/** #g95wkd9y: pages per batch when warming the mention and search caches. */
+const WARM_BATCH = 200;
+
+/** #g95wkd9y: files a scan stats and reads at once. */
+export const SCAN_CONCURRENCY = 32;
+
+type ScanOutcome =
+  | { kind: "gone" }
+  | { kind: "keep" }
+  | { kind: "cached" | "read"; key: string; record: PageRecord };
+
+/**
+ * `fn` over `items` with at most `limit` running at once; the results come
+ * back in the items' order. A rejection rejects the whole (as `Promise.all`).
+ */
+export async function mapBounded<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]!, index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 /** #35q6kt6e: a read that failed for this file only (the rest of a rescan goes on). */
 const UNREADABLE = Symbol("unreadable");
 
 /** This file can't be read right now (permissions, a lock, a folder where a file was). */
 function isPerFileError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
+  // Not EMFILE/ENFILE (out of file handles): that's temporary and not about
+  // this file; the scan fails and the next one retries (#35q6kt6e, @lead).
   return code === "EACCES" || code === "EPERM" || code === "EBUSY" || code === "EISDIR";
 }
 
@@ -774,6 +804,17 @@ export class VaultStore {
   private readonly pendingPaths = new Set<string>();
   /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
   private pendingFull = false;
+  /** #g95wkd9y: the background index after a cold open. */
+  private indexingNow = false;
+  /** Set by `stopWatching` (the server closing): background warming stops. */
+  private stopped = false;
+  private indexDone: Promise<void> = Promise.resolve();
+  /** The background cache warm-up after the index (tests await it). */
+  warmed: Promise<void> = Promise.resolve();
+  /** Test hook: runs (and may wait) right before the background index. */
+  private beforeIndex: (() => Promise<void>) | undefined;
+  /** Files a scan reads at once (#g95wkd9y); tests set 1 for a sequential baseline. */
+  private scanConcurrency = SCAN_CONCURRENCY;
   /** Files that couldn't be read, already logged once (#35q6kt6e); cleared when one reads again. */
   private readonly unreadableLogged = new Set<string>();
   /** Watcher rescans that failed in a row (reset by one that succeeds). */
@@ -788,9 +829,43 @@ export class VaultStore {
     this.sessionBytesCap = options.sessionBytesCap ?? SESSION_BYTES_CAP;
   }
 
-  async init(): Promise<void> {
+  /**
+   * Read the vault and index it. With `background` (#g95wkd9y, the server's
+   * start), it returns once every file is read (the tree, titles, a page's
+   * text) and the link index is built right after, in one synchronous pass
+   * over the records as they are then (saves and outside edits before it
+   * compute their own links; it recomputes them all, so nothing is lost or
+   * read against a stale index). `indexing` is true until it's done, and
+   * whatever reads links (`graph`, `backlinks`, base views) awaits
+   * `whenIndexed()`. After it, the mention and search caches warm in the
+   * background, so the first mentions or search request isn't the slow one.
+   */
+  async init(options: { background?: boolean } = {}): Promise<void> {
     await mkdir(this.root, { recursive: true });
-    await this.rebuild();
+    if (options.background) {
+      await this.readAll();
+      this.indexingNow = true;
+      // Not in the store's queue: a page read (its properties go through the
+      // queue) must not wait for the index. `reindexAll` is synchronous, so it
+      // runs as one block over the records as they are then; a save or rescan
+      // that ran before it recomputed its own links, and it recomputes them all.
+      // Scheduled after `init` returns, so the server starts answering first.
+      this.indexDone = new Promise<void>((resolve) => setImmediate(resolve)).then(async () => {
+        try {
+          await this.beforeIndex?.();
+          this.reindexAll();
+        } catch (error) {
+          // Never stuck: logged, and links are recomputed by the next change.
+          console.error("[gumply] indexing the vault's links failed:", error);
+        } finally {
+          this.indexingNow = false;
+        }
+      });
+      // After the index, never part of it: links don't wait for the warm-up.
+      this.warmed = this.indexDone.then(() => this.warmCaches());
+    } else {
+      await this.rebuild();
+    }
     // #e9hs2zgq: our own temp files a crash left behind, once a day old. In the
     // background (never delays opening the vault); tests await `tempSweep`.
     this.tempSweep = sweepTempFiles(this.root).catch(() => []);
@@ -803,6 +878,7 @@ export class VaultStore {
   startWatching(): void {
     if (this.watching) return;
     this.watching = true;
+    this.stopped = false;
     // Synchronous, so edits made right after start are already seen.
     this.syncDirectoryWatchers();
     // The app that watches the vault also keeps its history in budget (§2.5).
@@ -812,6 +888,7 @@ export class VaultStore {
   /** Stop the vault watcher (used by tests and shutdown). */
   stopWatching(): void {
     this.watching = false;
+    this.stopped = true;
     if (this.watchTimer !== null) {
       clearTimeout(this.watchTimer);
       this.watchTimer = null;
@@ -1047,10 +1124,18 @@ export class VaultStore {
       rel: relative(this.root, absolute).split(sep).join("/"),
     }));
     const boards = new Set(files.filter((file) => keepsExtension(file.rel)).map((file) => file.rel.toLowerCase()));
+    // Ids in walk order (cheap, and the collision rules depend on it).
+    const items: Array<{ absolute: string; id: PageId }> = [];
     for (const { absolute, rel } of files) {
       let id = keepsExtension(rel) ? rel : pathToPageId(rel);
       if (!keepsExtension(rel) && boards.has(id.toLowerCase())) id = rel;
-      if (!isValidPageId(id)) continue;
+      if (isValidPageId(id)) items.push({ absolute, id });
+    }
+    // #g95wkd9y: stat and read up to SCAN_CONCURRENCY files at once (10k files
+    // one after another were most of a cold open); the outcomes are applied
+    // below in walk order, so ids, the index order and every side effect are
+    // exactly those of a sequential read.
+    const outcomes = await mapBounded(items, this.scanConcurrency, async ({ absolute, id }): Promise<ScanOutcome> => {
       let stats;
       try {
         stats = await stat(absolute);
@@ -1060,34 +1145,35 @@ export class VaultStore {
         // since the listing.
         if (isPerFileError(error)) {
           this.noteUnreadable(absolute, error);
-          const previous = this.pages.get(id);
-          if (previous) next.set(id, previous);
+          return { kind: "keep" };
         }
-        continue;
+        return { kind: "gone" };
       }
       const key = statKey(stats);
       const cached = this.readCache.get(absolute);
       // #g95wkd9y: an unchanged file keeps its record; a file the watcher named is always read.
-      let record: PageRecord;
-      if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) record = cached.record;
-      else {
-        const read = await this.readIfPresent(absolute, id);
-        if (read === null) continue; // Deleted between the stat and the read.
-        if (read === UNREADABLE) {
-          // #35q6kt6e: this one file can't be read right now (permissions, a lock
-          // held by antivirus or a sync tool). It keeps the record it had, if any,
-          // and isn't cached, so the next rescan tries it again; the rest of the
-          // rescan goes on.
-          const previous = this.pages.get(id);
-          if (previous) next.set(id, previous);
-          continue;
-        }
-        record = read;
-        this.refreshTags(record);
+      if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) return { kind: "cached", key, record: cached.record };
+      const read = await this.readIfPresent(absolute, id);
+      if (read === null) return { kind: "gone" }; // Deleted between the stat and the read.
+      // #35q6kt6e: this one file can't be read right now (permissions, a lock
+      // held by antivirus or a sync tool). It keeps the
+      // record it had, if any, and isn't cached, so the next rescan tries it
+      // again; the rest of the rescan goes on.
+      if (read === UNREADABLE) return { kind: "keep" };
+      return { kind: "read", key, record: read };
+    });
+    items.forEach(({ absolute, id }, index) => {
+      const outcome = outcomes[index]!;
+      if (outcome.kind === "gone") return;
+      if (outcome.kind === "keep") {
+        const previous = this.pages.get(id);
+        if (previous) next.set(id, previous);
+        return;
       }
-      nextCache.set(absolute, { key, id, record });
-      next.set(id, record);
-    }
+      if (outcome.kind === "read") this.refreshTags(outcome.record);
+      nextCache.set(absolute, { key: outcome.key, id, record: outcome.record });
+      next.set(id, outcome.record);
+    });
     // #35q6kt6e: a folder that couldn't be listed keeps the pages and boards it
     // had (they aren't deleted, just out of reach), with their cached reads.
     if (unreadableDirs.length > 0) {
@@ -3075,17 +3161,29 @@ export class VaultStore {
     }
     for (const record of this.pages.values()) {
       if (record.kind !== "page" || copies.has(record.id)) continue;
-      const cached = this.mentionWordsByPage.get(record.id);
-      if (cached && cached.content === record.content) continue;
-      if (cached) drop(record.id, cached.words);
-      const words = new Set(mentionWords(mentionableText(record.content)));
-      for (const word of words) {
-        let pages = this.mentionPostings.get(word);
-        if (!pages) this.mentionPostings.set(word, (pages = new Set()));
-        pages.add(record.id);
-      }
-      this.mentionWordsByPage.set(record.id, { content: record.content, words });
+      this.mentionWordsOf(record);
     }
+  }
+
+  /** One page's mention words in the postings, unless they're already there for this content. */
+  private mentionWordsOf(record: PageRecord): void {
+    const cached = this.mentionWordsByPage.get(record.id);
+    if (cached && cached.content === record.content) return;
+    if (cached) {
+      for (const word of cached.words) {
+        const pages = this.mentionPostings.get(word);
+        if (!pages) continue;
+        pages.delete(record.id);
+        if (pages.size === 0) this.mentionPostings.delete(word);
+      }
+    }
+    const words = new Set(mentionWords(mentionableText(record.content)));
+    for (const word of words) {
+      let pages = this.mentionPostings.get(word);
+      if (!pages) this.mentionPostings.set(word, (pages = new Set()));
+      pages.add(record.id);
+    }
+    this.mentionWordsByPage.set(record.id, { content: record.content, words });
   }
 
   /** The terms page `id` is mentioned by: its title and frontmatter `aliases` (decision 4). */
@@ -4290,12 +4388,54 @@ export class VaultStore {
   // --- index -------------------------------------------------------------
 
   private async rebuild(): Promise<void> {
+    await this.readAll();
+    this.reindexAll();
+  }
+
+  /** Read every file into the index's records (no links yet). */
+  private async readAll(): Promise<void> {
     const { pages: next, folders } = await this.scanRecords();
     this.folders = folders;
     this.pages.clear();
     this.edgesBySource.clear();
     for (const [id, record] of next) this.pages.set(id, record);
-    this.reindexAll();
+  }
+
+  /** True while the links of a vault just opened are being indexed (#g95wkd9y). */
+  get indexing(): boolean {
+    return this.indexingNow;
+  }
+
+  /** Resolves once the link index is complete (at once unless the vault is still being indexed). */
+  whenIndexed(): Promise<void> {
+    return this.indexDone;
+  }
+
+  /**
+   * #g95wkd9y: fill the mention and search caches in small batches between
+   * other work (never in the queue, so a save never waits for it). Both are
+   * caches keyed on a page's content: a page that changes meanwhile is simply
+   * refreshed when it's next used.
+   */
+  private warmCaches(): Promise<void> {
+    const ids = [...this.pages.keys()];
+    let at = 0;
+    return new Promise((resolve) => {
+      const batch = () => {
+        if (this.stopped) return resolve();
+        const copies = this.copyIds();
+        const end = Math.min(ids.length, at + WARM_BATCH);
+        for (; at < end; at += 1) {
+          const record = this.pages.get(ids[at]!);
+          if (!record) continue;
+          this.searchText(record);
+          if (record.kind === "page" && !copies.has(record.id)) this.mentionWordsOf(record);
+        }
+        if (at < ids.length) setImmediate(batch);
+        else resolve();
+      };
+      setImmediate(batch);
+    });
   }
 
   private reindexAll(): void {

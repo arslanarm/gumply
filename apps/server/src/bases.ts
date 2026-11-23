@@ -32,6 +32,8 @@ export class BaseQueries {
     ]);
     const types = new Map<string, string>(typeMap);
     const propertiesOf = new Map(withProperties.map((meta) => [meta.id, meta.properties ?? []]));
+    // #g95wkd9y: a base's link columns need the link index complete.
+    await this.store.whenIndexed();
     const index = this.store.baseIndex();
 
     const byPath = new Map<string, FileInfo>();

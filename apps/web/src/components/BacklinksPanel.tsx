@@ -5,6 +5,7 @@ import { isBoard } from "../lib/boards.js";
 import { Icon } from "./Icon.js";
 import { MentionsSection } from "./MentionsSection.js";
 import { useT } from "../i18n/index.js";
+import { isVaultIndexing } from "../api/client.js";
 
 export interface BacklinksPanelProps {
   items: readonly Backlink[];
@@ -30,7 +31,7 @@ export function BacklinksPanel({ items, loading, onOpen, pageId, onLinked }: Bac
       </h2>
 
       {loading && items.length === 0 ? (
-        <p className="backlinks-empty">{t("backlinks.loading")}</p>
+        <p className="backlinks-empty">{isVaultIndexing() ? t("backlinks.indexing") : t("backlinks.loading")}</p>
       ) : items.length === 0 ? (
         <p className="backlinks-empty">
           {t("backlinks.emptyBefore")}<code>[[</code>{t("backlinks.emptyAfter")}

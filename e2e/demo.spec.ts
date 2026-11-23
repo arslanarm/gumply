@@ -31,6 +31,29 @@ test.afterAll(async () => {
   await app?.stop();
 });
 
+// #g95wkd9y: a failed test shows what the demo servers printed (a Vite
+// "http proxy error" explains a stray 500 from the dev proxy).
+test.afterEach(async ({}, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus || !app) return;
+  const logs = app.recentLogs().join('\n');
+  console.log(`[demo-app logs]\n${logs}`);
+  await testInfo.attach('demo-app logs', { body: logs, contentType: 'text/plain' });
+});
+
+/**
+ * Restart the API with the app's page parked on about:blank, then come back
+ * to where it was (as a reload). The open app polls /api/pages through the
+ * demo's Vite proxy; a poll landing while the API is down gets a 500 from the
+ * proxy itself, a console error that has nothing to do with the server under
+ * test (#g95wkd9y).
+ */
+async function restartWithPageParked(page: import('@playwright/test').Page): Promise<void> {
+  const url = page.url();
+  await page.goto('about:blank');
+  await app.restartServer();
+  await page.goto(url);
+}
+
 // #rqtacq4d: this spec has its own app (cold Vite, first-run seeding), so it
 // installs the shared load-aware page-open wait itself, for that app's URL.
 test.beforeEach(({ page }, testInfo) => {
@@ -81,8 +104,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   await expect(page.getByTestId('page-item-Welcome')).toHaveCount(1);
 
   // Restart the API against the same vault: the marker must stop re-seeding.
-  await app.restartServer();
-  await page.reload();
+  await restartWithPageParked(page);
   await expectPageTitle(page, 'Welcome');
 
   const afterRestart = (await (await request.get(`${DEMO_API_URL}/api/pages`)).json()) as {
@@ -121,8 +143,7 @@ test('a fresh vault is seeded once, opens Welcome and never duplicates or re-see
   expect(await listPages()).toHaveLength(0);
   expect(existsSync(app.marker)).toBe(true);
 
-  await app.restartServer();
-  await page.reload();
+  await restartWithPageParked(page);
   await expect(page.getByTestId('empty-state')).toBeVisible();
   await expect(page.getByTestId('page-item-Welcome')).toHaveCount(0);
   expect(await listPages()).toHaveLength(0);

@@ -87,6 +87,14 @@ export class DemoApp {
     }
   }
 
+  /**
+   * The demo servers' recent output (Vite's and the API's), for a failure
+   * report: a Vite "http proxy error" there explains a stray 500 (#g95wkd9y).
+   */
+  recentLogs(count = 80): string[] {
+    return this.logs.slice(-count);
+  }
+
   async restartServer(): Promise<void> {
     await this.stopChild(this.server);
     this.server = null;

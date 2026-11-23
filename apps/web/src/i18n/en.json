@@ -54,6 +54,7 @@
     "loading": "Loading graph…",
     "arranging": "Arranging the graph…",
     "arrangingProgress": "Arranging the graph… {{percent}}%",
+    "indexing": "Indexing links…",
     "empty": "Your graph is empty.",
     "emptyHintBefore": "Create a page and link it with ",
     "emptyHintAfter": ".",
@@ -565,6 +566,7 @@
   "backlinks": {
     "title": "Linked from",
     "loading": "Loading links…",
+    "indexing": "Indexing links…",
     "emptyBefore": "No pages link here yet. Type ",
     "emptyAfter": " on any page to link to this one.",
     "showFewer": "Show fewer",

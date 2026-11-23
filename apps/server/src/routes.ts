@@ -170,6 +170,8 @@ export function createApiRoutes(store: VaultStore): Hono {
     c.header("X-Gumply-Files", String(store.fileIndexVersion));
     // v1.29 (spec/sync-conflicts §8): a sync tool is changing many files right now.
     if (store.syncing) c.header("X-Gumply-Syncing", "1");
+    // v1.33 (#g95wkd9y): the links of a vault just opened are still being indexed.
+    if (store.indexing) c.header("X-Gumply-Indexing", "1");
     // v1.12: opt-in properties per page (database views); the default stays light.
     if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());
@@ -477,7 +479,11 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json(rewrittenPages.length > 0 ? { ...result, rewrittenPages } : result);
   });
 
-  api.get("/pages/:id/backlinks", (c) => c.json<Backlink[]>(store.backlinks(c.req.param("id"))));
+  // #g95wkd9y: links are complete once the background index is done.
+  api.get("/pages/:id/backlinks", async (c) => {
+    await store.whenIndexed();
+    return c.json<Backlink[]>(store.backlinks(c.req.param("id")));
+  });
 
   // v1.21 (C1, spec/api-mentions): unlinked mentions, and turning them into links.
   api.get("/pages/:id/mentions", async (c) => c.json<PageMentions[]>(await store.mentions(c.req.param("id"))));
@@ -487,7 +493,7 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<LinkMentionsResult>(await store.linkMentions(c.req.param("id"), body as unknown as LinkMentionsInput));
   });
 
-  api.get("/graph", (c) => {
+  api.get("/graph", async (c) => {
     const centerQuery = c.req.query("center");
     const center = centerQuery === undefined || centerQuery === "" ? undefined : centerQuery;
     if (centerQuery === "") throw badRequest("center must not be empty");
@@ -506,6 +512,7 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (include.includes("attachments")) options.attachments = true;
     // v1.32 (#g95wkd9y): `links=index` sends links as [sourceIndex, targetIndex]
     // into `nodes` (11 MB → ~1 MB on a 10k vault). The default is unchanged.
+    await store.whenIndexed();
     const graph = store.graph(options);
     if (c.req.query("links") === "index") return c.json<IndexedGraphData>(indexGraphLinks(graph));
     return c.json<GraphData>(graph);
