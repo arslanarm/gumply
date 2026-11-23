@@ -11,6 +11,7 @@ import { BOARD_TEMPLATES, type BoardTemplateId } from "../board/templates.js";
 // The board palette (--board-c1…) lives with the board styles.
 import "../board/board.css";
 import { useLanguage, useT } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 
 export interface TemplateGalleryProps {
   onCancel: () => void;
@@ -81,6 +82,9 @@ export function TemplatePreview({ board }: { board: CanvasBoard }) {
 }
 
 export function TemplateGallery({ onCancel, onSelect }: TemplateGalleryProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef, { ownsTab: true });
   const t = useT();
   const language = useLanguage();
   const choices = useMemo<Choice[]>(
@@ -134,7 +138,7 @@ export function TemplateGallery({ onCancel, onSelect }: TemplateGalleryProps) {
     >
       <div
         className="modal template-gallery"
-        role="dialog"
+        role="dialog" ref={modalRef}
         aria-modal="true"
         aria-labelledby="template-gallery-title"
         data-testid="template-gallery"

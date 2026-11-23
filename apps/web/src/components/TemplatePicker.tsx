@@ -5,6 +5,7 @@ import { useT } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
 import { Icon } from "./Icon.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
+import { useModal } from "../lib/modal.js";
 
 export interface TemplatePickerProps {
   /** "new": New page from template…; "insert": `/template` in a page. */
@@ -18,6 +19,9 @@ export interface TemplatePickerProps {
  * (Obsidian's Templates plugin setting, default `Templates/`), searchable.
  */
 export function TemplatePicker({ mode, onCancel, onPick }: TemplatePickerProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef, { ownsTab: true });
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [state, setState] = useState<{ folder: string; templates: PageMeta[] } | { error: string } | null>(null);
@@ -78,7 +82,7 @@ export function TemplatePicker({ mode, onCancel, onPick }: TemplatePickerProps) 
     >
       <div
         className="quick-switcher template-picker"
-        role="dialog"
+        role="dialog" ref={modalRef}
         aria-modal="true"
         aria-label={title}
         data-testid="template-picker"

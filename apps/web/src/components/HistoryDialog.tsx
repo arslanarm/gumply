@@ -10,6 +10,7 @@ import { flushAllSaves, hasUnsavedChanges } from "../lib/pending-saves.js";
 import { Editor } from "./Editor.js";
 import { Icon } from "./Icon.js";
 import { LineDiffView } from "./LineDiffView.js";
+import { useModal } from "../lib/modal.js";
 
 /**
  * D41 / spec/version-history §6.2: a page's or board's versions beside a
@@ -46,6 +47,9 @@ function useHistorySourceLabel() {
 }
 
 export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDialogProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   const t = useT();
   const id = useId();
   const sourceLabel = useHistorySourceLabel();
@@ -283,7 +287,7 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
         if (event.target === event.currentTarget && !busy) onClose();
       }}
     >
-      <div className="modal history-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-testid="history-dialog">
+      <div className="modal history-dialog" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="history-dialog">
         <header className="history-header">
           <h2 id={`${id}-title`}>
             {t("history.title")} <span className="history-page-title">{target.title}</span>

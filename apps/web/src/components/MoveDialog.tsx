@@ -10,6 +10,7 @@ import { Icon } from "./Icon.js";
 import { moveTargets, type MoveTarget } from "../lib/move.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 
 export interface MoveDialogProps {
   page: PageMeta;
@@ -21,6 +22,9 @@ export interface MoveDialogProps {
 
 /** Searchable “Move to…” picker from the sidebar `⋯` menu (spec/ux §6). */
 export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef, { ownsTab: true });
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const [query, setQuery] = useState("");
@@ -83,7 +87,7 @@ export function MoveDialog({ page, pages, onCancel, onSelect }: MoveDialogProps)
     >
       <div
         className="quick-switcher move-dialog"
-        role="dialog"
+        role="dialog" ref={modalRef}
         aria-modal="true"
         aria-label={t("move.dialogLabel", { title: page.title })}
         data-testid="move-dialog"

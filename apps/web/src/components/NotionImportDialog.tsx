@@ -21,6 +21,7 @@ import {
   STEP_MESSAGES,
 } from "../lib/notion-import.js";
 import { Icon } from "./Icon.js";
+import { useModal } from "../lib/modal.js";
 
 /** How often the job is asked about while it runs. */
 const POLL_MS = 400;
@@ -59,6 +60,9 @@ function List({ title, items, testId }: { title: string; items: string[]; testId
 }
 
 export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }: NotionImportDialogProps) {
+  // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  useModal(modalRef);
   const t = useT();
   const id = useId();
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
@@ -346,7 +350,7 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
         if (event.target === event.currentTarget && !running) onClose();
       }}
     >
-      <div className="modal notion-import-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-testid="notion-import">
+      <div className="modal notion-import-dialog" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="notion-import">
         <h2 id={`${id}-title`}>{t("notionImport.title")}</h2>
         {body}
       </div>
