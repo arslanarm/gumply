@@ -31,15 +31,36 @@ export function currentModifierLabel(): string {
   return modifierLabel(platformString());
 }
 
+/**
+ * Shortcuts the command palette shows next to its commands (#snuin2ja), one
+ * source with this dialog: "Mod" is ⌘ or Ctrl.
+ */
+export const SHORTCUT_KEYS = {
+  searchPages: ["Mod", "K"],
+  toggleSidebar: ["Mod", "\\"],
+  openToday: ["Mod", "Shift", "D"],
+  toggleOutline: ["Mod", "Shift", "O"],
+  shortcuts: ["?"],
+  boardFit: ["Shift", "1"],
+} as const satisfies Record<string, readonly string[]>;
+
+export type ShortcutId = keyof typeof SHORTCUT_KEYS;
+
+/** The dialog's way of writing keys: "⌘K", "Ctrl+Shift+D". */
+function written(id: ShortcutId, modifier: string): string {
+  const keys = SHORTCUT_KEYS[id].map((key) => (key === "Mod" ? modifier : key));
+  return keys.length === 2 && keys[0] === modifier ? `${keys[0]}${keys[1]}` : keys.join("+");
+}
+
 export function shortcutGroups(modifier: string): ShortcutGroup[] {
   return [
     {
       title: t("shortcuts.groups.navigate"),
       items: [
-        { keys: `${modifier}K`, label: t("shortcuts.labels.searchPages") },
-        { keys: `${modifier}\\`, label: t("shortcuts.labels.toggleSidebar") },
-        { keys: `${modifier}+Shift+D`, label: t("shortcuts.labels.openToday") },
-        { keys: `${modifier}+Shift+O`, label: t("shortcuts.labels.toggleOutline") },
+        { keys: written("searchPages", modifier), label: t("shortcuts.labels.searchPages") },
+        { keys: written("toggleSidebar", modifier), label: t("shortcuts.labels.toggleSidebar") },
+        { keys: written("openToday", modifier), label: t("shortcuts.labels.openToday") },
+        { keys: written("toggleOutline", modifier), label: t("shortcuts.labels.toggleOutline") },
         { keys: `${modifier}+Alt+O`, label: t("shortcuts.labels.toggleOutlineFallback") },
       ],
     },
@@ -82,7 +103,7 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: "Esc", label: t("shortcuts.labels.stopEditingDeselect") },
         { keys: `Space + ${t("keys.drag")}`, label: t("shortcuts.labels.pan") },
         { keys: `${modifier}+${t("keys.scroll")} / ${t("keys.pinch")}`, label: t("shortcuts.labels.zoom") },
-        { keys: "Shift+1", label: t("shortcuts.labels.fitToScreen") },
+        { keys: written("boardFit", modifier), label: t("shortcuts.labels.fitToScreen") },
         { keys: `${t("keys.arrows")} / Shift+${t("keys.arrows")}`, label: t("shortcuts.labels.nudgeBy840") },
         { keys: `${modifier}D`, label: t("shortcuts.labels.duplicate") },
         { keys: `${modifier}C / ${modifier}V`, label: t("shortcuts.labels.copyPaste") },

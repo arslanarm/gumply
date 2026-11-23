@@ -7,24 +7,15 @@
 import { useEffect, useRef, useState } from "react";
 import { LANGUAGES, useLanguage, useT, type LanguagePreference } from "../i18n/index.js";
 import { chooseLanguage, languagePreference } from "../i18n/preference.js";
+import { browserStorage, chooseTheme, loadThemePreference, themeName, type ThemePreference } from "../lib/theme.js";
 import {
-  applyThemePreference,
-  browserStorage,
-  loadThemePreference,
-  saveThemePreference,
-  systemPrefersDark,
-  themeName,
-  type ThemePreference,
-} from "../lib/theme.js";
-import {
-  applyPageAppearance,
+  choosePageFont,
+  choosePageWidth,
   loadPageFont,
   loadPageWidth,
   loadStartupMode,
   PAGE_FONTS,
   PAGE_WIDTHS,
-  savePageFont,
-  savePageWidth,
   saveStartupMode,
   STARTUP_MODES,
   type PageFont,
@@ -96,22 +87,17 @@ export function SettingsMenu({
   }, [open, onOpenChange]);
 
   const pickTheme = (next: ThemePreference) => {
-    applyThemePreference(next, systemPrefersDark());
-    saveThemePreference(browserStorage(), next);
+    chooseTheme(next);
     setTheme(next);
-    // The topbar toggle reads the same storage; tell it.
-    window.dispatchEvent(new CustomEvent("gumply:theme-changed"));
   };
 
   const pickFont = (next: PageFont) => {
-    savePageFont(next);
+    choosePageFont(next);
     setFont(next);
-    applyPageAppearance(next, width);
   };
   const pickWidth = (next: PageWidth) => {
-    savePageWidth(next);
+    choosePageWidth(next);
     setWidth(next);
-    applyPageAppearance(font, next);
   };
   const pickStartup = (next: StartupMode) => {
     saveStartupMode(next);

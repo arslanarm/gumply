@@ -55,7 +55,7 @@ import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload } from "./lib/rename.js";
 import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
 import { TagRenameDialog } from "./components/TagRenameDialog.js";
-import type { TagRenameRequest } from "./components/TagsPane.js";
+import { SHOW_TAGS_EVENT, type TagRenameRequest } from "./components/TagsPane.js";
 import {
   CONFLICTS_HASH,
   GRAPH_HASH,
@@ -68,17 +68,30 @@ import {
   type TrashRoute,
 } from "./lib/routing.js";
 import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashedCount } from "./lib/trash.js";
-import { isTypingTarget } from "./lib/shortcuts.js";
+import { currentModifierLabel, isTypingTarget } from "./lib/shortcuts.js";
+import {
+  availableCommands,
+  BOARD_TOOLS,
+  isStaticCommandId,
+  LEGACY_DESKTOP_IDS,
+  type BoardToolId,
+  type CommandContext,
+  type CommandHandlers,
+} from "./lib/commands.js";
+import { SLASH_ITEMS } from "./editor/slash-items.js";
+import { TURN_INTO, type TurnIntoKind } from "./editor/block-editing.js";
+import { chooseTheme } from "./lib/theme.js";
+import { userGuideUrl } from "./lib/user-guide.js";
 import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
-import { t, useT } from "./i18n/index.js";
+import { currentLanguage, t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
 import { HistoryDialog } from "./components/HistoryDialog.js";
 import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.js";
 import { ConflictCompareDialog, type CompareTarget } from "./components/ConflictCompareDialog.js";
 import { ConflictsView, fileNameOf } from "./components/ConflictsView.js";
 import { resolvedToast } from "./lib/conflicts.js";
-import { loadLastPage, loadStartupMode, loadStartupPage, saveLastPage, saveStartupMode, saveStartupPage, startupTarget } from "./lib/page-appearance.js";
+import { choosePageFont, choosePageWidth, loadLastPage, loadStartupMode, loadStartupPage, saveLastPage, saveStartupMode, saveStartupPage, startupTarget } from "./lib/page-appearance.js";
 import { PagePickerDialog } from "./components/PagePickerDialog.js";
 import { LazyBoardPreview } from "./board/index.js";
 import type { ConflictCopy, ConflictKeep, PossibleCopy } from "@gumply/core";
@@ -212,8 +225,6 @@ export function App() {
   const [updatesOpen, setUpdatesOpen] = useState(false);
   /** B4: "Import from Notion…" is open, importing into this page or folder by default (null: the top level). */
   const [notionImport, setNotionImport] = useState<{ target: PageMeta | null } | null>(null);
-  /** The default target, for the desktop File menu's command (set each render). */
-  const importTargetRef = useRef<PageMeta | null>(null);
   /** G2: the page "Export as PDF…" was picked for. */
   const [pdfTarget, setPdfTarget] = useState<PageMeta | null>(null);
   // D41: the page or board whose History… panel is open.
@@ -225,7 +236,6 @@ export function App() {
   const [conflictsStamp, setConflictsStamp] = useState(0);
   /** §8: a sync tool is changing many files ("Syncing changes…" in the sidebar). */
   const [vaultSyncing, setVaultSyncing] = useState(false);
-  const pdfTargetRef = useRef<PageMeta | null>(null);
   /** G1: the page "Export as HTML…" was picked for. */
   const [exportTarget, setExportTarget] = useState<PageMeta | null>(null);
   const [galleryParent, setGalleryParent] = useState<{
@@ -297,6 +307,8 @@ export function App() {
   const selectedRef = useRef<PageId | null>(selectedId);
   /** v0.9 F: the startup effect runs before `openToday` is declared; it reaches it through this. */
   const openTodayRef = useRef<(() => Promise<void>) | null>(null);
+  // #snuin2ja: the current command runner (desktop menu events arrive outside render).
+  const runCommandRef = useRef<((id: string) => void) | null>(null);
   selectedRef.current = selectedId;
 
   // D41: leaving a page ends its editing session; the server keeps its last state as a version
@@ -1079,12 +1091,9 @@ export function App() {
   // sends the same commands as the in-app buttons and shortcuts.
   useEffect(() => {
     const onCommand = (event: Event) => {
+      // #snuin2ja: registry ids (and the older ids an older desktop shell sends).
       const command = (event as CustomEvent<unknown>).detail;
-      if (command === "new-page") void handleCreate(null);
-      else if (command === "new-whiteboard") setGalleryParent({ parentId: null });
-      else if (command === "search") openSearch();
-      else if (command === "import-notion") setNotionImport({ target: importTargetRef.current });
-      else if (command === "export-pdf" && pdfTargetRef.current) setPdfTarget(pdfTargetRef.current);
+      if (typeof command === "string") runCommandRef.current?.(command);
     };
     window.addEventListener("gumply:command", onCommand);
     // Toasts from parts of the editor that don't see the app (#5dpxwac4).
@@ -1993,17 +2002,118 @@ export function App() {
   // B4: Cmd+K / File menu → Import from Notion: into the open folder, or the open page's folder.
   const importDefaultTarget =
     selectedFolder ?? (page?.parentId ? (pages.find((item) => item.id === page.parentId) ?? null) : null);
-  importTargetRef.current = importDefaultTarget;
   // G1: Cmd+K → Export page as HTML, for the open page (not a board or a database view).
   const openPageMeta =
     page && page.id === selectedId ? (pages.find((item) => item.id === page.id && (item.kind ?? "page") === "page") ?? null) : null;
-  // G2: File → Export as PDF… (desktop) exports the open page.
-  pdfTargetRef.current = openPageMeta;
   // D41: Cmd+K → Show page history, for the open page or board.
   const openHistoryMeta =
     page && page.id === selectedId
       ? (pages.find((item) => item.id === page.id && ((item.kind ?? "page") === "page" || item.kind === "whiteboard")) ?? null)
       : null;
+
+  // v0.9 H (#snuin2ja): every action in Cmd+K, from one registry (lib/commands.ts).
+  // The open page, board or base is what page commands act on.
+  // A view (Trash, graph, Conflicts) in front means no page is in view.
+  const pageInView = showingPage && trashRoute === null && !graphOpen && !conflictsOpen;
+  const commandPage = pageInView ? selectedMeta : null;
+  const commandContext: CommandContext = {
+    page: commandPage,
+    editor: pageInView && showingNote && !showingCopy,
+    board: pageInView && showingBoard,
+    desktop: updates !== null,
+  };
+  const commandHandlers: CommandHandlers = {
+    "page.rename": () => {
+      if (commandPage) setTitleFocusSignal((value) => value + 1);
+    },
+    "page.duplicate": () => {
+      if (commandPage) void handleDuplicate(commandPage.id);
+    },
+    "page.copy-link": () => {
+      if (commandPage) void handleCopyLink(commandPage.id);
+    },
+    "page.move": () => {
+      if (commandPage) startMove(commandPage.id);
+    },
+    "page.add-board": () => {
+      if (commandPage) setGalleryParent({ parentId: commandPage.id });
+    },
+    "page.add-base": () => {
+      if (commandPage) void handleCreateBase(commandPage.id);
+    },
+    "page.new-from-template": () => setTemplatePicker({ mode: "new", parentId: commandPage?.id ?? null }),
+    "page.import-notion": () => setNotionImport({ target: importDefaultTarget }),
+    "page.export-html": () => {
+      if (openPageMeta) setExportTarget(openPageMeta);
+    },
+    "page.export-pdf": () => {
+      if (openPageMeta) setPdfTarget(openPageMeta);
+    },
+    "page.history": () => {
+      if (openHistoryMeta) setHistoryTarget(openHistoryMeta);
+    },
+    "page.delete": () => {
+      if (commandPage) requestDelete(commandPage.id);
+    },
+    "new.page": () => void handleCreate(null),
+    "new.board": () => setGalleryParent({ parentId: null }),
+    "new.base": () => void handleCreateBase(null),
+    "new.page-from-template": () => setTemplatePicker({ mode: "new", parentId: null }),
+    "new.board-from-template": () => setGalleryParent({ parentId: null }),
+    "new.today": () => void openToday(),
+    "view.outline": () => toggleRightPanel("outline"),
+    "view.local-graph": () => toggleRightPanel("graph"),
+    "view.search": () => openSearch(),
+    "view.graph": () => navigateGraph(),
+    "view.trash": () => navigateTrash(),
+    "view.conflicts": () => navigateConflicts(),
+    "view.tags": () => {
+      setSidebarOpen(true);
+      window.dispatchEvent(new Event(SHOW_TAGS_EVENT));
+    },
+    "view.sidebar": () => setSidebarOpen((open) => !open),
+    "settings.theme-system": () => chooseTheme("system"),
+    "settings.theme-light": () => chooseTheme("light"),
+    "settings.theme-dark": () => chooseTheme("dark"),
+    "settings.font-default": () => choosePageFont("default"),
+    "settings.font-serif": () => choosePageFont("serif"),
+    "settings.font-mono": () => choosePageFont("mono"),
+    "settings.width-normal": () => choosePageWidth("normal"),
+    "settings.width-wide": () => choosePageWidth("wide"),
+    "settings.width-full": () => choosePageWidth("full"),
+    "settings.language": () => setSettingsOpen(true),
+    "settings.ai-apps": () => setMcpOpen(true),
+    "settings.version-history": () => setHistorySettingsOpen(true),
+    "settings.updates": () => setUpdatesOpen(true),
+    "settings.open": () => setSettingsOpen(true),
+    "board.fit": () => boardControls.current?.view("fit"),
+    "board.zoom-in": () => boardControls.current?.view("in"),
+    "board.zoom-out": () => boardControls.current?.view("out"),
+    "board.zoom-reset": () => boardControls.current?.view("reset"),
+    "help.shortcuts": () => setShortcutsOpen(true),
+    // The desktop shell sends https: to the system browser; the web app opens a tab.
+    "help.guide": () => void window.open(userGuideUrl(currentLanguage()), "_blank", "noopener"),
+  };
+  /** Run a command by id: a registry id, a desktop menu's older id, or a family member. */
+  const runCommand = (id: string) => {
+    const known = isStaticCommandId(id) ? id : LEGACY_DESKTOP_IDS[id];
+    if (known) {
+      commandHandlers[known]();
+      return;
+    }
+    if (id.startsWith("editor.insert.")) editorControls.current?.insertBlock(id.slice("editor.insert.".length));
+    else if (id.startsWith("editor.turn-into.")) editorControls.current?.turnInto(id.slice("editor.turn-into.".length) as TurnIntoKind);
+    else if (id.startsWith("board.tool.")) boardControls.current?.setTool(id.slice("board.tool.".length) as BoardToolId);
+  };
+  runCommandRef.current = runCommand;
+  const paletteCommands = searchOpen
+    ? availableCommands(commandContext, {
+        modifier: currentModifierLabel(),
+        insert: SLASH_ITEMS.map((item) => ({ key: item.key, label: item.title, keywords: item.keywords })),
+        turnInto: TURN_INTO.map((item) => ({ key: item.kind, label: item.label })),
+        boardTools: BOARD_TOOLS.map((item) => ({ key: item.tool, label: t(`board.tools.${item.tool}`) })),
+      })
+    : [];
 
   return (
     <div className={`app${sidebarOpen ? "" : " sidebar-collapsed"}`}>
@@ -2547,61 +2657,12 @@ export function App() {
             dismissSearch();
             void handleCreateBase(null, title);
           }}
-          onNewFromTemplate={() => {
+          commands={paletteCommands}
+          commandPage={commandPage}
+          onCommand={(id) => {
             dismissSearch();
-            setGalleryParent({ parentId: null });
-          }}
-          onOpenLanguage={() => {
-            dismissSearch();
-            setSettingsOpen(true);
-          }}
-          onOpenToday={() => {
-            dismissSearch();
-            void openToday();
-          }}
-          onToggleOutline={
-            showingPage
-              ? () => {
-                  dismissSearch();
-                  toggleRightPanel("outline");
-                }
-              : undefined
-          }
-          onNewPageFromTemplate={() => {
-            dismissSearch();
-            setTemplatePicker({ mode: "new", parentId: null });
-          }}
-          onImportNotion={() => {
-            dismissSearch();
-            setNotionImport({ target: importDefaultTarget });
-          }}
-          onExportPdf={
-            openPageMeta
-              ? () => {
-                  dismissSearch();
-                  setPdfTarget(openPageMeta);
-                }
-              : undefined
-          }
-          onExportHtml={
-            openPageMeta
-              ? () => {
-                  dismissSearch();
-                  setExportTarget(openPageMeta);
-                }
-              : undefined
-          }
-          onShowHistory={
-            openHistoryMeta
-              ? () => {
-                  dismissSearch();
-                  setHistoryTarget(openHistoryMeta);
-                }
-              : undefined
-          }
-          onShowConflicts={() => {
-            dismissSearch();
-            navigateConflicts();
+            // After the palette has closed and handed focus back, so the command's own focus wins.
+            window.requestAnimationFrame(() => runCommandRef.current?.(id));
           }}
           onClose={closeSearch}
         />

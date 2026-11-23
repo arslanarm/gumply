@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import { api } from "../api/client.js";
 import { isBoard } from "../lib/boards.js";
@@ -18,6 +19,7 @@ import {
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
 import { useModal } from "../lib/modal.js";
+import { commandQuery, groupLabel, matchCommands, plainCommandMatches, type Command } from "../lib/commands.js";
 
 /** Results the switcher asks for (the server's maximum, spec/api v1.31). */
 const SWITCHER_SEARCH_LIMIT = 200;
@@ -30,26 +32,15 @@ export interface QuickSwitcherProps {
   onCreateBoard?: (title: string) => void;
   /** `Create database view “X”` (D34); without it the row isn't offered. */
   onCreateBase?: (title: string) => void;
-  /** `New board from template…`: opens the template gallery (spec/v0-6 §D). */
-  onNewFromTemplate?: () => void;
-  /** `Language…`: opens Settings (#7h5utv23). */
-  onOpenLanguage?: () => void;
-  /** v0.7 C: `Open today's note`. */
-  onOpenToday?: () => void;
-  /** v0.7 C: `New page from template…`. */
-  onNewPageFromTemplate?: () => void;
-  /** G1: export the open page as HTML (only when a page is open). */
-  onExportHtml?: () => void;
-  /** B4: Import from Notion…. */
-  onImportNotion?: () => void;
-  /** G2: export the open page as PDF. */
-  onExportPdf?: () => void;
-  /** v0.8 D1: `Toggle outline` (only while a page is open). */
-  onToggleOutline?: () => void;
-  /** D41: `Show page history` (only while a page or board is open). */
-  onShowHistory?: () => void;
-  /** D43: `Show conflicts`. */
-  onShowConflicts?: () => void;
+  /**
+   * v0.9 H (#snuin2ja): the commands that apply where Cmd+K was opened, from
+   * the registry (lib/commands.ts). `>` lists only them; plain typing shows
+   * the best few after the pages.
+   */
+  commands?: readonly Command[];
+  /** The open page, for the "This page · X" heading. */
+  commandPage?: PageMeta | null;
+  onCommand?: (id: string) => void;
   onClose: () => void;
   /** Start with this query (a clicked `#tag`, #ux5cukze). */
   initialQuery?: string;
@@ -62,16 +53,9 @@ export function QuickSwitcher({
   onCreate,
   onCreateBoard,
   onCreateBase,
-  onNewFromTemplate,
-  onOpenLanguage,
-  onOpenToday,
-  onToggleOutline,
-  onNewPageFromTemplate,
-  onExportHtml,
-  onImportNotion,
-  onExportPdf,
-  onShowHistory,
-  onShowConflicts,
+  commands = [],
+  commandPage = null,
+  onCommand,
   onClose,
   initialQuery = "",
 }: QuickSwitcherProps) {
@@ -93,7 +77,10 @@ export function QuickSwitcher({
     inputRef.current?.focus();
   }, []);
 
-  const needle = query.trim();
+  // `>` first: commands only (#snuin2ja); the page search waits.
+  const commandText = commandQuery(query);
+  const commandMode = commandText !== null;
+  const needle = commandMode ? "" : query.trim();
   const searching = needle.length > 0 && settled !== needle;
 
   // 150ms debounce; the token makes late responses from older queries no-ops.
@@ -139,19 +126,15 @@ export function QuickSwitcher({
     [visibleResults, pages, query, needle],
   );
 
-  // Commands the query asks for, after the results (each only when wired).
-  const commandRows = [
-    onNewPageFromTemplate ? sections.pageTemplate : null,
-    onNewFromTemplate ? sections.fromTemplate : null,
-    onOpenToday ? sections.today : null,
-    onExportHtml ? (sections.exportHtml ?? null) : null,
-    onImportNotion ? (sections.importNotion ?? null) : null,
-    onExportPdf ? (sections.exportPdf ?? null) : null,
-    onToggleOutline ? (sections.outline ?? null) : null,
-    onShowHistory ? (sections.history ?? null) : null,
-    onShowConflicts ? (sections.conflicts ?? null) : null,
-    onOpenLanguage ? sections.language : null,
-  ].filter((row): row is SearchRow => row !== null);
+  const toCommandRow = (command: Command): SearchRow => ({ kind: "command", key: `command-${command.id}`, label: command.label, command });
+  // Commands mode: every command that applies, grouped (or the matches, best first).
+  const commandModeRows = useMemo(
+    () => (commandText === null ? [] : matchCommands(commands, commandText).map(toCommandRow)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [commands, commandText],
+  );
+  // Plain typing: the best few commands after the pages and text.
+  const commandRows = commandMode ? [] : plainCommandMatches(commands, needle).map(toCommandRow);
   // Typing an action's name ranks it above "Create “…”" (#5hrsrqsj review).
   const createRows = [
     ...(sections.create ? [sections.create] : []),
@@ -159,7 +142,7 @@ export function QuickSwitcher({
     ...(sections.createBase && onCreateBase ? [sections.createBase] : []),
   ];
   const tailRows = [...commandRows, ...createRows];
-  const rows: SearchRow[] = needle.length > 0 ? [...sections.pages, ...sections.text, ...tailRows] : recents;
+  const rows: SearchRow[] = commandMode ? commandModeRows : needle.length > 0 ? [...sections.pages, ...sections.text, ...tailRows] : recents;
 
   useActiveOptionVisible(listRef, index, rows.length);
 
@@ -175,48 +158,12 @@ export function QuickSwitcher({
 
   const select = (row: SearchRow | undefined) => {
     if (!row) return;
+    if (row.kind === "command") {
+      if (row.command) onCommand?.(row.command.id);
+      return;
+    }
     if (row.kind === "create") {
       if (row.title) onCreate(row.title);
-      return;
-    }
-    if (row.kind === "language") {
-      onOpenLanguage?.();
-      return;
-    }
-    if (row.kind === "from-template") {
-      onNewFromTemplate?.();
-      return;
-    }
-    if (row.kind === "today") {
-      onOpenToday?.();
-      return;
-    }
-    if (row.kind === "outline") {
-      onToggleOutline?.();
-      return;
-    }
-    if (row.kind === "history") {
-      onShowHistory?.();
-      return;
-    }
-    if (row.kind === "conflicts") {
-      onShowConflicts?.();
-      return;
-    }
-    if (row.kind === "page-template") {
-      onNewPageFromTemplate?.();
-      return;
-    }
-    if (row.kind === "export-html") {
-      onExportHtml?.();
-      return;
-    }
-    if (row.kind === "import-notion") {
-      onImportNotion?.();
-      return;
-    }
-    if (row.kind === "export-pdf") {
-      onExportPdf?.();
       return;
     }
     if (row.kind === "create-board") {
@@ -266,30 +213,17 @@ export function QuickSwitcher({
         aria-selected={active}
         className={`quick-switcher-option${active ? " is-active" : ""}`}
         data-testid={
-          row.page
-            ? `search-result-${row.page.id}`
-            : row.kind === "create-board"
-              ? "search-create-board"
-              : row.kind === "create-base"
-                ? "search-create-base"
-                : row.kind === "from-template"
-                ? "search-from-template"
-                : row.kind === "language"
-                  ? "search-language"
-                  : row.kind === "today"
-                    ? "search-today"
-                    : row.kind === "page-template"
-                      ? "search-page-template"
-                      : row.kind === "export-html"
-                        ? "search-export-html"
-                        : row.kind === "import-notion"
-                          ? "search-import-notion"
-                          : row.kind === "export-pdf"
-                            ? "search-export-pdf"
-                            : row.kind === "outline"
-                              ? "search-outline"
-                              : "search-create"
+          row.command
+            ? row.command.testId
+            : row.page
+              ? `search-result-${row.page.id}`
+              : row.kind === "create-board"
+                ? "search-create-board"
+                : row.kind === "create-base"
+                  ? "search-create-base"
+                  : "search-create"
         }
+        aria-keyshortcuts={row.command?.keys ? row.command.keys.join("+") : undefined}
         // Keep the caret in the input so typing continues after a mouse pick.
         onMouseDown={(event) => {
           event.preventDefault();
@@ -300,27 +234,11 @@ export function QuickSwitcher({
         }}
       >
         <span className="quick-switcher-icon" aria-hidden="true">
-          {row.kind === "create" ? (
+          {row.command ? (
+            <Icon name={row.command.icon} size={16} />
+          ) : row.kind === "create" ? (
             <Icon name="plus" size={16} />
-          ) : row.kind === "language" ? (
-            <Icon name="languages" size={16} />
-          ) : row.kind === "today" ? (
-            <Icon name="calendar" size={16} />
-          ) : row.kind === "page-template" ? (
-            <Icon name="pageTemplate" size={16} />
-          ) : row.kind === "export-html" ? (
-            <Icon name="download" size={16} />
-          ) : row.kind === "export-pdf" ? (
-            <Icon name="file" size={16} />
-          ) : row.kind === "import-notion" ? (
-            <Icon name="folderOpen" size={16} />
-          ) : row.kind === "outline" ? (
-            <Icon name="list" size={16} />
-          ) : row.kind === "history" ? (
-            <Icon name="clock" size={16} />
-          ) : row.kind === "conflicts" ? (
-            <Icon name="alert" size={16} />
-          ) : row.kind === "create-board" || row.kind === "from-template" ? (
+          ) : row.kind === "create-board" ? (
             <Icon name="board" size={16} />
           ) : row.kind === "create-base" ? (
             <Icon name="database" size={16} />
@@ -340,6 +258,10 @@ export function QuickSwitcher({
             ) : null}
           </span>
           {row.path ? <span className="quick-switcher-path">{row.path}</span> : null}
+          {/* Plain typing: say what a page or board command acts on. */}
+          {row.command && !commandMode && (row.command.group === "page" || row.command.group === "board") ? (
+            <span className="quick-switcher-path">{groupLabel(row.command.group, null)}</span>
+          ) : null}
           {row.snippet ? (
             <span className="quick-switcher-snippet">
               {highlightSegments(row.snippet, needle).map((part, partIndex) =>
@@ -352,8 +274,34 @@ export function QuickSwitcher({
             </span>
           ) : null}
         </span>
+        {row.command?.keys ? (
+          <span className="quick-switcher-keys" aria-hidden="true">
+            {row.command.keys.map((key, keyIndex) => (
+              <kbd key={keyIndex}>{key}</kbd>
+            ))}
+          </span>
+        ) : null}
       </button>
     );
+  };
+
+  // Commands mode without a query: every command under its group's heading.
+  const groupedCommands = () => {
+    const out: ReactNode[] = [];
+    let previous: string | null = null;
+    commandModeRows.forEach((row, rowIndex) => {
+      const group = row.command!.group;
+      if (group !== previous) {
+        out.push(
+          <p key={`heading-${group}`} className="quick-switcher-heading" data-testid={`command-group-${group}`}>
+            {groupLabel(group, commandPage)}
+          </p>,
+        );
+        previous = group;
+      }
+      out.push(renderRow(row, rowIndex));
+    });
+    return out;
   };
 
   return (
@@ -381,7 +329,7 @@ export function QuickSwitcher({
             data-testid="quick-switcher-input"
             type="text"
             value={query}
-            placeholder={t("search.placeholder")}
+            placeholder={commandMode ? t("commands.commandsPlaceholder") : t("commands.placeholder")}
             aria-label={t("search.label")}
             aria-controls="quick-switcher-results"
             aria-activedescendant={
@@ -400,7 +348,20 @@ export function QuickSwitcher({
           role="listbox"
           aria-label={t("search.results")}
         >
-          {needle.length === 0 ? (
+          {commandMode ? (
+            commandModeRows.length === 0 ? (
+              <p className="quick-switcher-empty" data-testid="search-empty">
+                {t("commands.noMatch", { query: commandText ?? "" })}
+              </p>
+            ) : commandText ? (
+              <>
+                <p className="quick-switcher-heading">{t("commands.section")}</p>
+                {commandModeRows.map((row, rowIndex) => renderRow(row, rowIndex))}
+              </>
+            ) : (
+              groupedCommands()
+            )
+          ) : needle.length === 0 ? (
             pages.length === 0 ? (
               <p className="quick-switcher-empty" data-testid="search-empty">
                 {t("empty.noPages")}
@@ -433,6 +394,11 @@ export function QuickSwitcher({
                 </p>
               ) : null}
               {searching ? <p className="quick-switcher-empty">{t("search.searching")}</p> : null}
+              {commandRows.length > 0 ? (
+                <p className="quick-switcher-heading" data-testid="search-commands-heading">
+                  {t("commands.section")}
+                </p>
+              ) : null}
               {tailRows.map((row, tailIndex) => renderRow(row, sections.pages.length + sections.text.length + tailIndex))}
             </>
           )}

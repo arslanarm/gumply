@@ -3437,6 +3437,33 @@ input {
   text-align: center;
 }
 
+/* #snuin2ja: a command's shortcut, on the right of its row. */
+.quick-switcher-text {
+  flex: 1 1 auto;
+}
+
+.quick-switcher-keys {
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+  gap: 0.2rem;
+  margin-left: 0.75rem;
+}
+
+.quick-switcher-keys kbd {
+  display: inline-block;
+  min-width: 1.2rem;
+  padding: 0.02rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .quick-switcher-input::placeholder {
   color: var(--muted);
 }

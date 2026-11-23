@@ -65,6 +65,18 @@ export function applyPageAppearance(
   root.dataset.pageWidth = width;
 }
 
+/** Save and apply a font (Settings, Cmd+K #snuin2ja); the width stays as saved. */
+export function choosePageFont(font: PageFont): void {
+  savePageFont(font);
+  applyPageAppearance(font, loadPageWidth());
+}
+
+/** Save and apply a page width; the font stays as saved. */
+export function choosePageWidth(width: PageWidth): void {
+  savePageWidth(width);
+  applyPageAppearance(loadPageFont(), width);
+}
+
 export function loadStartupMode(storage: ThemeStorage | null = browserStorage()): StartupMode {
   const value = read(storage, STARTUP_KEY);
   return value === "page" || value === "daily" ? value : "last";

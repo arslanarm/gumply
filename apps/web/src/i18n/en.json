@@ -1804,5 +1804,77 @@
     "sidebarWithCount_many": "Conflicts, {{count}} copies",
     "sidebarWithCount_other": "Conflicts, {{count}} copies",
     "dropboxCopy": "{{who}}'s copy"
+  },
+  "commands": {
+    "section": "Commands",
+    "placeholder": "Search pages, or type > for commands…",
+    "commandsPlaceholder": "Type a command…",
+    "noMatch": "No command matches “{{query}}”",
+    "groups": {
+      "page": "This page",
+      "pageNamed": "This page · {{title}}",
+      "new": "New",
+      "editor": "Editor",
+      "board": "Board",
+      "views": "Views",
+      "settings": "Settings",
+      "help": "Help"
+    },
+    "page": {
+      "rename": "Rename page",
+      "duplicate": "Duplicate page",
+      "copyLink": "Copy link to page",
+      "move": "Move page to…",
+      "addBoard": "Add whiteboard inside",
+      "addBase": "Add database view inside",
+      "newFromTemplate": "New page from template inside…",
+      "delete": "Delete page"
+    },
+    "new": {
+      "page": "New page",
+      "board": "New whiteboard…",
+      "base": "New database view"
+    },
+    "view": {
+      "localGraph": "Show local graph",
+      "graph": "Open graph view",
+      "trash": "Open Trash",
+      "tags": "Show tags",
+      "sidebar": "Toggle sidebar",
+      "search": "Search pages"
+    },
+    "settings": {
+      "themeSystem": "Theme: system",
+      "themeLight": "Theme: light",
+      "themeDark": "Theme: dark",
+      "fontDefault": "Font: default",
+      "fontSerif": "Font: serif",
+      "fontMono": "Font: mono",
+      "widthNormal": "Page width: normal",
+      "widthWide": "Page width: wide",
+      "widthFull": "Page width: full",
+      "aiApps": "AI apps…",
+      "versionHistory": "Version history settings…",
+      "updates": "Check for updates…",
+      "open": "Open Settings"
+    },
+    "board": {
+      "fit": "Fit board to screen",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "zoomReset": "Zoom to 100%",
+      "tool": "Board tool: {{tool}}",
+      "toolWords": ""
+    },
+    "editor": {
+      "insert": "Insert: {{block}}",
+      "insertWord": "",
+      "turnInto": "Turn into: {{block}}",
+      "turnIntoWords": ""
+    },
+    "help": {
+      "shortcuts": "Keyboard shortcuts",
+      "guide": "Open the user guide"
+    }
   }
 }

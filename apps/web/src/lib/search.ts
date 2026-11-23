@@ -16,7 +16,7 @@ export function tagQuery(query: string): string | null {
 export const RECENT_LIMIT = 5;
 
 export interface SearchRow {
-  kind: "page" | "text" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf" | "outline" | "history" | "conflicts";
+  kind: "page" | "text" | "command" | "create" | "create-board" | "create-base" | "from-template" | "language" | "today" | "page-template" | "export-html" | "import-notion" | "export-pdf" | "outline" | "history" | "conflicts";
   /** Stable key: the page id, or `create` for the create row. */
   key: string;
   page?: PageMeta;
@@ -28,6 +28,8 @@ export interface SearchRow {
   snippet?: string;
   /** Title to create for the create row. */
   title?: string;
+  /** A registry command (#snuin2ja). */
+  command?: import("./commands.js").Command;
 }
 
 export interface SearchSections {

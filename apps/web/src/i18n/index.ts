@@ -130,6 +130,15 @@ export function t(key: MessageKey, vars?: MessageVars): string {
   return interpolate(text ?? key, vars);
 }
 
+/**
+ * The English message for `key`, whatever the interface language (#snuin2ja:
+ * the command palette matches English words in every language, so muscle
+ * memory works in both).
+ */
+export function tEnglish(key: MessageKey): string {
+  return english.get(key) ?? key;
+}
+
 /** "a, b and c" in the current language (no serial comma in any shipped language). */
 export function listJoin(parts: readonly string[]): string {
   if (parts.length <= 1) return parts[0] ?? "";
