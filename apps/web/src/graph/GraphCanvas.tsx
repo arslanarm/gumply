@@ -1133,6 +1133,10 @@ export function GraphCanvas({
   useEffect(() => {
     if (!engine.worker || !hasSize) return;
     workerRunning.current = true;
+    // Every run, not only new data: a re-arrange (the centre page or reduced motion
+    // changed) hasn't settled either; the worker's `done` marks ready again.
+    setReady(false);
+    setEngineStopped(false);
     const drawn = nodes as PositionedNode[];
     const { width, height } = sizeRef.current;
     const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion });
