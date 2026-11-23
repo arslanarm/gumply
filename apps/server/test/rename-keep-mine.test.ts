@@ -123,4 +123,35 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     const differing = sentLines.flatMap((line, i) => (line === writtenLines[i] ? [] : [[line, writtenLines[i]]]));
     expect(differing).toEqual([["See [[Hub]] for more.", "See [[Hub renamed]] for more."]]);
   });
+
+  it("the same editor's next ordinary save (it still shows [[Hub]]) doesn't undo the merge; the answer says the links were kept", async () => {
+    const { dir, store } = await vault();
+    const target = firstLinker(store);
+    const start = store.get(target);
+    await store.update("Hub", { title: "Hub renamed" });
+    const first = start.content.replace(/^Intro (\d+)\./, "Intro $1, mine.");
+    const kept = await store.update(target, { content: first, expectedUpdated: start.updated, force: true, writer: "w1" });
+    expect(kept).toMatchObject({ renameLinksKept: true });
+    // The editor didn't reload: it still has [[Hub]], and saves more typing from the version it got back.
+    const next = await store.update(target, { content: `${first}More typing.\n`, expectedUpdated: kept.updated, writer: "w1" });
+    const text = await readFile(join(dir, `${target}.md`), "utf8");
+    expect(text).toContain("More typing.");
+    expect(text).toContain("See [[Hub renamed]] for more.");
+    expect(text).not.toContain("[[Hub]]");
+    expect(next).toMatchObject({ renameLinksKept: true });
+    // A plain save with nothing to keep says nothing.
+    const plain = await store.update(target, { content: text.replace(/^---[\s\S]*?---\n/, ""), expectedUpdated: next.updated, writer: "w2" });
+    expect(plain.renameLinksKept).toBeUndefined();
+  });
+
+  it("another editor session's save isn't touched by that follow-up", async () => {
+    const { dir, store } = await vault();
+    const target = firstLinker(store);
+    const start = store.get(target);
+    await store.update("Hub", { title: "Hub renamed" });
+    const kept = await store.update(target, { content: start.content, expectedUpdated: start.updated, force: true, writer: "w1" });
+    // Another editor (w2) deliberately writes [[Hub]] on that line, from the current version: kept as sent.
+    await store.update(target, { content: start.content, expectedUpdated: kept.updated, writer: "w2" });
+    expect(await readFile(join(dir, `${target}.md`), "utf8")).toContain("See [[Hub]] for more.");
+  });
 });

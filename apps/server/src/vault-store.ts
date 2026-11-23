@@ -970,6 +970,12 @@ export class VaultStore {
    * the rename's link changes on the lines it didn't touch.
    */
   private renameRewrites = new Map<PageId, Array<{ before: string; after: string; versionBefore: string; versionAfter: string; at: number }>>();
+  /**
+   * N10 (@polish-dev's question): after a merged Keep mine, that editor still shows `[[Old]]` until it
+   * reloads; its next ordinary saves (same `writer`, from the version the merge wrote) get the same
+   * rename changes again, within the same window, so they never undo the merge.
+   */
+  private renameMergeSessions = new Map<PageId, { writer: string; version: string; pairs: Array<{ before: string; after: string }>; at: number }>();
   /** N9-1: renames whose batches are running (their `touched` sets are filled). */
   private activeRenameJobs = new Set<RenameRewrite>();
   /** N9-1: inside a rename's own rewrite (its writes aren't "touched" by someone else). */
@@ -3344,7 +3350,7 @@ export class VaultStore {
   private async updateNow(
     id: PageId,
     patch: UpdatePageInput,
-  ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string }> {
+  ): Promise<Page & { rewrittenPages: PageId[]; conflictBackup?: string; renameLinksKept?: true }> {
     if (this.folders.has(id)) return this.renameFolderNow(id, patch);
     let record = this.require(id);
     if (record.kind === "whiteboard") {
@@ -3383,8 +3389,26 @@ export class VaultStore {
     let nextContent = patch.content === undefined ? record.content : patch.content;
     if (typeof nextContent !== "string") throw badRequest("content must be a string");
     // N10 (#5pgmziyc, D22 note): Keep mine keeps the user's text, except a concurrent rename's link
-    // changes on lines they didn't touch.
-    if (patch.force && changedOnDisk && patch.content !== undefined) nextContent = this.mergeRecentRenames(record.id, patch.expectedUpdated, nextContent);
+    // changes on lines they didn't touch. The same editor's later saves (it still shows the old
+    // link until it reloads) get them again, so they never undo it.
+    let mergePairs: Array<{ before: string; after: string }> = [];
+    let mergeAt = 0;
+    if (patch.content !== undefined) {
+      if (patch.force && changedOnDisk) {
+        const merged = this.mergeRecentRenames(record.id, patch.expectedUpdated, nextContent);
+        nextContent = merged.content;
+        mergePairs = merged.pairs;
+        mergeAt = merged.at;
+      } else {
+        const session = this.renameMergeSessions.get(record.id);
+        if (session && session.writer === patch.writer && session.version === patch.expectedUpdated && Date.now() - session.at <= RENAME_MERGE_WINDOW_MS) {
+          for (const pair of session.pairs) nextContent = mergeRenameLinks(pair.before, pair.after, nextContent).content;
+          mergePairs = session.pairs;
+          mergeAt = session.at;
+        }
+      }
+    }
+    const renameLinksKept = patch.content !== undefined && nextContent !== patch.content;
     if (nextContent.length > MAX_CONTENT_LENGTH) throw badRequest("content is too large");
 
     let nextIcon = record.icon;
@@ -3493,10 +3517,18 @@ export class VaultStore {
       rewrittenPages.sort((a, b) => a.localeCompare(b));
     }
 
+    // N10: the merge follows this editor session (its next save starts from the version just written).
+    if (mergePairs.length > 0 && patch.writer) {
+      const written = this.pages.get(targetId);
+      if (written) this.renameMergeSessions.set(targetId, { writer: patch.writer, version: written.updated, pairs: mergePairs, at: mergeAt });
+    }
     return {
       ...this.get(targetId),
       rewrittenPages,
       ...(conflictBackup ? { conflictBackup } : {}),
+      // N10 (spec/api v1.35): the text written isn't exactly what was sent (a rename's link changes
+      // were kept); the client shows the page as written.
+      ...(renameLinksKept ? { renameLinksKept: true } : {}),
     };
   }
 
@@ -3772,18 +3804,26 @@ export class VaultStore {
    * recent rename rewrote: the rename's link changes (and any later rename's, in order) applied to
    * the forced text on the lines the user didn't touch. Anything else is the user's text as sent.
    */
-  private mergeRecentRenames(id: PageId, expected: string | undefined, content: string): string {
+  private mergeRecentRenames(
+    id: PageId,
+    expected: string | undefined,
+    content: string,
+  ): { content: string; pairs: Array<{ before: string; after: string }>; at: number } {
     const list = this.renameRewrites.get(id);
-    if (!list || expected === undefined) return content;
+    if (!list || expected === undefined) return { content, pairs: [], at: 0 };
     const now = Date.now();
     let version = expected;
     let merged = content;
+    const pairs: Array<{ before: string; after: string }> = [];
+    let at = 0;
     for (const entry of list) {
       if (now - entry.at > RENAME_MERGE_WINDOW_MS || entry.versionBefore !== version) continue;
       merged = mergeRenameLinks(entry.before, entry.after, merged).content;
+      pairs.push({ before: entry.before, after: entry.after });
+      at = at || entry.at;
       version = entry.versionAfter;
     }
-    return merged;
+    return { content: merged, pairs, at };
   }
 
   /**
