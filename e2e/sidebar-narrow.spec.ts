@@ -88,3 +88,57 @@ test.describe('narrow sidebar overlay (#hy9dizhb)', () => {
     await expectSidebarClosed(page);
   });
 });
+
+/**
+ * #h4tyk92t: the update notice and "Syncing changes…" live in the sidebar. While
+ * it's closed, its toggle shows a dot and says why; opening it shows the news.
+ */
+test.describe('news in a closed sidebar (#h4tyk92t)', () => {
+  test('a sync burst: a dot on the toggle, named in its label; gone once open', async ({ page, vault }) => {
+    await vault.seed([{ title: 'Note', content: 'Body' }]);
+    await page.route(/\/api\/pages(\?.*)?$/, async (route) => {
+      try {
+        const response = await route.fetch();
+        const headers = { ...response.headers(), 'x-gumply-syncing': '1' };
+        delete headers['content-length'];
+        delete headers['content-encoding'];
+        await route.fulfill({ status: response.status(), headers, body: await response.body() });
+      } catch {
+        // The page closed while the request was in flight.
+      }
+    });
+    await page.goto('/#/Note');
+    const toggle = page.getByTestId('sidebar-toggle');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('sidebar-toggle-dot')).toHaveAttribute('data-news', 'syncing');
+    await expect(toggle).toHaveAccessibleName('Show sidebar: syncing changes');
+    await toggle.click();
+    await expect(page.getByTestId('sidebar-syncing')).toBeVisible();
+    await expect(page.getByTestId('sidebar-toggle-dot')).toHaveCount(0);
+    await expect(toggle).toHaveAccessibleName('Hide sidebar');
+  });
+
+  test('an update: the dot until Later hides the notice', async ({ page }) => {
+    const state = { kind: 'nsis', mode: 'auto', modes: ['auto', 'notify', 'off'], status: 'ready', currentVersion: '0.9.0', version: '0.9.1', releaseUrl: null, lastChecked: null, error: null };
+    await page.route('**/api/health', async (route) => {
+      try {
+        const response = await route.fetch();
+        await route.fulfill({ response, json: { ...(await response.json()), desktop: true } });
+      } catch {
+        // The page closed while the request was in flight.
+      }
+    });
+    await page.route('**/api/desktop/updates**', (route) => route.fulfill({ json: state }));
+    await page.goto('/');
+    const toggle = page.getByTestId('sidebar-toggle');
+    await expect(page.getByTestId('sidebar-toggle-dot')).toHaveAttribute('data-news', 'update');
+    await expect(toggle).toHaveAccessibleName('Show sidebar: there’s an update');
+    await toggle.click();
+    await page.getByTestId('update-notice-later').click();
+    await expect(page.getByTestId('update-notice')).toHaveCount(0);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('sidebar-toggle-dot')).toHaveCount(0);
+    await expect(toggle).toHaveAccessibleName('Show sidebar');
+  });
+});

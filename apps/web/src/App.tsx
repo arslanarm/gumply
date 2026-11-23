@@ -98,7 +98,7 @@ import type { ConflictCopy, ConflictKeep, PossibleCopy } from "@gumply/core";
 import { HistorySettingsDialog } from "./components/HistorySettingsDialog.js";
 import { pageLeaveTracker } from "./lib/page-leave.js";
 import { McpSettingsDialog } from "./components/McpSettingsDialog.js";
-import { UpdateNotice } from "./components/UpdateNotice.js";
+import { UpdateNotice, updateNoticeKey } from "./components/UpdateNotice.js";
 import { UpdatesDialog, useDesktopUpdates } from "./components/UpdatesDialog.js";
 import { NotionImportDialog } from "./components/NotionImportDialog.js";
 
@@ -280,6 +280,8 @@ export function App() {
   const [desktop, setDesktop] = useState(false);
   // spec/auto-update: the desktop app's update state (null in the browser).
   const [updates, setUpdates] = useDesktopUpdates(desktop);
+  /** The update notice's "Later": hides that `version:status` until the next start. */
+  const [hiddenUpdate, setHiddenUpdate] = useState<string | null>(null);
   const [lastPageId, setLastPageId] = useState<PageId | null>(null);
   // v0.7 F (#385sexd6): bumped by "Add cover" to open the cover picker.
   const [coverPickerSignal, setCoverPickerSignal] = useState(0);
@@ -2135,6 +2137,18 @@ export function App() {
       })
     : [];
 
+  // #h4tyk92t: the update notice and "Syncing changes…" live in the sidebar; while it's
+  // closed (a narrow window), its toggle carries a quiet dot and says why.
+  const updateKey = updateNoticeKey(updates);
+  const sidebarNews = sidebarOpen ? null : updateKey !== null && updateKey !== hiddenUpdate ? "update" : vaultSyncing ? "syncing" : null;
+  const sidebarToggleLabel = sidebarOpen
+    ? t("sidebar.hide")
+    : sidebarNews === "update"
+      ? t("sidebar.showUpdate")
+      : sidebarNews === "syncing"
+        ? t("sidebar.showSyncing")
+        : t("sidebar.show");
+
   return (
     <div className={`app${sidebarOpen ? "" : " sidebar-collapsed"}`}>
       <header className="topbar">
@@ -2142,12 +2156,13 @@ export function App() {
           type="button"
           className="icon-button sidebar-toggle"
           data-testid="sidebar-toggle"
-          data-tooltip={sidebarOpen ? t("sidebar.hide") : t("sidebar.show")}
-          aria-label={sidebarOpen ? t("sidebar.hide") : t("sidebar.show")}
+          data-tooltip={sidebarToggleLabel}
+          aria-label={sidebarToggleLabel}
           aria-pressed={sidebarOpen}
           onClick={() => setSidebarOpen((open) => !open)}
         >
           <Icon name="sidebar" size={17} />
+          {sidebarNews ? <span className="sidebar-toggle-dot" aria-hidden="true" data-testid="sidebar-toggle-dot" data-news={sidebarNews} /> : null}
         </button>
         <span className="logo" aria-hidden="true">
           <Icon name="brand" size={18} />
@@ -2210,7 +2225,7 @@ export function App() {
         className={`layout${!graphOpen && showingPage && rightPanel ? " layout-with-panel" : ""}`}
       >
         <Sidebar
-          footer={<UpdateNotice state={updates} />}
+          footer={<UpdateNotice state={updates} hidden={hiddenUpdate} onHide={setHiddenUpdate} />}
           onCreateBoard={closingSidebar((parentId: PageId | null) => setGalleryParent({ parentId }))}
           onCreateBase={(parentId) => void handleCreateBase(parentId)}
           pages={pages}

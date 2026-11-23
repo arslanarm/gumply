@@ -225,3 +225,21 @@ async function pickVersionWith(dialog: ReturnType<Page['getByTestId']>, text: st
   }
   throw new Error(`no version shows "${text}"`);
 }
+
+test('Changes says so plainly when only Gumply\'s own dates changed; Show whole file shows them (#h4tyk92t)', async ({ page, vault, request }) => {
+  const [note] = await vault.seed([{ title: 'Dates', content: 'Same text.' }]);
+  const before = await readFile(path.join(E2E_VAULT, 'Dates.md'), 'utf8');
+  expect(before).toContain('updated:');
+  // Saved again with the same text: only `updated:` changes.
+  await request.put(`${API_URL}/api/pages/${encodeURIComponent(note!.id)}`, { data: { content: 'Same text.' } });
+  await request.post(`${API_URL}/api/history/${encodeURIComponent(note!.id)}/checkpoint`);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Dates');
+  await openHistoryFromMenu(page, note!.id);
+  const dialog = page.getByTestId('history-dialog');
+  await dialog.getByTestId('history-item').last().click();
+  await dialog.getByTestId('history-view-changes').click();
+  await expect(dialog.getByTestId('history-only-dates')).toHaveText('No changes to the text; only Gumply’s dates changed. “Show whole file” shows them.');
+  await dialog.getByTestId('history-whole-file').click();
+  await expect(dialog.getByTestId('history-diff')).toContainText('updated:');
+});

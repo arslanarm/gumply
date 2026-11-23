@@ -1,5 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
-import type { ConflictCopy, ConflictDiff, ConflictKeep, PageMeta, PossibleCopy } from "@gumply/core";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { CanvasBoard, ConflictCopy, ConflictDiff, ConflictKeep, PageMeta, PossibleCopy } from "@gumply/core";
+import type { BoardPageOption } from "../board/index.js";
+import { vaultPathOf } from "../lib/boards.js";
+import { BoardChanges } from "./HistoryDialog.js";
 import { api } from "../api/client.js";
 import { useT } from "../i18n/index.js";
 import { conflictSource } from "../lib/conflicts.js";
@@ -38,6 +41,12 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
   const [error, setError] = useState<string | null>(null);
   const [whole, setWhole] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** #h4tyk92t: a board conflict names its cards, so both boards are loaded (page, copy). */
+  const [boards, setBoards] = useState<{ page: CanvasBoard; copy: CanvasBoard } | null>(null);
+  const boardPages = useMemo<BoardPageOption[]>(
+    () => pages.map((item) => ({ path: vaultPathOf(item), title: item.title, updated: item.updated, ...(item.icon ? { icon: item.icon } : {}) })),
+    [pages],
+  );
   const copyId = "copy" in target ? target.copy.copyId : target.possible.copyId;
   const originalId = "copy" in target ? target.copy.originalId : target.possible.originalId;
   const titleOf = (pageId: string | null) => pages.find((page) => page.id === pageId)?.title ?? pageId ?? "";
@@ -46,13 +55,22 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
     closeRef.current?.focus();
     let live = true;
     api.conflictDiff(copyId).then(
-      (result) => live && setDiff(result),
+      (result) => {
+        if (!live) return;
+        if (result.kind === "board" && originalId) {
+          Promise.all([api.getBoard(originalId), api.getBoard(copyId)]).then(
+            ([page, copy]) => live && setBoards({ page: page.board, copy: copy.board }),
+            () => undefined, // The counts still show without the names.
+          );
+        }
+        setDiff(result);
+      },
       (failure: unknown) => live && setError(errorMessage(failure)),
     );
     return () => {
       live = false;
     };
-  }, [copyId]);
+  }, [copyId, originalId]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -78,12 +96,30 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
     if (error) return <p className="history-muted" role="alert">{error}</p>;
     if (!diff) return <p className="history-muted">{t("conflicts.loading")}</p>;
     if (diff.kind === "board") {
+      const legend = {
+        added: t("conflicts.boardOnlyCopy", { count: diff.added.length }),
+        removed: t("conflicts.boardOnlyPage", { count: diff.removed.length }),
+        changed: t("conflicts.boardChangedInCopy", { count: diff.changed.length }),
+      };
+      if (!boards) {
+        return (
+          <ul className="history-board-changes" data-testid="conflict-board-changes">
+            <li>{legend.added}</li>
+            <li>{legend.removed}</li>
+            <li>{legend.changed}</li>
+          </ul>
+        );
+      }
+      // The copy as it is, its differences from the page marked: + only in the copy, − only in the page, ~ changed.
       return (
-        <ul className="history-board-changes" data-testid="conflict-board-changes">
-          <li>{t("history.boardAdded", { count: diff.added.length })}</li>
-          <li>{t("history.boardRemoved", { count: diff.removed.length })}</li>
-          <li>{t("history.boardChanged", { count: diff.changed.length })}</li>
-        </ul>
+        <BoardChanges
+          version={boards.page}
+          current={boards.copy}
+          diff={diff}
+          pages={boardPages}
+          labels={{ legend, list: t("conflicts.boardChangesList") }}
+          testId="conflict-board-changes"
+        />
       );
     }
     if (!diff.lines.some((line) => line.op !== "same")) return <p className="history-muted">{t("conflicts.noChanges")}</p>;
@@ -133,7 +169,8 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
                 {t("conflicts.removeCopy")}
               </button>
             ) : (
-              <>
+              // #h4tyk92t: one group, so a narrow footer wraps it whole instead of splitting it.
+              <span className="conflict-actions-keep">
                 <button type="button" className="button-secondary" disabled={busy} data-testid="conflict-keep-both" onClick={() => void run(() => onResolve(target.copy, "both"))}>
                   {t("conflicts.keepBoth")}
                 </button>
@@ -143,7 +180,7 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
                 <button type="button" className="button-primary" disabled={busy} data-testid="conflict-keep-page" onClick={() => void run(() => onResolve(target.copy, "page"))}>
                   {t("conflicts.keepPage")}
                 </button>
-              </>
+              </span>
             )
           ) : (
             <button type="button" className="button-secondary" disabled={busy} data-testid="conflict-not-a-copy" onClick={() => void run(() => onNotACopy(target.possible))}>

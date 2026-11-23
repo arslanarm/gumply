@@ -410,7 +410,7 @@ export function QuickSwitcher({
             <kbd>↓</kbd> {t("search.navigate")}
           </span>
           <span>
-            <kbd>Enter</kbd> {t("search.open")}
+            <kbd>Enter</kbd> {commandMode ? t("search.run") : t("search.open")}
           </span>
           <span>
             <kbd>Esc</kbd> {t("search.close")}

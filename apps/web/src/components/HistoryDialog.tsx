@@ -10,6 +10,7 @@ import { flushAllSaves, hasUnsavedChanges } from "../lib/pending-saves.js";
 import { Editor } from "./Editor.js";
 import { Icon } from "./Icon.js";
 import { LineDiffView } from "./LineDiffView.js";
+import { hideManagedKeyChanges } from "../lib/history-diff.js";
 import { useModal } from "../lib/modal.js";
 
 /**
@@ -276,11 +277,17 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
       if (!versionBoard || !currentBoard) return <p className="history-muted">{t("history.loading")}</p>;
       return <BoardChanges version={versionBoard} current={currentBoard} diff={diff} pages={boardPages} />;
     }
-    if (!diff.lines.some((line) => line.op !== "same")) return <p className="history-muted">{t("history.noChanges")}</p>;
+    // #h4tyk92t: Gumply's own `updated:`/`created:` changes are hidden unless the whole file is shown.
+    const lines = whole ? diff.lines : hideManagedKeyChanges(diff.lines);
+    if (!lines.some((line) => line.op !== "same")) {
+      // Said plainly when only those dates differ, so it doesn't look like an empty diff.
+      const onlyDates = diff.lines.some((line) => line.op !== "same");
+      return onlyDates ? <p className="history-muted" data-testid="history-only-dates">{t("history.onlyDates")}</p> : <p className="history-muted">{t("history.noChanges")}</p>;
+    }
     // The diff runs from this version to now: "add" is what now has and this version lacks.
     return (
       <>
-        <LineDiffView lines={diff.lines} whole={whole} testId="history-diff" />
+        <LineDiffView lines={lines} whole={whole} testId="history-diff" />
       </>
     );
   };
@@ -445,24 +452,27 @@ const MARK_SYMBOL: Record<BoardDiffMark, string> = { added: "+", removed: "−",
  * red, and changed ones amber. The legend pairs each colour with a symbol and
  * a word; the list below names every card that changed.
  */
-function BoardChanges({ version, current, diff, pages }: {
+export function BoardChanges({ version, current, diff, pages, labels, testId = "history-board-changes" }: {
   version: CanvasBoard;
   current: CanvasBoard;
   diff: { added: string[]; removed: string[]; changed: string[] };
   pages: BoardPageOption[];
+  /** #h4tyk92t: Compare words the legend and the list for a copy, not a version. */
+  labels?: { legend: Record<BoardDiffMark, string>; list: string };
+  testId?: string;
 }) {
   const t = useT();
   const view = useMemo(() => boardDiffView(version, current, diff), [version, current, diff]);
   const nodeById = useMemo(() => new Map(view.board.nodes.map((node) => [node.id, node])), [view]);
   const legend: Array<[BoardDiffMark, string]> = [
-    ["added", t("history.boardAdded", { count: diff.added.length })],
-    ["removed", t("history.boardRemoved", { count: diff.removed.length })],
-    ["changed", t("history.boardChanged", { count: diff.changed.length })],
+    ["added", labels?.legend.added ?? t("history.boardAdded", { count: diff.added.length })],
+    ["removed", labels?.legend.removed ?? t("history.boardRemoved", { count: diff.removed.length })],
+    ["changed", labels?.legend.changed ?? t("history.boardChanged", { count: diff.changed.length })],
   ];
   const word: Record<BoardDiffMark, string> = { added: t("history.added"), removed: t("history.removed"), changed: t("history.changed") };
   const rows = [...view.marks].sort((a, b) => ["added", "removed", "changed"].indexOf(a[1]) - ["added", "removed", "changed"].indexOf(b[1]));
   return (
-    <div className="history-board-wrap" data-testid="history-board-changes">
+    <div className="history-board-wrap" data-testid={testId}>
       <ul className="history-board-legend">
         {legend.map(([mark, label]) => (
           <li key={mark} className={`history-board-legend-${mark}`} data-mark={mark}>
@@ -478,7 +488,7 @@ function BoardChanges({ version, current, diff, pages }: {
           <LazyBoardPreview board={view.board} pages={pages} interactive highlight={view.marks} />
         </Suspense>
       </div>
-      <h3 className="history-board-list-title">{t("history.boardChangesList")}</h3>
+      <h3 className="history-board-list-title">{labels?.list ?? t("history.boardChangesList")}</h3>
       <ul className="history-board-list" data-testid="history-board-list">
         {rows.map(([id, mark]) => (
           <li key={id} data-mark={mark}>
