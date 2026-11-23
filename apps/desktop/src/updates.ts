@@ -292,12 +292,13 @@ export class UpdateController {
       return;
     }
     if (result.retry) {
-      // Couldn't fetch the signed files (offline, timeout): nothing installed, and
-      // like a failed download the update stays on offer, tried again at the next check.
+      // Couldn't fetch the signed files (offline, timeout, too big): nothing installed,
+      // shown like a failed check ("Couldn't check for updates"), tried again at the
+      // next check. No failedVersion: this says nothing about the release itself.
       this.deps.log?.(`[gumply] update ${info.version} not verified yet: ${result.reason}`);
       this.downloadedFile = null;
       this.verifiedSha256 = null;
-      this.set({ status: "available", version: info.version, releaseUrl: releaseUrl(info.version), error: result.reason });
+      this.set({ status: "error", version: info.version, releaseUrl: releaseUrl(info.version), error: result.reason });
       return;
     }
     this.failVerification(info.version, result.reason);
