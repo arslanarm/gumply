@@ -8,7 +8,6 @@ import {
   HEADER_KEYS,
   inferPropertyType,
   isAliasesKey,
-  isTagsKey,
   isPropertyType,
   mergeRenameLinks,
   isValidPropertyKey,
