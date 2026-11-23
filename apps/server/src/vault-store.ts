@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   coercePropertyValue,
@@ -603,6 +603,26 @@ function matchesTitleSegment(segment: string, title: string): boolean {
  */
 function noteBody(content: string): string {
   return content.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+}
+
+/**
+ * A file's text and its stat, **from the same open file** (D22). Reading the
+ * path and then stat-ing it can pair the old text with the new mtime when
+ * another program atomically replaces the file in between; the conflict check
+ * (disk mtime vs the record's) would then pass, and the next save would erase
+ * that program's write (a lost update). An open handle keeps the inode, so
+ * the text and the mtime always belong together; a replace after this is a
+ * real mtime change, which the check catches.
+ */
+async function readConsistent(absolute: string): Promise<{ raw: string; stats: import("node:fs").Stats }> {
+  const handle = await open(absolute, "r");
+  try {
+    const stats = await handle.stat();
+    const raw = await handle.readFile("utf8");
+    return { raw, stats };
+  } finally {
+    await handle.close();
+  }
 }
 
 function mtimeVersion(mtimeMs: number): string {
@@ -2802,8 +2822,7 @@ export class VaultStore {
 
   /** A `.base` file (D34): title = file name, dates from the file, kept as text. */
   private async readBaseRecord(absolute: string, id: PageId): Promise<PageRecord> {
-    const raw = await readFile(absolute, "utf8");
-    const stats = await stat(absolute);
+    const { raw, stats } = await readConsistent(absolute);
     return {
       id,
       title: baseStem(id),
@@ -4594,9 +4613,8 @@ export class VaultStore {
   private async readRecord(absolute: string, id: PageId): Promise<PageRecord> {
     if (isBoardId(absolute)) return this.readBoardRecord(absolute, id);
     if (isBaseId(absolute)) return this.readBaseRecord(absolute, id);
-    const raw = await readFile(absolute, "utf8");
+    const { raw, stats } = await readConsistent(absolute);
     const { frontmatter, content } = parseFrontmatter(raw);
-    const stats = await stat(absolute);
 
     const created = toIso(frontmatter.created) ?? stats.birthtime.toISOString();
     const mtime = mtimeVersion(stats.mtimeMs);
@@ -4638,8 +4656,7 @@ export class VaultStore {
    * without a backup: saving it backs up the original first.
    */
   private async readBoardRecord(absolute: string, id: PageId): Promise<PageRecord> {
-    const raw = await readFile(absolute, "utf8");
-    const stats = await stat(absolute);
+    const { raw, stats } = await readConsistent(absolute);
     let board: CanvasBoard;
     let repaired = false;
     try {
