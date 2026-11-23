@@ -99,6 +99,7 @@ export {
 } from "./links.js";
 
 export { parseEmbeds } from "./embeds.js";
+export { expandGraphLinks, indexGraphLinks, type IndexedGraphData } from "./graph-links.js";
 export { linkSnippet, markdownLinks, plainText, type MarkdownLink } from "./plain-text.js";
 export {
   formatWikilink,

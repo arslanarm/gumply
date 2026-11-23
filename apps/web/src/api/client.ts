@@ -42,6 +42,7 @@ import type {
   ConflictResolveResult,
   ConflictsList,
 } from "@gumply/core";
+import { expandGraphLinks, type IndexedGraphData } from "@gumply/core";
 import { currentLanguage } from "../i18n/index.js";
 
 export class ApiRequestError extends Error {
@@ -497,8 +498,9 @@ export const api = {
     if (options.center !== undefined) params.set("center", options.center);
     if (options.depth !== undefined) params.set("depth", String(options.depth));
     if (options.attachments) params.set("include", "attachments");
-    const query = params.toString();
-    return request(`/graph${query.length > 0 ? `?${query}` : ""}`);
+    // v1.32 (#g95wkd9y): links as index pairs (a tenth of the bytes on a big vault).
+    params.set("links", "index");
+    return request<IndexedGraphData>(`/graph?${params.toString()}`).then(expandGraphLinks);
   },
 
   /** E1 (spec/api-graph-groups, v1.19): the graph's colour groups and filters. */
