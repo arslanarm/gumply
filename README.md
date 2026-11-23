@@ -12,6 +12,7 @@ How to use Gumply, from installing it to boards, version history and sync:
 The desktop app opens it from **Help → User Guide**.
 
 Every file Gumply reads or writes in a vault, and what it never touches, is in **[the file format](docs/file-format.md)**.
+What changed in each release is in the **[changelog](CHANGELOG.md)**; how to build, test and contribute is in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ## Stack
 
