@@ -28,6 +28,11 @@ function bundledModulesManifest(): Plugin {
 
 export default defineConfig({
   plugins: [react(), bundledModulesManifest()],
+  // #g95wkd9y: the graph's layout worker imports d3-force-3d directly (before,
+  // it only came inside react-force-graph's bundle). Pre-bundle it up front, or
+  // the dev server finds it when the graph first opens, re-optimizes and
+  // reloads the page mid-session.
+  optimizeDeps: { include: ["d3-force-3d"] },
   resolve: {
     alias: [
       // Consume core sources directly so UI edits don't need a core rebuild.
