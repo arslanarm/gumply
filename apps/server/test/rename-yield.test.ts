@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createApp } from "../src/app";
 import { historyDir, readHistory } from "../src/history";
 import { VaultStore } from "../src/vault-store";
 
@@ -38,7 +39,8 @@ async function vault(linkers: number, extra: Record<string, string> = {}) {
 /** The linking page the rewrite reaches last (the batches go in the store's own order). */
 const lastLinker = (store: VaultStore) => [...(store as unknown as { pages: Map<string, unknown> }).pages.keys()].filter((id) => id.startsWith("L/")).at(-1)!;
 
-describe("a rename lets other saves through (#xgnvipyd)", () => {
+// Each builds hundreds of files: generous under a parallel full run.
+describe("a rename lets other saves through (#xgnvipyd)", { timeout: 60_000 }, () => {
   it("a save to another page sent during a 1,500-link rename answers in under a second, before the rename ends", async () => {
     const { dir, store } = await vault(1500);
     const started = Date.now();
@@ -129,7 +131,47 @@ describe("a rename lets other saves through (#xgnvipyd)", () => {
   });
 });
 
-describe("boards and bases rename in batches too (#xgnvipyd)", () => {
+// Each builds hundreds of files: generous under a parallel full run.
+describe("while the batches run, the old name still means the renamed page (#xgnvipyd, spec/api v1.35)", { timeout: 60_000 }, () => {
+  it("backlinks list every linker, the graph has no ghost, and GET /pages says which rename is running", async () => {
+    const { dir, store } = await vault(600);
+    const app = createApp({ vaultPath: dir, store });
+    let checked = false;
+    store.afterRenameBatch = async () => {
+      if (checked) return;
+      checked = true;
+      // Most linking pages still say [[Hub]] here.
+      expect((await readFile(join(dir, `${lastLinker(store)}.md`), "utf8"))).toContain("[[Hub]]");
+      expect(new Set(store.backlinks("Hub renamed").map((link) => link.page.id)).size).toBe(600);
+      const graph = store.graph();
+      expect(graph.nodes.some((node) => node.id === "Hub renamed")).toBe(true);
+      expect(graph.nodes.filter((node) => /^hub$/i.test(node.title ?? "") && node.id !== "Hub renamed")).toEqual([]);
+      const response = await app.request("/api/pages");
+      expect(JSON.parse(decodeURIComponent(response.headers.get("X-Gumply-Renaming")!))).toEqual([{ fromTitle: "Hub", fromId: "Hub", to: "Hub renamed" }]);
+    };
+    await store.update("Hub", { title: "Hub renamed" });
+    expect(checked).toBe(true);
+    // Done: no alias left, and every link really says the new name.
+    expect(store.renamesInProgress).toEqual([]);
+    expect((await app.request("/api/pages")).headers.get("X-Gumply-Renaming")).toBeNull();
+    expect(new Set(store.backlinks("Hub renamed").map((link) => link.page.id)).size).toBe(600);
+  });
+
+  it("a page really named like the old title, created mid-rename, takes its links from then on", async () => {
+    const { dir, store } = await vault(300);
+    store.afterRenameBatch = async () => {
+      if (store.list().some((meta) => meta.id === "Hub")) return;
+      await store.create({ title: "Hub", content: "A new hub." });
+    };
+    await store.update("Hub", { title: "Hub renamed" });
+    // The links written before the rename were to the old page: they follow it.
+    expect(await readFile(join(dir, "L", "Linker 299.md"), "utf8")).toContain("[[Hub renamed]]");
+    expect(store.renamesInProgress).toEqual([]);
+  });
+});
+
+// Each builds hundreds of files: generous under a parallel full run.
+describe("boards and bases rename in batches too (#xgnvipyd)", { timeout: 60_000 }, () => {
   it("a board's rename rewrites the links to it across batches", async () => {
     const { dir, store } = await vault(0);
     await mkdir(join(dir, "B"), { recursive: true });

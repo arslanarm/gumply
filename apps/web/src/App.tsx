@@ -15,7 +15,7 @@ import {
   type DailyNoteSettings,
 } from "@gumply/core";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
+import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, renamedTargetFor, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -1624,6 +1624,14 @@ export function App() {
     async (link: { targetTitle: string; heading: string; from?: string }) => {
       // From the page the link is written in: a same-named page in its folder wins (#35e42m7v).
       const resolved = resolveWikilink(link.targetTitle, documentPages, link.from ?? page?.id);
+      // v1.35 (#xgnvipyd): `[[Old]]` while a rename of Old is still rewriting links: open the renamed page, never create a new Old.
+      const renamedTo = resolved ? null : renamedTargetFor(link.targetTitle);
+      if (renamedTo) {
+        setPendingHeading(link.heading.length > 0 ? { pageId: renamedTo, heading: link.heading } : null);
+        if (renamedTo === selectedRef.current) requestPageReload();
+        else navigate(renamedTo);
+        return;
+      }
 
       if (!resolved) {
         try {

@@ -57,6 +57,21 @@ export class ApiRequestError extends Error {
 
 let newVaultPage: PageId | null = null;
 
+/** The `X-Gumply-Renaming` header (v1.35): a percent-encoded JSON list; anything malformed is no renames. */
+export function parseRenames(header: string | null): Array<{ fromTitle: string; fromId: PageId; to: PageId }> {
+  if (!header) return [];
+  try {
+    const value = JSON.parse(decodeURIComponent(header)) as unknown;
+    if (!Array.isArray(value)) return [];
+    return value.filter(
+      (item): item is { fromTitle: string; fromId: PageId; to: PageId } =>
+        typeof item === "object" && item !== null && typeof item.fromTitle === "string" && typeof item.fromId === "string" && typeof item.to === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
 /** One-shot: the server just seeded the demo vault and suggests this page. */
 export function consumeNewVaultPage(): PageId | null {
   const page = newVaultPage;
@@ -66,6 +81,18 @@ export function consumeNewVaultPage(): PageId | null {
 
 let vaultSyncing = false;
 let vaultIndexing = false;
+/** v1.35 (#xgnvipyd): renames still rewriting their links, from the last page list. */
+let renamesInProgress: Array<{ fromTitle: string; fromId: PageId; to: PageId }> = [];
+
+/**
+ * The page a not-yet-rewritten `[[Old]]` link means while a rename of `Old`
+ * is still rewriting the links to it (spec/api v1.35), or null.
+ */
+export function renamedTargetFor(targetTitle: string): PageId | null {
+  const wanted = targetTitle.trim().toLowerCase();
+  const found = renamesInProgress.find((rename) => rename.fromTitle.toLowerCase() === wanted || rename.fromId.toLowerCase() === wanted);
+  return found ? found.to : null;
+}
 
 /** Whether the last page list said the vault's links are still being indexed (#g95wkd9y, spec/api v1.33). */
 export function isVaultIndexing(): boolean {
@@ -131,6 +158,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (path === "/pages" || path.startsWith("/pages?")) {
     vaultSyncing = response.headers.get("x-gumply-syncing") === "1";
     vaultIndexing = response.headers.get("x-gumply-indexing") === "1";
+    renamesInProgress = parseRenames(response.headers.get("x-gumply-renaming"));
   }
 
   if (!response.ok) {

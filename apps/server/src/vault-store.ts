@@ -936,6 +936,13 @@ export class VaultStore {
   /** Test hooks (#xgnvipyd): rename batches run so far, and a callback after each one. */
   renameBatchesRun = 0;
   afterRenameBatch: (() => Promise<void>) | null = null;
+  /**
+   * #xgnvipyd: while a rename's batches run, the linking pages still say
+   * `[[Old]]`. Link resolution treats the old title and id as the renamed page
+   * meanwhile (key: the new id), so backlinks, the graph and a click on
+   * `[[Old]]` never see a broken link; cleared before the final reindex.
+   */
+  private renameAliases = new Map<PageId, { fromId: PageId; fromTitle: string }>();
   /** Queued tasks that aren't rescans: a pending rescan waits for them (save priority, §8). */
   private pendingWrites = 0;
   /** Page to open once after first-run seeding (consumed by GET /pages). */
@@ -2271,6 +2278,11 @@ export class VaultStore {
     return this.enqueue(() => this.updateNow(this.resolveId(id), patch));
   }
 
+  /** #xgnvipyd (spec/api v1.35): renames whose link rewrite is still running: the old title and id → the page's id now. */
+  get renamesInProgress(): Array<{ fromTitle: string; fromId: PageId; to: PageId }> {
+    return [...this.renameAliases].map(([to, alias]) => ({ fromTitle: alias.fromTitle, fromId: alias.fromId, to }));
+  }
+
   /** #xgnvipyd: wait while `id` (old or new) is being renamed, so nothing else changes it mid-rename. */
   private async renameSettled(id: PageId): Promise<void> {
     for (let running = this.renamesRunning.get(id); running; running = this.renamesRunning.get(this.resolveId(id))) {
@@ -2325,11 +2337,16 @@ export class VaultStore {
         await this.afterRenameBatch?.();
       }
       return await this.enqueue(async () => {
+        // Every link says the new name now: resolve as usual again.
+        this.renameAliases.delete(newId);
         this.reindexAll();
         return { ...result, rewrittenPages: rewritten.sort((a, b) => a.localeCompare(b)) };
       });
     } finally {
-      for (const key of held) if (this.renamesRunning.get(key) === running) this.renamesRunning.delete(key);
+      for (const key of held) {
+        if (this.renamesRunning.get(key) === running) this.renamesRunning.delete(key);
+        if (this.renameAliases.delete(key)) this.reindexAll();
+      }
       finished();
     }
   }
@@ -3407,6 +3424,7 @@ export class VaultStore {
     if (this.deferRewrites) {
       // #xgnvipyd: pinned now (the link snapshot is beforeMetas/afterMetas above), run in batches after.
       this.deferredRewrite = { skip, rewriteText, ids: [...this.pages.keys()] };
+      if (oldId !== record.id || previousTitle !== record.title) this.renameAliases.set(record.id, { fromId: oldId, fromTitle: previousTitle });
       return [];
     }
     return this.rewriteEverywhere(skip, rewriteText, {}, { frontmatter: true });
@@ -4909,10 +4927,26 @@ export class VaultStore {
     });
   }
 
-  private reindexAll(): void {
+  /**
+   * The page list links resolve against: `pageMetas()`, plus, while a rename's
+   * batches run, its old title as another name of the renamed page (after the
+   * real pages, so a page really called that still wins).
+   */
+  private linkMetas(): PageMeta[] {
     const metas = this.pageMetas();
+    if (this.renameAliases.size === 0) return metas;
+    const aliases: PageMeta[] = [];
+    for (const [to, alias] of this.renameAliases) {
+      const meta = metas.find((candidate) => candidate.id === to);
+      if (meta) aliases.push({ ...meta, title: alias.fromTitle });
+    }
+    return [...metas, ...aliases];
+  }
+
+  private reindexAll(): void {
+    const metas = this.linkMetas();
     this.edgesBySource.clear();
-    for (const meta of metas) {
+    for (const meta of this.pageMetas()) {
       const record = this.pages.get(meta.id);
       if (!record) continue;
       this.edgesBySource.set(meta.id, this.edgesFor(record, metas));
@@ -4922,7 +4956,7 @@ export class VaultStore {
   /** Recompute the link edges of these sources only (one page list for all of them). */
   private recomputeSources(ids: readonly PageId[]): void {
     if (ids.length === 0) return;
-    const metas = this.pageMetas();
+    const metas = this.linkMetas();
     // D43: a conflict copy beside its original holds no links (as recomputeSource).
     const copies = this.copyIds();
     for (const id of ids) {
@@ -4938,7 +4972,7 @@ export class VaultStore {
       this.edgesBySource.delete(id);
       return;
     }
-    this.edgesBySource.set(id, this.edgesFor(record, this.pageMetas()));
+    this.edgesBySource.set(id, this.edgesFor(record, this.linkMetas()));
   }
 
   /**

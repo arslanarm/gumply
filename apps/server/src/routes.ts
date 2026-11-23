@@ -172,6 +172,10 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (store.syncing) c.header("X-Gumply-Syncing", "1");
     // v1.33 (#g95wkd9y): the links of a vault just opened are still being indexed.
     if (store.indexing) c.header("X-Gumply-Indexing", "1");
+    // v1.35 (#xgnvipyd): renames whose link rewrite is still running, so a click on
+    // an `[[Old]]` link not yet rewritten opens the renamed page (JSON, percent-encoded).
+    const renames = store.renamesInProgress;
+    if (renames.length > 0) c.header("X-Gumply-Renaming", encodeURIComponent(JSON.stringify(renames)));
     // v1.12: opt-in properties per page (database views); the default stays light.
     if (c.req.query("include") === "properties") return c.json(await store.listWithProperties());
     return c.json<PageMeta[]>(store.list());
