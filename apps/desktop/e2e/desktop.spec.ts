@@ -481,6 +481,35 @@ test('vault files: documents open in their app, scripts and programs are only re
   }
 });
 
+test('a big graph is laid out by the worker under the app\'s CSP and settles (#g95wkd9y)', async () => {
+  // 2,000 linked notes: over the worker threshold (1,500), so the graph's
+  // layout runs in a Web Worker served under the packaged app's strict CSP.
+  mkdirSync(vault, { recursive: true });
+  for (let i = 0; i < 2000; i += 1) {
+    const base = Math.floor(i / 20) * 20;
+    writeFileSync(join(vault, `Note ${i}.md`), `See [[Note ${base + ((i - base + 1) % 20)}]] and [[Note ${(i + 97) % 2000}]].\n`);
+  }
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  const refused: string[] = [];
+  window.on('console', (message) => {
+    const text = message.text();
+    if (/Content Security Policy|Refused to|graph layout worker/i.test(text)) refused.push(text);
+  });
+  try {
+    await expect(window.getByTestId('page-item-Note 0')).toBeVisible({ timeout: 60_000 });
+    await window.getByTestId('sidebar-graph').click();
+    const canvas = window.getByTestId('graph-canvas');
+    await expect(canvas).toHaveAttribute('data-graph-layout', 'worker');
+    // "stopped" on the worker path comes only from the worker's own "done"
+    // (the fallback timer marks the view ready, never the engine stopped).
+    await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 120_000 });
+    await expect(canvas).toHaveAttribute('data-graph-ready', 'true');
+    expect(refused).toEqual([]);
+  } finally {
+    await app.close();
+  }
+});
+
 test('opening a folder that already has files writes nothing into it (#pc3wvc2u)', async () => {
   mkdirSync(vault, { recursive: true });
   writeFileSync(join(vault, 'report.pdf'), '%PDF-1.4');

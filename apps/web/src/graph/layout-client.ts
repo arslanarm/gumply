@@ -13,6 +13,10 @@ const listeners = new Map<number, (update: LayoutUpdate) => void>();
 function layoutWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL("./layout-worker.ts", import.meta.url), { type: "module" });
+  // A worker that can't load (a CSP, a missing chunk) or throws is reported,
+  // never silent: the graph would otherwise wait for a layout that never comes.
+  worker.onerror = (event) => console.error("[gumply] graph layout worker failed:", event.message || event);
+  worker.onmessageerror = () => console.error("[gumply] graph layout worker sent a message that couldn't be read");
   worker.onmessage = (event: MessageEvent<LayoutUpdate>) => {
     const listener = listeners.get(event.data.id);
     if (!listener) return;

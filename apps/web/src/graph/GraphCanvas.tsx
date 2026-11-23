@@ -1232,6 +1232,7 @@ export function GraphCanvas({
         data-graph-fit={String(fitGeneration)}
         data-graph-fit-reason={fitReason}
         data-graph-engine={engineStopped ? "stopped" : "running"}
+        data-graph-layout={engine.worker ? "worker" : "engine"}
         role="img"
         aria-label={ariaLabel}
       >
