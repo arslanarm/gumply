@@ -30,9 +30,25 @@
   --board-c6: #8b5cf6;
   --board-c6-fill: #f2ecfe;
   --board-c6-sticky: #e3d8fd;
+  /* Text drawn in a preset colour (plain text, frame labels): a deeper shade
+     of the same hue, ≥ 4.5:1 on the canvas and on its own fill (WCAG 1.4.3,
+     #jchhjepb). Strokes, borders and fills keep the colours above. */
+  --board-c1-text: #c03c41;
+  --board-c2-text: #ac5509;
+  --board-c3-text: #8d6c00;
+  --board-c4-text: #257b47;
+  --board-c5-text: #0b7788;
+  --board-c6-text: #7950d6;
 }
 
 :root[data-theme="dark"] {
+  /* Dark presets already pass as text. */
+  --board-c1-text: var(--board-c1);
+  --board-c2-text: var(--board-c2);
+  --board-c3-text: var(--board-c3);
+  --board-c4-text: var(--board-c4);
+  --board-c5-text: var(--board-c5);
+  --board-c6-text: var(--board-c6);
   --board-surface: #161616;
   --board-dot: #363633;
   --board-ink: #e8e6e1;
@@ -184,12 +200,38 @@
   field-sizing: content;
 }
 
+/*
+ * D39 (#jchhjepb): an unmarked text node on a board made outside Gumply is a
+ * card, as Obsidian 1.14.4 draws it (measured): 1 px border in the colour at
+ * 70% plus the same as a 1 px inner ring (uncoloured: a plain grey border),
+ * 8 px radius, a soft shadow, a 7% tint of the colour over the card, text in
+ * the normal text colour, 16 px in from the sides.
+ */
+.board-plain.is-card {
+  padding: 14px 16px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.3;
+  border: 1px solid color-mix(in srgb, var(--board-ink) 24%, var(--panel));
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 0.5px 1px 0.5px rgb(0 0 0 / 10%);
+}
+
+.board-plain.is-card.has-color {
+  border-color: color-mix(in srgb, var(--node-color) 70%, transparent);
+  background: color-mix(in srgb, var(--node-color) 7%, var(--panel));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--node-color) 70%, transparent),
+    0 0.5px 1px 0.5px rgb(0 0 0 / 10%);
+}
+
 /* Plain text: no box, left aligned. */
 .board-plain {
   width: 100%;
   height: 100%;
   padding: 6px 8px;
-  color: var(--node-color, var(--text));
+  color: var(--node-text, var(--node-color, var(--text)));
   font-size: 16px;
   overflow: hidden;
 }
@@ -285,7 +327,7 @@
   max-width: 100%;
   font-size: 13px;
   font-weight: 550;
-  color: var(--node-color, var(--muted));
+  color: var(--node-text, var(--node-color, var(--muted)));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

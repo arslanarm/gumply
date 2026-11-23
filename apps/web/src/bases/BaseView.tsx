@@ -412,7 +412,9 @@ function ViewTabs(props: {
   };
 
   return (
-    <div className="base-tabs" role="tablist" aria-label={t("bases.views")}>
+    <div className="base-tabs">
+      {/* The tabs only: "+" (a button that opens a menu) sits outside the tablist (WCAG 1.3.1, #jchhjepb). */}
+      <div className="base-tablist" role="tablist" aria-label={t("bases.views")}>
       {views.map((view) =>
         renaming === view.name ? (
           <input
@@ -451,6 +453,7 @@ function ViewTabs(props: {
           </button>
         ),
       )}
+      </div>
       <button
         type="button"
         className="base-tab base-tab-add"

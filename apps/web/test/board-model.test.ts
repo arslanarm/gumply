@@ -42,10 +42,13 @@ describe("factories", () => {
     expect(sticky.id).toMatch(/^[0-9a-f]{16}$/);
     expect(sticky.color).toBe("3");
 
+    // The Text tool marks its nodes (#jchhjepb): an unmarked text node is an Obsidian card.
+    expect(createText({ x: 0, y: 0, width: 1, height: 1 }).gumply).toEqual({ kind: "text" });
     expect(Object.keys(createText({ x: 0, y: 0, width: 1, height: 1 }))).toEqual([
       "id",
       "type",
       "text",
+      "gumply",
       "x",
       "y",
       "width",

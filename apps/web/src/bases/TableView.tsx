@@ -126,8 +126,9 @@ export function TableView(props: TableViewProps) {
   } as CSSProperties;
 
   return (
-    <div className="base-table" data-testid="base-table" role="table" aria-rowcount={result.rows.length + 1} style={style}>
-      <div className="base-table-scroll" ref={scrollRef} data-testid="base-table-scroll">
+    <div className="base-table" data-testid="base-table" style={style}>
+      {/* The table role is on the part that holds only rows; "New" and the column menus sit beside it (WCAG 1.3.1, #jchhjepb). */}
+      <div className="base-table-scroll" ref={scrollRef} data-testid="base-table-scroll" role="table" aria-rowcount={result.rows.length + 1}>
         <div className="base-table-head" role="row">
           {columns.map((column) => {
             const sort = sorts.find((item) => propertyId(String(item.property)) === column.id);
@@ -156,8 +157,8 @@ export function TableView(props: TableViewProps) {
             if (item.kind === "group") {
               return (
                 <div className="base-group-row" key={virtual.key} style={top} role="row" data-testid="base-group">
-                  <span className="base-group-label">{item.label || t("bases.noValue")}</span>
-                  <span className="base-group-count">{item.count}</span>
+                  <span className="base-group-label" role="cell">{item.label || t("bases.noValue")}</span>
+                  <span className="base-group-count" role="cell">{item.count}</span>
                 </div>
               );
             }
@@ -356,6 +357,18 @@ function ValueCell(props: {
   const editable = column.editable && !props.readOnly;
   const [editing, setEditing] = useState(false);
   const label = t("bases.editCell", { property: column.displayName ?? column.id.replace(/^note\./, ""), title: row.title });
+  // When the editor closes with Escape or a save, its input goes and focus
+  // would drop to <body>: give it back to the cell (WCAG 2.4.3, #jchhjepb).
+  // A click elsewhere has already moved focus, so it's left alone.
+  const cellRef = useRef<HTMLDivElement | null>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (wasEditing.current && !editing) {
+      const active = document.activeElement;
+      if (!active || active === document.body) cellRef.current?.focus();
+    }
+    wasEditing.current = editing;
+  }, [editing]);
 
   if (column.type === "checkbox") {
     return (
@@ -428,6 +441,7 @@ function ValueCell(props: {
 
   return (
     <div
+      ref={cellRef}
       className={`base-td${editable ? " is-editable" : ""}${column.type === "number" ? " is-number" : ""}`}
       role="cell"
       data-testid={`base-cell-${row.id}-${column.id}`}

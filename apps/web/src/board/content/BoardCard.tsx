@@ -61,6 +61,10 @@ const sameText = (a: string, b: string) =>
   a.trim().toLowerCase().replace(/\s+/g, " ") === b.trim().toLowerCase().replace(/\s+/g, " ");
 
 const TASK = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\](?:\s+|$)/;
+/** `> [!note] Title` (any depth of `>`, optional +/- fold marker). */
+const CALLOUT = /^\s*(?:>\s*)+\[!([^\]\s]+)\][+-]?\s*(.*)$/;
+/** Pandoc fenced divs: `::: {.column}`, `::::`, `:::`. */
+const FENCED_DIV = /^\s*:{3,}/;
 
 /**
  * The first lines of a page as plain text (no Markdown syntax). A leading H1
@@ -83,8 +87,16 @@ export function previewLines(markdown: string, title?: string): PreviewLine[] {
       continue;
     }
     if (inFence) continue;
-    const task = TASK.exec(raw);
-    if (task) {
+    // Structure isn't text (#jchhjepb): a column fence is skipped, a callout
+    // shows its title (or its type, "Note") instead of `[!note] …`.
+    if (FENCED_DIV.test(raw)) continue;
+    const callout = CALLOUT.exec(raw);
+    const task = callout ? null : TASK.exec(raw);
+    if (callout) {
+      const title = plainTextSnippet(callout[2] ?? "").trim();
+      const type = callout[1]!;
+      lines.push({ text: title || type.charAt(0).toUpperCase() + type.slice(1).toLowerCase() });
+    } else if (task) {
       lines.push({ text: plainTextSnippet(raw.slice(task[0].length)).trim(), task: { checked: task[1] !== " " } });
     } else {
       const line = plainTextSnippet(raw).trim();

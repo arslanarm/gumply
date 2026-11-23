@@ -2214,8 +2214,11 @@ export function App() {
                   <span className="empty-state-icon" aria-hidden="true">
                     <Icon name="monitor" size={26} />
                   </span>
-                  <h2>{serverDownMessage()}</h2>
-                  <p>{t("errors.serverDownHint")}</p>
+                  {/* Announced when it appears (WCAG 4.1.3, #jchhjepb); the sidebar's copy stays quiet. */}
+                  <div role="alert" data-testid="server-error-message">
+                    <h2>{serverDownMessage()}</h2>
+                    <p>{t("errors.serverDownHint")}</p>
+                  </div>
                   <button type="button" className="button-primary" onClick={handleRetry}>
                     {t("common.retry")}
                   </button>

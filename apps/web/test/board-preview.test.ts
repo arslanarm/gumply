@@ -38,3 +38,24 @@ describe("page card tasks (#vc4hivrr)", () => {
     ]);
   });
 });
+
+describe("page card callouts and columns (#jchhjepb)", () => {
+  it("a callout shows its title, or its type when it has none; its body follows", () => {
+    expect(previewLines("> [!note] Remember\n> Callouts hold side notes.\n\n> [!TIP]-\n> Folded body\n>> [!warning] **Nested**")).toEqual([
+      { text: "Remember" },
+      { text: "Callouts hold side notes." },
+      { text: "Tip" },
+      { text: "Folded body" },
+      { text: "Nested" },
+    ]);
+  });
+  it("Pandoc column fences are structure, not text", () => {
+    expect(previewLines(":::: {.columns}\n::: {.column width=\"40%\"}\nLeft.\n:::\n::: {.column}\nRight.\n:::\n::::")).toEqual([
+      { text: "Left." },
+      { text: "Right." },
+    ]);
+  });
+  it("a quote that isn't a callout keeps its text", () => {
+    expect(previewLines("> Just a quote")).toEqual([{ text: "Just a quote" }]);
+  });
+});

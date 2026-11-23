@@ -44,6 +44,7 @@ export function DatePicker({ value, datetime, label, autoOpen = false, onChange 
   const [open, setOpen] = useState(autoOpen);
   const parsed = parseDateValue(value);
   const shown = formatDateValue(value);
+  const visible = shown ?? (value || t("datePicker.empty"));
 
   const close = (refocus: boolean) => {
     setOpen(false);
@@ -57,13 +58,15 @@ export function DatePicker({ value, datetime, label, autoOpen = false, onChange 
         type="button"
         className={`date-picker-value${shown === null && !value ? " is-empty" : ""}`}
         data-testid="date-picker-value"
-        aria-label={label}
+        // WCAG 2.5.3: the name holds what the button shows ("due: Dec 1, 2026"),
+        // so "click Dec 1" works for speech users (a11y audit P3, #jchhjepb).
+        aria-label={`${label}: ${visible}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
         <Icon name="calendar" size={14} />
-        <span>{shown ?? (value || t("datePicker.empty"))}</span>
+        <span>{visible}</span>
       </button>
       {open ? (
         <DatePopover

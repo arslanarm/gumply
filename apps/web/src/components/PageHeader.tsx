@@ -281,7 +281,9 @@ export function PageHeader({
             className={`page-icon-button${page.icon || fallbackIcon ? " has-icon" : ""}`}
             data-testid="page-icon-button"
             data-tooltip={page.icon ? t("page.changeIcon") : t("page.addIcon")}
-            aria-label={page.icon ? t("page.changeIconLabel") : t("page.addIconLabel")}
+            // Without an icon the visible "Add icon" is the name (WCAG 2.5.3, #jchhjepb);
+            // an emoji alone needs the label.
+            aria-label={page.icon || fallbackIcon ? t("page.changeIconLabel") : undefined}
             aria-expanded={iconOpen}
             aria-haspopup="dialog"
             ref={iconButtonRef}

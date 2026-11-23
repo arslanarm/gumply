@@ -136,7 +136,8 @@ test.describe('board engine (W1)', () => {
     const text = await serialized(page);
     expect(text.startsWith('{\n\t"nodes":[\n')).toBe(true);
     expect(text).toMatch(/"text":"Sticky",\n\t\t\t"gumply":\{"kind":"sticky"\},\n\t\t\t"x":/);
-    expect(text).toContain('"text":"Plain text","x":');
+    // The Text tool marks its nodes (#jchhjepb): unmarked text is an Obsidian card.
+    expect(text).toMatch(/"text":"Plain text",\n\t\t\t"gumply":\{"kind":"text"\},\n\t\t\t"x":/);
   });
 
   test('a new frame is named right away; typing never triggers tool shortcuts', async ({ page }) => {

@@ -7,7 +7,7 @@ import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { createContext, memo, useContext, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { fileUrl } from "../api/client.js";
 import { colorStyle, solidColor } from "./colors.js";
-import { useBoardActions, useBoardRenderers, type BoardCardRenderProps } from "./context.js";
+import { BoardLookContext, useBoardActions, useBoardRenderers, type BoardCardRenderProps } from "./context.js";
 import type { BoardFlowNode } from "./flow.js";
 import { BoardIcon } from "./icons.js";
 import { inkExtent, inkPath } from "./ink.js";
@@ -266,11 +266,14 @@ export const TextNode = memo(function TextNode({ id, data, selected }: BoardNode
   useT();
   const { node, editing } = data;
   const text = nodeText(node);
+  // D39 (#jchhjepb): an unmarked text node on a board made elsewhere is a card, as Obsidian draws it.
+  const card = useContext(BoardLookContext).textCards && node.gumply === undefined;
+  const look = `board-plain${text ? "" : " is-empty"}${card ? ` is-card${node.color ? " has-color" : ""}` : ""}`;
   return (
     <>
       <Resizer id={id} selected={data.resizable} minWidth={40} minHeight={24} />
       <ConnectHandles />
-      <div className={`board-plain${text ? "" : " is-empty"}`} style={colorStyle(node.color)} data-testid="board-text">
+      <div className={look} style={colorStyle(node.color)} data-testid="board-text" data-card={card ? "true" : undefined}>
         {editing ? (
           <TextEditor
             node={node}

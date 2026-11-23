@@ -11,6 +11,7 @@ import {
   canvasText,
   emptyCanvas,
   gumplyNodeData,
+  isGumplyBoard,
   isPresetColor,
   parseCanvas,
   rewriteCanvas,
@@ -332,5 +333,22 @@ describe("helpers", () => {
     expect(canvasBounds([])).toBeNull();
     const board = parseCanvas(fixture("obsidian-basic.canvas"));
     expect(canvasBounds(board.nodes)).toEqual({ x: -420, y: -300, width: 1460, height: 800 });
+  });
+});
+
+describe("Obsidian text cards (#jchhjepb, D39)", () => {
+  const text = (id: string, extra: Record<string, unknown> = {}) => ({ id, type: "text", text: id, x: 0, y: 0, width: 10, height: 10, ...extra }) as CanvasNode;
+  it("a board with no Gumply data anywhere is an Obsidian board", () => {
+    expect(isGumplyBoard({ nodes: [text("a"), text("b", { color: "2" })], edges: [] })).toBe(false);
+  });
+  it("Gumply metadata or Gumply data on any node makes it a Gumply board", () => {
+    expect(isGumplyBoard({ nodes: [text("a")], edges: [], gumply: { icon: "🧭" } })).toBe(true);
+    expect(isGumplyBoard({ nodes: [text("a"), text("s", { gumply: { kind: "sticky" } })], edges: [] })).toBe(true);
+  });
+  it("the Text tool's mark is a text node", () => {
+    const marked = text("t", { gumply: { kind: "text" } });
+    expect(gumplyNodeData(marked)).toEqual({ kind: "text" });
+    expect(canvasNodeKind(marked)).toBe("text");
+    expect(canvasNodeKind(text("plain"))).toBe("text");
   });
 });

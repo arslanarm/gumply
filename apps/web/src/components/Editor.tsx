@@ -90,6 +90,7 @@ import { normalizeEditorMarkdown } from "../lib/markdown.js";
 import { taskCheckboxLabel } from "../lib/task.js";
 import { createExitTopExtension, focusStartNow } from "../editor/title-navigation.js";
 import { t } from "../i18n/index.js";
+import { scrollBehavior } from "../lib/motion.js";
 
 export interface EditorControls {
   /** Id of the page this editor shows (controls outlive a page switch). */
@@ -985,7 +986,7 @@ export function Editor({
 
     const dom = editor.view.nodeDOM(headingPos);
     if (dom instanceof HTMLElement) {
-      dom.scrollIntoView({ block: "center", behavior: "smooth" });
+      dom.scrollIntoView({ block: "center", behavior: scrollBehavior() });
     }
     onHeadingResultRef.current?.(true);
   }, [editor, headingToReveal]);

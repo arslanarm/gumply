@@ -33,6 +33,13 @@ export interface BoardActions {
 
 export const BoardActionsContext = createContext<BoardActions | null>(null);
 
+/**
+ * How this board draws an unmarked `text` node (#jchhjepb, D39): as an
+ * Obsidian card on a board Gumply hasn't written to, else as plain text.
+ * Decided once when the board opens, so adding a sticky doesn't restyle it.
+ */
+export const BoardLookContext = createContext<{ textCards: boolean }>({ textCards: false });
+
 export function useBoardActions(): BoardActions {
   const actions = useContext(BoardActionsContext);
   if (!actions) throw new Error("useBoardActions outside a board");
