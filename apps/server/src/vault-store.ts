@@ -122,7 +122,7 @@ import {
   type ConflictsList,
   type PossibleCopy,
 } from "@gumply/core";
-import { badRequest, conflict, notFound } from "./errors.js";
+import { badRequest, conflict, notFound, payloadTooLarge } from "./errors.js";
 import {
   boardDiff,
   budgetFor,
@@ -148,6 +148,7 @@ import {
   type HistoryMove,
   type HistoryReason,
   type HistorySource,
+  type HistoryUndid,
   type HistoryUsage,
 } from "./history.js";
 
@@ -166,6 +167,8 @@ export interface HistoryItem {
   version: string;
   pinned: boolean;
   restoredFrom?: string;
+  /** When the restore was an Undo of an action (spec/api v1.34): `keep-copy`. */
+  undid?: HistoryUndid;
   /** The page's title when this version was made, when it differs from now. */
   title?: string;
   /** Its folder then ("" for the top level), when it differs from now. */
@@ -4795,7 +4798,7 @@ export class VaultStore {
    * written exactly into the current file. Never renames. 409 when the file
    * changed since `expectedUpdated`.
    */
-  restoreVersion(id: PageId, file: string, input: { expectedUpdated?: string; writer?: string } = {}): Promise<Page | BoardDocument> {
+  restoreVersion(id: PageId, file: string, input: { expectedUpdated?: string; writer?: string; undid?: HistoryUndid } = {}): Promise<Page | BoardDocument> {
     return this.enqueue(async () => {
       const record = this.historyRecord(id);
       const entry = await this.historyEntry(record, file);
@@ -4821,9 +4824,53 @@ export class VaultStore {
         // The bytes Gumply wrote before are the `before-restore` version now.
         this.forgetSessionBytes(record.id);
         this.reindexAll();
-        await saveVersion(this.root, { id: record.id, ext, bytes, version: fresh.updated, source: "app", restoredFrom: entry.file });
+        await saveVersion(this.root, { id: record.id, ext, bytes, version: fresh.updated, source: "app", restoredFrom: entry.file, ...(input.undid ? { undid: input.undid } : {}) });
       }
       return record.kind === "whiteboard" ? this.getBoard(record.id) : this.get(record.id);
+    });
+  }
+
+  /**
+   * spec/api v1.34 (#chbpc9yb): keep text that is about to be dropped (a save
+   * conflict's Reload) as a `before-reload` version. The bytes are those a save
+   * of it would have written: the file's frontmatter as it is on disk with this
+   * body, or the board serialized. The page file is never written (D37). Same
+   * input limits as a save. Returns the new entry, or null when the bytes
+   * equal the newest version.
+   */
+  saveUnsavedVersion(id: PageId, input: { content?: unknown; board?: unknown }): Promise<HistoryItem | null> {
+    return this.enqueue(async () => {
+      const record = this.historyRecord(id);
+      let bytes: Buffer;
+      if (record.kind === "whiteboard") {
+        if (typeof input.board !== "object" || input.board === null || Array.isArray(input.board)) throw badRequest("board must be a JSON Canvas object");
+        const text = JSON.stringify(input.board);
+        if (text.length > MAX_CONTENT_LENGTH) throw payloadTooLarge("board is too large");
+        let board: CanvasBoard;
+        try {
+          board = parseCanvas(text);
+        } catch (error) {
+          throw badRequest(error instanceof Error ? error.message : "Invalid board");
+        }
+        bytes = Buffer.from(serializeCanvas(board), "utf8");
+      } else {
+        if (typeof input.content !== "string") throw badRequest("content must be a string");
+        if (input.content.length > MAX_CONTENT_LENGTH) throw payloadTooLarge("content is too large");
+        const onDisk = await readFile(record.filePath, "utf8").catch(() => null);
+        // The frontmatter as on disk (none for a plain note), with this body: no header key is touched.
+        bytes = Buffer.from(serializeNoteLike(onDisk === null ? null : parseNoteTemplate(onDisk), {}, input.content, []), "utf8");
+      }
+      const newest = await newestVersion(this.root, record.id);
+      if (newest && newest.sha256 === sha256(bytes)) return null;
+      const entry = await saveVersion(this.root, {
+        id: record.id,
+        ext: record.kind === "whiteboard" ? "canvas" : "md",
+        bytes,
+        version: record.updated,
+        source: "app",
+        reason: "before-reload",
+      });
+      return this.historyItem(entry, record);
     });
   }
 
@@ -5157,6 +5204,7 @@ export class VaultStore {
       version: entry.version,
       pinned: entry.pinned === true,
       ...(entry.restoredFrom ? { restoredFrom: entry.restoredFrom } : {}),
+      ...(entry.undid ? { undid: entry.undid } : {}),
       ...(title !== undefined ? { title } : {}),
       ...(folder !== undefined ? { folder } : {}),
     };

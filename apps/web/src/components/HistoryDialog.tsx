@@ -239,10 +239,13 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
   };
 
   const secondary = (entry: HistoryItem): string | null => {
+    // spec/api v1.34 (#chbpc9yb): say what an Undo undid, not "Restored the version saved just now".
+    if (entry.undid === "keep-copy") return t("history.reason.undidKeepCopy");
     if (entry.restoredFrom) return t("history.reason.restoredFrom", { time: timeOf(entry.restoredFrom) || entry.restoredFrom });
     if (entry.title !== undefined) return t("history.renamedFrom", { title: entry.title });
     if (entry.folder !== undefined) return t("history.movedFrom", { folder: entry.folder === "" ? t("history.topLevel") : entry.folder });
     if (entry.reason === "session" || entry.reason === "trash" || entry.reason === "conflict") return t(`history.reason.${entry.reason}` as const);
+    if (entry.reason === "before-reload") return t("history.reason.beforeReload");
     return null;
   };
 

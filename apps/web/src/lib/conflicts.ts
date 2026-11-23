@@ -63,7 +63,7 @@ export function resolvedToast(
           if (result.beforeVersion && copy.originalId) {
             const original = copy.originalId;
             const updated = copy.kind === "whiteboard" ? (await api.getBoard(original)).meta.updated : (await api.getPage(original)).updated;
-            await api.restoreVersion(original, result.beforeVersion, updated);
+            await api.restoreVersion(original, result.beforeVersion, updated, "undo-keep-copy");
           }
           await restoreCopy();
         },

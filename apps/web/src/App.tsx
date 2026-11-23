@@ -91,7 +91,7 @@ import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.
 import { ConflictCompareDialog, type CompareTarget } from "./components/ConflictCompareDialog.js";
 import { ConflictsView, fileNameOf } from "./components/ConflictsView.js";
 import { resolvedToast } from "./lib/conflicts.js";
-import { choosePageFont, choosePageWidth, loadLastPage, loadStartupMode, loadStartupPage, saveLastPage, saveStartupMode, saveStartupPage, startupTarget } from "./lib/page-appearance.js";
+import { choosePageFont, choosePageWidth, followPageInStorage, loadLastPage, loadStartupMode, loadStartupPage, saveLastPage, saveStartupMode, saveStartupPage, startupTarget } from "./lib/page-appearance.js";
 import { PagePickerDialog } from "./components/PagePickerDialog.js";
 import { LazyBoardPreview } from "./board/index.js";
 import type { ConflictCopy, ConflictKeep, PossibleCopy } from "@gumply/core";
@@ -375,6 +375,14 @@ export function App() {
 
   // "<Page> — <Vault folder> — Gumply" (#ux5cukze); the desktop window shows it.
   const [vaultPath, setVaultPath] = useState<string | null>(null);
+  const vaultPathRef = useRef<string | null>(null);
+  vaultPathRef.current = vaultPath;
+  /** #chbpc9yb: the stored startup and last pages follow a rename or move made here. */
+  const followInStorage = useCallback((from: PageId, to: PageId) => {
+    const vault = vaultPathRef.current;
+    if (!vault || from === to) return;
+    setStartupPageId(followPageInStorage(vault, from, to));
+  }, []);
   /** v0.9 F: the page chosen to open on startup in this vault, and its picker. */
   const [startupPageId, setStartupPageId] = useState<PageId | null>(null);
   const [startupPickerOpen, setStartupPickerOpen] = useState(false);
@@ -642,6 +650,7 @@ export function App() {
     (previousId: PageId, updated: Page) => {
       saveEpoch.current += 1;
       const newId = updated.id;
+      followInStorage(previousId, newId);
       const remap = (id: PageId): PageId =>
         newId === previousId
           ? id
@@ -711,12 +720,42 @@ export function App() {
     [applySavedPage],
   );
 
-  const handleConflictReload = useCallback(() => {
+  /**
+   * #chbpc9yb (spec/api v1.34): Reload drops the editor's unsaved text, so keep
+   * it in History first, as a "Before reload" version. If that fails, ask before
+   * reloading: the user asked to reload, not to lose text with no way back.
+   */
+  const [reloadNotKept, setReloadNotKept] = useState(false);
+  const handleConflictReload = useCallback(async () => {
+    const id = selectedRef.current;
+    const controls = documentControls();
+    if (id !== null && controls?.isDirty()) {
+      const board = isBoardId(id) ? (boardControls.current?.getBoard() ?? null) : null;
+      const input = isBoardId(id) ? (board ? { board } : null) : editorControls.current ? { content: editorControls.current.getMarkdown() } : null;
+      if (input) {
+        try {
+          await api.keepUnsaved(id, input);
+        } catch {
+          setReloadNotKept(true);
+          return;
+        }
+      }
+    }
     requestPageReload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestPageReload]);
 
-  const handleConflictKeepMine = useCallback(() => {
-    void documentControls()?.keepMine();
+  /** #chbpc9yb (F2): after "Keep mine", the keys go back to where the user was typing. */
+  const handleConflictKeepMine = useCallback(async () => {
+    const controls = documentControls();
+    if (!controls) return;
+    const editor = isBoardId(selectedRef.current) ? null : editorControls.current;
+    const selection = editor?.getSelection() ?? null;
+    // Focus back first, not after the save: keys typed while it's on its way
+    // must reach the editor (they're saved after it, as any typing is).
+    if (editor) editor.focusAt(selection ? selection.to : 0);
+    else document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true });
+    await controls.keepMine();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -835,11 +874,21 @@ export function App() {
 
       // v0.9 F (#if236h9k): what opens on startup is a per-device setting, per vault.
       const vault = await api.health().then((health) => health.vaultPath, () => "");
+      const ids = new Set(list.filter((item) => item.kind !== "folder").map((item) => item.id));
+      let chosen = vault ? loadStartupPage(vault) : null;
+      // #chbpc9yb: renamed outside Gumply since: the server redirects the old id (#3c444g85).
+      if (vault && chosen !== null && !ids.has(chosen) && loadStartupMode() === "page" && !isBoardId(chosen) && !isBaseId(chosen)) {
+        const renamed = await api.getPage(chosen).then((found) => found.id, () => null);
+        if (renamed !== null && renamed !== chosen && ids.has(renamed)) {
+          saveStartupPage(vault, renamed);
+          chosen = renamed;
+        }
+      }
       const choice = startupTarget({
-        ids: new Set(list.filter((item) => item.kind !== "folder").map((item) => item.id)),
+        ids,
         newVaultPage,
         mode: loadStartupMode(),
-        chosen: vault ? loadStartupPage(vault) : null,
+        chosen,
         last: vault ? loadLastPage(vault) : null,
         fallback: chooseLandingPage(list, null),
       });
@@ -1805,6 +1854,7 @@ export function App() {
   /** Moves change path-based ids; keep the open page (or a moved ancestor) open. */
   const followMovedPage = useCallback(
     (oldId: PageId, newId: PageId) => {
+      followInStorage(oldId, newId);
       const current = selectedRef.current;
       if (current === null) return;
       if (current !== oldId && !current.startsWith(`${oldId}/`)) return;
@@ -2282,8 +2332,8 @@ export function App() {
         <SaveStatus
           state={saveState}
           onRetry={handleRetrySave}
-          onReload={handleConflictReload}
-          onKeepMine={handleConflictKeepMine}
+          onReload={() => void handleConflictReload()}
+          onKeepMine={() => void handleConflictKeepMine()}
         />
         <ThemeToggle />
         <SettingsMenu
@@ -2294,6 +2344,8 @@ export function App() {
           {...(updates ? { onOpenUpdates: () => setUpdatesOpen(true) } : {})}
           startupPage={{
             title: startupPageId ? (pages.find((item) => item.id === startupPageId)?.title ?? null) : null,
+            // #chbpc9yb: chosen, but no longer in the vault (deleted, or renamed where we couldn't follow).
+            missing: startupPageId !== null && listStatus === "ready" && !pages.some((item) => item.id === startupPageId),
             onChoose: () => setStartupPickerOpen(true),
           }}
         />
@@ -2897,6 +2949,20 @@ export function App() {
           }}
         />
       ) : null}
+      {reloadNotKept ? (
+        <ConfirmDialog
+          heading={t("save.reloadNotKept.heading")}
+          body={t("save.reloadNotKept.body")}
+          confirmLabel={t("save.reloadNotKept.reloadAnyway")}
+          testId="reload-not-kept"
+          onCancel={() => setReloadNotKept(false)}
+          onConfirm={() => {
+            setReloadNotKept(false);
+            requestPageReload();
+          }}
+        />
+      ) : null}
+
       {updatesOpen && updates ? <UpdatesDialog state={updates} onChange={setUpdates} onClose={() => setUpdatesOpen(false)} /> : null}
 
       {shortcutsOpen ? <ShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}

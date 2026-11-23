@@ -1,7 +1,9 @@
+import { rename } from 'node:fs/promises';
+import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { deletePage } from './support/api';
-import { API_URL } from './support/env';
+import { deletePage, listPages } from './support/api';
+import { API_URL, E2E_VAULT } from './support/env';
 
 /**
  * v0.9 F (#if236h9k): Settings → page font and width, and what opens on
@@ -95,4 +97,46 @@ test('on startup: today\'s daily note, made if missing (ru)', async ({ page, vau
   await expect(page).toHaveURL(new RegExp(`#/.*${today}$`));
   const pages = (await (await request.get(`${API_URL}/api/pages`)).json()) as Array<{ id: string }>;
   expect(pages.filter((item) => item.id.includes(today)).map((item) => item.id)).toEqual([`Daily/${today}`]);
+});
+
+test('the chosen startup page follows a rename in the app and outside it; a deleted one is named in Settings (#chbpc9yb)', async ({ page, vault, request }) => {
+  await vault.seed([{ title: 'Alpha', content: 'Alpha.' }, { title: 'Beta', content: 'Beta.' }]);
+  await page.goto('/#/Beta');
+  await expect(page.getByTestId('editor-content')).toContainText('Beta.');
+  await openSettings(page);
+  await page.getByTestId('settings-startup').selectOption('page');
+  await page.getByTestId('page-picker-input').fill('alp');
+  await page.getByTestId('page-picker-option-Alpha').click();
+
+  // Renamed in the sidebar: startup still opens it, under its new name.
+  const row = page.getByTestId('page-item-Alpha');
+  await row.click();
+  await page.keyboard.press('F2');
+  await page.getByTestId('page-rename-input-Alpha').fill('Roadmap');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('page-item-Roadmap')).toBeVisible();
+  await page.goto('/#/Beta');
+  await expect(page.getByTestId('editor-content')).toContainText('Beta.');
+  await page.goto('/');
+  await expect(page).toHaveURL(/#\/Roadmap$/);
+  await openSettings(page);
+  await expect(page.getByTestId('settings-startup-choose')).toContainText('Roadmap');
+  await page.keyboard.press('Escape');
+
+  // Renamed outside Gumply (another app): the server follows it, and so does startup.
+  await page.goto('/#/Beta');
+  await expect(page.getByTestId('editor-content')).toContainText('Beta.');
+  await rename(path.join(E2E_VAULT, 'Roadmap.md'), path.join(E2E_VAULT, 'Plan 2027.md'));
+  await expect.poll(async () => (await listPages(request)).map((item) => item.id), { timeout: 10_000 }).toContain('Plan 2027');
+  await page.goto('/');
+  await expect(page).toHaveURL(/#\/Plan%202027$|#\/Plan 2027$/);
+
+  // Deleted: startup falls back to the last page, and Settings says what happened.
+  await page.goto('/#/Beta');
+  await expect(page.getByTestId('editor-content')).toContainText('Beta.');
+  await deletePage(request, 'Plan 2027');
+  await page.goto('/');
+  await expect(page).toHaveURL(/#\/Beta$/);
+  await openSettings(page);
+  await expect(page.getByTestId('settings-startup-page-title')).toHaveText('The chosen page was deleted');
 });

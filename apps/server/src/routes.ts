@@ -288,9 +288,13 @@ export function createApiRoutes(store: VaultStore): Hono {
     const body = await readJson(c);
     const expectedUpdated = optionalString(body, "expectedUpdated");
     const writer = optionalString(body, "writer");
+    // spec/api v1.34: why the restore happens. Only "undo-keep-copy" (a conflict's Keep copy, undone).
+    const why = optionalString(body, "why");
+    if (why !== undefined && why !== "undo-keep-copy") throw badRequest('why must be "undo-keep-copy"');
     const result = await store.restoreVersion(c.req.param("id"), c.req.param("file"), {
       ...(expectedUpdated !== undefined ? { expectedUpdated } : {}),
       ...(writer !== undefined ? { writer: writer.slice(0, 64) } : {}),
+      ...(why === "undo-keep-copy" ? { undid: "keep-copy" as const } : {}),
     });
     if ("board" in result) return c.json<BoardDocument>(result);
     return c.json<Page>({ ...result, properties: (await store.pageProperties(result.id)) ?? [] });
@@ -304,6 +308,15 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   // The page was closed: its editing session ends now (D41 rule 6).
   api.post("/history/:id/checkpoint", async (c) => c.json({ saved: await store.checkpoint(c.req.param("id")) }));
+
+  // spec/api v1.34 (#chbpc9yb): keep text about to be dropped (a save conflict's
+  // Reload) as a `before-reload` version. Same trust level and input limits as
+  // `PUT /pages/:id`; it never writes the page file.
+  api.post("/history/:id/unsaved", async (c) => {
+    const body = await readJson(c);
+    const item = await store.saveUnsavedVersion(c.req.param("id"), { content: body.content, board: body.board });
+    return item ? c.json({ file: item.file, at: item.at }, 201) : c.json({ saved: false });
+  });
 
   api.get("/history-orphans", async (c) => c.json(await store.historyOrphans()));
 

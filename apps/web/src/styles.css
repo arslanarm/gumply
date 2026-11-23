@@ -7887,6 +7887,12 @@ input {
   white-space: nowrap;
 }
 
+/* #chbpc9yb: the chosen page is gone (startup falls back to the last page). */
+.settings-startup-page-title.is-missing {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .settings-startup-page-action {
   flex: none;
   color: var(--accent);

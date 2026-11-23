@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { listPages } from './support/api';
-import { E2E_VAULT } from './support/env';
+import { API_URL, E2E_VAULT } from './support/env';
 
 /**
  * D43 / spec/sync-conflicts (#3jkf2gf6): a sync tool's conflict copy shows as
@@ -171,4 +171,25 @@ test('a board Compare names the cards that differ, worded for the copy (#h4tyk92
   await expect(changes).toContainText('1 card only in the page');
   await expect(changes.getByTestId('history-board-list')).toContainText('Launch plan, v2');
   await expect(changes.getByTestId('history-board-list')).toContainText('Old idea');
+});
+
+test('undoing Keep copy is named in History: "Undid Keep copy" (#chbpc9yb)', async ({ page, vault, request }) => {
+  await vault.seed([{ title: 'Note', content: 'Mine.' }]);
+  await syncIn(request, { [`${SYNCTHING}.md`]: 'Theirs.\n' });
+  await page.goto('/');
+  await page.getByTestId('sidebar-conflicts').click();
+  const view = page.getByTestId('conflicts-view');
+  await view.getByTestId(`conflict-row-${SYNCTHING}`).getByTestId('conflict-row-keep-copy').click();
+  await expect.poll(() => readFile(path.join(E2E_VAULT, 'Note.md'), 'utf8')).toBe('Theirs.\n');
+  await page.getByTestId('undo-delete').click();
+  await expect.poll(() => readFile(path.join(E2E_VAULT, 'Note.md'), 'utf8')).toContain('Mine.');
+
+  const items = (await (await request.get(`${API_URL}/api/history/Note`)).json()) as { items: Array<{ undid?: string }> };
+  expect(items.items.some((item) => item.undid === 'keep-copy')).toBe(true);
+  await page.goto('/#/Note');
+  await page.getByTestId('page-item-Note').hover();
+  await page.getByTestId('page-menu-button-Note').click();
+  await page.getByTestId('page-history-Note').click();
+  await expect(page.getByTestId('history-dialog')).toContainText('Undid Keep copy');
+  await expect(page.getByTestId('history-dialog')).not.toContainText('Restored the version saved just now');
 });

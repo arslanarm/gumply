@@ -933,9 +933,19 @@ export function Editor({
         from: editor.state.selection.from,
         to: editor.state.selection.to,
       }),
+      // Synchronous (#chbpc9yb), as focusBody is (#d636gdxx): TipTap's focus()
+      // waits a frame, and a key typed meanwhile went to <body>.
       focusAt: (position: number) => {
-        const max = editor.state.doc.content.size;
-        editor.commands.focus(Math.min(Math.max(position, 0), max));
+        if (editor.isDestroyed) return;
+        const { state, view } = editor;
+        const at = Math.min(Math.max(position, 0), state.doc.content.size);
+        view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(at))).scrollIntoView());
+        view.focus();
+        requestAnimationFrame(() => {
+          if (editor.isDestroyed) return;
+          const active = document.activeElement;
+          if (active === null || active === document.body) view.focus();
+        });
       },
       isDirty: () => autosave.isDirty(),
       keepMine: async () => {

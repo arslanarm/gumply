@@ -722,7 +722,12 @@
     "conflictLong": "This page changed on disk.",
     "conflictShort": "Changed on disk",
     "reload": "Reload",
-    "keepMine": "Keep mine"
+    "keepMine": "Keep mine",
+    "reloadNotKept": {
+      "heading": "Your unsaved text couldn't be kept in History.",
+      "body": "If you reload now, the text you haven't saved is lost.",
+      "reloadAnyway": "Reload anyway"
+    }
   },
   "search": {
     "label": "Search pages",
@@ -890,7 +895,8 @@
       "none": "No page chosen",
       "pickerLabel": "Choose the page to open on startup",
       "pickerPlaceholder": "Find a page…",
-      "pickerNoMatch": "No page matches “{{query}}”"
+      "pickerNoMatch": "No page matches “{{query}}”",
+      "gone": "The chosen page was deleted"
     }
   },
   "update": {
@@ -1684,7 +1690,9 @@
       "session": "End of editing",
       "trash": "Before the Trash",
       "conflict": "Kept from a conflict",
-      "restoredFrom": "Restored the version saved {{time}}"
+      "restoredFrom": "Restored the version saved {{time}}",
+      "undidKeepCopy": "Undid Keep copy",
+      "beforeReload": "Before reload"
     },
     "renamedFrom": "Renamed from “{{title}}”",
     "movedFrom": "Moved from {{folder}}",

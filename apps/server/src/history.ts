@@ -25,7 +25,11 @@ import { writeAtomic } from "./temp-files.js";
 export const HISTORY_DIR = join(".gumply", "history");
 
 export type HistorySource = "app" | "external" | "mcp" | "import" | "restore";
-export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict";
+/** `before-reload` (spec/api v1.34, #chbpc9yb): the editor's unsaved text, kept before a save conflict's Reload dropped it. */
+export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict" | "before-reload";
+
+/** What a restore undid (spec/api v1.34): `keep-copy` is the Undo of a conflict's "Keep copy". */
+export type HistoryUndid = "keep-copy";
 
 /** One version (a file) of a page or board. */
 export interface HistoryEntry {
@@ -43,6 +47,8 @@ export interface HistoryEntry {
   pinned?: boolean;
   /** On the entry a restore made: the version it restored. */
   restoredFrom?: string;
+  /** On that entry, when the restore was an Undo of an action (spec/api v1.34). */
+  undid?: HistoryUndid;
 }
 
 /**
@@ -198,6 +204,7 @@ export interface SaveVersion {
   tool?: string;
   client?: string;
   restoredFrom?: string;
+  undid?: HistoryUndid;
   now?: Date;
 }
 
@@ -229,6 +236,7 @@ export async function saveVersion(root: string, input: SaveVersion): Promise<His
     bytes: input.bytes.length,
     sha256: hash,
     ...(input.restoredFrom ? { restoredFrom: input.restoredFrom } : {}),
+    ...(input.undid ? { undid: input.undid } : {}),
   };
   await appendFile(join(dir, INDEX_FILE), `${JSON.stringify(entry)}\n`);
   await prune(dir, now.getTime());

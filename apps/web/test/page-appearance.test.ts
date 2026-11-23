@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPageAppearance,
+  followPageInStorage,
   loadLastPage,
   loadPageFont,
   loadPageWidth,
   loadStartupMode,
   loadStartupPage,
+  remapPageId,
   saveLastPage,
   savePageFont,
   savePageWidth,
@@ -76,5 +78,27 @@ describe("startup", () => {
     expect(startupTarget({ ...base, mode: "page", chosen: "Deleted" })).toEqual({ kind: "page", id: "Plan" });
     expect(startupTarget({ ...base, mode: "last", last: "Deleted" })).toEqual({ kind: "page", id: "Welcome" });
     expect(startupTarget({ ...base, mode: "last", last: null, fallback: null })).toEqual({ kind: "none" });
+  });
+});
+
+describe("the stored pages follow renames and moves (#chbpc9yb)", () => {
+  it("remapPageId: the page itself and its sub-pages; others unchanged", () => {
+    expect(remapPageId("Notes/Plan", "Notes/Plan", "Notes/Roadmap")).toBe("Notes/Roadmap");
+    expect(remapPageId("Notes/Plan/Week 1", "Notes/Plan", "Archive/Plan")).toBe("Archive/Plan/Week 1");
+    expect(remapPageId("Notes/Planner", "Notes/Plan", "Notes/Roadmap")).toBe("Notes/Planner");
+    expect(remapPageId("Other", "Notes/Plan", "Notes/Roadmap")).toBe("Other");
+  });
+
+  it("followPageInStorage: the chosen startup page and the last page, in this vault only", () => {
+    const storage = memory();
+    saveStartupPage("/vaults/a", "Notes/Plan", storage);
+    saveLastPage("/vaults/a", "Notes/Plan/Week 1", storage);
+    saveStartupPage("/vaults/b", "Notes/Plan", storage);
+    expect(followPageInStorage("/vaults/a", "Notes/Plan", "Archive/Roadmap", storage)).toBe("Archive/Roadmap");
+    expect(loadStartupPage("/vaults/a", storage)).toBe("Archive/Roadmap");
+    expect(loadLastPage("/vaults/a", storage)).toBe("Archive/Roadmap/Week 1");
+    expect(loadStartupPage("/vaults/b", storage)).toBe("Notes/Plan");
+    // An unrelated rename changes nothing.
+    expect(followPageInStorage("/vaults/a", "Elsewhere", "Moved", storage)).toBe("Archive/Roadmap");
   });
 });
