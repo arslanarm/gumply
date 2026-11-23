@@ -7,6 +7,9 @@ import {
   ATTACHMENT_PALETTE_INDEX,
   attachmentPath,
   buildGraphModel,
+  rememberedGraphTagSlots,
+  tagColorSlots,
+  tagSlot,
   filterGraph,
   groupColorer,
   isAttachmentNodeId,
@@ -85,6 +88,8 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
   }, [load, settingsReady]);
 
   const model = useMemo(() => (data ? buildGraphModel(data) : null), [data]);
+  // #cp7xvwjc: the global graph's tag colours if it was opened this session, else this graph's own.
+  const tagSlots = useMemo(() => (model ? (rememberedGraphTagSlots() ?? tagColorSlots(model.nodes)) : undefined), [model]);
   // The search box and Orphans are about the whole vault: here only tags,
   // attachments and "existing files only" apply, so the page itself always stays.
   const filtered = useMemo(
@@ -107,8 +112,10 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
   const colorOf = useMemo(() => {
     const group = groupColorer(groups ?? []);
     return (node: GraphNode, palette: readonly string[]) =>
-      group(node) ?? (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null);
-  }, [groups]);
+      group(node) ??
+      (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null) ??
+      (node.tags[0] ? (palette[tagSlot(node.tags[0], tagSlots)] ?? null) : null);
+  }, [groups, tagSlots]);
   /** Tag nodes have no page to open; attachment nodes open the file. */
   const openNode = (id: PageId) => {
     if (isTagNodeId(id)) return;

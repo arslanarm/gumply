@@ -14,7 +14,10 @@ import {
   groupColorer,
   isAttachmentNodeId,
   isTagNodeId,
-  paletteIndex,
+  colouringTags,
+  rememberGraphTagSlots,
+  tagColorSlots,
+  tagSlot,
   type GhostNode,
 } from "./graph-model.js";
 import { useGraphSettings } from "./graph-settings.js";
@@ -91,6 +94,12 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   }, [wantAttachments, data]);
 
   const model = useMemo(() => (data ? buildGraphModel(data) : null), [data]);
+  // #cp7xvwjc: distinct colours for the tags in this graph (unfiltered, so a search never recolours).
+  const tagSlots = useMemo(() => (model ? tagColorSlots(model.nodes) : undefined), [model]);
+  useEffect(() => {
+    if (tagSlots) rememberGraphTagSlots(tagSlots);
+  }, [tagSlots]);
+  const legendTags = useMemo(() => (model ? colouringTags(model.nodes).slice(0, 8) : []), [model]);
   const filters = settings?.filters;
   const filtered = useMemo(
     () =>
@@ -120,8 +129,10 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   const colorOf = useMemo(() => {
     const group = groupColorer(groups ?? []);
     return (node: GraphNode, palette: readonly string[]) =>
-      group(node) ?? (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null);
-  }, [groups]);
+      group(node) ??
+      (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null) ??
+      (node.tags[0] ? (palette[tagSlot(node.tags[0], tagSlots)] ?? null) : null);
+  }, [groups, tagSlots]);
   const legendGroups = useMemo(() => (groups ?? []).filter((group) => group.query.trim().length > 0), [groups]);
 
   /** Tag nodes search for their tag; attachment nodes open the file. */
@@ -369,14 +380,15 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                 {t("graph.legendIcon")}
               </p>
             ) : null}
-            {(data?.tags ?? []).length > 0 ? (
+            {legendTags.length > 0 ? (
               <p className="graph-legend-caption">{t("graph.legendColour")}</p>
             ) : null}
-            {(data?.tags ?? []).slice(0, 8).map((tag) => (
-              <p key={tag} className="graph-legend-row graph-legend-tag">
+            {/* #cp7xvwjc: the tags that colour nodes, most nodes first, in the colour drawn. */}
+            {legendTags.map((tag) => (
+              <p key={tag} className="graph-legend-row graph-legend-tag" data-testid="graph-legend-tag" data-tag={tag}>
                 <span
                   className="graph-legend-dot"
-                  style={{ background: `var(--graph-${paletteIndex(tag)})` }}
+                  style={{ background: `var(--graph-${tagSlot(tag, tagSlots)})` }}
                   aria-hidden="true"
                 />
                 #{tag}
