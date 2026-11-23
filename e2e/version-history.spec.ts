@@ -212,6 +212,7 @@ async function pickVersionWith(dialog: ReturnType<Page['getByTestId']>, text: st
   const count = await items.count();
   for (let index = 0; index < count; index += 1) {
     await items.nth(index).click();
+    await expect(items.nth(index)).toHaveAttribute('aria-selected', 'true');
     const preview = dialog.getByTestId('history-preview');
     // A real wait: `isVisible()` ignores its timeout and answers at once, so under load
     // the right version (still drawing its cards) was skipped for the next one.
