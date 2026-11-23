@@ -397,6 +397,7 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
                   <Icon name="clock" size={26} />
                 </span>
                 <p>{t("history.empty")}</p>
+                <p className="history-empty-note">{t("history.emptyViewed")}</p>
               </div>
             ) : (
               <>

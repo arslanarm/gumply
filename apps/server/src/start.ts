@@ -38,6 +38,31 @@ export interface StartOptions {
   /** Desktop only (spec/auto-update): the update controller behind `/api/desktop/updates`. */
   updates?: DesktopUpdates;
   log?: (message: string) => void;
+  /** Tests: how long close() waits for the history flush (default {@link HISTORY_FLUSH_TIMEOUT_MS}). */
+  historyFlushTimeoutMs?: number;
+}
+
+/** Shutdown never waits on version history longer than this (#a7qepp99). */
+export const HISTORY_FLUSH_TIMEOUT_MS = 3_000;
+
+/**
+ * Run the history flush, but give up after `timeoutMs`: a stuck history
+ * write must never hold up quitting. Open sessions then miss their last
+ * "End of editing" version; the page files themselves are already saved.
+ */
+export async function flushWithin(flush: () => Promise<void>, timeoutMs: number, warn: (message: string) => void = (message) => console.error(message)): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), timeoutMs);
+    timer.unref?.();
+  });
+  const done = flush().then(
+    () => "done" as const,
+    () => "done" as const,
+  );
+  const result = await Promise.race([done, timedOut]);
+  if (timer) clearTimeout(timer);
+  if (result === "timeout") warn(`[gumply] version history flush still running after ${timeoutMs} ms; closing without it`);
 }
 
 export interface RunningServer {
@@ -108,7 +133,7 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
       new Promise<void>((resolveClose) => {
         store.stopWatching();
         // D41: open editing sessions become versions on close.
-        void store.flushHistory().finally(() => {
+        void flushWithin(() => store.flushHistory(), options.historyFlushTimeoutMs ?? HISTORY_FLUSH_TIMEOUT_MS).finally(() => {
           server.close(() => resolveClose());
           // Keep-alive sockets (the window) would hold close() open.
           (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
