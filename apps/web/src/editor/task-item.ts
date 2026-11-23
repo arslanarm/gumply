@@ -48,10 +48,22 @@ export const AccessibleTaskItem = TaskItem.extend({
           t("tasks.checkboxFallback", { text: currentNode.textContent || t("tasks.emptyItem") });
       };
 
+      // In a read-only editor that can't tick (the History preview, a trashed
+      // page), the box is shown but isn't a control: out of the Tab order and
+      // announced as unavailable (#jchhjepb). Not `disabled`: that greys it out.
+      const syncLocked = () => {
+        const locked = !editor.isEditable && !this.options.onReadOnlyChecked;
+        checkbox.tabIndex = locked ? -1 : 0;
+        if (locked) checkbox.setAttribute("aria-disabled", "true");
+        else checkbox.removeAttribute("aria-disabled");
+      };
+
       checkboxWrapper.contentEditable = "false";
       checkbox.type = "checkbox";
       checkbox.checked = node.attrs.checked;
       updateA11Y();
+      syncLocked();
+      editor.on("transaction", syncLocked);
 
       checkbox.addEventListener("mousedown", (event) => event.preventDefault());
       checkbox.addEventListener("change", (event) => {
@@ -108,6 +120,9 @@ export const AccessibleTaskItem = TaskItem.extend({
         },
         ignoreMutation: (mutation) =>
           mutation.type === "attributes" && mutation.target === checkbox,
+        destroy: () => {
+          editor.off("transaction", syncLocked);
+        },
       };
     };
   },

@@ -220,3 +220,28 @@ test('reduced motion (2.3.3): with "reduce", the board\'s Fit jumps instead of a
   await page.waitForTimeout(500);
   expect(soon).toBe(await viewport());
 });
+
+test('read-only (4.1.2): task boxes in the History preview are not offered as controls', async ({ page, vault, request }) => {
+  const [note] = await vault.seed([{ title: 'Tasks', content: '- [ ] Write the brief\n- [x] Book the room\n' }]);
+  await request.put(`${API_URL}/api/pages/${encodeURIComponent(note!.id)}`, { data: { content: '- [ ] Write the brief\n- [x] Book the room\n- [ ] One more\n' } });
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Tasks');
+  // The page's own boxes are controls.
+  const own = page.getByTestId('editor').getByRole('checkbox');
+  await expect(own).toHaveCount(3);
+  for (const box of await own.all()) {
+    await expect(box).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(box).not.toHaveAttribute('tabindex', '-1');
+  }
+  await page.getByTestId(`page-item-${note!.id}`).hover();
+  await page.getByTestId(`page-menu-button-${note!.id}`).click();
+  await page.getByTestId(`page-history-${note!.id}`).click();
+  const dialog = page.getByTestId('history-dialog');
+  await dialog.getByTestId('history-item').first().click();
+  const preview = dialog.getByTestId('history-preview').getByRole('checkbox');
+  await expect(preview).toHaveCount(2);
+  for (const box of await preview.all()) {
+    await expect(box).toHaveAttribute('aria-disabled', 'true');
+    await expect(box).toHaveAttribute('tabindex', '-1');
+  }
+});
