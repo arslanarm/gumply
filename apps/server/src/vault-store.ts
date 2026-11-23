@@ -7,6 +7,8 @@ import {
   frontmatterKeys,
   HEADER_KEYS,
   inferPropertyType,
+  isAliasesKey,
+  isTagsKey,
   isPropertyType,
   mergeRenameLinks,
   isValidPropertyKey,
@@ -1068,6 +1070,8 @@ export class VaultStore {
   private readonly scanYaml = new Map<string, { mtimeMs: number; yaml: string | null }>();
   /** Test counter (#kguq5bc5): files read to get a page's properties. */
   propertyFileReads = 0;
+  /** Test counter (N11): kept frontmatter YAML blocks parsed for properties. */
+  propertyYamlParses = 0;
 
   constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number; instanceId?: string | InstanceId } = {}) {
     this.root = resolve(root);
@@ -2071,8 +2075,9 @@ export class VaultStore {
     return this.enqueue(async () => {
       const record = this.pages.get(this.resolveId(id));
       if (!record || record.kind !== "page") return null;
-      const index = await this.propertyIndex();
-      return typedProperties(await this.rawPropertiesOf(record), (key) => index.typeOf(key));
+      const raw = await this.rawPropertiesOf(record);
+      const typeOf = await this.typeOfKeys(raw.map((property) => property.key));
+      return typedProperties(raw, typeOf);
     });
   }
 
@@ -2155,12 +2160,57 @@ export class VaultStore {
     if (scanned.mtimeMs !== record.fileMtimeMs) return null;
     let raw: RawProperty[] = [];
     try {
+      this.propertyYamlParses += 1;
       raw = readRawProperties(scanned.yaml);
     } catch {
       raw = [];
     }
     this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw });
     return raw;
+  }
+
+  /**
+   * N11: the types of just these keys, exactly as `propertyIndex().typeOf`
+   * gives them, without parsing every page's frontmatter: a key's values are
+   * collected only from pages whose frontmatter can hold it (`mayHoldKeys`).
+   * Keys are matched exactly (case-sensitive), as the full index does; `tags`
+   * and `aliases` in any case are typed by name. Values keep the full index's
+   * page order, so a tie in the inference breaks the same way.
+   */
+  private async typeOfKeys(keys: readonly string[]): Promise<(key: string) => PropertyType> {
+    const stored = await this.propertyTypes.read();
+    const wanted = [...new Set(keys)].filter((key) => stored[key] === undefined && !isTagsKey(key) && !isAliasesKey(key));
+    const values = new Map<string, unknown[]>(wanted.map((key) => [key, []]));
+    const typeOf = (key: string): PropertyType => stored[key] ?? inferPropertyType(key, values.get(key) ?? []);
+    if (wanted.length === 0) return typeOf;
+    // A key YAML may write escaped or folded can't be found as a substring: the full index.
+    if (wanted.some((key) => /['"\\\r\n]/.test(key))) {
+      const index = await this.propertyIndex();
+      return (key) => index.typeOf(key);
+    }
+    const copies = this.copyIds();
+    for (const record of this.pages.values()) {
+      if (record.kind !== "page" || copies.has(record.id) || !this.mayHoldKeys(record, wanted)) continue;
+      for (const property of await this.rawPropertiesOf(record)) values.get(property.key)?.push(property.value);
+    }
+    return typeOf;
+  }
+
+  /**
+   * N11: can this page's frontmatter hold one of `keys`? False only when the
+   * YAML the scan kept (still this version of the file) contains none of them
+   * as text and has no escape (`\`) or explicit key (`? `) that could spell a
+   * key differently. Anything else (cached, or unknown) is a yes: it is parsed.
+   */
+  private mayHoldKeys(record: PageRecord, keys: readonly string[]): boolean {
+    const cached = this.rawPropertyCache.get(record.filePath);
+    if (cached && cached.mtimeMs === record.fileMtimeMs) return true;
+    const scanned = this.scanYaml.get(record.filePath);
+    if (!scanned || scanned.mtimeMs !== record.fileMtimeMs) return true;
+    const yaml = scanned.yaml;
+    if (yaml === null) return false;
+    if (yaml.includes("\\") || /^[ \t]*\?/m.test(yaml)) return true;
+    return keys.some((key) => yaml.includes(key));
   }
 
   /** Types and counts across the vault's pages. */
@@ -4020,8 +4070,8 @@ export class VaultStore {
   private async mentionTermsOf(id: PageId): Promise<string[]> {
     const record = this.pages.get(id);
     if (!record) return [];
-    const index = await this.propertyIndex();
-    const properties = typedProperties(await this.rawPropertiesOf(record), (key) => index.typeOf(key));
+    const raw = await this.rawPropertiesOf(record);
+    const properties = typedProperties(raw, await this.typeOfKeys(raw.map((property) => property.key)));
     // `aliases` in any case, the first in file order (#ippqkgus), as Obsidian reads it.
     const aliasKey = frontmatterKey(properties.map((property) => property.key), "aliases");
     const aliases = properties.find((property) => property.key === aliasKey)?.value;
