@@ -3,7 +3,8 @@ import { EditorContent, useEditor, type Editor as TipTapEditor } from "@tiptap/r
 import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import type { Attachment, Page, PageMeta } from "@gumply/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { applyCombobox, listboxIdFrom, optionId } from "../lib/editor-combobox.js";
 import { Markdown } from "tiptap-markdown";
 import { TextSelection } from "@tiptap/pm/state";
 import { api, ApiRequestError } from "../api/client.js";
@@ -919,6 +920,33 @@ export function Editor({
     });
   }, [editor, autosave, onReady, page.id, readOnly]);
 
+  // #5nykir64: while a suggestion menu is open, the editor is a combobox that controls it and
+  // points at the keyboard's option (WAI-ARIA 1.2), so screen readers hear the options.
+  const comboBase = useId();
+  const slashListId = listboxIdFrom(comboBase, "slash");
+  const linkListId = listboxIdFrom(comboBase, "link");
+  const emojiListId = listboxIdFrom(comboBase, "emoji");
+  const openList: { id: string; items: readonly unknown[]; index: number } | null = menu
+    ? { id: slashListId, items: menu.items, index: menu.index }
+    : emojiMenu
+      ? { id: emojiListId, items: emojiMenu.items, index: emojiMenu.index }
+      : linkMenu
+        ? { id: linkListId, items: linkMenu.items, index: linkMenu.index }
+        : null;
+  const openListId = openList?.id ?? null;
+  const activeOptionId = openList && openList.items.length > 0 ? optionId(openList.id, Math.min(openList.index, openList.items.length - 1)) : null;
+  useEffect(() => {
+    const root = editor?.view.dom;
+    if (!root) return;
+    applyCombobox(root, openListId ? { listboxId: openListId, activeId: activeOptionId } : null);
+  }, [editor, openListId, activeOptionId]);
+  useEffect(() => {
+    const root = editor?.view.dom;
+    return () => {
+      if (root) applyCombobox(root, null);
+    };
+  }, [editor]);
+
   // `[[Page#Heading]]`: scroll to the heading, or report it missing.
   useEffect(() => {
     if (!editor || !headingToReveal) return;
@@ -986,6 +1014,7 @@ export function Editor({
       {editor && !readOnly ? <EditorContextMenu editor={editor} /> : null}
       {menu ? (
         <SlashMenu
+          id={slashListId}
           items={menu.items}
           index={menu.index}
           left={menu.left}
@@ -1005,6 +1034,7 @@ export function Editor({
       ) : null}
       {emojiMenu ? (
         <EmojiMenu
+          id={emojiListId}
           items={emojiMenu.items}
           index={emojiMenu.index}
           left={emojiMenu.left}
@@ -1046,6 +1076,7 @@ export function Editor({
       ) : null}
       {linkMenu ? (
         <LinkMenu
+          id={linkListId}
           items={linkMenu.items}
           index={linkMenu.index}
           left={linkMenu.left}

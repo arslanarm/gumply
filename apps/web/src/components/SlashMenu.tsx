@@ -3,6 +3,7 @@ import { Icon, type IconName } from "./Icon.js";
 import type { SlashItem } from "../editor/slash-items.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
+import { optionId } from "../lib/editor-combobox.js";
 
 export interface SlashMenuProps {
   items: readonly SlashItem[];
@@ -11,6 +12,8 @@ export interface SlashMenuProps {
   top: number;
   onSelect: (item: SlashItem) => void;
   onHover: (index: number) => void;
+  /** The listbox id the editor's combobox attributes point at (#5nykir64). */
+  id: string;
 }
 
 const SLASH_ICONS: Record<string, IconName> = {
@@ -36,7 +39,7 @@ const SLASH_ICONS: Record<string, IconName> = {
 };
 
 /** Floating `/` menu. Positioned from the suggestion's client rect. */
-export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashMenuProps) {
+export function SlashMenu({ items, index, left, top, onSelect, onHover, id }: SlashMenuProps) {
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -53,6 +56,7 @@ export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashM
       ref={menuRef}
       className={`slash-menu${overflowing ? " is-scrollable" : ""}`}
       data-testid="slash-menu"
+      id={id}
       role="listbox"
       aria-label={t("slash.menuLabel")}
       style={{ left, top }}
@@ -62,6 +66,7 @@ export function SlashMenu({ items, index, left, top, onSelect, onHover }: SlashM
           key={item.key}
           type="button"
           role="option"
+          id={optionId(id, itemIndex)}
           aria-selected={itemIndex === index}
           className={`slash-menu-item${itemIndex === index ? " is-active" : ""}`}
           data-testid={`slash-menu-item-${item.key}`}

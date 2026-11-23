@@ -3,6 +3,7 @@ import { Icon } from "./Icon.js";
 import { isImageFile, type LinkSuggestion } from "../lib/wikilinks.js";
 import { useActiveOptionVisible, usePointerMovedSinceOpen } from "./use-active-option.js";
 import { useT } from "../i18n/index.js";
+import { optionId } from "../lib/editor-combobox.js";
 
 export interface LinkMenuProps {
   items: readonly LinkSuggestion[];
@@ -11,10 +12,12 @@ export interface LinkMenuProps {
   top: number;
   onSelect: (item: LinkSuggestion) => void;
   onHover: (index: number) => void;
+  /** The listbox id the editor's combobox attributes point at (#5nykir64). */
+  id: string;
 }
 
 /** Floating `[[` menu (pages + Create row). */
-export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMenuProps) {
+export function LinkMenu({ items, index, left, top, onSelect, onHover, id }: LinkMenuProps) {
   const t = useT();
   const pointerMoved = usePointerMovedSinceOpen();
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -31,6 +34,7 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
       ref={menuRef}
       className={`link-menu${overflowing ? " is-scrollable" : ""}`}
       data-testid="link-menu"
+      id={id}
       role="listbox"
       aria-label={t("board.linkPage")}
       style={{ left, top }}
@@ -43,6 +47,7 @@ export function LinkMenu({ items, index, left, top, onSelect, onHover }: LinkMen
             key={item.key}
             type="button"
             role="option"
+            id={optionId(id, itemIndex)}
             aria-selected={itemIndex === index}
             className={`link-menu-item${itemIndex === index ? " is-active" : ""}`}
             data-testid={
