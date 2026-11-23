@@ -20,8 +20,12 @@ async function openLab(page: Page) {
 }
 
 async function addSticky(page: Page, x: number, y: number, text: string) {
-  await page.mouse.dblclick(x, y);
-  await expect(page.getByTestId('board-text-editor')).toBeFocused();
+  // Under load the first double-click can land before the board handles it; click again only if it added nothing.
+  const before = (await board(page)).nodes.length;
+  await expect(async () => {
+    if ((await board(page)).nodes.length === before) await page.mouse.dblclick(x, y);
+    await expect(page.getByTestId('board-text-editor')).toBeFocused({ timeout: 2_000 });
+  }).toPass({ timeout: 10_000 });
   await page.keyboard.type(text);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('board-text-editor')).toHaveCount(0);
@@ -52,6 +56,7 @@ test.describe('boards from the keyboard (#pujmbsyz)', () => {
 
     await page.keyboard.press('Tab');
     await expect.poll(() => focusedNodeId(page)).toBe(a);
+    // Focus moves in a frame; wait until the selection has rendered too, or a key can act on the old one.
     await expect.poll(() => selectedIds(page)).toEqual([a]);
     await expect(announcer(page)).toHaveText('Selected: Sticky note: A');
 
@@ -71,6 +76,8 @@ test.describe('boards from the keyboard (#pujmbsyz)', () => {
     await page.getByTestId('board').focus();
     await page.keyboard.press('Tab');
     await expect.poll(() => focusedNodeId(page)).toBe(a);
+    // Focus moves in a frame; wait until the selection has rendered too, or a key can act on the old one.
+    await expect.poll(() => selectedIds(page)).toEqual([a]);
 
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('board-text-editor')).toBeFocused();
@@ -92,6 +99,8 @@ test.describe('boards from the keyboard (#pujmbsyz)', () => {
     await page.getByTestId('board').focus();
     await page.keyboard.press('Tab');
     await expect.poll(() => focusedNodeId(page)).toBe(a);
+    // Focus moves in a frame; wait until the selection has rendered too, or a key can act on the old one.
+    await expect.poll(() => selectedIds(page)).toEqual([a]);
 
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Shift+ArrowDown');
@@ -105,6 +114,8 @@ test.describe('boards from the keyboard (#pujmbsyz)', () => {
     await page.getByTestId('board').focus();
     await page.keyboard.press('Tab');
     await expect.poll(() => focusedNodeId(page)).toBe(a);
+    // Focus moves in a frame; wait until the selection has rendered too, or a key can act on the old one.
+    await expect.poll(() => selectedIds(page)).toEqual([a]);
 
     await page.keyboard.press('Delete');
     await expect.poll(async () => (await board(page)).nodes.map((node) => node.text).sort()).toEqual(['B', 'C']);

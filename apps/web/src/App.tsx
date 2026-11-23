@@ -326,6 +326,8 @@ export function App() {
   // Set when App itself moved the URL to a renamed page's new id, so the load
   // effect keeps the open page instead of refetching and remounting it.
   const followedRename = useRef<PageId | null>(null);
+  /** #3c444g85: the vanished page whose outside rename is being asked about (one request at a time). */
+  const followingOutsideRename = useRef<PageId | null>(null);
   // Pages whose rename request is in flight. The disk poll may already see the
   // new file name; it must not treat the open page as deleted meanwhile.
   const renamesInFlight = useRef(new Set<PageId>());
@@ -735,6 +737,24 @@ export function App() {
     const loaded = pageRef.current;
 
     if (!meta) {
+      // #3c444g85: renamed outside Gumply. The server pairs the old file with the new one (same
+      // inode, title or content) and redirects the old id: follow it in place, keeping the open
+      // editor and any unsaved text, which then saves to the new file.
+      if (loaded && !isBoardId(currentId) && followingOutsideRename.current !== currentId) {
+        followingOutsideRename.current = currentId;
+        try {
+          const renamed = await api.getPage(currentId);
+          if (renamed.id !== currentId && list.some((item) => item.id === renamed.id) && selectedRef.current === currentId) {
+            setDeletedOnDisk(null);
+            applySavedPage(currentId, renamed);
+            return;
+          }
+        } catch {
+          // No redirect: it was deleted (handled below).
+        } finally {
+          followingOutsideRename.current = null;
+        }
+      }
       if (loaded) {
         // An external rename keeps the title in frontmatter; follow it.
         const moved = list.find((item) => item.title === loaded.title);
@@ -769,7 +789,7 @@ export function App() {
           : null;
       requestPageReload();
     }
-  }, [navigate, requestPageReload]);
+  }, [applySavedPage, navigate, requestPageReload]);
 
   useEffect(() => {
     const timer = window.setInterval(() => void refreshFromDisk(), 2000);

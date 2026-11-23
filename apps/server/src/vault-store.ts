@@ -1223,6 +1223,8 @@ export class VaultStore {
 
   private async refreshFromDisk(scope: RefreshScope = { kind: "all" }): Promise<boolean> {
     const epochBefore = this.fileIndexEpoch;
+    // #3c444g85: each page's inode before this rescan (the read cache is replaced by it).
+    const inodesBefore = this.inodesById();
     const { pages: next, folders } =
       (scope.kind === "paths" ? await this.rereadKnownFiles(scope.paths) : null) ??
       (await this.scanRecords(scope.kind === "paths" ? scope.paths : undefined));
@@ -1246,20 +1248,31 @@ export class VaultStore {
     const externalMoves: Array<{ from: PageId; to: PageId }> = [];
     // D20: a page renamed outside Gumply, matched as below, keeps its history.
     const historyMoves: Array<{ from: PageId; to: PageId }> = [];
+    const inodesAfter = removed ? this.inodesById() : new Map<PageId, string>();
+    const fresh = [...next.values()].filter((record) => !this.pages.has(record.id));
+    const claimed = new Set<PageId>();
     for (const [oldId, oldRecord] of this.pages) {
       if (next.has(oldId)) continue;
-      // Pages keep their frontmatter title across a rename; a board's title
-      // is its file name, so a renamed board is recognised by its content.
+      const candidates = fresh.filter((record) => !claimed.has(record.id) && record.kind === oldRecord.kind);
+      if (candidates.length === 0) continue;
+      // #3c444g85, in order:
+      // 1. the same inode and mtime: a rename keeps both (POSIX, and NTFS), exact even for empty or
+      //    identical notes; the mtime rules out an inode the file system reused for a new file;
+      // 2. pages keep their frontmatter title across a rename; a board's title is its file name, so a
+      //    renamed board is recognised by its content;
+      // 3. where inodes aren't stable (some network or sync mounts): the one new page with exactly the
+      //    same content, never an empty one (two empty notes must not pair).
+      const inode = inodesBefore.get(oldId);
       const oldBoard = oldRecord.board ? serializeCanvas(oldRecord.board) : null;
-      const moved = [...next.values()].find(
-        (record) =>
-          !this.pages.has(record.id) &&
-          record.kind === oldRecord.kind &&
-          (oldBoard !== null
-            ? record.board !== undefined && serializeCanvas(record.board) === oldBoard
-            : record.title === oldRecord.title),
+      const sameContent = candidates.filter((record) =>
+        oldBoard !== null ? record.board !== undefined && serializeCanvas(record.board) === oldBoard : record.content === oldRecord.content,
       );
+      const moved =
+        (inode ? candidates.find((record) => inodesAfter.get(record.id) === inode) : undefined) ??
+        (oldBoard !== null ? sameContent[0] : candidates.find((record) => record.title === oldRecord.title)) ??
+        (oldBoard === null && oldRecord.content.trim() !== "" && sameContent.length === 1 ? sameContent[0] : undefined);
       if (!moved) continue;
+      claimed.add(moved.id);
       this.addRedirect(oldId, moved.id);
       historyMoves.push({ from: oldId, to: moved.id });
       // Same file, moved: identical content (a rename that also edits it is
@@ -1318,6 +1331,19 @@ export class VaultStore {
     if (targetsMoved) this.reindexAll();
     else this.recomputeSources(changedIds);
     return true;
+  }
+
+  /**
+   * Each page's or board's file identity from the read cache: `inode:mtime`
+   * (absent when the file system reports no inode). A rename keeps both.
+   */
+  private inodesById(): Map<PageId, string> {
+    const out = new Map<PageId, string>();
+    for (const { key, id } of this.readCache.values()) {
+      const [mtime, , inode] = key.split(":");
+      if (inode && Number(inode) > 0) out.set(id, `${inode}:${mtime}`);
+    }
+    return out;
   }
 
   private recordSignature(record: PageRecord): string {
