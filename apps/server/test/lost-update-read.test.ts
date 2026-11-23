@@ -15,11 +15,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * file, so a save based on that text is a 409 and the other write survives.
  */
 let replaceAfterRead: { path: string; text: string } | null = null;
+let replaceAfterRename: { path: string; text: string } | null = null;
 
-async function replaceNow(path: string): Promise<void> {
-  const pending = replaceAfterRead;
+async function replaceNow(path: string, which: "read" | "rename" = "read"): Promise<void> {
+  const pending = which === "read" ? replaceAfterRead : replaceAfterRename;
   if (!pending || pending.path !== path) return;
-  replaceAfterRead = null;
+  if (which === "read") replaceAfterRead = null;
+  else replaceAfterRename = null;
   const real = await vi.importActual<typeof fsPromises>("node:fs/promises");
   const temp = `${path}.other-program`;
   await real.writeFile(temp, pending.text);
@@ -37,6 +39,10 @@ vi.mock("node:fs/promises", async () => {
       const result = await real.readFile(...args);
       if (typeof args[0] === "string") await replaceNow(args[0]);
       return result;
+    },
+    rename: async (...args: Parameters<typeof real.rename>) => {
+      await real.rename(...args);
+      await replaceNow(String(args[1]), "rename");
     },
     open: async (...args: Parameters<typeof real.open>) => {
       const handle = await real.open(...args);
@@ -61,6 +67,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   replaceAfterRead = null;
+  replaceAfterRename = null;
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -94,6 +101,33 @@ describe("a read racing another program's atomic save keeps text and mtime toget
       } else {
         const record = store.getBoard(id);
         await expect(store.updateBoard(id, { board: { nodes: [], edges: [] }, expectedUpdated: record.meta.updated })).rejects.toMatchObject({ status: 409 });
+      }
+      expect(await readFile(file, "utf8")).toBe(theirs);
+    });
+  }
+
+  // The same race on the write side: the store saves (temp + rename), and another program
+  // replaces the file before the store stats it. The mtime the store keeps must be its own
+  // file's, so the next save is a 409 rather than erasing the other program's bytes.
+  for (const [kind, name, first, theirs] of [
+    ["page", "Plan.md", "# Plan\n\nIntro.\n", "# Plan\n\nIntro.\n\nUser line.\n"],
+    ["board", "Map.canvas", '{"nodes":[],"edges":[]}', '{"nodes":[{"id":"u","type":"text","text":"User card","x":0,"y":0,"width":100,"height":50}],"edges":[]}'],
+  ] as const) {
+    it(`a ${kind}: a save racing another program's save keeps its own mtime, so the next save is a conflict`, async () => {
+      const file = join(dir, name);
+      await writeFile(file, first);
+      const store = new VaultStore(dir);
+      await store.init();
+      replaceAfterRename = { path: file, text: theirs };
+      if (kind === "page") {
+        const saved = await store.update("Plan", { content: "# Plan\n\nIntro.\n\nModel line.\n", expectedUpdated: store.get("Plan").updated });
+        expect(replaceAfterRename).toBeNull(); // the race really happened
+        await expect(store.update("Plan", { content: "# Plan\n\nIntro.\n\nModel line 2.\n", expectedUpdated: saved.updated })).rejects.toMatchObject({ status: 409 });
+      } else {
+        const card = { id: "m", type: "text", text: "Model card", x: 0, y: 0, width: 100, height: 50 };
+        const saved = await store.updateBoard("Map.canvas", { board: { nodes: [card], edges: [] } as never, expectedUpdated: store.getBoard("Map.canvas").meta.updated });
+        expect(replaceAfterRename).toBeNull();
+        await expect(store.updateBoard("Map.canvas", { board: { nodes: [], edges: [] }, expectedUpdated: saved.meta.updated })).rejects.toMatchObject({ status: 409 });
       }
       expect(await readFile(file, "utf8")).toBe(theirs);
     });

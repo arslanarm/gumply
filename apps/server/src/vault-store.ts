@@ -2632,10 +2632,15 @@ export class VaultStore {
       record.boardRepaired = false;
     }
     const temporary = tempPathBeside(record.filePath);
+    let stats: import("node:fs").Stats;
     try {
       await mkdir(dirname(record.filePath), { recursive: true });
       const next = text ?? serializeCanvas(board);
       await writeFile(temporary, next, "utf8");
+      // The mtime of the file just written, taken from the temp file before the
+      // rename (a rename keeps the inode and its mtime): a stat of the path after
+      // it could be another program's file that replaced ours in between (#a76d3php).
+      stats = await stat(temporary);
       const previous = await readFile(record.filePath).catch(() => null);
       if (previous !== null && !previous.equals(Buffer.from(next, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
       if (previous === null) await this.freshHistory(record.filePath);
@@ -2645,7 +2650,6 @@ export class VaultStore {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    const stats = await stat(record.filePath);
     const meta = canvasMeta(board);
     record.board = board;
     record.content = canvasText(board);
@@ -2807,14 +2811,18 @@ export class VaultStore {
 
   private async writeBaseFile(record: PageRecord, text: string): Promise<void> {
     const temporary = tempPathBeside(record.filePath);
+    let stats: import("node:fs").Stats;
     try {
       await writeFile(temporary, text, "utf8");
+      // The mtime of the file just written, taken from the temp file before the
+      // rename (a rename keeps the inode and its mtime): a stat of the path after
+      // it could be another program's file that replaced ours in between (#a76d3php).
+      stats = await stat(temporary);
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    const stats = await stat(record.filePath);
     record.baseSource = text;
     record.fileMtimeMs = stats.mtimeMs;
     record.updated = mtimeVersion(stats.mtimeMs);
@@ -5473,12 +5481,16 @@ export class VaultStore {
     const temporary = tempPathBeside(filePath);
     try {
       await writeFile(temporary, text, "utf8");
+      // The mtime of the file just written, taken from the temp file before the
+      // rename (a rename keeps the inode and its mtime): a stat of the path after
+      // it could be another program's file that replaced ours in between (#a76d3php).
+      const written = await stat(temporary);
       if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
       if (previous === null) await this.freshHistory(filePath);
       await rename(temporary, filePath);
       await this.rememberWrite(filePath, text);
       return {
-        mtimeMs: (await stat(filePath)).mtimeMs,
+        mtimeMs: written.mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
         // caller uses the file time (`mtimeVersion`), as for plain notes.
         frontmatter: !plain && versionKey,
