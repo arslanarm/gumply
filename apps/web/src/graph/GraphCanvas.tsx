@@ -75,7 +75,7 @@ type ThemeColorToken = Exclude<keyof ThemeColors, "palette" | "page">;
 
 const FALLBACK_COLORS: ThemeColors = {
   text: "#26251f",
-  muted: "#6f6d65",
+  muted: "#65635c",
   panel: "#ffffff",
   bg: "#f7f6f3",
   accent: "#4f46e5",

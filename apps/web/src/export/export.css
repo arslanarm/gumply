@@ -9,15 +9,16 @@ html[data-theme] {
   color-scheme: light;
   --surface-page: #ffffff;
   --text: #26251f;
-  --muted: #6f6d65;
+  --muted: #65635c;
   --border: #e5e3dc;
   --accent: #4f46e5;
   --hover: #ebeae5;
-  --code-keyword: #cf222e;
+  --code-keyword: #c6202c;
+  --callout-title-keep: 70%;
   --code-string: #0a3069;
   --code-number: #0550ae;
-  --code-comment: #6e7781;
-  --code-title: #8250df;
+  --code-comment: #5e666e;
+  --code-title: #7749cd;
   --code-type: #953800;
   --code-tag: #116329;
   --code-meta: #6639ba;
@@ -39,6 +40,7 @@ html[data-theme] {
 }
 
 html[data-theme="dark"] {
+  --callout-title-keep: 85%;
   color-scheme: dark;
   --surface-page: #191919;
   --text: #ececec;
@@ -73,6 +75,7 @@ html[data-theme="dark"] {
 
 @media (prefers-color-scheme: dark) {
   html[data-theme="system"] {
+    --callout-title-keep: 85%;
     color-scheme: dark;
     --surface-page: #191919;
     --text: #ececec;
@@ -486,7 +489,8 @@ html[data-theme="dark"] .callout[data-callout-style="quote"] { --callout-rgb: 15
 
 .callout-title {
   font-weight: 600;
-  color: rgb(var(--callout-rgb));
+  /* #3nnx98m4: as in the app, nudged toward the text colour for 4.5:1 on the tint. */
+  color: color-mix(in srgb, rgb(var(--callout-rgb)) var(--callout-title-keep), var(--text));
   min-height: 1.6em;
 }
 

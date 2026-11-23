@@ -1151,3 +1151,50 @@ img.board-card-image {
 .board-root.board-preview .board-card-open {
   display: none;
 }
+
+/*
+ * #3nnx98m4 (WCAG 1.4.10, v0.9 audit #7): on a short board (200% zoom, a small
+ * window) the vertical toolbar is taller than the canvas and its ends were cut
+ * off. Measured on the board itself (a size container), it becomes a row across
+ * the top that wraps: every tool stays visible, with its tooltip below it, and
+ * nothing scrolls or clips. Popovers open below the row.
+ */
+.board-root:not(.board-preview) {
+  container-type: size;
+  container-name: board;
+}
+
+@container board (max-height: 520px) {
+  .board-toolbar {
+    top: 10px;
+    left: 14px;
+    transform: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    max-width: calc(100% - 84px);
+  }
+
+  .board-toolbar-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .board-toolbar [data-tooltip]::after {
+    left: 50%;
+    top: calc(100% + 8px);
+    bottom: auto;
+    right: auto;
+    transform: translate(-50%, -2px);
+  }
+
+  .board-toolbar [data-tooltip]:hover::after,
+  .board-toolbar [data-tooltip]:focus-visible::after {
+    transform: translate(-50%, 0);
+  }
+
+  .board-toolbar .board-popover {
+    left: 0;
+    top: calc(100% + 8px);
+  }
+}

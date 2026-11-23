@@ -1031,6 +1031,11 @@ function BoardCanvas(props: BoardEditorProps) {
   const fitPadding = useCallback(() => {
     const root = rootRef.current?.getBoundingClientRect();
     const toolbar = rootRef.current?.querySelector(".board-toolbar")?.getBoundingClientRect();
+    // #3nnx98m4: on a short board the toolbar is a row across the top (board.css): clear it there instead.
+    if (root && toolbar && toolbar.width > toolbar.height) {
+      const top = Math.max(40, Math.round(toolbar.bottom - root.top + 20));
+      return { top: `${top}px`, right: "40px", bottom: "72px", left: "40px" } as const;
+    }
     const left = root && toolbar ? Math.max(32, Math.round(toolbar.right - root.left + 28)) : 96;
     return { top: "40px", right: "40px", bottom: "72px", left: `${left}px` } as const;
   }, []);
