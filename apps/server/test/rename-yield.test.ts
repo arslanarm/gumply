@@ -157,6 +157,21 @@ describe("while the batches run, the old name still means the renamed page (#xgn
     expect(new Set(store.backlinks("Hub renamed").map((link) => link.page.id)).size).toBe(600);
   });
 
+  it("a rename whose first step fails after capturing its rewrite leaves no alias and no hold behind", async () => {
+    const { store } = await vault(50);
+    const internals = store as unknown as { reindexAll: () => void };
+    vi.spyOn(internals, "reindexAll").mockImplementationOnce(() => {
+      throw new Error("index failed (test)");
+    });
+    await expect(store.update("Hub", { title: "Hub renamed" })).rejects.toThrow(/index failed/);
+    expect(store.renamesInProgress).toEqual([]);
+    // Nothing still holds the page: renaming it again goes through (by its id now, as moved).
+    const id = store.list().find((meta) => meta.title === "Hub renamed" || meta.title === "Hub")!.id;
+    const again = await store.update(id, { title: "Hub again" });
+    expect(again.id).toBe("Hub again");
+    expect(store.renamesInProgress).toEqual([]);
+  });
+
   it("a page really named like the old title, created mid-rename, takes its links from then on", async () => {
     const { dir, store } = await vault(300);
     store.afterRenameBatch = async () => {

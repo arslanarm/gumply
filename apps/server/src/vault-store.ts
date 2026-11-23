@@ -509,6 +509,8 @@ interface RenameRewrite {
   rewriteText: (markdown: string, source: PageId) => { content: string; count: number };
   /** Every page and board id at the rename, in order; each batch resolves them again (a page renamed meanwhile is followed). */
   ids: PageId[];
+  /** The `renameAliases` key this rename set (the page's new id), if any. */
+  aliasKey: PageId | null;
 }
 
 /** #im3em6tq: how long a path Gumply itself wrote or moved doesn't count toward a sync burst. */
@@ -2319,6 +2321,11 @@ export class VaultStore {
           const result = await renameNow();
           // Set by rewriteLinksTo during renameNow (TS narrows the field to null across the await).
           return { result, job: this.deferredRewrite as RenameRewrite | null };
+        } catch (error) {
+          // Failed after the rewrite was captured: no batches will run, so drop its alias now.
+          const captured = this.deferredRewrite as RenameRewrite | null;
+          if (captured?.aliasKey && this.renameAliases.delete(captured.aliasKey)) this.reindexAll();
+          throw error;
         } finally {
           this.deferRewrites = false;
           this.deferredRewrite = null;
@@ -3423,8 +3430,9 @@ export class VaultStore {
     const skip = new Set([oldId, record.id]);
     if (this.deferRewrites) {
       // #xgnvipyd: pinned now (the link snapshot is beforeMetas/afterMetas above), run in batches after.
-      this.deferredRewrite = { skip, rewriteText, ids: [...this.pages.keys()] };
-      if (oldId !== record.id || previousTitle !== record.title) this.renameAliases.set(record.id, { fromId: oldId, fromTitle: previousTitle });
+      const aliased = oldId !== record.id || previousTitle !== record.title;
+      this.deferredRewrite = { skip, rewriteText, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null };
+      if (aliased) this.renameAliases.set(record.id, { fromId: oldId, fromTitle: previousTitle });
       return [];
     }
     return this.rewriteEverywhere(skip, rewriteText, {}, { frontmatter: true });
