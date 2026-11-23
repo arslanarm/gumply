@@ -88,11 +88,11 @@ All of these are hidden, and none of them are your notes. When Gumply replaces o
 |---|---|---|
 | `.gumply/history/<page>/` | Earlier versions of each page and board, as exact copies of the file, plus `index.jsonl` (when, who, why). Old versions are thinned automatically: all of the last day, one an hour for a week, one a day for 90 days (very large versions, over 5 MB: one a day, at most 10), within max(200 MB, half the vault). Versions you keep are never thinned. | Yes. You only lose the versions. |
 | `.trash/<id>/` | Deleted pages, boards and folders, with `meta.json` (what was deleted, when). Restore moves them back. | Yes (or use Empty trash). |
-| `.gumply/conflicts/` | When you choose **Keep mine**, the other program's version is kept here as text. The exact copy is in the page's history. | Yes. |
+| `.gumply/conflicts/` | When you choose **Keep mine**, the other program's version is kept here, byte for byte, named after the page (`Заметки-<time>.md`, `Map-<time>.canvas`). It's also in the page's history. | Yes. |
 | `.gumply/mcp.json` | AI app access for this vault: `{"enabled": true, "access": "read"}` (`read`, `append` or `edit`). Missing means read-only. | Yes. AI apps go back to read-only. |
 | `.gumply/mcp-log.jsonl` (+ `.1`, `.2`) | One line per change an AI app made: when, which tool, which page, the before and after versions, and which app. No note text. Rotated at 5 MB. | Yes. |
 | `.gumply/types.json` | Property types, when the vault has no `.obsidian/` folder. | Yes. Types are guessed from values again. |
-| `.gumply/graph.json` | Graph colour groups and filters. | Yes. |
+| `.gumply/graph.json` | Graph colour groups and filters. Saving keeps any settings Gumply doesn't know; a damaged file is moved aside as `graph.json.invalid-<time>`. | Yes. |
 | `.gumply/sync-dismissed.json` | Pages you marked **Not a copy**. | Yes. They may be flagged again. |
 | `.gumply/demo-seeded.json` | Remembers that the demo pages were added once. | Yes. |
 | `.gumply/import/` | A Notion import while it's running. Removed when it ends. | Yes, when no import is running. |
@@ -134,4 +134,4 @@ This page describes **version 1**.
 - **No silent conversions.** Gumply never rewrites your existing files into a new form on its own, when it opens a vault or when it saves.
 - **Additions** (a new optional key, file or syntax that older Gumply versions keep as they are) can come in any release. This page gets a new minor version.
 - **A change older versions would misread** only comes in a major release. It comes with a note in the release notes, and with an optional conversion you run yourself. That conversion shows what it will change first, and keeps every changed file's old version in history.
-- **Gumply is tolerant when reading.** Keys, files and fields it doesn't know are left as they are, never dropped. (One exception for now: saving the graph settings rewrites `.gumply/graph.json` with only the settings Gumply knows.)
+- **Gumply is tolerant when reading.** Keys, files and fields it doesn't know are left as they are, never dropped.
