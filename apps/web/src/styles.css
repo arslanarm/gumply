@@ -2236,6 +2236,23 @@ input {
   bottom: auto;
 }
 
+.topbar .sidebar-toggle {
+  position: relative;
+}
+
+/* #h4tyk92t: news in the closed sidebar (an update, a sync burst). */
+.sidebar-toggle-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--surface-topbar);
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+}
+
 .topbar .sidebar-toggle[data-tooltip]::after {
   left: 0;
   right: auto;

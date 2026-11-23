@@ -6,21 +6,28 @@
  * the next start, once per version.
  */
 import type { DesktopUpdatesState } from "@gumply/core";
-import { useState } from "react";
 import { api } from "../api/client.js";
 import { useT } from "../i18n/index.js";
 import { Icon } from "./Icon.js";
 
 const SHOWN: ReadonlySet<DesktopUpdatesState["status"]> = new Set(["available", "ready", "pending-running", "read-only", "install-failed"]);
 
-export function UpdateNotice({ state }: { state: DesktopUpdatesState | null }) {
-  const t = useT();
-  const [hidden, setHidden] = useState<string | null>(null);
+/**
+ * What the notice is about (`version:status`), or null when it has nothing to
+ * say. "Later" hides one key; the app keeps that, so a closed sidebar's toggle
+ * can show a dot only while the notice would show (#h4tyk92t).
+ */
+export function updateNoticeKey(state: DesktopUpdatesState | null): string | null {
   if (!state || !SHOWN.has(state.status) || !state.version) return null;
   // The notice is for news; with updates off, only Settings shows the state.
   if (state.mode === "off") return null;
-  const key = `${state.version}:${state.status}`;
-  if (hidden === key) return null;
+  return `${state.version}:${state.status}`;
+}
+
+export function UpdateNotice({ state, hidden, onHide }: { state: DesktopUpdatesState | null; hidden: string | null; onHide: (key: string) => void }) {
+  const t = useT();
+  const key = updateNoticeKey(state);
+  if (!state || !state.version || key === null || hidden === key) return null;
 
   const text =
     state.status === "ready"
@@ -52,7 +59,7 @@ export function UpdateNotice({ state }: { state: DesktopUpdatesState | null }) {
             {state.status === "ready" ? t("update.whatsNew") : t("update.download")}
           </a>
         ) : null}
-        <button type="button" className="update-notice-later" data-testid="update-notice-later" onClick={() => setHidden(key)}>
+        <button type="button" className="update-notice-later" data-testid="update-notice-later" onClick={() => onHide(key)}>
           {t("update.later")}
         </button>
       </div>
