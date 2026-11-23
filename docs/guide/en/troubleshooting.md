@@ -29,7 +29,7 @@ To back up your notes, back up the vault folder. To move to another computer, co
 
 Another app (or another window of Gumply) changed the page while you had unsaved edits. Gumply never overwrites it without asking:
 
-- **Reload** shows their version and drops your unsaved edits;
+- **Reload** shows their version; your unsaved edits stay in the page's [history](version-history.md) as **Before reload** (if they can't be kept, Gumply says so and asks first);
 - **Keep mine** saves yours, and keeps theirs as a backup in `.gumply/conflicts/`.
 
 Both sides are also in the page's [version history](version-history.md).
