@@ -7,7 +7,7 @@
   --surface-page: #ffffff;
   --surface-topbar: #f8f7f4;
   --text: #26251f;
-  --muted: #6f6d65;
+  --muted: #65635c;
   --border: #e5e3dc;
   --accent: #4f46e5;
   --accent-soft: #eef2ff;
@@ -35,11 +35,13 @@
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --sidebar-width: 264px;
   /* Syntax highlighting (code blocks), GitHub-like and calm. */
-  --code-keyword: #cf222e;
+  --code-keyword: #c6202c;
+  /* #3nnx98m4: how much of a callout's colour its title keeps (the rest is --text), for 4.5:1 on its tint. */
+  --callout-title-keep: 70%;
   --code-string: #0a3069;
   --code-number: #0550ae;
-  --code-comment: #6e7781;
-  --code-title: #8250df;
+  --code-comment: #5e666e;
+  --code-title: #7749cd;
   --code-type: #953800;
   --code-tag: #116329;
   --code-meta: #6639ba;
@@ -50,6 +52,7 @@
 }
 
 :root[data-theme="dark"] {
+  --callout-title-keep: 85%;
   color-scheme: dark;
   --code-keyword: #ff7b72;
   --code-string: #a5d6ff;
@@ -4716,7 +4719,8 @@ input {
 
 .callout-title {
   font-weight: 600;
-  color: rgb(var(--callout-rgb));
+  /* #3nnx98m4 (WCAG 1.4.3): the callout's colour, nudged toward the text colour to read at 4.5:1 on its own tint. */
+  color: color-mix(in srgb, rgb(var(--callout-rgb)) var(--callout-title-keep), var(--text));
   min-height: 1.6em;
 }
 
@@ -6169,8 +6173,8 @@ input {
 
 .properties-add {
   width: auto;
+  /* #3nnx98m4: the plain muted colour (with opacity 0.8 it was 3.45:1). */
   color: var(--muted);
-  opacity: 0.8;
 }
 
 .properties-add:hover,
