@@ -5,7 +5,9 @@
  *   node scripts/perf/measure-web.mjs http://127.0.0.1:<web port> [--runs 3] [--throttle 4] [--json out.json]
  *
  * Point it at `vite preview` (a production build) whose /api proxy reaches a
- * server started on the big vault (scripts/perf/make-vault.mjs). Every run
+ * server started on the big vault (scripts/perf/make-vault.mjs), with the dev
+ * entry so it writes nothing to your app data (D47's installation id):
+ * `GUMPLY_VAULT=<vault> GUMPLY_PORT=<port> npx tsx apps/server/src/dev.ts`. Every run
  * uses a fresh browser context (cold cache) with the CPU throttled via CDP,
  * as scripts/measure-startup.mjs does, and reports medians of:
  *   - editor visible ("app start, warm server" on the budget page): navigation

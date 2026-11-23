@@ -212,6 +212,7 @@ import { PropertyTypesStore, readRawProperties, rewritePropertyLinks, typedPrope
 import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import { sweepTempFiles, tempPathBeside, writeAtomic } from "./temp-files.js";
 import { RenameJournal, RESUME_ANY_AFTER_MS, type PendingRename } from "./rename-journal.js";
+import { fixedInstanceId, type InstanceId } from "./instance-id.js";
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -955,7 +956,7 @@ export class VaultStore {
   private deferRewrites = false;
   private deferredRewrite: RenameRewrite | null = null;
   /** D47: this installation's id (app data, never the vault); a recent journal entry is only resumed by its own. */
-  private readonly instanceId: string;
+  private readonly instance: InstanceId;
   private readonly renameJournal: RenameJournal;
   /** D47: renames a crash left unfinished, resumed after the start (tests await it). */
   renamesResumed: Promise<void> = Promise.resolve();
@@ -1039,9 +1040,10 @@ export class VaultStore {
   /** Test counter (#kguq5bc5): files read to get a page's properties. */
   propertyFileReads = 0;
 
-  constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number; instanceId?: string } = {}) {
+  constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number; instanceId?: string | InstanceId } = {}) {
     this.root = resolve(root);
-    this.instanceId = options.instanceId ?? "local";
+    const instance = options.instanceId ?? "local";
+    this.instance = typeof instance === "string" ? fixedInstanceId(instance) : instance;
     this.renameJournal = new RenameJournal(this.root);
     this.propertyTypes = new PropertyTypesStore(this.root);
     this.historySource = options.historySource ?? "app";
@@ -2403,7 +2405,7 @@ export class VaultStore {
       const rewritten: PageId[] = [...result.rewrittenPages];
       // D47: journalled right after the move (phase A), so a crash before the rewrite ends is finished
       // at the next start. Never part of phase A: a failure here must not drop the captured rewrite.
-      const entry: PendingRename = { oldId: id, newId, oldTitle: job.oldTitle, newTitle: job.newTitle, instance: this.instanceId, startedAt: new Date().toISOString() };
+      const entry: PendingRename = { oldId: id, newId, oldTitle: job.oldTitle, newTitle: job.newTitle, instance: this.instance.ensure(), startedAt: new Date().toISOString() };
       await this.renameJournal.add(entry).catch((error: unknown) => console.warn("[gumply] couldn't journal a rename (it goes on, not crash-safe):", error));
       this.activeRenameJobs.add(job);
       for (let at = 0; at < job.ids.length; ) {
@@ -3528,7 +3530,7 @@ export class VaultStore {
     for (const entry of read.entries) {
       const same = (pending: PendingRename) => pending.oldId === entry.oldId && pending.newId === entry.newId && pending.startedAt === entry.startedAt;
       const age = Date.now() - Date.parse(entry.startedAt);
-      if (entry.instance !== this.instanceId) {
+      if (entry.instance !== this.instance.peek()) {
         // Another device's, recent: it finishes it at its next start (two would write the same pages).
         // Logged at every start that skips it, so it's never silent; after 7 days any installation may.
         if (!(age > RESUME_ANY_AFTER_MS)) {

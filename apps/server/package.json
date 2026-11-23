@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/dev.ts",
     "build": "tsc -b",
     "start": "node dist/index.js",
     "typecheck": "tsc -b --pretty false"

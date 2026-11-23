@@ -12,12 +12,13 @@ import type { UiStateStore } from "./ui-state.js";
 import type { McpLaunchCommand } from "@gumply/core";
 import { logUnhandledRejections } from "./last-resort.js";
 import { isLoopbackName } from "./security.js";
+import type { InstanceId } from "./instance-id.js";
 import { VaultStore } from "./vault-store.js";
 
 export interface StartOptions {
   vaultPath: string;
-  /** D47: this installation's id (app data, never the vault), for the rename crash journal. */
-  instanceId?: string;
+  /** D47: this installation's id (app data, never the vault), for the rename crash journal; created lazily. */
+  instanceId?: string | InstanceId;
   /** 0 = a random free port. */
   port: number;
   host?: string;
