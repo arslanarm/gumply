@@ -516,6 +516,23 @@ function idExtension(kind: PageKind): string {
   return kind === "whiteboard" ? BOARD_EXTENSION : kind === "base" ? BASE_EXTENSION : "";
 }
 
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * A conflict backup's file name in `.gumply/conflicts/` (#reynggre): the page
+ * id with every run of characters other than letters and digits (any script),
+ * `_` and `-` as one `-`, NFC, at most 120 characters, then `-<ms>` and the
+ * kind's extension. Never empty and never a Windows device name.
+ */
+export function conflictBackupName(id: PageId, kind: PageKind, ms: number): string {
+  const extension = kind === "page" ? ".md" : idExtension(kind);
+  const stem = extension && id.toLowerCase().endsWith(extension) ? id.slice(0, -extension.length) : id;
+  let safe = stem.normalize("NFC").replace(/[^\p{L}\p{N}_-]+/gu, "-");
+  safe = Array.from(safe).slice(0, 120).join("").replace(/^-+|-+$/g, "");
+  if (!safe || WINDOWS_RESERVED.test(safe)) safe = `page-${safe}`.replace(/-+$/, "");
+  return `${safe}-${ms}${extension}`;
+}
+
 /** The kind a vault file is, by its extension. */
 function kindOfFile(path: string): PageKind {
   return isBoardId(path) ? "whiteboard" : isBaseId(path) ? "base" : "page";
@@ -5452,18 +5469,27 @@ export class VaultStore {
   }
 
   private async backupConflict(record: PageRecord): Promise<string | undefined> {
-    let raw: string;
+    let raw: Buffer;
     try {
-      raw = await readFile(record.filePath, "utf8");
+      // The exact bytes on disk (#reynggre): no UTF-8 round trip.
+      raw = await readFile(record.filePath);
     } catch {
       return undefined;
     }
     const dir = join(this.root, ".gumply", "conflicts");
     await mkdir(dir, { recursive: true });
-    const safeId = record.id.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 120);
-    const extension = record.kind === "page" ? ".md" : idExtension(record.kind);
-    const file = join(dir, `${safeId}-${Date.now()}${extension}`);
-    await writeFile(file, raw, "utf8");
+    const now = Date.now();
+    let file = join(dir, conflictBackupName(record.id, record.kind, now));
+    for (let attempt = 2; ; attempt++) {
+      try {
+        await writeFile(file, raw, { flag: "wx" });
+        break;
+      } catch (error) {
+        // Two backups of one page in the same millisecond: the next number.
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST" || attempt > 50) throw error;
+        file = join(dir, conflictBackupName(record.id, record.kind, now).replace(/(\.[a-z]+)$/, `-${attempt}$1`));
+      }
+    }
     // §3: the other side of a conflict is a version too (pages and boards).
     await this.snapshotRecord(record, "external", "conflict");
     const relativePath = relative(this.root, file).split(sep).join("/");

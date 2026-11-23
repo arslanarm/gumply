@@ -84,6 +84,28 @@ export function normalizeGraphSettings(raw: unknown): GraphSettings {
   };
 }
 
+/**
+ * The file to write for `next`, keeping what's already in `.gumply/graph.json`
+ * that Gumply doesn't know (spec/file-format §7: unknown keys are never
+ * dropped on write): unknown top-level and `filters` keys stay, in the file's
+ * order; a group keeps its unknown keys when its query matches a group on disk
+ * (the first one not taken yet). Known keys take `next`'s values.
+ */
+export function mergeGraphSettings(onDisk: unknown, next: GraphSettings): Record<string, unknown> {
+  const disk = isObject(onDisk) ? onDisk : {};
+  const merged: Record<string, unknown> = { ...disk };
+  const diskGroups = Array.isArray(disk.groups) ? disk.groups.filter(isObject) : [];
+  const taken = new Set<Record<string, unknown>>();
+  merged.groups = next.groups.map((group) => {
+    const match = diskGroups.find((candidate) => !taken.has(candidate) && candidate.query === group.query);
+    if (!match) return { ...group };
+    taken.add(match);
+    return { ...match, query: group.query, color: group.color };
+  });
+  merged.filters = { ...(isObject(disk.filters) ? disk.filters : {}), ...next.filters };
+  return merged;
+}
+
 /** `{ rgb: 14701138, a: 1 }` (Obsidian's colour) → `#e05252`. */
 export function obsidianColor(value: unknown): string | null {
   if (!isObject(value) || typeof value.rgb !== "number" || !Number.isInteger(value.rgb)) return null;

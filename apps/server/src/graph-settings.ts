@@ -4,12 +4,17 @@
  * Without it, a vault Obsidian set up starts from `.obsidian/graph.json`
  * (colour groups, search and the four filters), read on each `GET` until the
  * first `PUT` writes `.gumply/graph.json`. Gumply never writes `.obsidian/`.
+ *
+ * A save keeps the file's keys Gumply doesn't know (#reynggre); a file that
+ * isn't a JSON object (a bad hand edit) is moved aside as
+ * `graph.json.invalid-<ms>` first, never silently replaced.
  */
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import {
   DEFAULT_GRAPH_SETTINGS,
   fromObsidianGraph,
+  mergeGraphSettings,
   normalizeGraphSettings,
   type GraphSettings,
   type GraphSettingsResponse,
@@ -53,6 +58,25 @@ export async function writeGraphSettings(root: string, body: unknown): Promise<G
   const dir = join(root, ".gumply");
   await mkdir(dir, { recursive: true });
   const file = join(root, GUMPLY_FILE);
-  await writeAtomic(file, `${JSON.stringify(settings, null, 2)}\n`);
+  let onDisk: unknown;
+  let text: string | undefined;
+  try {
+    text = await readFile(file, "utf8");
+  } catch {
+    text = undefined; // no file yet
+  }
+  if (text !== undefined) {
+    try {
+      onDisk = JSON.parse(text) as unknown;
+    } catch {
+      onDisk = undefined;
+    }
+    if (typeof onDisk !== "object" || onDisk === null || Array.isArray(onDisk)) {
+      // Not ours to throw away: keep it beside the new file.
+      await rename(file, `${file}.invalid-${Date.now()}`);
+      onDisk = undefined;
+    }
+  }
+  await writeAtomic(file, `${JSON.stringify(mergeGraphSettings(onDisk, settings), null, 2)}\n`);
   return { ...settings, source: "gumply" };
 }
