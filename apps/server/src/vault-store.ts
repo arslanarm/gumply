@@ -626,21 +626,41 @@ async function readConsistent(absolute: string): Promise<{ raw: string; stats: i
 }
 
 /**
- * The stat to keep for a file the store has just renamed into place (#a76d3php).
- * `temp` is the temp file's stat, taken before the rename, so it is always ours.
- * Prefer the path's stat after the rename when the path still holds our file,
- * because on some filesystems (SMB/NFS shares, cloud-sync folders, FAT/exFAT with
- * 2 s mtimes) a rename can change the reported mtime, and keeping the temp's would
- * make every next save a false "changed on disk" 409. If the inode and device are
- * the same and non-zero and the size is the one we wrote, it is our file, so use
- * the path's stat. Otherwise another program replaced it in between, or rewrote it
- * in place (same inode, other size): keep the temp's, so the next conditional save
- * sees that change instead of erasing it.
+ * The stat to keep for a file the store has just renamed into place (#a76d3php,
+ * #2m8y7bwf). `temp` is the temp file's stat, taken before the rename, so it is
+ * always ours; `written` is exactly the bytes we wrote.
+ *
+ * Prefer the path's stat after the rename when the path still holds our file:
+ * on some filesystems (SMB/NFS shares, cloud-sync folders, FAT/exFAT with 2 s
+ * mtimes) a rename can change the reported mtime, and keeping the temp's would
+ * make every next save a false "changed on disk" 409. "Our file" is decided by
+ * its bytes, read from the same open handle as its stat, never by its file ID:
+ * FAT/exFAT can give a renamed file a new ID, and a same-size in-place rewrite
+ * by another program keeps the ID and the size.
+ *
+ * - The bytes equal what we wrote: it is ours, whatever the ID says; use its stat.
+ * - Anything else keeps the temp's stat, so the next conditional save sees the
+ *   change instead of erasing it: other bytes (another program replaced or
+ *   rewrote it), a file rewritten *while* we read it (mixed bytes never equal
+ *   ours: the safe direction), or any error.
+ *
+ * The cost is one read of a file we just wrote (from the page cache), skipped
+ * when the size already differs.
  */
-async function statAfterRename(path: string, temp: import("node:fs").Stats): Promise<import("node:fs").Stats> {
-  const now = await stat(path).catch(() => null);
-  if (now !== null && now.ino !== 0 && now.ino === temp.ino && now.dev === temp.dev && now.size === temp.size) return now;
-  return temp;
+async function statAfterRename(path: string, temp: import("node:fs").Stats, written: string | Buffer): Promise<import("node:fs").Stats> {
+  const expected = typeof written === "string" ? Buffer.from(written, "utf8") : written;
+  let handle: import("node:fs/promises").FileHandle | null = null;
+  try {
+    handle = await open(path, "r");
+    const now = await handle.stat();
+    if (now.size !== expected.length) return temp;
+    const bytes = await handle.readFile();
+    return bytes.equals(expected) ? now : temp;
+  } catch {
+    return temp;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
 }
 
 function mtimeVersion(mtimeMs: number): string {
@@ -2657,9 +2677,9 @@ export class VaultStore {
     }
     const temporary = tempPathBeside(record.filePath);
     let stats: import("node:fs").Stats;
+    const next = text ?? serializeCanvas(board);
     try {
       await mkdir(dirname(record.filePath), { recursive: true });
-      const next = text ?? serializeCanvas(board);
       await writeFile(temporary, next, "utf8");
       // Stat the temp before the rename: the path's stat after it could be
       // another program's file (see statAfterRename, #a76d3php).
@@ -2673,7 +2693,7 @@ export class VaultStore {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    stats = await statAfterRename(record.filePath, stats);
+    stats = await statAfterRename(record.filePath, stats, next);
     const meta = canvasMeta(board);
     record.board = board;
     record.content = canvasText(board);
@@ -2846,7 +2866,7 @@ export class VaultStore {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    stats = await statAfterRename(record.filePath, stats);
+    stats = await statAfterRename(record.filePath, stats, text);
     record.baseSource = text;
     record.fileMtimeMs = stats.mtimeMs;
     record.updated = mtimeVersion(stats.mtimeMs);
@@ -5513,7 +5533,7 @@ export class VaultStore {
       await rename(temporary, filePath);
       await this.rememberWrite(filePath, text);
       return {
-        mtimeMs: (await statAfterRename(filePath, written)).mtimeMs,
+        mtimeMs: (await statAfterRename(filePath, written, text)).mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
         // caller uses the file time (`mtimeVersion`), as for plain notes.
         frontmatter: !plain && versionKey,

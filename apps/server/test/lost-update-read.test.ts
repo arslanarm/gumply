@@ -23,8 +23,25 @@ let saveTime = 0;
 // after the store renames onto `path`, every stat of it reports the mtime shifted by `ms`.
 let shiftOnRename: { path: string; ms: number } | null = null;
 // Another program that rewrites the file in place (truncate + write: same inode) right after our rename.
-let rewriteAfterRename: { path: string; text: string } | null = null;
+// `text` may be built from our bytes (a same-size rewrite, #2m8y7bwf).
+let rewriteAfterRename: { path: string; text: string | ((ours: string) => string) } | null = null;
 const shifted = new Map<string, number>();
+// FAT/exFAT (#2m8y7bwf): after the store renames onto `path`, its stats report another file ID.
+let newIdOnRename: string | null = null;
+const renumbered = new Set<string>();
+
+/** A stat as this fake filesystem reports it: the rename's mtime shift and file ID applied. */
+function reported<T extends { mtimeMs: number; ino: number }>(stats: T, path: string): T {
+  const ms = shifted.get(path);
+  if (ms === undefined && !renumbered.has(path)) return stats;
+  const copy = Object.assign(Object.create(Object.getPrototypeOf(stats)), stats) as T & { mtime: Date };
+  if (ms !== undefined) {
+    copy.mtimeMs = stats.mtimeMs + ms;
+    copy.mtime = new Date(copy.mtimeMs);
+  }
+  if (renumbered.has(path)) copy.ino = stats.ino + 1_000_003;
+  return copy;
+}
 
 async function replaceNow(path: string, which: "read" | "rename" = "read"): Promise<void> {
   if (which === "read" && replaceOnEveryRead?.path === path && replaceOnEveryRead.texts.length > 0) {
@@ -59,22 +76,15 @@ vi.mock("node:fs/promises", async () => {
       if (typeof args[0] === "string") await replaceNow(args[0]);
       return result;
     },
-    stat: async (...args: Parameters<typeof real.stat>) => {
-      const stats = await real.stat(...args);
-      const ms = shifted.get(String(args[0]));
-      if (ms === undefined) return stats;
-      const copy = Object.assign(Object.create(Object.getPrototypeOf(stats)), stats);
-      copy.mtimeMs = stats.mtimeMs + ms;
-      copy.mtime = new Date(copy.mtimeMs);
-      return copy;
-    },
+    stat: async (...args: Parameters<typeof real.stat>) => reported(await real.stat(...args), String(args[0])),
     rename: async (...args: Parameters<typeof real.rename>) => {
       await real.rename(...args);
       if (shiftOnRename && shiftOnRename.path === String(args[1])) shifted.set(shiftOnRename.path, shiftOnRename.ms);
+      if (newIdOnRename === String(args[1])) renumbered.add(newIdOnRename);
       if (rewriteAfterRename && rewriteAfterRename.path === String(args[1])) {
         const { path, text } = rewriteAfterRename;
         rewriteAfterRename = null;
-        await real.writeFile(path, text);
+        await real.writeFile(path, typeof text === "string" ? text : text(await real.readFile(path, "utf8")));
         const later = new Date(Date.now() + 5_000);
         await real.utimes(path, later, later);
       }
@@ -84,6 +94,9 @@ vi.mock("node:fs/promises", async () => {
       const handle = await real.open(...args);
       const path = String(args[0]);
       const readFile = handle.readFile.bind(handle);
+      // A handle's stat is the same filesystem's answer as the path's.
+      const handleStat = handle.stat.bind(handle);
+      handle.stat = (async (...statArgs: Parameters<typeof handle.stat>) => reported(await handleStat(...statArgs), path)) as typeof handle.stat;
       handle.readFile = (async (...readArgs: Parameters<typeof handle.readFile>) => {
         const result = await readFile(...readArgs);
         await replaceNow(path);
@@ -107,7 +120,9 @@ afterEach(async () => {
   replaceOnEveryRead = null;
   shiftOnRename = null;
   rewriteAfterRename = null;
+  newIdOnRename = null;
   shifted.clear();
+  renumbered.clear();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -245,6 +260,62 @@ describe("a read racing another program's atomic save keeps text and mtime toget
         expect(rewriteAfterRename).toBeNull();
         await expect(store.updateBoard("Map.canvas", { board: { nodes: [], edges: [] }, expectedUpdated: saved.meta.updated })).rejects.toMatchObject({ status: 409 });
       }
+      expect(await readFile(file, "utf8")).toBe(theirs);
+    });
+  }
+
+  // #2m8y7bwf: whether the path holds our file is decided by its bytes, not its file ID.
+  for (const [kind, name, first] of [
+    ["page", "Plan.md", "# Plan\n\nIntro.\n"],
+    ["board", "Map.canvas", '{"nodes":[],"edges":[]}'],
+  ] as const) {
+    it(`a ${kind}: on FAT/exFAT a rename gives our file a new ID and another mtime; with our bytes there, the next save is not a conflict`, async () => {
+      const file = join(dir, name);
+      await writeFile(file, first);
+      const store = new VaultStore(dir);
+      await store.init();
+      shiftOnRename = { path: file, ms: 2_000 };
+      newIdOnRename = file;
+      if (kind === "page") {
+        const saved = await store.update("Plan", { content: "# Plan\n\nIntro.\n\nOne.\n", expectedUpdated: store.get("Plan").updated });
+        expect(renumbered.has(file) && shifted.has(file)).toBe(true); // the stub really applied
+        await store.update("Plan", { content: "# Plan\n\nIntro.\n\nOne.\n\nTwo.\n", expectedUpdated: saved.updated });
+        expect(await readFile(file, "utf8")).toContain("Two.");
+      } else {
+        const card = (id: string) => ({ id, type: "text", text: id, x: 0, y: 0, width: 100, height: 50 });
+        const saved = await store.updateBoard("Map.canvas", { board: { nodes: [card("one")], edges: [] } as never, expectedUpdated: store.getBoard("Map.canvas").meta.updated });
+        expect(renumbered.has(file) && shifted.has(file)).toBe(true);
+        await store.updateBoard("Map.canvas", { board: { nodes: [card("one"), card("two")], edges: [] } as never, expectedUpdated: saved.meta.updated });
+        expect(await readFile(file, "utf8")).toContain('"two"');
+      }
+    });
+
+    it(`a ${kind}: another program rewriting it in place with the same size (same ID) after our save makes the next save a conflict`, async () => {
+      const file = join(dir, name);
+      await writeFile(file, first);
+      const store = new VaultStore(dir);
+      await store.init();
+      // Same length as ours, other bytes: "Model" becomes "Thief".
+      let theirs = "";
+      rewriteAfterRename = {
+        path: file,
+        text: (ours) => {
+          theirs = ours.replace("Model", "Thief");
+          return theirs;
+        },
+      };
+      if (kind === "page") {
+        const saved = await store.update("Plan", { content: "# Plan\n\nIntro.\n\nModel line.\n", expectedUpdated: store.get("Plan").updated });
+        expect(rewriteAfterRename).toBeNull(); // the rewrite really happened
+        await expect(store.update("Plan", { content: "# Plan\n\nIntro.\n\nModel line 2.\n", expectedUpdated: saved.updated })).rejects.toMatchObject({ status: 409 });
+      } else {
+        const card = { id: "m", type: "text", text: "Model card", x: 0, y: 0, width: 100, height: 50 };
+        const saved = await store.updateBoard("Map.canvas", { board: { nodes: [card], edges: [] } as never, expectedUpdated: store.getBoard("Map.canvas").meta.updated });
+        expect(rewriteAfterRename).toBeNull();
+        await expect(store.updateBoard("Map.canvas", { board: { nodes: [], edges: [] }, expectedUpdated: saved.meta.updated })).rejects.toMatchObject({ status: 409 });
+      }
+      expect(theirs).toContain("Thief");
+      expect(Buffer.byteLength(theirs)).toBe(Buffer.byteLength(theirs.replace("Thief", "Model")));
       expect(await readFile(file, "utf8")).toBe(theirs);
     });
   }
