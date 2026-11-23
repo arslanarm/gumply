@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -379,6 +379,127 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
       } finally {
         warn.mockRestore();
         internals.refreshFromDisk = refresh;
+      }
+    });
+  });
+
+  describe("a file that can't be read (#35q6kt6e, @opus-hunter's P2)", () => {
+    for (const code of ["EACCES", "EPERM", "EBUSY", "EISDIR"]) {
+      it(`${code} on one file: it keeps its record, the rest of the rescan goes on, and it's logged once`, async () => {
+        const store = await vaultOf(5);
+        await writeFile(join(dir, "Locked.md"), "Locked, pointing at [[Hub]].\n");
+        await store.rescan();
+        const locked = join(dir, "Locked.md");
+        await writeFile(locked, "Locked, edited: now points at [[Note 1]].\n");
+        await writeFile(join(dir, "After.md"), "New, pointing at [[Hub]].\n");
+        await writeFile(join(dir, "Note 2.md"), "Edited outside, pointing at [[Hub]].\n");
+        const internals = store as unknown as Internals;
+        const readRecord = internals.readRecord;
+        let blocked = true;
+        internals.readRecord = async function (this: unknown, ...args) {
+          if (blocked && args[0] === locked) throw Object.assign(new Error(`${code}: can't read`), { code });
+          return readRecord.apply(this, args as [string, string]);
+        };
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        try {
+          await expect(store.rescan()).resolves.toBe(true);
+          // The new note is listed, the outside edit is read...
+          expect(backlinkIds(store, "Hub")).toEqual(["After", "Locked", "Note 2"]);
+          expect(store.get("Note 2").content).toContain("Edited outside");
+          // ...and the unreadable one keeps the record it had.
+          expect(store.get("Locked").content).toContain("Locked, pointing at");
+          expect(warn).toHaveBeenCalledTimes(1);
+          expect(String(warn.mock.calls[0]![0])).toContain(`can't read Locked.md (${code})`);
+          // A second rescan tries it again but logs nothing new.
+          await store.rescan();
+          expect(warn).toHaveBeenCalledTimes(1);
+          // Readable again: its new text comes in.
+          blocked = false;
+          await store.rescan();
+          expect(store.get("Locked").content).toContain("now points at [[Note 1]]");
+          expect(backlinkIds(store, "Hub")).toEqual(["After", "Note 2"]);
+        } finally {
+          warn.mockRestore();
+          internals.readRecord = readRecord;
+        }
+      });
+    }
+
+    it("a new file that can't be read is absent until it can be, and the rest still comes in", async () => {
+      const store = await vaultOf(3);
+      const locked = join(dir, "Fresh lock.md");
+      await writeFile(locked, "Points at [[Hub]].\n");
+      await writeFile(join(dir, "Also new.md"), "Points at [[Hub]].\n");
+      const internals = store as unknown as Internals;
+      const readRecord = internals.readRecord;
+      internals.readRecord = async function (this: unknown, ...args) {
+        if (args[0] === locked) throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+        return readRecord.apply(this, args as [string, string]);
+      };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await store.rescan();
+      } finally {
+        warn.mockRestore();
+        internals.readRecord = readRecord;
+      }
+      expect(backlinkIds(store, "Hub")).toEqual(["Also new"]);
+      await store.rescan();
+      expect(backlinkIds(store, "Hub")).toEqual(["Also new", "Fresh lock"]);
+    });
+
+    it("the watcher's scoped read keeps an unreadable file's record too", async () => {
+      const store = await vaultOf(5);
+      const file = join(dir, "Note 4.md");
+      await writeFile(file, "Edited, pointing at [[Hub]].\n");
+      const internals = store as unknown as Internals;
+      const readRecord = internals.readRecord;
+      internals.readRecord = async function (this: unknown, ...args) {
+        if (args[0] === file) throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+        return readRecord.apply(this, args as [string, string]);
+      };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await expect(internals.refreshFromDisk({ kind: "paths", paths: new Set([file]) })).resolves.toBe(false);
+      } finally {
+        warn.mockRestore();
+        internals.readRecord = readRecord;
+      }
+      expect(store.get("Note 4").content).toContain("Links to [[Note 0]]");
+    });
+
+    it("running out of file handles (EMFILE) isn't per-file: the rescan fails, for the retry path", async () => {
+      const store = await vaultOf(3);
+      await writeFile(join(dir, "Note 1.md"), "Edited.\n");
+      const internals = store as unknown as Internals;
+      const readRecord = internals.readRecord;
+      internals.readRecord = async function () {
+        throw Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" });
+      };
+      try {
+        await expect(store.rescan()).rejects.toThrow("EMFILE");
+      } finally {
+        internals.readRecord = readRecord;
+      }
+    });
+
+    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a real mode-000 file doesn't stop an outside edit and a new note", async () => {
+      const store = await vaultOf(3);
+      const locked = join(dir, "Locked.md");
+      await writeFile(locked, "Locked.\n");
+      await store.rescan();
+      await chmod(locked, 0o000);
+      await writeFile(join(dir, "After.md"), "New, pointing at [[Hub]].\n");
+      await writeFile(join(dir, "Note 0.md"), "Edited outside.\n");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await store.rescan();
+        expect(backlinkIds(store, "Hub")).toEqual(["After"]);
+        expect(store.get("Note 0").content).toContain("Edited outside");
+        expect(store.get("Locked").content).toContain("Locked.");
+      } finally {
+        warn.mockRestore();
+        await chmod(locked, 0o644);
       }
     });
   });

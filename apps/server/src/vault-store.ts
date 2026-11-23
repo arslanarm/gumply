@@ -389,6 +389,15 @@ const MAX_REFRESH_PATHS = 200;
 /** A watcher rescan that failed is tried again (as a full rescan) this many times in a row. */
 const RESCAN_RETRIES = 3;
 
+/** #35q6kt6e: a read that failed for this file only (the rest of a rescan goes on). */
+const UNREADABLE = Symbol("unreadable");
+
+/** This file can't be read right now (permissions, a lock, a folder where a file was). */
+function isPerFileError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "EACCES" || code === "EPERM" || code === "EBUSY" || code === "EISDIR";
+}
+
 /** A file or folder that went away under us: removed, or a parent replaced by a file. */
 function isGoneError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
@@ -759,6 +768,8 @@ export class VaultStore {
   private readonly pendingPaths = new Set<string>();
   /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
   private pendingFull = false;
+  /** Files that couldn't be read, already logged once (#35q6kt6e); cleared when one reads again. */
+  private readonly unreadableLogged = new Set<string>();
   /** Watcher rescans that failed in a row (reset by one that succeeds). */
   private rescanFailures = 0;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
@@ -978,7 +989,16 @@ export class VaultStore {
       if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) record = cached.record;
       else {
         const read = await this.readIfPresent(absolute, id);
-        if (!read) continue; // Deleted between the stat and the read.
+        if (read === null) continue; // Deleted between the stat and the read.
+        if (read === UNREADABLE) {
+          // #35q6kt6e: this one file can't be read right now (permissions, a lock
+          // held by antivirus or a sync tool). It keeps the record it had, if any,
+          // and isn't cached, so the next rescan tries it again; the rest of the
+          // rescan goes on.
+          const previous = this.pages.get(id);
+          if (previous) next.set(id, previous);
+          continue;
+        }
         record = read;
         this.refreshTags(record);
       }
@@ -1014,7 +1034,9 @@ export class VaultStore {
     const next = new Map(this.pages);
     for (const { absolute, id, key } of reads) {
       const record = await this.readIfPresent(absolute, id);
-      if (!record) return null; // Deleted after its stat: the walk settles it.
+      if (record === null) return null; // Deleted after its stat: the walk settles it.
+      // #35q6kt6e: unreadable right now: it keeps its record (already in `next`).
+      if (record === UNREADABLE) continue;
       this.refreshTags(record);
       // The layout didn't change, so neither did the parent.
       record.parentId = this.pages.get(id)!.parentId;
@@ -1024,13 +1046,27 @@ export class VaultStore {
     return { pages: next, folders: this.folders };
   }
 
-  /** `readRecord`, or null when the file is gone (deleted mid-refresh). */
-  private async readIfPresent(absolute: string, id: PageId): Promise<PageRecord | null> {
+  /**
+   * `readRecord`, or null when the file is gone (deleted mid-refresh), or
+   * UNREADABLE when this one file can't be read now (#35q6kt6e: EACCES, EPERM,
+   * EBUSY, EISDIR), logged once per file until it reads again. Anything else
+   * (EMFILE: the process is out of handles) fails the rescan, which retries.
+   */
+  private async readIfPresent(absolute: string, id: PageId): Promise<PageRecord | null | typeof UNREADABLE> {
     try {
-      return await this.readRecord(absolute, id);
+      const record = await this.readRecord(absolute, id);
+      this.unreadableLogged.delete(absolute);
+      return record;
     } catch (error) {
       // Gone, or its folder was replaced by a file, since the walk listed it.
       if (isGoneError(error)) return null;
+      if (isPerFileError(error)) {
+        if (!this.unreadableLogged.has(absolute)) {
+          this.unreadableLogged.add(absolute);
+          console.warn(`[gumply] can't read ${relative(this.root, absolute)} (${(error as NodeJS.ErrnoException).code}); keeping what was there and reading the rest`);
+        }
+        return UNREADABLE;
+      }
       throw error;
     }
   }
