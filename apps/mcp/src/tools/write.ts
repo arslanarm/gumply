@@ -284,6 +284,7 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       await snapshot(meta.id, current.updated, "update_page", client);
       // A rename rewrites links in other pages too: keep their versions as well.
       if (title !== undefined && title.trim() !== current.title) {
+        await vault.store.whenIndexed();
         for (const link of vault.store.backlinks(meta.id)) await snapshot(link.page.id, link.page.updated, "update_page", client);
       }
       try {

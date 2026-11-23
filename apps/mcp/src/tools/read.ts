@@ -277,6 +277,8 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
     },
     async ({ id, title }) => {
       const meta = await vault.resolve({ id, title });
+      // #g95wkd9y: never a partial answer while the links are being indexed.
+      await vault.store.whenIndexed();
       const links = vault.store.backlinks(meta.id);
       const pages = await visible(links.map((link) => link.page));
       const items = pages.map((page) => ({
@@ -338,6 +340,7 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
     },
     async ({ id, depth, limit }) => {
       const meta = await vault.resolve({ id });
+      await vault.store.whenIndexed();
       const graph = vault.store.graph({ center: meta.id, depth });
       // The centre first, then by link count, so a cut keeps the closest pages.
       const sorted = [...graph.nodes].sort((a, b) => (a.id === meta.id ? -1 : b.id === meta.id ? 1 : b.linkCount - a.linkCount || a.title.localeCompare(b.title)));
