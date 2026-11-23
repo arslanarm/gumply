@@ -213,7 +213,14 @@ async function pickVersionWith(dialog: ReturnType<Page['getByTestId']>, text: st
   for (let index = 0; index < count; index += 1) {
     await items.nth(index).click();
     const preview = dialog.getByTestId('history-preview');
-    if (await preview.getByText(text, { exact: true }).first().isVisible({ timeout: 3_000 }).catch(() => false)) return;
+    // A real wait: `isVisible()` ignores its timeout and answers at once, so under load
+    // the right version (still drawing its cards) was skipped for the next one.
+    try {
+      await expect(preview.getByText(text, { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+      return;
+    } catch {
+      // Not this version: try the next one.
+    }
   }
   throw new Error(`no version shows "${text}"`);
 }
