@@ -133,7 +133,8 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
                 {t("conflicts.removeCopy")}
               </button>
             ) : (
-              <>
+              // #h4tyk92t: one group, so a narrow footer wraps it whole instead of splitting it.
+              <span className="conflict-actions-keep">
                 <button type="button" className="button-secondary" disabled={busy} data-testid="conflict-keep-both" onClick={() => void run(() => onResolve(target.copy, "both"))}>
                   {t("conflicts.keepBoth")}
                 </button>
@@ -143,7 +144,7 @@ export function ConflictCompareDialog({ target, pages, onClose, onResolve, onNot
                 <button type="button" className="button-primary" disabled={busy} data-testid="conflict-keep-page" onClick={() => void run(() => onResolve(target.copy, "page"))}>
                   {t("conflicts.keepPage")}
                 </button>
-              </>
+              </span>
             )
           ) : (
             <button type="button" className="button-secondary" disabled={busy} data-testid="conflict-not-a-copy" onClick={() => void run(() => onNotACopy(target.possible))}>

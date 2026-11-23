@@ -7184,7 +7184,12 @@ input {
 .history-note,
 .history-status,
 .history-error,
-.history-muted {
+.history-muted,
+/* #h4tyk92t: .modal p (0,1,1) would otherwise zero these margins in the History dialog. */
+.modal p.history-note,
+.modal p.history-status,
+.modal p.history-error,
+.modal p.history-muted {
   margin: 0.75rem 1.75rem 0;
   font-size: 0.85rem;
 }
@@ -7662,6 +7667,12 @@ input {
   flex: 1;
 }
 
+.conflict-actions-keep {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .conflict-section-title {
   margin: 0.5rem 0;
   font-size: 0.95rem;
@@ -7752,7 +7763,8 @@ input {
 }
 
 .sidebar-syncing {
-  padding: 0.3rem 0.85rem 0.5rem;
+  /* #h4tyk92t: lined up with the row labels above (past their icons), clear of the bottom edge. */
+  padding: 0.35rem 0.85rem 0.75rem 2.6rem;
   color: var(--muted);
   font-size: 0.8rem;
 }

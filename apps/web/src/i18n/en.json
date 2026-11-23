@@ -733,6 +733,7 @@
     "searching": "Searching…",
     "navigate": "navigate",
     "open": "open",
+    "run": "run",
     "close": "close",
     "create": "Create “{{title}}”",
     "createBoard": "Create whiteboard “{{title}}”",
@@ -1681,7 +1682,7 @@
       "session": "End of editing",
       "trash": "Before the Trash",
       "conflict": "Kept from a conflict",
-      "restoredFrom": "Restored the version from {{time}}"
+      "restoredFrom": "Restored the version saved {{time}}"
     },
     "renamedFrom": "Renamed from “{{title}}”",
     "movedFrom": "Moved from {{folder}}",
@@ -1711,7 +1712,7 @@
     "kept": "Kept",
     "keptHint": "Kept versions are never cleaned up. Click to stop keeping it.",
     "copied": "Copied",
-    "restored": "Restored the version from {{time}}. Undo is at the top of the list.",
+    "restored": "Restored the version saved {{time}}. Undo is at the top of the list.",
     "changedOnDisk": "This page changed while you were looking. Check the list and try again.",
     "restoreFailed": "Couldn't restore: {{error}}",
     "orphans": "Earlier versions of deleted pages",
