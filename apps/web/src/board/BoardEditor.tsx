@@ -1071,6 +1071,7 @@ function BoardCanvas(props: BoardEditorProps) {
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   /** #zkknytrs: `--board-zoom` on the elements whose dots can show (zoom-var.ts), not the whole board. */
   const selectedNodeElements = useRef<HTMLElement[]>([]);
+  const selectedKey = useRef("");
   /**
    * `full` looks up the selected objects again (zoom, selection, tool, rest);
    * a hover change reuses them, so objects sliding under the pointer during a
@@ -1081,10 +1082,19 @@ function BoardCanvas(props: BoardEditorProps) {
       const root = rootRef.current;
       if (!root) return;
       if (full) {
-        // From our selection, not React Flow's `selected` class, which can land a render later.
-        const ids = new Set(selectedRef.current.nodes);
-        selectedNodeElements.current =
-          ids.size === 0 ? [] : [...root.querySelectorAll<HTMLElement>(".react-flow__node")].filter((element) => ids.has(element.dataset.id ?? ""));
+        // From our selection, not React Flow's `selected` class, which can land a
+        // render later. Looked up again only when the selection changed or one of
+        // its objects isn't in the page yet (or anymore): a drag re-renders often.
+        const ids = selectedRef.current.nodes;
+        const key = ids.join("\n");
+        const cached = selectedNodeElements.current;
+        const complete = cached.length === ids.length && cached.every((element) => element.isConnected);
+        if (key !== selectedKey.current || !complete) {
+          const wanted = new Set(ids);
+          selectedNodeElements.current =
+            wanted.size === 0 ? [] : [...root.querySelectorAll<HTMLElement>(".react-flow__node")].filter((element) => wanted.has(element.dataset.id ?? ""));
+          selectedKey.current = key;
+        }
       }
       // Compensate down to the minimum zoom, so dots keep a ~10 px screen
       // target however far out you are (#zk6etvae).
