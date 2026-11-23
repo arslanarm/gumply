@@ -395,6 +395,30 @@ const RESCAN_RETRIES = 3;
 /** #g95wkd9y: pages per batch when warming the mention and search caches. */
 const WARM_BATCH = 200;
 
+/**
+ * #kguq5bc5: a page's frontmatter YAML exactly as `parseNoteTemplate(raw).yaml`
+ * gives it, but reading only up to the closing `---` (the scan keeps it for
+ * every page, so it must not split whole files).
+ */
+export function frontmatterYaml(raw: string): string | null {
+  const text = raw.startsWith("\uFEFF") ? raw.slice(1) : raw;
+  if (!text.startsWith("---")) return null;
+  for (let at = 0, first = true; at <= text.length; ) {
+    const newline = text.indexOf("\n", at);
+    const lineEnd = newline === -1 ? text.length : newline;
+    const line = text.slice(at, lineEnd).replace(/\r$/, "");
+    if (/^---\s*$/.test(line)) {
+      if (!first) return parseNoteTemplate(text.slice(0, newline === -1 ? text.length : newline + 1)).yaml;
+    } else if (first) {
+      return null;
+    }
+    first = false;
+    if (newline === -1) return null;
+    at = newline + 1;
+  }
+  return null;
+}
+
 /** #g95wkd9y: files a scan stats and reads at once. */
 export const SCAN_CONCURRENCY = 32;
 
@@ -920,6 +944,14 @@ export class VaultStore {
   private rescanFailures = 0;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
   private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
+  /**
+   * #kguq5bc5: each page's frontmatter YAML as the scan read it (path → its
+   * mtime then), so its properties are parsed without reading the file again;
+   * each entry is dropped once parsed (by a request or the warm-up).
+   */
+  private readonly scanYaml = new Map<string, { mtimeMs: number; yaml: string | null }>();
+  /** Test counter (#kguq5bc5): files read to get a page's properties. */
+  propertyFileReads = 0;
 
   constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number } = {}) {
     this.root = resolve(root);
@@ -1900,9 +1932,28 @@ export class VaultStore {
   private async rawPropertiesOf(record: PageRecord): Promise<RawProperty[]> {
     const cached = this.rawPropertyCache.get(record.filePath);
     if (cached && cached.mtimeMs === record.fileMtimeMs) return cached.raw;
+    const scanned = this.rawPropertiesFromScan(record);
+    if (scanned) return scanned;
     let raw: RawProperty[] = [];
     try {
+      this.propertyFileReads += 1;
       raw = readRawProperties(parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml);
+    } catch {
+      raw = [];
+    }
+    this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw });
+    return raw;
+  }
+
+  /** #kguq5bc5: the page's properties from the YAML the scan kept, if it's still this version of the file. */
+  private rawPropertiesFromScan(record: PageRecord): RawProperty[] | null {
+    const scanned = this.scanYaml.get(record.filePath);
+    if (!scanned) return null;
+    this.scanYaml.delete(record.filePath);
+    if (scanned.mtimeMs !== record.fileMtimeMs) return null;
+    let raw: RawProperty[] = [];
+    try {
+      raw = readRawProperties(scanned.yaml);
     } catch {
       raw = [];
     }
@@ -4566,7 +4617,11 @@ export class VaultStore {
           const record = this.pages.get(ids[at]!);
           if (!record) continue;
           this.searchText(record);
-          if (record.kind === "page" && !copies.has(record.id)) this.mentionWordsOf(record);
+          if (record.kind === "page" && !copies.has(record.id)) {
+            this.mentionWordsOf(record);
+            // #kguq5bc5: the properties index's input, from the scan's YAML (no file read).
+            this.rawPropertiesFromScan(record);
+          }
         }
         if (at < ids.length) setImmediate(batch);
         else resolve();
@@ -4764,6 +4819,10 @@ export class VaultStore {
     };
     if (icon) record.icon = icon;
     this.setPropertyLinks(record, raw);
+    // #kguq5bc5: the frontmatter for the properties index, so nothing reads this file again for it.
+    if (!this.rawPropertyCache.has(absolute) || this.rawPropertyCache.get(absolute)!.mtimeMs !== stats.mtimeMs) {
+      this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
+    }
     return record;
   }
 
