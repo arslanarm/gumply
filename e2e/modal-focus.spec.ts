@@ -35,12 +35,20 @@ async function openNote(page: Page, vault: { seed: (pages: { title: string; cont
   return note!;
 }
 
-/** Click into the editor, so that is where focus should come back to. */
+/**
+ * Click into the editor, so that is where focus should come back to. A second
+ * click on the same spot within 500 ms is a double-click to ProseMirror (it
+ * selects a word, and Cmd+K then adds a link instead of searching), so End
+ * collapses the caret whatever the click count was (#34defyna).
+ */
 async function focusEditor(page: Page) {
   await page.getByTestId('editor-content').getByText('Some text here.').click();
+  await page.keyboard.press('End');
 }
 
 async function fromCmdK(page: Page, query: string, testId: string) {
+  // Cmd+K with text selected is "add link"; search needs a collapsed caret.
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.isCollapsed ?? true)).toBe(true);
   await page.keyboard.press(`${MOD}+k`);
   await page.keyboard.type(query);
   await page.getByTestId(testId).click();
