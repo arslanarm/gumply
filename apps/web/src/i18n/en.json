@@ -216,7 +216,8 @@
       "openToday": "Open today's note",
       "toggleOutline": "Toggle outline",
       "toggleOutlineFallback": "Toggle outline (if the browser keeps the first)",
-      "toggle": "Toggle"
+      "toggle": "Toggle",
+      "resizeImage": "Resize the selected image"
     },
     "introBefore": "Press ",
     "introAfter": " anywhere outside a text field or the editor to open this again."
@@ -694,7 +695,9 @@
     "captionLabel": "Image caption",
     "resizeHint": "Drag to resize: snaps to 25, 50, 75 or 100% of the page (Alt: any width). With the image selected, Shift+← and Shift+→ too.",
     "widthAnnounce": "Image width {{percent}}%",
-    "unavailable": "Image unavailable · {{name}}"
+    "unavailable": "Image unavailable · {{name}}",
+    "widthAtSmallest": "Image width {{percent}}%: the smallest step",
+    "widthAtLargest": "Image width {{percent}}%: the full page width"
   },
   "table": {
     "insertRowAbove": "Insert row above",

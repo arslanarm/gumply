@@ -81,6 +81,8 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: `${modifier}S`, label: t("shortcuts.labels.saveNow") },
         { keys: `${modifier}+Shift+↑ / ↓`, label: t("shortcuts.labels.moveBlockUpDown") },
         { keys: `${modifier}D`, label: t("shortcuts.labels.duplicateBlock") },
+        // #e9bd64bb: with an image block selected (click it, or arrow onto it).
+        { keys: "Shift+← / →", label: t("shortcuts.labels.resizeImage") },
       ],
     },
     {

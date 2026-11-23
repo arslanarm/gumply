@@ -27,7 +27,7 @@ describe("shortcut platform label", () => {
     const groups = shortcutGroups("Ctrl");
     expect(groups.map((group) => group.title)).toEqual(["Navigate", "Editor", "Pages", "Whiteboard"]);
     const editorKeys = groups[1]?.items.map((item) => item.keys) ?? [];
-    for (const key of ["/", "[[", "#", "-", "1.", "- [ ]", ">", "```", "CtrlZ", "CtrlS"]) {
+    for (const key of ["/", "[[", "#", "-", "1.", "- [ ]", ">", "```", "CtrlZ", "CtrlS", "Shift+← / →"]) {
       expect(editorKeys).toContain(key);
     }
     expect(groups[2]?.items.map((item) => item.keys)).toContain("Enter");

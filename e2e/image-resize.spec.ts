@@ -16,10 +16,16 @@ const WIDE = Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="400"><rect width="1600" height="400" fill="#3b82f6"/></svg>',
 );
 
+// A small image: its natural size is well under the column.
+const SMALL = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100" fill="#f59e0b"/></svg>',
+);
+
 function addImage() {
   const dir = path.join(E2E_VAULT, 'attachments');
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'wide.svg'), WIDE);
+  writeFileSync(path.join(dir, 'small.svg'), SMALL);
 }
 
 async function open(page: Page, id: string) {
@@ -40,8 +46,8 @@ function widthIn(content: string, marker: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-const columnWidth = (page: Page) =>
-  page.getByTestId('image-block').first().evaluate((figure) => figure.parentElement?.clientWidth ?? figure.clientWidth);
+// The image's own column: its figure's width (the handles, the keys and the announcement all use it).
+const columnWidth = (page: Page) => page.getByTestId('image-block').first().evaluate((figure) => figure.clientWidth);
 
 test('untouched images keep their exact bytes, and show the width they have', async ({ page, request, vault }) => {
   addImage();
@@ -118,6 +124,53 @@ test('editing the caption keeps the size', async ({ page, request, vault }) => {
   await page.keyboard.press('End');
   await page.keyboard.type('s');
   await saved(request, 'Caption size', (text) => text === '![Cats|200](attachments/wide.svg)');
+});
+
+test('edit the caption, then resize: the file has the new caption and the width (D37)', async ({ page, request, vault }) => {
+  addImage();
+  await vault.seed([{ title: 'Caption then size', content: 'Intro\n\n![Old](<attachments/wide.svg>)\n\nAfter' }]);
+  await open(page, 'Caption then size');
+  const caption = page.getByTestId('image-caption');
+  await caption.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('New');
+  await saved(request, 'Caption then size', (text) => text.includes('![New]'));
+
+  await page.getByTestId('image-block-img').click();
+  const column = await columnWidth(page);
+  await page.keyboard.press('Shift+ArrowLeft');
+  const after = await saved(request, 'Caption then size', (text) => /!\[New\|\d+\]/.test(text));
+  expect(after).not.toContain('Old');
+  expect(widthIn(after, 'New')).toBe(Math.round(column * 0.75));
+  await expect(page.getByTestId('image-caption')).toHaveValue('New');
+});
+
+test('a small image with no width: Shift+← steps down from its drawn size, and the limit is announced', async ({ page, request, vault }) => {
+  addImage();
+  const content = 'Intro\n\n![[small.svg]]\n\nAfter';
+  await vault.seed([{ title: 'Small keys', content }]);
+  await open(page, 'Small keys');
+  const img = page.getByTestId('image-block-img');
+  await expect(img).toBeVisible();
+  // From the keyboard: arrow down from the line above selects the image.
+  await page.getByTestId('editor-content').getByText('Intro', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByTestId('image-block')).toHaveClass(/is-selected/);
+  const column = await columnWidth(page);
+  const drawn = await img.evaluate((element) => element.getBoundingClientRect().width);
+  expect(drawn).toBeLessThan(column * 0.5);
+
+  // 200 px in a wider column is under 50%: one step down is 25%, never a bigger 75%.
+  await page.keyboard.press('Shift+ArrowLeft');
+  const after = await saved(request, 'Small keys', (text) => text.includes('![[small.svg|'));
+  expect(widthIn(after, 'small.svg')).toBe(Math.round(column * 0.25));
+  const status = page.getByTestId('image-width-status');
+  await expect(status).toHaveText('Image width 25%');
+  // At the smallest step another Shift+← changes nothing, and says so.
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(status).toHaveText('Image width 25%: the smallest step');
+  expect((await api.getPage(request, 'Small keys')).content).toBe(after);
 });
 
 test('an image block moves with ⋮⋮ like any block', async ({ page, request, vault }) => {

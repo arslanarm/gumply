@@ -79,7 +79,7 @@ Your notes are plain files in a folder you choose (your *vault*). You can read a
 
 - Saved in the vault's `attachments/` folder, under a cleaned-up name (`My photo.PNG` → `My-photo.png`; a clash gets `-1`, `-2`…), up to 25 MB each.
 - Files from a Notion import go in `attachments/Notion import`.
-- **An image's width** is Obsidian's: `![[pic.png|300]]`, or `![Caption|300](attachments/pic.png)` (the width ends the caption), in pixels. `|300x200` is read and kept as written. Resizing an image writes only its width; an image you don't resize keeps its text exactly. A caption that ends in `|` and a number reads as a width, as in Obsidian.
+- **An image's width** is Obsidian's: `![[pic.png|300]]`, or `![Caption|300](attachments/pic.png)` (the width ends the caption), in pixels. `|300x200` is read and kept as written until you resize the image, which writes the width alone (`|N`). Resizing an image writes only its width; an image you don't resize keeps its text exactly. A caption that ends in `|` and a number reads as a width, as in Obsidian.
 
 ## Gumply's own files
 

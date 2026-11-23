@@ -93,6 +93,7 @@ interface ImageAttrsLike {
   title?: unknown;
   obsidian?: unknown;
   markdownRaw?: unknown;
+  markdownRawKey?: unknown;
 }
 
 /** A block image's width in pixels (from its embed or its alt), or null. */
@@ -114,7 +115,10 @@ export function imageCaptionOf(attrs: ImageAttrsLike): string {
 export function widthPatch(attrs: ImageAttrsLike, width: number | null): Record<string, unknown> {
   if (typeof attrs.obsidian === "string" && attrs.obsidian) return { obsidian: embedWithWidth(attrs.obsidian, width) };
   const alt = joinAltWidth(imageCaptionOf(attrs), width);
-  const raw = typeof attrs.markdownRaw === "string" && attrs.markdownRaw ? markdownWithWidth(attrs.markdownRaw, width) : null;
+  // The text as written only while it still describes this image: after a caption edit it's stale
+  // (the serializer ignores it), and stamping it with a fresh key would write the old caption back.
+  const current = typeof attrs.markdownRaw === "string" && attrs.markdownRaw && attrs.markdownRawKey === rawKey(attrs.src, attrs.alt, attrs.title);
+  const raw = current ? markdownWithWidth(attrs.markdownRaw as string, width) : null;
   return raw === null
     ? { alt, markdownRaw: null, markdownRawKey: null }
     : { alt, markdownRaw: raw, markdownRawKey: rawKey(attrs.src, alt, attrs.title) };

@@ -7,7 +7,9 @@ import {
   nearestStep,
   splitAltWidth,
   steppedWidth,
+  widthPatch,
 } from "../src/editor/attachments/image-width";
+import { rawKey } from "../src/editor/attachments/image-raw";
 
 /** #e9bd64bb (D46): a block image's width in Obsidian's `|N` syntax. */
 describe("Markdown image alt: caption|width", () => {
@@ -69,5 +71,36 @@ describe("resize steps: 25 / 50 / 75 / 100% of the column", () => {
     // Between steps: to the next one in that direction.
     expect(steppedWidth(300, 800, 1)).toBe(400);
     expect(steppedWidth(300, 800, -1)).toBe(200);
+  });
+});
+
+describe("widthPatch keeps the text as written only while it's current (D37)", () => {
+  const written = "![Old](<my pic.png>)";
+  const parsed = { src: "my pic.png", alt: "Old", title: null, markdownRaw: written, markdownRawKey: rawKey("my pic.png", "Old", null) };
+
+  it("an untouched image: only the size changes in its text", () => {
+    expect(widthPatch(parsed, 300)).toEqual({ alt: "Old|300", markdownRaw: "![Old|300](<my pic.png>)", markdownRawKey: rawKey("my pic.png", "Old|300", null) });
+  });
+
+  it("after a caption edit the old text is stale: a resize drops it, so the new caption is written", () => {
+    // The caption was edited: alt moved on, the recorded text and its key didn't.
+    const edited = { ...parsed, alt: "New" };
+    expect(widthPatch(edited, 300)).toEqual({ alt: "New|300", markdownRaw: null, markdownRawKey: null });
+  });
+
+  it("a stale text isn't revived by a width that is then removed", () => {
+    const edited = { ...parsed, alt: "New|300" };
+    expect(widthPatch(edited, null)).toEqual({ alt: "New", markdownRaw: null, markdownRawKey: null });
+  });
+});
+
+describe("keyboard steps from an image with no width start at its drawn width", () => {
+  it("a 200 px picture in a 700 px column: Shift+← goes to 25%, not 75%", () => {
+    expect(steppedWidth(200, 700, -1)).toBe(175);
+    expect(steppedWidth(200, 700, 1)).toBe(350);
+  });
+
+  it("a picture as wide as the column is at 100%: Shift+→ stays (no size)", () => {
+    expect(steppedWidth(700, 700, 1)).toBeNull();
   });
 });

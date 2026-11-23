@@ -7,17 +7,7 @@ import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { useFileLinkVersion } from "../lib/file-links.js";
 import { t, useT } from "../i18n/index.js";
 import { altWithCaption, imageCaptionOf, imageWidthOf, nearestStep, widthPatch } from "../editor/attachments/image-width.js";
-
-/** The page column an image can use, in pixels (the figure's own width). */
-function columnWidth(figure: HTMLElement | null): number {
-  return figure?.parentElement?.clientWidth || figure?.clientWidth || 0;
-}
-
-/** "50%" for a width in a column, or "100%" for no width. */
-function sharePercent(width: number | null, column: number): number {
-  if (width === null || column <= 0) return 100;
-  return Math.min(100, Math.round((width / column) * 100));
-}
+import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageWidthPercent } from "../editor/attachments/image-measure.js";
 
 /**
  * Image block with a loading skeleton, an editable caption (the alt text) and,
@@ -65,13 +55,30 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
     setFailed(false);
   }, [alt, src]);
 
-  // A width set while the image is selected (a handle, or Shift+arrows) is announced.
+  // A width set while the image is selected (a handle, or Shift+arrows) is announced, as the
+  // share of the column it really takes (an image with no width may be narrower than 100%).
   const announcedWidth = useRef(width);
   useEffect(() => {
     if (announcedWidth.current === width) return;
     announcedWidth.current = width;
-    if (selected) setAnnounce(t("image.widthAnnounce", { percent: sharePercent(width, columnWidth(figureRef.current)) }));
+    if (selected) setAnnounce(t("image.widthAnnounce", { percent: imageWidthPercent(width, figureRef.current) }));
   }, [width, selected, t]);
+
+  // Shift+←/→ at 25% or at the full column changes nothing: say where it is, every time.
+  useEffect(() => {
+    const figure = figureRef.current;
+    if (!figure) return;
+    const onLimit = (event: Event) => {
+      const direction = (event as CustomEvent<{ direction: 1 | -1 }>).detail?.direction;
+      const percent = imageWidthPercent(imageWidthOf(node.attrs), figure);
+      const message = t(direction > 0 ? "image.widthAtLargest" : "image.widthAtSmallest", { percent });
+      // Cleared first, so the same words are read again on a repeated key.
+      setAnnounce("");
+      window.requestAnimationFrame(() => setAnnounce(message));
+    };
+    figure.addEventListener(IMAGE_WIDTH_LIMIT_EVENT, onLimit);
+    return () => figure.removeEventListener(IMAGE_WIDTH_LIMIT_EVENT, onLimit);
+  }, [node.attrs, t]);
 
   const startResize = (side: "left" | "right") => (event: ReactPointerEvent<HTMLSpanElement>) => {
     const figure = figureRef.current;
@@ -83,7 +90,7 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
     handle.setPointerCapture(event.pointerId);
     const startX = event.clientX;
     const startWidth = image.getBoundingClientRect().width;
-    const column = columnWidth(figure);
+    const column = imageColumnWidth(figure);
     let next: number | null = width;
     const move = (moveEvent: PointerEvent) => {
       const delta = (moveEvent.clientX - startX) * (side === "right" ? 1 : -1);

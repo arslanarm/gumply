@@ -13,6 +13,7 @@ import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 import { NodeSelection } from "@tiptap/pm/state";
 import { embedWidth, imageWidthOf, splitAltWidth, steppedWidth, widthPatch } from "./image-width.js";
+import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageFigureOf, renderedImageWidth } from "./image-measure.js";
 import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
 /** `|` escaped in a written label, so the link is safe inside a table cell too (#eg65ktng). */
@@ -78,12 +79,17 @@ export const ImageBlock = Node.create({
       const { state, view } = this.editor;
       const selection = state.selection;
       if (!(selection instanceof NodeSelection) || selection.node.type.name !== this.name) return false;
-      const dom = view.nodeDOM(selection.from) as HTMLElement | null;
-      const column = dom?.clientWidth ?? 0;
+      const figure = imageFigureOf(view.nodeDOM(selection.from) as Element | null);
+      const column = imageColumnWidth(figure);
       if (column <= 0) return false;
       const current = imageWidthOf(selection.node.attrs);
-      const next = steppedWidth(current, column, direction);
-      if (next === current) return true;
+      // No width: the image shows at its natural size (capped), so step from what's drawn.
+      const next = steppedWidth(current ?? renderedImageWidth(figure), column, direction);
+      if (next === current) {
+        // Already at 25% or the full column: say so, so a screen reader hears the limit.
+        figure?.dispatchEvent(new CustomEvent(IMAGE_WIDTH_LIMIT_EVENT, { detail: { direction } }));
+        return true;
+      }
       const attrs = { ...selection.node.attrs, ...widthPatch(selection.node.attrs, next) };
       const tr = state.tr.setNodeMarkup(selection.from, undefined, attrs);
       tr.setSelection(NodeSelection.create(tr.doc, selection.from));
