@@ -1380,6 +1380,23 @@ export class VaultStore {
     const previous = new Map(this.pages);
     this.pages.clear();
     for (const [id, record] of next) this.pages.set(id, record);
+    // #m67tqa7m: the links follow the new records at once, before any awaited
+    // history work below, so a request served meanwhile (pages, backlinks, the
+    // graph) never sees the new page list with the old links.
+    // #g95wkd9y: a change that leaves every link target where it was (same ids,
+    // titles and kinds, same linkable files) only changes the changed pages'
+    // own links. Anything else can change what other pages' links resolve to.
+    const targetsMoved =
+      removed ||
+      externalMoves.length > 0 ||
+      this.fileIndexEpoch !== epochBefore ||
+      changedIds.some((id) => {
+        const before = previous.get(id);
+        const after = this.pages.get(id);
+        return !before || !after || before.title !== after.title || before.kind !== after.kind;
+      });
+    if (targetsMoved) this.reindexAll();
+    else this.recomputeSources(changedIds);
     for (const { from, to } of historyMoves) {
       const record = this.pages.get(to);
       if (record && (record.kind === "page" || record.kind === "whiteboard")) await this.followHistory(from, to);
@@ -1401,21 +1418,10 @@ export class VaultStore {
     for (const record of editedOutside) await this.versionFromOutside(record);
     // D23: a file moved to another folder outside Gumply keeps working
     // attachment links. Links the other tool already fixed are kept.
-    await this.relinkMoved(externalMoves, { keepValidAtDestination: true });
-    // #g95wkd9y: a change that leaves every link target where it was (same ids,
-    // titles and kinds, same linkable files) only changes the changed pages'
-    // own links. Anything else can change what other pages' links resolve to.
-    const targetsMoved =
-      removed ||
-      externalMoves.length > 0 ||
-      this.fileIndexEpoch !== epochBefore ||
-      changedIds.some((id) => {
-        const before = previous.get(id);
-        const after = this.pages.get(id);
-        return !before || !after || before.title !== after.title || before.kind !== after.kind;
-      });
-    if (targetsMoved) this.reindexAll();
-    else this.recomputeSources(changedIds);
+    const relinked = await this.relinkMoved(externalMoves, { keepValidAtDestination: true });
+    // The few pages whose attachment links were just rewritten: their own links
+    // again (cheap, and the rewrite only touched attachment paths).
+    if (relinked.length > 0) this.recomputeSources(relinked);
     return true;
   }
 
