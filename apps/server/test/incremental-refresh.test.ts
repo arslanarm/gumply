@@ -468,19 +468,26 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
       expect(store.get("Note 4").content).toContain("Links to [[Note 0]]");
     });
 
-    it("running out of file handles (EMFILE) isn't per-file: the rescan fails, for the retry path", async () => {
+    it("running out of file handles (EMFILE/ENFILE) skips that file like any unreadable one (@lead, #g95wkd9y)", async () => {
       const store = await vaultOf(3);
       await writeFile(join(dir, "Note 1.md"), "Edited.\n");
+      await writeFile(join(dir, "Note 2.md"), "Also edited.\n");
       const internals = store as unknown as Internals;
       const readRecord = internals.readRecord;
-      internals.readRecord = async function () {
-        throw Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" });
+      internals.readRecord = async function (this: unknown, ...args) {
+        if (String(args[0]).endsWith("Note 1.md")) throw Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" });
+        return readRecord.apply(this, args as [string, string]);
       };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
-        await expect(store.rescan()).rejects.toThrow("EMFILE");
+        await expect(store.rescan()).resolves.toBe(true);
       } finally {
+        warn.mockRestore();
         internals.readRecord = readRecord;
       }
+      // That one file keeps what it had; the other edit came in.
+      expect(store.get("Note 1").content).toContain("Links to [[Note 2]]");
+      expect(store.get("Note 2").content).toContain("Also edited.");
     });
 
     it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a real mode-000 file doesn't stop an outside edit and a new note", async () => {

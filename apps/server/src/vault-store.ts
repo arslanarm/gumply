@@ -389,13 +389,40 @@ const MAX_REFRESH_PATHS = 200;
 /** A watcher rescan that failed is tried again (as a full rescan) this many times in a row. */
 const RESCAN_RETRIES = 3;
 
+/** #g95wkd9y: files a scan stats and reads at once. */
+export const SCAN_CONCURRENCY = 32;
+
+type ScanOutcome =
+  | { kind: "gone" }
+  | { kind: "keep" }
+  | { kind: "cached" | "read"; key: string; record: PageRecord };
+
+/**
+ * `fn` over `items` with at most `limit` running at once; the results come
+ * back in the items' order. A rejection rejects the whole (as `Promise.all`).
+ */
+export async function mapBounded<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]!, index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 /** #35q6kt6e: a read that failed for this file only (the rest of a rescan goes on). */
 const UNREADABLE = Symbol("unreadable");
 
 /** This file can't be read right now (permissions, a lock, a folder where a file was). */
 function isPerFileError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code === "EACCES" || code === "EPERM" || code === "EBUSY" || code === "EISDIR";
+  // #g95wkd9y (@lead): out of file handles (EMFILE/ENFILE) is treated like
+  // any unreadable file: that file is skipped, the scan goes on.
+  return code === "EACCES" || code === "EPERM" || code === "EBUSY" || code === "EISDIR" || code === "EMFILE" || code === "ENFILE";
 }
 
 /** A file or folder that went away under us: removed, or a parent replaced by a file. */
@@ -774,6 +801,8 @@ export class VaultStore {
   private readonly pendingPaths = new Set<string>();
   /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
   private pendingFull = false;
+  /** Files a scan reads at once (#g95wkd9y); tests set 1 for a sequential baseline. */
+  private scanConcurrency = SCAN_CONCURRENCY;
   /** Files that couldn't be read, already logged once (#35q6kt6e); cleared when one reads again. */
   private readonly unreadableLogged = new Set<string>();
   /** Watcher rescans that failed in a row (reset by one that succeeds). */
@@ -1047,10 +1076,18 @@ export class VaultStore {
       rel: relative(this.root, absolute).split(sep).join("/"),
     }));
     const boards = new Set(files.filter((file) => keepsExtension(file.rel)).map((file) => file.rel.toLowerCase()));
+    // Ids in walk order (cheap, and the collision rules depend on it).
+    const items: Array<{ absolute: string; id: PageId }> = [];
     for (const { absolute, rel } of files) {
       let id = keepsExtension(rel) ? rel : pathToPageId(rel);
       if (!keepsExtension(rel) && boards.has(id.toLowerCase())) id = rel;
-      if (!isValidPageId(id)) continue;
+      if (isValidPageId(id)) items.push({ absolute, id });
+    }
+    // #g95wkd9y: stat and read up to SCAN_CONCURRENCY files at once (10k files
+    // one after another were most of a cold open); the outcomes are applied
+    // below in walk order, so ids, the index order and every side effect are
+    // exactly those of a sequential read.
+    const outcomes = await mapBounded(items, this.scanConcurrency, async ({ absolute, id }): Promise<ScanOutcome> => {
       let stats;
       try {
         stats = await stat(absolute);
@@ -1060,34 +1097,35 @@ export class VaultStore {
         // since the listing.
         if (isPerFileError(error)) {
           this.noteUnreadable(absolute, error);
-          const previous = this.pages.get(id);
-          if (previous) next.set(id, previous);
+          return { kind: "keep" };
         }
-        continue;
+        return { kind: "gone" };
       }
       const key = statKey(stats);
       const cached = this.readCache.get(absolute);
       // #g95wkd9y: an unchanged file keeps its record; a file the watcher named is always read.
-      let record: PageRecord;
-      if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) record = cached.record;
-      else {
-        const read = await this.readIfPresent(absolute, id);
-        if (read === null) continue; // Deleted between the stat and the read.
-        if (read === UNREADABLE) {
-          // #35q6kt6e: this one file can't be read right now (permissions, a lock
-          // held by antivirus or a sync tool). It keeps the record it had, if any,
-          // and isn't cached, so the next rescan tries it again; the rest of the
-          // rescan goes on.
-          const previous = this.pages.get(id);
-          if (previous) next.set(id, previous);
-          continue;
-        }
-        record = read;
-        this.refreshTags(record);
+      if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) return { kind: "cached", key, record: cached.record };
+      const read = await this.readIfPresent(absolute, id);
+      if (read === null) return { kind: "gone" }; // Deleted between the stat and the read.
+      // #35q6kt6e: this one file can't be read right now (permissions, a lock
+      // held by antivirus or a sync tool, or out of file handles). It keeps the
+      // record it had, if any, and isn't cached, so the next rescan tries it
+      // again; the rest of the rescan goes on.
+      if (read === UNREADABLE) return { kind: "keep" };
+      return { kind: "read", key, record: read };
+    });
+    items.forEach(({ absolute, id }, index) => {
+      const outcome = outcomes[index]!;
+      if (outcome.kind === "gone") return;
+      if (outcome.kind === "keep") {
+        const previous = this.pages.get(id);
+        if (previous) next.set(id, previous);
+        return;
       }
-      nextCache.set(absolute, { key, id, record });
-      next.set(id, record);
-    }
+      if (outcome.kind === "read") this.refreshTags(outcome.record);
+      nextCache.set(absolute, { key: outcome.key, id, record: outcome.record });
+      next.set(id, outcome.record);
+    });
     // #35q6kt6e: a folder that couldn't be listed keeps the pages and boards it
     // had (they aren't deleted, just out of reach), with their cached reads.
     if (unreadableDirs.length > 0) {
