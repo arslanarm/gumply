@@ -133,7 +133,10 @@ describe("display math and comments inside a column (#8uqd657j)", () => {
     expect(rawBlocks(row("%%\nhidden\n%%"))).toEqual([["comment", "%%\nhidden\n%%"]]);
   });
 
-  it("not inside a list or quote in a column (those keep their own rules)", () => {
-    expect(rawBlocks(row("- $$x$$"))).toEqual([]);
+  it("not inside a list, quote or callout in a column, nor at the top level of those (only columns widen the rule)", () => {
+    for (const inner of ["- $$x$$", "> $$\n> x\n> $$", "> [!note] Title\n> $$\n> x\n> $$"]) {
+      expect(rawBlocks(row(inner)), inner).toEqual([]);
+      expect(rawBlocks(inner), inner).toEqual([]);
+    }
   });
 });
