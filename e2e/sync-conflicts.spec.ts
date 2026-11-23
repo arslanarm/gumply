@@ -157,3 +157,18 @@ test('a board copy opens read-only with its board drawn (the board engine loads 
   await expect(page.getByTestId('conflict-copy-banner')).toBeVisible();
   await expect(page.getByTestId('conflict-copy-page')).toContainText('Theirs on the copy', { timeout: 10_000 });
 });
+
+test('a board Compare names the cards that differ, worded for the copy (#h4tyk92t)', async ({ page, request }) => {
+  const board = (nodes: Array<{ id: string; text: string }>) =>
+    `${JSON.stringify({ nodes: nodes.map((node, i) => ({ ...node, type: 'text', x: i * 300, y: 0, width: 220, height: 80 })), edges: [] })}\n`;
+  await writeFile(path.join(E2E_VAULT, 'Plan.canvas'), board([{ id: 'a', text: 'Launch plan' }, { id: 'b', text: 'Old idea' }]), 'utf8');
+  const copy = 'Plan.sync-conflict-20261122-143005-ABCDEFG.canvas';
+  await syncIn(request, { [copy]: board([{ id: 'a', text: 'Launch plan, v2' }]) });
+  await page.goto('/#/Plan.canvas');
+  await page.getByTestId('conflict-banner').getByTestId('conflict-banner-compare').click();
+  const changes = page.getByTestId('conflict-compare').getByTestId('conflict-board-changes');
+  await expect(changes).toContainText('1 card changed in the copy', { timeout: 10_000 });
+  await expect(changes).toContainText('1 card only in the page');
+  await expect(changes.getByTestId('history-board-list')).toContainText('Launch plan, v2');
+  await expect(changes.getByTestId('history-board-list')).toContainText('Old idea');
+});

@@ -445,24 +445,27 @@ const MARK_SYMBOL: Record<BoardDiffMark, string> = { added: "+", removed: "−",
  * red, and changed ones amber. The legend pairs each colour with a symbol and
  * a word; the list below names every card that changed.
  */
-function BoardChanges({ version, current, diff, pages }: {
+export function BoardChanges({ version, current, diff, pages, labels, testId = "history-board-changes" }: {
   version: CanvasBoard;
   current: CanvasBoard;
   diff: { added: string[]; removed: string[]; changed: string[] };
   pages: BoardPageOption[];
+  /** #h4tyk92t: Compare words the legend and the list for a copy, not a version. */
+  labels?: { legend: Record<BoardDiffMark, string>; list: string };
+  testId?: string;
 }) {
   const t = useT();
   const view = useMemo(() => boardDiffView(version, current, diff), [version, current, diff]);
   const nodeById = useMemo(() => new Map(view.board.nodes.map((node) => [node.id, node])), [view]);
   const legend: Array<[BoardDiffMark, string]> = [
-    ["added", t("history.boardAdded", { count: diff.added.length })],
-    ["removed", t("history.boardRemoved", { count: diff.removed.length })],
-    ["changed", t("history.boardChanged", { count: diff.changed.length })],
+    ["added", labels?.legend.added ?? t("history.boardAdded", { count: diff.added.length })],
+    ["removed", labels?.legend.removed ?? t("history.boardRemoved", { count: diff.removed.length })],
+    ["changed", labels?.legend.changed ?? t("history.boardChanged", { count: diff.changed.length })],
   ];
   const word: Record<BoardDiffMark, string> = { added: t("history.added"), removed: t("history.removed"), changed: t("history.changed") };
   const rows = [...view.marks].sort((a, b) => ["added", "removed", "changed"].indexOf(a[1]) - ["added", "removed", "changed"].indexOf(b[1]));
   return (
-    <div className="history-board-wrap" data-testid="history-board-changes">
+    <div className="history-board-wrap" data-testid={testId}>
       <ul className="history-board-legend">
         {legend.map(([mark, label]) => (
           <li key={mark} className={`history-board-legend-${mark}`} data-mark={mark}>
@@ -478,7 +481,7 @@ function BoardChanges({ version, current, diff, pages }: {
           <LazyBoardPreview board={view.board} pages={pages} interactive highlight={view.marks} />
         </Suspense>
       </div>
-      <h3 className="history-board-list-title">{t("history.boardChangesList")}</h3>
+      <h3 className="history-board-list-title">{labels?.list ?? t("history.boardChangesList")}</h3>
       <ul className="history-board-list" data-testid="history-board-list">
         {rows.map(([id, mark]) => (
           <li key={id} data-mark={mark}>
