@@ -349,6 +349,74 @@ test.describe('board engine (W1)', () => {
     expect(((await board(page)).nodes[0]?.width ?? 0) - before).toBeGreaterThan(100);
   });
 
+  test('connection dots stay ~11 px at 10% and 200%: hovered, selected, with the connector tool and after a zoom (#zkknytrs)', async ({ page }) => {
+    const seed = {
+      nodes: [
+        { id: 'dddd000000000001', type: 'text', text: 'A', gumply: { kind: 'sticky' }, x: 0, y: 0, width: 100, height: 100, color: '3' },
+        { id: 'dddd000000000002', type: 'text', text: 'B', gumply: { kind: 'sticky' }, x: 200, y: 0, width: 100, height: 100, color: '3' },
+      ],
+      edges: [],
+    };
+    const dotWidth = async (index: number) => {
+      const box = await page.getByTestId('board-sticky').nth(index).locator('xpath=..').getByTestId('board-handle-right').boundingBox();
+      if (!box) throw new Error('no dot');
+      return box.width;
+    };
+    const expectDot = async (index: number) => {
+      await expect.poll(() => dotWidth(index)).toBeGreaterThanOrEqual(10);
+      await expect.poll(() => dotWidth(index)).toBeLessThanOrEqual(12.5);
+    };
+
+    for (const zoom of [0.1, 2]) {
+      await page.addInitScript(
+        ({ value, z }) => {
+          window.localStorage.setItem('gumply:board-lab:dots', value);
+          window.localStorage.setItem('gumply:board-view:lab:dots', JSON.stringify({ x: 300, y: 250, zoom: z }));
+        },
+        { value: JSON.stringify(seed), z: zoom },
+      );
+      await page.goto('/board-lab.html?id=dots&theme=light');
+      await expect(page.getByTestId('board-zoom-value')).toHaveText(`${Math.round(zoom * 100)}%`);
+
+      // Hovered.
+      await page.getByTestId('board-sticky').first().hover();
+      await expectDot(0);
+      // Selected, with the pointer away from it.
+      await page.getByTestId('board-sticky').first().click();
+      await page.mouse.move(1200, 800);
+      await expectDot(0);
+      // Selected, after a Ctrl+wheel zoom (the step and the rest after it place it again).
+      await page.keyboard.down('Control');
+      await page.mouse.wheel(0, zoom < 1 ? -100 : 100);
+      await page.keyboard.up('Control');
+      await expect(page.getByTestId('board-zoom-value')).not.toHaveText(`${Math.round(zoom * 100)}%`);
+      await expectDot(0);
+      // Dragging a connection from A's dot: B's dots, under the pointer mid-drag.
+      await page.keyboard.press('Escape');
+      await page.getByTestId('board-sticky').first().hover();
+      const from = await page.getByTestId('board-sticky').first().locator('xpath=..').getByTestId('board-handle-right').boundingBox();
+      const to = await page.getByTestId('board-sticky').nth(1).boundingBox();
+      if (!from || !to) throw new Error('no layout');
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i += 1) {
+        await page.mouse.move(from.x + ((to.x + to.width / 2 - from.x) * i) / 8, from.y + ((to.y + to.height / 2 - from.y) * i) / 8);
+      }
+      await expectDot(1);
+      await page.mouse.up();
+      // The connector tool shows every dot: B, neither hovered nor selected.
+      await page.keyboard.press('Escape');
+      await page.getByTestId('board-tool-connector').click();
+      await page.mouse.move(1200, 800);
+      await expectDot(1);
+      // Leaving it takes the value off the board again.
+      await page.getByTestId('board-tool-select').click();
+      await expect
+        .poll(() => page.getByTestId('board').evaluate((root) => (root as HTMLElement).style.getPropertyValue('--board-zoom')))
+        .toBe('');
+    }
+  });
+
   test('handle sizes stay 10-14 px at 100% and 15%; a small selected card at 15% drags, never resizes (#ubqp5r4h)', async ({ page }) => {
     const seed = {
       nodes: [

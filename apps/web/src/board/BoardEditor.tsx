@@ -57,6 +57,7 @@ import { ApiRequestError } from "../api/client.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
 import { GROUP_DRAG_MIN, setGroupOffset } from "./group-drag.js";
 import { lodLevel, type LodLevel } from "./lod.js";
+import { createZoomVar, zoomVarTargets } from "./zoom-var.js";
 import {
   amend,
   canRedo,
@@ -1055,21 +1056,73 @@ function BoardCanvas(props: BoardEditorProps) {
 
   /** Keep handles a constant screen size at any zoom (#8ht6zhdv item 2). */
   const lod = useRef<LodLevel>(0);
+  const zoomVar = useRef(createZoomVar()).current;
+  const zoomNow = useRef(1);
+  const zoomRest = useRef<number | undefined>(undefined);
+  // Every dot can show with the connector tool, and while a connection is
+  // dragged (the target's dots appear under the pointer): the whole board then.
+  const connectorTool = useRef(false);
+  connectorTool.current = tool === "connector";
+  const connecting = useRef(false);
+  /** #zkknytrs: `--board-zoom` on the elements whose dots can show (zoom-var.ts), not the whole board. */
+  const placeZoomVar = useCallback(() => {
+    const root = rootRef.current;
+    // Compensate down to the minimum zoom, so dots keep a ~10 px screen
+    // target however far out you are (#zk6etvae).
+    if (root) zoomVar.sync(zoomVarTargets(root, connectorTool.current || connecting.current), Math.max(MIN_ZOOM, zoomNow.current));
+  }, [zoomVar]);
+  /** placeZoomVar in the next frame, at most once per frame. */
+  const zoomVarFrame = useRef(0);
+  const placeZoomVarSoon = useCallback(() => {
+    if (zoomVarFrame.current) return;
+    zoomVarFrame.current = requestAnimationFrame(() => {
+      zoomVarFrame.current = 0;
+      placeZoomVar();
+    });
+  }, [placeZoomVar]);
   const syncZoomVar = useCallback((zoom: number) => {
     const root = rootRef.current;
     if (!root) return;
-    // Compensate down to the minimum zoom, so dots and resize handles keep a
-    // ~10 px screen target however far out you are (#zk6etvae).
-    root.style.setProperty("--board-zoom", String(Math.max(MIN_ZOOM, zoom)));
+    zoomNow.current = zoom;
+    placeZoomVar();
+    // Objects that come into view mount after this step, and the hovered one
+    // changes under a still cursor once the gesture rests: place it again then.
+    placeZoomVarSoon();
+    window.clearTimeout(zoomRest.current);
+    zoomRest.current = window.setTimeout(placeZoomVar, 150);
     // Level of detail: unreadably small text is drawn as bars (lod.ts).
     const level = lodLevel(zoom, lod.current);
     if (level !== lod.current || !root.dataset.lod) {
       lod.current = level;
       root.dataset.lod = String(level);
     }
-  }, []);
+  }, [placeZoomVar, placeZoomVarSoon]);
   const onViewportChange = useCallback((viewport: Viewport) => syncZoomVar(viewport.zoom), [syncZoomVar]);
+  const onConnectStartZoomVar = useCallback(() => {
+    connecting.current = true;
+    placeZoomVar();
+  }, [placeZoomVar]);
+  const onConnectEndZoomVar: OnConnectEnd = useCallback(
+    (event, state) => {
+      connecting.current = false;
+      placeZoomVar();
+      onConnectEnd(event, state);
+    },
+    [onConnectEnd, placeZoomVar],
+  );
   useOnViewportChange({ onChange: onViewportChange });
+  // Selection and tool decide where dots show (after React Flow has rendered the `selected` classes).
+  useEffect(() => {
+    placeZoomVar();
+    placeZoomVarSoon();
+  }, [selection, tool, placeZoomVar, placeZoomVarSoon]);
+  useEffect(
+    () => () => {
+      window.clearTimeout(zoomRest.current);
+      cancelAnimationFrame(zoomVarFrame.current);
+    },
+    [],
+  );
 
   const onInit = useCallback(() => {
     syncZoomVar(flow.getZoom());
@@ -1731,6 +1784,10 @@ function BoardCanvas(props: BoardEditorProps) {
           onPointerMove={(event) => {
             pointerRef.current = toFlow({ x: event.clientX, y: event.clientY });
           }}
+          onPointerOver={(event) => {
+            // Hover shows an object's dots: give it `--board-zoom` (once its :hover applies).
+            if (event.target instanceof Element && event.target.closest(".react-flow__node")) placeZoomVarSoon();
+          }}
           onPointerLeave={() => {
             pointerRef.current = null;
           }}
@@ -1751,7 +1808,8 @@ function BoardCanvas(props: BoardEditorProps) {
             onNodeDragStart={onNodeDragStart}
             onNodeDragStop={onNodeDragStop}
             onConnect={onConnect}
-            onConnectEnd={onConnectEnd}
+            onConnectStart={onConnectStartZoomVar}
+            onConnectEnd={onConnectEndZoomVar}
             isValidConnection={isValidConnection}
             onNodeDoubleClick={onNodeDoubleClick}
             onEdgeDoubleClick={onEdgeDoubleClick}
