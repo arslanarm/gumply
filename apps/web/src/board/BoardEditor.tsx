@@ -107,6 +107,7 @@ import { NODE_TYPES } from "./nodes.js";
 import { Palette } from "./Swatch.js";
 import { t, useT } from "../i18n/index.js";
 import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
+import { motionMs } from "../lib/motion.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -781,7 +782,7 @@ function BoardCanvas(props: BoardEditorProps) {
       zoomToFrame: (id) => {
         const node = boardRef.current.nodes.find((item) => item.id === id);
         if (!node) return;
-        void flow.fitBounds({ x: node.x, y: node.y, width: node.width, height: node.height }, { padding: 0.08, duration: 250 });
+        void flow.fitBounds({ x: node.x, y: node.y, width: node.width, height: node.height }, { padding: 0.08, duration: motionMs(250) });
       },
     });
   }, [addFileCard, onReady, flow]);
@@ -1072,9 +1073,9 @@ function BoardCanvas(props: BoardEditorProps) {
   const fit = useCallback(() => {
     if (boardRef.current.nodes.length === 0) {
       const rect = rootRef.current?.getBoundingClientRect();
-      void flow.setViewport({ x: (rect?.width ?? 0) / 2, y: (rect?.height ?? 0) / 2, zoom: 1 }, { duration: 200 });
+      void flow.setViewport({ x: (rect?.width ?? 0) / 2, y: (rect?.height ?? 0) / 2, zoom: 1 }, { duration: motionMs(200) });
     } else {
-      void flow.fitView({ padding: fitPadding(), maxZoom: 1, duration: 200 });
+      void flow.fitView({ padding: fitPadding(), maxZoom: 1, duration: motionMs(200) });
     }
   }, [flow, fitPadding]);
 
@@ -1791,7 +1792,7 @@ function BoardCanvas(props: BoardEditorProps) {
               <button type="button" className="board-zoom-button" aria-label={t("board.zoomOut")} data-tooltip={t("board.zoomOut")} data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
                 <BoardIcon name="minus" size={16} />
               </button>
-              <button type="button" className="board-zoom-value" aria-label={t("board.resetZoom")} data-tooltip={t("board.zoomTo100")} data-testid="board-zoom-value" onClick={() => void flow.zoomTo(1, { duration: 150 })}>
+              <button type="button" className="board-zoom-value" aria-label={t("board.resetZoom")} data-tooltip={t("board.zoomTo100")} data-testid="board-zoom-value" onClick={() => void flow.zoomTo(1, { duration: motionMs(150) })}>
                 <ZoomPercent />
               </button>
               <button type="button" className="board-zoom-button" aria-label={t("board.zoomIn")} data-tooltip={t("board.zoomIn")} data-testid="board-zoom-in" onClick={() => void flow.zoomIn({ duration: 150 })}>

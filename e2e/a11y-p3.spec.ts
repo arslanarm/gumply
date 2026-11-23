@@ -197,3 +197,26 @@ test('focus order (2.4.3): after editing a base cell with the keyboard, focus is
   await expect(cell).toHaveText('Done');
   await expect(cell).toBeFocused();
 });
+
+test('reduced motion (2.3.3): with "reduce", the board\'s Fit jumps instead of animating', async ({ page, request }) => {
+  const nodes = [
+    { id: 'a', type: 'text', text: 'Far left', x: -2000, y: 0, width: 200, height: 60 },
+    { id: 'b', type: 'text', text: 'Far right', x: 2000, y: 400, width: 200, height: 60 },
+  ];
+  writeFileSync(path.join(E2E_VAULT, 'Wide.canvas'), JSON.stringify({ nodes, edges: [] }));
+  await expect
+    .poll(async () => ((await (await request.get(`${API_URL}/api/pages`)).json()) as { id: string }[]).some((meta) => meta.id === 'Wide.canvas'), { timeout: 10_000 })
+    .toBe(true);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(`/#/${encodeURIComponent('Wide.canvas')}`);
+  await expect(page.getByTestId('board-toolbar')).toBeVisible();
+  const viewport = () => page.locator('.react-flow__viewport').evaluate((el) => (el as HTMLElement).style.transform);
+  // Move away from the fitted view, then Fit: the very next frame is already the end state.
+  await page.getByTestId('board-zoom-in').click();
+  await page.getByTestId('board-zoom-in').click();
+  await page.waitForTimeout(400);
+  await page.getByTestId('board-fit').click();
+  const soon = await page.evaluate(() => new Promise<string>((resolve) => requestAnimationFrame(() => resolve((document.querySelector('.react-flow__viewport') as HTMLElement).style.transform))));
+  await page.waitForTimeout(500);
+  expect(soon).toBe(await viewport());
+});
