@@ -211,6 +211,7 @@ const HISTORY_SESSION_MS = 10 * 60_000;
 import { PropertyTypesStore, readRawProperties, rewritePropertyLinks, typedProperties, type RawProperty } from "./properties.js";
 import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import { sweepTempFiles, tempPathBeside, writeAtomic } from "./temp-files.js";
+import { RenameJournal, RESUME_ANY_AFTER_MS, type PendingRename } from "./rename-journal.js";
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -528,6 +529,9 @@ interface RenameRewrite {
    * plans them again.
    */
   touched: Set<PageId>;
+  /** D47: the renamed page's title before and after (for the journal). */
+  oldTitle: string;
+  newTitle: string;
 }
 
 /** #im3em6tq: how long a path Gumply itself wrote or moved doesn't count toward a sync burst. */
@@ -950,6 +954,11 @@ export class VaultStore {
    */
   private deferRewrites = false;
   private deferredRewrite: RenameRewrite | null = null;
+  /** D47: this installation's id (app data, never the vault); a recent journal entry is only resumed by its own. */
+  private readonly instanceId: string;
+  private readonly renameJournal: RenameJournal;
+  /** D47: renames a crash left unfinished, resumed after the start (tests await it). */
+  renamesResumed: Promise<void> = Promise.resolve();
   /** N9-1: renames whose batches are running (their `touched` sets are filled). */
   private activeRenameJobs = new Set<RenameRewrite>();
   /** N9-1: inside a rename's own rewrite (its writes aren't "touched" by someone else). */
@@ -1030,8 +1039,10 @@ export class VaultStore {
   /** Test counter (#kguq5bc5): files read to get a page's properties. */
   propertyFileReads = 0;
 
-  constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number } = {}) {
+  constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number; instanceId?: string } = {}) {
     this.root = resolve(root);
+    this.instanceId = options.instanceId ?? "local";
+    this.renameJournal = new RenameJournal(this.root);
     this.propertyTypes = new PropertyTypesStore(this.root);
     this.historySource = options.historySource ?? "app";
     this.sessionBytesCap = options.sessionBytesCap ?? SESSION_BYTES_CAP;
@@ -1071,8 +1082,10 @@ export class VaultStore {
       });
       // After the index, never part of it: links don't wait for the warm-up.
       this.warmed = this.indexDone.then(() => this.warmCaches());
+      this.renamesResumed = this.indexDone.then(() => this.resumePendingRenames());
     } else {
       await this.rebuild();
+      this.renamesResumed = this.resumePendingRenames();
     }
     // #e9hs2zgq: our own temp files a crash left behind, once a day old. In the
     // background (never delays opening the vault); tests await `tempSweep`.
@@ -2388,6 +2401,10 @@ export class VaultStore {
         held.push(newId);
       }
       const rewritten: PageId[] = [...result.rewrittenPages];
+      // D47: journalled right after the move (phase A), so a crash before the rewrite ends is finished
+      // at the next start. Never part of phase A: a failure here must not drop the captured rewrite.
+      const entry: PendingRename = { oldId: id, newId, oldTitle: job.oldTitle, newTitle: job.newTitle, instance: this.instanceId, startedAt: new Date().toISOString() };
+      await this.renameJournal.add(entry).catch((error: unknown) => console.warn("[gumply] couldn't journal a rename (it goes on, not crash-safe):", error));
       this.activeRenameJobs.add(job);
       for (let at = 0; at < job.ids.length; ) {
         at = await this.enqueue(() => this.rewriteBatch(job, at, rewritten));
@@ -2401,6 +2418,7 @@ export class VaultStore {
         // Every link says the new name now: resolve as usual again.
         this.renameAliases.delete(newId);
         this.reindexAll();
+        await this.renameJournal.remove((pending) => pending.oldId === entry.oldId && pending.newId === entry.newId && pending.startedAt === entry.startedAt).catch(() => undefined);
         return {
           ...result,
           rewrittenPages: rewritten.sort((a, b) => a.localeCompare(b)),
@@ -3473,26 +3491,133 @@ export class VaultStore {
    * title and file name differ, links become `[[file name|Title]]` (for a
    * board always `[[Map.canvas|Map]]`, v1.7) so Obsidian resolves them too.
    */
+  /**
+   * The link rewrite for a renamed page (as it is now): given a page list to
+   * resolve against and the target ids, a text rewriter. Resolved from the page
+   * the link is written in (#35e42m7v). Shared by a rename and its resume (D47).
+   */
+  private renameRewriteWith(record: PageRecord, previousTitle: string): RenameRewrite["rewriteWith"] {
+    const afterMetas = this.pageMetas();
+    const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
+    return (metas, targets) => (markdown, source) => {
+      const isTarget = (link: { targetTitle: string }) => {
+        const found = resolveWikilink(link.targetTitle, metas, source)?.id;
+        return found !== undefined && targets.has(found);
+      };
+      return renamedMeta
+        ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
+        : rewriteWikilinkTargets(markdown, isTarget, record.title);
+    };
+  }
+
+  /**
+   * D47 (#xhdjpaev): finish the renames a crash left unfinished (the journal).
+   * An entry is resumed by the installation that started it, or by any once it
+   * is RESUME_ANY_AFTER_MS old (a lost device); otherwise it is left for its
+   * own. It is resumed when the page is at its new id and nothing holds the old
+   * one; anything else (a crash before the move, another page took the old
+   * name, the page gone) drops it, logged. A file this version can't read is
+   * left as it is.
+   */
+  private async resumePendingRenames(): Promise<void> {
+    const read = await this.renameJournal.read();
+    if (!read.ok) {
+      console.warn("[gumply] .gumply/rename-pending.json is in a format this version can't read: left as it is");
+      return;
+    }
+    for (const entry of read.entries) {
+      const same = (pending: PendingRename) => pending.oldId === entry.oldId && pending.newId === entry.newId && pending.startedAt === entry.startedAt;
+      const age = Date.now() - Date.parse(entry.startedAt);
+      if (entry.instance !== this.instanceId) {
+        // Another device's, recent: it finishes it at its next start (two would write the same pages).
+        if (!(age > RESUME_ANY_AFTER_MS)) continue;
+        console.warn(`[gumply] finishing a rename another installation left ${Math.floor(age / 86_400_000)} days ago: “${entry.oldTitle}” → “${entry.newTitle}”`);
+      }
+      const titleOnly = entry.oldId === entry.newId;
+      const applies = this.pages.has(entry.newId) && (titleOnly || !this.pages.has(entry.oldId));
+      if (!applies) {
+        console.warn(`[gumply] a pending rename “${entry.oldTitle}” → “${entry.newTitle}” no longer applies (moved back, renamed again, taken over or gone): dropped`);
+        await this.renameJournal.remove(same).catch(() => undefined);
+        continue;
+      }
+      try {
+        await this.resumeRename(entry);
+        await this.renameJournal.remove(same).catch(() => undefined);
+      } catch (error) {
+        console.error(`[gumply] finishing the rename “${entry.oldTitle}” → “${entry.newTitle}” failed (kept for the next start):`, error);
+      }
+    }
+  }
+
+  /**
+   * D47: one journalled rename, finished as #xgnvipyd's batches would have:
+   * the alias on again (`[[Old]]` means the renamed page), every page planned
+   * against the page list as it is now plus the old title, in batches, then the
+   * late pass. Idempotent: a page already rewritten links the new name, so it
+   * has nothing left to change (and an unchanged text is never written, D37).
+   */
+  private async resumeRename(entry: PendingRename): Promise<void> {
+    const { oldId, newId } = entry;
+    let finished!: () => void;
+    const running = new Promise<void>((resolve) => (finished = resolve));
+    this.renamesRunning.set(newId, running);
+    this.renameAliases.set(newId, { fromId: oldId, fromTitle: entry.oldTitle });
+    this.reindexAll();
+    let job: RenameRewrite | null = null;
+    try {
+      job = await this.enqueue(async () => {
+        const record = this.pages.get(newId);
+        if (!record) return null;
+        const rewriteWith = this.renameRewriteWith(record, entry.oldTitle);
+        // The alias stands for the old id and title; for a title-only rename (same id) it is added here.
+        const metas = this.linkMetas();
+        if (oldId === newId) {
+          const meta = metas.find((candidate) => candidate.id === newId);
+          if (meta) metas.push({ ...meta, title: entry.oldTitle });
+        }
+        return {
+          skip: new Set([oldId, newId]),
+          rewriteText: rewriteWith(metas, new Set([oldId])),
+          rewriteWith,
+          ids: [...this.pages.keys()],
+          aliasKey: newId,
+          failed: [],
+          oldId,
+          touched: new Set<PageId>(),
+          oldTitle: entry.oldTitle,
+          newTitle: entry.newTitle,
+        } satisfies RenameRewrite;
+      });
+      if (!job) return;
+      const current = job;
+      const rewritten: PageId[] = [];
+      this.activeRenameJobs.add(current);
+      for (let at = 0; at < current.ids.length; ) {
+        at = await this.enqueue(() => this.rewriteBatch(current, at, rewritten));
+        this.renameBatchesRun += 1;
+        await this.afterRenameBatch?.();
+      }
+      await this.enqueue(async () => {
+        await this.rewriteLatePages(current, this.resolveId(newId), rewritten);
+        this.renameAliases.delete(newId);
+        this.reindexAll();
+      });
+      console.warn(`[gumply] finished a rename a crash had left: “${entry.oldTitle}” → “${entry.newTitle}” (${rewritten.length} page(s) rewritten)`);
+    } finally {
+      if (job) this.activeRenameJobs.delete(job);
+      if (this.renamesRunning.get(newId) === running) this.renamesRunning.delete(newId);
+      if (this.renameAliases.delete(newId)) this.reindexAll();
+      finished();
+    }
+  }
+
   private async rewriteLinksTo(
     oldId: PageId,
     record: PageRecord,
     previousTitle: string,
     beforeMetas: readonly PageMeta[],
   ): Promise<PageId[]> {
-    const afterMetas = this.pageMetas();
-    const renamedMeta = afterMetas.find((meta) => meta.id === record.id);
-    // Resolved from the page the link is written in (#35e42m7v).
-    const rewriteWith =
-      (metas: readonly PageMeta[], targets: ReadonlySet<PageId>) =>
-      (markdown: string, source: PageId) => {
-        const isTarget = (link: { targetTitle: string }) => {
-          const found = resolveWikilink(link.targetTitle, metas, source)?.id;
-          return found !== undefined && targets.has(found);
-        };
-        return renamedMeta
-          ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
-          : rewriteWikilinkTargets(markdown, isTarget, record.title);
-      };
+    const rewriteWith = this.renameRewriteWith(record, previousTitle);
     const rewriteText = rewriteWith(beforeMetas, new Set([oldId]));
     const skip = new Set([oldId, record.id]);
     // #xgnvipyd: when deferred, the rename's own step (phase A) must not do anything that can fail
@@ -3502,7 +3627,7 @@ export class VaultStore {
     if (this.deferRewrites) {
       // #xgnvipyd: pinned now (the link snapshot is beforeMetas/afterMetas above), run in batches after.
       const aliased = oldId !== record.id || previousTitle !== record.title;
-      this.deferredRewrite = { skip, rewriteText, rewriteWith, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null, failed: [], oldId, touched: new Set() };
+      this.deferredRewrite = { skip, rewriteText, rewriteWith, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null, failed: [], oldId, touched: new Set(), oldTitle: previousTitle, newTitle: record.title };
       if (aliased) this.renameAliases.set(record.id, { fromId: oldId, fromTitle: previousTitle });
       return [];
     }

@@ -74,6 +74,8 @@ export default defineConfig({
       // port (#kmff9wkt), which the whole suite exercises.
       GUMPLY_WEB_PORT: '',
       GUMPLY_VAULT: E2E_VAULT,
+      // D47: the server's installation id, fixed for tests (so nothing is written to the real app data).
+      GUMPLY_INSTANCE_ID: 'e2e-instance-0001',
       // The suite starts from an empty vault unless a test opts into first-run
       // seeding; server-side demo seeding is covered by its own unit tests.
       GUMPLY_SEED_DEMO: '0',

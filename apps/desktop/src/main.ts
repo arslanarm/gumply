@@ -18,6 +18,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, Menu, nativeTheme, net, screen, session, shell, type MenuItemConstructorOptions } from "electron";
 import { startGumplyServer, type RunningServer } from "../../server/src/start.js";
+import { loadInstanceId } from "../../server/src/instance-id.js";
 import { logUnhandledRejections } from "../../server/src/last-resort.js";
 import type { DesktopUpdates } from "../../server/src/desktop-updates.js";
 import { applyUiStateChange, type UiState, type UiStateChange, type UiStateStore } from "../../server/src/ui-state.js";
@@ -283,6 +284,8 @@ async function openVault(path: string): Promise<void> {
   launchPhase("server-starting");
   server = await startGumplyServer({
     vaultPath: target,
+    // D47: this installation's id, in app data (never the vault).
+    instanceId: loadInstanceId(app.getPath("userData")),
     // A random free port; GUMPLY_DESKTOP_PORT pins one (tests, debugging).
     port: Number(process.env.GUMPLY_DESKTOP_PORT ?? 0) || 0,
     host: "127.0.0.1",

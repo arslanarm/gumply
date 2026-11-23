@@ -16,6 +16,8 @@ import { VaultStore } from "./vault-store.js";
 
 export interface StartOptions {
   vaultPath: string;
+  /** D47: this installation's id (app data, never the vault), for the rename crash journal. */
+  instanceId?: string;
   /** 0 = a random free port. */
   port: number;
   host?: string;
@@ -84,7 +86,7 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
 
   // #35q6kt6e: a stray rejection is logged, never the end of the server.
   logUnhandledRejections();
-  const store = new VaultStore(options.vaultPath);
+  const store = new VaultStore(options.vaultPath, options.instanceId ? { instanceId: options.instanceId } : {});
   // #g95wkd9y: answer once the files are read; the links are indexed next, in
   // the background (whatever reads links waits for it).
   await store.init({ background: true });
