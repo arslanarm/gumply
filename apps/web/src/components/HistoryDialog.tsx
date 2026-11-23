@@ -10,6 +10,7 @@ import { flushAllSaves, hasUnsavedChanges } from "../lib/pending-saves.js";
 import { Editor } from "./Editor.js";
 import { Icon } from "./Icon.js";
 import { LineDiffView } from "./LineDiffView.js";
+import { hideManagedKeyChanges } from "../lib/history-diff.js";
 import { useModal } from "../lib/modal.js";
 
 /**
@@ -276,11 +277,13 @@ export function HistoryDialog({ target, pages, onClose, onRestored }: HistoryDia
       if (!versionBoard || !currentBoard) return <p className="history-muted">{t("history.loading")}</p>;
       return <BoardChanges version={versionBoard} current={currentBoard} diff={diff} pages={boardPages} />;
     }
-    if (!diff.lines.some((line) => line.op !== "same")) return <p className="history-muted">{t("history.noChanges")}</p>;
+    // #h4tyk92t: Gumply's own `updated:`/`created:` changes are hidden unless the whole file is shown.
+    const lines = whole ? diff.lines : hideManagedKeyChanges(diff.lines);
+    if (!lines.some((line) => line.op !== "same")) return <p className="history-muted">{t("history.noChanges")}</p>;
     // The diff runs from this version to now: "add" is what now has and this version lacks.
     return (
       <>
-        <LineDiffView lines={diff.lines} whole={whole} testId="history-diff" />
+        <LineDiffView lines={lines} whole={whole} testId="history-diff" />
       </>
     );
   };

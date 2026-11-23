@@ -368,6 +368,22 @@ describe("restore (§4)", () => {
     expect(await readFile(join(dir, "Doc.md"), "utf8")).toBe("two\n");
   });
 
+  it("Restore writes the version's exact bytes, its own updated: included (Changes only hides it, #h4tyk92t)", async () => {
+    const { app, store, dir } = await createTestServer();
+    const version = "---\ncreated: 2026-11-01T10:00:00.000Z\nupdated: 2026-11-20T09:00:00.000Z\n---\nBody.\n";
+    await writeFile(join(dir, "Doc.md"), version);
+    await store.rescan();
+    await store.update("Doc", { content: "Body." });
+    const now = await readFile(join(dir, "Doc.md"), "utf8");
+    expect(now).not.toContain("updated: 2026-11-20T09:00:00.000Z");
+    const list = await getJson<HistoryList>(app, `/api/history/${enc("Doc")}`);
+    const original = list.items.at(-1)!;
+    const page = await getJson<{ updated: string }>(app, `/api/pages/${enc("Doc")}`);
+    const response = await jsonRequest(app, "POST", `/api/history/${enc("Doc")}/${original.file}/restore`, { expectedUpdated: page.updated });
+    expect(response.status).toBe(200);
+    expect(await readFile(join(dir, "Doc.md"), "utf8")).toBe(version);
+  });
+
   it("serves bytes, diffs and pins by exact file name only", async () => {
     const { app, store, dir } = await createTestServer();
     await writeFile(join(dir, "Doc.md"), "a\nb\n");
