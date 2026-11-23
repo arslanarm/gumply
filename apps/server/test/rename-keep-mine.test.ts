@@ -103,4 +103,24 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     await store.update("Hub", { title: "Hub renamed" });
     expect(refused).toMatchObject({ status: 409 });
   });
+
+  it("Keep mine's backup is still the exact version it replaced (the rename's), and only link lines differ from what was sent", async () => {
+    const { dir, store } = await vault();
+    const target = firstLinker(store);
+    const start = store.get(target);
+    await store.update("Hub", { title: "Hub renamed" });
+    const onDisk = await readFile(join(dir, `${target}.md`));
+    const sent = start.content.replace(/^Intro (\d+)\./, "Intro $1, mine.");
+    const saved = await store.update(target, { content: sent, expectedUpdated: start.updated, force: true });
+    // The backup in .gumply/conflicts/ holds the replaced file byte for byte, as before N10.
+    expect(saved.conflictBackup).toBeTruthy();
+    expect((await readFile(join(dir, saved.conflictBackup!))).equals(onDisk)).toBe(true);
+    // What was written is what was sent, except the rename's link line (which the user didn't touch).
+    const written = store.get(target).content;
+    const sentLines = sent.split("\n");
+    const writtenLines = written.split("\n");
+    expect(writtenLines).toHaveLength(sentLines.length);
+    const differing = sentLines.flatMap((line, i) => (line === writtenLines[i] ? [] : [[line, writtenLines[i]]]));
+    expect(differing).toEqual([["See [[Hub]] for more.", "See [[Hub renamed]] for more."]]);
+  });
 });
