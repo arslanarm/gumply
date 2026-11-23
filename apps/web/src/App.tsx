@@ -54,6 +54,7 @@ import { errorMessage, isNotFound, serverDownMessage } from "./lib/errors.js";
 import { freshRetrySchedule, takeRetry } from "./lib/save-retry.js";
 import { moveToastMessage } from "./lib/move.js";
 import { openPageNeedsReload, reloadDecision, type ReloadKind } from "./lib/rename.js";
+import { OwnSaves } from "./lib/own-saves.js";
 import { flushAllSaves, installUnloadGuards } from "./lib/pending-saves.js";
 import { TagRenameDialog } from "./components/TagRenameDialog.js";
 import { SHOW_TAGS_EVENT, type TagRenameRequest } from "./components/TagsPane.js";
@@ -334,6 +335,9 @@ export function App() {
     trackPageLeave(selectedId);
   }, [selectedId, trackPageLeave]);
   const pageRef = useRef<Page | null>(page);
+  // #4tquqqdv: this app's own confirmed saves of the open page (History's restore follows only these).
+  const ownSaves = useRef(new OwnSaves()).current;
+  useEffect(() => ownSaves.keepOnly(selectedId), [ownSaves, selectedId]);
   pageRef.current = page;
   // D20: stable identity of an open page across renames (new id → first id).
   const sessionKeys = useRef(new Map<PageId, string>());
@@ -781,9 +785,12 @@ export function App() {
 
   const handlePageSaved = useCallback(
     (updated: Page, savedId: PageId) => {
+      // The version this save replaced is the one the app held until now.
+      const before = pageRef.current;
+      if (before && before.id === savedId) ownSaves.record(updated.id, before.updated, updated.updated);
       applySavedPage(savedId, updated);
     },
-    [applySavedPage],
+    [applySavedPage, ownSaves],
   );
 
   /**
@@ -1762,6 +1769,7 @@ export function App() {
           properties: patch,
           ...(expectedUpdated ? { expectedUpdated } : {}),
         });
+        ownSaves.record(updated.id, expectedUpdated, updated.updated);
         applySavedPage(id, updated);
         // The next queued save reads the new version from here before React re-renders.
         pageRef.current =
@@ -2145,8 +2153,12 @@ export function App() {
   );
 
   const handleBoardSaved = useCallback(
-    (meta: PageMeta, savedId: PageId) => applySavedPage(savedId, boardAsPage(meta)),
-    [applySavedPage],
+    (meta: PageMeta, savedId: PageId) => {
+      const before = pageRef.current;
+      if (before && before.id === savedId) ownSaves.record(meta.id, before.updated, meta.updated);
+      applySavedPage(savedId, boardAsPage(meta));
+    },
+    [applySavedPage, ownSaves],
   );
 
   const editTitleRef = useRef(editTitleId);
@@ -3033,6 +3045,7 @@ export function App() {
           target={historyTarget}
           pages={pages}
           reconnectKey={reconnectKey}
+          ownVersion={(id, version) => ownSaves.follow(id, version)}
           onClose={() => setHistoryTarget(null)}
           onRestored={(result) => {
             void loadPages();

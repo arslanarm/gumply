@@ -29,6 +29,12 @@ export interface HistoryDialogProps {
    * down. Whatever failed to load (the list, a version, its changes) loads again.
    */
   reconnectKey?: number;
+  /**
+   * #4tquqqdv: a version moved forward through this app's own confirmed saves
+   * of the page (an autosave that landed after the list was read). Only those:
+   * an outside change still leaves the version stale, so the restore is refused.
+   */
+  ownVersion?: (id: string, version: string) => string;
 }
 
 /** `null` = the current version. */
@@ -52,7 +58,7 @@ function useHistorySourceLabel() {
   };
 }
 
-export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey = 0 }: HistoryDialogProps) {
+export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey = 0, ownVersion }: HistoryDialogProps) {
   // Focus in on open, Tab kept inside, focus back to the opener on close (#vefk9dwg).
   const modalRef = useRef<HTMLDivElement | null>(null);
   useModal(modalRef);
@@ -231,10 +237,13 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
     setStatus(null);
     try {
       let version = list?.current.version ?? "";
+      // Our own autosave may have landed since the list was read (#4tquqqdv).
+      if (version && ownVersion) version = ownVersion(target.id, version);
       // Unsaved edits in the open editor go out first; they're ours, so the restore follows them.
       if (hasUnsavedChanges()) {
         await flushAllSaves();
         version = (await load())?.current.version ?? version;
+        if (version && ownVersion) version = ownVersion(target.id, version);
       }
       const result = await api.restoreVersion(target.id, item.file, version);
       onRestored(result);

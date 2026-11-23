@@ -1,4 +1,4 @@
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, stat, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
@@ -262,16 +262,9 @@ test('#iihi4dg7: restoring a version right after typing: the restored bytes win,
   const dialog = page.getByTestId('history-dialog');
   await pickVersionWith(dialog, 'First line.');
   await expect(dialog.getByTestId('history-restore')).toBeEnabled();
+  // #4tquqqdv: the first Restore succeeds, though the editor's autosave landed after the list was read.
   await dialog.getByTestId('history-restore').click();
-  const status = dialog.getByTestId('history-status');
-  await expect(status).toContainText(/Undo is at the top of the list|changed while you were looking/);
-  if ((await status.textContent())?.includes('changed while you were looking')) {
-    // A restore straight after typing is refused once on main too (a separate bug, reported with
-    // #iihi4dg7): the typing was saved first; the user tries again, as the message says.
-    await pickVersionWith(dialog, 'First line.');
-    await dialog.getByTestId('history-restore').click();
-  }
-  await expect(status).toContainText('Undo is at the top of the list');
+  await expect(dialog.getByTestId('history-status')).toContainText('Undo is at the top of the list');
 
   // The restore wins, byte for byte, and the page shows it.
   await expect.poll(async () => (await readFile(file)).equals(original)).toBe(true);
@@ -287,4 +280,31 @@ test('#iihi4dg7: restoring a version right after typing: the restored bytes win,
   await page.waitForTimeout(3_000);
   expect((await readFile(file)).equals(original)).toBe(true);
   await expect(page.getByTestId('editor-content')).toHaveText('First line.');
+});
+
+test('#4tquqqdv: another program changed the page while History was open: Restore is still refused', async ({ page, vault, request }) => {
+  const [note] = await vault.seed([{ title: 'Ledger', content: 'First line.' }]);
+  const id = note!.id;
+  const file = path.join(E2E_VAULT, 'Ledger.md');
+  await page.goto(`/#/${encodeURIComponent(id)}`);
+  await expectPageTitle(page, 'Ledger');
+  await page.getByTestId('editor-content').getByText('First line.', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Second thought.');
+  await expect.poll(() => pageText(request, id), { timeout: 10_000 }).toBe('First line. Second thought.');
+
+  await openHistoryFromMenu(page, id);
+  const dialog = page.getByTestId('history-dialog');
+  await pickVersionWith(dialog, 'First line.');
+  // Meanwhile another program rewrites the file.
+  const outside = (await readFile(file, 'utf8')).replace('Second thought.', 'Written by another app.');
+  await writeFile(file, outside);
+  const later = new Date(Date.now() + 5_000);
+  await utimes(file, later, later);
+  await expect.poll(() => pageText(request, id), { timeout: 10_000 }).toContain('Written by another app.');
+
+  await dialog.getByTestId('history-restore').click();
+  await expect(dialog.getByTestId('history-status')).toContainText('changed while you were looking');
+  // Nothing was restored over the other program's text.
+  expect(await readFile(file, 'utf8')).toBe(outside);
 });
