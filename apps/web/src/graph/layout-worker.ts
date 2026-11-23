@@ -22,8 +22,14 @@ let current = 0;
 
 self.onmessage = (event: MessageEvent<LayoutRequest>) => {
   const message = event.data;
+  // #3jep576p: a stop names the run it cancels (layout-client). It used to set
+  // `current` to that same id, so the cancelled run went on to its end (CPU busy
+  // with a layout nobody wants). Abandon it, unless a newer run already took over.
+  if (message.type === "stop") {
+    if (current === message.id) current = -1;
+    return;
+  }
   current = message.id;
-  if (message.type === "stop") return;
   const { id, input } = message;
   const layout = createLayout(input);
   const postEvery = postInterval(input.x.length);

@@ -51,6 +51,21 @@ test('a re-arrange of a big graph without new data is not "ready" until the work
   // Reduced motion on: the same data, laid out again (settled once, behind "Arranging").
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(canvas).toHaveAttribute('data-graph-ready', 'false', { timeout: 10_000 });
+
+  // #3jep576p: while it arranges, the start layout is dimmed by a veil over the canvas.
+  // The veil never takes the pointer (hover, click, drag and zoom reach the graph) or focus.
+  await expect(canvas).toHaveAttribute('data-graph-arranging', 'true', { timeout: 10_000 });
+  const veil = canvas.locator('.graph-arranging-veil');
+  await expect(veil).toHaveCount(1);
+  const hit = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="graph-canvas"]')!;
+    const box = el.getBoundingClientRect();
+    // A point clear of the centred status pill.
+    const target = document.elementFromPoint(box.left + box.width * 0.25, box.top + box.height * 0.25);
+    const veilEl = el.querySelector('.graph-arranging-veil') as HTMLElement;
+    return { tag: target?.tagName, pointerEvents: getComputedStyle(veilEl).pointerEvents, tabIndex: veilEl.tabIndex, hidden: veilEl.getAttribute('aria-hidden') };
+  });
+  expect(hit).toEqual({ tag: 'CANVAS', pointerEvents: 'none', tabIndex: -1, hidden: 'true' });
   await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 120_000 });
   await expect(canvas).not.toHaveAttribute('data-graph-arranging', 'true');
   await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped');

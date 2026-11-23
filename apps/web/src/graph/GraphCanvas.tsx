@@ -1289,6 +1289,7 @@ export function GraphCanvas({
           />
         ) : null}
         <div ref={tooltipRef} className="graph-tooltip" role="presentation" hidden />
+        {arranging !== null ? <div className="graph-arranging-veil" aria-hidden="true" /> : null}
         {arranging !== null ? (
           <div className="graph-arranging" role="status" data-testid="graph-arranging">
             {arranging > 0 ? t("graph.arrangingProgress", { percent: Math.round(arranging * 100) }) : t("graph.arranging")}
