@@ -75,3 +75,35 @@ describe("no redundant alias (@opus-hunter nit)", () => {
     expect(formatWikilink(pages[1]!, pages)).toBe("[[Plan 2|Plan]]");
   });
 });
+
+describe("rewriteLinksToPage computes the link form once per page list (#im3em6tq)", () => {
+  const isOld = (link: { targetTitle: string }) => link.targetTitle === "Old";
+  const plan = meta("Work/Plan", "Plan");
+
+  it("a new list (another rename's, or one where a page was created meanwhile) is never served the old answer", () => {
+    const first = [plan, meta("Welcome", "Welcome")];
+    expect(rewriteLinksToPage("See [[Old]].", isOld, plan, first, "Old").content).toBe("See [[Plan]].");
+    // Someone created another "Plan" before the next rename: the server builds a fresh list.
+    const second = [...first, meta("Archive/Plan", "Plan")];
+    expect(rewriteLinksToPage("See [[Old]].", isOld, plan, second, "Old").content).toBe("See [[Work/Plan|Plan]].");
+    // And the first list still gives its own answer.
+    expect(rewriteLinksToPage("Again [[Old]].", isOld, plan, first, "Old").content).toBe("Again [[Plan]].");
+  });
+
+  it("within one list, the answer is per page and per title", () => {
+    const list = [plan, meta("Notes/Ideas Q3", "Ideas: Q3?")];
+    const ideas = list[1]!;
+    expect(rewriteLinksToPage("[[Old]]", isOld, plan, list, "Old").content).toBe("[[Plan]]");
+    expect(rewriteLinksToPage("[[Old]]", isOld, ideas, list, "Old").content).toBe("[[Ideas Q3|Ideas: Q3?]]");
+    // The same id with another title (a record retitled meanwhile) isn't served the cached form.
+    expect(rewriteLinksToPage("[[Old]]", isOld, meta("Work/Plan", "Plan B"), list, "Old").content).toBe("[[Plan|Plan B]]");
+  });
+
+  it("gives exactly what linkTargetFor gives, for every page of a list", () => {
+    const list = [plan, meta("Archive/Plan", "Plan"), meta("Ideas Q3", "Ideas: Q3?"), meta("Welcome", "Welcome")];
+    for (const page of list) {
+      const { target, alias } = linkTargetFor(page, list);
+      expect(rewriteLinksToPage("[[Old]]", isOld, page, list, "Old").content, page.id).toBe(`[[${target}${alias ? `|${alias}` : ""}]]`);
+    }
+  });
+});
