@@ -6213,11 +6213,19 @@ input {
   background: var(--hover);
 }
 
-.property-input:focus,
-.property-key-input,
-.property-chip-input:focus {
+.property-key-input {
   background: var(--surface-page);
   border-color: var(--border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Focus shows as an accent border, like the other text fields (the soft
+   ring alone was about 1.1:1 on white; WCAG 2.4.7, #jchhjepb). */
+.property-input:focus,
+.property-key-input:focus,
+.property-chip-input:focus {
+  background: var(--surface-page);
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
@@ -6453,9 +6461,14 @@ input {
   border-radius: 5px;
 }
 
-.property-chips:hover,
-.property-chips:focus-within {
+.property-chips:hover {
   background: var(--hover);
+}
+
+/* The chips box is the field: it shows the focus ring (WCAG 2.4.7, #jchhjepb). */
+.property-chips:focus-within {
+  background: var(--surface-page);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-soft);
 }
 
 .property-chip {

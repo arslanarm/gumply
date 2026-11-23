@@ -142,3 +142,32 @@ test('non-text content (1.1.1): the global and the local graph are images named 
   await page.getByTestId('local-graph-toggle').click();
   await expect(page.getByTestId('local-graph').getByRole('img', { name: /pages?, .*links?/ })).toHaveCount(1);
 });
+
+test('focus visible (2.4.7): a focused property input shows an accent border, ≥ 3:1 against the page', async ({ page }) => {
+  writeFileSync(path.join(E2E_VAULT, 'Props.md'), '---\ntags: [plan]\nstatus: Active\n---\n\nBody.\n');
+  await page.goto('/#/Props');
+  await expectPageTitle(page, 'Props');
+  for (const input of [page.getByTestId('property-value-tags').locator('input'), page.getByTestId('property-value-status').locator('input')]) {
+    await input.focus();
+    const ratio = await input.evaluate((el) => {
+      const rgba = (c: string) => (c.match(/[\d.]+/g) ?? []).map(Number);
+      const lum = (rgb: number[]) => rgb.slice(0, 3).map((v) => (v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i]!, 0);
+      const visible = (c: string) => !!c && !/transparent/.test(c) && (rgba(c)[3] ?? 1) > 0;
+      // The field: the chips box for a chip input, else the input. Its indicator: a
+      // visible border colour, else the first box-shadow colour; none → 0.
+      const field = (el.closest('.property-chips') as HTMLElement | null) ?? el;
+      const cs = getComputedStyle(field);
+      const shadow = cs.boxShadow.match(/rgba?\([^)]*\)/)?.[0] ?? '';
+      const indicator = visible(cs.borderTopColor) && cs.borderTopWidth !== '0px' ? cs.borderTopColor : visible(shadow) ? shadow : '';
+      if (!indicator) return 0;
+      let node: Element | null = field.parentElement;
+      let bg = 'rgba(0, 0, 0, 0)';
+      while (node && !visible(bg)) { bg = getComputedStyle(node).backgroundColor; node = node.parentElement; }
+      const [a, b] = [lum(rgba(indicator)), lum(rgba(bg))];
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    });
+    expect(ratio).toBeGreaterThanOrEqual(3);
+  }
+  await page.getByTestId('property-value-tags').locator('input').focus();
+  await page.getByTestId('property-row-tags').screenshot({ path: test.info().outputPath('tags-focus.png') });
+});
