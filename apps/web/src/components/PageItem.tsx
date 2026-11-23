@@ -212,6 +212,7 @@ function PageItemRow(props: PageItemProps) {
     "page.duplicate": () => props.onDuplicate(page.id),
     "page.copy-link": () => props.onCopyLink(page.id),
     "page.move": () => props.onStartMove(page.id),
+    "page.add-page": () => props.onCreateChild(page.id),
     "page.add-board": () => props.onCreateBoardChild(page.id),
     "page.add-base": props.onCreateBaseChild ? () => props.onCreateBaseChild?.(page.id) : undefined,
     "page.new-from-template": () => props.onNewFromTemplate(page.id),
@@ -245,9 +246,11 @@ function PageItemRow(props: PageItemProps) {
         data-testid={`page-item-${page.id}`}
         data-page-id={page.id}
         role="treeitem"
-        tabIndex={0}
+        // #ifcn6pvx: one Tab stop for the whole tree; the Sidebar sets the row that is 0.
+        tabIndex={-1}
         aria-selected={isSelected}
         aria-expanded={hasChildren ? expanded : undefined}
+        aria-level={depth + 1}
         ref={rowRef}
         style={{ paddingLeft: `${6 + depth * 14}px` }}
         onClick={() => {
@@ -312,6 +315,7 @@ function PageItemRow(props: PageItemProps) {
           <button
             type="button"
             className="tree-toggle"
+            tabIndex={-1}
             data-testid={`tree-toggle-${page.id}`}
             aria-label={
               folder
@@ -379,6 +383,7 @@ function PageItemRow(props: PageItemProps) {
           <button
             type="button"
             className="tree-action"
+            tabIndex={-1}
             data-tooltip={folder ? t("sidebar.newPageInside") : t("sidebar.newSubPage")}
             data-testid={`new-child-button-${page.id}`}
             aria-label={folder ? t("sidebar.newPageInside") : t("sidebar.newSubPage")}
@@ -395,6 +400,7 @@ function PageItemRow(props: PageItemProps) {
             <button
               type="button"
               className="tree-action"
+              tabIndex={-1}
               data-tooltip={t("sidebar.moreActions")}
               ref={menuButtonRef}
               data-testid={`page-menu-button-${page.id}`}

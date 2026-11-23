@@ -350,7 +350,9 @@ export function App() {
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
   const reloadEditorAfterFetch = useRef(false);
-  const focusBodyAfterOpen = useRef(false);
+  /** Focus the next editor when ready: true = the start of its body, "caret" = its last caret (Cmd+K, #ifcn6pvx). */
+  const focusBodyAfterOpen = useRef<boolean | "caret">(false);
+  const focusBaseAfterOpen = useRef<PageId | null>(null);
   const restoreSelection = useRef<{ from: number; to: number } | null>(null);
   const backlinksRequest = useRef(0);
   const initialLoadStarted = useRef(false);
@@ -1034,6 +1036,39 @@ export function App() {
     void loadBacklinks(selectedId);
   }, [saveState, selectedId, loadBacklinks]);
 
+  /**
+   * #ifcn6pvx: a palette command that opened a view (`> trash`, conflicts,
+   * graph…) left focus on <body>, so the next Tab went into the sidebar. A few
+   * frames on, if nothing took focus (dialogs and editors do it themselves),
+   * the view's heading gets it, else the main area.
+   */
+  const focusViewIfLost = useCallback(() => {
+    let frames = 0;
+    const check = () => {
+      frames += 1;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      if (frames < 4) {
+        window.requestAnimationFrame(check);
+        return;
+      }
+      const main = document.querySelector<HTMLElement>("main.content");
+      const target = main?.querySelector<HTMLElement>("h1") ?? main;
+      if (!target) return;
+      if (target.tabIndex < 0 && !target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+      target.focus({ preventScroll: true });
+    };
+    window.requestAnimationFrame(check);
+  }, []);
+
+  /** #ifcn6pvx: where the caret was on each page, so coming back from Cmd+K puts it there again. */
+  const lastCaret = useRef(new Map<PageId, number>());
+  const rememberCaret = useCallback(() => {
+    const controls = editorControls.current;
+    const selection = controls?.getSelection();
+    if (controls && selection) lastCaret.current.set(controls.pageId, selection.to);
+  }, []);
+
   const handleOpen = useCallback(
     (id: PageId) => {
       setAutoFocusTitle(true);
@@ -1045,9 +1080,10 @@ export function App() {
         requestPageReload();
         return;
       }
+      rememberCaret();
       navigate(id);
     },
-    [navigate, requestPageReload],
+    [navigate, requestPageReload, rememberCaret],
   );
 
   const handleCreate = useCallback(
@@ -1340,10 +1376,43 @@ export function App() {
   const openSearchResult = useCallback(
     (id: PageId) => {
       dismissSearch();
+      // #ifcn6pvx: the palette gives focus to what it opened, never to <body>
+      // (where the next Tab went into the sidebar tree). A board focuses its
+      // canvas when ready (handleBoardReady); a base its first control.
+      if (isBaseId(id)) focusBaseAfterOpen.current = id;
+      else if (!isBoardId(id)) {
+        const controls = editorControls.current;
+        if (id === selectedRef.current && controls?.pageId === id) {
+          // Already open: back to its caret, as Esc does.
+          const selection = controls.getSelection();
+          window.requestAnimationFrame(() => (selection ? controls.focusAt(selection.to) : controls.focusBody()));
+        }
+        else focusBodyAfterOpen.current = "caret";
+      }
       handleOpen(id);
     },
     [dismissSearch, handleOpen],
   );
+
+  // A base opened from the palette: its first control, once the view is drawn.
+  useEffect(() => {
+    const id = focusBaseAfterOpen.current;
+    if (id === null || selectedId !== id) return;
+    let tries = 0;
+    let timer = 0;
+    const tick = () => {
+      const target = document.querySelector<HTMLElement>(
+        '[data-testid="base-view"] :is(button, input, select, textarea, [tabindex="0"]):not([disabled])',
+      );
+      if (target) {
+        focusBaseAfterOpen.current = null;
+        target.focus({ preventScroll: true });
+      } else if ((tries += 1) < 60) timer = window.setTimeout(tick, 50);
+      else focusBaseAfterOpen.current = null;
+    };
+    timer = window.setTimeout(tick, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedId]);
 
   /** D13: `Create “X”` in the quick switcher — top level, like New page. */
   const createSearchPage = useCallback(
@@ -1843,8 +1912,11 @@ export function App() {
     editorControls.current = controls;
     setOutlineTick((value) => value + 1);
     if (focusBodyAfterOpen.current) {
+      const where = focusBodyAfterOpen.current;
       focusBodyAfterOpen.current = false;
-      controls.focusBody();
+      const caret = where === "caret" ? lastCaret.current.get(controls.pageId) : undefined;
+      if (caret !== undefined) controls.focusAt(caret);
+      else controls.focusBody();
     } else if (restoreSelection.current) {
       const position = restoreSelection.current.to;
       restoreSelection.current = null;
@@ -2056,6 +2128,9 @@ export function App() {
     },
     "page.move": () => {
       if (commandPage) startMove(commandPage.id);
+    },
+    "page.add-page": () => {
+      if (commandPage) void handleCreate(commandPage.id);
     },
     "page.add-board": () => {
       if (commandPage) setGalleryParent({ parentId: commandPage.id });
@@ -2697,7 +2772,10 @@ export function App() {
           onCommand={(id) => {
             dismissSearch();
             // After the palette has closed and handed focus back, so the command's own focus wins.
-            window.requestAnimationFrame(() => runCommandRef.current?.(id));
+            window.requestAnimationFrame(() => {
+              runCommandRef.current?.(id);
+              focusViewIfLost();
+            });
           }}
           onClose={closeSearch}
         />

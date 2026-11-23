@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { preloadGraph } from "../lazy-parts.js";
 import { buildPageTree, pageTrail } from "../lib/tree.js";
@@ -128,6 +128,93 @@ export function Sidebar(props: SidebarProps) {
     });
     return () => cancelAnimationFrame(frame);
   });
+
+  /*
+   * #ifcn6pvx: the tree is ONE Tab stop (the WAI-ARIA tree pattern). Every row
+   * renders tabIndex=-1; one row is 0: the row last focused, else the open
+   * page's, else the first. Set on the DOM, not as a prop: a prop that changes
+   * on every arrow key would re-render every (memoized) row of a big tree.
+   * Re-checked after each render and when rows mount or unmount.
+   */
+  const tabStop = useRef<PageId | null>(null);
+  const selectedRef = useRef(selectedId);
+  if (selectedRef.current !== selectedId) {
+    // Another page opened: the stop follows it.
+    selectedRef.current = selectedId;
+    tabStop.current = null;
+  }
+  const placeTabStop = useCallback(() => {
+    const tree = treeRef.current;
+    if (!tree) return;
+    const rows = treeRows(tree);
+    if (rows.length === 0) return;
+    const stop =
+      rows.find((row) => row.dataset.pageId === tabStop.current) ?? rows.find((row) => row.dataset.pageId === selectedRef.current) ?? rows[0];
+    for (const row of rows) {
+      const index = row === stop ? 0 : -1;
+      if (row.tabIndex !== index) row.tabIndex = index;
+    }
+  }, []);
+  useLayoutEffect(placeTabStop);
+  useEffect(() => {
+    const tree = treeRef.current;
+    if (!tree) return;
+    const observer = new MutationObserver(placeTabStop);
+    observer.observe(tree, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [placeTabStop]);
+
+  const typeahead = useRef({ text: "", at: 0 });
+  const onTreeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const tree = treeRef.current;
+    const row = event.target instanceof HTMLElement && event.target.getAttribute("role") === "treeitem" ? event.target : null;
+    if (!tree || !row || event.altKey || event.ctrlKey || event.metaKey) return;
+    const rows = treeRows(tree);
+    const index = rows.indexOf(row);
+    const go = (target: HTMLElement | undefined) => {
+      event.preventDefault();
+      if (!target) return;
+      target.focus();
+      target.scrollIntoView({ block: "nearest" });
+    };
+    const expanded = row.getAttribute("aria-expanded");
+    const toggle = () => row.querySelector<HTMLButtonElement>(":scope > .tree-toggle")?.click();
+    switch (event.key) {
+      case "ArrowDown":
+        return go(rows[index + 1]);
+      case "ArrowUp":
+        return go(rows[index - 1]);
+      case "Home":
+        return go(rows[0]);
+      case "End":
+        return go(rows.at(-1));
+      case "ArrowRight":
+        event.preventDefault();
+        if (expanded === "false") toggle();
+        else if (expanded === "true" && rows[index + 1] && row.parentElement?.contains(rows[index + 1]!)) go(rows[index + 1]);
+        return;
+      case "ArrowLeft": {
+        event.preventDefault();
+        if (expanded === "true") return toggle();
+        const parent = row.closest(".tree-children")?.parentElement?.querySelector<HTMLElement>(':scope > [role="treeitem"]');
+        return go(parent ?? undefined);
+      }
+      default: {
+        // Type-ahead: the next row whose title starts with what was typed.
+        if (event.key.length !== 1 || event.key === " " || event.shiftKey && event.key === "?") return;
+        const now = Date.now();
+        const text = now - typeahead.current.at < 700 ? typeahead.current.text + event.key : event.key;
+        typeahead.current = { text, at: now };
+        const needle = text.toLocaleLowerCase();
+        const start = text.length === 1 ? index + 1 : index;
+        for (let step = 0; step < rows.length; step += 1) {
+          const candidate = rows[(start + step) % rows.length]!;
+          const title = candidate.querySelector(".page-item-title")?.textContent?.toLocaleLowerCase() ?? "";
+          if (title.startsWith(needle)) return go(candidate);
+        }
+      }
+    }
+  };
 
   // D11: focus the next sibling after a delete, else the New page button.
   useEffect(() => {
@@ -336,6 +423,13 @@ export function Sidebar(props: SidebarProps) {
         // show a note instead (an empty role=tree is invalid, WCAG 1.3.1, #jchhjepb).
         role={status !== "loading" && status !== "error" && tree.length > 0 ? "tree" : undefined}
         aria-label={t("sidebar.pages")}
+        onKeyDown={onTreeKeyDown}
+        onFocus={(event) => {
+          const row = event.target instanceof HTMLElement && event.target.getAttribute("role") === "treeitem" ? event.target : null;
+          if (!row) return;
+          tabStop.current = row.dataset.pageId ?? null;
+          placeTabStop();
+        }}
         onDragOver={(event) => {
           if (!draggingId) return;
           event.preventDefault();
@@ -451,4 +545,9 @@ export function Sidebar(props: SidebarProps) {
       {props.footer ?? null}
     </aside>
   );
+}
+
+/** The tree's rows as shown, top to bottom (collapsed children aren't rendered). */
+function treeRows(tree: HTMLElement): HTMLElement[] {
+  return [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')];
 }

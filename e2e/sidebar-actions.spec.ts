@@ -53,6 +53,7 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
       'Duplicate',
       'Copy link',
       'Move to…',
+      'New sub-page',
       'Add whiteboard inside',
       'Add database view inside',
       'New page from template…',

@@ -1840,6 +1840,7 @@
       "duplicate": "Duplicate page",
       "copyLink": "Copy link to page",
       "move": "Move page to…",
+      "addPage": "Add page inside",
       "addBoard": "Add whiteboard inside",
       "addBase": "Add database view inside",
       "newFromTemplate": "New page from template inside…",
