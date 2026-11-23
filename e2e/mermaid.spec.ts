@@ -220,3 +220,20 @@ test('/mermaid inserts a starter diagram; errors show inline; previews draw diag
   await expect(editor.getByTestId('mermaid-diagram')).toContainText('Worth it?');
   await expect.poll(() => body('Slash.md'), { timeout: 5_000 }).toContain('```mermaid\nflowchart LR\n  A[Idea] --> B{Worth it?}');
 });
+
+test('the language label never sits on the diagram, in a column or not (#8uqd657j)', async ({ page, vault }) => {
+  const wide = '```mermaid\nflowchart LR\n  A[A long first step] --> B[A long second step] --> C[A long third step] --> D[Done]\n```';
+  await vault.seed([
+    { title: 'Label top', content: `${wide}\n\nAfter.` },
+    { title: 'Label col', content: `:::: {.columns}\n::: {.column}\n${wide}\n:::\n::: {.column}\nRight.\n:::\n::::\n\nAfter.` },
+  ]);
+  for (const title of ['Label top', 'Label col']) {
+    await open(page, title);
+    const block = page.getByTestId('code-block').filter({ has: page.getByTestId('mermaid-diagram') });
+    await expect(block.getByTestId('mermaid-diagram').locator('svg')).toBeVisible();
+    const label = (await block.locator('.code-block-language').boundingBox())!;
+    const svg = (await block.getByTestId('mermaid-diagram').locator('svg').boundingBox())!;
+    // The diagram starts below the label's bar.
+    expect(svg.y, title).toBeGreaterThanOrEqual(label.y + label.height);
+  }
+});

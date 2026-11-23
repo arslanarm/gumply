@@ -200,6 +200,18 @@ describe("HTML export (G1)", () => {
     expect(html).toContain("::: note");
   });
 
+  it("display math inside a column (#8uqd657j) exports as a math block, in both forms", async () => {
+    const root = page("P", ":::: {.columns}\n::: {.column}\n$$\n\\sum_i i\n$$\n:::\n::: {.column}\n$$x^2$$\n:::\n::::");
+    const html = await buildPageHtml(
+      root,
+      source({}, [root], { math: async (tex, display) => `<math${display ? ' display="block"' : ""}><mi>${tex}</mi></math>` }).value,
+      options,
+    );
+    expect(html).toContain('<div class="math-block"><math display="block"><mi>\\sum_i i</mi></math></div>');
+    expect(html).toContain('<div class="math-block"><math display="block"><mi>x^2</mi></math></div>');
+    expect(html).not.toContain("$");
+  });
+
   it("the page frame: icon, cover image, background tint, properties", async () => {
     const root = page("P", "Body", {
       icon: "🚀",
