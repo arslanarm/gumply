@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from './fixtures';
 import { API_URL, E2E_VAULT } from './support/env';
+import { contrastFailures } from './support/contrast';
 import { expectPageTitle } from './support/ui';
 
 /**
@@ -110,4 +111,24 @@ test('status messages (4.1.3): "Can\'t reach Gumply\'s local server" is announce
   const alert = page.getByRole('alert').filter({ hasText: "Can't reach Gumply's local server." });
   await expect(alert).toHaveCount(1);
   await expect(page.getByTestId('server-error').getByRole('button', { name: 'Retry' })).toBeVisible();
+});
+
+test('contrast (1.4.3): board text in the six preset colours reads ≥ 4.5:1, light and dark', async ({ page, request }) => {
+  // Plain text cards and frame labels in colours "1"–"6" (a Gumply board: the Text tool's nodes).
+  const nodes = [1, 2, 3, 4, 5, 6].flatMap((i) => [
+    { id: `t${i}`, type: 'text', text: `Colour ${i} text`, gumply: { kind: 'text' }, x: (i - 1) * 220, y: 0, width: 200, height: 40, color: String(i) },
+    { id: `f${i}`, type: 'group', label: `Frame ${i}`, x: (i - 1) * 220, y: 120, width: 200, height: 80, color: String(i) },
+  ]);
+  writeFileSync(path.join(E2E_VAULT, 'Colours.canvas'), JSON.stringify({ nodes, edges: [] }));
+  await expect
+    .poll(async () => ((await (await request.get(`${API_URL}/api/pages`)).json()) as { id: string }[]).some((meta) => meta.id === 'Colours.canvas'), { timeout: 10_000 })
+    .toBe(true);
+  for (const theme of ['light', 'dark']) {
+    await page.addInitScript((value) => window.localStorage.setItem('gumply:theme', value), theme);
+    await page.goto(`/#/${encodeURIComponent('Colours.canvas')}`);
+    await expect(page.getByTestId('board-text')).toHaveCount(6);
+    await expect(page.getByTestId('board-frame')).toHaveCount(6);
+    const failures = await contrastFailures(page.locator('.react-flow__nodes'));
+    expect(failures, theme).toEqual([]);
+  }
 });

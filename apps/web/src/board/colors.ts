@@ -34,13 +34,15 @@ export function solidColor(color: unknown): string | undefined {
 }
 
 /**
- * CSS variables for a node: `--node-color` (solid), `--node-fill` (soft
+ * CSS variables for a node: `--node-color` (solid), `--node-text` (text in
+ * that colour; a deeper shade for presets on light), `--node-fill` (soft
  * background) and `--node-sticky` (sticky-note paper).
  */
 export function colorStyle(color: unknown): CSSProperties {
   if (isPresetColor(color)) {
     return {
       "--node-color": `var(--board-c${color})`,
+      "--node-text": `var(--board-c${color}-text)`,
       "--node-fill": `var(--board-c${color}-fill)`,
       "--node-sticky": `var(--board-c${color}-sticky)`,
     } as CSSProperties;
