@@ -5,7 +5,8 @@ import { api, expect, test } from './fixtures';
 import { E2E_VAULT } from './support/env';
 
 /**
- * #e9bd64bb / #n6cy66ib: blocks with no text inside (an image, a board embed)
+ * #e9bd64bb / #n6cy66ib: blocks with no text inside (an image, a board embed,
+ * a database view, a page preview)
  * get the ⋮⋮ gutter like any block: it moves them and deletes them, and the
  * file says so. Nothing else on the page changes.
  */
@@ -45,6 +46,26 @@ const cases: Array<{ kind: string; line: string; testId: string; setup: (request
     testId: 'board-embed',
     setup: async (request) => {
       const response = await request.post('/api/boards', { data: { title: 'Plan board' } });
+      expect(response.status()).toBe(201);
+    },
+  },
+  {
+    kind: 'a database view',
+    line: '![[Tasks view.base]]',
+    testId: 'base-embed',
+    setup: async (request) => {
+      writeFileSync(path.join(E2E_VAULT, 'Tasks view.base'), 'views:\n  - type: table\n    name: Table\n');
+      await expect
+        .poll(async () => (await api.listPages(request)).some((meta) => meta.id === 'Tasks view.base'), { timeout: 10_000 })
+        .toBe(true);
+    },
+  },
+  {
+    kind: 'a page preview',
+    line: '![[Preview target]]',
+    testId: 'page-embed',
+    setup: async (request) => {
+      const response = await request.post('/api/pages', { data: { title: 'Preview target', content: 'Shown in the preview.' } });
       expect(response.status()).toBe(201);
     },
   },
