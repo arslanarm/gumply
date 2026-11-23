@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNavigation, vaultFileAction } from "../src/urls";
+import { classifyNavigation, userGuideUrl, vaultFileAction } from "../src/urls";
 
 const origin = "http://127.0.0.1:43123";
 
@@ -70,3 +70,12 @@ describe("vault files: open documents, only reveal anything that could run", () 
     }
   });
 });
+
+describe("Help → User guide (#6ka8s7mf)", () => {
+  it("opens the guide on GitHub in the app's language, English otherwise", () => {
+    expect(userGuideUrl("en")).toBe("https://github.com/arslanarm/gumply/blob/main/docs/guide/en/README.md");
+    expect(userGuideUrl("ru")).toBe("https://github.com/arslanarm/gumply/blob/main/docs/guide/ru/README.md");
+    expect(userGuideUrl("de")).toBe("https://github.com/arslanarm/gumply/blob/main/docs/guide/en/README.md");
+  });
+});
+

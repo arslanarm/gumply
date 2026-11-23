@@ -1,0 +1,56 @@
+# Links and the graph
+
+Link pages with `[[double brackets]]`, as in Obsidian. Gumply keeps links working when you rename or move pages, and shows how your pages connect.
+
+## Link to a page
+
+Type `[[` and start typing a title. Choose a page from the list, or **Create** a new one.
+
+![The [[ menu listing pages](../img/link-menu.en.png)
+
+- **Show other text:** `[[Roadmap|the plan]]` shows "the plan" and opens Roadmap.
+- **Link to a heading:** type `[[Roadmap#` to choose one of its headings. `[[#` lists the headings of the page you're on.
+- **Embed:** `![[` embeds a file or image (anywhere in the vault), a board (`![[Plan.canvas]]`) or a database view.
+- **Open a link:** click it.
+
+When several pages share a name, a link means the one in the linking page's own folder first, then the one with the shortest path, as in Obsidian. When you pick such a page from the menu, Gumply writes its path (`[[Projects/Plan|Plan]]`) so the link always means that page.
+
+## Rename and move without breaking links
+
+- **Rename a page:** links to it in other pages and on boards are updated to the new title. Only the links change; nothing else in those files does.
+- **Rename a heading:** links to that heading (`[[Page#Old]]`) are updated too.
+- **Move a page** to another folder: its links keep working, and links to its images and files are adjusted.
+- **Renamed in another app** (Obsidian, a file manager): the sidebar shows the new name within a moment, and the links that app rewrote work as they are.
+
+## See what links here
+
+At the bottom of every page, **Linked from** lists the pages and boards that link to it, with the line around each link.
+
+![Linked from, at the bottom of a page](../img/backlinks.en.png)
+
+Below it, **Unlinked mentions** lists pages that mention this page's title (or one of its `aliases`) without linking it. Choose **Link** for one, or **Link all**.
+
+## The graph
+
+Choose **Graph** in the sidebar to see every page as a dot and every link as a line.
+
+![The graph of a small vault](../img/graph.light.png)
+
+- **Bigger dots** have more links. Boards are squares. A dashed circle is a page that's linked but doesn't exist yet: click it to create it.
+- **Filter** by title in the search box, or by tag with the chips under it.
+- **Graph settings** (the filter button) hide or show tags, attachments, pages that don't exist yet and pages without links. **Groups** colour pages by a query such as `tag:#work` or `path:Projects`. The settings are saved per vault.
+- **Move around:** scroll to zoom, drag to move, **Fit** to see it all. Click a dot to open its page.
+
+### The local graph
+
+On any page, the **Local graph** button in the header shows just that page and its neighbours, one or two links away, in a column beside the page.
+
+## The outline
+
+**Outline** (`Ctrl/Cmd+Shift+O`) lists the page's headings beside the page, or a board's frames. Click one to jump to it. It shares the side column with the local graph.
+
+## Good to know
+
+- Links in **properties** count too: a property whose value is `"[[Roadmap]]"` is a link, in the graph and in Linked from.
+- A link to a page that doesn't exist yet is still a link. It shows dashed in the graph until you create the page.
+- `\[[not a link]]` (with a backslash) stays plain text, as in Obsidian.

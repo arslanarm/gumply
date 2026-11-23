@@ -5,6 +5,12 @@
 A local-first note app with Notion's simplicity and Obsidian's visualizations: nested Markdown
 pages, wikilinks, backlinks and a graph view. Notes live as plain `.md` files in a vault folder.
 
+## User guide
+
+How to use Gumply, from installing it to boards, version history and sync:
+**[User guide (English)](docs/guide/en/README.md)** · **[Руководство (русский)](docs/guide/ru/README.md)**.
+The desktop app opens it from **Help → User Guide**.
+
 ## Stack
 
 - TypeScript everywhere, npm workspaces monorepo

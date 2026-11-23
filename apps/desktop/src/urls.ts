@@ -78,3 +78,11 @@ export function vaultFileAction(path: string): VaultFileAction {
   if (dot <= 0) return "reveal"; // no extension, or a dot file
   return OPENABLE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase()) ? "open" : "reveal";
 }
+
+/** The user guide on GitHub (#6ka8s7mf): `docs/guide/<en|ru>/README.md`, by the app's language. */
+export const USER_GUIDE_BASE = "https://github.com/arslanarm/gumply/blob/main/docs/guide";
+
+export function userGuideUrl(language: string): string {
+  const folder = language === "ru" ? "ru" : "en";
+  return `${USER_GUIDE_BASE}/${folder}/README.md`;
+}
