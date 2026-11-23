@@ -81,9 +81,10 @@ import {
 import { SLASH_ITEMS } from "./editor/slash-items.js";
 import { TURN_INTO, type TurnIntoKind } from "./editor/block-editing.js";
 import { chooseTheme } from "./lib/theme.js";
+import { userGuideUrl } from "./lib/user-guide.js";
 import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
-import { t, useT } from "./i18n/index.js";
+import { currentLanguage, t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
 import { HistoryDialog } from "./components/HistoryDialog.js";
 import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.js";
@@ -2090,6 +2091,8 @@ export function App() {
     "board.zoom-out": () => boardControls.current?.view("out"),
     "board.zoom-reset": () => boardControls.current?.view("reset"),
     "help.shortcuts": () => setShortcutsOpen(true),
+    // The desktop shell sends https: to the system browser; the web app opens a tab.
+    "help.guide": () => void window.open(userGuideUrl(currentLanguage()), "_blank", "noopener"),
   };
   /** Run a command by id: a registry id, a desktop menu's older id, or a family member. */
   const runCommand = (id: string) => {

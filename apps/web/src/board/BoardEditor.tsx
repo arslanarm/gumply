@@ -1233,13 +1233,21 @@ function BoardCanvas(props: BoardEditorProps) {
     setPagePicker(false);
   }, []);
 
+  // Cmd+K acts as the keys and zoom buttons do, then gives focus back to the
+  // board, so the next key reaches it (`ownsEvent`).
   paletteRef.current = {
-    setTool: chooseTool,
+    setTool: (next) => {
+      chooseTool(next);
+      // As with S: the shape choices show too.
+      if (next === "shape") setShapeMenu(true);
+      rootRef.current?.focus({ preventScroll: true });
+    },
     view: (action) => {
       if (action === "fit") fit();
       else if (action === "in") void flow.zoomIn({ duration: 150 });
       else if (action === "out") void flow.zoomOut({ duration: 150 });
       else void flow.zoomTo(1, { duration: 150 });
+      rootRef.current?.focus({ preventScroll: true });
     },
   };
 

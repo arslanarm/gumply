@@ -192,6 +192,7 @@ const OTHER_COMMANDS = {
   "board.zoom-reset": { group: "board", icon: "search", label: "commands.board.zoomReset", en: "zoom 100% actual size reset board", when: (c) => c.board },
   // Help
   "help.shortcuts": { group: "help", icon: "keyboard", label: "commands.help.shortcuts", en: "keyboard shortcuts keys help", shortcut: "shortcuts" },
+  "help.guide": { group: "help", icon: "help", label: "commands.help.guide", en: "user guide help manual docs documentation" },
 } satisfies Record<string, StaticCommand>;
 
 const STATIC_COMMANDS: Record<StaticCommandId, StaticCommand> = { ...PAGE_COMMANDS, ...OTHER_COMMANDS };
@@ -356,14 +357,16 @@ const PLAIN_MATCHERS: Partial<Record<string, (query: string) => boolean>> = {
 /**
  * Commands for plain typing, after the pages: those that ask for 3+
  * characters and match every word, best first, at most PLAIN_COMMAND_LIMIT.
- * A `#tag` query is never a command.
+ * A `#tag` query is never a command, and the editor's Insert / Turn into
+ * rows only show in `>` mode.
  */
 export function plainCommandMatches(commands: readonly Command[], query: string): Command[] {
   const needle = query.trim();
   if (needle.length < 3 || needle.startsWith("#")) return [];
   const legacy = commands.filter((command) => PLAIN_MATCHERS[command.id]?.(needle));
+  // Insert / Turn into stay in `>` mode: plain typing is page search first.
   const generic = matchCommands(
-    commands.filter((command) => !PLAIN_MATCHERS[command.id]),
+    commands.filter((command) => !PLAIN_MATCHERS[command.id] && command.group !== "editor"),
     needle,
   );
   return [...legacy, ...generic].slice(0, PLAIN_COMMAND_LIMIT);

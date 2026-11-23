@@ -77,6 +77,14 @@ test('context: no page commands in a view; board commands only on a board', asyn
   // Board tool and fit, end to end.
   await run(page, '> pen', 'command-board.tool.pen');
   await expect(page.getByTestId('board-tool-pen')).toHaveAttribute('aria-pressed', 'true');
+  // Focus is back on the board: its own keys work right away.
+  await page.keyboard.press('v');
+  await expect(page.getByTestId('board-tool-select')).toHaveAttribute('aria-pressed', 'true');
+  // Shape from Cmd+K shows the shape choices, as S does.
+  await run(page, '> board tool shape', 'command-board.tool.shape');
+  await expect(page.getByTestId('board-tool-shape')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('board-shape-menu')).toBeVisible();
+  await page.keyboard.press('Escape');
   await run(page, '> zoom in', 'command-board.zoom-in');
   await expect(page.getByTestId('board-zoom-value')).not.toHaveText('100%');
   await run(page, '> zoom 100', 'command-board.zoom-reset');
@@ -165,4 +173,24 @@ test('the desktop menu sends registry ids (and an older shell\'s ids still work)
   await expect.poll(count).toBe(before + 2);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('gumply:command', { detail: 'view.search' })));
   await expect(palette(page)).toBeVisible();
+});
+
+test('Help: the user guide opens in a new tab, in the app\'s language', async ({ page, vault }) => {
+  await openNote(page, vault);
+  await page.evaluate(() => {
+    (window as unknown as { opened: unknown[] }).opened = [];
+    window.open = ((...args: unknown[]) => {
+      (window as unknown as { opened: unknown[] }).opened.push(args);
+      return null;
+    }) as typeof window.open;
+  });
+  await run(page, '> user guide', 'command-help.guide');
+  expect(await page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([
+    ['https://github.com/arslanarm/gumply/blob/main/docs/guide/en/README.md', '_blank', 'noopener'],
+  ]);
+  // Plain typing never offers Insert / Turn into (they're for `>`).
+  await openPalette(page, 'insert table');
+  await expect(page.getByTestId('command-editor.insert.table')).toHaveCount(0);
+  await input(page).fill('> insert table');
+  await expect(page.getByTestId('command-editor.insert.table')).toBeVisible();
 });

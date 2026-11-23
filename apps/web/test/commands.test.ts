@@ -11,6 +11,7 @@ import {
   LEGACY_DESKTOP_IDS,
   matchCommands,
   menuLabel,
+  plainCommandMatches,
   ROW_MENU,
   ROW_TEST_IDS,
   STATIC_COMMAND_IDS,
@@ -137,6 +138,18 @@ describe("matching", () => {
     expect(matchCommands(all(), "theme dark")[0]!.id).toBe("settings.theme-dark");
     expect(matchCommands(all(), "экспорт").map((command) => command.id)).toEqual(expect.arrayContaining(["page.export-html", "page.export-pdf"]));
     expect(matchCommands(all(), "export").map((command) => command.id)).toEqual(expect.arrayContaining(["page.export-html", "page.export-pdf"]));
+  });
+
+  it("plain typing: never Insert / Turn into (those are `>` only), at most 5, 3+ characters, no #tags", () => {
+    const families = { modifier: "Ctrl", insert: [{ key: "table", label: "Table", keywords: ["grid"] }], turnInto: [{ key: "h1", label: "Heading 1" }] };
+    const commands = availableCommands(context(meta("P"), { editor: true }), families);
+    expect(matchCommands(commands, "table").map((command) => command.id)).toContain("editor.insert.table");
+    expect(plainCommandMatches(commands, "table").map((command) => command.id)).not.toContain("editor.insert.table");
+    expect(plainCommandMatches(commands, "turn into").some((command) => command.group === "editor")).toBe(false);
+    expect(plainCommandMatches(commands, "page").length).toBeLessThanOrEqual(5);
+    expect(plainCommandMatches(commands, "th")).toEqual([]);
+    expect(plainCommandMatches(commands, "#theme")).toEqual([]);
+    expect(plainCommandMatches(commands, "theme dark")[0]!.id).toBe("settings.theme-dark");
   });
 
   it("> starts commands mode", () => {

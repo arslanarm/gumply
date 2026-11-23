@@ -1873,7 +1873,8 @@
       "turnIntoWords": ""
     },
     "help": {
-      "shortcuts": "Keyboard shortcuts"
+      "shortcuts": "Keyboard shortcuts",
+      "guide": "Open the user guide"
     }
   }
 }
