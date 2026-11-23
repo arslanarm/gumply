@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   coercePropertyValue,
@@ -603,6 +603,44 @@ function matchesTitleSegment(segment: string, title: string): boolean {
  */
 function noteBody(content: string): string {
   return content.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+}
+
+/**
+ * A file's text and its stat, **from the same open file** (D22). Reading the
+ * path and then stat-ing it can pair the old text with the new mtime when
+ * another program atomically replaces the file in between; the conflict check
+ * (disk mtime vs the record's) would then pass, and the next save would erase
+ * that program's write (a lost update). An open handle keeps the inode, so
+ * the text and the mtime always belong together; a replace after this is a
+ * real mtime change, which the check catches.
+ */
+async function readConsistent(absolute: string): Promise<{ raw: string; stats: import("node:fs").Stats }> {
+  const handle = await open(absolute, "r");
+  try {
+    const stats = await handle.stat();
+    const raw = await handle.readFile("utf8");
+    return { raw, stats };
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * The stat to keep for a file the store has just renamed into place (#a76d3php).
+ * `temp` is the temp file's stat, taken before the rename, so it is always ours.
+ * Prefer the path's stat after the rename when the path still holds our file,
+ * because on some filesystems (SMB/NFS shares, cloud-sync folders, FAT/exFAT with
+ * 2 s mtimes) a rename can change the reported mtime, and keeping the temp's would
+ * make every next save a false "changed on disk" 409. If the inode and device are
+ * the same and non-zero and the size is the one we wrote, it is our file, so use
+ * the path's stat. Otherwise another program replaced it in between, or rewrote it
+ * in place (same inode, other size): keep the temp's, so the next conditional save
+ * sees that change instead of erasing it.
+ */
+async function statAfterRename(path: string, temp: import("node:fs").Stats): Promise<import("node:fs").Stats> {
+  const now = await stat(path).catch(() => null);
+  if (now !== null && now.ino !== 0 && now.ino === temp.ino && now.dev === temp.dev && now.size === temp.size) return now;
+  return temp;
 }
 
 function mtimeVersion(mtimeMs: number): string {
@@ -2612,10 +2650,14 @@ export class VaultStore {
       record.boardRepaired = false;
     }
     const temporary = tempPathBeside(record.filePath);
+    let stats: import("node:fs").Stats;
     try {
       await mkdir(dirname(record.filePath), { recursive: true });
       const next = text ?? serializeCanvas(board);
       await writeFile(temporary, next, "utf8");
+      // Stat the temp before the rename: the path's stat after it could be
+      // another program's file (see statAfterRename, #a76d3php).
+      stats = await stat(temporary);
       const previous = await readFile(record.filePath).catch(() => null);
       if (previous !== null && !previous.equals(Buffer.from(next, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
       if (previous === null) await this.freshHistory(record.filePath);
@@ -2625,7 +2667,7 @@ export class VaultStore {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    const stats = await stat(record.filePath);
+    stats = await statAfterRename(record.filePath, stats);
     const meta = canvasMeta(board);
     record.board = board;
     record.content = canvasText(board);
@@ -2787,14 +2829,18 @@ export class VaultStore {
 
   private async writeBaseFile(record: PageRecord, text: string): Promise<void> {
     const temporary = tempPathBeside(record.filePath);
+    let stats: import("node:fs").Stats;
     try {
       await writeFile(temporary, text, "utf8");
+      // Stat the temp before the rename: the path's stat after it could be
+      // another program's file (see statAfterRename, #a76d3php).
+      stats = await stat(temporary);
       await rename(temporary, record.filePath);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
-    const stats = await stat(record.filePath);
+    stats = await statAfterRename(record.filePath, stats);
     record.baseSource = text;
     record.fileMtimeMs = stats.mtimeMs;
     record.updated = mtimeVersion(stats.mtimeMs);
@@ -2802,8 +2848,7 @@ export class VaultStore {
 
   /** A `.base` file (D34): title = file name, dates from the file, kept as text. */
   private async readBaseRecord(absolute: string, id: PageId): Promise<PageRecord> {
-    const raw = await readFile(absolute, "utf8");
-    const stats = await stat(absolute);
+    const { raw, stats } = await readConsistent(absolute);
     return {
       id,
       title: baseStem(id),
@@ -4594,9 +4639,8 @@ export class VaultStore {
   private async readRecord(absolute: string, id: PageId): Promise<PageRecord> {
     if (isBoardId(absolute)) return this.readBoardRecord(absolute, id);
     if (isBaseId(absolute)) return this.readBaseRecord(absolute, id);
-    const raw = await readFile(absolute, "utf8");
+    const { raw, stats } = await readConsistent(absolute);
     const { frontmatter, content } = parseFrontmatter(raw);
-    const stats = await stat(absolute);
 
     const created = toIso(frontmatter.created) ?? stats.birthtime.toISOString();
     const mtime = mtimeVersion(stats.mtimeMs);
@@ -4638,8 +4682,7 @@ export class VaultStore {
    * without a backup: saving it backs up the original first.
    */
   private async readBoardRecord(absolute: string, id: PageId): Promise<PageRecord> {
-    const raw = await readFile(absolute, "utf8");
-    const stats = await stat(absolute);
+    const { raw, stats } = await readConsistent(absolute);
     let board: CanvasBoard;
     let repaired = false;
     try {
@@ -5456,12 +5499,15 @@ export class VaultStore {
     const temporary = tempPathBeside(filePath);
     try {
       await writeFile(temporary, text, "utf8");
+      // Stat the temp before the rename: the path's stat after it could be
+      // another program's file (see statAfterRename, #a76d3php).
+      const written = await stat(temporary);
       if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(filePath, previous);
       if (previous === null) await this.freshHistory(filePath);
       await rename(temporary, filePath);
       await this.rememberWrite(filePath, text);
       return {
-        mtimeMs: (await stat(filePath)).mtimeMs,
+        mtimeMs: (await statAfterRename(filePath, written)).mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
         // caller uses the file time (`mtimeVersion`), as for plain notes.
         frontmatter: !plain && versionKey,
