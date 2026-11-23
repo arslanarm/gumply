@@ -91,6 +91,19 @@ export function takeUnreachableSeen(): boolean {
   return seen;
 }
 
+/** `fetch` for the API that notes when the server couldn't be reached (see `takeUnreachableSeen`). */
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    unreachableSeen = true;
+    throw error;
+  }
+  if (response.status >= 500) unreachableSeen = true;
+  return response;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -100,14 +113,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`/api${path}`, { ...init, headers });
-  } catch (error) {
-    unreachableSeen = true;
-    throw error;
-  }
-  if (response.status >= 500) unreachableSeen = true;
+  const response = await apiFetch(`/api${path}`, { ...init, headers });
 
   // First-run signal from the server: open this page once, then forget it.
   const firstPage = response.headers.get("x-gumply-new-vault");
@@ -564,7 +570,7 @@ export const api = {
 
   /** A version's exact text. */
   historyText: async (id: PageId, file: string): Promise<string> => {
-    const response = await fetch(`/api${historyPath(id)}/${encodeURIComponent(file)}`);
+    const response = await apiFetch(`/api${historyPath(id)}/${encodeURIComponent(file)}`);
     if (!response.ok) throw new ApiRequestError(response.status, response.statusText || `HTTP ${response.status}`);
     return response.text();
   },

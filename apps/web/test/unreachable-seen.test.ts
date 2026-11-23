@@ -22,6 +22,15 @@ describe("takeUnreachableSeen", () => {
     expect(takeUnreachableSeen()).toBe(false);
   });
 
+  it("a version's text (its own fetch, not request()) is seen too", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
+    await expect(api.historyText("Plan", "2026-11-23T10-00-00-000Z.md")).rejects.toThrow();
+    expect(takeUnreachableSeen()).toBe(true);
+    vi.stubGlobal("fetch", answer(503));
+    await expect(api.historyText("Plan", "x.md")).rejects.toThrow();
+    expect(takeUnreachableSeen()).toBe(true);
+  });
+
   it("a 5xx (the dev proxy while the server is down) is seen", async () => {
     vi.stubGlobal("fetch", answer(502, { error: "down" }));
     await expect(api.listPages()).rejects.toThrow();
