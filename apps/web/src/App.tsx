@@ -792,6 +792,16 @@ export function App() {
     [navigate],
   );
 
+  /**
+   * N10 (#5pgmziyc): the server kept a rename's link changes in what it just wrote, so the editor's
+   * text (still the old link) isn't the file's. Reload by the usual rule: a clean page shows the file
+   * at once; one with newer typing is left alone (its next save gets the same changes on the server,
+   * and this runs again after it).
+   */
+  const handleRenameLinksKept = useCallback(() => {
+    void reloadOpenPage.current("auto");
+  }, []);
+
   const handlePageSaved = useCallback(
     (updated: Page, savedId: PageId) => {
       // The version this save replaced is the one the app held until now.
@@ -2835,6 +2845,7 @@ export function App() {
                     onSaved={handlePageSaved}
                     waitForRename={waitForRename}
                     onConflictBackup={handleConflictBackup}
+                    onRenameLinksKept={handleRenameLinksKept}
                     onReady={handleEditorReady}
                     onOpenLink={handleOpenLink}
                     onCreateLink={createLinkedPage}
