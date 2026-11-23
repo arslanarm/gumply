@@ -4,13 +4,14 @@
 
 Open them with the gear at the top right.
 
-![Settings: language, theme, AI apps and version history](../img/settings.en.png)
+![Settings: language, what opens on startup, appearance, AI apps and version history](../img/settings.en.png)
 
 - **Language:** English or Russian, or the same as your system. Menus in the desktop app follow it.
-- **Theme:** System, Light or Dark. The sun or moon button next to the gear switches it too.
-
-  ![A page in the dark theme](../img/page.dark.png)
-
+- **On startup, open:** the **Last opened page**, **A page I choose** (pick it with **Choose…**), or **Today's daily note**.
+- **Appearance:**
+  - **Theme:** System, Light or Dark. The sun or moon button next to the gear switches it too.
+  - **Font** for your pages: **Default**, **Serif** or **Mono**.
+  - **Page width:** **Normal**, **Wide**, or **Full** (the whole window).
 - **AI apps (MCP)…:** let AI apps use this vault. See [AI apps](ai-apps.md).
 - **Version history:** how much space it takes, clearing old versions, and the lines for Syncthing. See [Version history](version-history.md).
 - **Updates…** (desktop app only): what Gumply does when there's a new version:
@@ -19,7 +20,7 @@ Open them with the gear at the top right.
   - **Don't check for updates.**
   - **Check now.** A check asks GitHub for the latest release; GitHub sees your IP address, and nothing else is sent.
 
-<!-- #if236h9k: Appearance (font, page width) and "On startup, open" are added here once that change is on main. -->
+![A page in the dark theme](../img/page.dark.png)
 
 Settings are kept per device: in the desktop app, in your user settings folder; in a browser, in the browser. They're never stored in your vault.
 
