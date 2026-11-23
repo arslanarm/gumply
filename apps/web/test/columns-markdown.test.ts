@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
 import { columnShares, columnsMarkdownPlugin, findRow, parseOpenFence } from "../src/editor/columns/markdown.js";
+import { rawMarkdownPlugin } from "../src/editor/raw-markdown/markdown-plugin.js";
 
 const md = new MarkdownIt();
 columnsMarkdownPlugin(md);
@@ -100,5 +101,42 @@ describe("columns: the exact Pandoc form only (spec/columns)", () => {
   it("a row isn't read inside a quote or a list (left as text there)", () => {
     expect(types("> :::: {.columns}\n> ::: {.column}\n> A\n> :::\n> ::::")).not.toContain("gumply_columns_open");
     expect(types("- :::: {.columns}\n  ::: {.column}\n  A\n  :::\n  ::::")).not.toContain("gumply_columns_open");
+  });
+});
+
+describe("display math and comments inside a column (#8uqd657j)", () => {
+  const editor = new MarkdownIt();
+  columnsMarkdownPlugin(editor);
+  rawMarkdownPlugin(editor);
+  const decode = (value: string) => value.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const rawBlocks = (source: string) =>
+    [...editor.render(source).matchAll(/<div data-raw-md="([^"]*)" data-raw-kind="([^"]*)"><\/div>/g)].map((m) => [m[2]!, decode(m[1]!)]);
+  const row = (inner: string) => `:::: {.columns}\n::: {.column}\n${inner}\n:::\n::: {.column}\nRight.\n:::\n::::`;
+
+  it("a $$ block on its own lines is a math block, as at the top level", () => {
+    expect(rawBlocks(row("$$\n\\sum_i i\n$$"))).toEqual([["math", "$$\n\\sum_i i\n$$"]]);
+    expect(rawBlocks("$$\n\\sum_i i\n$$")).toEqual([["math", "$$\n\\sum_i i\n$$"]]);
+  });
+
+  it("a $$ block on one line is a math block, not inline math with stray $", () => {
+    expect(rawBlocks(row("$$\\sum_i i$$"))).toEqual([["math", "$$\\sum_i i$$"]]);
+    expect(editor.render(row("$$\\sum_i i$$"))).not.toContain("data-raw-kind=\"math-inline\"");
+  });
+
+  it("next to other blocks, and in a row inside a column", () => {
+    expect(rawBlocks(row("Before.\n\n$$\nx^2\n$$\n\nAfter."))).toEqual([["math", "$$\nx^2\n$$"]]);
+    const nested = `:::: {.columns}\n::: {.column}\n::::: {.columns}\n:::: {.column}\n$$\ny\n$$\n::::\n:::::\n:::\n::::`;
+    expect(rawBlocks(nested)).toEqual([["math", "$$\ny\n$$"]]);
+  });
+
+  it("a %% comment in a column stays a comment block", () => {
+    expect(rawBlocks(row("%%\nhidden\n%%"))).toEqual([["comment", "%%\nhidden\n%%"]]);
+  });
+
+  it("not inside a list, quote or callout in a column, nor at the top level of those (only columns widen the rule)", () => {
+    for (const inner of ["- $$x$$", "> $$\n> x\n> $$", "> [!note] Title\n> $$\n> x\n> $$"]) {
+      expect(rawBlocks(row(inner)), inner).toEqual([]);
+      expect(rawBlocks(inner), inner).toEqual([]);
+    }
   });
 });

@@ -144,12 +144,22 @@ function rawBlocksRule(state: any): void {
   const out: any[] = [];
   const tableSources: Array<string | null> = [];
 
+  // Open block containers above the current token. A block directly inside
+  // columns (#8uqd657j) is written unindented, like a top-level one, so its
+  // paragraph rules ($$ math, %% comments, footnotes) apply there too.
+  const open: string[] = [];
+  const inColumnsOnly = () => open.length > 0 && open.every((type) => type === "gumply_columns_open" || type === "gumply_column_open");
+
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
+    if (token.nesting === -1) open.pop();
     if (token.type === "table_open" && token.level > 0 && token.map) {
       tableSources.push(nestedTableSource(lines, token.map as [number, number]));
     }
-    if (token.level !== 0 || token.nesting !== 1 || !token.map) {
+    const topLevel = token.level === 0;
+    const inColumn = !topLevel && token.type === "paragraph_open" && inColumnsOnly();
+    if ((!topLevel && !inColumn) || token.nesting !== 1 || !token.map) {
+      if (token.nesting === 1) open.push(token.type);
       out.push(token);
       continue;
     }
@@ -162,12 +172,13 @@ function rawBlocksRule(state: any): void {
     if (token.type === "table_open" && !kind) tableSources.push(source);
 
     if (!kind) {
+      open.push(token.type);
       out.push(token);
       continue;
     }
     const raw = new state.Token("gumply_raw_block", "div", 0);
     raw.block = true;
-    raw.level = 0;
+    raw.level = token.level;
     raw.map = [startLine, contentEnd];
     raw.content = source;
     raw.info = kind;
@@ -178,7 +189,7 @@ function rawBlocksRule(state: any): void {
   lastTableSources = tableSources;
 }
 
-/** A top-level paragraph that is a `$$…$$` math block (F1 previews share this rule). */
+/** A top-level (or column-level) paragraph that is a `$$…$$` math block (F1 previews share this rule). */
 export function isMathBlockSource(trimmed: string): boolean {
   return trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length >= 4;
 }

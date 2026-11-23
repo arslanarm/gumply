@@ -6885,6 +6885,12 @@ input {
   cursor: pointer;
 }
 
+/* #8uqd657j: with the source hidden, the diagram clears the language bar itself
+   (as the `pre` does with its padding), so a wide diagram never runs under it. */
+.gumply-editor .code-block.is-diagram:not(.is-editing) .code-block-diagram {
+  padding-top: 2.1rem;
+}
+
 .code-block-diagram:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

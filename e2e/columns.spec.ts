@@ -91,6 +91,26 @@ test.describe('columns (spec/columns)', () => {
     });
   }
 
+  test('display math in a column renders as a block in both forms, and the file stays byte-exact (#8uqd657j)', async ({ page, request, vault }) => {
+    void vault;
+    const text = ':::: {.columns}\n::: {.column}\nLeft.\n\n$$\n\\sum_i i\n$$\n:::\n::: {.column}\n$$\\int_0^1 x\\,dx$$\n\n%%\nhidden note\n%%\n:::\n::::\n\nTarget paragraph.\n';
+    await open(page, request, text);
+    const columns = page.getByTestId('column');
+    await expect(columns).toHaveCount(2);
+    // Each column holds one display formula (KaTeX), not raw `$$` text or an inline formula with stray `$`.
+    for (const column of [columns.first(), columns.nth(1)]) {
+      await expect(column.locator('.raw-block-math .katex')).toHaveCount(1);
+      await expect(column.locator('.raw-block-math .katex')).toBeVisible();
+      await expect(column.locator('.raw-inline-math')).toHaveCount(0);
+      expect(await column.locator('p').allTextContents()).not.toContainEqual(expect.stringContaining('$'));
+    }
+    await typeAtEndOf(page, 'Target paragraph.', ' X');
+    expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+    // An edit inside the same column leaves the formula's bytes alone.
+    await typeAtEndOf(page, 'Left.', ' Y');
+    expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X').replace('Left.', 'Left. Y'));
+  });
+
   test('an edit inside one column changes only that line', async ({ page, request, vault }) => {
     void vault;
     const text = `${SHAPES['three columns with widths']}\n\nTarget paragraph.\n`;
