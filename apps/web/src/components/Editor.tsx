@@ -144,8 +144,6 @@ export interface EditorProps {
    */
   waitForRename?: (id: string) => Promise<{ id: string; updated: string | null } | null> | null;
   onConflictBackup?: (path: string) => void;
-  /** N10 (#5pgmziyc): the server kept a rename's link changes in what it wrote: the page should show the file. */
-  onRenameLinksKept?: () => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
   onCreateLink: (title: string) => void;
@@ -216,7 +214,6 @@ export function Editor({
   onSaved,
   waitForRename,
   onConflictBackup,
-  onRenameLinksKept,
   onReady,
   onOpenLink,
   onCreateLink,
@@ -248,8 +245,6 @@ export function Editor({
   waitForRenameRef.current = waitForRename;
   const onConflictBackupRef = useRef(onConflictBackup);
   onConflictBackupRef.current = onConflictBackup;
-  const onRenameLinksKeptRef = useRef(onRenameLinksKept);
-  onRenameLinksKeptRef.current = onRenameLinksKept;
   const onHeadingResultRef = useRef(onHeadingResult);
   onHeadingResultRef.current = onHeadingResult;
   const onAttachmentErrorRef = useRef(onAttachmentError);
@@ -313,7 +308,6 @@ export function Editor({
           // Report which page this was: by now another page may be open.
           onSavedRef.current?.(updated, savedId);
           if (updated.conflictBackup) onConflictBackupRef.current?.(updated.conflictBackup);
-          if (updated.renameLinksKept) onRenameLinksKeptRef.current?.();
         } catch (error) {
           if (!force) forceRef.current = false;
           throw error;

@@ -193,9 +193,6 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10): neve
   expect(text).toContain(' last');
   expect(text).toContain('[[Hub renamed]]');
   expect(text).not.toContain('[[Hub]]');
-  // The editor shows the page as written (it reloads), so its next save can't bring [[Hub]] back.
-  await expect(page.getByTestId('editor-content')).toContainText('Hub renamed', { timeout: 15_000 });
-  await expect(page.getByTestId('editor-content')).toContainText(' last');
   // Every other linker has the new link.
   expect(await fs.readFile(path.join(E2E_VAULT, 'Linkers', 'Linker 7.md'), 'utf8')).toContain('[[Hub renamed]]');
 });
