@@ -503,4 +503,38 @@ describe("refresh after outside changes (#g95wkd9y)", () => {
       }
     });
   });
+
+  describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a folder that can't be read (#35q6kt6e, @polish-dev's review)", () => {
+    for (const [mode, what] of [[0o000, "can't be listed"], [0o444, "can be listed but not looked into"]] as const) {
+      it(`a folder that ${what} keeps its pages and folder row; a new note and an edit elsewhere still come in`, async () => {
+        await mkdir(join(dir, "Area"));
+        await writeFile(join(dir, "Area", "Inner.md"), "Inside, pointing at [[Hub]].\n");
+        const store = await vaultOf(3);
+        expect(store.list().find((meta) => meta.id === "Area")?.kind).toBe("folder");
+        await chmod(join(dir, "Area"), mode);
+        await writeFile(join(dir, "After.md"), "New, pointing at [[Hub]].\n");
+        await writeFile(join(dir, "Note 0.md"), "Edited outside.\n");
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        try {
+          await expect(store.rescan()).resolves.toBe(true);
+          expect(store.get("Note 0").content).toContain("Edited outside");
+          expect(backlinkIds(store, "Hub")).toEqual(["After", "Area/Inner"]);
+          expect(store.list().find((meta) => meta.id === "Area")?.kind).toBe("folder");
+          expect(store.list().find((meta) => meta.id === "Area/Inner")?.parentId).toBe("Area");
+          const logged = warn.mock.calls.length;
+          expect(logged).toBe(1);
+          await store.rescan();
+          expect(warn.mock.calls.length).toBe(logged);
+        } finally {
+          warn.mockRestore();
+          await chmod(join(dir, "Area"), 0o755);
+        }
+        // Readable again: an edit inside comes in.
+        await writeFile(join(dir, "Area", "Inner.md"), "Inside, edited.\n");
+        await store.rescan();
+        expect(store.get("Area/Inner").content).toContain("Inside, edited.");
+        expect(backlinkIds(store, "Hub")).toEqual(["After"]);
+      });
+    }
+  });
 });

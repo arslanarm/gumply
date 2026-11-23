@@ -967,7 +967,8 @@ export class VaultStore {
     const nextCache = new Map<string, { key: string; id: PageId; record: PageRecord }>();
     const directories: DirectoryScan = new Map();
     const others: string[] = [];
-    const files = (await this.scan(this.root, directories, others)).map((absolute) => ({
+    const unreadableDirs: string[] = [];
+    const files = (await this.scan(this.root, directories, others, unreadableDirs)).map((absolute) => ({
       absolute,
       rel: relative(this.root, absolute).split(sep).join("/"),
     }));
@@ -979,8 +980,16 @@ export class VaultStore {
       let stats;
       try {
         stats = await stat(absolute);
-      } catch {
-        continue; // Gone since the directory was read.
+      } catch (error) {
+        // #35q6kt6e: listed but can't be looked at now (a folder without search
+        // permission): it keeps the record it had, logged once. Otherwise gone
+        // since the listing.
+        if (isPerFileError(error)) {
+          this.noteUnreadable(absolute, error);
+          const previous = this.pages.get(id);
+          if (previous) next.set(id, previous);
+        }
+        continue;
       }
       const key = statKey(stats);
       const cached = this.readCache.get(absolute);
@@ -1004,6 +1013,17 @@ export class VaultStore {
       }
       nextCache.set(absolute, { key, id, record });
       next.set(id, record);
+    }
+    // #35q6kt6e: a folder that couldn't be listed keeps the pages and boards it
+    // had (they aren't deleted, just out of reach), with their cached reads.
+    if (unreadableDirs.length > 0) {
+      const inside = (absolute: string) => unreadableDirs.some((dir) => absolute.startsWith(dir + sep));
+      for (const [id, record] of this.pages) {
+        if (next.has(id) || !inside(record.filePath)) continue;
+        next.set(id, record);
+        const cached = this.readCache.get(record.filePath);
+        if (cached) nextCache.set(record.filePath, cached);
+      }
     }
     this.readCache = nextCache;
     const folders = VaultStore.foldersFrom(directories, next);
@@ -1061,14 +1081,18 @@ export class VaultStore {
       // Gone, or its folder was replaced by a file, since the walk listed it.
       if (isGoneError(error)) return null;
       if (isPerFileError(error)) {
-        if (!this.unreadableLogged.has(absolute)) {
-          this.unreadableLogged.add(absolute);
-          console.warn(`[gumply] can't read ${relative(this.root, absolute)} (${(error as NodeJS.ErrnoException).code}); keeping what was there and reading the rest`);
-        }
+        this.noteUnreadable(absolute, error);
         return UNREADABLE;
       }
       throw error;
     }
+  }
+
+  /** Log a file that can't be read, once until it reads again (#35q6kt6e). */
+  private noteUnreadable(absolute: string, error: unknown): void {
+    if (this.unreadableLogged.has(absolute)) return;
+    this.unreadableLogged.add(absolute);
+    console.warn(`[gumply] can't read ${relative(this.root, absolute)} (${(error as NodeJS.ErrnoException).code}); keeping what was there and reading the rest`);
   }
 
   /**
@@ -5219,15 +5243,33 @@ export class VaultStore {
    * each directory walked (vault path → non-page files directly in it), so
    * D33 folders come from the same single walk.
    */
-  private async scan(dir: string, directories?: DirectoryScan, others?: string[]): Promise<string[]> {
+  private async scan(dir: string, directories?: DirectoryScan, others?: string[], unreadable?: string[]): Promise<string[]> {
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
+      this.unreadableLogged.delete(dir);
     } catch (error) {
       // #g95wkd9y: a folder removed or renamed while the walk was under way (a
       // git checkout, a sync tool) holds nothing now; the next rescan sees where
       // it went. The vault itself missing is a real error.
       if (dir !== this.root && isGoneError(error)) return [];
+      // #35q6kt6e: a folder that can't be listed now (permissions, a lock) is
+      // out of reach, not empty: the caller keeps what it had, and so do the
+      // plain folders under it; the rest of the walk goes on. Logged once.
+      if (dir !== this.root && isPerFileError(error)) {
+        if (!this.unreadableLogged.has(dir)) {
+          this.unreadableLogged.add(dir);
+          console.warn(`[gumply] can't list ${relative(this.root, dir)}/ (${(error as NodeJS.ErrnoException).code}); keeping what was there and reading the rest`);
+        }
+        unreadable?.push(dir);
+        if (directories) {
+          const key = relative(this.root, dir).split(sep).join("/");
+          for (const folder of this.folders.values()) {
+            if (folder.id === key || folder.id.startsWith(`${key}/`)) directories.set(folder.id, 0);
+          }
+        }
+        return [];
+      }
       throw error;
     }
     const files: string[] = [];
@@ -5240,7 +5282,7 @@ export class VaultStore {
       if (entry.isSymbolicLink()) continue;
 
       const absolute = join(dir, entry.name);
-      if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories, others)));
+      if (entry.isDirectory()) files.push(...(await this.scan(absolute, directories, others, unreadable)));
       else if (entry.isFile() && ITEM_FILE.test(entry.name)) files.push(absolute);
       else if (entry.isFile()) {
         otherFiles += 1;
