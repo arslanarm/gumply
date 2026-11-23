@@ -1058,7 +1058,8 @@ function BoardCanvas(props: BoardEditorProps) {
   const lod = useRef<LodLevel>(0);
   const zoomVar = useRef(createZoomVar()).current;
   const zoomNow = useRef(1);
-  const zoomRest = useRef<number | undefined>(undefined);
+  const viewRestFrame = useRef(0);
+  const viewQuietFrames = useRef(0);
   // Every dot can show with the connector tool, and while a connection is
   // dragged (the target's dots appear under the pointer): the whole board then.
   const connectorTool = useRef(false);
@@ -1094,15 +1095,24 @@ function BoardCanvas(props: BoardEditorProps) {
       // Objects that come into view mount after this step: place it on them too.
       placeZoomVarSoon();
     }
-    // Once the gesture rests: newly mounted objects, and the object now under
-    // a pointer that didn't move (no pointer event tells us).
-    window.clearTimeout(zoomRest.current);
-    zoomRest.current = window.setTimeout(() => {
-      const at = lastPointer.current;
-      const under = at ? document.elementFromPoint(at.x, at.y)?.closest(".react-flow__node") ?? null : null;
-      if (at) hoveredNode.current = under && rootRef.current?.contains(under) ? under : null;
-      placeZoomVar();
-    }, 150);
+    // Once the view rests (a few frames with no change, however slow the
+    // frames are): newly mounted objects, and the object now under a pointer
+    // that didn't move (no pointer event tells us). Once per gesture, never per step.
+    viewQuietFrames.current = 0;
+    if (!viewRestFrame.current) {
+      const watch = (): void => {
+        viewQuietFrames.current += 1;
+        if (viewQuietFrames.current < 3) {
+          viewRestFrame.current = requestAnimationFrame(watch);
+          return;
+        }
+        viewRestFrame.current = 0;
+        const board = rootRef.current;
+        if (board && lastPointer.current) hoveredNode.current = board.querySelector(".react-flow__node:hover");
+        placeZoomVar();
+      };
+      viewRestFrame.current = requestAnimationFrame(watch);
+    }
     // Level of detail: unreadably small text is drawn as bars (lod.ts).
     const level = lodLevel(zoom, lod.current);
     if (level !== lod.current || !root.dataset.lod) {
@@ -1131,7 +1141,7 @@ function BoardCanvas(props: BoardEditorProps) {
   }, [selection, tool, placeZoomVar, placeZoomVarSoon]);
   useEffect(
     () => () => {
-      window.clearTimeout(zoomRest.current);
+      cancelAnimationFrame(viewRestFrame.current);
       cancelAnimationFrame(zoomVarFrame.current);
     },
     [],
