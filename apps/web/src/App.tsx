@@ -2204,7 +2204,8 @@ export function App() {
                 // D43: a conflict copy opens read-only; nothing it shows can write.
                 <div className="conflict-copy-page" data-testid="conflict-copy-page">
                   <ConflictCopyBanner meta={selectedMeta} pages={pages} refreshKey={conflictsStamp} onCompare={setCompareTarget} onResolve={handleResolveConflict} />
-                  <h1 className="page-title">{selectedMeta.title}</h1>
+                  {/* The copy's file name: it usually carries the page's own `title:`. */}
+                  <h1 className="page-title">{fileNameOf(selectedMeta.id)}</h1>
                   <div className="conflict-copy-body">
                     {showingBoard && boardDoc ? (
                       <BoardPreview board={boardDoc.board} />

@@ -7702,3 +7702,7 @@ input {
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+.conflicts-view .history-muted {
+  margin: 0.25rem 0 0.6rem;
+}
