@@ -4,10 +4,33 @@
  * by Gumply id or title, never by path.
  */
 import type { McpServer } from "@modelcontextprotocol/server";
-import { canvasNodeKind, canvasText, extractWikilinks, resolveWikilink, tagMatches, type CanvasBoard, type PageMeta, type WikiLink } from "@gumply/core";
+import { canvasNodeKind, canvasText, extractWikilinks, resolveWikilink, tagMatches, type CanvasBoard, type PageMeta, type SearchResult, type WikiLink } from "@gumply/core";
 import * as z from "zod";
 import { ToolError } from "../errors.js";
 import type { Vault } from "../vault.js";
+import { SEARCH_LIMIT_MAX, type SearchOptions, type VaultStore } from "../../../server/src/vault-store.js";
+
+/** Store pages of search results the tool looks through at most. */
+export const MAX_SEARCH_PAGES = 20;
+
+/**
+ * The store's ranked hits, one page of 200 at a time (#g95wkd9y), so only
+ * as many results are built as the tool looks at. A hard stop at 20 pages: a
+ * filter that keeps nothing (every hit outside the vault) can't walk on.
+ */
+export function* searchHits(
+  store: Pick<VaultStore, "searchPage">,
+  query: string,
+  kinds: NonNullable<SearchOptions["kinds"]>,
+): Generator<SearchResult> {
+  let cursor: string | undefined;
+  for (let pages = 0; pages < MAX_SEARCH_PAGES; pages += 1) {
+    const page = store.searchPage(query, { limit: SEARCH_LIMIT_MAX, kinds, ...(cursor ? { cursor } : {}) });
+    yield* page.items;
+    cursor = page.nextCursor;
+    if (!cursor) return;
+  }
+}
 import { kindOf, metaKind, ok, provenance, READ_ANNOTATIONS, tool } from "./common.js";
 
 const MAX_LIST = 500;
@@ -51,21 +74,24 @@ export function registerReadTools(server: McpServer, vault: Vault, clientName: (
         const itemKind = kindOf(page);
         return kind === "any" ? itemKind === "page" || itemKind === "whiteboard" : itemKind === kind;
       };
-      let hits: Array<{ page: PageMeta; snippet: string }>;
       const trimmed = query.trim();
-      if (/^#[^\s#]+$/.test(trimmed)) {
-        const tag = trimmed.slice(1);
-        hits = vault
-          .list()
-          .filter((page) => page.tags.some((own) => tagMatches(own, tag)))
-          .sort((a, b) => a.title.localeCompare(b.title))
-          .map((page) => ({ page, snippet: "" }));
-      } else {
-        hits = vault.store.search(trimmed);
+      // The hits in rank order, one store page at a time (#g95wkd9y: a broad
+      // query can hit every page; only as many are built as get looked at).
+      async function* ranked(): AsyncGenerator<{ page: PageMeta; snippet: string }> {
+        if (/^#[^\s#]+$/.test(trimmed)) {
+          const tag = trimmed.slice(1);
+          yield* vault
+            .list()
+            .filter((page) => page.tags.some((own) => tagMatches(own, tag)))
+            .sort((a, b) => a.title.localeCompare(b.title))
+            .map((page) => ({ page, snippet: "" }));
+          return;
+        }
+        yield* searchHits(vault.store, trimmed, kind === "any" ? ["page", "whiteboard"] : [kind]);
       }
-      // Check containment only until the limit is filled (a broad query can hit every page).
+      // Check containment only until the limit is filled.
       const results: Array<z.infer<typeof searchHit>> = [];
-      for (const hit of hits) {
+      for await (const hit of ranked()) {
         if (results.length >= limit) break;
         if (!wanted(hit.page) || !(await vault.inside(hit.page.id))) continue;
         results.push({ id: hit.page.id, title: hit.page.title, kind: kindOf(hit.page), snippet: hit.snippet, path: vault.pathOf(hit.page.id) });

@@ -476,9 +476,18 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json<GraphSettingsResponse>(await writeGraphSettings(store.root, body));
   });
 
+  // D13; v1.31 (#g95wkd9y): one page of results (`limit`, default 50, at most 200),
+  // the next page's `cursor` in `X-Next-Cursor`. The body stays an array.
   api.get("/search", (c) => {
     const q = c.req.query("q") ?? "";
-    return c.json<SearchResult[]>(store.search(q));
+    const limit = Number(c.req.query("limit") ?? "");
+    const cursor = c.req.query("cursor");
+    const { items, nextCursor } = store.searchPage(q, {
+      ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      ...(cursor ? { cursor } : {}),
+    });
+    if (nextCursor) c.header("X-Next-Cursor", nextCursor);
+    return c.json<SearchResult[]>(items);
   });
 
   api.post("/attachments", async (c) => {
