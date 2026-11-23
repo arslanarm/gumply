@@ -126,8 +126,9 @@ export function TableView(props: TableViewProps) {
   } as CSSProperties;
 
   return (
-    <div className="base-table" data-testid="base-table" role="table" aria-rowcount={result.rows.length + 1} style={style}>
-      <div className="base-table-scroll" ref={scrollRef} data-testid="base-table-scroll">
+    <div className="base-table" data-testid="base-table" style={style}>
+      {/* The table role is on the part that holds only rows; "New" and the column menus sit beside it (WCAG 1.3.1, #jchhjepb). */}
+      <div className="base-table-scroll" ref={scrollRef} data-testid="base-table-scroll" role="table" aria-rowcount={result.rows.length + 1}>
         <div className="base-table-head" role="row">
           {columns.map((column) => {
             const sort = sorts.find((item) => propertyId(String(item.property)) === column.id);
@@ -156,8 +157,8 @@ export function TableView(props: TableViewProps) {
             if (item.kind === "group") {
               return (
                 <div className="base-group-row" key={virtual.key} style={top} role="row" data-testid="base-group">
-                  <span className="base-group-label">{item.label || t("bases.noValue")}</span>
-                  <span className="base-group-count">{item.count}</span>
+                  <span className="base-group-label" role="cell">{item.label || t("bases.noValue")}</span>
+                  <span className="base-group-count" role="cell">{item.count}</span>
                 </div>
               );
             }

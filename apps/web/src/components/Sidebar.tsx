@@ -332,7 +332,9 @@ export function Sidebar(props: SidebarProps) {
         ref={treeRef}
         className="page-tree"
         data-testid="page-tree"
-        role="tree"
+        // A tree only while it has items: loading, error and an empty vault
+        // show a note instead (an empty role=tree is invalid, WCAG 1.3.1, #jchhjepb).
+        role={status !== "loading" && status !== "error" && tree.length > 0 ? "tree" : undefined}
         aria-label={t("sidebar.pages")}
         onDragOver={(event) => {
           if (!draggingId) return;

@@ -67,6 +67,11 @@
   overflow-x: auto;
 }
 
+/* The tablist lays out as part of .base-tabs; it only carries the role. */
+.base-tablist {
+  display: contents;
+}
+
 .base-tab {
   display: inline-flex;
   align-items: center;
