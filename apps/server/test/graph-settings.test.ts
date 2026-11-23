@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GraphData, GraphSettingsResponse } from "@gumply/core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -68,6 +68,59 @@ describe("GET/PUT /api/graph/settings", () => {
     expect((await jsonRequest(app, "PUT", "/api/graph/settings", { filters: [] })).status).toBe(400);
     const put = await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [{ query: "a", color: "blue" }], filters: { showTags: 1 } });
     expect(await put.json()).toMatchObject({ groups: [], filters: { showTags: false } });
+  });
+
+  it("#reynggre: a save keeps keys Gumply doesn't know (top level, filters, groups), in the file's order", async () => {
+    const onDisk = {
+      future: { layout: "radial" },
+      groups: [
+        { query: "tag:#work", color: "#112233", weight: 3 },
+        { query: "path:Daily", color: "#445566", note: "hand edit" },
+      ],
+      filters: { depth: 2, search: "x", showTags: true, showAttachments: false, hideUnresolved: false, showOrphans: true },
+      zoom: 1.5,
+    };
+    const { app, dir } = await vault({ ".gumply/graph.json": JSON.stringify(onDisk, null, 2) });
+    const settings = await getJson<GraphSettingsResponse>(app, "/api/graph/settings");
+    // The user drops the Daily group, recolours work, adds one, and turns tags off.
+    const put = await jsonRequest(app, "PUT", "/api/graph/settings", {
+      groups: [{ query: "tag:#work", color: "#aabbcc" }, { query: "tag:#home", color: "#00ff00" }],
+      filters: { ...settings.filters, showTags: false },
+    });
+    expect(put.status).toBe(200);
+    const saved = JSON.parse(await readFile(join(dir, ".gumply/graph.json"), "utf8")) as Record<string, unknown>;
+    expect(Object.keys(saved)).toEqual(["future", "groups", "filters", "zoom"]);
+    expect(saved).toEqual({
+      future: { layout: "radial" },
+      groups: [
+        { query: "tag:#work", color: "#aabbcc", weight: 3 },
+        { query: "tag:#home", color: "#00ff00" },
+      ],
+      filters: { depth: 2, search: "x", showTags: false, showAttachments: false, hideUnresolved: false, showOrphans: true },
+      zoom: 1.5,
+    });
+    // What the app reads back is unchanged by the extra keys.
+    expect(await getJson<GraphSettingsResponse>(app, "/api/graph/settings")).toMatchObject({
+      source: "gumply",
+      groups: [{ query: "tag:#work", color: "#aabbcc" }, { query: "tag:#home", color: "#00ff00" }],
+    });
+  });
+
+  it("#reynggre: a hand-edited invalid file is kept aside, not replaced silently", async () => {
+    const broken = '{ "groups": [ { "query": "tag:#work", "color": "#112233" }, ]  // oops\n';
+    const { app, dir } = await vault({ ".gumply/graph.json": broken });
+    const put = await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [], filters: {} });
+    expect(put.status).toBe(200);
+    const names = await readdir(join(dir, ".gumply"));
+    const aside = names.filter((name) => /^graph\.json\.invalid-\d+$/.test(name));
+    expect(aside).toHaveLength(1);
+    expect(await readFile(join(dir, ".gumply", aside[0]!), "utf8")).toBe(broken);
+    expect(JSON.parse(await readFile(join(dir, ".gumply/graph.json"), "utf8"))).toMatchObject({ groups: [] });
+    // A JSON array is just as invalid; a valid file is never moved aside.
+    await writeFile(join(dir, ".gumply/graph.json"), "[1, 2]");
+    await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [] });
+    await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [] });
+    expect((await readdir(join(dir, ".gumply"))).filter((name) => name.startsWith("graph.json.invalid-"))).toHaveLength(2);
   });
 
   it("writes need the app's origin", async () => {

@@ -238,6 +238,7 @@ export {
   MAX_GRAPH_GROUPS,
   MAX_GRAPH_QUERY,
   normalizeGraphSettings,
+  mergeGraphSettings,
   obsidianColor,
   type GraphFilters,
   type GraphGroup,
