@@ -37,6 +37,13 @@ export function blockAt(doc: ProseMirrorNode, pos: number): BlockRef | null {
     }
   }
 
+  // #e9bd64bb (#n6cy66ib): a block atom (an image, a divider, an embed) has no
+  // inside; a position over it is the one right before it. It's the block too.
+  const after = $pos.nodeAfter;
+  if (after && after.isBlock && after.isAtom) {
+    return { from: clamped, to: clamped + after.nodeSize, node: after, depth: $pos.depth + 1 };
+  }
+
   if ($pos.depth < 1) return null;
   const node = $pos.node(1);
   return { from: $pos.before(1), to: $pos.before(1) + node.nodeSize, node, depth: 1 };

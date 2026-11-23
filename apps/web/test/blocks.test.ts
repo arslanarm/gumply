@@ -165,3 +165,31 @@ describe("deleteBlock", () => {
     expect(next.doc.child(0).textContent).toBe("");
   });
 });
+
+
+describe("block atoms (#e9bd64bb, #n6cy66ib)", () => {
+  const hr = () => schema.nodes.horizontalRule!.create();
+
+  it("the position right before an atom block is that block, so the gutter finds images and dividers", () => {
+    const d = doc(p("A"), hr(), p("B"));
+    const before = 3; // after "A"'s paragraph (0..3)
+    const block = blockAt(d, before)!;
+    expect(block.node.type.name).toBe("horizontalRule");
+    expect(block).toMatchObject({ from: 3, to: 4, depth: 1 });
+  });
+
+  it("a text position is unchanged: still its paragraph", () => {
+    const d = doc(p("A"), hr(), p("B"));
+    expect(blockAt(d, 1)!.node.textContent).toBe("A");
+    expect(blockAt(d, 5)!.node.textContent).toBe("B");
+  });
+
+  it("an atom block moves and is deleted like any block", () => {
+    const s = state(p("A"), hr(), p("B"));
+    const block = blockAt(s.doc, 3)!;
+    const moved = moveBlock(s, block, "up")!;
+    expect(moved.doc.child(0).type.name).toBe("horizontalRule");
+    const deleted = deleteBlock(s, block)!;
+    expect(deleted.doc.childCount).toBe(2);
+  });
+});
