@@ -201,6 +201,10 @@ export function makeVerifier(deps: VerifierDeps): ((download: { version: string;
     }
     const name = deps.installerName(version);
     if (!name) return { ok: false, reason: "no installer name for this kind of install" };
+    // electron-updater caches the asset under its release file name: it must be
+    // the one for the version offered (an old installer keeps its old name).
+    const downloadedName = downloadedFile.split(/[\\/]/).pop() ?? "";
+    if (downloadedName !== name) return { ok: false, reason: `downloaded ${downloadedName}, expected ${name} for ${version}` };
     const result = await verifyDownload({ path: downloadedFile, name }, sums, sig.toString("utf8"), deps.keys, deps.hash).catch(
       (error: unknown) => ({ ok: false as const, reason: error instanceof Error ? error.message : String(error) }),
     );

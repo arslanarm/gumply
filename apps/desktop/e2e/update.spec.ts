@@ -68,18 +68,16 @@ function testKeyPair(): { privateKey: KeyObject; spki: Buffer; id: string } {
 const trustedKey = testKeyPair();
 const otherKey = testKeyPair();
 
-type SigMode = 'good' | 'missing' | 'other-key' | 'old-sums';
+type SigMode = 'good' | 'missing' | 'other-key';
 let sigMode: SigMode = 'good';
 /** N+1's SHA256SUMS.txt, as the release job writes it (`sha256sum *`). */
 let sumsFile = Buffer.alloc(0);
+/** N's own SHA256SUMS.txt (its installer), for the replay case. */
+let oldSumsFile = Buffer.alloc(0);
 
-/**
- * The sums served: N+1's, or for 'old-sums' an older release's validly signed
- * sums (the entries carry N's file names), as if latest.yml had been edited
- * to offer an old signed build as N+1.
- */
+/** The sums served: N+1's, or in the replay N's own, validly signed. */
 function servedSums(): Buffer {
-  return sigMode === 'old-sums' ? Buffer.from(sumsFile.toString('utf8').split(newVersion).join(oldVersion)) : sumsFile;
+  return feedMode === 'replay' ? oldSumsFile : sumsFile;
 }
 
 function sigLine(): string {
@@ -92,7 +90,12 @@ const isSignatureRequest = (name: string) => name === 'SHA256SUMS.txt' || name =
 
 // --- the feed ------------------------------------------------------------------
 
-type FeedMode = 'real' | 'tampered' | 'old';
+/**
+ * 'replay': someone who can edit a release put N's own installer, N's validly
+ * signed sums and .sig into N+1's release, with latest.yml saying N+1 (and N's
+ * sha512 and size, so electron-updater's own check passes).
+ */
+type FeedMode = 'real' | 'tampered' | 'old' | 'replay';
 let feed: Server;
 let feedUrl = '';
 let feedMode: FeedMode = 'real';
@@ -113,7 +116,7 @@ function startFeed(): Promise<void> {
       else response.writeHead(200, { 'content-type': 'text/plain' }).end(sigLine());
       return;
     }
-    const file = join(feedDir, basename(name));
+    const file = feedMode === 'replay' && name === basename(oldApp) ? oldApp : join(feedDir, basename(name));
     if (!name || name.includes('/') || !existsSync(file) || !statSync(file).isFile()) {
       response.writeHead(404).end();
       return;
@@ -122,6 +125,15 @@ function startFeed(): Promise<void> {
       let yml = readFileSync(file, 'utf8');
       if (feedMode === 'tampered') yml = yml.replace(/sha512: \S+/g, `sha512: ${Buffer.alloc(64, 7).toString('base64')}`);
       if (feedMode === 'old') yml = yml.replace(/^version: .*$/m, `version: ${oldVersion}`);
+      if (feedMode === 'replay') {
+        const newInstaller = readdirSync(feedDir).find((entry) => /\.(AppImage|exe)$/.test(entry))!;
+        yml = yml
+          .split(newInstaller)
+          .join(basename(oldApp))
+          .replace(/sha512: \S+/g, `sha512: ${sha512(oldApp)}`)
+          .replace(/size: \d+/g, `size: ${statSync(oldApp).size}`)
+          .replace(/^\s*blockMapSize: .*\n/gm, '');
+      }
       response.writeHead(200, { 'content-type': 'text/yaml' }).end(yml);
       return;
     }
@@ -297,6 +309,7 @@ test.beforeAll(async () => {
   const assets = readdirSync(feedDir)
     .filter((name) => statSync(join(feedDir, name)).isFile())
     .sort();
+  oldSumsFile = Buffer.from(`${createHash('sha256').update(readFileSync(oldApp)).digest('hex')}  ${basename(oldApp)}\n`);
   sumsFile = Buffer.from(assets.map((name) => `${createHash('sha256').update(readFileSync(join(feedDir, name))).digest('hex')}  ${name}\n`).join(''));
   await startFeed();
   if (isLinux) {
@@ -371,11 +384,11 @@ test('a file that fails its sha512: never installed, N untouched', async () => {
 for (const [mode, why] of [
   ['missing', 'no SHA256SUMS.txt.sig'],
   ['other-key', 'signed by a key the app doesn\'t have'],
-  ['old-sums', 'an older release\'s validly signed sums offered as N+1 (replay)'],
+  ['replay', 'N\'s own installer, sums and .sig offered as N+1 (replay)'],
 ] as const) {
   test(`signing: ${why}: verify-failed, never installed, N untouched`, async () => {
-    feedMode = 'real';
-    sigMode = mode;
+    feedMode = mode === 'replay' ? 'replay' : 'real';
+    sigMode = mode === 'replay' ? 'good' : mode;
     const before = sha512(installed);
     try {
       await startApp();
@@ -384,12 +397,15 @@ for (const [mode, why] of [
       // It downloaded N+1 (the first time; then electron-updater reuses its
       // cached copy), then fetched exactly the sums and the .sig.
       if (mode === 'missing') expect(feedRequests.some((name) => /\.(AppImage|exe)$/.test(name))).toBe(true);
+      // The replay really fetched N's installer (electron-updater's sha512 passed).
+      if (mode === 'replay') expect(feedRequests).toContain(basename(oldApp));
       expect(feedRequests.filter(isSignatureRequest).sort()).toEqual(['SHA256SUMS.txt', 'SHA256SUMS.txt.sig']);
       await expect(page.getByTestId('update-notice')).toHaveAttribute('data-status', 'verify-failed');
       expect(appLog).toMatch(/not verified: /);
       await quitApp();
     } finally {
       sigMode = 'good';
+      feedMode = 'real';
     }
     expect(sha512(installed)).toBe(before);
     if (isWindows) expect(installedVersion()).toBe(oldVersion);

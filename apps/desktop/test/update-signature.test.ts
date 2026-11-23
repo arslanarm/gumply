@@ -189,13 +189,21 @@ describe("makeVerifier (what main.ts gives the controller)", () => {
       const old = Buffer.from("Gumply 0.9.0, an old build with a known bug");
       const oldSums = Buffer.from(`${sha(old)}  Gumply-0.9.0-x86_64.AppImage\n`);
       const oldSig = Buffer.from(signWith(primary.privateKey, oldSums, primary.entry.id));
-      // ...served as "0.9.1" (latest.yml edited), under either file name.
-      for (const cached of ["Gumply-0.9.0-x86_64.AppImage", "Gumply-0.9.1-x86_64.AppImage"]) {
-        const downloadedFile = join(dir, cached);
-        writeFileSync(downloadedFile, old);
-        const { verify } = release({ "https://example.test/v0.9.1/SHA256SUMS.txt": oldSums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": oldSig });
-        expect(await verify({ version: "0.9.1", downloadedFile }), cached).toMatchObject({ ok: false, reason: "Gumply-0.9.1-x86_64.AppImage is not in SHA256SUMS.txt" });
-      }
+      // ...put into the "0.9.1" release with latest.yml saying 0.9.1: the old installer
+      // keeps its own name, so the name check stops it before any hashing.
+      const { verify: replayed, get } = release({ "https://example.test/v0.9.1/SHA256SUMS.txt": oldSums, "https://example.test/v0.9.1/SHA256SUMS.txt.sig": oldSig });
+      writeFileSync(join(dir, "Gumply-0.9.0-x86_64.AppImage"), old);
+      expect(await replayed({ version: "0.9.1", downloadedFile: join(dir, "Gumply-0.9.0-x86_64.AppImage") })).toEqual({
+        ok: false,
+        reason: "downloaded Gumply-0.9.0-x86_64.AppImage, expected Gumply-0.9.1-x86_64.AppImage for 0.9.1",
+      });
+      expect(get).toHaveBeenCalledTimes(2);
+      // The old installer renamed to 0.9.1's name: the old signed sums don't list that name.
+      writeFileSync(join(dir, "Gumply-0.9.1-x86_64.AppImage"), old);
+      expect(await replayed({ version: "0.9.1", downloadedFile: join(dir, "Gumply-0.9.1-x86_64.AppImage") })).toMatchObject({
+        ok: false,
+        reason: "Gumply-0.9.1-x86_64.AppImage is not in SHA256SUMS.txt",
+      });
       // Signed sums that list 0.9.1's name, but the old file under it: the hash differs.
       const newSums = Buffer.from(`${sha(installer)}  Gumply-0.9.1-x86_64.AppImage\n`);
       writeFileSync(join(dir, "Gumply-0.9.1-x86_64.AppImage"), old);
