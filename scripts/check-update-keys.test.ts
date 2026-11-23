@@ -96,12 +96,30 @@ describe("scripts/check-update-keys.mjs --verify (the release job)", () => {
 
   it("fails on a missing .sig, another key, or sums changed after signing", () => {
     expect(release(null).verify().stderr).toMatch(/\.sig is missing/);
-    expect(release(stranger).verify().stderr).toMatch(/isn't built into the app/);
+    expect(release(stranger).verify().stderr).toMatch(/aren't built into the app/);
     const changed = release(primary);
     writeFileSync(join(changed.dir, "SHA256SUMS.txt"), "c".repeat(64) + "  Gumply-0.9.0-x86_64.AppImage\n");
     const result = changed.verify();
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/doesn't verify/);
+  });
+
+  it("the app's multi-line rule: an unknown key's line is skipped; a malformed or failing trusted line fails; at most 8", () => {
+    const { dir, verify } = release(primary);
+    const sums = readFileSync(join(dir, "SHA256SUMS.txt"));
+    const lineBy = (signer: { pem: string }) => (signSums(sums, signer.pem) as { line: string }).line;
+    const write = (text: string) => writeFileSync(join(dir, "SHA256SUMS.txt.sig"), text);
+    write(lineBy(stranger) + lineBy(backup));
+    expect(verify().stdout).toContain("built-in backup key");
+    write(lineBy(primary) + "gumply-sig v1 garbage\n");
+    expect(verify().stderr).toMatch(/isn't a gumply-sig v1 line/);
+    // A trusted id over a bad signature (a stranger's, relabelled), next to a good line.
+    write(lineBy(stranger).replace(stranger.entry.id, backup.entry.id) + lineBy(primary));
+    expect(verify().stderr).toMatch(/the line for key .* doesn't verify/);
+    write(lineBy(primary).repeat(9));
+    expect(verify().stderr).toMatch(/1 to 8 lines \(has 9\)/);
+    write(lineBy(primary).repeat(8));
+    expect(verify().status).toBe(0);
   });
 
   it("fails with no keys built in, even with a good-looking .sig", () => {

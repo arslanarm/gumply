@@ -102,6 +102,27 @@ describe("verifySums", () => {
     expect(verifySums(sums, signWith(stranger.privateKey, sums, primary.entry.id), keys)).toEqual({ ok: false, reason: "bad signature" });
   });
 
+  it("key rotation: 1 to 8 lines; passes if a trusted key's line verifies, unknown ids skipped", () => {
+    const good = signWith(primary.privateKey, sums, primary.entry.id);
+    const goodBackup = signWith(backup.privateKey, sums, backup.entry.id);
+    const unknown = signWith(stranger.privateKey, sums, stranger.entry.id);
+    // An unknown key (e.g. a newer primary) plus a trusted one: passes, by the trusted one.
+    expect(verifySums(sums, unknown + good, keys)).toMatchObject({ ok: true, keyId: primary.entry.id });
+    expect(verifySums(sums, good + goodBackup, keys)).toMatchObject({ ok: true, keyId: primary.entry.id });
+    // Good plus a malformed line: the whole file fails (strict).
+    expect(verifySums(sums, good + "gumply-sig v1 key=nothex sig=AAAA\n", keys)).toEqual({ ok: false, reason: "malformed signature file" });
+    expect(verifySums(sums, good + "\n" + good, keys)).toEqual({ ok: false, reason: "malformed signature file" });
+    // A trusted id with a bad signature, next to a good line: fails.
+    const forged = signWith(stranger.privateKey, sums, backup.entry.id);
+    expect(verifySums(sums, forged + good, keys)).toEqual({ ok: false, reason: "bad signature" });
+    expect(verifySums(sums, good + forged, keys)).toEqual({ ok: false, reason: "bad signature" });
+    // Only unknown keys: fails. 8 lines pass; 9 fail.
+    expect(verifySums(sums, unknown + unknown, keys)).toMatchObject({ ok: false, reason: expect.stringMatching(/unknown key/) });
+    expect(verifySums(sums, unknown.repeat(7) + good, keys)).toMatchObject({ ok: true });
+    expect(verifySums(sums, unknown.repeat(8) + good, keys)).toEqual({ ok: false, reason: "malformed signature file" });
+    expect(verifySums(sums, (unknown + good).replace(/\n/g, "\r\n"), keys)).toMatchObject({ ok: true });
+  });
+
   it("a mislabelled built-in key isn't trusted", () => {
     const mislabelled = [{ id: primary.entry.id, spki: stranger.entry.spki }];
     expect(verifySums(sums, signWith(stranger.privateKey, sums, primary.entry.id), mislabelled)).toMatchObject({ ok: false, reason: expect.stringMatching(/wrong id/) });

@@ -4,11 +4,16 @@
  * a downloaded update is only installed when that signature verifies against
  * a public key built into the app and the installer's sha256 is in the sums.
  *
- * The `.sig` file is one line:
+ * The `.sig` file is one line (CI writes one):
  *
  *   gumply-sig v1 key=<key id> sig=<base64 signature>
  *
- * signed over the exact bytes of `SHA256SUMS.txt`. A key id is the first 8
+ * signed over the exact bytes of `SHA256SUMS.txt`. For key rotation it may
+ * hold up to 8 such lines (one per signing key, e.g. the old backup and the
+ * new primary), so an app that skips the rotation release still verifies the
+ * next one: it passes if at least one line verifies with a trusted key; lines
+ * with unknown key ids are skipped; any malformed line, or any trusted key's
+ * signature that doesn't verify, fails the whole file. A key id is the first 8
  * bytes of sha256(the public key's SPKI DER), in hex, so the app can pick the
  * key (primary or backup) without trying each one.
  *
@@ -87,25 +92,45 @@ export type VerifyResult =
  * Check `sigText` over the exact bytes of `sumsBytes` against `keys`. On
  * success, the parsed sums.
  */
+/** The most lines a `.sig` file may have. */
+export const MAX_SIG_LINES = 8;
+
+/** Parse a whole `.sig` file: 1 to 8 lines, every one well-formed. Null otherwise. */
+export function parseSigFile(text: string): SigLine[] | null {
+  const body = text.replace(/\r?\n$/, "");
+  if (body === "") return null;
+  const lines = body.split(/\r?\n/);
+  if (lines.length > MAX_SIG_LINES) return null;
+  const parsed = lines.map(parseSigLine);
+  return parsed.every((line): line is SigLine => line !== null) ? parsed : null;
+}
+
 export function verifySums(sumsBytes: Buffer, sigText: string, keys: readonly UpdatePublicKey[]): VerifyResult {
-  const sig = parseSigLine(sigText);
-  if (!sig) return { ok: false, reason: "malformed signature file" };
-  const key = keys.find((candidate) => candidate.id === sig.keyId);
-  if (!key) return { ok: false, reason: `signed by an unknown key (${sig.keyId})` };
-  const publicKey = publicKeyOf(key);
-  if (!publicKey) return { ok: false, reason: `built-in key ${key.id} is not an ed25519 public key` };
-  // The id must match the key itself, so a mislabelled key can't stand in for another.
-  if (keyIdOf(Buffer.from(key.spki, "base64")) !== key.id) return { ok: false, reason: `built-in key ${key.id} has the wrong id` };
-  let good = false;
-  try {
-    good = verify(null, sumsBytes, publicKey, sig.signature);
-  } catch {
-    good = false;
+  const lines = parseSigFile(sigText);
+  if (!lines) return { ok: false, reason: "malformed signature file" };
+  let verifiedBy: string | null = null;
+  for (const sig of lines) {
+    const key = keys.find((candidate) => candidate.id === sig.keyId);
+    // Another key (e.g. a newer one during rotation): not ours to judge.
+    if (!key) continue;
+    const publicKey = publicKeyOf(key);
+    if (!publicKey) return { ok: false, reason: `built-in key ${key.id} is not an ed25519 public key` };
+    // The id must match the key itself, so a mislabelled key can't stand in for another.
+    if (keyIdOf(Buffer.from(key.spki, "base64")) !== key.id) return { ok: false, reason: `built-in key ${key.id} has the wrong id` };
+    let good = false;
+    try {
+      good = verify(null, sumsBytes, publicKey, sig.signature);
+    } catch {
+      good = false;
+    }
+    // A trusted key's line that doesn't verify fails the file, whatever the other lines say.
+    if (!good) return { ok: false, reason: "bad signature" };
+    verifiedBy ??= key.id;
   }
-  if (!good) return { ok: false, reason: "bad signature" };
+  if (!verifiedBy) return { ok: false, reason: `signed by an unknown key (${lines.map((line) => line.keyId).join(", ")})` };
   const sums = parseSums(sumsBytes.toString("utf8"));
   if (!sums) return { ok: false, reason: "malformed SHA256SUMS.txt" };
-  return { ok: true, keyId: key.id, sums };
+  return { ok: true, keyId: verifiedBy, sums };
 }
 
 /** sha256 of a file, lowercase hex. */

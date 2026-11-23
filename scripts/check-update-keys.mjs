@@ -65,14 +65,24 @@ export function keyProblems(keys) {
 export function verifySigned(sumsPath, keys) {
   const sigPath = `${sumsPath}.sig`;
   if (!existsSync(sigPath)) throw new Error(`${sigPath} is missing.`);
-  const line = readFileSync(sigPath, "utf8").replace(/\r?\n$/, "");
-  const match = /^gumply-sig v1 key=([0-9a-f]{16}) sig=([A-Za-z0-9+/]+={0,2})$/.exec(line);
-  if (!match) throw new Error(`${sigPath} isn't a gumply-sig v1 line.`);
-  const index = keys.findIndex((key) => key.id === match[1]);
-  if (index < 0) throw new Error(`${sigPath} is signed by key ${match[1]}, which isn't built into the app.`);
-  const publicKey = createPublicKey({ key: Buffer.from(keys[index].spki, "base64"), format: "der", type: "spki" });
-  if (!verify(null, readFileSync(sumsPath), publicKey, Buffer.from(match[2], "base64"))) throw new Error(`${sigPath} doesn't verify over ${sumsPath}.`);
-  return { role: ROLES[index] ?? `key ${index + 1}`, id: keys[index].id };
+  // The app's rule (update-signature.ts verifySums): 1 to 8 well-formed lines;
+  // unknown key ids skipped; every trusted key's line must verify; at least one does.
+  const body = readFileSync(sigPath, "utf8").replace(/\r?\n$/, "");
+  const lines = body === "" ? [] : body.split(/\r?\n/);
+  if (lines.length === 0 || lines.length > 8) throw new Error(`${sigPath} must have 1 to 8 lines (has ${lines.length}).`);
+  const sums = readFileSync(sumsPath);
+  let first = null;
+  for (const line of lines) {
+    const match = /^gumply-sig v1 key=([0-9a-f]{16}) sig=([A-Za-z0-9+/]+={0,2})$/.exec(line);
+    if (!match || Buffer.from(match[2], "base64").length !== 64) throw new Error(`${sigPath} has a line that isn't a gumply-sig v1 line.`);
+    const index = keys.findIndex((key) => key.id === match[1]);
+    if (index < 0) continue;
+    const publicKey = createPublicKey({ key: Buffer.from(keys[index].spki, "base64"), format: "der", type: "spki" });
+    if (!verify(null, sums, publicKey, Buffer.from(match[2], "base64"))) throw new Error(`${sigPath}: the line for key ${match[1]} doesn't verify over ${sumsPath}.`);
+    first ??= { role: ROLES[index] ?? `key ${index + 1}`, id: keys[index].id };
+  }
+  if (!first) throw new Error(`${sigPath} is signed only by keys that aren't built into the app.`);
+  return first;
 }
 
 function main(argv) {
