@@ -213,6 +213,10 @@ import { readDailySettings, readTemplateSettings } from "./note-settings.js";
 import { sweepTempFiles, tempPathBeside, writeAtomic } from "./temp-files.js";
 import { RenameJournal, RESUME_ANY_AFTER_MS, type PendingRename } from "./rename-journal.js";
 import { fixedInstanceId, type InstanceId } from "./instance-id.js";
+import { mergeRenameLinks } from "./rename-merge.js";
+
+/** N10 (#5pgmziyc): how long a rename's rewrite of a page is remembered for a later Keep mine. */
+const RENAME_MERGE_WINDOW_MS = 10 * 60 * 1000;
 import {
   buildDemoBoard,
   buildDemoPages,
@@ -960,6 +964,12 @@ export class VaultStore {
   private readonly renameJournal: RenameJournal;
   /** D47: renames a crash left unfinished, resumed after the start (tests await it). */
   renamesResumed: Promise<void> = Promise.resolve();
+  /**
+   * N10 (#5pgmziyc): what a rename's rewrite did to each page (its body before and after, and the
+   * versions), for RENAME_MERGE_WINDOW_MS: a Keep mine from an editor that started before it gets
+   * the rename's link changes on the lines it didn't touch.
+   */
+  private renameRewrites = new Map<PageId, Array<{ before: string; after: string; versionBefore: string; versionAfter: string; at: number }>>();
   /** N9-1: renames whose batches are running (their `touched` sets are filled). */
   private activeRenameJobs = new Set<RenameRewrite>();
   /** N9-1: inside a rename's own rewrite (its writes aren't "touched" by someone else). */
@@ -3370,8 +3380,11 @@ export class VaultStore {
       throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
     }
 
-    const nextContent = patch.content === undefined ? record.content : patch.content;
+    let nextContent = patch.content === undefined ? record.content : patch.content;
     if (typeof nextContent !== "string") throw badRequest("content must be a string");
+    // N10 (#5pgmziyc, D22 note): Keep mine keeps the user's text, except a concurrent rename's link
+    // changes on lines they didn't touch.
+    if (patch.force && changedOnDisk && patch.content !== undefined) nextContent = this.mergeRecentRenames(record.id, patch.expectedUpdated, nextContent);
     if (nextContent.length > MAX_CONTENT_LENGTH) throw badRequest("content is too large");
 
     let nextIcon = record.icon;
@@ -3727,14 +3740,50 @@ export class VaultStore {
 
   /** #xgnvipyd: one page's rename rewrite; a write error is logged and skipped, so the other pages still get theirs. */
   private async applyRenameRewrite(job: RenameRewrite, other: PageRecord, apply: () => Promise<void>): Promise<boolean> {
+    const before = other.kind === "page" ? other.content : null;
+    const versionBefore = other.updated;
     try {
       await apply();
+      const after = this.pages.get(other.id);
+      if (before !== null && after && after.content !== before) this.rememberRenameRewrite(other.id, before, after.content, versionBefore, after.updated);
       return true;
     } catch (error) {
       job.failed.push(other.id);
       console.warn(`[gumply] rename: links in ${other.id} not rewritten:`, error instanceof Error ? error.message : error);
       return false;
     }
+  }
+
+  /** N10: remember a rename's rewrite of page `id` (pruned by age). */
+  private rememberRenameRewrite(id: PageId, before: string, after: string, versionBefore: string, versionAfter: string): void {
+    const now = Date.now();
+    for (const [key, list] of this.renameRewrites) {
+      const kept = list.filter((entry) => now - entry.at <= RENAME_MERGE_WINDOW_MS);
+      if (kept.length === 0) this.renameRewrites.delete(key);
+      else if (kept.length !== list.length) this.renameRewrites.set(key, kept);
+    }
+    const list = this.renameRewrites.get(id) ?? [];
+    list.push({ before, after, versionBefore, versionAfter, at: now });
+    this.renameRewrites.set(id, list);
+  }
+
+  /**
+   * N10 (#5pgmziyc): a Keep mine of page `id` from an editor whose version (`expected`) is one a
+   * recent rename rewrote: the rename's link changes (and any later rename's, in order) applied to
+   * the forced text on the lines the user didn't touch. Anything else is the user's text as sent.
+   */
+  private mergeRecentRenames(id: PageId, expected: string | undefined, content: string): string {
+    const list = this.renameRewrites.get(id);
+    if (!list || expected === undefined) return content;
+    const now = Date.now();
+    let version = expected;
+    let merged = content;
+    for (const entry of list) {
+      if (now - entry.at > RENAME_MERGE_WINDOW_MS || entry.versionBefore !== version) continue;
+      merged = mergeRenameLinks(entry.before, entry.after, merged).content;
+      version = entry.versionAfter;
+    }
+    return merged;
   }
 
   /**
