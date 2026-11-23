@@ -14,8 +14,8 @@
  * - Gestures: drag 1 object, drag 50 selected, drag all (Ctrl+A), pan (wheel),
  *   zoom (Ctrl+wheel); 60 pointer/wheel events about 16 ms apart.
  * - fps / p95 come from a requestAnimationFrame loop during the gesture; a
- *   busy main thread shows up as long frames. "moved" checks that the drag
- *   really moved that many objects.
+ *   busy main thread shows up as long frames. "moved/selected" checks that the
+ *   drag really moved what it selected (read once the drop is committed).
  * - `--throttle 4` slows the CPU 4× through CDP (a mid-range laptop).
  * - `--gpu` turns on GPU rasterisation in headless Chromium (closer to a real
  *   browser; software rendering is the default and the more pessimistic).
@@ -134,25 +134,28 @@ async function select(page, count) {
   if (count === Infinity) {
     await page.keyboard.press("Control+a");
   } else {
-    const centres = await page.evaluate((n) => {
-      const out = [];
-      // Row by row from the top: the context toolbar sits above the selection,
-      // so it never covers the next object to click.
-      for (const el of document.querySelectorAll(".react-flow__node")) {
-        const r = el.getBoundingClientRect();
-        // Near the top-left inner edge, not the centre: text there may be a
-        // [[link]], and clicking a link opens it instead of selecting.
-        const x = r.x + Math.min(6, r.width / 4);
-        const y = r.y + Math.min(6, r.height / 4);
-        const hit = document.elementFromPoint(x, y);
-        // Only objects nothing else (toolbars, minimap) covers.
-        if (r.y > 120 && y < 860 && el.contains(hit) && !hit.closest("a, .wiki-link, button")) out.push({ x, y });
-        if (out.length >= n) break;
-      }
-      return out;
-    }, count);
+    // #g95wkd9y: the next object is picked from the page as it is *now*, after
+    // each click. The context toolbar appears over the selection and DOM order
+    // isn't screen order, so points worked out up front were often under the
+    // toolbar: the clicks hit its buttons and only one object got selected.
+    const nextPoint = () =>
+      page.evaluate(() => {
+        for (const el of document.querySelectorAll(".react-flow__node:not(.selected)")) {
+          const r = el.getBoundingClientRect();
+          // Near the top-left inner edge, not the centre: text there may be a
+          // [[link]], and clicking a link opens it instead of selecting.
+          const x = r.x + Math.min(6, r.width / 4);
+          const y = r.y + Math.min(6, r.height / 4);
+          const hit = document.elementFromPoint(x, y);
+          // Only objects nothing else (toolbars, minimap) covers right now.
+          if (r.y > 120 && y < 860 && hit && el.contains(hit) && !hit.closest("a, .wiki-link, button")) return { x, y };
+        }
+        return null;
+      });
     // React Flow tracks Shift through keydown, not the click's shiftKey.
-    for (const [index, point] of centres.entries()) {
+    for (let index = 0; index < count; index += 1) {
+      const point = await nextPoint();
+      if (!point) break;
       if (index === 1) await page.keyboard.down("Shift");
       await page.mouse.click(point.x, point.y);
     }
@@ -173,7 +176,31 @@ async function select(page, count) {
       if (!best || distance < best.distance) best = { x, y, distance };
     }
     return { ...best, selected: document.querySelectorAll(".react-flow__node.selected").length };
+  }).then((start) => {
+    if (start.x === undefined) throw new Error(`no selected object to grab (${start.selected} selected)`);
+    return start;
   });
+}
+
+/**
+ * #g95wkd9y: wait until the drop is committed. A big selection moves with CSS
+ * offsets (or the viewport transform) during the drag and its positions are
+ * written once on drop; at 1,000 objects that commit can take longer than a
+ * fixed wait, which read as "moved 0".
+ */
+async function settled(page, before, timeout = 15_000) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    const state = await page.evaluate(() => ({
+      temporary:
+        [...document.querySelectorAll(".react-flow__node")].some((el) => el.style.translate !== "") ||
+        (document.querySelector(".react-flow__viewport")?.style.translate ?? "") !== "",
+      nodes: Object.fromEntries(window.__board.get().nodes.map((n) => [n.id, `${n.x},${n.y}`])),
+    }));
+    const moved = Object.keys(state.nodes).filter((id) => state.nodes[id] !== before[id]).length;
+    if ((!state.temporary && moved > 0) || Date.now() > until) return moved;
+    await page.waitForTimeout(100);
+  }
 }
 
 async function drag(page, count) {
@@ -188,9 +215,9 @@ async function drag(page, count) {
     }
     await page.mouse.up();
   });
-  await page.waitForTimeout(300);
-  const after = await positions(page);
-  const moved = Object.keys(after).filter((id) => after[id] !== before[id]).length;
+  const moved = await settled(page, before);
+  // A drag that didn't move what it selected measures nothing: say so loudly.
+  if (moved !== start.selected) console.error(`warning: ${start.selected} selected but ${moved} moved`);
   return { ...result, moved, selected: start.selected };
 }
 
@@ -224,7 +251,7 @@ try {
         const page = await openBoard(seed, throttle);
         const r = await run(page);
         await page.close();
-        const moved = r.moved === undefined ? "" : `${r.moved}`;
+        const moved = r.moved === undefined ? "" : `${r.moved}/${r.selected}`;
         rows.push(`| ${seed} | ${throttle}× | ${name} | ${r.fps} | ${r.p95} | ${r.worst} | ${r.wall} | ${moved} |`);
         console.error(`${seed} ${throttle}× ${name}: ${JSON.stringify(r)}`);
         if (check && seed === 500 && throttle === 1 && name === "drag all" && r.fps < 50) failed = true;
@@ -241,7 +268,7 @@ try {
 console.log(
   `Board perf — ${gpu ? "GPU" : "software"} rendering, 1440×900, ${fixedZoom === null ? "whole board visible" : `zoom ${Math.round(fixedZoom * 100)}%`}\n`,
 );
-console.log("| objects | CPU | gesture | fps | p95 frame ms | worst frame ms | gesture ms | moved |");
+console.log("| objects | CPU | gesture | fps | p95 frame ms | worst frame ms | gesture ms | moved/selected |");
 console.log("|---|---|---|---|---|---|---|---|");
 for (const row of rows) console.log(row);
 if (failed) {
