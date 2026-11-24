@@ -1151,8 +1151,10 @@ export function GraphCanvas({
     const { width, height } = sizeRef.current;
     const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion });
     // Above STREAM_MAX_NODES (or with reduced motion) the graph is drawn once,
-    // settled; meanwhile its start layout shows dimmed with a status.
-    setArranging(input.stream ? null : 0);
+    // settled; meanwhile its start layout shows dimmed with a status. With a
+    // layout cache, only once the cache has no layout for it (no "Arranging"
+    // flash before a kept layout).
+    const arrange = () => setArranging(input.stream ? null : 0);
     const place = (x: Float32Array, y: Float32Array) => {
       for (let i = 0; i < drawn.length; i += 1) {
         const node = drawn[i]!;
@@ -1175,6 +1177,7 @@ export function GraphCanvas({
     const key = store ? layoutCacheKey(drawn.map((node) => node.id), input.links, `${centerId ?? ""}|${reducedMotion ? 1 : 0}`) : "";
     let cancelled = false;
     let cancel: () => void = () => {};
+    if (!store) arrange();
     void cachedLayout(store, key, drawn.length).then((kept) => {
       if (cancelled) return;
       if (kept) {
@@ -1182,6 +1185,7 @@ export function GraphCanvas({
         settled();
         return;
       }
+      if (store) arrange();
       cancel = startLayout(input, (update) => {
         if (update.type === "progress") {
           setArranging(update.progress);

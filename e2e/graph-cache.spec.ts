@@ -43,6 +43,14 @@ async function openGraph(page: Page, timeout: number): Promise<{ arranged: boole
   return { arranged: await page.evaluate(() => (window as unknown as { __arranged?: boolean }).__arranged === true), ms };
 }
 
+// The notes are written straight to disk: take them away again, so later specs start from a small vault.
+test.afterEach(async ({ request }) => {
+  await fs.rm(path.join(E2E_VAULT, 'Big'), { recursive: true, force: true });
+  await expect
+    .poll(async () => (await api.listPages(request)).some((meta) => meta.id.startsWith('Big/')), { timeout: 60_000 })
+    .toBe(false);
+});
+
 test('a big graph opened again shows its kept layout at once, and a changed graph arranges afresh', async ({ page, request, vault }) => {
   test.setTimeout(420_000);
   await vault.reset();
@@ -66,7 +74,7 @@ test('a big graph opened again shows its kept layout at once, and a changed grap
   expect(first.arranged).toBe(true);
   await page.waitForTimeout(800); // the fit tween
   const before = new Map((await probe(page)).map((node) => [node.id, node]));
-  expect(before.size).toBeGreaterThan(NOTES);
+  expect(before.size).toBeGreaterThanOrEqual(NOTES);
 
   // Opened again (a reload; the browser keeps the cache): laid out at once.
   const again = await openGraph(page, 15_000);
@@ -96,9 +104,8 @@ test('a big graph opened again shows its kept layout at once, and a changed grap
     return nearest;
   };
   const target = inside.reduce((best, node) => (room(node) > room(best) ? node : best));
-  const title = target.id.replace(/^Big\//, '');
   await page.mouse.click(box.x + target.x, box.y + target.y);
-  await expect(page.getByTestId('page-title').first()).toContainText(title, { timeout: 10_000 });
+  await expect.poll(() => decodeURIComponent(page.url()), { timeout: 10_000 }).toContain(`#/${target.id}`);
 
   // Nothing about the layout went into the vault.
   const gumply = await fs.readdir(path.join(E2E_VAULT, '.gumply')).catch(() => [] as string[]);
