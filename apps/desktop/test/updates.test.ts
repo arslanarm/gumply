@@ -199,6 +199,40 @@ describe("UpdateController policy", () => {
     expect(store()?.lastChecked).toBe("2026-11-23T10:00:00.000Z");
   });
 
+  it("a download that rejects without an \"error\" event leaves the update on offer, not stuck on downloading (v0.9.0 tag build)", async () => {
+    // electron-updater's differential fallback, then a sha512 mismatch: downloadUpdate() rejected,
+    // and the status stayed "downloading" for good (update.spec.ts:368 on Linux).
+    const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage" });
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    updater.downloadUpdate.mockImplementation(async () => {
+      throw new Error("sha512 checksum mismatch, expected abc, got def");
+    });
+    await instance.check(true);
+    await vi.waitFor(() => expect(instance.getState().status).not.toBe("downloading"));
+    expect(instance.getState()).toMatchObject({ status: "available", version: "0.9.1", error: expect.stringContaining("sha512 checksum mismatch") });
+  });
+
+  it("a download that rejects and also emits \"error\" ends the same way, once", async () => {
+    const log = vi.fn();
+    const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage", log });
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    updater.downloadUpdate.mockImplementation(async () => {
+      const error = new Error("sha512 checksum mismatch");
+      updater.emit("error", error);
+      throw error;
+    });
+    await instance.check(true);
+    await vi.waitFor(() => expect(instance.getState().status).toBe("available"));
+    expect(instance.getState().error).toContain("sha512 checksum mismatch");
+    expect(log.mock.calls.filter(([line]) => String(line).includes("sha512")).length).toBe(1);
+  });
+
   it("notify (and .deb/macOS): tells, never downloads", async () => {
     for (const [kind, saved] of [["nsis", { mode: "notify" }], ["deb", undefined], ["mac", undefined]] as const) {
       const { instance, updater } = controller(kind, saved);

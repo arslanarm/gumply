@@ -424,7 +424,16 @@ export class UpdateController {
     this.set({ status: "downloading" });
     return this.deps.updater.downloadUpdate().then(
       () => undefined,
-      () => undefined, // reported through the "error" event
+      (error: unknown) => {
+        // Usually reported through the "error" event too, which has then already moved
+        // the status on. But electron-updater can reject without emitting it (a sha512
+        // mismatch after its differential-download fallback, the v0.9.0 tag build), and
+        // the status then stayed "downloading" for good: leave the update on offer.
+        if (this.state.status !== "downloading") return;
+        const message = error instanceof Error ? error.message : String(error);
+        this.deps.log?.(`[gumply] update: ${message}`);
+        this.set({ status: "available", error: message });
+      },
     );
   }
 
