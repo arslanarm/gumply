@@ -130,6 +130,28 @@ describe("the background link index runs in slices (#rz3iukrp)", () => {
     await expectSameAsSynchronous(store, dir);
   });
 
+  it("started while a rename's batches run: [[Old]] resolves to the renamed page, exactly as reindexAll() resolves it (N9's linkMetas)", async () => {
+    // A rename of Old to New is mid-batches: New exists, its old title is an alias, and pages
+    // not yet rewritten still say [[Old]]. The slices must resolve against linkMetas(), as
+    // N9's reindexAll() does; resolving against pageMetas() alone left [[Old]] dangling.
+    const dir = await mkdtemp(join(tmpdir(), "gumply-index-slices-alias-"));
+    dirs.push(dir);
+    await writeFile(join(dir, "New.md"), "The renamed page.\n");
+    for (let i = 0; i < 30; i++) await writeFile(join(dir, `Linker ${i}.md`), `See [[Old]] and [[Linker ${(i + 1) % 30}]].\n`);
+    type WithAliases = Internals & { renameAliases: Map<string, { fromId: string; fromTitle: string }>; reindexAll: () => void };
+    let internals: WithAliases | null = null;
+    const store = await started(dir, 0, () => {
+      internals!.renameAliases.set("New", { fromId: "Old", fromTitle: "Old" });
+    });
+    internals = store as unknown as WithAliases;
+    await store.whenIndexed();
+    const sliced = indexOf(store);
+    expect(store.backlinks("New").map((link) => link.page.id).sort()).toEqual(Array.from({ length: 30 }, (_, i) => `Linker ${i}`).sort());
+    // Exactly what the synchronous full reindex gives with the same alias in place.
+    internals.reindexAll();
+    expect(sliced).toEqual(indexOf(store));
+  });
+
   it("a rename while it indexes: the result is exact", async () => {
     const dir = await vault();
     let renaming: Promise<unknown> = Promise.resolve();
