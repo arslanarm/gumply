@@ -1668,6 +1668,17 @@ export class VaultStore {
     this.bytesAt.set(filePath, kept.slice(-3));
   }
 
+  /**
+   * #rfgpvrdb: our own rename keeps a file's bytes and mtime, so its hashes move with it. Left under the
+   * old path, a touch or same-bytes rewrite of the renamed file made the next save a false 409.
+   */
+  private moveNotedBytes(oldPath: string, newPath: string): void {
+    if (oldPath === newPath) return;
+    const seen = this.bytesAt.get(oldPath);
+    this.bytesAt.delete(oldPath);
+    if (seen) this.bytesAt.set(newPath, seen);
+  }
+
   /** Did `current`'s file and `fresh`'s (the same path, re-read) hold exactly the same bytes? */
   private sameBytesOnDisk(current: PageRecord, fresh: PageRecord): boolean {
     if (current.filePath !== fresh.filePath) return false;
@@ -3646,20 +3657,22 @@ export class VaultStore {
       throw error;
     }
 
-    const moved: Array<{ oldId: PageId; record: PageRecord }> = [];
+    const moved: Array<{ oldId: PageId; oldPath: string; record: PageRecord }> = [];
     for (const [key, value] of [...this.pages]) {
       if (key !== id && !key.startsWith(`${id}/`)) continue;
       this.pages.delete(key);
       const movedId = `${newId}${key.slice(id.length)}`;
       moved.push({
         oldId: key,
+        oldPath: value.filePath,
         record: { ...value, id: movedId, filePath: this.movedFilePath(value, movedId) },
       });
     }
-    for (const { oldId, record: value } of moved) {
+    for (const { oldId, oldPath, record: value } of moved) {
       this.pages.set(value.id, value);
       this.redirects.delete(value.id);
       this.addRedirect(oldId, value.id);
+      this.moveNotedBytes(oldPath, value.filePath);
     }
     // D20: each page's history follows it.
     for (const { oldId, record: value } of moved) {
@@ -4266,7 +4279,10 @@ export class VaultStore {
       this.pages.delete(key);
       const suffix = key.slice(id.length);
       const movedId = `${newId}${suffix}`;
-      moved.push({ ...value, id: movedId, filePath: this.movedFilePath(value, movedId) });
+      const filePath = this.movedFilePath(value, movedId);
+      // #rfgpvrdb: the same-bytes hashes move with the file (a move keeps its bytes and mtime).
+      this.moveNotedBytes(value.filePath, filePath);
+      moved.push({ ...value, id: movedId, filePath });
     }
     for (const value of moved) this.pages.set(value.id, value);
 
@@ -4501,17 +4517,18 @@ export class VaultStore {
     await mkdir(dirname(newDir), { recursive: true });
     await rename(oldDir, newDir);
 
-    const moved: Array<{ oldId: PageId; record: PageRecord }> = [];
+    const moved: Array<{ oldId: PageId; oldPath: string; record: PageRecord }> = [];
     for (const [key, value] of [...this.pages]) {
       if (!key.startsWith(`${id}/`)) continue;
       this.pages.delete(key);
       const movedId = `${newId}${key.slice(id.length)}`;
-      moved.push({ oldId: key, record: { ...value, id: movedId, filePath: this.movedFilePath(value, movedId) } });
+      moved.push({ oldId: key, oldPath: value.filePath, record: { ...value, id: movedId, filePath: this.movedFilePath(value, movedId) } });
     }
-    for (const { oldId, record: value } of moved) {
+    for (const { oldId, oldPath, record: value } of moved) {
       this.pages.set(value.id, value);
       this.redirects.delete(value.id);
       this.addRedirect(oldId, value.id);
+      this.moveNotedBytes(oldPath, value.filePath);
     }
     // D20: each page's history follows it.
     for (const { oldId, record: value } of moved) {
