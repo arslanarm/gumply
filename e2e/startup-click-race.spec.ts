@@ -21,11 +21,11 @@ test('a click on Graph while the startup is still choosing the landing page wins
   });
   await page.goto('/');
   await page.getByTestId('sidebar-graph').click();
-  await expect(page).toHaveURL(/#\/graph/);
+  await expect(page).toHaveURL(/#graph$/);
   // After the held request returns and the startup code finishes, the graph is still what's open.
   await page.waitForTimeout(4_000);
   expect(held).toBeGreaterThan(0);
-  await expect(page).toHaveURL(/#\/graph/);
+  await expect(page).toHaveURL(/#graph$/);
   await expect(page.getByTestId('graph-canvas').or(page.getByTestId('graph-empty'))).toBeVisible();
 });
 
@@ -44,9 +44,9 @@ test('with "today\'s note" on startup, a click on Graph while the note is fetche
   });
   await page.goto('/');
   await page.getByTestId('sidebar-graph').click();
-  await expect(page).toHaveURL(/#\/graph/);
+  await expect(page).toHaveURL(/#graph$/);
   await page.waitForTimeout(4_000);
   expect(held).toBeGreaterThan(0);
-  await expect(page).toHaveURL(/#\/graph/);
+  await expect(page).toHaveURL(/#graph$/);
   await expect(page.getByTestId('graph-canvas').or(page.getByTestId('graph-empty'))).toBeVisible();
 });
