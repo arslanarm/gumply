@@ -18,6 +18,7 @@
  * Move to, the template pickers).
  */
 import { useLayoutEffect, type RefObject } from "react";
+import { focusMainRegion, isFocusReturnTarget } from "./focus-fallback.js";
 
 const TABBABLE = [
   "a[href]",
@@ -248,7 +249,12 @@ export function useModal(
       }
       if (!handBack) return;
       const target = returnTarget(opener, history, (item) => dialog.contains(item) || item.closest("[inert]") !== null);
-      target?.focus({ preventScroll: true });
+      if (target) target.focus({ preventScroll: true });
+      // Nothing to go back to (opened with focus on <body>, or its opener is gone): the main
+      // region, never <body> (#fw97pkjh). After the dialog is removed, so it doesn't count as inside.
+      else queueMicrotask(() => {
+        if (!isFocusReturnTarget(document.activeElement) || dialog.contains(document.activeElement)) focusMainRegion();
+      });
     };
   }, [active, modal, ownsTab, ref]);
 }
