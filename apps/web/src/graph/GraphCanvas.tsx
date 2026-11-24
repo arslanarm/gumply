@@ -30,7 +30,8 @@ import {
   type FitItem,
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
-import { engineTicks, layoutInputFor } from "./layout-forces.js";
+import { engineTicks, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
+import { drawLinkLayer, type LinkLayer, type LinkSlotStyle } from "./link-layer.js";
 import { startLayout } from "./layout-client.js";
 import { t, useT } from "../i18n/index.js";
 
@@ -103,6 +104,8 @@ const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", 
 const LABEL_GAP_PX = 4;
 const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
+/** #s3sszwux (iii): force-graph draws no links for a big graph; we draw them (link-layer.ts). */
+const noForceGraphLinks = (): boolean => false;
 /** Dash for links into a "not created yet" page (graph units, as before). */
 const GHOST_LINK_DASH = [4, 3];
 
@@ -1207,6 +1210,35 @@ export function GraphCanvas({
     [],
   );
 
+  // #s3sszwux (iii): above STREAM_MAX_NODES the links are drawn by us into a
+  // half-resolution CPU canvas (link-layer.ts) and copied under the dots, so the
+  // graph's canvas records one image instead of ~123k path operations (a full
+  // repaint's commit of that recording is what stalled, up to 150 s). The same
+  // colours, widths and dashes as force-graph's own drawing below; it draws none.
+  const bigLinks = nodes.length > STREAM_MAX_NODES;
+  const layerRef = useRef<LinkLayer>({ canvas: null });
+  const onFramePre = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number) => {
+      // Slots: idle, active (the hovered node's), faded (the rest while hovering); each solid or dashed.
+      const styles: LinkSlotStyle[] = [
+        { color: linkPaint.idle, width: 1, dash: null },
+        { color: linkPaint.idle, width: 1, dash: GHOST_LINK_DASH },
+        { color: linkPaint.active, width: 1.7, dash: null },
+        { color: linkPaint.active, width: 1.7, dash: GHOST_LINK_DASH },
+        { color: linkPaint.faded, width: 1, dash: null },
+        { color: linkPaint.faded, width: 1, dash: GHOST_LINK_DASH },
+      ];
+      const slotOf = (link: LinkObject<CanvasNode, GraphLink>): number => {
+        const dashed = isGhostId(endpointId(link.target)) ? 1 : 0;
+        if (hoveredId === null) return dashed;
+        const touches = endpointId(link.source) === hoveredId || endpointId(link.target) === hoveredId;
+        return (touches ? 2 : 4) + dashed;
+      };
+      drawLinkLayer(ctx, layerRef.current, graphData.links as Array<LinkObject<CanvasNode, GraphLink>>, styles, slotOf, scale);
+    },
+    [linkPaint, hoveredId, graphData],
+  );
+
   return (
     <div className="graph-canvas-wrap">
       {showControls ? (
@@ -1274,6 +1306,8 @@ export function GraphCanvas({
             backgroundColor="transparent"
             nodeVisibility={hideBuiltInNodes}
             onRenderFramePost={drawNodes}
+            linkVisibility={bigLinks ? noForceGraphLinks : true}
+            onRenderFramePre={bigLinks ? onFramePre : undefined}
             linkColor={linkColor}
             linkWidth={linkWidth}
             linkLineDash={linkLineDash}
