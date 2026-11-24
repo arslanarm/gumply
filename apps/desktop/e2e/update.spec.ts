@@ -371,9 +371,14 @@ test('a file that fails its sha512: never installed, N untouched', async () => {
   await startApp();
   feedRequests = [];
   await checkNow(/is available|Couldn't/);
-  await page.waitForTimeout(3_000);
+  // "Check now" retries a download that failed in this session, and while that retry runs
+  // ("downloading") the notice isn't shown at all, so a fixed wait raced it (the 913ee46
+  // Linux re-run). Wait for the retry to settle: the update back on offer, never "ready".
+  // On b5bc371 the status stuck on "downloading" for good, so this times out there.
+  await expect(page.getByTestId('update-notice')).toHaveAttribute('data-status', /^(available|verify-failed|install-failed)$/, { timeout: 90_000 });
   // It did download N+1 (so the refusal is the sha512 check, not a missing file).
   expect(feedRequests.some((name) => /\.(AppImage|exe)$/.test(name))).toBe(true);
+  await page.waitForTimeout(2_000);
   await expect(page.getByTestId('update-notice')).not.toHaveAttribute('data-status', 'ready');
   await quitApp();
   expect(sha512(installed)).toBe(before);
