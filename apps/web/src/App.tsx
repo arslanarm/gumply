@@ -2256,8 +2256,10 @@ export function App() {
       : newest
         ? t(merged.links > 1 ? "page.conflictKeptLinksMany" : "page.conflictKeptLinks", { title: newest })
         : t("page.conflictKeptLinksUntitled");
-    const parts = [path ? t("page.conflictKept", { path }) : null, links].filter((part): part is string => Boolean(part));
-    if (parts.length > 0) setToast({ message: parts.join(" "), icon: "info" });
+    const kept = path ? t("page.conflictKept", { path }) : null;
+    // "Other version kept in …" has no full stop of its own; it gets one before a second sentence.
+    const message = kept && links ? `${/[.!?…]$/.test(kept) ? kept : `${kept}.`} ${links}` : (kept ?? links);
+    if (message) setToast({ message, icon: "info" });
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
