@@ -25,10 +25,24 @@ export interface GraphFilters {
   showOrphans: boolean;
 }
 
+/**
+ * #xb4b54gr: how the graph groups pages into clusters (a soft area behind
+ * each, the groups kept apart): by links (communities), by folder, by first
+ * tag, or not at all.
+ */
+export type GraphClusterMode = "links" | "folder" | "tag" | "off";
+
+export const GRAPH_CLUSTER_MODES: readonly GraphClusterMode[] = ["links", "folder", "tag", "off"];
+
 export interface GraphSettings {
   /** In order: the first group whose query matches colours a node. */
   groups: GraphGroup[];
   filters: GraphFilters;
+  /**
+   * #xb4b54gr (spec/api v1.36, spec/api-graph-clusters): "Group by" in the
+   * graph panel. Absent in the file = the default.
+   */
+  clusterBy: GraphClusterMode;
 }
 
 export type GraphSettingsSource = "gumply" | "obsidian" | "default";
@@ -49,7 +63,9 @@ export const DEFAULT_GRAPH_FILTERS: GraphFilters = {
   showOrphans: true,
 };
 
-export const DEFAULT_GRAPH_SETTINGS: GraphSettings = { groups: [], filters: DEFAULT_GRAPH_FILTERS };
+export const DEFAULT_GRAPH_CLUSTERS: GraphClusterMode = "links";
+
+export const DEFAULT_GRAPH_SETTINGS: GraphSettings = { groups: [], filters: DEFAULT_GRAPH_FILTERS, clusterBy: DEFAULT_GRAPH_CLUSTERS };
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -81,6 +97,7 @@ export function normalizeGraphSettings(raw: unknown): GraphSettings {
       hideUnresolved: flag("hideUnresolved"),
       showOrphans: flag("showOrphans"),
     },
+    clusterBy: GRAPH_CLUSTER_MODES.includes(data.clusterBy as GraphClusterMode) ? (data.clusterBy as GraphClusterMode) : DEFAULT_GRAPH_CLUSTERS,
   };
 }
 
@@ -91,7 +108,7 @@ export function normalizeGraphSettings(raw: unknown): GraphSettings {
  * order; a group keeps its unknown keys when its query matches a group on disk
  * (the first one not taken yet). Known keys take `next`'s values.
  */
-export function mergeGraphSettings(onDisk: unknown, next: GraphSettings): Record<string, unknown> {
+export function mergeGraphSettings(onDisk: unknown, next: GraphSettings, options: { clusterBy?: boolean } = {}): Record<string, unknown> {
   const disk = isObject(onDisk) ? onDisk : {};
   const merged: Record<string, unknown> = { ...disk };
   const diskGroups = Array.isArray(disk.groups) ? disk.groups.filter(isObject) : [];
@@ -103,6 +120,9 @@ export function mergeGraphSettings(onDisk: unknown, next: GraphSettings): Record
     return { ...match, query: group.query, color: group.color };
   });
   merged.filters = { ...(isObject(disk.filters) ? disk.filters : {}), ...next.filters };
+  // #xb4b54gr: the mode is written only when the user set it (a PUT that carries
+  // it); otherwise the file's own value stays, even one a newer Gumply wrote.
+  if (options.clusterBy) merged.clusterBy = next.clusterBy;
   return merged;
 }
 

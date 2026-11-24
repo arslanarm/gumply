@@ -3,7 +3,7 @@
  * attachments, existing files only, orphans) and colour Groups (a query and
  * a colour each, in order: the first match wins).
  */
-import type { GraphFilters, GraphGroup, GraphSettings } from "@gumply/core";
+import { GRAPH_CLUSTER_MODES, type GraphClusterMode, type GraphFilters, type GraphGroup, type GraphSettings } from "@gumply/core";
 import { useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
@@ -14,9 +14,19 @@ export interface GraphControlsProps {
   settings: GraphSettings;
   onChange: (next: GraphSettings) => void;
   onClose: () => void;
+  /** #xb4b54gr: the current "Group by" found no groups (e.g. links that don't form clear groups). */
+  noGroups?: boolean;
 }
 
 type FilterFlag = Exclude<keyof GraphFilters, "search">;
+
+/** #xb4b54gr: the "Group by" choices' labels. */
+const CLUSTER_LABELS: Record<GraphClusterMode, MessageKey> = {
+  links: "graph.panel.clustersLinks",
+  folder: "graph.panel.clustersFolder",
+  tag: "graph.panel.clustersTag",
+  off: "graph.panel.clustersOff",
+};
 
 const FLAGS: Array<{ key: FilterFlag; label: MessageKey }> = [
   { key: "showTags", label: "graph.panel.showTags" },
@@ -25,7 +35,7 @@ const FLAGS: Array<{ key: FilterFlag; label: MessageKey }> = [
   { key: "showOrphans", label: "graph.panel.showOrphans" },
 ];
 
-export function GraphControls({ settings, onChange, onClose }: GraphControlsProps) {
+export function GraphControls({ settings, onChange, onClose, noGroups = false }: GraphControlsProps) {
   const t = useT();
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [groupsOpen, setGroupsOpen] = useState(true);
@@ -73,6 +83,33 @@ export function GraphControls({ settings, onChange, onClose }: GraphControlsProp
             ))}
           </div>
         ) : null}
+      </section>
+
+      <section className="graph-panel-section">
+        <div className="graph-panel-body">
+          <label className="graph-panel-toggle graph-panel-select-row">
+            <span>{t("graph.panel.clusters")}</span>
+            <select
+              className="graph-panel-select"
+              data-testid="graph-clusters"
+              value={settings.clusterBy}
+              onChange={(event) => onChange({ ...settings, clusterBy: event.target.value as GraphClusterMode })}
+            >
+              {GRAPH_CLUSTER_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(CLUSTER_LABELS[mode])}
+                </option>
+              ))}
+            </select>
+          </label>
+          {noGroups && settings.clusterBy !== "off" ? (
+            <p className="graph-panel-hint" role="status" data-testid="graph-clusters-none">
+              {t(settings.clusterBy === "links" ? "graph.panel.clustersNoneLinks" : "graph.panel.clustersNone")}
+            </p>
+          ) : (
+            <p className="graph-panel-hint">{t("graph.panel.clustersHint")}</p>
+          )}
+        </div>
       </section>
 
       <section className="graph-panel-section">

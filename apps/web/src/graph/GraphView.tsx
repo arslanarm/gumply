@@ -1,4 +1,4 @@
-import type { GraphData, GraphNode, GraphSettings, PageId } from "@gumply/core";
+import { DEFAULT_GRAPH_CLUSTERS, type GraphData, type GraphNode, type GraphSettings, type PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiRequestError, fileUrl, isVaultIndexing } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
@@ -64,6 +64,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   // greet the next visit with a half-empty graph. (`filters.search` is kept in
   // the file as read, for Obsidian round-trips.)
   const [query, setQuery] = useState("");
+  /** #xb4b54gr: what the canvas found for the current "Group by" (none → a hint in the panel). */
+  const [clustersFound, setClustersFound] = useState<{ mode: GraphSettings["clusterBy"]; groups: number } | null>(null);
   const wantAttachments = settings?.filters.showAttachments ?? false;
 
   const load = useCallback(async (attachments: boolean) => {
@@ -330,6 +332,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               reducedMotion={reducedMotion}
               onOpenPage={openNode}
               colorOf={colorOf}
+              clusterMode={settings?.clusterBy ?? DEFAULT_GRAPH_CLUSTERS}
+              onClustersFound={setClustersFound}
               onCreatePage={(title) => {
                 const ghost = filtered.ghosts.find(
                   (candidate) => candidate.title.toLowerCase() === title.toLowerCase(),
@@ -342,7 +346,12 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
         ) : null}
 
         {controlsOpen && settings && status === "ready" && hasPages ? (
-          <GraphControls settings={settings} onChange={(next: GraphSettings) => updateSettings(next)} onClose={() => setControlsOpen(false)} />
+          <GraphControls
+            settings={settings}
+            noGroups={clustersFound !== null && clustersFound.mode === settings.clusterBy && clustersFound.groups === 0}
+            onChange={(next: GraphSettings) => updateSettings(next)}
+            onClose={() => setControlsOpen(false)}
+          />
         ) : null}
 
         {legendOpen && status === "ready" && hasPages ? (
@@ -379,6 +388,19 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
                   {sampleIcon}
                 </span>{" "}
                 {t("graph.legendIcon")}
+              </p>
+            ) : null}
+            {clustersFound !== null && clustersFound.mode === settings?.clusterBy && clustersFound.groups > 0 ? (
+              // #xb4b54gr (@lead): grouped pages get a tinted area, and their dots its colour.
+              <p className="graph-legend-row" data-testid="graph-legend-clusters">
+                <span className="graph-legend-area" aria-hidden="true" />{" "}
+                {t(
+                  clustersFound.mode === "folder"
+                    ? "graph.legendClustersFolder"
+                    : clustersFound.mode === "tag"
+                      ? "graph.legendClustersTag"
+                      : "graph.legendClustersLinks",
+                )}
               </p>
             ) : null}
             {legendTags.length > 0 ? (

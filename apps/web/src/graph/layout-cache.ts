@@ -6,13 +6,16 @@
  * layout depends on. Any change (a node, a link, the centre page, reduced
  * motion, the forces' version) is a different key, and lays out afresh.
  */
+import type { ClusterInfo } from "./clusters.js";
 import { STREAM_MAX_NODES } from "./layout-forces.js";
 
 /**
  * Bumped whenever the forces or their settings change, so positions from an
  * older layout are never shown as this one's. 1: θ 1.2 above 5k nodes (N6).
+ * 2: graph clusters (#xb4b54gr): the cluster force and links between clusters
+ * relaxed, and the worker's clusters kept with the positions.
  */
-export const LAYOUT_CACHE_VERSION = 1;
+export const LAYOUT_CACHE_VERSION = 2;
 
 /** Graphs at least this big are cached; smaller ones lay out (and stream) quickly enough. */
 export const LAYOUT_CACHE_MIN_NODES = STREAM_MAX_NODES + 1;
@@ -20,9 +23,18 @@ export const LAYOUT_CACHE_MIN_NODES = STREAM_MAX_NODES + 1;
 /** How many graphs' positions are kept (each ~80 KB at 10k nodes); the oldest go first. */
 export const LAYOUT_CACHE_ENTRIES = 4;
 
+/** #xb4b54gr: the clusters the worker found for this graph (links mode), kept with its positions. */
+export interface CachedClusters {
+  of: Int32Array;
+  list: ClusterInfo[];
+  modularity?: number;
+}
+
 export interface CachedLayout {
   x: Float32Array;
   y: Float32Array;
+  /** The worker's clusters, when it computed them (a hit then needs no worker at all). */
+  clusters?: CachedClusters;
 }
 
 /** Where cached layouts live: IndexedDB in the app, a Map in tests. */
@@ -81,6 +93,8 @@ export async function cachedLayout(store: LayoutStore | null, key: string, count
     const found = await store.get(key);
     if (!found || found.x.length !== count || found.y.length !== count) return undefined;
     for (let i = 0; i < count; i += 1) if (!Number.isFinite(found.x[i]) || !Number.isFinite(found.y[i])) return undefined;
+    // Clusters that don't fit the graph are dropped (the caller then treats it as a miss if it needs them).
+    if (found.clusters && (found.clusters.of.length !== count || !Array.isArray(found.clusters.list))) return { x: found.x, y: found.y };
     return found;
   } catch {
     return undefined;
@@ -91,7 +105,19 @@ export async function cachedLayout(store: LayoutStore | null, key: string, count
 export async function keepLayout(store: LayoutStore | null, key: string, layout: CachedLayout): Promise<void> {
   if (!store) return;
   try {
-    await store.put(key, { x: Float32Array.from(layout.x), y: Float32Array.from(layout.y) });
+    await store.put(key, {
+      x: Float32Array.from(layout.x),
+      y: Float32Array.from(layout.y),
+      ...(layout.clusters
+        ? {
+            clusters: {
+              of: Int32Array.from(layout.clusters.of),
+              list: layout.clusters.list.map((info) => ({ ...info })),
+              ...(layout.clusters.modularity === undefined ? {} : { modularity: layout.clusters.modularity }),
+            },
+          }
+        : {}),
+    });
   } catch {
     // Nothing to do: the next open lays out again.
   }
@@ -134,7 +160,7 @@ export function browserLayoutStore(): LayoutStore | null {
     async get(key) {
       const database = await db();
       const value = (await request(database.transaction(STORE, "readonly").objectStore(STORE).get(key))) as
-        | { x: Float32Array; y: Float32Array }
+        | { x: Float32Array; y: Float32Array; clusters?: CachedClusters }
         | undefined;
       if (!value) return undefined;
       // A hit counts as a use, so eviction drops the least recently used graph (best effort).
@@ -143,13 +169,13 @@ export function browserLayoutStore(): LayoutStore | null {
       } catch {
         // Only the eviction order is affected.
       }
-      return { x: value.x, y: value.y };
+      return { x: value.x, y: value.y, ...(value.clusters ? { clusters: value.clusters } : {}) };
     },
     async put(key, layout) {
       const tx = (await db()).transaction([STORE, SAVED], "readwrite");
       const layouts = tx.objectStore(STORE);
       const saved = tx.objectStore(SAVED);
-      await request(layouts.put({ x: layout.x, y: layout.y }, key));
+      await request(layouts.put({ x: layout.x, y: layout.y, ...(layout.clusters ? { clusters: layout.clusters } : {}) }, key));
       await request(saved.put(Date.now(), key));
       // Keep only the newest few graphs: sorted by the small "saved" entries alone.
       const keys = (await request(saved.getAllKeys())) as string[];

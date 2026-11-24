@@ -9,7 +9,9 @@ import {
   FALLBACK_GRAPH_PALETTE,
   ghostDetail,
   graphPaletteFromStyles,
+  isAttachmentNodeId,
   isGhostId,
+  isTagNodeId,
   labelledIds,
   neighbourIds,
   nodeColor,
@@ -30,9 +32,24 @@ import {
   type FitItem,
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
-import { engineTicks, layoutInputFor } from "./layout-forces.js";
+import { clusterLinkFactor, engineTicks, forceCluster, layoutInputFor } from "./layout-forces.js";
+import {
+  clusterKeyFor,
+  colorSlots,
+  computeClusters,
+  convexHull,
+  corePoints,
+  mixColors,
+  NO_CLUSTERS,
+  rgbOf,
+  separateHulls,
+  traceRoundedHull,
+  type ClusterMode,
+  type ClusterNode,
+  type Clusters,
+} from "./clusters.js";
 import { startLayout } from "./layout-client.js";
-import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
+import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type CachedClusters, type LayoutStore } from "./layout-cache.js";
 
 let layoutStore: LayoutStore | null | undefined;
 /** The browser's graph layout cache, opened on first use (N6). */
@@ -66,6 +83,17 @@ export interface GraphCanvasProps {
    * stable (memoised): a new function re-styles every node.
    */
   colorOf?: (node: GraphNode, palette: readonly string[]) => string | null;
+  /**
+   * #xb4b54gr: group pages into clusters (links, folder, first tag): a soft
+   * area behind each, and a gentle force keeping each together and the
+   * groups apart. "off" (the default) draws and moves nothing extra.
+   */
+  clusterMode?: ClusterMode;
+  /**
+   * #xb4b54gr: told whether the mode found any groups, so the graph panel can
+   * say "No clear groups found" instead of leaving a mode that draws nothing.
+   */
+  onClustersFound?: (found: { mode: ClusterMode; groups: number }) => void;
 }
 
 interface ThemeColors {
@@ -111,6 +139,8 @@ const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", 
 const LABEL_GAP_PX = 4;
 const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
+/** #xb4b54gr: how much of its area's colour a page dot in a shaded cluster takes (the rest is the page grey). */
+const CLUSTER_DOT_SHARE = 0.6;
 /** Dash for links into a "not created yet" page (graph units, as before). */
 const GHOST_LINK_DASH = [4, 3];
 
@@ -183,6 +213,17 @@ function useElementSize(ref: RefObject<HTMLDivElement | null>): { width: number;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+/** #xb4b54gr: relative luminance (0 black – 1 white) of a `#rgb`, `#rrggbb` or `rgb()` colour; 1 if unreadable. */
+function luminance(color: string): number {
+  const rgb = rgbOf(color);
+  if (!rgb) return 1;
+  const [r, g, b] = rgb.map((channel) => {
+    const c = channel / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 /** `#rrggbb` + alpha → `rgba(...)`, so canvas colours match the CSS theme. */
@@ -317,6 +358,8 @@ export function GraphCanvas({
   onOpenPage,
   onCreatePage,
   colorOf,
+  clusterMode = "off",
+  onClustersFound,
 }: GraphCanvasProps) {
   useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -383,8 +426,75 @@ export function GraphCanvas({
     [nodes],
   );
 
+  /**
+   * #xb4b54gr: the drawn nodes' clusters. Recomputed only when what they're
+   * computed from changes (node ids, links, and the folder or tag in those
+   * modes), not on every page-list poll; colours keep their slot across runs.
+   */
+  const clusterNodes = useMemo<ClusterNode[]>(
+    () =>
+      nodes.map((node) => {
+        const page = !isGhostId(node.id) && !isTagNodeId(node.id) && !isAttachmentNodeId(node.id);
+        const meta = node as GraphNode;
+        return { id: node.id, clusterable: page, parentId: page ? (meta.parentId ?? null) : null, tags: page ? (meta.tags ?? []) : [] };
+      }),
+    [nodes],
+  );
+  /** Re-cluster (and re-lay out) only when the mode or the drawn content changes (see clusterKeyFor). */
+  const clusterKey = useMemo(() => clusterKeyFor(clusterMode, dataKey, clusterNodes), [clusterMode, dataKey, clusterNodes]);
+  const previousSlots = useRef<Map<string, number>>(new Map());
+  /** Big graphs in links mode: Louvain runs in the layout worker, which posts the clusters back. */
+  const clustersInWorker = engine.worker && clusterMode === "links";
+  const [workerClusters, setWorkerClusters] = useState<{ key: string; clusters: Clusters } | null>(null);
+  const clusterKeyRef = useRef(clusterKey);
+  clusterKeyRef.current = clusterKey;
+  const { clusters, clusterSlots } = useMemo(() => {
+    if (clusterMode === "off") {
+      previousSlots.current = new Map();
+      return { clusters: NO_CLUSTERS, clusterSlots: [] as number[] };
+    }
+    const next = clustersInWorker
+      ? workerClusters !== null && workerClusters.key === clusterKey
+        ? workerClusters.clusters
+        : NO_CLUSTERS
+      : computeClusters(clusterMode, clusterNodes, links);
+    const { slots, byId } = colorSlots(next, clusterNodes.map((node) => node.id), previousSlots.current);
+    previousSlots.current = byId;
+    return { clusters: next, clusterSlots: slots };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clusterKey, clustersInWorker, workerClusters]);
+  const clustersRef = useRef(clusters);
+  clustersRef.current = clusters;
+  // Report what was found once the mode's answer is in (in the worker's case, when it arrives).
+  const clustersAnswered = !clustersInWorker || (workerClusters !== null && workerClusters.key === clusterKey);
+  useEffect(() => {
+    if (clusterMode === "off" || !clustersAnswered || nodes.length === 0) return;
+    onClustersFound?.({ mode: clusterMode, groups: clusters.list.length });
+  }, [clusters, clusterMode, clustersAnswered, nodes.length, onClustersFound]);
+  const clusterSlotsRef = useRef(clusterSlots);
+  clusterSlotsRef.current = clusterSlots;
+  /** Cluster by node id (force-graph's engine hands the force node objects). */
+  const clusterById = useMemo(() => {
+    const byId = new Map<string, number>();
+    nodes.forEach((node, i) => {
+      const c = clusters.of[i] ?? -1;
+      if (c >= 0) byId.set(node.id, c);
+    });
+    return byId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clusters]);
+
   const nodeStyles = useMemo(() => {
     const styles = new Map<string, NodeStyle>();
+    // A user group's or the first tag's colour wins; else a page in a shaded cluster takes a tint of its
+    // area's colour (#xb4b54gr, @lead), so the dots say which group they're in, not only the area.
+    const fillOf = (node: GraphNode): string => {
+      const own = colorOf?.(node, colors.palette) ?? nodeColor(node, colors.palette, colors.page);
+      const c = clusterById.get(node.id);
+      if (own !== colors.page || c === undefined) return own;
+      const area = colors.palette[(clusterSlots[c] ?? c) % colors.palette.length];
+      return area ? mixColors(area, colors.page, CLUSTER_DOT_SHARE) : own;
+    };
     for (const node of nodes) {
       const ghost = isGhostId(node.id);
       const title = titleOf(node);
@@ -401,7 +511,7 @@ export function GraphCanvas({
         ghost,
         board: !ghost && (node as GraphNode).kind === "whiteboard",
         emoji,
-        fill: ghost ? "" : (colorOf?.(node as GraphNode, colors.palette) ?? nodeColor(node as GraphNode, colors.palette, colors.page)),
+        fill: ghost ? "" : fillOf(node as GraphNode),
         label,
         labelWidth: measureLabel(label),
         // The hovered node's label already shows the title; only repeat it
@@ -410,7 +520,7 @@ export function GraphCanvas({
       });
     }
     return styles;
-  }, [nodes, maxCount, colors.palette, colors.page, colorOf]);
+  }, [nodes, maxCount, colors.palette, colors.page, colorOf, clusterById, clusterSlots]);
 
   /** Labels drawn when nothing is hovered: what the fit has to keep in view. */
   const restingLabelIds = useMemo(
@@ -642,7 +752,14 @@ export function GraphCanvas({
 
     const link = graph.d3Force("link") as AlphaForce | undefined;
     (link?.distance as ((value: number) => unknown) | undefined)?.(52);
-    (link?.strength as ((value: number) => unknown) | undefined)?.(0.45);
+    // #xb4b54gr: links between clusters are relaxed, so groups sit apart (big graphs: in the worker).
+    const clustered = clusterById.size > 0 && !engine.worker;
+    const endId = (end: unknown) => (typeof end === "object" && end !== null ? (end as { id: string }).id : String(end));
+    (link?.strength as ((value: number | ((link: { source: unknown; target: unknown }) => number)) => unknown) | undefined)?.(
+      clustered
+        ? (edge) => 0.45 * clusterLinkFactor(clusterById.get(endId(edge.source)) ?? -1, clusterById.get(endId(edge.target)) ?? -1)
+        : 0.45,
+    );
     if (link) graph.d3Force("link", capAlpha(link, alphaCapRef) as never);
 
     const charge = graph.d3Force("charge") as AlphaForce | undefined;
@@ -683,10 +800,20 @@ export function GraphCanvas({
       "y",
       capAlpha(axisForce("y", centerStrength * stretchY) as never, alphaCapRef) as never,
     );
+    // #xb4b54gr: clusters held together and apart (big graphs: in the worker).
+    graph.d3Force(
+      "cluster",
+      clusterById.size > 0 && !engine.worker
+        ? (capAlpha(
+            forceCluster<PositionedNode>((node) => clusterById.get(node.id) ?? -1) as never,
+            alphaCapRef,
+          ) as never)
+        : null,
+    );
     // The worker lays out big graphs: reheating force-graph's engine would run
     // its ticks on the main thread (#g95wkd9y).
     if (!engine.worker) graph.d3ReheatSimulation();
-  }, [dataKey, hasSize, nodes, centerId, engine.worker]);
+  }, [dataKey, hasSize, nodes, centerId, engine.worker, clusterById]);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -722,6 +849,8 @@ export function GraphCanvas({
       },
       zoom: () => graphRef.current?.zoom() ?? 1,
       hovered: () => hoveredRef.current,
+      // #xb4b54gr: the groups drawn (sizes, biggest first) and the clusters key.
+      clusters: () => ({ sizes: clustersRef.current.list.map((info) => info.size), modularity: clustersRef.current.modularity ?? null }),
     };
     return () => {
       delete registry[testId];
@@ -908,16 +1037,75 @@ export function GraphCanvas({
   );
 
   /**
+   * #xb4b54gr: a soft rounded area behind each cluster, before the links: a
+   * palette colour at low opacity with a faint edge, no name (@plony). Hulls
+   * are recomputed only when positions change (each engine tick, or each
+   * worker update).
+   */
+  const hullCache = useRef<{ key: string; hulls: Array<Array<[number, number]>> } | null>(null);
+  const dark = useMemo(() => luminance(colors.bg) < 0.4, [colors.bg]);
+  const drawClusters = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number): void => {
+      const { of, list } = clustersRef.current;
+      if (list.length === 0) return;
+      const drawn = nodesRef.current as PositionedNode[];
+      const k = Math.max(scale, 0.05);
+      // A worker-laid graph only moves on its updates; the engine moves every tick.
+      const key = engine.worker ? `${layoutFrame}|${drawn.length}|${clusterKey}` : "";
+      let hulls = hullCache.current && key !== "" && hullCache.current.key === key ? hullCache.current.hulls : null;
+      if (!hulls) {
+        const points: Array<Array<[number, number]>> = list.map(() => []);
+        drawn.forEach((node, i) => {
+          const c = of[i] ?? -1;
+          if (c < 0 || node.x === undefined || node.y === undefined) return;
+          points[c]!.push([node.x, node.y]);
+        });
+        hulls = points.map((set) => convexHull(corePoints(set)));
+        hullCache.current = { key, hulls };
+      }
+      // Room around the outermost pages: mostly constant on screen, so a zoomed-in area stays snug.
+      const pad = 4 + 16 / k;
+      const fill = dark ? 0.12 : 0.075;
+      const edge = dark ? 0.28 : 0.2;
+      const dimmed = hoveredId !== null;
+      // Areas never overlap: hulls that would touch are cut apart (cheap: C ≤ 40).
+      const shapes = separateHulls(hulls, pad);
+      ctx.save();
+      shapes.forEach((hull, c) => {
+        if (hull.length === 0) return;
+        const slot = clusterSlotsRef.current[c] ?? c;
+        const color = colors.palette[slot % colors.palette.length] ?? colors.accent;
+        ctx.beginPath();
+        traceRoundedHull(ctx, hull, pad);
+        // Opacity through globalAlpha: theme colours may be rgb() as well as hex.
+        // Tighter groups read stronger: the per-cluster strength (0.2–1) maps to 0.52–1 of the tint, so a
+        // loose group of a connected web stays visible (the force uses the raw strength). Half while a node is hovered.
+        const strength = (dimmed ? 0.5 : 1) * (0.4 + 0.6 * (clustersRef.current.list[c]?.strength ?? 1));
+        ctx.globalAlpha = fill * strength;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.globalAlpha = edge * strength;
+        ctx.lineWidth = 1 / k;
+        ctx.strokeStyle = color;
+        ctx.stroke();
+      });
+      ctx.restore();
+    },
+    [colors, dark, engine.worker, layoutFrame, hoveredId, clusterKey],
+  );
+
+  /**
    * force-graph only repaints when it thinks something changed. Our node layer
    * is drawn in `onRenderFramePost`, so hand it a new (no-op) node accessor
    * whenever that layer's inputs change: that prop change requests a redraw.
    */
   const hideBuiltInNodes = useMemo(() => {
     void drawNodes;
+    void drawClusters;
     void nodeStyles;
     void layoutFrame;
     return () => false;
-  }, [drawNodes, nodeStyles, layoutFrame]);
+  }, [drawNodes, drawClusters, nodeStyles, layoutFrame]);
 
   const handleNodeClick = useCallback(
     (node: CanvasNode) => {
@@ -1147,7 +1335,21 @@ export function GraphCanvas({
     setEngineStopped(false);
     const drawn = nodes as PositionedNode[];
     const { width, height } = sizeRef.current;
-    const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion });
+    const cluster = !clustersInWorker && clustersRef.current.list.length > 0 ? clustersRef.current.of : undefined;
+    const input = layoutInputFor(drawn, links, {
+      centerId,
+      width,
+      height,
+      reducedMotion,
+      ...(cluster ? { cluster } : {}),
+    });
+    if (clustersInWorker) {
+      input.clusterLinks = {
+        ids: drawn.map((node) => node.id),
+        clusterable: Uint8Array.from(drawn, (node) => (isGhostId(node.id) || isTagNodeId(node.id) || isAttachmentNodeId(node.id) ? 0 : 1)),
+      };
+    }
+    const runKey = clusterKeyRef.current;
     // Above STREAM_MAX_NODES (or with reduced motion) the graph is drawn once,
     // settled; meanwhile its start layout shows dimmed with a status. With a
     // layout cache, only once the cache has no layout for it (no "Arranging"
@@ -1173,28 +1375,41 @@ export function GraphCanvas({
     // detaches) the input's arrays.
     const store = cachesLayout(drawn.length) ? graphLayoutStore() : null;
     const keyStart = performance.now();
-    const key = store ? layoutCacheKey(drawn.map((node) => node.id), input.links, `${centerId ?? ""}|${reducedMotion ? 1 : 0}`) : "";
+    // #xb4b54gr: the grouping (mode, and the folders or tags it uses) is part of the layout: in the key.
+    const key = store ? layoutCacheKey(drawn.map((node) => node.id), input.links, `${centerId ?? ""}|${reducedMotion ? 1 : 0}|${runKey}`) : "";
     // Its main-thread cost, readable by the perf probes (`graph-layout-key`).
     if (store) performance.measure?.("graph-layout-key", { start: keyStart });
     let cancelled = false;
     let cancel: () => void = () => {};
     if (!store) arrange();
+    // #xb4b54gr: the worker's clusters for this run, kept with its positions.
+    let found: CachedClusters | undefined;
+    const deliverClusters = (clusters: CachedClusters) =>
+      setWorkerClusters({ key: runKey, clusters: { of: clusters.of, list: clusters.list, ...(clusters.modularity === undefined ? {} : { modularity: clusters.modularity }) } });
     void cachedLayout(store, key, drawn.length).then((kept) => {
       if (cancelled) return;
-      if (kept) {
+      // A kept layout without the clusters this mode needs from the worker is a miss.
+      if (kept && (!clustersInWorker || kept.clusters)) {
+        // The clusters first, then the positions: the same order as the worker's.
+        if (clustersInWorker && kept.clusters) deliverClusters(kept.clusters);
         place(kept.x, kept.y);
         settled();
         return;
       }
       if (store) arrange();
       cancel = startLayout(input, (update) => {
+        if (update.type === "clusters") {
+          found = { of: update.of, list: update.list, ...(update.modularity === undefined ? {} : { modularity: update.modularity }) };
+          deliverClusters(found);
+          return;
+        }
         if (update.type === "progress") {
           setArranging(update.progress);
           return;
         }
         place(update.x, update.y);
         if (update.done) {
-          void keepLayout(store, key, update);
+          void keepLayout(store, key, { x: update.x, y: update.y, ...(found ? { clusters: found } : {}) });
           settled();
         }
       });
@@ -1205,7 +1420,7 @@ export function GraphCanvas({
       cancel();
       setArranging(null);
     };
-  }, [dataKey, engine.worker, hasSize, centerId, reducedMotion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dataKey, engine.worker, hasSize, centerId, reducedMotion, clusterKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // force-graph/d3 rewrite `link.source/target` from ids into node objects.
   // Hand it copies: the model's links must keep their string ids, or the next
@@ -1311,6 +1526,7 @@ export function GraphCanvas({
             nodeId="id"
             backgroundColor="transparent"
             nodeVisibility={hideBuiltInNodes}
+            onRenderFramePre={drawClusters}
             onRenderFramePost={drawNodes}
             linkColor={linkColor}
             linkWidth={linkWidth}
