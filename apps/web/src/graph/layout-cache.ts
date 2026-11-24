@@ -99,6 +99,8 @@ export async function keepLayout(store: LayoutStore | null, key: string, layout:
 
 const DB_NAME = "gumply-graph-layout";
 const STORE = "layouts";
+/** When each layout was kept, in a store of its own: eviction sorts these without reading any layout. */
+const SAVED = "saved";
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -113,9 +115,14 @@ export function browserLayoutStore(): LayoutStore | null {
   let opened: Promise<IDBDatabase> | null = null;
   const db = () => {
     opened ??= new Promise<IDBDatabase>((resolve, reject) => {
-      const open = indexedDB.open(DB_NAME, 1);
+      const open = indexedDB.open(DB_NAME, 2);
       open.onupgradeneeded = () => {
-        if (!open.result.objectStoreNames.contains(STORE)) open.result.createObjectStore(STORE);
+        const names = open.result.objectStoreNames;
+        // Version 1 kept the time inside each layout: start the cache afresh (it's only a cache).
+        if (names.contains(STORE)) open.result.deleteObjectStore(STORE);
+        if (names.contains(SAVED)) open.result.deleteObjectStore(SAVED);
+        open.result.createObjectStore(STORE);
+        open.result.createObjectStore(SAVED);
       };
       open.onsuccess = () => resolve(open.result);
       open.onerror = () => reject(open.error);
@@ -126,19 +133,25 @@ export function browserLayoutStore(): LayoutStore | null {
   return {
     async get(key) {
       const value = (await request((await db()).transaction(STORE, "readonly").objectStore(STORE).get(key))) as
-        | { x: Float32Array; y: Float32Array; at: number }
+        | { x: Float32Array; y: Float32Array }
         | undefined;
       return value ? { x: value.x, y: value.y } : undefined;
     },
     async put(key, layout) {
-      const store = (await db()).transaction(STORE, "readwrite").objectStore(STORE);
-      await request(store.put({ x: layout.x, y: layout.y, at: Date.now() }, key));
-      // Keep only the newest few graphs.
-      const keys = (await request(store.getAllKeys())) as string[];
+      const tx = (await db()).transaction([STORE, SAVED], "readwrite");
+      const layouts = tx.objectStore(STORE);
+      const saved = tx.objectStore(SAVED);
+      await request(layouts.put({ x: layout.x, y: layout.y }, key));
+      await request(saved.put(Date.now(), key));
+      // Keep only the newest few graphs: sorted by the small "saved" entries alone.
+      const keys = (await request(saved.getAllKeys())) as string[];
       if (keys.length <= LAYOUT_CACHE_ENTRIES) return;
-      const entries = await Promise.all(keys.map(async (k) => ({ k, at: ((await request(store.get(k))) as { at?: number } | undefined)?.at ?? 0 })));
-      entries.sort((p, q) => p.at - q.at);
-      for (const { k } of entries.slice(0, entries.length - LAYOUT_CACHE_ENTRIES)) store.delete(k);
+      const times = (await request(saved.getAll())) as number[];
+      const oldestFirst = keys.map((k, i) => ({ k, at: times[i] ?? 0 })).sort((p, q) => p.at - q.at);
+      for (const { k } of oldestFirst.slice(0, oldestFirst.length - LAYOUT_CACHE_ENTRIES)) {
+        layouts.delete(k);
+        saved.delete(k);
+      }
     },
   };
 }
