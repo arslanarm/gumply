@@ -176,9 +176,14 @@ describe("verifyDownload and the file hash", () => {
 });
 
 describe("makeVerifier (what main.ts gives the controller)", () => {
-  it("no keys: no verifier, so no check and no extra requests (today's behaviour)", () => {
-    expect(UPDATE_PUBLIC_KEYS).toEqual([]);
-    expect(makeVerifier({ keys: UPDATE_PUBLIC_KEYS, baseUrl: () => "x/", installerName: () => "x", get: async () => Buffer.alloc(0) })).toBeNull();
+  it("no keys: no verifier, so no check and no extra requests", () => {
+    expect(makeVerifier({ keys: [], baseUrl: () => "x/", installerName: () => "x", get: async () => Buffer.alloc(0) })).toBeNull();
+  });
+
+  it("the built-in keys are the owner's two, pinned: an emptied or changed list fails here (D44)", () => {
+    expect(UPDATE_PUBLIC_KEYS.map((key) => key.id)).toEqual(["7d231848158a2a02", "3806c70f4944286f"]);
+    for (const key of UPDATE_PUBLIC_KEYS) expect(keyIdOf(Buffer.from(key.spki, "base64"))).toBe(key.id);
+    expect(makeVerifier({ keys: UPDATE_PUBLIC_KEYS, baseUrl: () => "x/", installerName: () => "x", get: async () => Buffer.alloc(0) })).not.toBeNull();
   });
 
   it("the installer's exact name per version, as package.json's artifactName makes it", () => {
