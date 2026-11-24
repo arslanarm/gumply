@@ -232,11 +232,13 @@ test.describe('a database view save meets a changed file (#ups4ikpj, D22)', () =
     await page.getByTestId('base-setting-cardSize').fill('300');
 
     await expect(embed.getByTestId('base-conflict')).toBeVisible({ timeout: 10_000 });
+    // The vault reset keeps .gumply/, so count what Reload adds, not what's there.
+    const before = (await conflictBackups()).length;
     await embed.getByTestId('base-conflict-reload').click();
     await expect(embed.getByTestId('base-conflict')).toHaveCount(0);
     await page.waitForTimeout(1000);
     expect(await read('Work/Tasks.base')).toBe(OUTSIDE);
-    expect(await conflictBackups()).not.toContain(OUTSIDE);
+    expect((await conflictBackups()).length).toBe(before);
   });
 
   test('embedded: a conflict that lands while the user types in the page leaves their caret alone (#hrdgchfb)', async ({ page, request, vault }) => {
