@@ -132,10 +132,18 @@ export function browserLayoutStore(): LayoutStore | null {
   };
   return {
     async get(key) {
-      const value = (await request((await db()).transaction(STORE, "readonly").objectStore(STORE).get(key))) as
+      const database = await db();
+      const value = (await request(database.transaction(STORE, "readonly").objectStore(STORE).get(key))) as
         | { x: Float32Array; y: Float32Array }
         | undefined;
-      return value ? { x: value.x, y: value.y } : undefined;
+      if (!value) return undefined;
+      // A hit counts as a use, so eviction drops the least recently used graph (best effort).
+      try {
+        database.transaction(SAVED, "readwrite").objectStore(SAVED).put(Date.now(), key);
+      } catch {
+        // Only the eviction order is affected.
+      }
+      return { x: value.x, y: value.y };
     },
     async put(key, layout) {
       const tx = (await db()).transaction([STORE, SAVED], "readwrite");
