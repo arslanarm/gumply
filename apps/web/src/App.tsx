@@ -973,14 +973,15 @@ export function App() {
       const newVaultPage = consumeNewVaultPage();
 
       if (list.length === 0) return;
-      if (
+      // The user already went somewhere (a page, the graph, Conflicts, the Trash): the
+      // startup doesn't take them away. Checked again after the awaits below: a click on
+      // Graph while they ran used to be overridden by the landing page (#s3sszwux side find).
+      const userWentElsewhere = () =>
         selectedRef.current !== null ||
         isGraphHash(window.location.hash) ||
         isConflictsHash(window.location.hash) ||
-        trashRouteFromHash(window.location.hash) !== null
-      ) {
-        return;
-      }
+        trashRouteFromHash(window.location.hash) !== null;
+      if (userWentElsewhere()) return;
 
       // v0.9 F (#if236h9k): what opens on startup is a per-device setting, per vault.
       const vault = await api.health().then((health) => health.vaultPath, () => "");
@@ -1002,6 +1003,7 @@ export function App() {
         last: vault ? loadLastPage(vault) : null,
         fallback: chooseLandingPage(list, null),
       });
+      if (userWentElsewhere()) return;
       if (choice.kind === "daily") {
         // Opened interactively, once per launch: today's note, made if missing (as Obsidian does).
         if (!startupDailyDone) {
