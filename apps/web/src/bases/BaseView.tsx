@@ -96,6 +96,7 @@ export function BaseView(props: BaseViewProps) {
   const [inlineNote, setInlineNote] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const conflictRef = useRef<HTMLDivElement | null>(null);
+  const focusInlineChoice = useRef(false);
   const requestSeq = useRef(0);
 
   useEffect(() => {
@@ -205,7 +206,11 @@ export function BaseView(props: BaseViewProps) {
           onSaveState("conflict");
           return;
         }
-        // An embed has no save bar: it asks in place (#hrdgchfb), and the change waits.
+        // An embed has no save bar: it asks in place (#hrdgchfb), and the change waits. The bar
+        // takes focus only if the user was in this view; typing elsewhere on the page carries on,
+        // and role="alert" announces it.
+        const active = document.activeElement;
+        focusInlineChoice.current = !!active && !!rootRef.current?.contains(active);
         setInlineNote(null);
         setInlineConflict(true);
       },
@@ -345,7 +350,8 @@ export function BaseView(props: BaseViewProps) {
   }, [active, baseId, load, props.pages]);
 
   useEffect(() => {
-    if (inlineConflict) conflictRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    if (!inlineConflict || !focusInlineChoice.current) return;
+    conflictRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
   }, [inlineConflict]);
 
   /** The inline choice closed: focus back on the view, never on <body>. */

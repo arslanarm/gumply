@@ -238,4 +238,36 @@ test.describe('a database view save meets a changed file (#ups4ikpj, D22)', () =
     expect(await read('Work/Tasks.base')).toBe(OUTSIDE);
     expect(await conflictBackups()).not.toContain(OUTSIDE);
   });
+
+  test('embedded: a conflict that lands while the user types in the page leaves their caret alone (#hrdgchfb)', async ({ page, request, vault }) => {
+    void vault;
+    const embed = await openEmbed(page, request);
+    // Hold the view's save until the user is back in the page's text.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let done = false;
+    await page.route(/\/api\/bases\//, async (route) => {
+      if (done || route.request().method() !== 'PUT') return route.continue();
+      done = true;
+      await held;
+      await fs.writeFile(path.join(E2E_VAULT, 'Work/Tasks.base'), OUTSIDE, 'utf8');
+      const later = new Date(Date.now() + 2000);
+      await fs.utimes(path.join(E2E_VAULT, 'Work/Tasks.base'), later, later);
+      await route.continue();
+    });
+    await embed.getByTestId('base-settings-button').click();
+    await page.getByTestId('base-setting-cardSize').fill('300');
+
+    const intro = page.getByTestId('editor-content').getByText('Intro.', { exact: true });
+    await intro.click();
+    await page.keyboard.press('End');
+    release();
+    await expect(embed.getByTestId('base-conflict')).toBeVisible({ timeout: 10_000 });
+    // The bar didn't take focus: typing carries on in the paragraph.
+    await expect(embed.getByTestId('base-conflict-keep-mine')).not.toBeFocused();
+    await page.keyboard.type(' More');
+    await expect(page.getByTestId('editor-content').getByText('Intro. More', { exact: true })).toBeVisible();
+  });
 });
