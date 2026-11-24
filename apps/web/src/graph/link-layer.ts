@@ -20,6 +20,8 @@ export interface LinkSlotStyle {
   /** In CSS px on screen, like force-graph's linkWidth. */
   width: number;
   dash: readonly number[] | null;
+  /** A multiplier on the colour's alpha (the half-resolution density match), 1 by default. */
+  alpha?: number;
 }
 
 interface Positioned {
@@ -51,7 +53,18 @@ export function layerContext(layer: LinkLayer): CanvasRenderingContext2D | null 
  * stall fix is the links being off force-graph's composited canvas, drawn on a
  * CPU canvas and copied as one image, not the lower resolution (to confirm).
  */
-export const LINK_LAYER_FACTOR = 1;
+export const LINK_LAYER_FACTOR = 0.5;
+
+/**
+ * #s3sszwux (iii, half resolution): no line thinner than this many **layer** px.
+ * A 1 px link is half a layer pixel at half resolution, which composes lighter
+ * and aliases into grain when upscaled; at least one layer pixel (two screen
+ * pixels) it doesn't. Set from the density grid (zz-density).
+ */
+export const LINK_LAYER_MIN_PX = 1;
+
+/** The idle links' alpha multiplier at half resolution, so the mass at fit is as dark as main's. Set from the density grid. */
+export const LINK_LAYER_IDLE_ALPHA = 1;
 
 /** The layer's size for a main canvas of `width` × `height` device px, at `factor` (rounded up, never empty). */
 export function layerSize(width: number, height: number, factor = LINK_LAYER_FACTOR): { width: number; height: number } {
@@ -109,20 +122,25 @@ export function drawLinkLayer<L extends { source: unknown; target: unknown }>(
   const sy = canvas.height / main.canvas.height;
   ctx.setTransform(t.a * sx, t.b * sy, t.c * sx, t.d * sy, t.e * sx, t.f * sy);
   const k = Math.max(scale, 1e-3);
+  // Layer pixels per graph unit, for the minimum line width.
+  const layerScale = Math.max(Math.hypot(t.a * sx, t.b * sy), 1e-6);
+  const minWidth = LINK_LAYER_MIN_PX / layerScale;
   const groups = groupLinks(links, styles.length, slotOf);
   groups.forEach((coords, slot) => {
     if (coords.length === 0) return;
     const style = styles[slot]!;
+    ctx.globalAlpha = style.alpha ?? 1;
     ctx.beginPath();
     for (let i = 0; i + 3 < coords.length; i += 4) {
       ctx.moveTo(coords[i]!, coords[i + 1]!);
       ctx.lineTo(coords[i + 2]!, coords[i + 3]!);
     }
     ctx.strokeStyle = style.color;
-    ctx.lineWidth = style.width / k;
+    ctx.lineWidth = Math.max(style.width / k, minWidth);
     ctx.setLineDash(style.dash ? [...style.dash] : []);
     ctx.stroke();
   });
+  ctx.globalAlpha = 1;
   main.save();
   main.setTransform(1, 0, 0, 1, 0, 0);
   main.imageSmoothingEnabled = true;

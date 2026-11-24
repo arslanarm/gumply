@@ -31,7 +31,7 @@ import {
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
-import { drawLinkLayer, type LinkLayer, type LinkSlotStyle } from "./link-layer.js";
+import { drawLinkLayer, LINK_LAYER_IDLE_ALPHA, type LinkLayer, type LinkSlotStyle } from "./link-layer.js";
 import { startLayout } from "./layout-client.js";
 import { t, useT } from "../i18n/index.js";
 
@@ -1225,8 +1225,8 @@ export function GraphCanvas({
     (ctx: CanvasRenderingContext2D, scale: number) => {
       // Slots: idle, active (the hovered node's), faded (the rest while hovering); each solid or dashed.
       const styles: LinkSlotStyle[] = [
-        { color: linkPaint.idle, width: 1, dash: null },
-        { color: linkPaint.idle, width: 1, dash: GHOST_LINK_DASH },
+        { color: linkPaint.idle, width: 1, dash: null, alpha: LINK_LAYER_IDLE_ALPHA },
+        { color: linkPaint.idle, width: 1, dash: GHOST_LINK_DASH, alpha: LINK_LAYER_IDLE_ALPHA },
         { color: linkPaint.active, width: 1.7, dash: null },
         { color: linkPaint.active, width: 1.7, dash: GHOST_LINK_DASH },
         { color: linkPaint.faded, width: 1, dash: null },
