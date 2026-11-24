@@ -180,4 +180,62 @@ test.describe('a database view save meets a changed file (#ups4ikpj, D22)', () =
       .toBe(true);
     expect(await read('Work/Tasks.base')).toBe(MINE);
   });
+
+  // #hrdgchfb: an embed (![[Tasks.base#Gallery]] in a page) has no save bar, so it asks in place.
+  async function openEmbed(page: Page, request: APIRequestContext) {
+    const files: Record<string, string> = {
+      'Work/Tasks.base': BASE,
+      'Work/Alpha.md': '---\nstatus: Todo\n---\nA\n',
+      'Notes.md': 'Intro.\n\n![[Work/Tasks.base#Gallery]]\n',
+    };
+    for (const [relative, content] of Object.entries(files)) {
+      const absolute = path.join(E2E_VAULT, relative);
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      await fs.writeFile(absolute, content, 'utf8');
+    }
+    await expect.poll(async () => (await api.listPages(request)).some((meta) => meta.id === 'Notes'), { timeout: 10_000 }).toBe(true);
+    await page.goto('/#/Notes');
+    const embed = page.getByTestId('base-embed');
+    await expect(embed.getByTestId('base-card-Work/Alpha')).toBeVisible();
+    return embed;
+  }
+
+  test('embedded: the change is kept and the embed asks; Keep mine writes it and notes the backup (#hrdgchfb)', async ({ page, request, vault }) => {
+    void vault;
+    const embed = await openEmbed(page, request);
+    await changeOnDiskBeforeTheSave(page);
+    await embed.getByTestId('base-settings-button').click();
+    await page.getByTestId('base-setting-cardSize').fill('300');
+
+    const ask = embed.getByTestId('base-conflict');
+    await expect(ask).toBeVisible({ timeout: 10_000 });
+    await expect(ask).toContainText('This database view changed on disk.');
+    await expect(embed.getByTestId('base-conflict-keep-mine')).toBeFocused();
+    expect(await read('Work/Tasks.base')).toBe(OUTSIDE);
+
+    await embed.getByTestId('base-conflict-keep-mine').click();
+    await expect(ask).toHaveCount(0);
+    await expect(embed.getByTestId('base-conflict-kept')).toContainText('.gumply/conflicts/');
+    await expect.poll(() => read('Work/Tasks.base')).toBe(MINE);
+    expect(await conflictBackups()).toContain(OUTSIDE);
+    // Focus stays in the view, not on <body>.
+    expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+    // The page around it was never touched.
+    expect(await read('Notes.md')).toBe('Intro.\n\n![[Work/Tasks.base#Gallery]]\n');
+  });
+
+  test('embedded: Reload drops the change knowingly and shows the file as it is (#hrdgchfb)', async ({ page, request, vault }) => {
+    void vault;
+    const embed = await openEmbed(page, request);
+    await changeOnDiskBeforeTheSave(page);
+    await embed.getByTestId('base-settings-button').click();
+    await page.getByTestId('base-setting-cardSize').fill('300');
+
+    await expect(embed.getByTestId('base-conflict')).toBeVisible({ timeout: 10_000 });
+    await embed.getByTestId('base-conflict-reload').click();
+    await expect(embed.getByTestId('base-conflict')).toHaveCount(0);
+    await page.waitForTimeout(1000);
+    expect(await read('Work/Tasks.base')).toBe(OUTSIDE);
+    expect(await conflictBackups()).not.toContain(OUTSIDE);
+  });
 });

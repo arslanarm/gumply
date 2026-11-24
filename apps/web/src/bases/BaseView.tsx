@@ -91,6 +91,11 @@ export function BaseView(props: BaseViewProps) {
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState<{ panel: Panel; n: number } | null>(null);
   const writer = useMemo(() => `base-${Math.random().toString(36).slice(2, 10)}`, []);
+  // #hrdgchfb: an embed has no save bar, so it asks in place (Keep mine / Reload) and notes the backup.
+  const [inlineConflict, setInlineConflict] = useState(false);
+  const [inlineNote, setInlineNote] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const conflictRef = useRef<HTMLDivElement | null>(null);
   const requestSeq = useRef(0);
 
   useEffect(() => {
@@ -188,7 +193,10 @@ export function BaseView(props: BaseViewProps) {
         docRef.current = next;
         setDoc(next);
         propsRef.current.onSaved?.(saved.meta);
-        if (saved.conflictBackup) propsRef.current.onConflictBackup?.(saved.conflictBackup);
+        if (saved.conflictBackup) {
+          if (propsRef.current.onConflictBackup) propsRef.current.onConflictBackup(saved.conflictBackup);
+          else setInlineNote(translate("page.conflictKept", { path: saved.conflictBackup }));
+        }
         if (!pending) propsRef.current.onSaveState?.("saved");
       },
       onConflict: () => {
@@ -197,9 +205,9 @@ export function BaseView(props: BaseViewProps) {
           onSaveState("conflict");
           return;
         }
-        // An embed has no save bar: as before, show the file and say why the change is gone.
-        void saverRef.current?.discard().then(() => reloadFromDisk(docRef.current));
-        propsRef.current.onError?.(translate("save.conflictLong"));
+        // An embed has no save bar: it asks in place (#hrdgchfb), and the change waits.
+        setInlineNote(null);
+        setInlineConflict(true);
       },
       onError: (error) => {
         void reloadFromDisk(docRef.current);
@@ -336,6 +344,24 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, baseId, load, props.pages]);
 
+  useEffect(() => {
+    if (inlineConflict) conflictRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  }, [inlineConflict]);
+
+  /** The inline choice closed: focus back on the view, never on <body>. */
+  const focusView = () => rootRef.current?.focus({ preventScroll: true });
+  const keepMineInline = async () => {
+    setInlineConflict(false);
+    focusView();
+    await saverRef.current?.keepMine();
+  };
+  const reloadInline = async () => {
+    setInlineConflict(false);
+    focusView();
+    await saverRef.current?.discard();
+    await reloadFromDisk(docRef.current);
+  };
+
   if (doc.error) {
     return (
       <div className="base-view">
@@ -351,7 +377,22 @@ export function BaseView(props: BaseViewProps) {
 
   return (
     <BaseLinks.Provider value={baseLinks}>
-    <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view">
+    <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1}>
+      {inlineConflict ? (
+        <div className="banner base-banner base-conflict" role="alert" data-testid="base-conflict" ref={conflictRef}>
+          <span>{t("bases.conflict")}</span>
+          <button type="button" className="base-conflict-button" data-testid="base-conflict-keep-mine" onClick={() => void keepMineInline()}>
+            {t("save.keepMine")}
+          </button>
+          <button type="button" className="base-conflict-button" data-testid="base-conflict-reload" onClick={() => void reloadInline()}>
+            {t("save.reload")}
+          </button>
+        </div>
+      ) : inlineNote ? (
+        <div className="base-warning" role="status" data-testid="base-conflict-kept">
+          {inlineNote}
+        </div>
+      ) : null}
       <div className="base-head">
         {embed ? null : (
           <ViewTabs
