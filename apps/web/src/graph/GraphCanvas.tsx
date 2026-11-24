@@ -105,6 +105,14 @@ const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
 /** Dash for links into a "not created yet" page (graph units, as before). */
 const GHOST_LINK_DASH = [4, 3];
+/**
+ * #s3sszwux (vi): the resting link width, just under one device pixel. force-graph strokes
+ * every link of a colour as one path with `width / globalScale` in a context scaled by
+ * `globalScale`; at exactly 1 px, floating point can land a hair above it, which takes Skia
+ * off its hairline path: one stroke of ~123k segments then rasterizes in tens of seconds
+ * instead of ~0.3 s (@opus-editor's measurement). 0.99 px looks the same.
+ */
+const HAIRLINE_WIDTH = 0.99;
 
 function readThemeColors(): ThemeColors {
   if (typeof window === "undefined") return FALLBACK_COLORS;
@@ -1193,10 +1201,10 @@ export function GraphCanvas({
 
   const linkWidth = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) => {
-      if (hoveredId === null) return 1;
+      if (hoveredId === null) return HAIRLINE_WIDTH;
       const source = endpointId(link.source);
       const target = endpointId(link.target);
-      return source === hoveredId || target === hoveredId ? 1.7 : 1;
+      return source === hoveredId || target === hoveredId ? 1.7 : HAIRLINE_WIDTH;
     },
     [hoveredId],
   );
