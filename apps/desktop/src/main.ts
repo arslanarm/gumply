@@ -33,7 +33,7 @@ import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downlo
 import { describeFlushes, flushAllSaved, NO_ANSWER, unsavedWindowNames, type WindowFlush } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { spellcheckLanguages } from "./spellcheck.js";
-import { classifyNavigation, userGuideUrl, vaultFileAction } from "./urls.js";
+import { classifyNavigation, userGuideUrl, vaultFileAction, newWindowUrl } from "./urls.js";
 import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
 import { installKind, listWindowsProcesses, UpdateController, type UpdaterLike } from "./updates.js";
@@ -489,7 +489,13 @@ function createWindow({ main }: { main: boolean }): BrowserWindow {
     if (!handle(url)) event.preventDefault();
   });
   contents.setWindowOpenHandler(({ url }) => {
-    // New windows are never created; links are handed to the system.
+    // N8: "Open in new window" (the app's own page) becomes a Gumply window on the same vault.
+    const page = newWindowUrl(url, appOrigin());
+    if (page) {
+      openAppWindow(page);
+      return { action: "deny" };
+    }
+    // Anything else never opens a window; links are handed to the system.
     const action = classifyNavigation(url, appOrigin());
     if (action.kind === "external") void shell.openExternal(action.url);
     else if (action.kind === "vault-file" && vaultPath) openVaultFile(action.path);
@@ -538,6 +544,13 @@ function createWindow({ main }: { main: boolean }): BrowserWindow {
     if (mainWindow === window) mainWindow = [...windows].find((win) => !win.isDestroyed()) ?? null;
   });
   return window;
+}
+
+/** N8: another window on the open vault, at `url` (the app's page; File → New Window opens its start). */
+function openAppWindow(url?: string): void {
+  if (!server) return;
+  const win = createWindow({ main: false });
+  void win.loadURL(url ?? `${server.url}/`).catch((error: unknown) => console.error("[gumply] new window failed:", error));
 }
 
 /**
@@ -669,6 +682,8 @@ function buildMenu(): void {
       submenu: [
         { id: "new-page", label: tr("menu.newPage"), accelerator: "CmdOrCtrl+N", click: () => sendCommand("new.page") },
         { id: "new-whiteboard", label: tr("menu.newBoard"), accelerator: "CmdOrCtrl+Shift+N", click: () => sendCommand("new.board") },
+        // N8: another window on the same vault.
+        { id: "new-window", label: tr("menu.newWindow"), click: () => openAppWindow() },
         { type: "separator" },
         // B4: the in-app "Import from Notion…" dialog.
         { id: "import-notion", label: tr("menu.importNotion"), click: () => sendCommand("page.import-notion") },

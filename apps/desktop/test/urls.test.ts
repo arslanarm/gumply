@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNavigation, userGuideUrl, vaultFileAction } from "../src/urls";
+import { classifyNavigation, newWindowUrl, userGuideUrl, vaultFileAction } from "../src/urls";
 
 const origin = "http://127.0.0.1:43123";
 
@@ -79,3 +79,21 @@ describe("Help → User guide (#6ka8s7mf)", () => {
   });
 });
 
+
+describe("which window.open becomes a new Gumply window (#vhdp68sm, N8)", () => {
+  const origin = "http://127.0.0.1:4100";
+  it("the app's own page, with or without a page route", () => {
+    expect(newWindowUrl(`${origin}/#/Projects%2FRoadmap`, origin)).toBe(`${origin}/#/Projects%2FRoadmap`);
+    expect(newWindowUrl(`${origin}/`, origin)).toBe(`${origin}/`);
+  });
+  it("never files, the API, a blob, another site, a query, or another hash", () => {
+    expect(newWindowUrl(`${origin}/api/files/a.pdf`, origin)).toBeNull();
+    expect(newWindowUrl(`${origin}/api/pages`, origin)).toBeNull();
+    expect(newWindowUrl(`blob:${origin}/123e4567`, origin)).toBeNull();
+    expect(newWindowUrl("https://example.com/#/Notes", origin)).toBeNull();
+    expect(newWindowUrl(`${origin}/?x=1#/Notes`, origin)).toBeNull();
+    expect(newWindowUrl(`${origin}/#graph`, origin)).toBeNull();
+    expect(newWindowUrl("not a url", origin)).toBeNull();
+    expect(newWindowUrl(`${origin}/#/Notes`, "")).toBeNull();
+  });
+});
