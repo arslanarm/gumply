@@ -124,33 +124,31 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     expect(differing).toEqual([["See [[Hub]] for more.", "See [[Hub renamed]] for more."]]);
   });
 
-  it("the same editor's next ordinary save (it still shows [[Hub]]) doesn't undo the merge; the answer says the links were kept", async () => {
+  it("Keep mine's answer says which links were kept; an ordinary save afterwards writes what was sent", async () => {
     const { dir, store } = await vault();
     const target = firstLinker(store);
     const start = store.get(target);
     await store.update("Hub", { title: "Hub renamed" });
-    const first = start.content.replace(/^Intro (\d+)\./, "Intro $1, mine.");
-    const kept = await store.update(target, { content: first, expectedUpdated: start.updated, force: true, writer: "w1" });
+    const mine = start.content.replace(/^Intro (\d+)\./, "Intro $1, mine.");
+    const kept = await store.update(target, { content: mine, expectedUpdated: start.updated, force: true, writer: "w1" });
     expect(kept.renameLinksMerged).toEqual({ links: 1, titles: ["Hub renamed"] });
-    // The editor didn't reload: it still has [[Hub]], and saves more typing from the version it got back.
-    const next = await store.update(target, { content: `${first}More typing.\n`, expectedUpdated: kept.updated, writer: "w1" });
+    // The same editor's next ordinary save, still with [[Hub]] (a client that didn't apply the answer):
+    // written as sent, and its answer reports no merge. Keeping the new link is the client's job.
+    const next = await store.update(target, { content: `${mine}More typing.\n`, expectedUpdated: kept.updated, writer: "w1" });
+    expect(next.renameLinksMerged).toBeUndefined();
     const text = await readFile(join(dir, `${target}.md`), "utf8");
+    expect(text).toContain("See [[Hub]] for more.");
     expect(text).toContain("More typing.");
-    expect(text).toContain("See [[Hub renamed]] for more.");
-    expect(text).not.toContain("[[Hub]]");
-    expect(next.renameLinksMerged).toEqual({ links: 1, titles: ["Hub renamed"] });
-    // A plain save with nothing to keep says nothing.
-    const plain = await store.update(target, { content: text.replace(/^---[\s\S]*?---\n/, ""), expectedUpdated: next.updated, writer: "w2" });
-    expect(plain.renameLinksMerged).toBeUndefined();
+    expect(text).not.toContain("[[Hub renamed]]");
   });
 
-  it("another editor session's save isn't touched by that follow-up", async () => {
+  it("a deliberate [[Hub]] put back by an ordinary save after a merge is written as sent", async () => {
     const { dir, store } = await vault();
     const target = firstLinker(store);
     const start = store.get(target);
     await store.update("Hub", { title: "Hub renamed" });
     const kept = await store.update(target, { content: start.content, expectedUpdated: start.updated, force: true, writer: "w1" });
-    // Another editor (w2) deliberately writes [[Hub]] on that line, from the current version: kept as sent.
+    // Someone deliberately writes [[Hub]] back on that line, from the current version: kept as sent.
     await store.update(target, { content: start.content, expectedUpdated: kept.updated, writer: "w2" });
     expect(await readFile(join(dir, `${target}.md`), "utf8")).toContain("See [[Hub]] for more.");
   });

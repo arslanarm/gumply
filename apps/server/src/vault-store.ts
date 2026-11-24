@@ -988,12 +988,7 @@ export class VaultStore {
    * the rename's link changes on the lines it didn't touch.
    */
   private renameRewrites = new Map<PageId, Array<{ before: string; after: string; versionBefore: string; versionAfter: string; at: number; title: string }>>();
-  /**
-   * N10 (@polish-dev's question): after a merged Keep mine, that editor still shows `[[Old]]` until it
-   * reloads; its next ordinary saves (same `writer`, from the version the merge wrote) get the same
-   * rename changes again, within the same window, so they never undo the merge.
-   */
-  private renameMergeSessions = new Map<PageId, { writer: string; version: string; pairs: RenameMergePair[]; at: number }>();
+
   /** N9-1: renames whose batches are running (their `touched` sets are filled). */
   private activeRenameJobs = new Set<RenameRewrite>();
   /** N9-1: inside a rename's own rewrite (its writes aren't "touched" by someone else). */
@@ -3407,28 +3402,14 @@ export class VaultStore {
     let nextContent = patch.content === undefined ? record.content : patch.content;
     if (typeof nextContent !== "string") throw badRequest("content must be a string");
     // N10 (#5pgmziyc, D22 note): Keep mine keeps the user's text, except a concurrent rename's link
-    // changes on lines they didn't touch. The same editor's later saves (it still shows the old
-    // link until it reloads) get them again, so they never undo it.
+    // changes on lines they didn't touch. Only Keep mine: an ordinary save writes what was sent.
     let mergePairs: RenameMergePair[] = [];
-    let mergeAt = 0;
     let mergedLinks = 0;
-    if (patch.content !== undefined) {
-      if (patch.force && changedOnDisk) {
-        const merged = this.mergeRecentRenames(record.id, patch.expectedUpdated, nextContent);
-        nextContent = merged.content;
-        mergedLinks = merged.links;
-        mergePairs = merged.pairs;
-        mergeAt = merged.at;
-      } else {
-        const session = this.renameMergeSessions.get(record.id);
-        if (session && session.writer === patch.writer && session.version === patch.expectedUpdated && Date.now() - session.at <= RENAME_MERGE_WINDOW_MS) {
-          const merged = applyRenameMerges(session.pairs, nextContent);
-          nextContent = merged.content;
-          mergedLinks = merged.links;
-          mergePairs = session.pairs;
-          mergeAt = session.at;
-        }
-      }
+    if (patch.content !== undefined && patch.force && changedOnDisk) {
+      const merged = this.mergeRecentRenames(record.id, patch.expectedUpdated, nextContent);
+      nextContent = merged.content;
+      mergedLinks = merged.links;
+      mergePairs = merged.pairs;
     }
     // spec/api v1.35 (N10): the lines the server changed from what was sent, and the renames' new titles.
     const renameLinksMerged =
@@ -3541,11 +3522,6 @@ export class VaultStore {
       rewrittenPages.sort((a, b) => a.localeCompare(b));
     }
 
-    // N10: the merge follows this editor session (its next save starts from the version just written).
-    if (mergePairs.length > 0 && patch.writer) {
-      const written = this.pages.get(targetId);
-      if (written) this.renameMergeSessions.set(targetId, { writer: patch.writer, version: written.updated, pairs: mergePairs, at: mergeAt });
-    }
     return {
       ...this.get(targetId),
       rewrittenPages,
@@ -3832,20 +3808,18 @@ export class VaultStore {
     id: PageId,
     expected: string | undefined,
     content: string,
-  ): { content: string; links: number; pairs: RenameMergePair[]; at: number } {
+  ): { content: string; links: number; pairs: RenameMergePair[] } {
     const list = this.renameRewrites.get(id);
-    if (!list || expected === undefined) return { content, links: 0, pairs: [], at: 0 };
+    if (!list || expected === undefined) return { content, links: 0, pairs: [] };
     const now = Date.now();
     let version = expected;
     const pairs: RenameMergePair[] = [];
-    let at = 0;
     for (const entry of list) {
       if (now - entry.at > RENAME_MERGE_WINDOW_MS || entry.versionBefore !== version) continue;
       pairs.push({ before: entry.before, after: entry.after, title: entry.title });
-      at = at || entry.at;
       version = entry.versionAfter;
     }
-    return { ...applyRenameMerges(pairs, content), pairs, at };
+    return { ...applyRenameMerges(pairs, content), pairs };
   }
 
   /**
