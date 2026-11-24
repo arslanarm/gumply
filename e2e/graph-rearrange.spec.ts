@@ -11,7 +11,10 @@ import { API_URL, E2E_VAULT } from './support/env';
  */
 const NOTES = 1_600; // over the worker threshold (1,500)
 
-test('a re-arrange of a big graph without new data is not "ready" until the worker is done', async ({ page, request }) => {
+test('a re-arrange of a big graph without new data is not "ready" until the worker is done', async ({ page, request, vault }) => {
+  // The vault fixture resets before and after: the 1,600 notes written below must not reach
+  // the next spec (graph.spec's empty-vault case failed right after this one).
+  void vault;
   test.setTimeout(240_000);
   await fs.mkdir(path.join(E2E_VAULT, 'Many'), { recursive: true });
   for (let i = 0; i < NOTES; i += 100) {
