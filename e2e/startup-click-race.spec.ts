@@ -28,3 +28,25 @@ test('a click on Graph while the startup is still choosing the landing page wins
   await expect(page).toHaveURL(/#\/graph/);
   await expect(page.getByTestId('graph-canvas').or(page.getByTestId('graph-empty'))).toBeVisible();
 });
+
+test('with "today\'s note" on startup, a click on Graph while the note is fetched wins too', async ({ page, vault }) => {
+  await vault.seed([
+    { title: 'Alpha', content: 'See [[Beta]].' },
+    { title: 'Beta', content: 'See [[Alpha]].' },
+  ]);
+  await page.addInitScript(() => window.localStorage.setItem('gumply:startup', 'daily'));
+  // Hold the daily-note request the startup awaits (made or fetched), so the click lands inside it.
+  let held = 0;
+  await page.route('**/api/daily', async (route) => {
+    held += 1;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await route.continue();
+  });
+  await page.goto('/');
+  await page.getByTestId('sidebar-graph').click();
+  await expect(page).toHaveURL(/#\/graph/);
+  await page.waitForTimeout(4_000);
+  expect(held).toBeGreaterThan(0);
+  await expect(page).toHaveURL(/#\/graph/);
+  await expect(page.getByTestId('graph-canvas').or(page.getByTestId('graph-empty'))).toBeVisible();
+});
