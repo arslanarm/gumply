@@ -2,6 +2,28 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.0: history, sync and speed (2026-11-24)
+
+**New**
+- **Version history:** History… in a page's ⋯ menu (or Cmd/Ctrl+K) lists earlier versions of a page or whiteboard, who changed it and when; preview, see changes, restore (undoable) or keep a version. Edits made outside Gumply and deleted pages keep their history too; Settings → Version history shows its size and clears old versions. History lives in `.gumply/history/` and never changes your notes.
+- **Sync tools:** conflict copies from Syncthing, Dropbox, Nextcloud and Obsidian Sync are recognised and kept out of the page tree; **Compare** them side by side (text and whiteboards) and keep the page, the copy or both, with nothing lost. "Syncing changes…" shows while a sync tool is busy. Every file is written through a temporary file and renamed into place.
+- **Updates:** the Windows installer and the Linux AppImage update themselves; each update is checked against the release's signed checksums before it installs. The `.deb` and macOS builds tell you about a new version. Settings → Updates and Help → Check for Updates….
+- **Settings:** page font and width, and what opens on startup (last page, a chosen page, or today's daily note). Saved per device, never in the vault.
+- **Command palette:** every action is in Cmd/Ctrl+K; type `>` for commands only, with their shortcuts.
+- **User guide** in English and Russian (Help → User Guide).
+- **Accessibility:** dialogs keep and return focus, the page list is one Tab stop with arrow keys, whiteboards work from the keyboard, editor menus are announced, and text contrast is 4.5:1 or better.
+- **Speed on a 10,000-note vault:** outside edits show within a second, search answers in tens of milliseconds, backlinks and database views are 3–4× faster, big vaults open in about 2 s, the global graph no longer freezes the app while it arranges, and zooming a 1,000-object board is about 3× smoother.
+- Obsidian whiteboards' text nodes are drawn as cards; display math renders in columns; the file format is documented in `docs/file-format.md`.
+
+**Fixed**
+- Saves: an untouched-but-rewritten file no longer blocks later saves with "Changed on disk"; no false "changed on disk" on FAT/exFAT drives or during a big rename; typing just before a rename, restore or conflict choice is kept; database view changes that meet an outside change offer Reload or Keep mine.
+- Editor: a new line after bold, italic, colour or a link starts plain; `1. 1. 1.` lists aren't renumbered; dragging blocks into and out of lists works, and images, embeds and views move with ⋮⋮; image captions keep `|`, `*` and `&`; the `[[` menu closes when a link is complete.
+- Gumply follows a note renamed by Obsidian or another app; Notion import keeps properties of rows whose title has `:` or `?`; spell-check follows the app's language; the browser version recovers by itself when the local server comes back.
+
+**Known limits**
+- On vaults of several thousand pages, the first graph open after a start can occasionally freeze the app for a while when its layout finishes; reopening it is fine. A fix is coming in 0.9.1.
+- Above 5,000 notes the graph appears once it has settled (about 15–35 s on a slow laptop).
+
 ## 0.8.2: a safer save (2026-11-23)
 
 A fix release, recommended for everyone on 0.8.
