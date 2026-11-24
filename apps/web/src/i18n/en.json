@@ -912,6 +912,7 @@
     "download": "Download",
     "whatsNew": "What's new",
     "installFailed": "The update couldn't be installed. Download it from the release page.",
+    "verifyFailed": "This update couldn't be verified, so it wasn't installed. Download it from the release page.",
     "debHint": "Installed from a .deb: update with your package manager or the new .deb.",
     "macHint": "Download the new version and replace Gumply in Applications.",
     "readOnly": "Gumply can't replace its own file here. Download the new version."
@@ -998,6 +999,7 @@
       "pendingRunning": "Update ready, will install when Gumply and AI apps using it are closed.",
       "failed": "Couldn't check for updates. Are you online?",
       "installFailed": "The update couldn't be installed. Download it from the release page.",
+      "verifyFailed": "This update couldn't be verified, so it wasn't installed. Download it from the release page.",
       "readOnly": "Gumply can't replace its own file here. Download the new version.",
       "debHint": "Installed from a .deb: update with your package manager or the new .deb.",
       "macHint": "Download the new version and replace Gumply in Applications.",

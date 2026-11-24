@@ -24,6 +24,11 @@ on:
     tags: ["v*"]
     branches: ["ci/**"]
   workflow_dispatch:
+    inputs:
+      signing_dry_run:
+        description: "Only run the update-signing dry run (a throwaway key made in the job; no build, nothing uploaded)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,6 +40,7 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.name }}
+    if: ${{ !inputs.signing_dry_run }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -83,6 +89,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: node scripts/set-version.mjs --check "${GITHUB_REF_NAME#v}"
+
+      # D44: a release must carry the owner's two update-signing public keys;
+      # with none, its auto-update would silently skip the signature check.
+      - name: Update keys are built in
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/check-update-keys.mjs --require
 
       - name: Install dependencies
         run: npm ci
@@ -281,9 +293,21 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # D44: the signing key is a secret of the protected "release" environment.
+    # If the owner set required reviewers there, this job waits for their
+    # approval before anything is signed or uploaded.
+    environment: release
     permissions:
       contents: write
     steps:
+      # The signing scripts (Node built-ins only; no npm ci).
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - uses: actions/download-artifact@v8
         with:
           pattern: gumply-*
@@ -295,6 +319,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          GUMPLY_SIGNING_KEY: ${{ secrets.GUMPLY_SIGNING_KEY }}
         run: |
           ls -la dist
           cd dist
@@ -311,6 +336,10 @@ jobs:
           fi
           { echo "### Release assets"; echo; echo '```'; cat SHA256SUMS.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cd ..
+          # D44: sign the sums (the key never leaves the env var, and the script
+          # never prints it), then check the .sig exactly as the app will, with
+          # the keys built into this release. dist/* then uploads the .sig too.
+          bash scripts/sign-release.sh dist
           # A tag with a suffix (v0.5.0-rc.1, -beta…) is a pre-release.
           prerelease=()
           if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
@@ -319,5 +348,44 @@ jobs:
           else
             gh release create "$TAG" dist/* --draft "${prerelease[@]}" --verify-tag \
               --title "Gumply $TAG" \
-              --notes "Desktop installers for $TAG (unsigned: Windows SmartScreen and macOS Gatekeeper will warn). Checksums in SHA256SUMS.txt."
+              --notes "Desktop installers for $TAG (unsigned: Windows SmartScreen and macOS Gatekeeper will warn). Checksums in SHA256SUMS.txt; SHA256SUMS.txt.sig is Gumply's update signature over them, checked by the app before it installs an update."
           fi
+
+  # D44: proves the release job's signing path before a tag, by hand only
+  # (Run workflow → signing_dry_run). The same scripts/sign-release.sh, with a
+  # THROWAWAY key pair made by gen-update-keys.mjs in this job and checked
+  # against those throwaway public keys (never the built-in ones). No
+  # "release" environment, no secret, no build, nothing uploaded.
+  signing-dry-run:
+    name: Update signing dry run
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.signing_dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Sign and verify with a throwaway key
+        run: |
+          keys="$RUNNER_TEMP/throwaway-keys"
+          dist="$RUNNER_TEMP/dist"
+          mkdir -p "$dist"
+          # Stand-in release files, summed as the release job sums them.
+          printf 'installer\n' > "$dist/Gumply-0.0.0-x86_64.AppImage"
+          printf 'installer\n' > "$dist/Gumply-Setup-0.0.0-x64.exe"
+          (cd "$dist" && sha256sum * > SHA256SUMS.txt)
+          # The owner's script, on a clean runner; its public lines become a stand-in update-keys.ts.
+          node scripts/gen-update-keys.mjs "$keys" > "$RUNNER_TEMP/gen.txt"
+          { echo 'export const UPDATE_PUBLIC_KEYS: readonly UpdatePublicKey[] = ['
+            grep -E '^\s*\{ id: "[0-9a-f]{16}", spki: ' "$RUNNER_TEMP/gen.txt"
+            echo '];'; } > "$RUNNER_TEMP/update-keys.ts"
+          node scripts/check-update-keys.mjs --require --keys-file "$RUNNER_TEMP/update-keys.ts"
+          GUMPLY_SIGNING_KEY="$(cat "$keys/gumply-update-primary.pem")" bash scripts/sign-release.sh "$dist" --keys-file "$RUNNER_TEMP/update-keys.ts"
+          # Without the secret, the release path refuses.
+          if GUMPLY_SIGNING_KEY= bash scripts/sign-release.sh "$dist" >/dev/null 2>&1; then echo "::error::signed without a key"; exit 1; fi
+          # And the real built-in list (the owner's two keys) is what a tag would check.
+          node scripts/check-update-keys.mjs --require 2>/dev/null || echo "::warning::the built-in update keys aren't in yet: a v* tag would stop here."
+          rm -rf "$keys"

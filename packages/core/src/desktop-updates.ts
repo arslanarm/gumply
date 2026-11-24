@@ -22,6 +22,8 @@ export type UpdateStatus =
   | "installing"
   | "read-only"
   | "install-failed"
+  /** Update signing (option B): the download didn't verify, nothing is installed. */
+  | "verify-failed"
   | "error";
 
 export interface DesktopUpdatesState {
