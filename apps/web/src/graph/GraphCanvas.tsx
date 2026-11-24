@@ -31,6 +31,7 @@ import {
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, layoutInputFor } from "./layout-forces.js";
+import { linkWidthFor } from "./link-width.js";
 import { startLayout } from "./layout-client.js";
 import { t, useT } from "../i18n/index.js";
 
@@ -105,6 +106,7 @@ const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
 /** Dash for links into a "not created yet" page (graph units, as before). */
 const GHOST_LINK_DASH = [4, 3];
+
 
 function readThemeColors(): ThemeColors {
   if (typeof window === "undefined") return FALLBACK_COLORS;
@@ -1192,12 +1194,8 @@ export function GraphCanvas({
   );
 
   const linkWidth = useCallback(
-    (link: LinkObject<CanvasNode, GraphLink>) => {
-      if (hoveredId === null) return 1;
-      const source = endpointId(link.source);
-      const target = endpointId(link.target);
-      return source === hoveredId || target === hoveredId ? 1.7 : 1;
-    },
+    (link: LinkObject<CanvasNode, GraphLink>) =>
+      linkWidthFor(endpointId(link.source), endpointId(link.target), hoveredId, window.devicePixelRatio),
     [hoveredId],
   );
 
