@@ -789,6 +789,15 @@ function bytesHash(bytes: string | Buffer): string {
   return createHash("sha256").update(bytes).digest("base64");
 }
 
+/** D41 + N1 (#kw8th869): the kinds that have version history, and each one's file extension there. */
+function hasHistory(kind: PageKind): boolean {
+  return kind === "page" || kind === "whiteboard" || kind === "base";
+}
+
+function historyExt(kind: PageKind): "md" | "canvas" | "base" {
+  return kind === "whiteboard" ? "canvas" : kind === "base" ? "base" : "md";
+}
+
 function mtimeVersion(mtimeMs: number): string {
   return new Date(Math.floor(mtimeMs)).toISOString();
 }
@@ -1703,7 +1712,7 @@ export class VaultStore {
     else this.recomputeSources(changedIds);
     for (const { from, to } of historyMoves) {
       const record = this.pages.get(to);
-      if (record && (record.kind === "page" || record.kind === "whiteboard")) await this.followHistory(from, to);
+      if (record && hasHistory(record.kind)) await this.followHistory(from, to);
     }
     // #yikrbg7h: a page deleted outside Gumply keeps the user's last save in its (orphaned) history.
     const movedAway = new Set(historyMoves.map(({ from }) => from));
@@ -1715,7 +1724,7 @@ export class VaultStore {
     if (this.historySource === "app") {
       const movedIn = new Set(historyMoves.map(({ to }) => to));
       for (const [id, record] of next) {
-        if (previousIds.has(id) || movedIn.has(id) || (record.kind !== "page" && record.kind !== "whiteboard")) continue;
+        if (previousIds.has(id) || movedIn.has(id) || !hasHistory(record.kind)) continue;
         await markRecreated(this.root, id).catch(() => false);
       }
     }
@@ -3388,8 +3397,13 @@ export class VaultStore {
       // Stat the temp before the rename: the path's stat after it could be
       // another program's file (see statAfterRename, #a76d3php).
       stats = await stat(temporary);
+      // N1 (#kw8th869): D41's pre-write rule, as for pages and boards.
+      const previous = await readFile(record.filePath).catch(() => null);
+      if (previous !== null && !previous.equals(Buffer.from(text, "utf8"))) await this.versionBeforeWrite(record.filePath, previous);
+      if (previous === null) await this.freshHistory(record.filePath);
       this.markOwnWrite(record.filePath);
       await rename(temporary, record.filePath);
+      await this.rememberWrite(record.filePath, text);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
@@ -4902,7 +4916,7 @@ export class VaultStore {
     // D20: each page's history follows it.
     for (const { from, to } of moves) {
       const record = this.pages.get(to);
-      if (record && (record.kind === "page" || record.kind === "whiteboard")) await this.followHistory(from, to);
+      if (record && hasHistory(record.kind)) await this.followHistory(from, to);
     }
     // D23: the moved page and its sub-pages are in another folder now.
     await this.relinkMoved(moves);
@@ -5722,7 +5736,7 @@ export class VaultStore {
    * written exactly into the current file. Never renames. 409 when the file
    * changed since `expectedUpdated`.
    */
-  restoreVersion(id: PageId, file: string, input: { expectedUpdated?: string; writer?: string; undid?: HistoryUndid } = {}): Promise<Page | BoardDocument> {
+  restoreVersion(id: PageId, file: string, input: { expectedUpdated?: string; writer?: string; undid?: HistoryUndid } = {}): Promise<Page | BoardDocument | BaseDocument> {
     return this.enqueue(async () => {
       const record = this.historyRecord(id);
       const entry = await this.historyEntry(record, file);
@@ -5732,7 +5746,7 @@ export class VaultStore {
       if (mtimeChanged || !versionMatches(record, input.expectedUpdated, input.writer)) {
         throw conflict("This page changed on disk.");
       }
-      const ext = record.kind === "whiteboard" ? "canvas" : "md";
+      const ext = historyExt(record.kind);
       const current = await readFile(record.filePath);
       if (!current.equals(bytes)) {
         await saveVersion(this.root, { id: record.id, ext, bytes: current, version: record.updated, source: "restore", reason: "before-restore" });
@@ -5754,6 +5768,7 @@ export class VaultStore {
         this.reindexAll();
         await saveVersion(this.root, { id: record.id, ext, bytes, version: fresh.updated, source: "app", restoredFrom: entry.file, ...(input.undid ? { undid: input.undid } : {}) });
       }
+      if (record.kind === "base") return this.getBase(record.id);
       return record.kind === "whiteboard" ? this.getBoard(record.id) : this.get(record.id);
     });
   }
@@ -5769,6 +5784,8 @@ export class VaultStore {
   saveUnsavedVersion(id: PageId, input: { content?: unknown; board?: unknown }): Promise<HistoryItem | null> {
     return this.enqueue(async () => {
       const record = this.historyRecord(id);
+      // A database view has no editor text to keep before a reload (N1: its history is its saves).
+      if (record.kind === "base") throw badRequest("A database view has no unsaved text to keep");
       let bytes: Buffer;
       if (record.kind === "whiteboard") {
         if (typeof input.board !== "object" || input.board === null || Array.isArray(input.board)) throw badRequest("board must be a JSON Canvas object");
@@ -5792,7 +5809,7 @@ export class VaultStore {
       if (newest && newest.sha256 === sha256(bytes)) return null;
       const entry = await saveVersion(this.root, {
         id: record.id,
-        ext: record.kind === "whiteboard" ? "canvas" : "md",
+        ext: historyExt(record.kind),
         bytes,
         version: record.updated,
         source: "app",
@@ -5818,7 +5835,7 @@ export class VaultStore {
   }
 
   /** Bring an orphan's version back as a new page at its old path (or `<name> 2`), never over another page. */
-  restoreOrphan(key: string, file?: string): Promise<Page | BoardDocument> {
+  restoreOrphan(key: string, file?: string): Promise<Page | BoardDocument | BaseDocument> {
     return this.enqueue(async () => {
       const orphan = (await this.historyOrphansNow()).find((item) => item.key === key);
       if (!orphan) throw notFound("No such history");
@@ -5827,11 +5844,11 @@ export class VaultStore {
       const entry = entries.find((item) => item.file === (file ?? orphan.newest));
       if (!entry) throw notFound("No such version");
       const bytes = await readFile(join(dir, entry.file));
-      const kind: PageKind = entry.file.endsWith(".canvas") ? "whiteboard" : "page";
+      const kind: PageKind = entry.file.endsWith(".canvas") ? "whiteboard" : entry.file.endsWith(".base") ? "base" : "page";
       const parent = parentOf(orphan.lastId);
       const folder = parent !== null && (await this.folderExists(parent)) ? parent : null;
       const name = orphan.lastId.split("/").pop() ?? orphan.lastId;
-      const stem = kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : name;
+      const stem = kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : kind === "base" ? name.replace(/\.base$/i, "") : name;
       const taken = new Set([...this.pages.keys()].map(collisionKey));
       const newId = await this.restoreTarget(folder, stem, false, taken, kind);
       const target = this.filePathFor(newId);
@@ -5840,7 +5857,8 @@ export class VaultStore {
       await moveHistoryDir(this.root, dir, orphan.lastId, newId, parentOf(newId) === parent ? "rename" : "move");
       await this.rebuild();
       const record = this.require(newId);
-      await saveVersion(this.root, { id: newId, ext: kind === "whiteboard" ? "canvas" : "md", bytes, version: record.updated, source: "app", restoredFrom: entry.file });
+      await saveVersion(this.root, { id: newId, ext: historyExt(kind), bytes, version: record.updated, source: "app", restoredFrom: entry.file });
+      if (kind === "base") return this.getBase(newId);
       return kind === "whiteboard" ? this.getBoard(newId) : this.get(newId);
     });
   }
@@ -5924,8 +5942,8 @@ export class VaultStore {
       await this.assertUnchanged(copy, input.expected.copy);
       if (original) await this.assertUnchanged(original, input.expected.page);
       const client = `${name.tool}${name.device ? ` ${name.device}` : ""}`;
-      const versioned = (record: PageRecord) => record.kind === "page" || record.kind === "whiteboard";
-      const extOf = (record: PageRecord): "md" | "canvas" => (record.kind === "whiteboard" ? "canvas" : "md");
+      const versioned = (record: PageRecord) => hasHistory(record.kind);
+      const extOf = (record: PageRecord): "md" | "canvas" | "base" => historyExt(record.kind);
 
       if (keep === "page" || keep === "delete") {
         if (keep === "page" && !original) throw badRequest("This copy's original is gone");
@@ -6096,7 +6114,7 @@ export class VaultStore {
   private historyRecord(id: PageId): PageRecord {
     const resolved = this.resolveId(id);
     const record = this.require(resolved);
-    if (record.kind !== "page" && record.kind !== "whiteboard") throw notFound("Only pages and boards have history");
+    if (!hasHistory(record.kind)) throw notFound("Only pages, boards and database views have history");
     return record;
   }
 
@@ -6142,7 +6160,7 @@ export class VaultStore {
   /** The page or board a file belongs to (pages and `.canvas` only: no `.base`, D41). */
   private historyRecordFor(filePath: string): PageRecord | undefined {
     for (const record of this.pages.values()) {
-      if (record.filePath === filePath) return record.kind === "page" || record.kind === "whiteboard" ? record : undefined;
+      if (record.filePath === filePath) return hasHistory(record.kind) ? record : undefined;
     }
     return undefined;
   }
@@ -6169,7 +6187,7 @@ export class VaultStore {
       }
       await saveVersion(this.root, {
         id: record.id,
-        ext: record.kind === "whiteboard" ? "canvas" : "md",
+        ext: historyExt(record.kind),
         bytes,
         version: record.updated,
         source: this.historySource,
@@ -6212,7 +6230,7 @@ export class VaultStore {
       this.sessionTimers.delete(resolved);
       let record: PageRecord | undefined;
       record = this.pages.get(resolved);
-      if (!record || (record.kind !== "page" && record.kind !== "whiteboard")) return false;
+      if (!record || !hasHistory(record.kind)) return false;
       // What Gumply wrote (the file may already hold an outside change the watcher hasn't seen yet).
       if (this.sessionBytes.has(resolved)) return this.saveSessionBytes(resolved);
       return this.snapshotRecord(record, "app", "session");
@@ -6228,14 +6246,14 @@ export class VaultStore {
 
   /** The record's file as it is now, as a version (deduplicated). True when one was written. */
   private async snapshotRecord(record: PageRecord, source: HistorySource, reason?: HistoryReason): Promise<boolean> {
-    if (record.kind !== "page" && record.kind !== "whiteboard") return false;
+    if (!hasHistory(record.kind)) return false;
     const bytes = await readFile(record.filePath).catch(() => null);
     if (!bytes) return false;
     try {
       const before = await newestVersion(this.root, record.id);
       const entry = await saveVersion(this.root, {
         id: record.id,
-        ext: record.kind === "whiteboard" ? "canvas" : "md",
+        ext: historyExt(record.kind),
         bytes,
         version: record.updated,
         source,
@@ -6254,7 +6272,7 @@ export class VaultStore {
    * saved a version of this page in the last 30 s, the change is its.
    */
   private async versionFromOutside(record: PageRecord): Promise<void> {
-    if (record.kind !== "page" && record.kind !== "whiteboard") return;
+    if (!hasHistory(record.kind)) return;
     if (this.historySource !== "app") return;
     // #yikrbg7h: the user's last save first, then what the other program wrote.
     await this.saveSessionBytes(record.id);
@@ -6280,7 +6298,7 @@ export class VaultStore {
   private async rememberWrite(filePath: string, text: string): Promise<void> {
     if (this.historySource !== "app") return;
     const path = relative(this.root, filePath).split(sep).join("/");
-    if (!/\.(md|canvas)$/i.test(path)) return;
+    if (!/\.(md|canvas|base)$/i.test(path)) return;
     const id = this.historyRecordFor(filePath)?.id ?? path.replace(/\.md$/i, "");
     this.forgetSessionBytes(id);
     const bytes = Buffer.from(text, "utf8");
@@ -6316,7 +6334,7 @@ export class VaultStore {
       const before = await newestVersion(this.root, id);
       const entry = await saveVersion(this.root, {
         id,
-        ext: /\.canvas$/i.test(id) ? "canvas" : "md",
+        ext: /\.canvas$/i.test(id) ? "canvas" : /\.base$/i.test(id) ? "base" : "md",
         bytes,
         version: this.pages.get(id)?.updated ?? new Date().toISOString(),
         source: "app",
@@ -6332,7 +6350,7 @@ export class VaultStore {
   /** A new page or board file: an older history under its id (a deleted page's) is set aside. */
   private async freshHistory(filePath: string): Promise<void> {
     const path = relative(this.root, filePath).split(sep).join("/");
-    if (!/\.(md|canvas)$/i.test(path)) return;
+    if (!/\.(md|canvas|base)$/i.test(path)) return;
     try {
       await setAsideHistory(this.root, path.replace(/\.md$/i, ""));
     } catch (error) {

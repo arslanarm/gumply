@@ -301,6 +301,8 @@ export function createApiRoutes(store: VaultStore): Hono {
       ...(why === "undo-keep-copy" ? { undid: "keep-copy" as const } : {}),
     });
     if ("board" in result) return c.json<BoardDocument>(result);
+    // N1 (#kw8th869): a database view's restore answers its document.
+    if ("config" in result) return c.json<BaseDocument>(result);
     return c.json<Page>({ ...result, properties: (await store.pageProperties(result.id)) ?? [] });
   });
 
@@ -328,7 +330,8 @@ export function createApiRoutes(store: VaultStore): Hono {
     const body = await readJson(c);
     const file = optionalString(body, "file");
     const result = await store.restoreOrphan(c.req.param("key"), file);
-    return c.json("board" in result ? result : { ...result, properties: (await store.pageProperties(result.id)) ?? [] }, 201);
+    if ("board" in result || "config" in result) return c.json(result, 201);
+    return c.json({ ...result, properties: (await store.pageProperties(result.id)) ?? [] }, 201);
   });
 
   api.get("/history-usage", async (c) => c.json(await store.historyUsage()));
