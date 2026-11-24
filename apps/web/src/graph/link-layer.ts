@@ -44,9 +44,19 @@ export function layerContext(layer: LinkLayer): CanvasRenderingContext2D | null 
   return layer.context;
 }
 
-/** The layer's size for a main canvas of `width` × `height` device px: half, rounded up. */
-export function layerSize(width: number, height: number): { width: number; height: number } {
-  return { width: Math.max(1, Math.ceil(width / 2)), height: Math.max(1, Math.ceil(height / 2)) };
+/**
+ * The layer's resolution, as a share of the main canvas: half when zoomed out
+ * (the links are a grey mass there, and that's where the big raster is), full
+ * when zoomed in (few links on screen, so it's cheap; a half-resolution line
+ * upscaled would look soft next to the crisp dots).
+ */
+export function layerFactor(scale: number): number {
+  return scale >= 1 ? 1 : 0.5;
+}
+
+/** The layer's size for a main canvas of `width` × `height` device px, at `factor` (rounded up, never empty). */
+export function layerSize(width: number, height: number, factor = 0.5): { width: number; height: number } {
+  return { width: Math.max(1, Math.ceil(width * factor)), height: Math.max(1, Math.ceil(height * factor)) };
 }
 
 /**
@@ -86,7 +96,7 @@ export function drawLinkLayer<L extends { source: unknown; target: unknown }>(
   slotOf: (link: L) => number,
   scale: number,
 ): void {
-  const size = layerSize(main.canvas.width, main.canvas.height);
+  const size = layerSize(main.canvas.width, main.canvas.height, layerFactor(scale));
   const ctx = layerContext(layer);
   const canvas = layer.canvas;
   if (!ctx || !canvas) return;

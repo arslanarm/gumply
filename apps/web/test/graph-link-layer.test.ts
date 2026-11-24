@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupLinks, layerContext, layerSize } from "../src/graph/link-layer";
+import { groupLinks, layerContext, layerFactor, layerSize } from "../src/graph/link-layer";
 
 /** #s3sszwux (iii), from N6 c0: the half-resolution CPU link layer's size, grouping and context (the drawing itself is measured in the browser). */
 describe("the half-resolution link layer (N6 c0)", () => {
@@ -35,5 +35,14 @@ describe("the half-resolution link layer (N6 c0)", () => {
     expect(layerContext(layer)).toBe(context);
     expect(layerContext(layer)).toBe(context);
     expect(calls).toEqual([["2d", { willReadFrequently: true }]]);
+  });
+
+  it("half resolution when zoomed out, full when zoomed in (crisp lines at 3×)", () => {
+    expect(layerFactor(0.2)).toBe(0.5);
+    expect(layerFactor(0.99)).toBe(0.5);
+    expect(layerFactor(1)).toBe(1);
+    expect(layerFactor(3)).toBe(1);
+    expect(layerSize(1288, 680, layerFactor(3))).toEqual({ width: 1288, height: 680 });
+    expect(layerSize(1288, 680, layerFactor(0.3))).toEqual({ width: 644, height: 340 });
   });
 });
