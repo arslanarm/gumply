@@ -14,7 +14,8 @@ import {
   groupColorer,
   isAttachmentNodeId,
   isTagNodeId,
-  paletteIndex,
+  colouringTags,
+  tagSlot,
   type GhostNode,
 } from "./graph-model.js";
 import { useGraphSettings } from "./graph-settings.js";
@@ -31,6 +32,8 @@ export interface GraphViewProps {
   onCreatePage: (title: string) => Promise<void>;
   /** Create a page from the empty state. */
   onNewPage: () => void;
+  /** #cp7xvwjc: the vault's tag colours (from the page list), the same in every graph. */
+  tagSlots?: ReadonlyMap<string, number>;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -44,7 +47,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** Global graph view at `#graph` (spec/ux §9, D16). */
-export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: GraphViewProps) {
+export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, tagSlots }: GraphViewProps) {
   const t = useT();
   const [data, setData] = useState<GraphData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
@@ -120,9 +123,18 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   const colorOf = useMemo(() => {
     const group = groupColorer(groups ?? []);
     return (node: GraphNode, palette: readonly string[]) =>
-      group(node) ?? (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null);
-  }, [groups]);
+      group(node) ??
+      (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null) ??
+      (node.tags[0] ? (palette[tagSlot(node.tags[0], tagSlots)] ?? null) : null);
+  }, [groups, tagSlots]);
   const legendGroups = useMemo(() => (groups ?? []).filter((group) => group.query.trim().length > 0), [groups]);
+  // #cp7xvwjc: the tags that colour nodes here (not those a group or the attachment colour overrides),
+  // most nodes first, from the unfiltered model so a search never changes the rows.
+  const legendTags = useMemo(() => {
+    if (!model) return [];
+    const group = groupColorer(groups ?? []);
+    return colouringTags(model.nodes.filter((node) => !isAttachmentNodeId(node.id) && !group(node))).slice(0, 8);
+  }, [model, groups]);
 
   /** Tag nodes search for their tag; attachment nodes open the file. */
   const openNode = (id: string) => {
@@ -369,14 +381,15 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
                 {t("graph.legendIcon")}
               </p>
             ) : null}
-            {(data?.tags ?? []).length > 0 ? (
+            {legendTags.length > 0 ? (
               <p className="graph-legend-caption">{t("graph.legendColour")}</p>
             ) : null}
-            {(data?.tags ?? []).slice(0, 8).map((tag) => (
-              <p key={tag} className="graph-legend-row graph-legend-tag">
+            {/* #cp7xvwjc: the tags that colour nodes, most nodes first, in the colour drawn. */}
+            {legendTags.map((tag) => (
+              <p key={tag} className="graph-legend-row graph-legend-tag" data-testid="graph-legend-tag" data-tag={tag}>
                 <span
                   className="graph-legend-dot"
-                  style={{ background: `var(--graph-${paletteIndex(tag)})` }}
+                  style={{ background: `var(--graph-${tagSlot(tag, tagSlots)})` }}
                   aria-hidden="true"
                 />
                 #{tag}
