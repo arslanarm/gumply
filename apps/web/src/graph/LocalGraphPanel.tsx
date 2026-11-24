@@ -7,8 +7,6 @@ import {
   ATTACHMENT_PALETTE_INDEX,
   attachmentPath,
   buildGraphModel,
-  rememberedGraphTagSlots,
-  tagColorSlots,
   tagSlot,
   filterGraph,
   groupColorer,
@@ -26,6 +24,8 @@ export interface LocalGraphPanelProps {
   onClose: () => void;
   /** A tab of the right-hand column (v0.8 D1): the column has the title and the close button. */
   embedded?: boolean;
+  /** #cp7xvwjc: the vault's tag colours (from the page list), the same as the global graph's. */
+  tagSlots?: ReadonlyMap<string, number>;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -47,7 +47,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** Collapsible right-hand graph for the current page (spec/ux §9). */
-export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, embedded = false }: LocalGraphPanelProps) {
+export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, embedded = false, tagSlots }: LocalGraphPanelProps) {
   const t = useT();
   const [depth, setDepth] = useState<Depth>(readDepth);
   const [data, setData] = useState<GraphData | null>(null);
@@ -88,8 +88,6 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
   }, [load, settingsReady]);
 
   const model = useMemo(() => (data ? buildGraphModel(data) : null), [data]);
-  // #cp7xvwjc: the global graph's tag colours if it was opened this session, else this graph's own.
-  const tagSlots = useMemo(() => (model ? (rememberedGraphTagSlots() ?? tagColorSlots(model.nodes)) : undefined), [model]);
   // The search box and Orphans are about the whole vault: here only tags,
   // attachments and "existing files only" apply, so the page itself always stays.
   const filtered = useMemo(

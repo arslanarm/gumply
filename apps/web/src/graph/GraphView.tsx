@@ -15,8 +15,6 @@ import {
   isAttachmentNodeId,
   isTagNodeId,
   colouringTags,
-  rememberGraphTagSlots,
-  tagColorSlots,
   tagSlot,
   type GhostNode,
 } from "./graph-model.js";
@@ -34,6 +32,8 @@ export interface GraphViewProps {
   onCreatePage: (title: string) => Promise<void>;
   /** Create a page from the empty state. */
   onNewPage: () => void;
+  /** #cp7xvwjc: the vault's tag colours (from the page list), the same in every graph. */
+  tagSlots?: ReadonlyMap<string, number>;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -47,7 +47,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** Global graph view at `#graph` (spec/ux §9, D16). */
-export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: GraphViewProps) {
+export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, tagSlots }: GraphViewProps) {
   const t = useT();
   const [data, setData] = useState<GraphData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
@@ -94,12 +94,6 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
   }, [wantAttachments, data]);
 
   const model = useMemo(() => (data ? buildGraphModel(data) : null), [data]);
-  // #cp7xvwjc: distinct colours for the tags in this graph (unfiltered, so a search never recolours).
-  const tagSlots = useMemo(() => (model ? tagColorSlots(model.nodes) : undefined), [model]);
-  useEffect(() => {
-    if (tagSlots) rememberGraphTagSlots(tagSlots);
-  }, [tagSlots]);
-  const legendTags = useMemo(() => (model ? colouringTags(model.nodes).slice(0, 8) : []), [model]);
   const filters = settings?.filters;
   const filtered = useMemo(
     () =>
@@ -134,6 +128,13 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage }: 
       (node.tags[0] ? (palette[tagSlot(node.tags[0], tagSlots)] ?? null) : null);
   }, [groups, tagSlots]);
   const legendGroups = useMemo(() => (groups ?? []).filter((group) => group.query.trim().length > 0), [groups]);
+  // #cp7xvwjc: the tags that colour nodes here (not those a group or the attachment colour overrides),
+  // most nodes first, from the unfiltered model so a search never changes the rows.
+  const legendTags = useMemo(() => {
+    if (!model) return [];
+    const group = groupColorer(groups ?? []);
+    return colouringTags(model.nodes.filter((node) => !isAttachmentNodeId(node.id) && !group(node))).slice(0, 8);
+  }, [model, groups]);
 
   /** Tag nodes search for their tag; attachment nodes open the file. */
   const openNode = (id: string) => {

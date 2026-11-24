@@ -44,6 +44,8 @@ import { UndoToast } from "./components/UndoToast.js";
 import type { SaveState } from "./editor/autosave.js";
 // Graph and dialogs load on demand (#evh35bn7).
 import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, TemplateGallery, preloadWhenIdle } from "./lazy-parts.js";
+// Only the small colour helpers (core and i18n): the graph itself stays lazy.
+import { firstTagCounts, firstTagCountsKey, tagColorSlotsFromCounts } from "./graph/graph-model.js";
 import type { BoardTemplateId } from "./board/templates.js";
 import { idFromVaultPath, isBoard, isBoardId, newBoardTitle, vaultPathOf } from "./lib/boards.js";
 import { isBase, isBaseId, newBaseTitle } from "./lib/bases.js";
@@ -435,6 +437,12 @@ export function App() {
       .then((health) => setVaultPath(health.vaultPath))
       .catch(() => undefined);
   }, []);
+  // #cp7xvwjc: one set of tag colours for every graph, from the vault's page list (each page's first
+  // tag, as the graph colours it). Keyed on the counts, so a new list with the same tags keeps them.
+  const tagCounts = useMemo(() => firstTagCounts(pages), [pages]);
+  const tagCountsKey = useMemo(() => firstTagCountsKey(tagCounts), [tagCounts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tagSlots = useMemo(() => tagColorSlotsFromCounts(tagCounts), [tagCountsKey]);
   const shownTitle = graphOpen ? t("graph.title") : (page?.title ?? selectedFolder?.title ?? null);
   useEffect(() => {
     document.title = windowTitle({ page: shownTitle, vaultPath });
@@ -2620,6 +2628,7 @@ export function App() {
             </div>
           ) : graphOpen ? (
             <GraphView
+              tagSlots={tagSlots}
               highlightId={lastPageId}
               onOpenPage={handleOpen}
               onCreatePage={handleGraphCreatePage}
@@ -2901,6 +2910,7 @@ export function App() {
             outline={<OutlinePane pageId={page.id} source={outlineSource} />}
             graph={
               <LocalGraphPanel
+                tagSlots={tagSlots}
                 embedded
                 pageId={page.id}
                 onOpenPage={handleOpen}
