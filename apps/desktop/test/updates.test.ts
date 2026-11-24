@@ -215,6 +215,33 @@ describe("UpdateController policy", () => {
     expect(instance.getState()).toMatchObject({ status: "available", version: "0.9.1", error: expect.stringContaining("sha512 checksum mismatch") });
   });
 
+  it("a second download that joins one already failing (electron-updater's \"already in progress\") isn't left stuck on downloading", async () => {
+    // The tag build's log: one "error" (handled: available), then a second update-available started
+    // another download, whose downloadUpdate() returned the same in-flight promise; that promise then
+    // rejected without a second "error" event.
+    const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage" });
+    let fail: (error: Error) => void = () => {};
+    const inFlight = new Promise<unknown>((_, reject) => {
+      fail = reject;
+    });
+    inFlight.catch(() => undefined);
+    updater.downloadUpdate.mockImplementation(() => inFlight);
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    await instance.check(true); // download #1 starts
+    const error = new Error("sha512 checksum mismatch");
+    updater.emit("error", error); // electron-updater dispatches it once, in the first call's catch
+    expect(instance.getState().status).toBe("available");
+    updater.emit("update-available", { version: "0.9.1" }); // a second check: download #2 joins the in-flight promise
+    expect(instance.getState().status).toBe("downloading");
+    fail(error); // ...which then rejects, with no second "error"
+    await vi.waitFor(() => expect(instance.getState().status).toBe("available"));
+    expect(instance.getState().error).toContain("sha512 checksum mismatch");
+    expect(updater.downloadUpdate).toHaveBeenCalledTimes(2);
+  });
+
   it("a download that rejects and also emits \"error\" ends the same way, once", async () => {
     const log = vi.fn();
     const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage", log });
