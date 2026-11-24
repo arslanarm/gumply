@@ -3,9 +3,10 @@ import { groupLinks, layerContext, layerSize } from "../src/graph/link-layer";
 
 /** #s3sszwux (iii), from N6 c0: the half-resolution CPU link layer's size, grouping and context (the drawing itself is measured in the browser). */
 describe("the half-resolution link layer (N6 c0)", () => {
-  it("is half the main canvas, rounded up, never empty", () => {
-    expect(layerSize(1288, 680)).toEqual({ width: 644, height: 340 });
-    expect(layerSize(1289, 681)).toEqual({ width: 645, height: 341 });
+  it("is the main canvas's size by default (the links look as force-graph drew them); a factor scales it, rounded up, never empty", () => {
+    expect(layerSize(1288, 680)).toEqual({ width: 1288, height: 680 });
+    expect(layerSize(1288, 680, 0.5)).toEqual({ width: 644, height: 340 });
+    expect(layerSize(1289, 681, 0.5)).toEqual({ width: 645, height: 341 });
     expect(layerSize(0, 0)).toEqual({ width: 1, height: 1 });
   });
 

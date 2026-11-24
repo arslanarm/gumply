@@ -717,6 +717,8 @@ export function GraphCanvas({
       },
       zoom: () => graphRef.current?.zoom() ?? 1,
       hovered: () => hoveredRef.current,
+      // #s3sszwux (iii): the link layer's last draw (slots: idle, idle dashed, active, active dashed, faded, faded dashed).
+      linkLayer: () => lastLayerDrawRef.current,
     };
     return () => {
       delete registry[testId];
@@ -1217,6 +1219,8 @@ export function GraphCanvas({
   // colours, widths and dashes as force-graph's own drawing below; it draws none.
   const bigLinks = nodes.length > STREAM_MAX_NODES;
   const layerRef = useRef<LinkLayer>({ canvas: null });
+  /** The last layer draw, for the dev probe: links per slot, and the hover and scale it drew with. */
+  const lastLayerDrawRef = useRef<{ slots: number[]; hoveredId: string | null; scale: number } | null>(null);
   const onFramePre = useCallback(
     (ctx: CanvasRenderingContext2D, scale: number) => {
       // Slots: idle, active (the hovered node's), faded (the rest while hovering); each solid or dashed.
@@ -1234,7 +1238,8 @@ export function GraphCanvas({
         const touches = endpointId(link.source) === hoveredId || endpointId(link.target) === hoveredId;
         return (touches ? 2 : 4) + dashed;
       };
-      drawLinkLayer(ctx, layerRef.current, graphData.links as Array<LinkObject<CanvasNode, GraphLink>>, styles, slotOf, scale);
+      const slots = drawLinkLayer(ctx, layerRef.current, graphData.links as Array<LinkObject<CanvasNode, GraphLink>>, styles, slotOf, scale);
+      lastLayerDrawRef.current = { slots, hoveredId, scale };
     },
     [linkPaint, hoveredId, graphData],
   );

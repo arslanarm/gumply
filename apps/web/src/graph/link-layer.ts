@@ -44,9 +44,18 @@ export function layerContext(layer: LinkLayer): CanvasRenderingContext2D | null 
   return layer.context;
 }
 
-/** The layer's size for a main canvas of `width` × `height` device px: half, rounded up. */
-export function layerSize(width: number, height: number): { width: number; height: number } {
-  return { width: Math.max(1, Math.ceil(width / 2)), height: Math.max(1, Math.ceil(height / 2)) };
+/**
+ * The layer's resolution as a share of the main canvas. 1: the same pixels, so
+ * the links look exactly as force-graph drew them (half resolution made the
+ * grey mass lighter at fit and the lines soft when zoomed in, #s3sszwux). The
+ * stall fix is the links being off force-graph's composited canvas, drawn on a
+ * CPU canvas and copied as one image, not the lower resolution (to confirm).
+ */
+export const LINK_LAYER_FACTOR = 1;
+
+/** The layer's size for a main canvas of `width` × `height` device px, at `factor` (rounded up, never empty). */
+export function layerSize(width: number, height: number, factor = LINK_LAYER_FACTOR): { width: number; height: number } {
+  return { width: Math.max(1, Math.ceil(width * factor)), height: Math.max(1, Math.ceil(height * factor)) };
 }
 
 /**
@@ -85,11 +94,11 @@ export function drawLinkLayer<L extends { source: unknown; target: unknown }>(
   styles: readonly LinkSlotStyle[],
   slotOf: (link: L) => number,
   scale: number,
-): void {
+): number[] {
   const size = layerSize(main.canvas.width, main.canvas.height);
   const ctx = layerContext(layer);
   const canvas = layer.canvas;
-  if (!ctx || !canvas) return;
+  if (!ctx || !canvas) return [];
   if (canvas.width !== size.width) canvas.width = size.width;
   if (canvas.height !== size.height) canvas.height = size.height;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -119,4 +128,6 @@ export function drawLinkLayer<L extends { source: unknown; target: unknown }>(
   main.imageSmoothingEnabled = true;
   main.drawImage(canvas, 0, 0, main.canvas.width, main.canvas.height);
   main.restore();
+  // How many links each slot drew (for the dev probe).
+  return groups.map((coords) => coords.length / 4);
 }
