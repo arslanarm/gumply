@@ -159,6 +159,35 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(((await page.json()) as PageMeta).id).toBe("Work 2");
   });
 
+  it("creates a database that owns its rows folder (#7prbquxu): People.base next to an empty People/", async () => {
+    const { app, dir } = await vault({ ...files, "Team/People.md": "A page already named People\n" });
+    const response = await jsonRequest(app, "POST", "/api/bases", { title: "People", parentId: "Projects", rows: true, source: { folder: "Elsewhere" } });
+    expect(response.status).toBe(201);
+    const created = (await response.json()) as { meta: PageMeta };
+    expect(created.meta).toMatchObject({ id: "Projects/People.base", kind: "base", title: "People" });
+    // The marker and the folder's own pages; `source` is ignored.
+    expect(await readFile(join(dir, "Projects/People.base"), "utf8")).toBe(
+      'gumply:\n  rows: Projects/People\nfilters:\n  and:\n    - file.folder == "Projects/People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n',
+    );
+    expect(await readdir(join(dir, "Projects/People"))).toEqual([]);
+    // The empty folder is in the tree right away, under the base's parent.
+    const listed = await getJson<PageMeta[]>(app, "/api/pages");
+    expect(listed.find((meta) => meta.id === "Projects/People")).toMatchObject({ kind: "folder", parentId: "Projects" });
+
+    // A name taken as a page (with its sub-page folder) or as a folder: both get the next free name.
+    const second = (await (await jsonRequest(app, "POST", "/api/bases", { title: "People", parentId: "Projects", rows: true })).json()) as { meta: PageMeta };
+    expect(second.meta.id).toBe("Projects/People 2.base");
+    await mkdir(join(dir, "Team/People"), { recursive: true });
+    const third = (await (await jsonRequest(app, "POST", "/api/bases", { title: "People", parentId: "Team", rows: true })).json()) as { meta: PageMeta };
+    expect(third.meta.id).toBe("Team/People 2.base");
+    expect(parseBase(await readFile(join(dir, "Team/People 2.base"), "utf8")).filters).toEqual({ and: ['file.folder == "Team/People 2"'] });
+
+    // A new row made in the folder is in the table.
+    await jsonRequest(app, "POST", "/api/pages", { title: "Ada", parentId: "Projects/People" });
+    const view = await getJson<BaseViewResult>(app, `/api/bases/${encodeId("Projects/People.base")}/view`);
+    expect(view.rows.map((row) => row.title)).toEqual(["Ada"]);
+  });
+
   it("saves only what changed, conditionally", async () => {
     const { app, dir } = await vault(files);
     const id = encodeId("Projects/Tasks.base");

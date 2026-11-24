@@ -470,6 +470,7 @@ export function createApiRoutes(store: VaultStore): Hono {
         folder: typeof source.folder === "string" ? source.folder : null,
         ...(typeof source.tag === "string" ? { tag: source.tag } : {}),
       },
+      ...(body.rows === true ? { rows: true } : {}),
     });
     return c.json<BaseDocument>(base, 201);
   });

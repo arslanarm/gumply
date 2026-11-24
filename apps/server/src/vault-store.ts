@@ -298,6 +298,12 @@ export interface CreateBaseInput {
   title: string;
   parentId?: string | null;
   source?: { folder?: PageId | null; tag?: string };
+  /**
+   * #7prbquxu (spec/database-tables §1): a database that owns its rows folder: the
+   * folder is made next to the `.base` with the same name, and the base reads that
+   * folder's own pages. `source` is ignored.
+   */
+  rows?: boolean;
 }
 
 export interface UpdateBaseInput {
@@ -3485,6 +3491,23 @@ export class VaultStore {
     const source = input.source && typeof input.source === "object" ? input.source : {};
     const folder = typeof source.folder === "string" && isValidPageId(source.folder) ? source.folder : null;
     const tag = typeof source.tag === "string" && source.tag.trim() ? source.tag.trim() : undefined;
+
+    if (input.rows === true) {
+      // A name free as a page, a board, a base and a folder: "People.base" next to "People/".
+      const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
+      const id = await this.freeTarget(childPageId(parentId, title), true, taken, "base");
+      const rows = id.slice(0, -idExtension("base").length);
+      this.redirects.delete(id);
+      const filePath = this.filePathFor(id);
+      await mkdir(join(this.root, rows), { recursive: true });
+      await writeFile(filePath, newBaseSource({ rows }), { encoding: "utf8", flag: "wx" });
+      const record = await this.readBaseRecord(filePath, id);
+      record.parentId = parentId;
+      this.pages.set(id, record);
+      await this.syncFolders();
+      this.reindexAll();
+      return this.getBase(id);
+    }
 
     const id = await this.freeId(childPageId(parentId, title), "base");
     this.redirects.delete(id);

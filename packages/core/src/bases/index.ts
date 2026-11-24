@@ -3,6 +3,7 @@ export {
   BaseParseError,
   GUMPLY_VIEW_TYPES,
   newBaseSource,
+  ownedRowsFolder,
   parseBase,
   updateBaseSource,
   type BaseConfig,
