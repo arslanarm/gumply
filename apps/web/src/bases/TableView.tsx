@@ -12,7 +12,7 @@ import { useT, type MessageKey } from "../i18n/index.js";
 import { PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
 import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
-import { propertyId } from "@gumply/core";
+import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
 import { BaseText } from "./values.js";
 import { formatDateValue } from "../lib/dates.js";
@@ -193,7 +193,9 @@ export function TableView(props: TableViewProps) {
                 <span className="base-count" data-testid="base-count">
                   {result.total > result.rows.length
                     ? t("bases.shownOf", { shown: result.rows.length, total: result.total })
-                    : t("bases.rows", { count: result.total })}
+                    : ownedRowsFolder(config)
+                      ? t("bases.tableRows", { count: result.total })
+                      : t("bases.rows", { count: result.total })}
                 </span>
               ) : null}
               {result.summaries?.[column.id] !== undefined ? (
