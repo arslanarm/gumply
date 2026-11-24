@@ -11,26 +11,31 @@ import { E2E_VAULT } from './support/env';
  */
 const ORIGINAL = '# my view, kept as written\nviews:\n  - type: table\n    name:   Tasks\n    order: [file.name]\n';
 
-test('a database view: History… previews its YAML, shows the changes, and restores the exact bytes', async ({ page, request }) => {
-  const file = path.join(E2E_VAULT, 'Tasks.base');
+test('a database view: History… previews its YAML, shows the changes, and restores the exact bytes', async ({ page, request, vault }) => {
+  await vault.reset();
+  // Written to disk as is (a comment and spacing a round trip would lose), under a name of its
+  // own: a file reappearing outside Gumply at a path with history is "recreated" (D41), and keeps it.
+  const name = `Tasks ${Date.now().toString(36)}`;
+  const id = `${name}.base`;
+  const file = path.join(E2E_VAULT, id);
   await writeFile(file, ORIGINAL);
-  await expect.poll(async () => (await request.get('/api/bases/Tasks.base')).status(), { timeout: 15_000 }).toBe(200);
+  await expect.poll(async () => (await request.get(`/api/bases/${encodeURIComponent(id)}`)).status(), { timeout: 15_000 }).toBe(200);
 
   // A save from the view (as the view's own controls make): the old bytes go into history first.
-  const before = await (await request.get('/api/bases/Tasks.base')).json();
+  const before = await (await request.get(`/api/bases/${encodeURIComponent(id)}`)).json();
   const config = { ...before.config, views: before.config.views.map((view: { name: string }, i: number) => (i === 0 ? { ...view, name: 'Renamed' } : view)) };
-  const saved = await request.put('/api/bases/Tasks.base', { data: { config, expectedUpdated: before.meta.updated } });
+  const saved = await request.put(`/api/bases/${encodeURIComponent(id)}`, { data: { config, expectedUpdated: before.meta.updated } });
   expect(saved.ok()).toBe(true);
   expect(await readFile(file, 'utf8')).not.toBe(ORIGINAL);
 
   // The view is open while its history is restored: it must show the restored version at once.
-  await page.goto('/#/Tasks.base');
+  await page.goto(`/#/${encodeURIComponent(id)}`);
   const tabs = page.getByTestId('base-view').getByRole('tablist');
   await expect(tabs).toContainText('Renamed');
-  await page.getByTestId('page-item-Tasks.base').hover();
-  await page.getByTestId('page-menu-button-Tasks.base').click();
-  await expect(page.getByTestId('page-menu-Tasks.base').getByRole('menuitem', { name: 'History…' })).toBeVisible();
-  await page.getByTestId('page-history-Tasks.base').click();
+  await page.getByTestId(`page-item-${id}`).hover();
+  await page.getByTestId(`page-menu-button-${id}`).click();
+  await expect(page.getByTestId(`page-menu-${id}`).getByRole('menuitem', { name: 'History…' })).toBeVisible();
+  await page.getByTestId(`page-history-${id}`).click();
 
   const dialog = page.getByTestId('history-dialog');
   await expect(dialog).toBeVisible();
