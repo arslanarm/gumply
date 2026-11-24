@@ -376,19 +376,32 @@ test('a file that fails its sha512: never installed, N untouched', async () => {
   // 913ee46 Linux re-run). Wait for it to settle: the update back on offer, never "ready".
   // On b5bc371 the status stuck on "downloading" for good, so this times out there.
   const notice = page.getByTestId('update-notice');
+  // The controller's own state, fetched from inside the page (same origin, as the app does).
+  const updateState = () =>
+    page.evaluate(() => fetch('/api/desktop/updates').then((r) => r.json())).catch(() => null) as Promise<{ status?: string; error?: string | null } | null>;
+  // Settled = back on offer **with the failure's error**. The "available" pushed just before the
+  // download starts has no error yet, so waiting on the label alone could match it (@opus-hunter).
+  let lastSeen: { status?: string; error?: string | null } | null = null;
   try {
-    await expect(notice).toHaveAttribute('data-status', /^(available|verify-failed|install-failed)$/, { timeout: 90_000 });
+    await expect
+      .poll(async () => {
+        lastSeen = await updateState();
+        return `${lastSeen?.status}|${lastSeen?.error ? 'error' : 'none'}`;
+      }, { timeout: 90_000 })
+      .toMatch(/^(available|verify-failed|install-failed)\|error$/);
   } catch (error) {
     // Say which state it's in: still downloading, a silent "error"/"up to date" (no notice), or no sidebar.
     const sidebar = await page.getByTestId('sidebar').isVisible().catch(() => false);
-    const shown = await notice.getAttribute('data-status').catch(() => null);
-    throw new Error(`The update didn't settle back on offer: Check now said "${checked}", the sidebar is ${sidebar ? 'visible' : 'not visible'}, the notice is ${shown ?? 'not shown'}. App log:\n${appLog.slice(-2000)}`, { cause: error });
+    const shown = await notice.getAttribute('data-status', { timeout: 1_000 }).catch(() => null);
+    throw new Error(`The update didn't settle back on offer: Check now said "${checked}", the controller is ${JSON.stringify(lastSeen)}, the sidebar is ${sidebar ? 'visible' : 'not visible'}, the notice is ${shown ?? 'not shown'}. App log:\n${appLog.slice(-2000)}`, { cause: error });
   }
-  const settled = await notice.getAttribute('data-status');
+  const settled = `${(lastSeen as { status?: string } | null)?.status} (${String((lastSeen as { error?: string | null } | null)?.error).slice(0, 40)})`;
   // It did download N+1 (so the refusal is the sha512 check, not a missing file).
   expect(feedRequests.some((name) => /\.(AppImage|exe)$/.test(name))).toBe(true);
+  // Never "ready", over a few more seconds: neither the controller nor the notice (an absent notice is fine).
   await page.waitForTimeout(2_000);
-  await expect(page.getByTestId('update-notice')).not.toHaveAttribute('data-status', 'ready');
+  expect((await updateState())?.status).not.toBe('ready');
+  expect(await notice.getAttribute('data-status', { timeout: 1_000 }).catch(() => null)).not.toBe('ready');
   await quitApp();
   expect(sha512(installed)).toBe(before);
   if (isWindows) expect(installedVersion()).toBe(oldVersion);
