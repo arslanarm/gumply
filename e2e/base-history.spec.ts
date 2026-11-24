@@ -23,7 +23,10 @@ test('a database view: History… previews its YAML, shows the changes, and rest
   expect(saved.ok()).toBe(true);
   expect(await readFile(file, 'utf8')).not.toBe(ORIGINAL);
 
-  await page.goto('/');
+  // The view is open while its history is restored: it must show the restored version at once.
+  await page.goto('/#/Tasks.base');
+  const tabs = page.getByTestId('base-view').getByRole('tablist');
+  await expect(tabs).toContainText('Renamed');
   await page.getByTestId('page-item-Tasks.base').hover();
   await page.getByTestId('page-menu-button-Tasks.base').click();
   await expect(page.getByTestId('page-menu-Tasks.base').getByRole('menuitem', { name: 'History…' })).toBeVisible();
@@ -49,4 +52,7 @@ test('a database view: History… previews its YAML, shows the changes, and rest
   await expect.poll(() => readFile(file, 'utf8'), { timeout: 10_000 }).toBe(ORIGINAL);
   await expect(versions.filter({ hasText: 'Before restore' })).toHaveCount(1);
   await dialog.getByTestId('history-close').click();
+  // The open view took the restored version without a reload or the next poll.
+  await expect(tabs).toContainText('Tasks', { timeout: 3_000 });
+  await expect(tabs).not.toContainText('Renamed');
 });
