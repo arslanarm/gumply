@@ -234,4 +234,15 @@ describe("altLiteral survives HTML (copy and paste)", () => {
     expect(imageWidthOf(back)).toBe(300);
     expect(imageCaptionOf(back)).toBe("Cap");
   });
+
+  it("a file's escaped caption «A|301» stays a caption through a copy and paste (@opus-editor's re-read)", () => {
+    const fromFile = { src: "a.png", alt: "A|301", title: null, altLiteral: false, markdownRaw: "![A\\|301](a.png)", markdownRawKey: rawKey("a.png", "A|301", null) };
+    expect(imageWidthOf(fromFile)).toBeNull();
+    const html = altLiteralAttribute.renderHTML(fromFile);
+    expect(html).toEqual({ "data-alt-literal": "true" });
+    // The raw text isn't in the HTML, so the copy has only the mark to go by.
+    const copy = { src: "a.png", alt: "A|301", altLiteral: altLiteralAttribute.parseHTML(withHas({ alt: "A|301", ...(html as Record<string, string>) })) };
+    expect(imageWidthOf(copy)).toBeNull();
+    expect(imageCaptionOf(copy)).toBe("A|301");
+  });
 });

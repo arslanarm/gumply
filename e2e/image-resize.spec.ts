@@ -277,6 +277,25 @@ test('a copied and pasted sized image keeps its width', async ({ page, request, 
   await saved(request, 'Sized paste', (text) => text.split('![Cap|300](attachments/wide.svg)').length === 3);
 });
 
+test('a copied and pasted file caption «A\\|301» stays a caption', async ({ page, request, vault, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  addImage();
+  await vault.seed([{ title: 'Escaped paste', content: 'Intro\n\n![A\\|301](attachments/wide.svg)\n\nAfter' }]);
+  await open(page, 'Escaped paste');
+  await expect(page.getByTestId('image-block').first()).not.toHaveAttribute('data-width');
+  await page.getByTestId('image-block-img').click();
+  await page.keyboard.press('ControlOrMeta+c');
+  await page.getByTestId('editor-content').getByText('After', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+v');
+  await expect(page.getByTestId('image-block')).toHaveCount(2);
+  await expect(page.getByTestId('image-block').nth(1)).not.toHaveAttribute('data-width');
+  await expect(page.getByTestId('image-caption').nth(1)).toHaveValue('A|301');
+  const after = await saved(request, 'Escaped paste', (text) => text.split('![A\\|301](attachments/wide.svg)').length === 3);
+  expect(after).not.toMatch(/!\[A\|301\]/);
+});
+
 test('an image block moves with ⋮⋮ like any block', async ({ page, request, vault }) => {
   addImage();
   await vault.seed([{ title: 'Image drag', content: 'First\n\n![Pic](attachments/wide.svg)\n\nLast' }]);

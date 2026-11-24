@@ -188,12 +188,13 @@ export const altLiteralAttribute = {
     if (element.hasAttribute?.("data-md-raw")) return false;
     return SIZE.test(element.getAttribute("alt") ?? "");
   },
-  renderHTML: (attributes: Record<string, unknown>) =>
-    attributes.altLiteral === true
-      ? { "data-alt-literal": "true" }
-      : SIZE.test(String(attributes.alt ?? ""))
-        ? { "data-alt-literal": "false" }
-        : {},
+  // The effective reading (`altParts`): a file's `![A\|301]` is a caption through its kept raw
+  // text, which the HTML doesn't carry, so the mark has to say it (@opus-editor's re-read).
+  renderHTML: (attributes: Record<string, unknown>) => {
+    if (attributes.altLiteral === true) return { "data-alt-literal": "true" };
+    if (!SIZE.test(String(attributes.alt ?? ""))) return {};
+    return { "data-alt-literal": altParts(attributes as ImageAttrsLike).width === null ? "true" : "false" };
+  },
 };
 
 /** The attributes for a new caption the user typed, keeping the image's size as written. */
