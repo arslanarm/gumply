@@ -4297,7 +4297,7 @@ export class VaultStore {
     }
     // D20: each page's history follows it.
     for (const { oldId, record: value } of moved) {
-      if (value.kind === "page" || value.kind === "whiteboard") await this.followHistory(oldId, value.id);
+      if (hasHistory(value.kind)) await this.followHistory(oldId, value.id);
     }
 
     await this.syncFolders();
@@ -5153,7 +5153,7 @@ export class VaultStore {
     }
     // D20: each page's history follows it.
     for (const { oldId, record: value } of moved) {
-      if (value.kind === "page" || value.kind === "whiteboard") await this.followHistory(oldId, value.id);
+      if (hasHistory(value.kind)) await this.followHistory(oldId, value.id);
     }
     await this.syncFolders();
 
