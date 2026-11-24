@@ -7,6 +7,9 @@ import {
   nearestStep,
   splitAltWidth,
   steppedWidth,
+  altParts,
+  imageCaptionOf,
+  imageWidthOf,
   widthPatch,
 } from "../src/editor/attachments/image-width";
 import { rawKey } from "../src/editor/attachments/image-raw";
@@ -102,5 +105,36 @@ describe("keyboard steps from an image with no width start at its drawn width", 
 
   it("a picture as wide as the column is at 100%: Shift+→ stays (no size)", () => {
     expect(steppedWidth(700, 700, 1)).toBeNull();
+  });
+});
+
+describe("an escaped pipe in the text as written is a caption, not a width (#3zpgenmw)", () => {
+  const image = (raw: string, alt: string) => ({ src: "a.png", alt, title: null, markdownRaw: raw, markdownRawKey: rawKey("a.png", alt, null) });
+
+  it("![A\\|300](a.png): no width, whichever way the alt was read", () => {
+    // After #3zpgenmw the escape is kept ("A|300"); before it, it was lost ("A300"). Neither is a width.
+    for (const alt of ["A|300", "A300"]) {
+      const attrs = image("![A\\|300](a.png)", alt);
+      expect(imageWidthOf(attrs)).toBeNull();
+      expect(imageCaptionOf(attrs)).toBe(alt);
+    }
+  });
+
+  it("an unescaped |N is a width; an escaped backslash before it doesn't escape the pipe", () => {
+    expect(imageWidthOf(image("![A|300](a.png)", "A|300"))).toBe(300);
+    expect(altParts(image("![A\\\\|300](a.png)", "A\\|300"))).toEqual({ text: "A\\", width: 300, size: "300" });
+  });
+
+  it("with no text as written (made in the editor), the alt decides", () => {
+    expect(imageWidthOf({ src: "a.png", alt: "A|300" })).toBe(300);
+  });
+
+  it("resizing a caption with an escaped pipe keeps it a caption", () => {
+    const attrs = image("![A\\|300](a.png)", "A|300");
+    const patch = widthPatch(attrs, 200);
+    expect(patch).toEqual({ alt: "A|300|200", markdownRaw: "![A\\|300|200](a.png)", markdownRawKey: rawKey("a.png", "A|300|200", null) });
+    const resized = { ...attrs, ...patch };
+    expect(imageWidthOf(resized)).toBe(200);
+    expect(imageCaptionOf(resized)).toBe("A|300");
   });
 });

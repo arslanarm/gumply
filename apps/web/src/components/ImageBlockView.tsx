@@ -51,8 +51,10 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
   };
 
   useEffect(() => {
-    setCaption(imageCaptionOf({ alt }));
+    setCaption(imageCaptionOf(node.attrs));
     setFailed(false);
+    // `alt` and `src` are what changes the caption; the rest of the attrs follow them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alt, src]);
 
   // A width set while the image is selected (a handle, or Shift+arrows) is announced, as the

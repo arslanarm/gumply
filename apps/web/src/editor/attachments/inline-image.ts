@@ -13,7 +13,7 @@ import { Node, mergeAttributes } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { urlForLink } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
-import { splitAltWidth } from "./image-width.js";
+import { altParts } from "./image-width.js";
 import { getWikiLinkEnvironment, subscribeWikiLinkEnvironment } from "../wikilink/link-store.js";
 
 export const INLINE_IMAGE_ATTR = "data-inline-image";
@@ -99,7 +99,7 @@ export const InlineImage = Node.create({
         dom.src =
           urlForLink(String(current.attrs.src), getWikiLinkEnvironment(), "image", current.attrs.obsidian as string | null) ?? "";
         // #e9bd64bb (D46): `![icon|16](x.png)` is 16 px wide, as in Obsidian.
-        const fromAlt = splitAltWidth(String(current.attrs.alt ?? ""));
+        const fromAlt = altParts(current.attrs);
         dom.alt = fromAlt.text;
         if (current.attrs.title) dom.title = String(current.attrs.title);
         const width = obsidianWidth(current.attrs.obsidian as string | null) ?? fromAlt.width;
@@ -143,7 +143,7 @@ export const InlineImage = Node.create({
           const src = String(node.attrs.src ?? "");
           const title = String(node.attrs.title ?? "");
           // #e9bd64bb: a size (`icon|16`) stays unescaped after the caption.
-          const { text, size } = splitAltWidth(String(node.attrs.alt ?? ""));
+          const { text, size } = altParts(node.attrs);
           state.write(
             `![${text.replace(/[[\]\\|]/g, "\\$&")}${size === null ? "" : `|${size}`}](${src.replace(/[()]/g, "\\$&")}${
               title ? ` "${title.replace(/"/g, '\\"')}"` : ""

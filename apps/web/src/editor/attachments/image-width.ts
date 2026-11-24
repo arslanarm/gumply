@@ -30,6 +30,13 @@ export function splitAltWidth(alt: string): AltWidth {
   return { text: alt.slice(0, match.index), width: Number(match[1]), size: alt.slice(match.index + 1).trim() };
 }
 
+/** Whether the character at `index` is escaped: an odd run of backslashes before it. */
+function escapedAt(text: string, index: number): boolean {
+  let slashes = 0;
+  for (let at = index - 1; at >= 0 && text[at] === "\\"; at--) slashes += 1;
+  return slashes % 2 === 1;
+}
+
 /** The alt text for `caption` at `width` (null: no size). */
 export function joinAltWidth(caption: string, width: number | null): string {
   return width === null ? caption : `${caption}|${Math.round(width)}`;
@@ -61,7 +68,7 @@ export function markdownWithWidth(markdown: string, width: number | null): strin
   const alt = match[1]!;
   const size = SIZE.exec(alt);
   // A `|` written escaped (`\|`) is part of the caption, not a size.
-  const caption = size && alt[size.index - 1] !== "\\" ? alt.slice(0, size.index) : alt;
+  const caption = size && !escapedAt(alt, size.index) ? alt.slice(0, size.index) : alt;
   const next = width === null ? caption : `${caption}|${Math.round(width)}`;
   return `![${next}](${markdown.slice(match[0].length)}`;
 }
@@ -96,15 +103,34 @@ interface ImageAttrsLike {
   markdownRawKey?: unknown;
 }
 
+/**
+ * An image's alt split into caption and size (#3zpgenmw). The parsed alt no longer shows whether
+ * a `|` was escaped: `![A\\|300](a.png)` is the caption "A|300" (how Gumply writes a caption typed
+ * that way), not a width. So while the image's text as written is current, it decides: a size only
+ * when its alt ends in an unescaped `|N`. With no such text (made in the editor), the alt as is.
+ */
+export function altParts(attrs: ImageAttrsLike): AltWidth {
+  const alt = String(attrs.alt ?? "");
+  const raw = typeof attrs.markdownRaw === "string" ? attrs.markdownRaw : "";
+  if (raw && attrs.markdownRawKey === rawKey(attrs.src, attrs.alt, attrs.title)) {
+    const written = /^!\[((?:\\.|[^\]\\])*)\]/.exec(raw)?.[1];
+    if (written !== undefined) {
+      const size = SIZE.exec(written);
+      if (!size || escapedAt(written, size.index) || Number(size[1]) === 0) return { text: alt, width: null, size: null };
+    }
+  }
+  return splitAltWidth(alt);
+}
+
 /** A block image's width in pixels (from its embed or its alt), or null. */
 export function imageWidthOf(attrs: ImageAttrsLike): number | null {
   if (typeof attrs.obsidian === "string" && attrs.obsidian) return embedWidth(attrs.obsidian);
-  return splitAltWidth(String(attrs.alt ?? "")).width;
+  return altParts(attrs).width;
 }
 
 /** A block image's caption: its alt without the size. */
 export function imageCaptionOf(attrs: ImageAttrsLike): string {
-  return splitAltWidth(String(attrs.alt ?? "")).text;
+  return altParts(attrs).text;
 }
 
 /**
@@ -126,6 +152,6 @@ export function widthPatch(attrs: ImageAttrsLike, width: number | null): Record<
 
 /** The alt for a new caption, keeping the image's size as written. */
 export function altWithCaption(attrs: ImageAttrsLike, caption: string): string {
-  const { size } = splitAltWidth(String(attrs.alt ?? ""));
+  const { size } = altParts(attrs);
   return size === null ? caption : `${caption}|${size}`;
 }

@@ -12,7 +12,7 @@ import { ImageBlockView } from "../../components/ImageBlockView.js";
 import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 import { NodeSelection } from "@tiptap/pm/state";
-import { embedWidth, imageWidthOf, splitAltWidth, steppedWidth, widthPatch } from "./image-width.js";
+import { altParts, embedWidth, imageWidthOf, steppedWidth, widthPatch } from "./image-width.js";
 import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageFigureOf, renderedImageWidth } from "./image-measure.js";
 import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
@@ -126,7 +126,7 @@ export const ImageBlock = Node.create({
           const escaped = href.replace(/[()]/g, "\\$&");
           // #e9bd64bb (D46): the width ends the alt, `![Caption|300](…)`, unescaped; an
           // embed's `|300` comes along when it becomes Markdown.
-          const { text, size } = splitAltWidth(alt);
+          const { text, size } = altParts(node.attrs);
           const embedded = node.attrs.obsidian ? embedWidth(node.attrs.obsidian as string) : null;
           const sizeText = size ?? (embedded === null ? null : String(embedded));
           state.write(
