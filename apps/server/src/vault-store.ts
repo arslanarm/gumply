@@ -1009,6 +1009,12 @@ export class VaultStore {
    * `[[Old]]`. Link resolution treats the old title and id as the renamed page
    * meanwhile (key: the new id), so backlinks, the graph and a click on
    * `[[Old]]` never see a broken link; cleared before the final reindex.
+   *
+   * Invariant: every `set` or `delete` here must be followed by `reindexAll()`
+   * (the deferred set in `rewriteLinksTo` by its rename's own reindex).
+   * `indexInSlices()` captures `linkMetas()`, which includes these aliases, once
+   * per generation, and only a `reindexAll()` bumps `indexGeneration`. A change
+   * without one leaves a running background index resolving against stale aliases.
    */
   private renameAliases = new Map<PageId, { fromId: PageId; fromTitle: string }>();
   /** Queued tasks that aren't rescans: a pending rescan waits for them (save priority, §8). */
