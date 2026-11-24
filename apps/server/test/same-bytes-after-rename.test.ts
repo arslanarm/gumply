@@ -67,6 +67,26 @@ describe("a same-bytes rewrite or a touch after Gumply's own rename is never a c
     expect(next.content).toBe("Child, edited.");
   });
 
+  for (const how of ["rewrite", "touch"] as const) {
+    it(`a page and its sub-page moved into another parent (drag, Move to…), ${how}`, async () => {
+      const { dir, store } = await vault();
+      const target = await store.create({ title: "Projects", content: "Target." });
+      const page = await store.create({ title: "Notes", content: "One." });
+      await store.create({ title: "Detail", parentId: page.id, content: "Sub." });
+      await store.update(page.id, { content: "One, saved.", expectedUpdated: page.updated });
+      const movedPage = await store.move(page.id, target.id);
+      expect(movedPage.id).toBe("Projects/Notes");
+      const movedSub = store.get("Projects/Notes/Detail");
+      await sameBytes(join(dir, "Projects", "Notes.md"), how);
+      await sameBytes(join(dir, "Projects", "Notes", "Detail.md"), how);
+      await store.rescan();
+      const next = await store.update(movedPage.id, { content: "One, edited.", expectedUpdated: movedPage.updated });
+      expect(next.content).toBe("One, edited.");
+      const nextSub = await store.update(movedSub.id, { content: "Sub, edited.", expectedUpdated: movedSub.updated });
+      expect(nextSub.content).toBe("Sub, edited.");
+    });
+  }
+
   it("a page inside a renamed plain folder (no folder page)", async () => {
     const { dir, store } = await vault();
     await mkdir(join(dir, "Inbox"));
