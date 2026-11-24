@@ -19,7 +19,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { writeAtomic } from "./temp-files.js";
 
 export const HISTORY_DIR = join(".gumply", "history");
@@ -289,6 +289,28 @@ export async function moveHistoryDir(root: string, source: string, from: string,
 export async function setAsideHistory(root: string, id: string, now = new Date()): Promise<void> {
   const dir = historyDir(root, id);
   if (existsSync(dir)) await rename(dir, `${dir}~${stamp(now)}`);
+}
+
+/**
+ * #4n2j4irt: the history a trashed item left at `id`, if a new item of that
+ * name set it aside (`<key>~<stamp>`) while it was in the Trash: the first one
+ * set aside after `trashedAt` whose newest version is the Trash's own (reason
+ * `trash`). Null when there's none, so nothing else is ever taken.
+ */
+export async function trashedItemHistory(root: string, id: string, trashedAt: string): Promise<string | null> {
+  const dir = historyDir(root, id);
+  const parent = dirname(dir);
+  const prefix = `${basename(dir)}~`;
+  const since = stamp(new Date(trashedAt));
+  const names = (await readdir(parent).catch(() => [] as string[]))
+    .filter((name) => name.startsWith(prefix) && name.slice(prefix.length) >= since)
+    .sort();
+  for (const name of names) {
+    const entries = await readIndex(join(parent, name)).catch(() => [] as HistoryEntry[]);
+    const newest = [...entries].sort(byFile).at(-1);
+    if (newest?.reason === "trash") return join(parent, name);
+  }
+  return null;
 }
 
 /**
