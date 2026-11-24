@@ -104,6 +104,8 @@ const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", 
 const LABEL_GAP_PX = 4;
 const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
+/** How long after the last pan or zoom step a big graph's links come back (#s3sszwux, from N6 B1). */
+export const GESTURE_IDLE_MS = 150;
 /** #s3sszwux (iii): force-graph draws no links for a big graph; we draw them (link-layer.ts). */
 const noForceGraphLinks = (): boolean => false;
 /** Dash for links into a "not created yet" page (graph units, as before). */
@@ -340,6 +342,29 @@ export function GraphCanvas({
   const [layoutFrame, setLayoutFrame] = useState(0);
   /** A big graph being laid out without streaming: its progress (0–1), else null. */
   const [arranging, setArranging] = useState<number | null>(null);
+  // #s3sszwux (iii) + N6 B1's e034afd (@graph-dev): above STREAM_MAX_NODES the
+  // links are hidden while the camera moves, and drawn again GESTURE_IDLE_MS
+  // after the last step, so a pan frame is the dots only. A ref, not state: the
+  // very next frame must see it (a state update lands only after that ~1 s frame).
+  const gestureRef = useRef(false);
+  // Bumped when a gesture ends: a new onRenderFramePre makes force-graph redraw with links.
+  const [linkEpoch, setLinkEpoch] = useState(0);
+  const bigGraphRef = useRef(false);
+  bigGraphRef.current = nodes.length > STREAM_MAX_NODES;
+  const gestureTimerRef = useRef(0);
+  // force-graph's onZoom: every camera change, by the user (wheel, pan, pinch,
+  // + / − / Fit) or by code (the settle's fit tween); its next frame reads the ref.
+  const markGesture = useCallback((): void => {
+    if (!bigGraphRef.current) return;
+    gestureRef.current = true;
+    window.clearTimeout(gestureTimerRef.current);
+    gestureTimerRef.current = window.setTimeout(() => {
+      gestureTimerRef.current = 0;
+      gestureRef.current = false;
+      setLinkEpoch((epoch) => epoch + 1);
+    }, GESTURE_IDLE_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(gestureTimerRef.current), []);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   /** Set once the user zooms, pans or drags: auto-fit then stops moving the camera. */
@@ -1234,9 +1259,11 @@ export function GraphCanvas({
         const touches = endpointId(link.source) === hoveredId || endpointId(link.target) === hoveredId;
         return (touches ? 2 : 4) + dashed;
       };
+      // While the camera moves, the dots only (the links return GESTURE_IDLE_MS after it rests).
+      if (gestureRef.current) return;
       drawLinkLayer(ctx, layerRef.current, graphData.links as Array<LinkObject<CanvasNode, GraphLink>>, styles, slotOf, scale);
     },
-    [linkPaint, hoveredId, graphData],
+    [linkPaint, hoveredId, graphData, linkEpoch], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return (
@@ -1308,6 +1335,7 @@ export function GraphCanvas({
             onRenderFramePost={drawNodes}
             linkVisibility={bigLinks ? noForceGraphLinks : true}
             onRenderFramePre={bigLinks ? onFramePre : undefined}
+            onZoom={markGesture}
             linkColor={linkColor}
             linkWidth={linkWidth}
             linkLineDash={linkLineDash}
