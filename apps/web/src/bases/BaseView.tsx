@@ -157,24 +157,28 @@ export function BaseView(props: BaseViewProps) {
 
   const propsRef = useRef(props);
   propsRef.current = props;
+  // The view stays mounted across a rename (App keys it by session), so the saver, made once, must
+  // always save to the current id, never the one it was made with.
+  const baseIdRef = useRef(baseId);
+  baseIdRef.current = baseId;
 
   /** Show the file as it is now (after a failed save, or a conflict without the app's save bar). */
   const reloadFromDisk = useCallback(async (fallback: BaseDocument) => {
     try {
-      const loaded = await api.getBase(baseId);
+      const loaded = await api.getBase(baseIdRef.current);
       saverRef.current?.setVersion(loaded.meta.updated);
       setDoc(loaded);
     } catch {
       setDoc(fallback);
     }
-  }, [baseId]);
+  }, []);
 
   // #ups4ikpj: saves go one at a time; a 409 keeps the user's change for the save bar's choice.
   const saverRef = useRef<BaseSaver | null>(null);
   if (saverRef.current === null) {
     saverRef.current = new BaseSaver(props.initial.meta.updated, {
       send: (config, { expectedUpdated, force }) =>
-        api.saveBase(baseId, { config, expectedUpdated, writer, ...(force ? { force: true } : {}) }),
+        api.saveBase(baseIdRef.current, { config, expectedUpdated, writer, ...(force ? { force: true } : {}) }),
       onSaved: (saved, pending) => {
         // A newer change is still on its way: keep it on screen, take only the new version.
         const next = pending ? { ...docRef.current, meta: saved.meta } : { meta: saved.meta, config: saved.config };

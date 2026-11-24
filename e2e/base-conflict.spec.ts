@@ -117,4 +117,23 @@ test.describe('a database view save meets a changed file (#ups4ikpj, D22)', () =
     await page.waitForTimeout(1000);
     expect(await read('Work/Tasks.base')).toBe(OUTSIDE);
   });
+
+  test('after renaming the open view, a change saves to the renamed file (no 404, no lost change)', async ({ page, request, vault }) => {
+    void vault;
+    await openGallery(page, request);
+    // Rename it from the sidebar while it's open.
+    await page.getByTestId('page-item-Work/Tasks.base').click();
+    await page.keyboard.press('F2');
+    await page.getByTestId('page-rename-input-Work/Tasks.base').fill('Projects');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('page-item-Work/Projects.base')).toBeVisible();
+    await expect.poll(() => fs.access(path.join(E2E_VAULT, 'Work/Projects.base')).then(() => true, () => false)).toBe(true);
+
+    await changeCardSize(page);
+    await expect.poll(() => read('Work/Projects.base')).toBe(MINE);
+    // Not recreated under the old name, and no conflict or error on the way.
+    expect(await fs.access(path.join(E2E_VAULT, 'Work/Tasks.base')).then(() => true, () => false)).toBe(false);
+    await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
+    await expect(page.locator('.banner-error[role="alert"]')).toHaveCount(0);
+  });
 });
