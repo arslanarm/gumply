@@ -128,4 +128,24 @@ test.describe('blocks move when dragged the way people drag them (#5634v3df)', (
     await saved(page);
     await expect.poll(() => lines(title)).toEqual(['First', A, 'Last']);
   });
+
+  test('selected caption text dragged into the page moves only the text, not the image', async ({ page, vault }) => {
+    const title = 'Drag the caption';
+    await vault.seed([{ title, content: 'First\n\n![Caption](attachments/a.svg)\n\nLast' }]);
+    await open(page, title);
+    const caption = page.getByTestId('image-caption');
+    await expect(caption).toHaveValue('Caption');
+    await caption.selectText();
+    const box = (await caption.boundingBox())!;
+    const last = await boxOf(page, 'Last');
+    await mouseDrag(page, { x: box.x + 12, y: box.y + box.height / 2 }, { x: last.x + last.width + 2, y: last.y + last.height / 2 });
+    await expect(page.getByTestId('editor-content')).toContainText('LastCaption');
+    await saved(page);
+    const after = lines(title);
+    // The image stays where it was (its caption may go with the text), and the text landed in "Last".
+    expect(after[0]).toBe('First');
+    expect(after[1]).toMatch(/^!\[[^\]]*\]\(attachments\/a\.svg\)$/);
+    expect(after[2]).toBe('LastCaption');
+    await expect(page.getByTestId('image-block')).toHaveCount(1);
+  });
 });

@@ -230,6 +230,9 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     const onDragStart = (event: DragEvent) => {
       if (draggingRef.current) return;
       const target = event.target instanceof Element ? event.target : null;
+      // Selected caption text dragged out stays a text drag; a resize handle
+      // (#e9bd64bb) never starts a move.
+      if (target?.closest("input, textarea, .image-resize-handle")) return;
       const nodeView = target?.closest(".node-image");
       if (!nodeView || !editor.view.dom.contains(nodeView) || !editor.isEditable) return;
       let block: BlockRef | null = null;
