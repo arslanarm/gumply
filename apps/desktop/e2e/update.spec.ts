@@ -370,12 +370,21 @@ test('a file that fails its sha512: never installed, N untouched', async () => {
   const before = sha512(installed);
   await startApp();
   feedRequests = [];
-  await checkNow(/is available|Couldn't/);
-  // "Check now" retries a download that failed in this session, and while that retry runs
-  // ("downloading") the notice isn't shown at all, so a fixed wait raced it (the 913ee46
-  // Linux re-run). Wait for the retry to settle: the update back on offer, never "ready".
+  const checked = await checkNow(/is available|Couldn't/);
+  // The notice isn't shown while a download runs ("downloading"), and Settings can read
+  // "is available" for a moment before the download starts, so a fixed wait raced it (the
+  // 913ee46 Linux re-run). Wait for it to settle: the update back on offer, never "ready".
   // On b5bc371 the status stuck on "downloading" for good, so this times out there.
-  await expect(page.getByTestId('update-notice')).toHaveAttribute('data-status', /^(available|verify-failed|install-failed)$/, { timeout: 90_000 });
+  const notice = page.getByTestId('update-notice');
+  try {
+    await expect(notice).toHaveAttribute('data-status', /^(available|verify-failed|install-failed)$/, { timeout: 90_000 });
+  } catch (error) {
+    // Say which state it's in: still downloading, a silent "error"/"up to date" (no notice), or no sidebar.
+    const sidebar = await page.getByTestId('sidebar').isVisible().catch(() => false);
+    const shown = await notice.getAttribute('data-status').catch(() => null);
+    throw new Error(`The update didn't settle back on offer: Check now said "${checked}", the sidebar is ${sidebar ? 'visible' : 'not visible'}, the notice is ${shown ?? 'not shown'}. App log:\n${appLog.slice(-2000)}`, { cause: error });
+  }
+  const settled = await notice.getAttribute('data-status');
   // It did download N+1 (so the refusal is the sha512 check, not a missing file).
   expect(feedRequests.some((name) => /\.(AppImage|exe)$/.test(name))).toBe(true);
   await page.waitForTimeout(2_000);
@@ -383,7 +392,7 @@ test('a file that fails its sha512: never installed, N untouched', async () => {
   await quitApp();
   expect(sha512(installed)).toBe(before);
   if (isWindows) expect(installedVersion()).toBe(oldVersion);
-  record('tampered', `downloaded (${feedRequests.filter((name) => /\.(AppImage|exe)$/.test(name)).length} request(s)), refused, N unchanged`);
+  record('tampered', `Check now: "${checked}"; settled ${settled}; downloaded (${feedRequests.filter((name) => /\.(AppImage|exe)$/.test(name)).length} request(s)), refused, N unchanged`);
 });
 
 for (const [mode, why] of [
