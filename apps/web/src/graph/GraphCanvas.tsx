@@ -31,7 +31,7 @@ import {
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
-import { drawLinkLayer, type LinkLayer, type LinkSlotStyle } from "./link-layer.js";
+import { drawLinksChunked, type LinkSlotStyle } from "./link-layer.js";
 import { startLayout } from "./layout-client.js";
 import { t, useT } from "../i18n/index.js";
 
@@ -1212,13 +1212,13 @@ export function GraphCanvas({
     [],
   );
 
-  // #s3sszwux (iii): above STREAM_MAX_NODES the links are drawn by us into a
-  // half-resolution CPU canvas (link-layer.ts) and copied under the dots, so the
-  // graph's canvas records one image instead of ~123k path operations (a full
-  // repaint's commit of that recording is what stalled, up to 150 s). The same
-  // colours, widths and dashes as force-graph's own drawing below; it draws none.
+  // #s3sszwux (v): above STREAM_MAX_NODES the links are drawn by us, on the
+  // graph's own canvas, in strokes of ~5k segments (link-layer.ts,
+  // drawLinksChunked) instead of force-graph's one path per colour: an
+  // experiment on whether that one huge path's raster is what occasionally
+  // stalls (up to 150 s). The same colours, widths and dashes as force-graph's
+  // own drawing below; it draws none.
   const bigLinks = nodes.length > STREAM_MAX_NODES;
-  const layerRef = useRef<LinkLayer>({ canvas: null });
   /** The last layer draw, for the dev probe: links per slot, and the hover and scale it drew with. */
   const lastLayerDrawRef = useRef<{ slots: number[]; hoveredId: string | null; scale: number } | null>(null);
   const onFramePre = useCallback(
@@ -1238,7 +1238,10 @@ export function GraphCanvas({
         const touches = endpointId(link.source) === hoveredId || endpointId(link.target) === hoveredId;
         return (touches ? 2 : 4) + dashed;
       };
-      const slots = drawLinkLayer(ctx, layerRef.current, graphData.links as Array<LinkObject<CanvasNode, GraphLink>>, styles, slotOf, scale);
+      // #s3sszwux (v): on force-graph's own canvas, in ~5k-segment strokes (not one path per colour).
+      ctx.save();
+      const slots = drawLinksChunked(ctx, graphData.links as Array<LinkObject<CanvasNode, GraphLink>>, styles, slotOf, scale);
+      ctx.restore();
       lastLayerDrawRef.current = { slots, hoveredId, scale };
     },
     [linkPaint, hoveredId, graphData],

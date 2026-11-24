@@ -131,3 +131,48 @@ export function drawLinkLayer<L extends { source: unknown; target: unknown }>(
   // How many links each slot drew (for the dev probe).
   return groups.map((coords) => coords.length / 4);
 }
+
+/** #s3sszwux (v): the most link segments one stroked path holds. */
+export const LINK_CHUNK_SEGMENTS = 5_000;
+
+/**
+ * #s3sszwux (v): the links drawn straight onto the graph's own canvas, in the
+ * main context's camera, with each slot's path split into strokes of at most
+ * `chunk` segments (force-graph strokes all of a colour's links as one path).
+ * It tests whether the size of that one path is what occasionally makes its
+ * raster pathological (a stalled and a clean run draw the very same path).
+ * Returns how many links each slot drew (for the dev probe).
+ */
+export function drawLinksChunked<L extends { source: unknown; target: unknown }>(
+  main: Pick<CanvasRenderingContext2D, "beginPath" | "moveTo" | "lineTo" | "stroke" | "setLineDash"> & {
+    strokeStyle: string | CanvasGradient | CanvasPattern;
+    lineWidth: number;
+  },
+  links: readonly L[],
+  styles: readonly LinkSlotStyle[],
+  slotOf: (link: L) => number,
+  scale: number,
+  chunk = LINK_CHUNK_SEGMENTS,
+): number[] {
+  const k = Math.max(scale, 1e-3);
+  const groups = groupLinks(links, styles.length, slotOf);
+  groups.forEach((coords, slot) => {
+    if (coords.length === 0) return;
+    const style = styles[slot]!;
+    main.strokeStyle = style.color;
+    main.lineWidth = style.width / k;
+    main.setLineDash(style.dash ? [...style.dash] : []);
+    const perChunk = Math.max(1, chunk) * 4;
+    for (let start = 0; start < coords.length; start += perChunk) {
+      main.beginPath();
+      const end = Math.min(coords.length, start + perChunk);
+      for (let i = start; i + 3 < end; i += 4) {
+        main.moveTo(coords[i]!, coords[i + 1]!);
+        main.lineTo(coords[i + 2]!, coords[i + 3]!);
+      }
+      main.stroke();
+    }
+  });
+  main.setLineDash([]);
+  return groups.map((coords) => coords.length / 4);
+}

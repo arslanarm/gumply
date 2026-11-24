@@ -38,3 +38,26 @@ describe("the half-resolution link layer (N6 c0)", () => {
     expect(calls).toEqual([["2d", { willReadFrequently: true }]]);
   });
 });
+
+describe("chunked link strokes (#s3sszwux v)", () => {
+  it("strokes each slot in paths of at most `chunk` segments, with the slot's style, and counts the links", async () => {
+    const { drawLinksChunked } = await import("../src/graph/link-layer");
+    const calls: string[] = [];
+    let segments = 0;
+    const ctx = {
+      strokeStyle: "" as string | CanvasGradient | CanvasPattern,
+      lineWidth: 0,
+      beginPath: () => { calls.push("begin"); segments = 0; },
+      moveTo: () => undefined,
+      lineTo: () => { segments += 1; },
+      stroke: () => { calls.push(`stroke:${segments}:${String(ctx.strokeStyle)}:${ctx.lineWidth}`); },
+      setLineDash: () => undefined,
+    };
+    const p = (x: number) => ({ x, y: 0 });
+    const links = Array.from({ length: 7 }, (_, i) => ({ source: p(i), target: p(i + 1), slot: i < 5 ? 0 : 1 }));
+    const counts = drawLinksChunked(ctx, links, [{ color: "a", width: 1, dash: null }, { color: "b", width: 2, dash: null }], (link) => link.slot, 2, 2);
+    expect(counts).toEqual([5, 2]);
+    // Slot 0: 5 links in strokes of 2, 2 and 1; slot 1: one stroke of 2. Width is in graph units (/ scale).
+    expect(calls).toEqual(["begin", "stroke:2:a:0.5", "begin", "stroke:2:a:0.5", "begin", "stroke:1:a:0.5", "begin", "stroke:2:b:1"]);
+  });
+});
