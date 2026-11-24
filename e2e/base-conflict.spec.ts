@@ -136,4 +136,38 @@ test.describe('a database view save meets a changed file (#ups4ikpj, D22)', () =
     await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
     await expect(page.locator('.banner-error[role="alert"]')).toHaveCount(0);
   });
+
+  test('quitting waits for a view change still on its way, and reports it saved (#wrr9fjn9)', async ({ page, request, vault }) => {
+    void vault;
+    await openGallery(page, request);
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let seen = false;
+    await page.route(/\/api\/bases\//, async (route) => {
+      if (seen || route.request().method() !== 'PUT') return route.continue();
+      seen = true;
+      await held;
+      await route.continue();
+    });
+    await changeCardSize(page);
+    await expect.poll(() => seen).toBe(true);
+
+    // What the desktop app calls before closing a window or quitting.
+    await page.evaluate(() => {
+      const w = window as unknown as { __gumplyFlush: () => Promise<unknown>; __flushDone?: unknown };
+      void w.__gumplyFlush().then((report) => {
+        w.__flushDone = report;
+      });
+    });
+    await page.waitForTimeout(500);
+    // Still waiting for the view's save: the quit doesn't go ahead without it.
+    expect(await page.evaluate(() => (window as unknown as { __flushDone?: unknown }).__flushDone ?? null)).toBeNull();
+    release();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __flushDone?: { saved: boolean } }).__flushDone?.saved ?? null))
+      .toBe(true);
+    expect(await read('Work/Tasks.base')).toBe(MINE);
+  });
 });

@@ -18,7 +18,8 @@ import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
 import { BaseLinks } from "./values.js";
-import { BaseSaver } from "./base-saver.js";
+import { BaseSaver, pendingSaverFor } from "./base-saver.js";
+import { registerSaver } from "../lib/pending-saves.js";
 import type { SaveState } from "../editor/autosave.js";
 import "./bases.css";
 
@@ -179,6 +180,8 @@ export function BaseView(props: BaseViewProps) {
     saverRef.current = new BaseSaver(props.initial.meta.updated, {
       send: (config, { expectedUpdated, force }) =>
         api.saveBase(baseIdRef.current, { config, expectedUpdated, writer, ...(force ? { force: true } : {}) }),
+      // The server lets this view's own exit save through while its previous write is still the newest.
+      sendOnExit: (config, { expectedUpdated }) => api.saveBaseOnExit(baseIdRef.current, { config, expectedUpdated, writer }),
       onSaved: (saved, pending) => {
         // A newer change is still on its way: keep it on screen, take only the new version.
         const next = pending ? { ...docRef.current, meta: saved.meta } : { meta: saved.meta, config: saved.config };
@@ -205,6 +208,12 @@ export function BaseView(props: BaseViewProps) {
       isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
     });
   }
+
+  // #wrr9fjn9: like a page's or a board's editor, a view's queued or in-flight change counts as
+  // unsaved work: quitting (__gumplyFlush), History and a reload all flush it first.
+  useEffect(() => {
+    return registerSaver(pendingSaverFor(saverRef.current!));
+  }, []);
 
   useEffect(() => {
     props.onReady?.({
