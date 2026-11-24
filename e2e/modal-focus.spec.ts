@@ -67,6 +67,51 @@ test('Export HTML and PDF (Cmd+K): focus inside, Tab kept in, Esc back to the ed
   }
 });
 
+/** Focus is on the open page (its main region), not <body>: where keyboard users keep their place. */
+async function expectFocusOnPage(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const active = document.activeElement;
+        return Boolean(active && active !== document.body && active.closest('main.content'));
+      }),
+    )
+    .toBe(true);
+}
+
+test('Cmd+K and the dialogs opened from it, with nothing focused before: Esc puts focus on the page, never <body> (#fw97pkjh)', async ({ page, vault }) => {
+  await openNote(page, vault);
+  const steps: Array<[string, (() => Promise<void>) | null, string]> = [
+    ['the palette', null, 'quick-switcher'],
+    ['Export HTML', () => fromCmdK(page, 'html', 'search-export-html'), 'export-dialog'],
+    ['Notion import', () => fromCmdK(page, 'import notion', 'search-import-notion'), 'notion-import'],
+  ];
+  for (const [name, openIt, testId] of steps) {
+    // A page opened by URL: nothing has focus yet.
+    await page.reload();
+    await expectPageTitle(page, 'Note');
+    expect(await page.evaluate(() => document.activeElement === document.body), name).toBe(true);
+    if (openIt) await openIt();
+    else await page.keyboard.press(`${MOD}+k`);
+    const dialog = page.getByTestId(testId);
+    await expectFocusIn(dialog);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expectFocusOnPage(page);
+  }
+});
+
+test('Cmd+K from a sidebar row: Esc gives focus back to that row (#fw97pkjh)', async ({ page, vault }) => {
+  const note = await openNote(page, vault);
+  const row = page.getByTestId(`page-item-${note.id}`);
+  await row.focus();
+  await page.keyboard.press(`${MOD}+k`);
+  await expectFocusIn(page.getByTestId('quick-switcher'));
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('quick-switcher')).toHaveCount(0);
+  await expectFocusIn(row);
+});
+
 test('Notion import (Cmd+K): focus moves into the dialog on open', async ({ page, vault }) => {
   await openNote(page, vault);
   await focusEditor(page);

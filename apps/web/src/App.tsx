@@ -88,6 +88,7 @@ import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 import { currentLanguage, t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
+import { focusMainRegion, isFocusReturnTarget } from "./lib/focus-fallback.js";
 import { HistoryDialog } from "./components/HistoryDialog.js";
 import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.js";
 import { ConflictCompareDialog, type CompareTarget } from "./components/ConflictCompareDialog.js";
@@ -456,9 +457,11 @@ export function App() {
     setSearchOpen(false);
     const trigger = searchTrigger.current;
     searchTrigger.current = null;
-    // Restore focus after the overlay unmounts (spec/ux §5).
+    // Restore focus after the overlay unmounts (spec/ux §5). Opened with nothing focused (a page
+    // opened by URL), or its opener gone: the main region, never <body> (#fw97pkjh).
     window.requestAnimationFrame(() => {
-      if (trigger?.isConnected) trigger.focus();
+      if (isFocusReturnTarget(trigger)) trigger.focus();
+      else if (!isFocusReturnTarget(document.activeElement)) focusMainRegion();
     });
   }, []);
 
@@ -1201,11 +1204,7 @@ export function App() {
         if (frames < 30) window.requestAnimationFrame(check);
         return;
       }
-      const main = document.querySelector<HTMLElement>("main.content");
-      const target = main?.querySelector<HTMLElement>("h1") ?? main;
-      if (!target) return;
-      if (target.tabIndex < 0 && !target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
-      target.focus({ preventScroll: true });
+      focusMainRegion();
     };
     window.requestAnimationFrame(check);
   }, []);
