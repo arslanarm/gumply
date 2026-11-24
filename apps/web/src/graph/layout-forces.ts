@@ -26,6 +26,16 @@ export function streamsPositions(count: number, reducedMotion: boolean): boolean
   return !reducedMotion && count <= STREAM_MAX_NODES;
 }
 
+/**
+ * N6 (#9x4duwmg): the charge's Barnes–Hut accuracy. d3's default (0.9) up to
+ * STREAM_MAX_NODES, so those graphs look exactly as before; above it a coarser
+ * 1.2, which on the 10k vault halves the layout (16.9 → 8.7 s for its 180
+ * ticks) with the same median link length and no more overlap.
+ */
+export function chargeTheta(count: number): number {
+  return count > STREAM_MAX_NODES ? 1.2 : 0.9;
+}
+
 /** The settings GraphCanvas uses (link spring, charge reach, decay). */
 export const LAYOUT_SETTINGS = {
   linkDistance: 52,
@@ -122,7 +132,7 @@ export function createLayout(input: LayoutInput): Layout {
     .alphaDecay(input.reducedMotion ? s.alphaDecayReduced : s.alphaDecay)
     .velocityDecay(s.velocityDecay)
     .force("link", forceLink(links).id((node: SimNode) => node.index).distance(s.linkDistance).strength(s.linkStrength))
-    .force("charge", forceManyBody().strength(input.chargeStrength).distanceMax(s.chargeDistanceMax))
+    .force("charge", forceManyBody().strength(input.chargeStrength).distanceMax(s.chargeDistanceMax).theta(chargeTheta(count)))
     .force("x", forceX(0).strength(input.centerStrengthX))
     .force("y", forceY(0).strength(input.centerStrengthY));
   const maxTicks = input.reducedMotion ? s.maxTicksReduced : s.maxTicks;
