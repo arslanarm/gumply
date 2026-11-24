@@ -61,3 +61,67 @@ test('a database view: History… previews its YAML, shows the changes, and rest
   await expect(tabs).toContainText('Tasks', { timeout: 3_000 });
   await expect(tabs).not.toContainText('Renamed');
 });
+
+// #wrr9fjn9: a view change still on its way when you press Restore goes out first, and is then kept as
+// the "before restore" version: the restore neither overtakes it (a false "changed on disk") nor loses it.
+const GALLERY = '# a gallery, kept as written\nviews:\n  - type: cards\n    name: Gallery\n    order: [file.name]\n';
+
+test('a database view: Restore waits for a view change still being saved, then keeps it as "Before restore"', async ({ page, request, vault }) => {
+  await vault.reset();
+  const id = `Gallery ${Date.now().toString(36)}.base`;
+  const file = path.join(E2E_VAULT, id);
+  await writeFile(file, GALLERY);
+  await expect.poll(async () => (await request.get(`/api/bases/${encodeURIComponent(id)}`)).status(), { timeout: 15_000 }).toBe(200);
+  // One saved change, so the original is a version to go back to.
+  const before = await (await request.get(`/api/bases/${encodeURIComponent(id)}`)).json();
+  const config = { ...before.config, views: before.config.views.map((view: { name: string }, i: number) => (i === 0 ? { ...view, name: 'Cards' } : view)) };
+  expect((await request.put(`/api/bases/${encodeURIComponent(id)}`, { data: { config, expectedUpdated: before.meta.updated } })).ok()).toBe(true);
+
+  await page.goto(`/#/${encodeURIComponent(id)}`);
+  await expect(page.getByTestId('base-view').getByRole('tablist')).toContainText('Cards');
+
+  // The view's next save is held on its way to the server.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let seen = false;
+  await page.route(/\/api\/bases\//, async (route) => {
+    if (seen || route.request().method() !== 'PUT') return route.continue();
+    seen = true;
+    await held;
+    await route.continue();
+  });
+  const restores: number[] = [];
+  page.on('request', (sent) => {
+    if (sent.method() === 'POST' && sent.url().includes('/restore')) restores.push(Date.now());
+  });
+  await page.getByTestId('base-settings-button').click();
+  await page.getByTestId('base-setting-cardSize').fill('300');
+  await expect.poll(() => seen).toBe(true);
+  await page.keyboard.press('Escape');
+
+  await page.getByTestId(`page-item-${id}`).hover();
+  await page.getByTestId(`page-menu-button-${id}`).click();
+  await page.getByTestId(`page-history-${id}`).click();
+  const dialog = page.getByTestId('history-dialog');
+  const versions = dialog.getByTestId('history-item');
+  await expect(versions).toHaveCount(1);
+  await versions.first().click();
+  await dialog.getByTestId('history-restore').click();
+
+  // The restore waits for the view's save: nothing is sent while it's held.
+  await page.waitForTimeout(500);
+  expect(restores).toHaveLength(0);
+  release();
+
+  await expect(dialog.getByTestId('history-status')).toContainText('Undo is at the top of the list');
+  await expect.poll(() => readFile(file, 'utf8'), { timeout: 10_000 }).toBe(GALLERY);
+  // The held change wasn't lost: it's the version the restore replaced.
+  const listed = await (await request.get(`/api/history/${encodeURIComponent(id)}`)).json();
+  const beforeRestore = listed.items.find((entry: { reason?: string }) => entry.reason === 'before-restore');
+  expect(beforeRestore).toBeTruthy();
+  const replaced = await (await request.get(`/api/history/${encodeURIComponent(id)}/${encodeURIComponent(beforeRestore.file)}`)).text();
+  expect(replaced).toContain('cardSize: 300');
+  await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
+});
