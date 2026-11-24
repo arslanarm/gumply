@@ -12,7 +12,7 @@ import { ImageBlockView } from "../../components/ImageBlockView.js";
 import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 import { NodeSelection } from "@tiptap/pm/state";
-import { altParts, embedWidth, imageWidthOf, steppedWidth, widthPatch } from "./image-width.js";
+import { altLiteralAttribute, altParts, embedWidth, imageWidthOf, steppedWidth, widthPatch } from "./image-width.js";
 import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageFigureOf, naturalImageWidth, renderedImageWidth } from "./image-measure.js";
 import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
@@ -56,7 +56,7 @@ export const ImageBlock = Node.create({
       obsidian: OBSIDIAN_ATTR,
       ...imageRawAttributes,
       // #e9bd64bb: a caption typed ending in `|digits` is text, not a width (see altFor).
-      altLiteral: { default: false, parseHTML: () => false, renderHTML: () => ({}) },
+      altLiteral: altLiteralAttribute,
     };
   },
 

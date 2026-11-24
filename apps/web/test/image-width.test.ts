@@ -7,6 +7,7 @@ import {
   nearestStep,
   splitAltWidth,
   steppedWidth,
+  altLiteralAttribute,
   altParts,
   captionPatch,
   fullColumnWidth,
@@ -189,5 +190,23 @@ describe("a caption the user types ending in |digits stays a caption (altLiteral
   it("an ordinary caption isn't marked", () => {
     expect(captionPatch({ alt: "" }, "A cat")).toEqual({ alt: "A cat", altLiteral: false });
     expect(captionPatch({ alt: "" }, "A | B")).toEqual({ alt: "A | B", altLiteral: false });
+  });
+});
+
+describe("altLiteral survives HTML (copy and paste)", () => {
+  const element = (attrs: Record<string, string>) => ({ getAttribute: (name: string) => attrs[name] ?? null });
+
+  it("is written as data-alt-literal and read back; an unmarked image writes nothing", () => {
+    const html = altLiteralAttribute.renderHTML({ altLiteral: true });
+    expect(html).toEqual({ "data-alt-literal": "true" });
+    expect(altLiteralAttribute.parseHTML(element(html as Record<string, string>))).toBe(true);
+    expect(altLiteralAttribute.renderHTML({ altLiteral: false })).toEqual({});
+    expect(altLiteralAttribute.parseHTML(element({}))).toBe(false);
+  });
+
+  it("a pasted «B|300» with the mark is still a caption", () => {
+    const pasted = { src: "a.png", alt: "B|300", altLiteral: altLiteralAttribute.parseHTML(element({ "data-alt-literal": "true" })) };
+    expect(imageWidthOf(pasted)).toBeNull();
+    expect(imageCaptionOf(pasted)).toBe("B|300");
   });
 });

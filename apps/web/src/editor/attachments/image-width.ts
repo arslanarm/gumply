@@ -172,6 +172,16 @@ export function altFor(caption: string, width: number | null): { alt: string; al
   return { alt: caption, altLiteral: SIZE.test(caption) };
 }
 
+/**
+ * The `altLiteral` node attribute. It goes into the HTML as `data-alt-literal`, so a copy and paste
+ * (which goes through HTML) keeps «B|300» a caption instead of turning it into a 300 px width.
+ */
+export const altLiteralAttribute = {
+  default: false,
+  parseHTML: (element: { getAttribute(name: string): string | null }) => element.getAttribute("data-alt-literal") === "true",
+  renderHTML: (attributes: Record<string, unknown>) => (attributes.altLiteral === true ? { "data-alt-literal": "true" } : {}),
+};
+
 /** The attributes for a new caption the user typed, keeping the image's size as written. */
 export function captionPatch(attrs: ImageAttrsLike, caption: string): { alt: string; altLiteral: boolean } {
   const { size } = altParts(attrs);

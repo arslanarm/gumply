@@ -216,6 +216,28 @@ test('a caption typed ending in |digits stays a caption, and a resize after it k
   await expect(page.getByTestId('image-caption')).toHaveValue('B|300');
 });
 
+test('a copied and pasted «B|300» image keeps it a caption', async ({ page, request, vault, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  addImage();
+  await vault.seed([{ title: 'Caption paste', content: 'Intro\n\n![Old](attachments/wide.svg)\n\nAfter' }]);
+  await open(page, 'Caption paste');
+  await page.getByTestId('image-caption').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('B|300');
+  await saved(request, 'Caption paste', (text) => text.includes('![B\\|300](attachments/wide.svg)'));
+
+  await page.getByTestId('image-block-img').click();
+  await page.keyboard.press('ControlOrMeta+c');
+  await page.getByTestId('editor-content').getByText('After', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+v');
+  await expect(page.getByTestId('image-block')).toHaveCount(2);
+  const after = await saved(request, 'Caption paste', (text) => text.split('![B\\|300](attachments/wide.svg)').length === 3);
+  expect(after).not.toMatch(/!\[B\|300\]/);
+  await expect(page.getByTestId('image-block').nth(1)).not.toHaveAttribute('data-width');
+});
+
 test('an image block moves with ⋮⋮ like any block', async ({ page, request, vault }) => {
   addImage();
   await vault.seed([{ title: 'Image drag', content: 'First\n\n![Pic](attachments/wide.svg)\n\nLast' }]);
