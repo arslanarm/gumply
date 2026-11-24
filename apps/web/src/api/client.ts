@@ -522,6 +522,9 @@ export const api = {
   saveBase: (id: PageId, input: SaveBaseInput): Promise<SaveBaseResult> =>
     mutate(() => request(basePath(id), { method: "PUT", body: JSON.stringify(input) })),
 
+  /** #wrr9fjn9: save a view change on the way out (reload, close): keepalive; null when too big. */
+  saveBaseOnExit: (id: PageId, input: SaveBaseInput): Promise<SaveBaseResult> | null => exitPut(basePath(id), input),
+
   createBase: (input: {
     title: string;
     parentId?: PageId | null;

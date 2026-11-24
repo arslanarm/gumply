@@ -9,10 +9,16 @@
  */
 import type { BaseConfig } from "@gumply/core";
 import type { SaveBaseResult } from "../api/client.js";
+import type { PendingSaver } from "../lib/pending-saves.js";
 
 export interface BaseSaverOptions {
   /** Write `config` (conditional on `expectedUpdated`, or forced). */
   send: (config: BaseConfig, options: { expectedUpdated: string; force: boolean }) => Promise<SaveBaseResult>;
+  /**
+   * #wrr9fjn9: the page is going away (reload, close, quit): send `config` now with a request that
+   * outlives it, conditional on `expectedUpdated`. Null when it can't be sent (too big).
+   */
+  sendOnExit?: (config: BaseConfig, options: { expectedUpdated: string }) => Promise<SaveBaseResult> | null;
   /** A save landed. `pending` is true when a newer change is still to be sent. */
   onSaved: (result: SaveBaseResult, pending: boolean) => void;
   /** A save met a changed file: the change is kept, waiting for the user's choice. */
@@ -25,6 +31,10 @@ export interface BaseSaverOptions {
 export class BaseSaver {
   private pending: BaseConfig | null = null;
   private writing = false;
+  /** The change a normal save is sending right now (an exit resends it: the unload may cancel it). */
+  private inFlight: BaseConfig | null = null;
+  /** The change an exit (keepalive) save is sending. */
+  private exiting: BaseConfig | null = null;
   private conflicted = false;
   private version: string;
   private chain: Promise<void> = Promise.resolve();
@@ -41,9 +51,37 @@ export class BaseSaver {
     if (!this.isDirty()) this.version = version;
   }
 
-  /** Changes not yet on disk: queued, being written, or held by a conflict. */
+  /** Changes not yet on disk: queued, being written (also on the way out), or held by a conflict. */
   isDirty(): boolean {
-    return this.pending !== null || this.writing || this.conflicted;
+    return this.pending !== null || this.writing || this.conflicted || this.exiting !== null;
+  }
+
+  /**
+   * #wrr9fjn9: the page is going away: send the newest change now with a keepalive save. True when
+   * nothing is left unsent; false when it couldn't be (a conflict waits for the user, or too big).
+   */
+  flushOnExit(): boolean {
+    if (this.conflicted) return false;
+    const config = this.pending ?? (this.writing ? this.inFlight : null);
+    if (config === null) return true;
+    if (config === this.exiting) return true;
+    const request = this.options.sendOnExit?.(config, { expectedUpdated: this.version }) ?? null;
+    if (!request) return false;
+    if (this.pending === config) this.pending = null;
+    this.exiting = config;
+    request.then(
+      (result) => {
+        if (this.exiting === config) this.exiting = null;
+        this.version = result.meta.updated;
+        this.options.onSaved(result, this.pending !== null);
+      },
+      () => {
+        if (this.exiting === config) this.exiting = null;
+        // Not sent after all (the page stayed): keep it for the next save.
+        if (this.pending === null) this.pending = config;
+      },
+    );
+    return true;
   }
 
   inConflict(): boolean {
@@ -87,14 +125,17 @@ export class BaseSaver {
       const config = this.pending;
       this.pending = null;
       this.writing = true;
+      this.inFlight = config;
       try {
         const result = await this.options.send(config, { expectedUpdated: this.version, force });
         force = false;
         this.version = result.meta.updated;
         this.writing = false;
+        this.inFlight = null;
         this.options.onSaved(result, this.pending !== null);
       } catch (error) {
         this.writing = false;
+        this.inFlight = null;
         if (this.options.isConflict(error)) {
           // Keep the newest change: the one that failed, unless the user made a newer one since.
           if (this.pending === null) this.pending = config;
@@ -108,4 +149,15 @@ export class BaseSaver {
       }
     }
   }
+}
+
+/** #wrr9fjn9: the view's entry in the pending-saves registry (quit, History and a reload flush it). */
+export function pendingSaverFor(saver: BaseSaver): PendingSaver {
+  return {
+    kind: "base",
+    isDirty: () => saver.isDirty(),
+    hasFailed: () => saver.inConflict(),
+    flush: () => saver.flush(),
+    flushOnExit: () => saver.flushOnExit(),
+  };
 }

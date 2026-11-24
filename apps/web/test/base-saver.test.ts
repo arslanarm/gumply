@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BaseConfig } from "@gumply/core";
 import { ApiRequestError, type SaveBaseResult } from "../src/api/client.js";
-import { BaseSaver } from "../src/bases/base-saver.js";
+import { BaseSaver, pendingSaverFor } from "../src/bases/base-saver.js";
+import { flushAllOnExit, flushAllSaves, hasUnsavedChanges, registerSaver } from "../src/lib/pending-saves.js";
 
 /** #ups4ikpj (D22): a database view's save that meets a changed file keeps the user's change. */
 const config = (column: string) => ({ views: [{ type: "table", name: "Table", order: [column] }] }) as unknown as BaseConfig;
@@ -117,5 +118,76 @@ describe("database view saves (#ups4ikpj)", () => {
     send.mockImplementation(async () => answer("v9", config("y")) as never);
     await instance.save(config("y"));
     expect((send.mock.calls.at(-1) as unknown as [BaseConfig, { expectedUpdated: string }])[1].expectedUpdated).toBe("v8");
+  });
+});
+
+describe("a view's saves in the pending-saves registry (#wrr9fjn9)", () => {
+  function held() {
+    let release: (result: SaveBaseResult) => void = () => {};
+    const send = vi.fn(
+      (c: BaseConfig) =>
+        new Promise<SaveBaseResult>((resolve) => {
+          release = (result) => resolve(result);
+          void c;
+        }),
+    );
+    return { send, release: (result: SaveBaseResult) => release(result) };
+  }
+
+  it("a queued or in-flight change counts as unsaved, and flushing everything waits for it", async () => {
+    const { send, release } = held();
+    const saver = new BaseSaver("v1", { send, onSaved: () => undefined, onConflict: () => undefined, onError: () => undefined, isConflict: () => false });
+    const unregister = registerSaver(pendingSaverFor(saver));
+    try {
+      expect(hasUnsavedChanges()).toBe(false);
+      void saver.save(config("mine"));
+      expect(hasUnsavedChanges()).toBe(true);
+      const flushed = flushAllSaves(2000);
+      await vi.waitFor(() => expect(send).toHaveBeenCalled());
+      expect(hasUnsavedChanges()).toBe(true);
+      release(answer("v2", config("mine")));
+      expect(await flushed).toBe(true);
+      expect(hasUnsavedChanges()).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("a change held by a conflict is unsaved and fails the quit flush (nothing is dropped)", async () => {
+    const saver = new BaseSaver("v1", {
+      send: async () => {
+        throw conflict();
+      },
+      onSaved: () => undefined,
+      onConflict: () => undefined,
+      onError: () => undefined,
+      isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
+    });
+    const unregister = registerSaver(pendingSaverFor(saver));
+    try {
+      await saver.save(config("mine"));
+      expect(hasUnsavedChanges()).toBe(true);
+      expect(await flushAllSaves(500)).toBe(false);
+      expect(flushAllOnExit()).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("on the way out, the change being written is sent again with a keepalive save", () => {
+    const { send } = held();
+    const sendOnExit = vi.fn(() => new Promise<SaveBaseResult>(() => undefined));
+    const saver = new BaseSaver("v1", { send, sendOnExit, onSaved: () => undefined, onConflict: () => undefined, onError: () => undefined, isConflict: () => false });
+    const unregister = registerSaver(pendingSaverFor(saver));
+    try {
+      void saver.save(config("mine"));
+      expect(flushAllOnExit()).toBe(true);
+      expect(sendOnExit).toHaveBeenCalledWith(config("mine"), { expectedUpdated: "v1" });
+      // Sent once, not again on a second unload event.
+      expect(flushAllOnExit()).toBe(true);
+      expect(sendOnExit).toHaveBeenCalledTimes(1);
+    } finally {
+      unregister();
+    }
   });
 });

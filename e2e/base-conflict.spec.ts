@@ -117,4 +117,67 @@ test.describe('a database view save meets a changed file (#ups4ikpj, D22)', () =
     await page.waitForTimeout(1000);
     expect(await read('Work/Tasks.base')).toBe(OUTSIDE);
   });
+
+  test('after renaming the open view, a change saves to the renamed file (no 404, no lost change)', async ({ page, request, vault }) => {
+    void vault;
+    await openGallery(page, request);
+    // Rename it from the sidebar while it's open.
+    await page.getByTestId('page-item-Work/Tasks.base').click();
+    await page.keyboard.press('F2');
+    await page.getByTestId('page-rename-input-Work/Tasks.base').fill('Projects');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('page-item-Work/Projects.base')).toBeVisible();
+    await expect.poll(() => fs.access(path.join(E2E_VAULT, 'Work/Projects.base')).then(() => true, () => false)).toBe(true);
+
+    // Where the view's save goes: the renamed id, not the old one (main's server redirect hid that).
+    const puts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'PUT' && request.url().includes('/api/bases/')) puts.push(decodeURIComponent(request.url()));
+    });
+    await changeCardSize(page);
+    await expect.poll(() => read('Work/Projects.base')).toBe(MINE);
+    expect(puts.length).toBeGreaterThan(0);
+    for (const url of puts) {
+      expect(url).toContain('Work/Projects.base');
+      expect(url).not.toContain('Work/Tasks.base');
+    }
+    // Not recreated under the old name, and no conflict or error on the way.
+    expect(await fs.access(path.join(E2E_VAULT, 'Work/Tasks.base')).then(() => true, () => false)).toBe(false);
+    await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
+    await expect(page.locator('.banner-error[role="alert"]')).toHaveCount(0);
+  });
+
+  test('quitting waits for a view change still on its way, and reports it saved (#wrr9fjn9)', async ({ page, request, vault }) => {
+    void vault;
+    await openGallery(page, request);
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let seen = false;
+    await page.route(/\/api\/bases\//, async (route) => {
+      if (seen || route.request().method() !== 'PUT') return route.continue();
+      seen = true;
+      await held;
+      await route.continue();
+    });
+    await changeCardSize(page);
+    await expect.poll(() => seen).toBe(true);
+
+    // What the desktop app calls before closing a window or quitting.
+    await page.evaluate(() => {
+      const w = window as unknown as { __gumplyFlush: () => Promise<unknown>; __flushDone?: unknown };
+      void w.__gumplyFlush().then((report) => {
+        w.__flushDone = report;
+      });
+    });
+    await page.waitForTimeout(500);
+    // Still waiting for the view's save: the quit doesn't go ahead without it.
+    expect(await page.evaluate(() => (window as unknown as { __flushDone?: unknown }).__flushDone ?? null)).toBeNull();
+    release();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __flushDone?: { saved: boolean } }).__flushDone?.saved ?? null))
+      .toBe(true);
+    expect(await read('Work/Tasks.base')).toBe(MINE);
+  });
 });
