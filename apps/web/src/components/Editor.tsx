@@ -63,6 +63,7 @@ import { MarkdownBlockJoins, MarkdownBlockquote } from "../editor/raw-markdown/b
 import { Callout, CalloutTitle } from "../editor/callout/callout.js";
 import { Column, Columns } from "../editor/columns/columns.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
+import { applyMergedRenameLinks, type RenameMergeIo } from "../editor/rename-merge-apply.js";
 import {
   GumplyTable,
   GumplyTableCell,
@@ -143,7 +144,11 @@ export interface EditorProps {
    * rename's version) instead of meeting the rename as a 409.
    */
   waitForRename?: (id: string) => Promise<{ id: string; updated: string | null } | null> | null;
-  onConflictBackup?: (path: string) => void;
+  /**
+   * After Keep mine: where the other version was kept (null: nowhere), and (N10) the rename link
+   * changes the server kept in the user's text.
+   */
+  onConflictBackup?: (path: string | null, merged?: { links: number; titles: string[] }) => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
   onCreateLink: (title: string) => void;
@@ -200,6 +205,17 @@ function readMarkdown(editor: TipTapEditor): string {
   const storage = editor.storage as unknown as MarkdownStorage;
   return normalizeEditorMarkdown(storage.markdown?.getMarkdown?.() ?? "");
 }
+
+/** N10: how the in-place apply reads and parses this editor's Markdown. */
+const renameMergeIo: RenameMergeIo = {
+  read: (editor) => readMarkdown(editor as TipTapEditor),
+  parse: (editor, markdown) => {
+    const storage = editor.storage as unknown as { markdown?: { parser?: { parse(content: string): string } } };
+    return storage.markdown?.parser?.parse(markdown) ?? markdown;
+  },
+  // Tables parsed here keep their text as written, like a page's first load (#7witbbun).
+  afterParse: (doc) => registerTableSources(doc, lastParsedTableSources()),
+};
 
 function menuRect(props: { clientRect?: (() => DOMRect | null) | null }) {
   const rect = props.clientRect?.() ?? null;
@@ -307,7 +323,16 @@ export function Editor({
           versionRef.current = updated.updated;
           // Report which page this was: by now another page may be open.
           onSavedRef.current?.(updated, savedId);
-          if (updated.conflictBackup) onConflictBackupRef.current?.(updated.conflictBackup);
+          const merged = updated.renameLinksMerged && updated.renameLinksMerged.links > 0 ? updated.renameLinksMerged : undefined;
+          if (updated.conflictBackup || merged) onConflictBackupRef.current?.(updated.conflictBackup ?? null, merged);
+          // N10: the server kept a rename's link changes in what we sent. Show them in the editor
+          // now (in place), and take the text written as the saved baseline, so the next save
+          // never writes the old link back.
+          if (merged && typeof updated.content === "string" && updated.content !== content) {
+            const instance = editorRef.current;
+            if (instance) applyMergedRenameLinks(instance, content, updated.content, renameMergeIo);
+            return updated.content;
+          }
         } catch (error) {
           if (!force) forceRef.current = false;
           throw error;

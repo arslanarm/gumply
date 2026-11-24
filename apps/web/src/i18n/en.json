@@ -162,7 +162,10 @@
     "rename": "Rename page",
     "updated": "Updated {{time}}",
     "contentLabel": "Page content",
-    "waitingForServer": "This page opens as soon as Gumply's local server is back."
+    "waitingForServer": "This page opens as soon as Gumply's local server is back.",
+    "conflictKeptLinks": "Your text was kept, with the new link to “{{title}}”.",
+    "conflictKeptLinksMany": "Your text was kept, with the new links to “{{title}}”.",
+    "conflictKeptLinksUntitled": "Your text was kept, with the updated links."
   },
   "empty": {
     "noPages": "No pages yet.",

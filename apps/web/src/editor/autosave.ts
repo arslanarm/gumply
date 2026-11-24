@@ -19,8 +19,12 @@
 export type SaveState = "idle" | "saving" | "saved" | "error" | "conflict";
 
 export interface AutosaveOptions {
-  /** Persist one snapshot. May reject; Autosave converts that to `error`. */
-  save: (value: string) => Promise<void>;
+  /**
+   * Persist one snapshot. May reject; Autosave converts that to `error`. May resolve to the text
+   * the server actually wrote when it differs from `value` (N10: a Keep mine that kept a rename's
+   * link changes); that becomes the saved baseline.
+   */
+  save: (value: string) => Promise<void | string>;
   onState?: (state: SaveState) => void;
   /** Debounce in ms (default 600). */
   delay?: number;
@@ -38,7 +42,7 @@ export interface AutosaveOptions {
 }
 
 export class Autosave {
-  private readonly saveValue: (value: string) => Promise<void>;
+  private readonly saveValue: (value: string) => Promise<void | string>;
   private readonly onState: ((state: SaveState) => void) | undefined;
   private readonly delay: number;
   private readonly indicatorDelay: number;
@@ -180,8 +184,8 @@ export class Autosave {
       this.inFlight = value;
       this.startIndicatorTimer();
       try {
-        await this.saveValue(value);
-        this.lastSaved = value;
+        const written = await this.saveValue(value);
+        this.lastSaved = typeof written === "string" ? written : value;
         wrote = true;
       } catch (error) {
         // Keep the newest unsaved snapshot for the next attempt.

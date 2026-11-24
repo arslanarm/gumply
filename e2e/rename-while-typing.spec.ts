@@ -195,4 +195,25 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10): neve
   expect(text).not.toContain('[[Hub]]');
   // Every other linker has the new link.
   expect(await fs.readFile(path.join(E2E_VAULT, 'Linkers', 'Linker 7.md'), 'utf8')).toContain('[[Hub renamed]]');
+
+  // N10 client: the editor itself took the new link in place (no reload), and says so.
+  const editor = page.getByTestId('editor-content');
+  await expect(editor.locator('[data-wikilink-title="Hub renamed"]')).toHaveCount(1);
+  await expect(editor.locator('[data-wikilink-title="Hub"]')).toHaveCount(0);
+  await expect(editor).toContainText(' last');
+  await expect(page.getByTestId('undo-toast')).toContainText('Your text was kept, with the new link to “Hub renamed”.');
+  // One more keystroke: its save keeps the new link (before N10's client part it wrote [[Hub]] back).
+  await page.keyboard.type('!');
+  await expect.poll(async () => fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8'), { timeout: 10_000 }).toContain(' last!');
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+  let after = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
+  expect(after).toContain('[[Hub renamed]]');
+  expect(after).not.toContain('[[Hub]]');
+  // Undo takes back the user's typing, never the link change.
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(async () => fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8'), { timeout: 10_000 }).not.toContain(' last!');
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+  after = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
+  expect(after).toContain('[[Hub renamed]]');
+  expect(after).not.toContain('[[Hub]]');
 });

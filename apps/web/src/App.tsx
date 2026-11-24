@@ -2248,8 +2248,16 @@ export function App() {
     }
   }, [deletedOnDisk, loadPages, applySavedPage]);
 
-  const handleConflictBackup = useCallback((path: string) => {
-    setToast({ message: t("page.conflictKept", { path }), icon: "info" });
+  const handleConflictBackup = useCallback((path: string | null, merged?: { links: number; titles: string[] }) => {
+    // N10 (#5pgmziyc): Keep mine kept the user's text plus a rename's new links; say so.
+    const newest = merged?.titles[merged.titles.length - 1];
+    const links = !merged || merged.links <= 0
+      ? null
+      : newest
+        ? t(merged.links > 1 ? "page.conflictKeptLinksMany" : "page.conflictKeptLinks", { title: newest })
+        : t("page.conflictKeptLinksUntitled");
+    const parts = [path ? t("page.conflictKept", { path }) : null, links].filter((part): part is string => Boolean(part));
+    if (parts.length > 0) setToast({ message: parts.join(" "), icon: "info" });
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);
