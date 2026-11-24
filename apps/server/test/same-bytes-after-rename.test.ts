@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +65,21 @@ describe("a same-bytes rewrite or a touch after Gumply's own rename is never a c
     await store.rescan();
     const next = await store.update(moved.id, { content: "Child, edited.", expectedUpdated: moved.updated });
     expect(next.content).toBe("Child, edited.");
+  });
+
+  it("a page inside a renamed plain folder (no folder page)", async () => {
+    const { dir, store } = await vault();
+    await mkdir(join(dir, "Inbox"));
+    await writeFile(join(dir, "Inbox", "Note.md"), "Inside.\n");
+    await store.rescan();
+    const note = store.get("Inbox/Note");
+    await store.update(note.id, { content: "Inside, saved.", expectedUpdated: note.updated });
+    await store.update("Inbox", { title: "Archive" });
+    const moved = store.get("Archive/Note");
+    await sameBytes(join(dir, "Archive", "Note.md"), "rewrite");
+    await store.rescan();
+    const next = await store.update(moved.id, { content: "Inside, edited.", expectedUpdated: moved.updated });
+    expect(next.content).toBe("Inside, edited.");
   });
 
   it("a board and a base", async () => {
