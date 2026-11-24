@@ -322,8 +322,6 @@ export function App() {
   const [pendingHeading, setPendingHeading] = useState<PendingHeading | null>(null);
 
   const selectedRef = useRef<PageId | null>(selectedId);
-  /** v0.9 F: the startup effect runs before `openToday` is declared; it reaches it through this. */
-  const openTodayRef = useRef<(() => Promise<void>) | null>(null);
   // #snuin2ja: the current command runner (desktop menu events arrive outside render).
   const runCommandRef = useRef<((id: string) => void) | null>(null);
   selectedRef.current = selectedId;
@@ -973,14 +971,15 @@ export function App() {
       const newVaultPage = consumeNewVaultPage();
 
       if (list.length === 0) return;
-      if (
+      // The user already went somewhere (a page, the graph, Conflicts, the Trash): the
+      // startup doesn't take them away. Checked again after the awaits below: a click on
+      // Graph while they ran used to be overridden by the landing page (#s3sszwux side find).
+      const userWentElsewhere = () =>
         selectedRef.current !== null ||
         isGraphHash(window.location.hash) ||
         isConflictsHash(window.location.hash) ||
-        trashRouteFromHash(window.location.hash) !== null
-      ) {
-        return;
-      }
+        trashRouteFromHash(window.location.hash) !== null;
+      if (userWentElsewhere()) return;
 
       // v0.9 F (#if236h9k): what opens on startup is a per-device setting, per vault.
       const vault = await api.health().then((health) => health.vaultPath, () => "");
@@ -1002,11 +1001,22 @@ export function App() {
         last: vault ? loadLastPage(vault) : null,
         fallback: chooseLandingPage(list, null),
       });
+      if (userWentElsewhere()) return;
       if (choice.kind === "daily") {
         // Opened interactively, once per launch: today's note, made if missing (as Obsidian does).
         if (!startupDailyDone) {
           startupDailyDone = true;
-          await openTodayRef.current?.();
+          // As `openToday`, but it doesn't take the user away from where they went while the
+          // daily note was fetched (or made): the same race as the landing page (#gy6red24).
+          try {
+            const result = await api.dailyNote(todayDay());
+            if (result.created) await loadPages();
+            if (userWentElsewhere()) return;
+            if (window.innerWidth <= 900) setSidebarOpen(false);
+            navigate(result.page.id);
+          } catch (error) {
+            setActionError(errorMessage(error));
+          }
           return;
         }
       }
@@ -1400,7 +1410,6 @@ export function App() {
       setActionError(errorMessage(error));
     }
   }, [loadPages, navigate]);
-  openTodayRef.current = openToday;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
