@@ -83,15 +83,24 @@ export function nearestStep(width: number, column: number): number {
 }
 
 /**
- * The next width for a keyboard step: `direction` +1 grows to the next snap,
- * -1 shrinks to the one below. Null means "full column" (no size written).
+ * The width to write for "the full column". No size means the image's natural size (capped at the
+ * column), so that's only right when the picture is at least as wide as the column; a narrower one
+ * gets the column in pixels, or "full width" would shrink it back to its natural size.
  */
-export function steppedWidth(current: number | null, column: number, direction: 1 | -1): number | null {
+export function fullColumnWidth(natural: number | null | undefined, column: number): number | null {
+  return natural !== null && natural !== undefined && natural > 0 && natural < column ? Math.round(column) : null;
+}
+
+/**
+ * The next width for a keyboard step: `direction` +1 grows to the next snap,
+ * -1 shrinks to the one below. The full column is `fullColumnWidth(natural, column)`.
+ */
+export function steppedWidth(current: number | null, column: number, direction: 1 | -1, natural?: number | null): number | null {
   const share = current === null || column <= 0 ? 1 : Math.min(1, current / column);
   const steps = [...WIDTH_STEPS];
   const next =
     direction > 0 ? (steps.find((step) => step > share + 0.01) ?? 1) : ([...steps].reverse().find((step) => step < share - 0.01) ?? steps[0]!);
-  return next >= 1 ? null : Math.round(next * column);
+  return next >= 1 ? fullColumnWidth(natural, column) : Math.round(next * column);
 }
 
 interface ImageAttrsLike {
@@ -101,6 +110,8 @@ interface ImageAttrsLike {
   obsidian?: unknown;
   markdownRaw?: unknown;
   markdownRawKey?: unknown;
+  /** The whole alt is a caption: a `|N` the user typed at its end is text, not a width. */
+  altLiteral?: unknown;
 }
 
 /**
@@ -111,6 +122,7 @@ interface ImageAttrsLike {
  */
 export function altParts(attrs: ImageAttrsLike): AltWidth {
   const alt = String(attrs.alt ?? "");
+  if (attrs.altLiteral === true) return { text: alt, width: null, size: null };
   const raw = typeof attrs.markdownRaw === "string" ? attrs.markdownRaw : "";
   if (raw && attrs.markdownRawKey === rawKey(attrs.src, attrs.alt, attrs.title)) {
     const written = /^!\[((?:\\.|[^\]\\])*)\]/.exec(raw)?.[1];
@@ -140,18 +152,29 @@ export function imageCaptionOf(attrs: ImageAttrsLike): string {
  */
 export function widthPatch(attrs: ImageAttrsLike, width: number | null): Record<string, unknown> {
   if (typeof attrs.obsidian === "string" && attrs.obsidian) return { obsidian: embedWithWidth(attrs.obsidian, width) };
-  const alt = joinAltWidth(imageCaptionOf(attrs), width);
+  const { alt, altLiteral } = altFor(imageCaptionOf(attrs), width);
   // The text as written only while it still describes this image: after a caption edit it's stale
   // (the serializer ignores it), and stamping it with a fresh key would write the old caption back.
   const current = typeof attrs.markdownRaw === "string" && attrs.markdownRaw && attrs.markdownRawKey === rawKey(attrs.src, attrs.alt, attrs.title);
   const raw = current ? markdownWithWidth(attrs.markdownRaw as string, width) : null;
   return raw === null
-    ? { alt, markdownRaw: null, markdownRawKey: null }
-    : { alt, markdownRaw: raw, markdownRawKey: rawKey(attrs.src, alt, attrs.title) };
+    ? { alt, altLiteral, markdownRaw: null, markdownRawKey: null }
+    : { alt, altLiteral, markdownRaw: raw, markdownRawKey: rawKey(attrs.src, alt, attrs.title) };
 }
 
-/** The alt for a new caption, keeping the image's size as written. */
-export function altWithCaption(attrs: ImageAttrsLike, caption: string): string {
+/**
+ * The alt for `caption` at `width`, and whether it must be read as a caption only: with no width,
+ * a caption that itself ends in `|digits` (typed by the user, or a literal `A\\|300`) would read
+ * back as a size, so it's marked literal and the serializers escape its pipe.
+ */
+export function altFor(caption: string, width: number | null): { alt: string; altLiteral: boolean } {
+  if (width !== null) return { alt: joinAltWidth(caption, width), altLiteral: false };
+  return { alt: caption, altLiteral: SIZE.test(caption) };
+}
+
+/** The attributes for a new caption the user typed, keeping the image's size as written. */
+export function captionPatch(attrs: ImageAttrsLike, caption: string): { alt: string; altLiteral: boolean } {
   const { size } = altParts(attrs);
-  return size === null ? caption : `${caption}|${size}`;
+  // With a size, the last `|N` is it and everything before is the caption, so no mark is needed.
+  return size === null ? altFor(caption, null) : { alt: `${caption}|${size}`, altLiteral: false };
 }

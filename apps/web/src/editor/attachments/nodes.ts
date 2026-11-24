@@ -13,7 +13,7 @@ import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
 import { NodeSelection } from "@tiptap/pm/state";
 import { altParts, embedWidth, imageWidthOf, steppedWidth, widthPatch } from "./image-width.js";
-import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageFigureOf, renderedImageWidth } from "./image-measure.js";
+import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageFigureOf, naturalImageWidth, renderedImageWidth } from "./image-measure.js";
 import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
 /** `|` escaped in a written label, so the link is safe inside a table cell too (#eg65ktng). */
@@ -55,6 +55,8 @@ export const ImageBlock = Node.create({
       uploadId: { default: "", parseHTML: () => "", renderHTML: () => ({}) },
       obsidian: OBSIDIAN_ATTR,
       ...imageRawAttributes,
+      // #e9bd64bb: a caption typed ending in `|digits` is text, not a width (see altFor).
+      altLiteral: { default: false, parseHTML: () => false, renderHTML: () => ({}) },
     };
   },
 
@@ -84,7 +86,7 @@ export const ImageBlock = Node.create({
       if (column <= 0) return false;
       const current = imageWidthOf(selection.node.attrs);
       // No width: the image shows at its natural size (capped), so step from what's drawn.
-      const next = steppedWidth(current ?? renderedImageWidth(figure), column, direction);
+      const next = steppedWidth(current ?? renderedImageWidth(figure), column, direction, naturalImageWidth(figure));
       if (next === current) {
         // Already at 25% or the full column: say so, so a screen reader hears the limit.
         figure?.dispatchEvent(new CustomEvent(IMAGE_WIDTH_LIMIT_EVENT, { detail: { direction } }));

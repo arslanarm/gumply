@@ -6,7 +6,7 @@ import { errorMessage } from "../lib/errors.js";
 import { useWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
 import { useFileLinkVersion } from "../lib/file-links.js";
 import { t, useT } from "../i18n/index.js";
-import { altWithCaption, imageCaptionOf, imageWidthOf, nearestStep, widthPatch } from "../editor/attachments/image-width.js";
+import { captionPatch, fullColumnWidth, imageCaptionOf, imageWidthOf, nearestStep, widthPatch } from "../editor/attachments/image-width.js";
 import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageWidthPercent } from "../editor/attachments/image-measure.js";
 
 /**
@@ -98,7 +98,8 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
       const delta = (moveEvent.clientX - startX) * (side === "right" ? 1 : -1);
       const raw = Math.max(48, Math.min(column, startWidth + delta));
       const snapped = moveEvent.altKey ? raw : nearestStep(raw, column) * column;
-      next = snapped >= column - 1 ? null : Math.round(snapped);
+      // The column edge is "full width": no size for a picture at least that wide, else the column in px.
+      next = snapped >= column - 1 ? fullColumnWidth(image.naturalWidth, column) : Math.round(snapped);
       setLiveWidth(next ?? column);
     };
     const end = () => {
@@ -186,7 +187,7 @@ export function ImageBlockView({ node, updateAttributes, selected }: NodeViewPro
         onChange={(event) => {
           setCaption(event.target.value);
           // The size (`Caption|300`) stays; only the caption text changes.
-          updateAttributes({ alt: altWithCaption(node.attrs, event.target.value) });
+          updateAttributes(captionPatch(node.attrs, event.target.value));
         }}
         onKeyDown={(event) => {
           if (event.key === "Enter") {

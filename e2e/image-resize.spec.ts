@@ -173,6 +173,49 @@ test('a small image with no width: Shift+← steps down from its drawn size, and
   expect((await api.getPage(request, 'Small keys')).content).toBe(after);
 });
 
+test('a small image stepped up to full width is the column wide, not back at its natural size', async ({ page, request, vault }) => {
+  addImage();
+  await vault.seed([{ title: 'Small full', content: 'Intro\n\n![[small.svg]]\n\nAfter' }]);
+  await open(page, 'Small full');
+  await page.getByTestId('image-block-img').click();
+  const column = await columnWidth(page);
+  for (const share of [0.5, 0.75]) {
+    await page.keyboard.press('Shift+ArrowRight');
+    await saved(request, 'Small full', (text) => widthIn(text, 'small.svg') === Math.round(column * share));
+  }
+  await page.keyboard.press('Shift+ArrowRight');
+  const full = await saved(request, 'Small full', (text) => widthIn(text, 'small.svg') === Math.round(column));
+  const status = page.getByTestId('image-width-status');
+  await expect(status).toHaveText('Image width 100%');
+  // Drawn at the column's width, not its natural 200 px.
+  const drawn = await page.getByTestId('image-block-img').evaluate((element) => element.getBoundingClientRect().width);
+  expect(Math.abs(drawn - column)).toBeLessThanOrEqual(2);
+  // At the full width another Shift+→ changes nothing, and says so.
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(status).toHaveText('Image width 100%: the full page width');
+  expect((await api.getPage(request, 'Small full')).content).toBe(full);
+});
+
+test('a caption typed ending in |digits stays a caption, and a resize after it keeps it', async ({ page, request, vault }) => {
+  addImage();
+  await vault.seed([{ title: 'Caption pipe', content: 'Intro\n\n![Old](attachments/wide.svg)\n\nAfter' }]);
+  await open(page, 'Caption pipe');
+  await page.getByTestId('image-caption').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('B|300');
+  await saved(request, 'Caption pipe', (text) => text.includes('![B\\|300](attachments/wide.svg)'));
+  // Not a width: the picture keeps the full column, and the caption reads as typed.
+  await expect(page.getByTestId('image-block')).not.toHaveAttribute('data-width');
+  await expect(page.getByTestId('image-caption')).toHaveValue('B|300');
+
+  await page.getByTestId('image-block-img').click();
+  const column = await columnWidth(page);
+  await page.keyboard.press('Shift+ArrowLeft');
+  const after = await saved(request, 'Caption pipe', (text) => text.includes(`![B\\|300|${Math.round(column * 0.75)}](attachments/wide.svg)`));
+  expect(after).toContain('Intro');
+  await expect(page.getByTestId('image-caption')).toHaveValue('B|300');
+});
+
 test('an image block moves with ⋮⋮ like any block', async ({ page, request, vault }) => {
   addImage();
   await vault.seed([{ title: 'Image drag', content: 'First\n\n![Pic](attachments/wide.svg)\n\nLast' }]);

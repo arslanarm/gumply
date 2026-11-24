@@ -21,6 +21,11 @@ export function renderedImageWidth(figure: HTMLElement | null): number {
   return figure?.querySelector("img")?.getBoundingClientRect().width ?? 0;
 }
 
+/** The picture's own width in pixels (0 until it has loaded). */
+export function naturalImageWidth(figure: HTMLElement | null): number {
+  return figure?.querySelector("img")?.naturalWidth ?? 0;
+}
+
 /** The width as a share of the column, in %: a set width, else the drawn one. */
 export function imageWidthPercent(width: number | null, figure: HTMLElement | null): number {
   const column = imageColumnWidth(figure);

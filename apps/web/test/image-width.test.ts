@@ -8,6 +8,8 @@ import {
   splitAltWidth,
   steppedWidth,
   altParts,
+  captionPatch,
+  fullColumnWidth,
   imageCaptionOf,
   imageWidthOf,
   widthPatch,
@@ -82,18 +84,18 @@ describe("widthPatch keeps the text as written only while it's current (D37)", (
   const parsed = { src: "my pic.png", alt: "Old", title: null, markdownRaw: written, markdownRawKey: rawKey("my pic.png", "Old", null) };
 
   it("an untouched image: only the size changes in its text", () => {
-    expect(widthPatch(parsed, 300)).toEqual({ alt: "Old|300", markdownRaw: "![Old|300](<my pic.png>)", markdownRawKey: rawKey("my pic.png", "Old|300", null) });
+    expect(widthPatch(parsed, 300)).toEqual({ alt: "Old|300", altLiteral: false, markdownRaw: "![Old|300](<my pic.png>)", markdownRawKey: rawKey("my pic.png", "Old|300", null) });
   });
 
   it("after a caption edit the old text is stale: a resize drops it, so the new caption is written", () => {
     // The caption was edited: alt moved on, the recorded text and its key didn't.
     const edited = { ...parsed, alt: "New" };
-    expect(widthPatch(edited, 300)).toEqual({ alt: "New|300", markdownRaw: null, markdownRawKey: null });
+    expect(widthPatch(edited, 300)).toEqual({ alt: "New|300", altLiteral: false, markdownRaw: null, markdownRawKey: null });
   });
 
   it("a stale text isn't revived by a width that is then removed", () => {
     const edited = { ...parsed, alt: "New|300" };
-    expect(widthPatch(edited, null)).toEqual({ alt: "New", markdownRaw: null, markdownRawKey: null });
+    expect(widthPatch(edited, null)).toEqual({ alt: "New", altLiteral: false, markdownRaw: null, markdownRawKey: null });
   });
 });
 
@@ -132,9 +134,60 @@ describe("an escaped pipe in the text as written is a caption, not a width (#3zp
   it("resizing a caption with an escaped pipe keeps it a caption", () => {
     const attrs = image("![A\\|300](a.png)", "A|300");
     const patch = widthPatch(attrs, 200);
-    expect(patch).toEqual({ alt: "A|300|200", markdownRaw: "![A\\|300|200](a.png)", markdownRawKey: rawKey("a.png", "A|300|200", null) });
+    expect(patch).toEqual({ alt: "A|300|200", altLiteral: false, markdownRaw: "![A\\|300|200](a.png)", markdownRawKey: rawKey("a.png", "A|300|200", null) });
     const resized = { ...attrs, ...patch };
     expect(imageWidthOf(resized)).toBe(200);
     expect(imageCaptionOf(resized)).toBe("A|300");
+  });
+});
+
+describe("full width on a picture narrower than the column is the column in px (#e9bd64bb review)", () => {
+  it("no size only when the picture is at least as wide as the column", () => {
+    expect(fullColumnWidth(1600, 700)).toBeNull();
+    expect(fullColumnWidth(700, 700)).toBeNull();
+    expect(fullColumnWidth(200, 700)).toBe(700);
+    // Not loaded yet: no size, as before.
+    expect(fullColumnWidth(0, 700)).toBeNull();
+  });
+
+  it("a 200 px picture stepped up three times ends at the column, not back at 200 px", () => {
+    expect(steppedWidth(200, 700, 1, 200)).toBe(350);
+    expect(steppedWidth(350, 700, 1, 200)).toBe(525);
+    expect(steppedWidth(525, 700, 1, 200)).toBe(700);
+    // Once there, another step up stays (the limit), and a step down goes to 75%.
+    expect(steppedWidth(700, 700, 1, 200)).toBe(700);
+    expect(steppedWidth(700, 700, -1, 200)).toBe(525);
+  });
+});
+
+describe("a caption the user types ending in |digits stays a caption (altLiteral)", () => {
+  it("«B|300» with no size is marked literal: no width, the whole text is the caption", () => {
+    const patch = captionPatch({ src: "a.png", alt: "A" }, "B|300");
+    expect(patch).toEqual({ alt: "B|300", altLiteral: true });
+    const attrs = { src: "a.png", ...patch };
+    expect(imageWidthOf(attrs)).toBeNull();
+    expect(imageCaptionOf(attrs)).toBe("B|300");
+    expect(altParts(attrs)).toEqual({ text: "B|300", width: null, size: null });
+  });
+
+  it("with a size, the caption keeps it and needs no mark", () => {
+    expect(captionPatch({ src: "a.png", alt: "A|200" }, "B|300")).toEqual({ alt: "B|300|200", altLiteral: false });
+    expect(imageCaptionOf({ alt: "B|300|200" })).toBe("B|300");
+  });
+
+  it("a resize after it gives a real width and keeps the caption; removing the width marks it again", () => {
+    const literal = { src: "a.png", ...captionPatch({ src: "a.png", alt: "" }, "B|300") };
+    const sized = { ...literal, ...widthPatch(literal, 200) };
+    expect(sized.altLiteral).toBe(false);
+    expect(imageWidthOf(sized)).toBe(200);
+    expect(imageCaptionOf(sized)).toBe("B|300");
+    const back = { ...sized, ...widthPatch(sized, null) };
+    expect(back).toMatchObject({ alt: "B|300", altLiteral: true });
+    expect(imageWidthOf(back)).toBeNull();
+  });
+
+  it("an ordinary caption isn't marked", () => {
+    expect(captionPatch({ alt: "" }, "A cat")).toEqual({ alt: "A cat", altLiteral: false });
+    expect(captionPatch({ alt: "" }, "A | B")).toEqual({ alt: "A | B", altLiteral: false });
   });
 });
