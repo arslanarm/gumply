@@ -27,13 +27,13 @@ const primary = pair();
 const backup = pair();
 const stranger = pair();
 
-/** update-keys.ts as it'll look with keys in (the real file's text, list filled). */
+/** update-keys.ts with these keys (the real file's text, its list replaced; the owner's keys are in the real one). */
 function keysFileText(entries: Array<{ id: string; spki: string }>): string {
   const lines = entries.map((entry, index) => `  { id: "${entry.id}", spki: "${entry.spki}" }, // ${index === 0 ? "primary (CI)" : "backup (offline)"}`);
-  return readFileSync(realKeysFile, "utf8").replace(
-    /export const UPDATE_PUBLIC_KEYS: readonly UpdatePublicKey\[\] = \[\];/,
-    `export const UPDATE_PUBLIC_KEYS: readonly UpdatePublicKey[] = [\n${lines.join("\n")}\n];`,
-  );
+  const list = /export const UPDATE_PUBLIC_KEYS: readonly UpdatePublicKey\[\] = \[[\s\S]*?\];/;
+  const text = readFileSync(realKeysFile, "utf8");
+  if (!list.test(text)) throw new Error("UPDATE_PUBLIC_KEYS not found in update-keys.ts");
+  return text.replace(list, `export const UPDATE_PUBLIC_KEYS: readonly UpdatePublicKey[] = [${lines.length ? `\n${lines.join("\n")}\n` : ""}];`);
 }
 
 const dirs: string[] = [];
@@ -48,9 +48,17 @@ function scratch(): string {
 const run = (...args: string[]) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
 
 describe("scripts/check-update-keys.mjs --require (the tag guard)", () => {
-  it("reads today's file: empty, so a tag would fail", () => {
-    expect(readKeys(readFileSync(realKeysFile, "utf8"))).toEqual([]);
+  it("reads today's file: the owner's two keys, so a tag passes", () => {
+    expect(readKeys(readFileSync(realKeysFile, "utf8")).map((key: { id: string }) => key.id)).toEqual(["7d231848158a2a02", "3806c70f4944286f"]);
     const result = run("--require");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("primary 7d231848158a2a02, backup 3806c70f4944286f");
+  });
+
+  it("an empty list fails the tag", () => {
+    const dir = scratch();
+    writeFileSync(join(dir, "update-keys.ts"), keysFileText([]));
+    const result = run("--require", "--keys-file", join(dir, "update-keys.ts"));
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/::error::UPDATE_PUBLIC_KEYS is empty/);
   });
@@ -124,8 +132,16 @@ describe("scripts/check-update-keys.mjs --verify (the release job)", () => {
 
   it("fails with no keys built in, even with a good-looking .sig", () => {
     const { dir } = release(primary);
-    const result = run("--verify", join(dir, "SHA256SUMS.txt"));
+    writeFileSync(join(dir, "empty-keys.ts"), keysFileText([]));
+    const result = run("--verify", join(dir, "SHA256SUMS.txt"), "--keys-file", join(dir, "empty-keys.ts"));
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/empty/);
+  });
+
+  it("against the real built-in keys, a test key's .sig is refused (only the owner's keys sign releases)", () => {
+    const { dir } = release(primary);
+    const result = run("--verify", join(dir, "SHA256SUMS.txt"));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/aren't built into the app/);
   });
 });
