@@ -129,8 +129,18 @@ test.describe('a database view save meets a changed file (#ups4ikpj, D22)', () =
     await expect(page.getByTestId('page-item-Work/Projects.base')).toBeVisible();
     await expect.poll(() => fs.access(path.join(E2E_VAULT, 'Work/Projects.base')).then(() => true, () => false)).toBe(true);
 
+    // Where the view's save goes: the renamed id, not the old one (main's server redirect hid that).
+    const puts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'PUT' && request.url().includes('/api/bases/')) puts.push(decodeURIComponent(request.url()));
+    });
     await changeCardSize(page);
     await expect.poll(() => read('Work/Projects.base')).toBe(MINE);
+    expect(puts.length).toBeGreaterThan(0);
+    for (const url of puts) {
+      expect(url).toContain('Work/Projects.base');
+      expect(url).not.toContain('Work/Tasks.base');
+    }
     // Not recreated under the old name, and no conflict or error on the way.
     expect(await fs.access(path.join(E2E_VAULT, 'Work/Tasks.base')).then(() => true, () => false)).toBe(false);
     await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
