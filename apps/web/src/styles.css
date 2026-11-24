@@ -7262,6 +7262,21 @@ div.history-error > p {
   margin: 0 auto;
 }
 
+/* N1 (#kw8th869): a database view's version is its YAML, shown as the file is. */
+.history-yaml {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  background: rgba(var(--mono-rgb-100), 0.04);
+  border-radius: 6px;
+}
+
 .history-page .gumply-editor {
   min-height: 0;
   color: var(--text);

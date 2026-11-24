@@ -91,7 +91,7 @@ const PAGE_COMMANDS = {
   "page.import-notion": { group: "new", icon: "folderOpen", label: "notionImport.command", words: "search.importWords", en: "import from notion", testId: "search-import-notion", when: (c) => !kind(c.page)?.leaf },
   "page.export-html": { group: "page", icon: "download", label: "export.command", words: "search.exportWords", en: "export as html page save", testId: "search-export-html", when: (c) => !!kind(c.page)?.note },
   "page.export-pdf": { group: "page", icon: "file", label: "export.pdf.command", words: "search.pdfWords", en: "export as pdf print page", testId: "search-export-pdf", when: (c) => !!kind(c.page)?.note },
-  "page.history": { group: "page", icon: "clock", label: "history.command", words: "search.historyWords", en: "history page history show page history version history versions restore version", testId: "search-history", when: (c) => !!kind(c.page) && !kind(c.page)!.folder && !kind(c.page)!.base },
+  "page.history": { group: "page", icon: "clock", label: "history.command", words: "search.historyWords", en: "history page history show page history version history versions restore version", testId: "search-history", when: (c) => !!kind(c.page) && !kind(c.page)!.folder },
   "page.delete": { group: "page", icon: "trash", label: "commands.page.delete", en: "delete remove trash", when: (c) => c.page !== null },
 } satisfies Record<string, StaticCommand>;
 

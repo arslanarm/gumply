@@ -279,7 +279,7 @@ export function createApiRoutes(store: VaultStore): Hono {
   api.get("/history/:id/:file", async (c) => {
     const { bytes, kind } = await store.readVersion(c.req.param("id"), c.req.param("file"));
     return c.body(new Uint8Array(bytes), 200, {
-      "Content-Type": kind === "whiteboard" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
+      "Content-Type": kind === "whiteboard" ? "application/json; charset=utf-8" : kind === "base" ? "text/yaml; charset=utf-8" : "text/markdown; charset=utf-8",
       "Cache-Control": "no-store",
     });
   });

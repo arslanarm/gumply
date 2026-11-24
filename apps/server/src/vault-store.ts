@@ -5707,12 +5707,18 @@ export class VaultStore {
     });
   }
 
-  /** A version's exact bytes. */
-  readVersion(id: PageId, file: string): Promise<{ bytes: Buffer; kind: "page" | "whiteboard" }> {
+  /**
+   * A version's exact bytes. N1 (#kw8th869): `current` is the file as it is now (a database view's
+   * API answer is its parsed config, so the History dialog reads its text here). Version names are
+   * always `<stamp>.<ext>`, so `current` can't be one.
+   */
+  readVersion(id: PageId, file: string): Promise<{ bytes: Buffer; kind: "page" | "whiteboard" | "base" }> {
     return this.enqueue(async () => {
       const record = this.historyRecord(id);
+      const kind = record.kind as "page" | "whiteboard" | "base";
+      if (file === "current") return { bytes: await readFile(record.filePath), kind };
       const entry = await this.historyEntry(record, file);
-      return { bytes: await this.versionBytes(record, entry), kind: record.kind as "page" | "whiteboard" };
+      return { bytes: await this.versionBytes(record, entry), kind };
     });
   }
 
