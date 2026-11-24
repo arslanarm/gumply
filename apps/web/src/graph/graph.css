@@ -377,6 +377,17 @@
   flex: none;
 }
 
+/* #xb4b54gr: a small tinted area, as the graph draws a group. */
+.graph-legend-area {
+  width: 14px;
+  height: 10px;
+  border-radius: 4px;
+  display: inline-block;
+  flex: none;
+  background: color-mix(in srgb, var(--graph-0) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--graph-0) 60%, transparent);
+}
+
 /* ---------- Local graph panel ---------- */
 
 .layout-with-panel,
@@ -659,6 +670,25 @@
 .graph-group-query:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* #xb4b54gr: "Group by" (links / folder / first tag / off). */
+.graph-panel-select {
+  height: 26px;
+  max-width: 60%;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.graph-panel-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .graph-group-add {

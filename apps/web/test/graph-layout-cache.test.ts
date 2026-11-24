@@ -103,3 +103,35 @@ describe("reading and keeping cached layouts (N6)", () => {
     expect(await cachedLayout(null, "k", 3)).toBeUndefined();
   });
 });
+
+describe("the cache keeps the worker's clusters with the positions (#xb4b54gr)", () => {
+  it("a hit gives exactly the clusters a fresh run found (no worker needed)", async () => {
+    const { computeClusters } = await import("../src/graph/clusters");
+    const nodes = ["A", "B", "C", "D", "E", "F", "G", "H", "I"].map((id) => ({ id, clusterable: true, parentId: null, tags: [] as string[] }));
+    const pairs: Array<[string, string]> = [["A", "B"], ["B", "C"], ["C", "A"], ["D", "E"], ["E", "F"], ["F", "D"], ["G", "H"], ["H", "I"], ["I", "G"], ["A", "D"]];
+    const fresh = computeClusters("links", nodes, pairs.map(([source, target]) => ({ source, target })));
+    const store = mapStore();
+    const x = Float32Array.from(nodes, (_, i) => i);
+    const y = Float32Array.from(nodes, (_, i) => -i);
+    await keepLayout(store, "k", { x, y, clusters: { of: fresh.of, list: fresh.list, ...(fresh.modularity === undefined ? {} : { modularity: fresh.modularity }) } });
+    const hit = await cachedLayout(store, "k", nodes.length);
+    expect([...hit!.clusters!.of]).toEqual([...fresh.of]);
+    expect(hit!.clusters!.list).toEqual(fresh.list);
+    expect(hit!.clusters!.modularity).toBe(fresh.modularity);
+    // Kept as copies: changing the run's arrays later doesn't change the cache.
+    fresh.of[0] = 99;
+    expect(store.map.get("k")!.clusters!.of[0]).not.toBe(99);
+  });
+
+  it("clusters that don't fit the graph are dropped (the canvas then lays out afresh)", async () => {
+    const store = mapStore();
+    store.map.set("k", { x: new Float32Array(3), y: new Float32Array(3), clusters: { of: new Int32Array(2), list: [] } });
+    const hit = await cachedLayout(store, "k", 3);
+    expect(hit).toBeDefined();
+    expect(hit!.clusters).toBeUndefined();
+  });
+
+  it("the grouping is part of the key: the same graph under another mode is another layout", () => {
+    expect(layoutCacheKey(ids, links, "|0|links:abc")).not.toBe(layoutCacheKey(ids, links, "|0|off:abc"));
+  });
+});

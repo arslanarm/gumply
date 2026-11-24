@@ -235,8 +235,10 @@ export { linkSourceFolder, pickLinkTarget, preferredLinkPath } from "./link-orde
 export { isWholeWikilink, isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED, wikilinkTargetPart } from "./wikilink-syntax.js";
 export { graphItemPath, matchesGraphQuery, parseGraphQuery, type GraphQuery, type GraphQueryItem, type GraphQueryOp, type GraphQueryTerm } from "./graph-query.js";
 export {
+  DEFAULT_GRAPH_CLUSTERS,
   DEFAULT_GRAPH_FILTERS,
   DEFAULT_GRAPH_SETTINGS,
+  GRAPH_CLUSTER_MODES,
   fromObsidianGraph,
   MAX_GRAPH_GROUPS,
   MAX_GRAPH_QUERY,
@@ -249,6 +251,7 @@ export {
   isDefaultGraphForces,
   normalizeGraphForces,
   type GraphForces,
+  type GraphClusterMode,
   type GraphFilters,
   type GraphGroup,
   type GraphSettings,

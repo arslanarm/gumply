@@ -93,7 +93,14 @@ describe("graph settings", () => {
       groups: [{ query: "tag:#a", color: "#aabbcc" }],
       filters: { search: "x", showTags: false, showAttachments: false, hideUnresolved: false, showOrphans: false },
       forces: { center: 1, repel: 1, linkStrength: 1, linkDistance: 1 },
+      // #xb4b54gr: "Group by" defaults to links.
+      clusterBy: "links",
     });
+    // A known mode is kept; anything else is the default.
+    expect(normalizeGraphSettings({ clusterBy: "folder" }).clusterBy).toBe("folder");
+    expect(normalizeGraphSettings({ clusterBy: "off" }).clusterBy).toBe("off");
+    expect(normalizeGraphSettings({ clusterBy: "property" }).clusterBy).toBe("links");
+    expect(normalizeGraphSettings({ clusterBy: 3 }).clusterBy).toBe("links");
     const many = normalizeGraphSettings({ groups: Array.from({ length: 80 }, () => ({ query: "q".repeat(900), color: "#000000" })) });
     expect(many.groups).toHaveLength(50);
     expect(many.groups[0]!.query).toHaveLength(500);
@@ -130,6 +137,8 @@ describe("graph settings", () => {
       ],
       filters: { search: "path:Projects", showTags: true, showAttachments: false, hideUnresolved: true, showOrphans: false },
       forces: { center: 1, repel: 1, linkStrength: 1, linkDistance: 1 },
+      // Obsidian has no grouping: the default (#xb4b54gr).
+      clusterBy: "links",
     });
   });
 

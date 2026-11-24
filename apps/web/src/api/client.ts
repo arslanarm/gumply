@@ -676,7 +676,8 @@ export const api = {
   /** E1 (spec/api-graph-groups, v1.19): the graph's colour groups and filters. */
   getGraphSettings: (): Promise<GraphSettingsResponse> => request("/graph/settings"),
 
-  putGraphSettings: (settings: GraphSettings): Promise<GraphSettingsResponse> =>
+  /** #xb4b54gr: `clusterBy` may be left out: the file keeps its own value then. */
+  putGraphSettings: (settings: Omit<GraphSettings, "clusterBy"> & { clusterBy?: GraphSettings["clusterBy"] }): Promise<GraphSettingsResponse> =>
     mutate(() => request("/graph/settings", { method: "PUT", body: JSON.stringify(settings) })),
 
   // --- sync conflict copies (spec/api v1.29, spec/sync-conflicts, D43) ---

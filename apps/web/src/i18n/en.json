@@ -75,6 +75,9 @@
     "noLinksBefore": "Type ",
     "noLinksAfter": " in this page to connect it.",
     "legendIcon": "emoji = page icon",
+    "legendClustersLinks": "colour area = group of linked pages",
+    "legendClustersFolder": "colour area = pages in one folder",
+    "legendClustersTag": "colour area = pages with one first tag",
     "panel": {
       "open": "Graph settings",
       "title": "Graph settings",
@@ -102,7 +105,15 @@
       "forceValue": "{{percent}}%",
       "forceValueDefault": "{{percent}}% (default)",
       "forcesReset": "Reset forces",
-      "forcesHint": "100% is Gumply's own layout. A change re-arranges the graph when you let go of the slider."
+      "forcesHint": "100% is Gumply's own layout. A change re-arranges the graph when you let go of the slider.",
+      "clusters": "Group by",
+      "clustersLinks": "Links",
+      "clustersFolder": "Folder",
+      "clustersTag": "First tag",
+      "clustersOff": "Off",
+      "clustersHint": "Pages that belong together get a shaded area and are kept apart from other groups.",
+      "clustersNoneLinks": "No clear groups found: these links connect pages across topics evenly.",
+      "clustersNone": "No groups of 3 or more pages found."
     },
     "legendAttachment": "Attachment"
   },

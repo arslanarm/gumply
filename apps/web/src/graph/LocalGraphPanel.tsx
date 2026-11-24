@@ -1,4 +1,4 @@
-import type { GraphData, GraphNode, PageId } from "@gumply/core";
+import { DEFAULT_GRAPH_CLUSTERS, type GraphData, type GraphNode, type PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiRequestError, fileUrl } from "../api/client.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
@@ -197,6 +197,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
             reducedMotion={reducedMotion}
             onOpenPage={openNode}
             colorOf={colorOf}
+            clusterMode={settings?.clusterBy ?? DEFAULT_GRAPH_CLUSTERS}
             onCreatePage={(title) => {
               const ghost = filtered.ghosts.find(
                 (candidate) => candidate.title.toLowerCase() === title.toLowerCase(),

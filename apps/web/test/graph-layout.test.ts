@@ -141,3 +141,61 @@ describe("graph layout off the main thread (#g95wkd9y)", () => {
     expect(layout.progress()).toBe(1);
   });
 });
+
+/** #xb4b54gr (@graph-dev's review): the same guards with the cluster force on. */
+describe("the guards with clusters (#xb4b54gr)", () => {
+  /** Every 20-page block of `graph()` is a cluster; 8 clusters over `count` pages. */
+  const clustered = (count: number, overrides: Partial<LayoutInput> = {}) =>
+    input(count, { cluster: Int32Array.from({ length: count }, (_, i) => Math.floor(i / 20) % 8), ...overrides });
+
+  // Two 2,000-node layouts: counted, not timed, but slow under load (the default 5 s timeout flaked).
+  it("the run is bounded: 2,000 nodes in 8 clusters settle within the tick budget", { timeout: 30_000 }, () => {
+    for (const reducedMotion of [false, true]) {
+      const layout = createLayout(clustered(2000, { reducedMotion }));
+      let done = false;
+      let calls = 0;
+      while (!done && calls < 1000) {
+        done = layout.tick();
+        calls += 1;
+      }
+      expect(done).toBe(true);
+      expect(layout.ticks).toBeLessThanOrEqual(reducedMotion ? LAYOUT_SETTINGS.maxTicksReduced : LAYOUT_SETTINGS.maxTicks);
+      expect(layout.tick()).toBe(true);
+      const { x, y } = layout.positions();
+      expect([...x, ...y].every(Number.isFinite)).toBe(true);
+    }
+  });
+
+  it("progress still rises to exactly 1", () => {
+    const layout = createLayout(clustered(300));
+    let last = 0;
+    let done = false;
+    while (!done) {
+      done = layout.tick();
+      const now = layout.progress();
+      expect(now).toBeGreaterThanOrEqual(last);
+      last = now;
+    }
+    expect(layout.progress()).toBe(1);
+  });
+
+  it("a re-run from the current positions doesn't jump (a re-cluster takes this path)", () => {
+    const first = createLayout(clustered(400));
+    while (!first.tick());
+    const settled = first.positions();
+    // The re-run may even come with other cluster numbers (Louvain relabels): positions still continue.
+    const relabelled = Int32Array.from({ length: 400 }, (_, i) => 7 - (Math.floor(i / 20) % 8));
+    const again = createLayout(clustered(400, { x: Float32Array.from(settled.x), y: Float32Array.from(settled.y), cluster: relabelled }));
+    again.tick();
+    const resumed = again.positions();
+    const fresh = createLayout(clustered(400));
+    fresh.tick();
+    const scratch = fresh.positions();
+    const moved = (a: Float32Array, b: Float32Array, c: Float32Array, d: Float32Array) => {
+      let max = 0;
+      for (let i = 0; i < a.length; i += 1) max = Math.max(max, Math.hypot(a[i]! - c[i]!, b[i]! - d[i]!));
+      return max;
+    };
+    expect(moved(resumed.x, resumed.y, settled.x, settled.y)).toBeLessThan(moved(scratch.x, scratch.y, settled.x, settled.y) / 10);
+  });
+});
