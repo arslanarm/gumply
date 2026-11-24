@@ -1174,7 +1174,10 @@ export function GraphCanvas({
     // positions at once. The key is taken before the worker gets (and
     // detaches) the input's arrays.
     const store = cachesLayout(drawn.length) ? graphLayoutStore() : null;
+    const keyStart = performance.now();
     const key = store ? layoutCacheKey(drawn.map((node) => node.id), input.links, `${centerId ?? ""}|${reducedMotion ? 1 : 0}`) : "";
+    // Its main-thread cost, readable by the perf probes (`graph-layout-key`).
+    if (store) performance.measure?.("graph-layout-key", { start: keyStart });
     let cancelled = false;
     let cancel: () => void = () => {};
     if (!store) arrange();
