@@ -15,7 +15,7 @@ import {
   type DailyNoteSettings,
 } from "@gumply/core";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
+import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, renamedTargetFor, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -1633,6 +1633,14 @@ export function App() {
     async (link: { targetTitle: string; heading: string; from?: string }) => {
       // From the page the link is written in: a same-named page in its folder wins (#35e42m7v).
       const resolved = resolveWikilink(link.targetTitle, documentPages, link.from ?? page?.id);
+      // v1.35 (#xgnvipyd): `[[Old]]` while a rename of Old is still rewriting links: open the renamed page, never create a new Old.
+      const renamedTo = resolved ? null : renamedTargetFor(link.targetTitle);
+      if (renamedTo) {
+        setPendingHeading(link.heading.length > 0 ? { pageId: renamedTo, heading: link.heading } : null);
+        if (renamedTo === selectedRef.current) requestPageReload();
+        else navigate(renamedTo);
+        return;
+      }
 
       if (!resolved) {
         try {
@@ -2249,8 +2257,18 @@ export function App() {
     }
   }, [deletedOnDisk, loadPages, applySavedPage]);
 
-  const handleConflictBackup = useCallback((path: string) => {
-    setToast({ message: t("page.conflictKept", { path }), icon: "info" });
+  const handleConflictBackup = useCallback((path: string | null, merged?: { links: number; titles: string[] }) => {
+    // N10 (#5pgmziyc): Keep mine kept the user's text plus a rename's new links; say so.
+    const newest = merged?.titles[merged.titles.length - 1];
+    const links = !merged || merged.links <= 0
+      ? null
+      : newest
+        ? t(merged.links > 1 ? "page.conflictKeptLinksMany" : "page.conflictKeptLinks", { title: newest })
+        : t("page.conflictKeptLinksUntitled");
+    const kept = path ? t("page.conflictKept", { path }) : null;
+    // "Other version kept in …" has no full stop of its own; it gets one before a second sentence.
+    const message = kept && links ? `${/[.!?…]$/.test(kept) ? kept : `${kept}.`} ${links}` : (kept ?? links);
+    if (message) setToast({ message, icon: "info" });
   }, []);
 
   const dismissToast = useCallback(() => setToast(null), []);

@@ -12,10 +12,13 @@ import type { UiStateStore } from "./ui-state.js";
 import type { McpLaunchCommand } from "@gumply/core";
 import { logUnhandledRejections } from "./last-resort.js";
 import { isLoopbackName } from "./security.js";
+import type { InstanceId } from "./instance-id.js";
 import { VaultStore } from "./vault-store.js";
 
 export interface StartOptions {
   vaultPath: string;
+  /** D47: this installation's id (app data, never the vault), for the rename crash journal; created lazily. */
+  instanceId?: string | InstanceId;
   /** 0 = a random free port. */
   port: number;
   host?: string;
@@ -45,6 +48,8 @@ export interface StartOptions {
 
 /** Shutdown never waits on version history longer than this (#a7qepp99). */
 export const HISTORY_FLUSH_TIMEOUT_MS = 3_000;
+/** #xgnvipyd: how long close() waits for a rename's remaining link-rewrite batches. */
+export const RENAME_SETTLE_TIMEOUT_MS = 5_000;
 
 /**
  * Run the history flush, but give up after `timeoutMs`: a stuck history
@@ -82,7 +87,7 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
 
   // #35q6kt6e: a stray rejection is logged, never the end of the server.
   logUnhandledRejections();
-  const store = new VaultStore(options.vaultPath);
+  const store = new VaultStore(options.vaultPath, options.instanceId ? { instanceId: options.instanceId } : {});
   // #g95wkd9y: answer once the files are read; the links are indexed next, in
   // the background (whatever reads links waits for it).
   await store.init({ background: true });
@@ -137,8 +142,11 @@ export async function startGumplyServer(options: StartOptions): Promise<RunningS
     close: () =>
       new Promise<void>((resolveClose) => {
         store.stopWatching();
-        // D41: open editing sessions become versions on close.
-        void flushWithin(() => store.flushHistory(), options.historyFlushTimeoutMs ?? HISTORY_FLUSH_TIMEOUT_MS)
+        // #xgnvipyd: a rename still rewriting links gets a few seconds to finish (fewer `[[Old]]` links left),
+        // then D41: open editing sessions become versions on close.
+        void store
+          .settleRenames(RENAME_SETTLE_TIMEOUT_MS)
+          .then(() => flushWithin(() => store.flushHistory(), options.historyFlushTimeoutMs ?? HISTORY_FLUSH_TIMEOUT_MS))
           .catch((error: unknown) => console.error("[gumply] history flush on close failed:", error))
           .finally(() => {
             server.close(() => resolveClose());

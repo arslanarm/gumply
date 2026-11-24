@@ -287,4 +287,41 @@ describe("Autosave on the way out (#3t6v62cb)", () => {
     expect(autosave.hasFailed()).toBe(true);
     expect(autosave.isDirty()).toBe(true);
   });
+  it("N10: a save that answers with the text written makes that the baseline: the editor taking it in place sends nothing more", async () => {
+    vi.useFakeTimers();
+    let autosave: Autosave;
+    const save = vi.fn(async (value: string): Promise<void | string> => {
+      if (value !== "See [[Hub]].") return;
+      // The server kept the rename's link; the editor takes it in place while the save returns.
+      autosave.schedule("See [[Hub renamed]].");
+      return "See [[Hub renamed]].";
+    });
+    autosave = new Autosave({ save, delay: 100 });
+    autosave.schedule("See [[Hub]].");
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(autosave.isDirty()).toBe(false);
+
+    // Typing after it saves as usual, from the new baseline.
+    autosave.schedule("See [[Hub renamed]]. More.");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(save).toHaveBeenLastCalledWith("See [[Hub renamed]]. More.");
+  });
+
+  it("N10: typing that arrived while that save was out is still saved after it", async () => {
+    vi.useFakeTimers();
+    let autosave: Autosave;
+    const save = vi.fn(async (value: string): Promise<void | string> => {
+      if (value !== "See [[Hub]].") return;
+      autosave.schedule("See [[Hub renamed]]. typed");
+      return "See [[Hub renamed]].";
+    });
+    autosave = new Autosave({ save, delay: 100 });
+    autosave.schedule("See [[Hub]].");
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith("See [[Hub renamed]]. typed");
+  });
 });

@@ -96,6 +96,7 @@ All of these are hidden, and none of them are your notes. When Gumply replaces o
 | `.gumply/sync-dismissed.json` | Pages you marked **Not a copy**. | Yes. They may be flagged again. |
 | `.gumply/demo-seeded.json` | Remembers that the demo pages were added once. | Yes. |
 | `.gumply/import/` | A Notion import while it's running. Removed when it ends. | Yes, when no import is running. |
+| `.gumply/rename-pending.json` | A rename whose links are still being updated (D47). Renaming a page moves its file at once and then updates the links to it in other pages a few at a time; this file lists that work (`{"version": 1, "renames": [{oldId, newId, oldTitle, newTitle, instance, startedAt}]}`), written right after the move and removed when the links are done. If the app stops before then, it finishes the rename at its next start. `instance` is the device that started it (an id kept in that app's own data, never in the vault): on a synced vault only that device finishes a recent one, and after 7 days any device may. A file this version can't read is left as it is. | Yes. Links not yet updated then stay as they are (`[[Old title]]`). |
 | `.~gumply-….tmp` | A save in progress. Left over only if the app stopped mid-save; Gumply removes its own leftovers after a day, and never other programs' files. | Yes. |
 
 Gumply never writes your sync tool's settings (such as `.stignore`). Settings → Version history shows the lines to add, so each device keeps its own history.
