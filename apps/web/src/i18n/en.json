@@ -985,7 +985,8 @@
       "leave": "Leave anyway",
       "stay": "Stay",
       "leaveMessage": "Unsaved changes",
-      "leaveDetail": "Some changes couldn't be saved. If you leave, they're lost."
+      "leaveDetail": "Some changes couldn't be saved. If you leave, they're lost.",
+      "detailWindows": "{{detail}} Not saved yet in: {{windows}}."
     },
     "export": {
       "saveTitle": "Export board"
