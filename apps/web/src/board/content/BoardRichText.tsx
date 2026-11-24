@@ -8,6 +8,7 @@ import MarkdownIt from "markdown-it";
 import { memo, useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
 import { highlightMarkdownPlugin } from "../../editor/highlight.js";
 import { wikilinkMarkdownPlugin } from "../../editor/wikilink/markdown-plugin.js";
+import { imageAltMarkdownPlugin } from "../../editor/raw-markdown/markdown-plugin.js";
 import { hydrateMath } from "../../lib/math.js";
 import { mathMarkdownPlugin } from "../../lib/math-markdown.js";
 import { diagramMarkdownPlugin } from "../../lib/diagram-markdown.js";
@@ -19,6 +20,8 @@ import { WIKILINK_INNER, WIKILINK_TARGET } from "@gumply/core";
 
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
 wikilinkMarkdownPlugin(markdown);
+// #3zpgenmw: `\|`, `\_`, `&amp;` stay in an image's alt, as in pages.
+imageAltMarkdownPlugin(markdown);
 // `==highlight==` on stickies too, as in pages (#bg3cb83t).
 highlightMarkdownPlugin(markdown);
 // F1: `$…$` / `$$…$$` become placeholders, typeset after mount (KaTeX is lazy).

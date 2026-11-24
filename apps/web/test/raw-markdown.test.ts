@@ -255,3 +255,48 @@ describe("block joins (#54prcupx)", () => {
     expect(joinsPrevious(node("heading"), node("paragraph", { markdownJoin: "h>p" }, 0))).toBe(false);
   });
 });
+
+describe("escapes and entities in image alt text (#3zpgenmw, D37)", () => {
+  /** The alt and the kept source of the first image. */
+  const image = (source: string) => {
+    const tag = /<img [^>]*>/.exec(render(source))![0];
+    const attr = (name: string) => decode(new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1] ?? "");
+    return { alt: attr("alt"), raw: attr("data-md-raw") };
+  };
+
+  it("an escaped character stays in the alt (markdown-it drops it inside an image)", () => {
+    expect(image("![A\\|300](a.png)").alt).toBe("A|300");
+    expect(image("![my\\_photo](a.png)").alt).toBe("my_photo");
+    expect(image("![a\\*b\\*](a.png)").alt).toBe("a*b*");
+    expect(image("![x \\[1\\]](a.png)").alt).toBe("x [1]");
+    expect(image("x ![A\\|B](a.png) y").alt).toBe("A|B");
+  });
+
+  it("an entity stays in the alt, decoded", () => {
+    expect(image("![a&amp;b](a.png)").alt).toBe("a&b");
+    expect(image("![&copy; 2026](a.png)").alt).toBe("© 2026");
+  });
+
+  it("the source is kept as written, so an untouched image keeps its bytes", () => {
+    expect(image("![A\\|300](a.png)").raw).toBe("![A\\|300](a.png)");
+    expect(image("![my\\_photo](<my pic.png>)").raw).toBe("![my\\_photo](<my pic.png>)");
+  });
+
+  it("emphasis in the alt is still plain text (CommonMark), and text outside images is unchanged", () => {
+    expect(image("![**bold** cat](a.png)").alt).toBe("bold cat");
+    expect(render("a \\| b")).toContain("\\|");
+  });
+});
+
+describe("the image alt fix in the other renderers (#3zpgenmw)", () => {
+  it("imageAltMarkdownPlugin alone keeps escapes and entities in alts, and is idempotent", async () => {
+    const { imageAltMarkdownPlugin } = await import("../src/editor/raw-markdown/markdown-plugin.js");
+    const plain = new MarkdownIt({ html: false });
+    imageAltMarkdownPlugin(plain);
+    imageAltMarkdownPlugin(plain);
+    expect(plain.render("![my\\_photo &amp; A\\|B](a.png)").trim()).toBe('<p><img src="a.png" alt="my_photo &amp; A|B"></p>');
+    // With the full editor plugin on the same instance, the rule is there once.
+    rawMarkdownPlugin(plain);
+    expect(plain.core.ruler.__rules__.filter((rule: { name: string }) => rule.name === "gumply_image_alt")).toHaveLength(1);
+  });
+});
