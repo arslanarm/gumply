@@ -7,6 +7,7 @@ import {
   ATTACHMENT_PALETTE_INDEX,
   attachmentPath,
   buildGraphModel,
+  tagSlot,
   filterGraph,
   groupColorer,
   isAttachmentNodeId,
@@ -23,6 +24,8 @@ export interface LocalGraphPanelProps {
   onClose: () => void;
   /** A tab of the right-hand column (v0.8 D1): the column has the title and the close button. */
   embedded?: boolean;
+  /** #cp7xvwjc: the vault's tag colours (from the page list), the same as the global graph's. */
+  tagSlots?: ReadonlyMap<string, number>;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -44,7 +47,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** Collapsible right-hand graph for the current page (spec/ux §9). */
-export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, embedded = false }: LocalGraphPanelProps) {
+export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, embedded = false, tagSlots }: LocalGraphPanelProps) {
   const t = useT();
   const [depth, setDepth] = useState<Depth>(readDepth);
   const [data, setData] = useState<GraphData | null>(null);
@@ -107,8 +110,10 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
   const colorOf = useMemo(() => {
     const group = groupColorer(groups ?? []);
     return (node: GraphNode, palette: readonly string[]) =>
-      group(node) ?? (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null);
-  }, [groups]);
+      group(node) ??
+      (isAttachmentNodeId(node.id) ? (palette[ATTACHMENT_PALETTE_INDEX] ?? null) : null) ??
+      (node.tags[0] ? (palette[tagSlot(node.tags[0], tagSlots)] ?? null) : null);
+  }, [groups, tagSlots]);
   /** Tag nodes have no page to open; attachment nodes open the file. */
   const openNode = (id: PageId) => {
     if (isTagNodeId(id)) return;

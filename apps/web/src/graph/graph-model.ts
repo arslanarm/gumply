@@ -390,6 +390,80 @@ function colorFor(key: string, palette: readonly string[] = PALETTE): string {
   return palette[paletteIndex(key)] ?? palette[0] ?? PALETTE[0]!;
 }
 
+/** Palette slots a tag can take: the attachments' slot only when the others are used. */
+const TAG_SLOT_ORDER = (preferred: number): number[] => {
+  const all = Array.from({ length: PALETTE.length }, (_, step) => (preferred + step) % PALETTE.length);
+  return [...all.filter((slot) => slot !== ATTACHMENT_PALETTE_INDEX), ATTACHMENT_PALETTE_INDEX];
+};
+
+/** #cp7xvwjc: how many pages each tag colours (a page's first tag, as `nodeColor` colours), keyed lower-case. */
+export function firstTagCounts(nodes: ReadonlyArray<{ tags: readonly string[] }>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    const tag = node.tags[0];
+    if (tag) counts.set(tag.toLowerCase(), (counts.get(tag.toLowerCase()) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** A key that changes only when the counts do (memos over a 10k-page list). */
+export function firstTagCountsKey(counts: ReadonlyMap<string, number>): string {
+  return [...counts.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([tag, count]) => `${tag}\u0000${count}`)
+    .join("\u0001");
+}
+
+/**
+ * #cp7xvwjc: which palette slot each tag colours nodes with, so the tags in a
+ * vault don't share colours (a plain hash put #money and #reading both on
+ * orange). From the vault's first-tag counts, so every view shows the same:
+ * - the 10 tags that colour the most pages get distinct slots, **handed out
+ *   most used first** (ties by name): each takes its hash slot if free, else
+ *   the next free one. A new tag is the least used, so it takes a free slot
+ *   and never pushes an existing tag off its colour;
+ * - the attachments' slot goes last, so up to 9 tags never look like files;
+ * - other tags keep their hash slot, moved off the attachments' slot
+ *   (beyond 10, colours must repeat, but never with files).
+ */
+export function tagColorSlotsFromCounts(counts: ReadonlyMap<string, number>): Map<string, number> {
+  const byUse = [...counts.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const slots = new Map<string, number>();
+  const used = new Set<number>();
+  for (const [tag] of byUse.slice(0, PALETTE.length)) {
+    const slot = TAG_SLOT_ORDER(paletteIndex(tag)).find((candidate) => !used.has(candidate))!;
+    used.add(slot);
+    slots.set(tag, slot);
+  }
+  for (const [tag] of byUse.slice(PALETTE.length)) slots.set(tag, TAG_SLOT_ORDER(paletteIndex(tag))[0]!);
+  return slots;
+}
+
+/** `tagColorSlotsFromCounts` of these nodes' first tags. */
+export function tagColorSlots(nodes: ReadonlyArray<{ tags: readonly string[] }>): Map<string, number> {
+  return tagColorSlotsFromCounts(firstTagCounts(nodes));
+}
+
+/** The slot for `tag` in `slots`, else its hash slot. */
+export function tagSlot(tag: string, slots?: ReadonlyMap<string, number>): number {
+  return slots?.get(tag.toLowerCase()) ?? paletteIndex(tag);
+}
+
+/** Tags that colour nodes, most nodes first (ties by name): the legend's rows. */
+export function colouringTags(nodes: ReadonlyArray<{ tags: readonly string[] }>): string[] {
+  const counts = new Map<string, { tag: string; count: number }>();
+  for (const node of nodes) {
+    const tag = node.tags[0];
+    if (!tag) continue;
+    const entry = counts.get(tag.toLowerCase());
+    if (entry) entry.count += 1;
+    else counts.set(tag.toLowerCase(), { tag, count: 1 });
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || (a.tag.toLowerCase() < b.tag.toLowerCase() ? -1 : 1))
+    .map((entry) => entry.tag);
+}
+
 /** Colour of a page without tags (legend: "page"). Matches `--graph-page`. */
 export const PAGE_NODE_COLOR = "#8c8a84";
 
@@ -402,9 +476,11 @@ export function nodeColor(
   meta: PageMeta,
   palette: readonly string[] = PALETTE,
   pageColor: string = PAGE_NODE_COLOR,
+  slots?: ReadonlyMap<string, number>,
 ): string {
   const tag = meta.tags[0];
-  return tag ? colorFor(tag, palette) : pageColor;
+  if (!tag) return pageColor;
+  return slots ? (palette[tagSlot(tag, slots)] ?? colorFor(tag, palette)) : colorFor(tag, palette);
 }
 
 /** Resolve `--graph-0…9` from the current theme for canvas/legend use. */
