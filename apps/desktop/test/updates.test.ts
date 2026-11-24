@@ -234,12 +234,54 @@ describe("UpdateController policy", () => {
     const error = new Error("sha512 checksum mismatch");
     updater.emit("error", error); // electron-updater dispatches it once, in the first call's catch
     expect(instance.getState().status).toBe("available");
-    updater.emit("update-available", { version: "0.9.1" }); // a second check: download #2 joins the in-flight promise
+    await instance.check(true); // "Check now": it retries, and download #2 joins the in-flight promise
     expect(instance.getState().status).toBe("downloading");
     fail(error); // ...which then rejects, with no second "error"
     await vi.waitFor(() => expect(instance.getState().status).toBe("available"));
     expect(instance.getState().error).toContain("sha512 checksum mismatch");
     expect(updater.downloadUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("a version whose download failed isn't downloaded again automatically, so a hanging retry can't stick it on downloading", async () => {
+    const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage" });
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    updater.downloadUpdate.mockImplementationOnce(async () => {
+      const error = new Error("sha512 checksum mismatch");
+      updater.emit("error", error);
+      throw error;
+    });
+    await instance.check(true);
+    await vi.waitFor(() => expect(instance.getState().status).toBe("available"));
+    // Any further download would hang for good.
+    updater.downloadUpdate.mockImplementation(() => new Promise<unknown>(() => undefined));
+    updater.emit("update-available", { version: "0.9.1" }); // an automatic check finds it again
+    expect(instance.getState()).toMatchObject({ status: "available", version: "0.9.1", error: "sha512 checksum mismatch" });
+    instance.setMode("notify");
+    instance.setMode("auto"); // switching to automatic doesn't restart it either
+    expect(instance.getState().status).toBe("available");
+    expect(updater.downloadUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("\"Check now\" retries a download that failed earlier in the session", async () => {
+    const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage" });
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    updater.downloadUpdate.mockImplementationOnce(async () => {
+      throw new Error("network down");
+    });
+    await instance.check(true);
+    await vi.waitFor(() => expect(instance.getState().status).toBe("available"));
+    updater.downloadUpdate.mockImplementation(async () => undefined);
+    await instance.check(true);
+    expect(updater.downloadUpdate).toHaveBeenCalledTimes(2);
+    expect(instance.getState().status).toBe("downloading");
+    updater.emit("update-downloaded", { version: "0.9.1", downloadedFile: "/cache/Gumply-0.9.1-x86_64.AppImage" });
+    expect(instance.getState().status).toBe("ready");
   });
 
   it("a download that rejects and also emits \"error\" ends the same way, once", async () => {

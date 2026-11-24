@@ -235,6 +235,12 @@ export class UpdateController {
   private verifiedSha256: string | null = null;
   /** With signing: a version whose download didn't verify; not downloaded again automatically. */
   private failedVersion: string | null = null;
+  /**
+   * A version whose download failed in this session (with the reason): not downloaded
+   * again automatically (an automatic check, or switching to automatic), so a failing
+   * download can't restart itself; a manual "Check now" clears it and retries.
+   */
+  private downloadFailed: { version: string | null; error: string } | null = null;
   private timer: unknown = null;
   private checking: Promise<void> | null = null;
 
@@ -271,7 +277,7 @@ export class UpdateController {
     updater.on("error", ((error: Error) => {
       this.deps.log?.(`[gumply] update: ${error?.message ?? String(error)}`);
       // A failed download leaves the update on offer; a failed check is an error.
-      if (this.state.status === "downloading") this.set({ status: "available", error: error?.message ?? String(error) });
+      if (this.state.status === "downloading") this.downloadDidFail(error?.message ?? String(error));
       else if (this.state.status !== "ready") this.set({ status: "error", error: error?.message ?? String(error) });
     }) as (arg: never) => void);
   }
@@ -331,7 +337,7 @@ export class UpdateController {
     this.deps.save({ ...this.deps.load(), mode: next });
     this.set({ mode: next });
     // Switching to automatic with an update on offer: fetch it now.
-    if (next === "auto" && this.state.status === "available") void this.download();
+    if (next === "auto" && this.state.status === "available" && this.downloadFailed?.version !== this.state.version) void this.download();
     return this.getState();
   }
 
@@ -339,6 +345,8 @@ export class UpdateController {
   check(manual = false): Promise<void> {
     if (this.state.kind === "none") return Promise.resolve();
     if (!manual && this.state.mode === "off") return Promise.resolve();
+    // "Check now" retries a download that failed earlier in this session.
+    if (manual) this.downloadFailed = null;
     if (this.state.status === "ready" || this.state.status === "downloading" || this.state.status === "pending-running") return Promise.resolve();
     if (this.checking) return this.checking;
     this.set({ status: "checking", error: null });
@@ -416,6 +424,11 @@ export class UpdateController {
       this.set({ status: "verify-failed", version, releaseUrl: releaseUrl(version) });
       return;
     }
+    // A version whose download failed in this session stays on offer, with its error, until "Check now".
+    if (this.downloadFailed?.version === version) {
+      this.set({ status: "available", version, releaseUrl: releaseUrl(version), error: this.downloadFailed.error });
+      return;
+    }
     this.set({ status: "available", version, releaseUrl: releaseUrl(version), error: null });
     if (this.state.mode === "auto" && canInstall(this.state.kind)) void this.download();
   }
@@ -432,9 +445,15 @@ export class UpdateController {
         if (this.state.status !== "downloading") return;
         const message = error instanceof Error ? error.message : String(error);
         this.deps.log?.(`[gumply] update: ${message}`);
-        this.set({ status: "available", error: message });
+        this.downloadDidFail(message);
       },
     );
+  }
+
+  /** A download failed: the update stays on offer with the reason, and isn't fetched again automatically. */
+  private downloadDidFail(message: string): void {
+    this.downloadFailed = { version: this.state.version, error: message };
+    this.set({ status: "available", error: message });
   }
 
   private schedule(ms: number): void {
