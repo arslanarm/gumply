@@ -56,6 +56,9 @@ test.describe('our own saves are never "changed on disk"', () => {
       if (route.request().method() !== 'GET') return route.fallback();
       const response = await route.fetch();
       await new Promise((resolve) => setTimeout(resolve, 1_500));
+      // #mxtuk2z7: a poll still held when the test ends outlives its page (the context closes
+      // and disposes the fetched response); there's nothing left to answer.
+      if (page.isClosed()) return;
       await route.fulfill({ response });
     });
     await page.goto(`/#/${seeded.id}`);
@@ -82,5 +85,7 @@ test.describe('our own saves are never "changed on disk"', () => {
     await expect(body).toContainText('Hello one two three!');
     await page.keyboard.press('Control+z');
     await expect(body).not.toContainText('three!');
+    // #mxtuk2z7: drop the held polls before teardown, so none answers after the context closes.
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
   });
 });
