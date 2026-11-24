@@ -2,6 +2,14 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.1: big graphs open again (2026-11-24)
+
+A fix release, recommended for everyone on 0.9.0.
+
+**Fixed**
+- **The graph of a large vault could freeze, sometimes for over a minute,** when it finished arranging. At some zoom levels the link lines came out a hair wider than one screen pixel, which is very slow to draw; they're now drawn just under one pixel, which looks the same. At high display scaling (200%), where in our tests large graphs stopped responding, links are now thinner.
+- **A click right after start is no longer undone:** opening the graph or a page while Gumply was starting could be replaced by the startup page (Settings → On startup).
+
 ## 0.9.0: history, sync and speed (2026-11-24)
 
 **New**
