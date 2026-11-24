@@ -110,12 +110,15 @@ test('a database view: Restore waits for a view change still being saved, then k
   await versions.first().click();
   await dialog.getByTestId('history-restore').click();
 
-  // The restore waits for the view's save: nothing is sent while it's held.
   await page.waitForTimeout(500);
-  expect(restores).toHaveLength(0);
+  const releasedAt = Date.now();
   release();
 
   await expect(dialog.getByTestId('history-status')).toContainText('Undo is at the top of the list');
+  // The restore went out only after the view's save was let through (without the flush it meets a
+  // false "changed while you were looking", which the status line above catches).
+  expect(restores).toHaveLength(1);
+  expect(restores[0]!).toBeGreaterThanOrEqual(releasedAt);
   await expect.poll(() => readFile(file, 'utf8'), { timeout: 10_000 }).toBe(GALLERY);
   // The held change wasn't lost: it's the version the restore replaced.
   const listed = await (await request.get(`/api/history/${encodeURIComponent(id)}`)).json();
