@@ -18,6 +18,12 @@ export interface GraphSettingsState {
 export function useGraphSettings(): GraphSettingsState {
   const [settings, setSettings] = useState<GraphSettings | null>(null);
   const pending = useRef<GraphSettings | null>(null);
+  /**
+   * #xb4b54gr: "Group by" is sent only once the user changes it here, so a
+   * value this Gumply doesn't know (from a newer one) stays in the file.
+   */
+  const clusterByTouched = useRef(false);
+  const current = useRef<GraphSettings | null>(null);
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -25,11 +31,16 @@ export function useGraphSettings(): GraphSettingsState {
     api
       .getGraphSettings()
       .then((loaded) => {
-        if (live) setSettings(normalizeGraphSettings(loaded));
+        if (!live) return;
+        const normalized = normalizeGraphSettings(loaded);
+        current.current = normalized;
+        setSettings(normalized);
       })
       .catch(() => {
         // The graph still works with the defaults; a later change saves them.
-        if (live) setSettings(DEFAULT_GRAPH_SETTINGS);
+        if (!live) return;
+        current.current = DEFAULT_GRAPH_SETTINGS;
+        setSettings(DEFAULT_GRAPH_SETTINGS);
       });
     return () => {
       live = false;
@@ -43,13 +54,17 @@ export function useGraphSettings(): GraphSettingsState {
     }
     const next = pending.current;
     pending.current = null;
-    if (next) void api.putGraphSettings(next).catch(() => undefined);
+    if (!next) return;
+    const { clusterBy, ...rest } = next;
+    void api.putGraphSettings(clusterByTouched.current ? { ...rest, clusterBy } : rest).catch(() => undefined);
   }, []);
 
   useEffect(() => flush, [flush]);
 
   const update = useCallback(
     (next: GraphSettings) => {
+      if (current.current && next.clusterBy !== current.current.clusterBy) clusterByTouched.current = true;
+      current.current = next;
       setSettings(next);
       pending.current = next;
       if (timer.current !== null) window.clearTimeout(timer.current);

@@ -43,6 +43,8 @@ describe("GET/PUT /api/graph/settings", () => {
     expect(await getJson<GraphSettingsResponse>(app, "/api/graph/settings")).toEqual({
       groups: [],
       filters: { search: "", showTags: false, showAttachments: false, hideUnresolved: false, showOrphans: true },
+      // #xb4b54gr: grouped by links unless set.
+      clusterBy: "links",
       source: "default",
     });
   });
@@ -89,6 +91,7 @@ describe("GET/PUT /api/graph/settings", () => {
     });
     expect(put.status).toBe(200);
     const saved = JSON.parse(await readFile(join(dir, ".gumply/graph.json"), "utf8")) as Record<string, unknown>;
+    // #xb4b54gr: a PUT without clusterBy (the user didn't change it) adds no key.
     expect(Object.keys(saved)).toEqual(["future", "groups", "filters", "zoom"]);
     expect(saved).toEqual({
       future: { layout: "radial" },
@@ -104,6 +107,25 @@ describe("GET/PUT /api/graph/settings", () => {
       source: "gumply",
       groups: [{ query: "tag:#work", color: "#aabbcc" }, { query: "tag:#home", color: "#00ff00" }],
     });
+  });
+
+  it("#xb4b54gr: \"Group by\" is saved when set; a value this Gumply doesn't know reads as links and stays in the file", async () => {
+    const { app, dir } = await vault();
+    const file = join(dir, ".gumply/graph.json");
+    const settings = await getJson<GraphSettingsResponse>(app, "/api/graph/settings");
+    const put = await jsonRequest(app, "PUT", "/api/graph/settings", { groups: settings.groups, filters: settings.filters, clusterBy: "folder" });
+    expect(put.status).toBe(200);
+    expect(await getJson<GraphSettingsResponse>(app, "/api/graph/settings")).toMatchObject({ clusterBy: "folder", source: "gumply" });
+    // A newer Gumply's mode: read as the default…
+    await writeFile(file, JSON.stringify({ groups: [], filters: {}, clusterBy: "property" }));
+    expect(await getJson<GraphSettingsResponse>(app, "/api/graph/settings")).toMatchObject({ clusterBy: "links" });
+    // …and kept by a save that doesn't change the mode (a colour group, a filter).
+    const kept = await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [{ query: "tag:#x", color: "#112233" }], filters: settings.filters });
+    expect(kept.status).toBe(200);
+    expect(JSON.parse(await readFile(file, "utf8")).clusterBy).toBe("property");
+    // The user picking a mode does replace it.
+    await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [], filters: settings.filters, clusterBy: "tag" });
+    expect(JSON.parse(await readFile(file, "utf8")).clusterBy).toBe("tag");
   });
 
   it("#reynggre: a hand-edited invalid file is kept aside, not replaced silently", async () => {

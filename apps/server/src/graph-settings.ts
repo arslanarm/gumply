@@ -78,6 +78,10 @@ export async function writeGraphSettings(root: string, body: unknown): Promise<G
       onDisk = undefined;
     }
   }
-  await writeAtomic(file, `${JSON.stringify(mergeGraphSettings(onDisk, settings), null, 2)}\n`);
-  return { ...settings, source: "gumply" };
+  // #xb4b54gr: "Group by" is written only when the body carries it (the user
+  // changed it); otherwise the file's value stays, known or not (spec/api-graph-clusters).
+  const setsClusterBy = Object.prototype.hasOwnProperty.call(body, "clusterBy");
+  await writeAtomic(file, `${JSON.stringify(mergeGraphSettings(onDisk, settings, { clusterBy: setsClusterBy }), null, 2)}\n`);
+  const clusterBy = setsClusterBy ? settings.clusterBy : normalizeGraphSettings(onDisk ?? {}).clusterBy;
+  return { ...settings, clusterBy, source: "gumply" };
 }

@@ -6,12 +6,15 @@
  * `stop` abandons the current run.
  */
 import { createLayout, postInterval, type LayoutInput } from "./layout-forces.js";
+import { computeClusters, type ClusterInfo } from "./clusters.js";
 
 export type LayoutRequest = { type: "start"; id: number; input: LayoutInput } | { type: "stop"; id: number };
 export type LayoutUpdate =
   | { type: "positions"; id: number; x: Float32Array; y: Float32Array; done: boolean; ticks: number }
   /** Not streaming (a big graph, or reduced motion): how far along the layout is, 0–1. */
-  | { type: "progress"; id: number; progress: number; done: false };
+  | { type: "progress"; id: number; progress: number; done: false }
+  /** #xb4b54gr: links-mode clusters, computed here before the layout (see LayoutInput.clusterLinks). */
+  | { type: "clusters"; id: number; of: Int32Array; list: ClusterInfo[]; modularity?: number; done: false };
 
 const PROGRESS_EVERY_MS = 500;
 
@@ -31,6 +34,28 @@ self.onmessage = (event: MessageEvent<LayoutRequest>) => {
   }
   current = message.id;
   const { id, input } = message;
+  if (input.clusterLinks) {
+    const { ids, clusterable } = input.clusterLinks;
+    const links: Array<{ source: string; target: string }> = [];
+    for (let i = 0; i + 1 < input.links.length; i += 2) links.push({ source: ids[input.links[i]!]!, target: ids[input.links[i + 1]!]! });
+    const clusters = computeClusters(
+      "links",
+      ids.map((nodeId, i) => ({ id: nodeId, clusterable: clusterable[i] === 1, parentId: null, tags: [] })),
+      links,
+    );
+    if (clusters.list.length > 0) {
+      input.cluster = clusters.of;
+    }
+    const update: LayoutUpdate = {
+      type: "clusters",
+      id,
+      of: clusters.of,
+      list: clusters.list,
+      ...(clusters.modularity === undefined ? {} : { modularity: clusters.modularity }),
+      done: false,
+    };
+    (self as unknown as Worker).postMessage(update);
+  }
   const layout = createLayout(input);
   const postEvery = postInterval(input.x.length);
   let lastPost = 0;

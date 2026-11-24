@@ -65,6 +65,152 @@ export interface LayoutInput {
   reducedMotion: boolean;
   /** Post positions as the layout runs (else only progress, then the settled layout). */
   stream: boolean;
+  /** #xb4b54gr: per node, its cluster (-1 = none); absent or empty = no cluster force. */
+  cluster?: Int32Array;
+  /**
+   * #xb4b54gr: links-mode clusters are computed in the worker for big graphs
+   * (Louvain takes ~0.3–0.5 s at 10k): the node ids (for the fixed order) and
+   * which nodes are pages. The worker posts the clusters back before laying out.
+   */
+  clusterLinks?: { ids: string[]; clusterable: Uint8Array };
+}
+
+/**
+ * #xb4b54gr: how firmly a cluster's pages are pulled to its centre, clusters
+ * pushed apart, and links between clusters relaxed. In a connected web (35% of
+ * links across groups) the links pull the groups into one hairball: at full
+ * strength 28% of graded300's area lies under two hulls; with links across
+ * groups at 0.2 and a pull of 0.1, none does, and every page sits nearest its
+ * own group's centre (task thread). Links are still drawn as they are.
+ */
+export const CLUSTER_FORCE = {
+  pull: 0.1,
+  push: 0.3,
+  /** Room kept between two clusters' areas (graph units). */
+  gap: 150,
+  /** A link's strength between two different shaded clusters, × the usual strength. */
+  crossLink: 0.2,
+} as const;
+
+/**
+ * #xb4b54gr: a link's strength factor: CLUSTER_FORCE.crossLink between two
+ * different shaded clusters, else 1 (@graph-dev's review). Links to loose
+ * pages keep their strength, and with no shaded clusters every factor is 1,
+ * so such a vault lays out exactly as without clustering.
+ */
+export function clusterLinkFactor(a: number, b: number): number {
+  return a >= 0 && b >= 0 && a !== b ? CLUSTER_FORCE.crossLink : 1;
+}
+
+interface ClusterForceNode {
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+}
+
+/**
+ * #xb4b54gr: keeps each cluster together and the clusters apart, in O(N + C²)
+ * per tick (C ≤ MAX_CLUSTERS): every node is pulled gently to its cluster's
+ * centre, and two clusters whose areas overlap are pushed apart as wholes.
+ * `clusterOf(node, i)` is read once, when the force is initialised.
+ */
+export function forceCluster<N extends ClusterForceNode>(
+  clusterOf: (node: N, index: number) => number,
+  tuning: { pull?: number; push?: number } = {},
+) {
+  const pullBase = tuning.pull ?? CLUSTER_FORCE.pull;
+  const pushBase = tuning.push ?? CLUSTER_FORCE.push;
+  let nodes: N[] = [];
+  let of = new Int32Array(0);
+  let count = 0;
+  let cx = new Float64Array(0);
+  let cy = new Float64Array(0);
+  let size = new Float64Array(0);
+  let spread = new Float64Array(0);
+  let dvx = new Float64Array(0);
+  let dvy = new Float64Array(0);
+  const force = (alpha: number) => {
+    if (count === 0) return;
+    cx.fill(0);
+    cy.fill(0);
+    size.fill(0);
+    spread.fill(0);
+    dvx.fill(0);
+    dvy.fill(0);
+    for (let i = 0; i < nodes.length; i += 1) {
+      const c = of[i]!;
+      if (c < 0) continue;
+      cx[c]! += nodes[i]!.x ?? 0;
+      cy[c]! += nodes[i]!.y ?? 0;
+      size[c]! += 1;
+    }
+    for (let c = 0; c < count; c += 1) {
+      if (size[c]! > 0) {
+        cx[c]! /= size[c]!;
+        cy[c]! /= size[c]!;
+      }
+    }
+    for (let i = 0; i < nodes.length; i += 1) {
+      const c = of[i]!;
+      if (c < 0) continue;
+      const dx = (nodes[i]!.x ?? 0) - cx[c]!;
+      const dy = (nodes[i]!.y ?? 0) - cy[c]!;
+      spread[c]! += dx * dx + dy * dy;
+    }
+    // A cluster's reach: its pages' RMS distance from the centre, a little enlarged.
+    // (The drawn area reaches about 2× the RMS, plus its padding: corePoints keeps pages out to 2.2× the median.)
+    for (let c = 0; c < count; c += 1) spread[c] = size[c]! > 0 ? Math.sqrt(spread[c]! / size[c]!) * 2.1 + 28 : 0;
+    for (let a = 0; a < count; a += 1) {
+      if (size[a] === 0) continue;
+      for (let b = a + 1; b < count; b += 1) {
+        if (size[b] === 0) continue;
+        let dx = cx[b]! - cx[a]!;
+        let dy = cy[b]! - cy[a]!;
+        let distance = Math.hypot(dx, dy);
+        if (distance < 1e-6) {
+          // Same centre: part them along a fixed direction, so the result stays deterministic.
+          dx = 1;
+          dy = 0;
+          distance = 1;
+        }
+        const wanted = spread[a]! + spread[b]! + CLUSTER_FORCE.gap;
+        if (distance >= wanted) continue;
+        const shift = ((wanted - distance) / distance) * pushBase * alpha;
+        // The smaller cluster moves more.
+        const total = size[a]! + size[b]!;
+        dvx[a]! -= dx * shift * (size[b]! / total);
+        dvy[a]! -= dy * shift * (size[b]! / total);
+        dvx[b]! += dx * shift * (size[a]! / total);
+        dvy[b]! += dy * shift * (size[a]! / total);
+      }
+    }
+    for (let i = 0; i < nodes.length; i += 1) {
+      const c = of[i]!;
+      if (c < 0) continue;
+      const node = nodes[i]!;
+      const pull = pullBase * alpha;
+      node.vx = (node.vx ?? 0) + (cx[c]! - (node.x ?? 0)) * pull + dvx[c]!;
+      node.vy = (node.vy ?? 0) + (cy[c]! - (node.y ?? 0)) * pull + dvy[c]!;
+    }
+  };
+  force.initialize = (next: N[]) => {
+    nodes = next;
+    of = new Int32Array(next.length);
+    count = 0;
+    next.forEach((node, i) => {
+      const c = clusterOf(node, i);
+      of[i] = c;
+      if (c + 1 > count) count = c + 1;
+    });
+    cx = new Float64Array(count);
+    cy = new Float64Array(count);
+    size = new Float64Array(count);
+    spread = new Float64Array(count);
+    dvx = new Float64Array(count);
+    dvy = new Float64Array(count);
+  };
+  return force;
 }
 
 /** Charge and centring as GraphCanvas sets them for `count` nodes. */
@@ -104,6 +250,9 @@ export interface Layout {
   positions(x?: Float32Array, y?: Float32Array): { x: Float32Array; y: Float32Array };
 }
 
+/** A link end as d3 hands it: the node once resolved, its index before. */
+const indexOf = (end: SimNode | number): number => (typeof end === "number" ? end : (end.index ?? -1));
+
 export function createLayout(input: LayoutInput): Layout {
   const count = input.x.length;
   const nodes: SimNode[] = new Array(count);
@@ -131,10 +280,25 @@ export function createLayout(input: LayoutInput): Layout {
     .alphaMin(s.alphaMin)
     .alphaDecay(input.reducedMotion ? s.alphaDecayReduced : s.alphaDecay)
     .velocityDecay(s.velocityDecay)
-    .force("link", forceLink(links).id((node: SimNode) => node.index).distance(s.linkDistance).strength(s.linkStrength))
+    .force(
+      "link",
+      forceLink(links)
+        .id((node: SimNode) => node.index)
+        .distance(s.linkDistance)
+        .strength(
+          input.cluster && input.cluster.length === count
+            ? (link: { source: SimNode | number; target: SimNode | number }) =>
+                s.linkStrength * clusterLinkFactor(input.cluster![indexOf(link.source)] ?? -1, input.cluster![indexOf(link.target)] ?? -1)
+            : s.linkStrength,
+        ),
+    )
     .force("charge", forceManyBody().strength(input.chargeStrength).distanceMax(s.chargeDistanceMax).theta(chargeTheta(count)))
     .force("x", forceX(0).strength(input.centerStrengthX))
     .force("y", forceY(0).strength(input.centerStrengthY));
+  const cluster = input.cluster;
+  if (cluster && cluster.length === count && cluster.some((c) => c >= 0)) {
+    simulation.force("cluster", forceCluster<SimNode>((_node, i) => cluster[i] ?? -1));
+  }
   const maxTicks = input.reducedMotion ? s.maxTicksReduced : s.maxTicks;
   let ticks = 0;
   return {
@@ -171,7 +335,7 @@ export function createLayout(input: LayoutInput): Layout {
 export function layoutInputFor(
   nodes: ReadonlyArray<{ id: string; x?: number; y?: number }>,
   links: ReadonlyArray<{ source: string; target: string }>,
-  options: { centerId: string | null; width: number; height: number; reducedMotion: boolean },
+  options: { centerId: string | null; width: number; height: number; reducedMotion: boolean; cluster?: Int32Array },
 ): LayoutInput {
   const index = new Map<string, number>();
   const x = new Float32Array(nodes.length);
@@ -198,6 +362,7 @@ export function layoutInputFor(
     ...forceStrengths(nodes.length, { local: options.centerId !== null, width: options.width, height: options.height }),
     reducedMotion: options.reducedMotion,
     stream: streamsPositions(nodes.length, options.reducedMotion),
+    ...(options.cluster && options.cluster.length === nodes.length ? { cluster: options.cluster } : {}),
   };
 }
 
