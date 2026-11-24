@@ -209,4 +209,29 @@ describe("altLiteral survives HTML (copy and paste)", () => {
     expect(imageWidthOf(pasted)).toBeNull();
     expect(imageCaptionOf(pasted)).toBe("B|300");
   });
+
+  // @opus-editor's review: HTML alt text from another app has no Obsidian meaning.
+  const withHas = (attrs: Record<string, string>) => ({ ...element(attrs), hasAttribute: (name: string) => name in attrs });
+
+  it("an image from another app's HTML keeps «Revenue | 2024» as its caption", () => {
+    const foreign = withHas({ src: "a.png", alt: "Revenue | 2024" });
+    const pasted = { src: "a.png", alt: "Revenue | 2024", altLiteral: altLiteralAttribute.parseHTML(foreign) };
+    expect(pasted.altLiteral).toBe(true);
+    expect(imageWidthOf(pasted)).toBeNull();
+    expect(imageCaptionOf(pasted)).toBe("Revenue | 2024");
+    expect(altLiteralAttribute.parseHTML(withHas({ alt: "Revenue 2024" }))).toBe(false);
+  });
+
+  it("an image from Markdown leaves it to the text as written (data-md-raw)", () => {
+    expect(altLiteralAttribute.parseHTML(withHas({ alt: "A|301", "data-md-raw": "![A|301](a.png)" }))).toBe(false);
+  });
+
+  it("Gumply's own HTML of a sized image says so, so a copy and paste keeps the width", () => {
+    const html = altLiteralAttribute.renderHTML({ alt: "Cap|300", altLiteral: false });
+    expect(html).toEqual({ "data-alt-literal": "false" });
+    const back = { src: "a.png", alt: "Cap|300", altLiteral: altLiteralAttribute.parseHTML(withHas({ alt: "Cap|300", ...(html as Record<string, string>) })) };
+    expect(back.altLiteral).toBe(false);
+    expect(imageWidthOf(back)).toBe(300);
+    expect(imageCaptionOf(back)).toBe("Cap");
+  });
 });

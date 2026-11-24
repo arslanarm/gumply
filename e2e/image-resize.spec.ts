@@ -238,6 +238,45 @@ test('a copied and pasted «B|300» image keeps it a caption', async ({ page, re
   await expect(page.getByTestId('image-block').nth(1)).not.toHaveAttribute('data-width');
 });
 
+test('an image pasted from another app keeps an alt ending in «| 2024» as its caption, not a width', async ({ page, request, vault }) => {
+  addImage();
+  await vault.seed([{ title: 'Foreign paste', content: 'Intro' }]);
+  await open(page, 'Foreign paste');
+  const body = page.getByTestId('editor-content');
+  await body.getByText('Intro', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  // A web page's HTML: alt text has no Obsidian meaning, so «| 2024» is part of the caption.
+  await body.evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.setData('text/html', '<p><img src="attachments/wide.svg" alt="Revenue | 2024"></p>');
+    transfer.setData('text/plain', '');
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+  });
+  await expect(page.getByTestId('image-block')).toHaveCount(1);
+  await expect(page.getByTestId('image-block')).not.toHaveAttribute('data-width');
+  await expect(page.getByTestId('image-caption')).toHaveValue('Revenue | 2024');
+  const content = await saved(request, 'Foreign paste', (text) => text.includes('wide.svg'));
+  expect(content).toContain('![Revenue \\| 2024](attachments/wide.svg)');
+});
+
+test('a copied and pasted sized image keeps its width', async ({ page, request, vault, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  addImage();
+  await vault.seed([{ title: 'Sized paste', content: 'Intro\n\n![Cap|300](attachments/wide.svg)\n\nAfter' }]);
+  await open(page, 'Sized paste');
+  await expect(page.getByTestId('image-block').first()).toHaveAttribute('data-width', '300');
+  await page.getByTestId('image-block-img').click();
+  await page.keyboard.press('ControlOrMeta+c');
+  await page.getByTestId('editor-content').getByText('After', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+v');
+  await expect(page.getByTestId('image-block')).toHaveCount(2);
+  await expect(page.getByTestId('image-block').nth(1)).toHaveAttribute('data-width', '300');
+  await saved(request, 'Sized paste', (text) => text.split('![Cap|300](attachments/wide.svg)').length === 3);
+});
+
 test('an image block moves with ⋮⋮ like any block', async ({ page, request, vault }) => {
   addImage();
   await vault.seed([{ title: 'Image drag', content: 'First\n\n![Pic](attachments/wide.svg)\n\nLast' }]);

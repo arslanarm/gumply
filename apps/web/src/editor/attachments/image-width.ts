@@ -175,11 +175,25 @@ export function altFor(caption: string, width: number | null): { alt: string; al
 /**
  * The `altLiteral` node attribute. It goes into the HTML as `data-alt-literal`, so a copy and paste
  * (which goes through HTML) keeps «B|300» a caption instead of turning it into a 300 px width.
+ * A sized image says `"false"`, so the copy keeps its width. Where the HTML has no mark:
+ * - from Markdown (`data-md-raw`), the text as written decides (`altParts`);
+ * - from another app or a web page, an alt ending in `|N` is caption text: HTML alt has no
+ *   Obsidian meaning (@opus-editor's review: `<img alt="Revenue | 2024">` isn't 2024 px wide).
  */
 export const altLiteralAttribute = {
   default: false,
-  parseHTML: (element: { getAttribute(name: string): string | null }) => element.getAttribute("data-alt-literal") === "true",
-  renderHTML: (attributes: Record<string, unknown>) => (attributes.altLiteral === true ? { "data-alt-literal": "true" } : {}),
+  parseHTML: (element: { getAttribute(name: string): string | null; hasAttribute?(name: string): boolean }) => {
+    const mark = element.getAttribute("data-alt-literal");
+    if (mark !== null) return mark === "true";
+    if (element.hasAttribute?.("data-md-raw")) return false;
+    return SIZE.test(element.getAttribute("alt") ?? "");
+  },
+  renderHTML: (attributes: Record<string, unknown>) =>
+    attributes.altLiteral === true
+      ? { "data-alt-literal": "true" }
+      : SIZE.test(String(attributes.alt ?? ""))
+        ? { "data-alt-literal": "false" }
+        : {},
 };
 
 /** The attributes for a new caption the user typed, keeping the image's size as written. */
