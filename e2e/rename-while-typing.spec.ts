@@ -198,8 +198,8 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10): neve
 
   // N10 client: the editor itself took the new link in place (no reload), and says so.
   const editor = page.getByTestId('editor-content');
-  await expect(editor.locator('[data-wikilink-title="Hub renamed"]')).toHaveCount(1);
-  await expect(editor.locator('[data-wikilink-title="Hub"]')).toHaveCount(0);
+  // The link's label is its own target ([[Hub]] would read "Hub", even while it resolves to the renamed page).
+  await expect(editor.locator('.wiki-link-label')).toHaveText(['Hub renamed']);
   await expect(editor).toContainText(' last');
   await expect(page.getByTestId('undo-toast')).toContainText('Your text was kept, with the new link to “Hub renamed”.');
   // One more keystroke: its save keeps the new link (before N10's client part it wrote [[Hub]] back).
