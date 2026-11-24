@@ -59,11 +59,22 @@ export const LINK_LAYER_FACTOR = 0.5;
  * #s3sszwux (iii, half resolution): no line thinner than this many **layer** px.
  * A 1 px link is half a layer pixel at half resolution, which composes lighter
  * and aliases into grain when upscaled; at least one layer pixel (two screen
- * pixels) it doesn't. Set from the density grid (zz-density).
+ * pixels) it doesn't.
+ *
+ * **Never above 1.** One stroke of ~123k segments is 282 ms at 1 px but 54 s at
+ * 3 px (headless Chromium, software raster): past one device pixel Skia leaves its
+ * hairline path. At 1 layer pixel (= main's width 2 at full resolution), a
+ * synthetic density grid matched main's mean luminance within ~1/255 in both
+ * themes (light −1.0, dark +0.03); the grid saturates, so it can't rank values
+ * finer than that: the check is the shots against main at fit.
  */
 export const LINK_LAYER_MIN_PX = 1;
 
-/** The idle links' alpha multiplier at half resolution, so the mass at fit is as dark as main's. Set from the density grid. */
+/**
+ * The idle links' alpha multiplier at half resolution, so the mass at fit is as
+ * dark as main's. 1 (main's 0.32): with a 1-layer-pixel line the grid found no
+ * better alpha within its resolution; adjust only from the shots against main.
+ */
 export const LINK_LAYER_IDLE_ALPHA = 1;
 
 /** The layer's size for a main canvas of `width` × `height` device px, at `factor` (rounded up, never empty). */
