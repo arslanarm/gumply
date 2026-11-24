@@ -4279,7 +4279,10 @@ export class VaultStore {
       this.pages.delete(key);
       const suffix = key.slice(id.length);
       const movedId = `${newId}${suffix}`;
-      moved.push({ ...value, id: movedId, filePath: this.movedFilePath(value, movedId) });
+      const filePath = this.movedFilePath(value, movedId);
+      // #rfgpvrdb: the same-bytes hashes move with the file (a move keeps its bytes and mtime).
+      this.moveNotedBytes(value.filePath, filePath);
+      moved.push({ ...value, id: movedId, filePath });
     }
     for (const value of moved) this.pages.set(value.id, value);
 
