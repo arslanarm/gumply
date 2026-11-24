@@ -18,6 +18,8 @@ import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
 import { BaseLinks } from "./values.js";
+import { BaseSaver } from "./base-saver.js";
+import type { SaveState } from "../editor/autosave.js";
 import "./bases.css";
 
 const LAYOUTS = ["table", "kanban", "list", "cards", "calendar"] as const;
@@ -54,6 +56,21 @@ export interface BaseViewProps {
   refreshKey?: string;
   /** Embedded in a page (`![[X.base#View]]`). */
   embed?: { thisId: PageId; viewName?: string; maxRows?: number };
+  /**
+   * #ups4ikpj (D22): the full-page view reports its saves to the app's save bar and hands it the
+   * conflict choice (Keep mine / Reload). Without these (an embed), a conflict reloads as before.
+   */
+  onSaveState?: (state: SaveState) => void;
+  onReady?: (controls: BaseViewControls) => void;
+  /** Keep mine kept the other version here (`.gumply/conflicts/…`). */
+  onConflictBackup?: (path: string) => void;
+}
+
+/** What the app's save bar needs from an open view. */
+export interface BaseViewControls {
+  flush: () => Promise<void>;
+  isDirty: () => boolean;
+  keepMine: () => Promise<void>;
 }
 
 export function BaseView(props: BaseViewProps) {
@@ -76,6 +93,7 @@ export function BaseView(props: BaseViewProps) {
   const requestSeq = useRef(0);
 
   useEffect(() => {
+    saverRef.current?.setVersion(props.initial.meta.updated);
     setDoc(props.initial);
   }, [props.initial]);
 
@@ -85,11 +103,15 @@ export function BaseView(props: BaseViewProps) {
   const listedUpdated = props.pages.find((page) => page.id === baseId)?.updated;
   useEffect(() => {
     if (!listedUpdated || listedUpdated <= docRef.current.meta.updated) return;
+    // #ups4ikpj: a change of the user's is on its way or held by a conflict: don't replace it.
+    if (saverRef.current?.isDirty()) return;
     let cancelled = false;
     api
       .getBase(baseId)
       .then((loaded) => {
-        if (!cancelled && loaded.meta.updated > docRef.current.meta.updated) setDoc(loaded);
+        if (cancelled || loaded.meta.updated <= docRef.current.meta.updated || saverRef.current?.isDirty()) return;
+        saverRef.current?.setVersion(loaded.meta.updated);
+        setDoc(loaded);
       })
       .catch(() => undefined);
     return () => {
@@ -133,30 +155,69 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.refreshKey]);
 
-  /** Save a new config; only what changed is written (spec/api-bases). */
-  const saveConfig = useCallback(
-    async (next: BaseConfig) => {
-      const current = docRef.current;
-      setDoc({ ...current, config: next });
-      try {
-        const saved = await api.saveBase(baseId, { config: next, expectedUpdated: current.meta.updated, writer });
-        setDoc({ meta: saved.meta, config: saved.config });
-        props.onSaved?.(saved.meta);
-      } catch (error) {
-        // Changed on disk (or failed): show the file as it is now.
-        try {
-          setDoc(await api.getBase(baseId));
-        } catch {
-          setDoc(current);
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
+  /** Show the file as it is now (after a failed save, or a conflict without the app's save bar). */
+  const reloadFromDisk = useCallback(async (fallback: BaseDocument) => {
+    try {
+      const loaded = await api.getBase(baseId);
+      saverRef.current?.setVersion(loaded.meta.updated);
+      setDoc(loaded);
+    } catch {
+      setDoc(fallback);
+    }
+  }, [baseId]);
+
+  // #ups4ikpj: saves go one at a time; a 409 keeps the user's change for the save bar's choice.
+  const saverRef = useRef<BaseSaver | null>(null);
+  if (saverRef.current === null) {
+    saverRef.current = new BaseSaver(props.initial.meta.updated, {
+      send: (config, { expectedUpdated, force }) =>
+        api.saveBase(baseId, { config, expectedUpdated, writer, ...(force ? { force: true } : {}) }),
+      onSaved: (saved, pending) => {
+        // A newer change is still on its way: keep it on screen, take only the new version.
+        const next = pending ? { ...docRef.current, meta: saved.meta } : { meta: saved.meta, config: saved.config };
+        docRef.current = next;
+        setDoc(next);
+        propsRef.current.onSaved?.(saved.meta);
+        if (saved.conflictBackup) propsRef.current.onConflictBackup?.(saved.conflictBackup);
+        if (!pending) propsRef.current.onSaveState?.("saved");
+      },
+      onConflict: () => {
+        const { onSaveState } = propsRef.current;
+        if (onSaveState) {
+          onSaveState("conflict");
+          return;
         }
-        props.onError?.(
-          error instanceof ApiRequestError && error.status === 409 ? translate("save.conflictLong") : errorText(error),
-        );
-      }
-    },
+        // An embed has no save bar: as before, show the file and say why the change is gone.
+        void saverRef.current?.discard().then(() => reloadFromDisk(docRef.current));
+        propsRef.current.onError?.(translate("save.conflictLong"));
+      },
+      onError: (error) => {
+        void reloadFromDisk(docRef.current);
+        propsRef.current.onError?.(errorText(error));
+      },
+      isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
+    });
+  }
+
+  useEffect(() => {
+    props.onReady?.({
+      flush: () => saverRef.current!.flush(),
+      isDirty: () => saverRef.current!.isDirty(),
+      keepMine: () => saverRef.current!.keepMine(),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseId, writer],
-  );
+  }, []);
+
+  /** Save a new config; only what changed is written (spec/api-bases). */
+  const saveConfig = useCallback(async (next: BaseConfig) => {
+    const shown = { ...docRef.current, config: next };
+    docRef.current = shown;
+    setDoc(shown);
+    await saverRef.current!.save(next);
+  }, []);
 
   const changeView = useCallback(
     (view: BaseViewConfig) => {

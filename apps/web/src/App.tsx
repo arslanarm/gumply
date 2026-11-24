@@ -47,7 +47,7 @@ import { GraphView, LocalGraphPanel, MoveDialog, ShortcutsDialog, TemplateGaller
 import type { BoardTemplateId } from "./board/templates.js";
 import { idFromVaultPath, isBoard, isBoardId, newBoardTitle, vaultPathOf } from "./lib/boards.js";
 import { isBase, isBaseId, newBaseTitle } from "./lib/bases.js";
-import { BaseView } from "./bases/BaseView.js";
+import { BaseView, type BaseViewControls } from "./bases/BaseView.js";
 import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, isNotFound, serverDownMessage } from "./lib/errors.js";
@@ -379,8 +379,14 @@ export function App() {
   const editorControls = useRef<EditorControls | null>(null);
   const boardControls = useRef<BoardViewControls | null>(null);
   /** Save controls of whatever is open: the page editor or the board. */
+  /** #ups4ikpj: the open database view's saves (its conflict choice goes through the save bar too). */
+  const baseControls = useRef<BaseViewControls | null>(null);
   const documentControls = (): DocumentControls | null =>
-    isBoardId(selectedRef.current) ? boardControls.current : editorControls.current;
+    isBoardId(selectedRef.current)
+      ? boardControls.current
+      : isBaseId(selectedRef.current)
+        ? baseControls.current
+        : editorControls.current;
   const focusNonce = useRef(0);
   const searchTrigger = useRef<HTMLElement | null>(null);
   const reloadEditorAfterFetch = useRef(false);
@@ -813,7 +819,14 @@ export function App() {
     }
     if (decision === "keep-then-reload" && id !== null) {
       const board = isBoardId(id) ? (boardControls.current?.getBoard() ?? null) : null;
-      const input = isBoardId(id) ? (board ? { board } : null) : editorControls.current ? { content: editorControls.current.getMarkdown() } : null;
+      // A database view has no "Before reload" version (no history until N1): Reload drops its change.
+      const input = isBoardId(id)
+        ? (board ? { board } : null)
+        : isBaseId(id)
+          ? null
+          : editorControls.current
+            ? { content: editorControls.current.getMarkdown() }
+            : null;
       if (input) {
         try {
           await api.keepUnsaved(id, input);
@@ -833,12 +846,13 @@ export function App() {
   const handleConflictKeepMine = useCallback(async () => {
     const controls = documentControls();
     if (!controls) return;
-    const editor = isBoardId(selectedRef.current) ? null : editorControls.current;
+    const open = selectedRef.current;
+    const editor = isBoardId(open) || isBaseId(open) ? null : editorControls.current;
     const selection = editor?.getSelection() ?? null;
     // Focus back first, not after the save: keys typed while it's on its way
     // must reach the editor (they're saved after it, as any typing is).
     if (editor) editor.focusAt(selection ? selection.to : 0);
-    else document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true });
+    else if (isBoardId(open)) document.querySelector<HTMLElement>('[data-testid="board"]')?.focus({ preventScroll: true });
     await controls.keepMine();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2716,6 +2730,11 @@ export function App() {
                     onOpen={handleOpen}
                     onError={setActionError}
                     onSaved={(meta) => setPage((current) => (current && current.id === meta.id ? { ...current, updated: meta.updated } : current))}
+                    onSaveState={setSaveState}
+                    onReady={(controls) => {
+                      baseControls.current = controls;
+                    }}
+                    onConflictBackup={handleConflictBackup}
                   />
                 </div>
               ) : showingBoard && boardDoc ? (
