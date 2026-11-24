@@ -10,3 +10,22 @@ export function restingLinkWidth(devicePixelRatio: number): number {
   const ratio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
   return 0.99 / ratio;
 }
+
+/** The hovered node's links, drawn wider (their own small path, so off the batched stroke). */
+export const ACTIVE_LINK_WIDTH = 1.7;
+
+/**
+ * The whole link-width rule `GraphCanvas` passes to force-graph: a link touching the hovered node
+ * is active, every other link (resting, or faded while something is hovered) gets the resting
+ * width, so the big batched stroke never reaches one device pixel. `graph-hairline.test.ts`
+ * guards it through this function, so a change here can't quietly bring the stall back.
+ */
+export function linkWidthFor(
+  sourceId: string,
+  targetId: string,
+  hoveredId: string | null,
+  devicePixelRatio: number,
+): number {
+  if (hoveredId !== null && (sourceId === hoveredId || targetId === hoveredId)) return ACTIVE_LINK_WIDTH;
+  return restingLinkWidth(devicePixelRatio);
+}

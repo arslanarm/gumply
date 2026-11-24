@@ -31,7 +31,7 @@ import {
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, layoutInputFor } from "./layout-forces.js";
-import { restingLinkWidth } from "./link-width.js";
+import { linkWidthFor } from "./link-width.js";
 import { startLayout } from "./layout-client.js";
 import { t, useT } from "../i18n/index.js";
 
@@ -1194,12 +1194,8 @@ export function GraphCanvas({
   );
 
   const linkWidth = useCallback(
-    (link: LinkObject<CanvasNode, GraphLink>) => {
-      if (hoveredId === null) return restingLinkWidth(window.devicePixelRatio);
-      const source = endpointId(link.source);
-      const target = endpointId(link.target);
-      return source === hoveredId || target === hoveredId ? 1.7 : restingLinkWidth(window.devicePixelRatio);
-    },
+    (link: LinkObject<CanvasNode, GraphLink>) =>
+      linkWidthFor(endpointId(link.source), endpointId(link.target), hoveredId, window.devicePixelRatio),
     [hoveredId],
   );
 
