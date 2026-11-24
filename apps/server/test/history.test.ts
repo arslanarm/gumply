@@ -425,3 +425,45 @@ describe("D37: history never touches page files", () => {
     expect((await stat(join(dir, ".gumply", "history"))).isDirectory()).toBe(true);
   });
 });
+
+describe("#eq2ug2vr: a restore keeps the item's place; a new board doesn't take a trashed board's history", () => {
+  it("restoring a version of a nested page or board keeps its parent (the sidebar doesn't move it)", async () => {
+    const { app, store, dir } = await createTestServer();
+    await mkdir(join(dir, "Projects"), { recursive: true });
+    await writeFile(join(dir, "Projects.md"), "Parent\n");
+    await writeFile(join(dir, "Projects", "Plan.md"), "One\n");
+    await store.rescan();
+    await store.update("Projects/Plan", { content: "Two" });
+    const board = await store.createBoard({ title: "Map", parentId: "Projects" });
+    await store.updateBoard(board.meta.id, { board: { nodes: [{ id: "a", type: "text", text: "A", x: 0, y: 0, width: 100, height: 50 }], edges: [] } });
+    await store.updateBoard(board.meta.id, { board: { nodes: [], edges: [] } });
+
+    for (const id of ["Projects/Plan", board.meta.id]) {
+      const list = await getJson<HistoryList>(app, `/api/history/${enc(id)}`);
+      const meta = store.pageMetas().find((item) => item.id === id)!;
+      expect(meta.parentId).toBe("Projects");
+      const response = await jsonRequest(app, "POST", `/api/history/${enc(id)}/${list.items.at(-1)!.file}/restore`, { expectedUpdated: meta.updated });
+      expect(response.status).toBe(200);
+      expect(store.pageMetas().find((item) => item.id === id)!.parentId).toBe("Projects");
+    }
+  });
+
+  it("a new board with a trashed board's name starts its own history; the old one is set aside", async () => {
+    const { app, store, dir } = await createTestServer();
+    const old = await store.createBoard({ title: "Map" });
+    await store.updateBoard(old.meta.id, { board: { nodes: [{ id: "a", type: "text", text: "Old", x: 0, y: 0, width: 100, height: 50 }], edges: [] } });
+    await store.remove(old.meta.id);
+    expect((await entries(dir, old.meta.id)).length).toBeGreaterThan(0);
+
+    const fresh = await store.createBoard({ title: "Map" });
+    expect(fresh.meta.id).toBe(old.meta.id);
+    await store.updateBoard(fresh.meta.id, { board: { nodes: [{ id: "b", type: "text", text: "New", x: 0, y: 0, width: 100, height: 50 }], edges: [] } });
+    const list = await getJson<HistoryList>(app, `/api/history/${enc(fresh.meta.id)}`);
+    // Only the new board's own versions: none of them holds the old board's card.
+    for (const item of list.items) {
+      expect(await readFile(join(historyDir(dir, fresh.meta.id), item.file), "utf8")).not.toContain('"Old"');
+    }
+    const keys = await readdir(join(dir, ".gumply", "history"));
+    expect(keys.some((key) => key.startsWith("Map.canvas~"))).toBe(true);
+  });
+});

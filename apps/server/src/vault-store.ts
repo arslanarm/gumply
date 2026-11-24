@@ -2749,6 +2749,8 @@ export class VaultStore {
         : "";
     const board = withBoardTitle(emptyCanvas(icon ? { icon } : undefined), `${title}${suffix}`, stem);
     await mkdir(dirname(filePath), { recursive: true });
+    // #eq2ug2vr: a trashed board of this name keeps its history; this new one starts its own (as pages do).
+    await this.freshHistory(filePath);
     await writeFile(filePath, serializeCanvas(board), { encoding: "utf8", flag: "wx" });
     const record = await this.readBoardRecord(filePath, id);
     record.parentId = parentId;
@@ -5041,6 +5043,8 @@ export class VaultStore {
           throw error;
         }
         const fresh = await this.readRecord(record.filePath, record.id);
+        // #eq2ug2vr: a re-read record has no parent (that comes from the tree); keep its place.
+        fresh.parentId = record.parentId;
         this.pages.set(record.id, fresh);
         // The bytes Gumply wrote before are the `before-restore` version now.
         this.forgetSessionBytes(record.id);
