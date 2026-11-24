@@ -404,7 +404,6 @@ const MAX_REFRESH_PATHS = 200;
 const RESCAN_RETRIES = 3;
 
 /** #g95wkd9y: pages per batch when warming the mention and search caches. */
-const WARM_BATCH = 200;
 /**
  * #rz3iukrp: the background link index runs in slices of about this long, then
  * yields, so a request after a start waits at most one slice (not the ~3 s of
@@ -5317,7 +5316,10 @@ export class VaultStore {
    * #g95wkd9y: fill the mention and search caches in small batches between
    * other work (never in the queue, so a save never waits for it). Both are
    * caches keyed on a page's content: a page that changes meanwhile is simply
-   * refreshed when it's next used.
+   * refreshed when it's next used. #rz3iukrp: batches are time slices
+   * (`indexSliceMs`, as the link index's), not 200 pages: a 200-page batch
+   * took ~60 ms on the 10k vault, and a request's every I/O step waited one,
+   * so the first page open after the index still took ~0.4 s.
    */
   private warmCaches(): Promise<void> {
     const ids = [...this.pages.keys()];
@@ -5326,9 +5328,10 @@ export class VaultStore {
       const batch = () => {
         if (this.stopped) return resolve();
         const copies = this.copyIds();
-        const end = Math.min(ids.length, at + WARM_BATCH);
-        for (; at < end; at += 1) {
+        const until = performance.now() + this.indexSliceMs;
+        do {
           const record = this.pages.get(ids[at]!);
+          at += 1;
           if (!record) continue;
           this.searchText(record);
           if (record.kind === "page" && !copies.has(record.id)) {
@@ -5336,7 +5339,7 @@ export class VaultStore {
             // #kguq5bc5: the properties index's input, from the scan's YAML (no file read).
             this.rawPropertiesFromScan(record);
           }
-        }
+        } while (at < ids.length && performance.now() < until);
         if (at < ids.length) setImmediate(batch);
         else resolve();
       };
