@@ -121,6 +121,25 @@ describe("history for database views (N1)", () => {
     expect(listed.items.length).toBeGreaterThanOrEqual(count);
   });
 
+  it("a new view with a trashed view's name starts its own history (the old one is set aside)", async () => {
+    const { dir, store } = await vault();
+    const first = await store.createBase({ title: "Tasks" });
+    const edited = await store.updateBase(first.meta.id, { config: { ...first.config, views: [{ ...first.config.views[0]!, name: "Old view" }] }, expectedUpdated: first.meta.updated });
+    expect(edited.meta.id).toBe("Tasks.base");
+    expect((await versions(dir, "Tasks.base")).length).toBeGreaterThanOrEqual(1);
+    await store.remove("Tasks.base");
+
+    const second = await store.createBase({ title: "Tasks" });
+    expect(second.meta.id).toBe("Tasks.base");
+    const listed = await store.listHistory("Tasks.base");
+    expect(listed.items).toHaveLength(0);
+    // Its first save keeps only its own bytes, none of the trashed view's.
+    await store.updateBase("Tasks.base", { config: { ...second.config, views: [{ ...second.config.views[0]!, name: "New view" }] }, expectedUpdated: second.meta.updated });
+    const list = await versions(dir, "Tasks.base");
+    expect(list).toHaveLength(1);
+    expect(await versionBytes(dir, list[0]!.file, "Tasks.base")).not.toContain("Old view");
+  });
+
   it("Before reload has nothing to keep for a view: a clear 400", async () => {
     const { store } = await vault();
     await expect(store.saveUnsavedVersion("View.base", { content: "x" })).rejects.toMatchObject({ status: 400 });

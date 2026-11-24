@@ -3309,6 +3309,8 @@ export class VaultStore {
     this.redirects.delete(id);
     const filePath = this.filePathFor(id);
     await mkdir(dirname(filePath), { recursive: true });
+    // A new view at a trashed view's path starts its own history (D41), as a new page or board does.
+    await this.freshHistory(filePath);
     await writeFile(filePath, newBaseSource({ folder, tag }), { encoding: "utf8", flag: "wx" });
     const record = await this.readBaseRecord(filePath, id);
     record.parentId = parentId;
