@@ -120,6 +120,25 @@ export function ownedRowsFolder(config: BaseConfig): string | null {
   return list.some((item) => typeof item === "string" && item.replace(/\s*==\s*/, " == ").trim() === wanted) ? rows : null;
 }
 
+/**
+ * The config of an owned database whose rows folder moved to `rows` (#7prbquxu): the
+ * marker and the `file.folder ==` clause follow; everything else is kept, so
+ * `updateBaseSource` rewrites only those two lines. A base that doesn't own a folder
+ * comes back unchanged.
+ */
+export function withOwnedRows(config: BaseConfig, rows: string): BaseConfig {
+  const owned = ownedRowsFolder(config);
+  if (owned === null || owned === rows) return config;
+  const before = `file.folder == ${JSON.stringify(owned)}`;
+  const after = `file.folder == ${JSON.stringify(rows)}`;
+  const swap = (item: BaseFilter): BaseFilter =>
+    typeof item === "string" && item.replace(/\s*==\s*/, " == ").trim() === before ? after : item;
+  const filter = config.filters;
+  const filters: BaseFilter | undefined =
+    filter === undefined ? undefined : typeof filter === "string" ? swap(filter) : "and" in filter ? { and: filter.and.map(swap) } : filter;
+  return { ...config, gumply: { ...(config.gumply as Record<string, unknown>), rows }, ...(filters === undefined ? {} : { filters }) };
+}
+
 function quoteIfNeeded(text: string): string {
   const doc = parseDocument("x: 0");
   doc.set("x", text);

@@ -27,6 +27,8 @@ export interface SidebarProps {
   onCreateBoard: (parentId: PageId | null) => void;
   /** New database view at the top level or inside a page or folder (D34). */
   onCreateBase?: (parentId: PageId | null) => void;
+  /** #7prbquxu: "New database", an empty table with its own rows folder. */
+  onCreateDatabase?: (parentId: PageId | null) => void;
   onRename: (id: PageId, title: string) => Promise<void>;
   onDelete: (id: PageId) => void;
   onMove: (id: PageId, parentId: PageId | null) => void;
@@ -391,18 +393,18 @@ export function Sidebar(props: SidebarProps) {
         {t("sidebar.newBoard")}
       </button>
 
-      {props.onCreateBase ? (
+      {props.onCreateDatabase ? (
         <button
           type="button"
           className="sidebar-row sidebar-new-base"
           data-testid="new-base-button"
-          aria-label={t("bases.newBase")}
-          onClick={() => props.onCreateBase?.(null)}
+          aria-label={t("bases.newDatabase")}
+          onClick={() => props.onCreateDatabase?.(null)}
         >
           <span className="sidebar-row-icon" aria-hidden="true">
             <Icon name="database" size={16} />
           </span>
-          {t("bases.newBase")}
+          {t("bases.newDatabase")}
         </button>
       ) : null}
 

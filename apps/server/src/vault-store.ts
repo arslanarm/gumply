@@ -93,8 +93,10 @@ import {
   type PropertyLinks,
   type WikiLink,
   newBaseSource,
+  ownedRowsFolder,
   parseBase,
   updateBaseSource,
+  withOwnedRows,
   type BaseConfig,
   type CanvasBoard,
   type TagCount,
@@ -3578,10 +3580,22 @@ export class VaultStore {
     let targetId = id;
     if (nextTitle !== previousTitle) {
       const beforeMetas = this.pageMetas();
-      targetId = await this.renameTarget(id, record.parentId, nextTitle, "base");
+      // #7prbquxu: a database that owns its rows folder (People.base next to People/)
+      // takes the folder along, so both keep one name; the marker and filter follow.
+      const rows = this.ownedRowsOf(record, id);
+      targetId = rows
+        ? await this.renameOwnedTarget(id, record.parentId, nextTitle, rows)
+        : await this.renameTarget(id, record.parentId, nextTitle, "base");
       if (targetId !== id) {
         rewrittenPages.push(...(await this.relocateNow(id, targetId)));
         record = this.pages.get(targetId) ?? record;
+        if (rows) {
+          const newRows = targetId.slice(0, -idExtension("base").length);
+          rewrittenPages.push(...(await this.relocateFolderNow(rows, newRows)));
+          const source = record.baseSource ?? "";
+          const text = updateBaseSource(source, withOwnedRows(parseBase(source), newRows));
+          if (text !== source) await this.writeBaseFile(record, text);
+        }
       }
       // A base's title is its file name (it has nowhere else to keep one).
       record.title = baseStem(targetId);
@@ -4531,6 +4545,35 @@ export class VaultStore {
       [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id).map(collisionKey),
     );
     return this.freeTarget(stem, this.hasChildren(id), taken, kind);
+  }
+
+  /**
+   * #7prbquxu: the rows folder this base owns: the marker and its filter agree, the folder
+   * is a plain folder, and it sits next to the base under the same name. Else null.
+   */
+  private ownedRowsOf(record: PageRecord, id: PageId): PageId | null {
+    let rows: string | null;
+    try {
+      rows = ownedRowsFolder(parseBase(record.baseSource ?? ""));
+    } catch {
+      return null;
+    }
+    if (rows === null || rows !== id.slice(0, -idExtension("base").length)) return null;
+    return this.folders.has(rows) ? rows : null;
+  }
+
+  /** A new name for an owned database: free as a base **and** as a folder (its rows move too). */
+  private async renameOwnedTarget(id: PageId, parentId: PageId | null, title: string, rows: PageId): Promise<PageId> {
+    const folder = parentOf(id) ?? parentId;
+    const stem = childPageId(folder, title);
+    const desired = `${stem}${idExtension("base")}`;
+    if (desired === id) return id;
+    // Case-only change: the same file and folder on case-insensitive file systems.
+    if (desired.toLowerCase() === id.toLowerCase()) return desired;
+    const taken = new Set(
+      [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id && key !== rows).map(collisionKey),
+    );
+    return this.freeTarget(stem, true, taken, "base");
   }
 
   private hasChildren(id: PageId): boolean {

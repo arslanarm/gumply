@@ -188,6 +188,46 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(view.rows.map((row) => row.title)).toEqual(["Ada"]);
   });
 
+  it("renaming a database that owns its rows folder takes the folder along (#7prbquxu)", async () => {
+    const { app, dir, store } = await vault({ "Elsewhere/People.md": "Not in the way\n", "Ref.md": "See [[Untitled database/Ada]].\n" });
+    await jsonRequest(app, "POST", "/api/bases", { title: "Untitled database", rows: true });
+    await jsonRequest(app, "POST", "/api/pages", { title: "Ada", parentId: "Untitled database" });
+    const before = store.getBase("Untitled database.base");
+
+    const renamed = await jsonRequest(app, "PUT", `/api/bases/${encodeId("Untitled database.base")}`, { title: "People", expectedUpdated: before.meta.updated });
+    expect(renamed.status).toBe(200);
+    expect(((await renamed.json()) as { meta: PageMeta }).meta.id).toBe("People.base");
+    // Only the marker and the filter lines changed.
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(
+      'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n',
+    );
+    expect(await readdir(join(dir, "People"))).toEqual(["Ada.md"]);
+    expect(await readdir(dir)).not.toContain("Untitled database");
+    const view = await getJson<BaseViewResult>(app, `/api/bases/${encodeId("People.base")}/view`);
+    expect(view.rows.map((row) => row.id)).toEqual(["People/Ada"]);
+    // A path link into the folder follows it.
+    expect(await readFile(join(dir, "Ref.md"), "utf8")).toBe("See [[People/Ada]].\n");
+
+    // A name whose folder is taken (a folder "Team/" exists): both get the next free name.
+    await mkdir(join(dir, "Team"), { recursive: true });
+    await store.rescan();
+    const again = store.getBase("People.base");
+    const second = await jsonRequest(app, "PUT", `/api/bases/${encodeId("People.base")}`, { title: "Team", expectedUpdated: again.meta.updated });
+    expect(((await second.json()) as { meta: PageMeta }).meta.id).toBe("Team 2.base");
+    expect(await readdir(join(dir, "Team 2"))).toEqual(["Ada.md"]);
+    expect(parseBase(await readFile(join(dir, "Team 2.base"), "utf8")).filters).toEqual({ and: ['file.folder == "Team 2"'] });
+  });
+
+  it("a base whose filter no longer reads its marked folder renames alone", async () => {
+    const edited = 'gumply:\n  rows: Crew\nfilters:\n  and:\n    - file.inFolder("Crew")\nviews: []\n';
+    const { app, dir, store } = await vault({ "Crew.base": edited, "Crew/Bo.md": "Bo\n" });
+    const base = store.getBase("Crew.base");
+    const renamed = await jsonRequest(app, "PUT", `/api/bases/${encodeId("Crew.base")}`, { title: "Staff", expectedUpdated: base.meta.updated });
+    expect(((await renamed.json()) as { meta: PageMeta }).meta.id).toBe("Staff.base");
+    expect(await readdir(join(dir, "Crew"))).toEqual(["Bo.md"]);
+    expect(await readFile(join(dir, "Staff.base"), "utf8")).toBe(edited);
+  });
+
   it("saves only what changed, conditionally", async () => {
     const { app, dir } = await vault(files);
     const id = encodeId("Projects/Tasks.base");

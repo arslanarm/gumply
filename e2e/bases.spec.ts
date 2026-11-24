@@ -188,13 +188,13 @@ test.describe('database views (.base, D34)', () => {
     await expect.poll(() => read('Projects/Tasks.base')).toBe(TASKS_BASE);
   });
 
-  test('New database view in the sidebar and inside a folder; + New adds a page to the source folder', async ({ page, request, vault }) => {
+  test('a view of pages inside a folder; + New adds a page to the source folder; the sidebar\'s New database owns its rows folder', async ({ page, request, vault }) => {
     void vault;
     await writeVault(request, PROJECT_FILES);
     await page.goto('/#/Projects/Alpha');
     await expectPageTitle(page, 'Alpha');
 
-    // ⋯ on the folder → Add database view inside: a table of that folder.
+    // ⋯ on the folder → Add view of pages inside: a table of that folder.
     await page.getByTestId('page-item-Projects').hover();
     await page.getByTestId('page-menu-button-Projects').click();
     await page.getByTestId('add-base-Projects').click();
@@ -218,12 +218,16 @@ test.describe('database views (.base, D34)', () => {
     await expect(titles(page)).toHaveText(['Alpha', 'Beta', 'Delta', 'Gamma']);
     await expect.poll(() => exists('Projects/Delta.md')).toBe(true);
 
-    // The sidebar's New database view: at the top level, all pages.
+    // #7prbquxu: the sidebar's New database: an empty table with its own rows folder next to it.
     await page.getByTestId('new-base-button').click();
     await expect(page.getByTestId('page-title-input')).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('page-item-Untitled database.base')).toBeVisible();
-    expect(await read('Untitled database.base')).toBe('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n');
+    expect(await read('Untitled database.base')).toBe(
+      'gumply:\n  rows: Untitled database\nfilters:\n  and:\n    - file.folder == "Untitled database"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n',
+    );
+    expect(await exists('Untitled database')).toBe(true);
+    await expect(titles(page)).toHaveCount(0);
   });
 
   test('a base of one folder\'s own pages (file.folder ==, as the Notion import writes) shows that folder, and + New adds its row there', async ({ page, request, vault }) => {

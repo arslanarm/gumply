@@ -1291,9 +1291,10 @@
   },
   "bases": {
     "untitled": "Untitled database",
-    "newBase": "New database view",
+    "newBase": "New view of pages…",
+    "newDatabase": "New database",
     "createNamed": "Create database view “{{title}}”",
-    "addBaseInside": "Add database view inside",
+    "addBaseInside": "Add view of pages inside",
     "deleteBase": "Delete database view",
     "deleted": "Database view deleted",
     "views": "Views",
@@ -1885,7 +1886,7 @@
       "move": "Move page to…",
       "addPage": "Add page inside",
       "addBoard": "Add whiteboard inside",
-      "addBase": "Add database view inside",
+      "addBase": "Add view of pages inside",
       "newFromTemplate": "New page from template inside…",
       "delete": "Delete page",
       "openWindow": "Open page in new window"
@@ -1893,7 +1894,8 @@
     "new": {
       "page": "New page",
       "board": "New whiteboard…",
-      "base": "New database view"
+      "base": "New view of pages…",
+      "database": "New database"
     },
     "view": {
       "localGraph": "Show local graph",

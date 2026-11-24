@@ -55,7 +55,7 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
       'Move to…',
       'New sub-page',
       'Add whiteboard inside',
-      'Add database view inside',
+      'Add view of pages inside',
       'New page from template…',
       'Import from Notion…',
       'Export as HTML…',

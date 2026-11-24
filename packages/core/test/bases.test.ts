@@ -8,6 +8,7 @@ import {
   newBaseSource,
   ownedRowsFolder,
   parseBase,
+  withOwnedRows,
   runBaseView,
   typedProperties,
   updateBaseSource,
@@ -205,6 +206,16 @@ describe("updateBaseSource", () => {
     // No marker (a Notion import): not owned.
     expect(owned('filters:\n  and:\n    - file.folder == "People"\nviews: []\n')).toBeNull();
     expect(owned('gumply: yes\nviews: []\n')).toBeNull();
+  });
+
+  it("moves an owned database's marker and filter to a renamed rows folder, touching only those lines", () => {
+    const source = 'gumply:\n  rows: Untitled database\n  showRows: true\nfilters:\n  and:\n    - file.folder == "Untitled database"\n    - status != "x"\nviews:\n  - type: table\n    name: Table\n';
+    const moved = updateBaseSource(source, withOwnedRows(parseBase(source), "Team/People"));
+    expect(moved).toBe(source.replace("rows: Untitled database", "rows: Team/People").replace('file.folder == "Untitled database"', 'file.folder == "Team/People"'));
+    expect(ownedRowsFolder(parseBase(moved))).toBe("Team/People");
+    // Not owned: unchanged.
+    const plain = parseBase('filters:\n  and:\n    - file.folder == "X"\nviews: []\n');
+    expect(withOwnedRows(plain, "Y")).toBe(plain);
   });
 });
 

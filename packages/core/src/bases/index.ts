@@ -4,6 +4,7 @@ export {
   GUMPLY_VIEW_TYPES,
   newBaseSource,
   ownedRowsFolder,
+  withOwnedRows,
   parseBase,
   updateBaseSource,
   type BaseConfig,
