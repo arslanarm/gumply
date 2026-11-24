@@ -1276,3 +1276,46 @@ ol.base-list {
   color: var(--muted);
   text-align: right;
 }
+
+/* #7prbquxu: the typing row of a database that owns its rows (spec/database-tables §4). */
+.base-typing-row {
+  position: relative;
+}
+
+.base-typing-row:hover {
+  background: transparent;
+}
+
+.base-typing-icon {
+  display: flex;
+  flex: none;
+  margin-right: 0.5rem;
+  color: var(--muted);
+}
+
+.base-typing-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.base-typing-input::placeholder {
+  color: var(--muted);
+}
+
+.base-typing-row:focus-within .base-td-title {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 2px;
+}
+
+.base-typing-hint {
+  margin: 0.5rem 0.5rem 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}

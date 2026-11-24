@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta } from "@gumply/core";
+import { ownedRowsFolder } from "@gumply/core";
 import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
 import { t as translate, useT, type MessageKey } from "../i18n/index.js";
@@ -316,8 +317,12 @@ export function BaseView(props: BaseViewProps) {
     [load],
   );
 
-  /** "+ New": a page in the source folder, with what the view's `is` filters need. */
-  const newRow = useCallback(async (implied?: Record<string, BaseValue>) => {
+  /**
+   * "+ New": a page in the source folder, with what the view's `is` filters need.
+   * #7prbquxu: with `title` (the typing row), the row is made with that name and
+   * nothing opens for renaming; it resolves once the table shows it.
+   */
+  const newRow = useCallback(async (implied?: Record<string, BaseValue>, title?: string) => {
     if (!active) return;
     const source = baseSource(docRef.current.config);
     const parentId =
@@ -325,7 +330,7 @@ export function BaseView(props: BaseViewProps) {
         ? source.folder
         : (props.pages.find((page) => page.id === baseId)?.parentId ?? null);
     try {
-      const page = await api.createPage({ title: translate("defaults.untitledPage"), parentId });
+      const page = await api.createPage({ title: title ?? translate("defaults.untitledPage"), parentId });
       const values: Record<string, BaseValue> = {};
       for (const clause of viewClauses(active)) {
         if ("rule" in clause && clause.rule.op === "is" && clause.rule.property.startsWith("note.")) {
@@ -336,7 +341,9 @@ export function BaseView(props: BaseViewProps) {
       // The kanban column or calendar day it was added to.
       Object.assign(values, implied ?? {});
       if (Object.keys(values).length) await api.setPageProperties(page.id, values, page.updated);
-      if (active.type === "table") {
+      if (title !== undefined) {
+        await load();
+      } else if (active.type === "table") {
         setRenameRowId(page.id);
         await load();
       } else {
@@ -487,6 +494,7 @@ export function BaseView(props: BaseViewProps) {
           onEditValue={editValue}
           onRename={rename}
           onNewRow={() => void newRow()}
+          {...(ownedRowsFolder(config) ? { onAddRow: (title: string) => newRow(undefined, title) } : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}
           onRenameDone={() => setRenameRowId(null)}

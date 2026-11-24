@@ -39,6 +39,11 @@ export interface TableViewProps {
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   onRename: (row: BaseRow, title: string) => Promise<void>;
   onNewRow?: () => void;
+  /**
+   * #7prbquxu: a database that owns its rows: the typing row at the bottom makes a row
+   * with the typed name (it resolves once the table shows it). Replaces "+ New".
+   */
+  onAddRow?: (title: string) => Promise<void>;
   onChangeView: (view: BaseView) => void;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
@@ -180,7 +185,9 @@ export function TableView(props: TableViewProps) {
           })}
         </div>
 
-        {result.rows.length === 0 ? (
+        {props.onAddRow && !props.readOnly ? (
+          <TypingRow columns={columns.length} onAddRow={props.onAddRow} />
+        ) : result.rows.length === 0 ? (
           <div className="base-empty" data-testid="base-empty">
             {t("bases.empty")}
           </div>
@@ -209,7 +216,13 @@ export function TableView(props: TableViewProps) {
         </div>
       </div>
 
-      {props.onNewRow && !props.readOnly ? (
+      {props.onAddRow && !props.readOnly && result.rows.length === 0 ? (
+        <p className="base-typing-hint" data-testid="base-typing-hint">
+          {t("bases.typingHint")}
+        </p>
+      ) : null}
+
+      {props.onNewRow && !props.onAddRow && !props.readOnly ? (
         <button type="button" className="base-new-row" data-testid="base-new-row" onClick={props.onNewRow}>
           <Icon name="plus" size={14} />
           {t("bases.newRow")}
@@ -231,6 +244,60 @@ export function TableView(props: TableViewProps) {
           )}
         </Popover>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * #7prbquxu (spec/database-tables §4): the row at the bottom of an owned database.
+ * Typing a name and Enter makes the row and keeps the field ready for the next one.
+ * An empty name makes nothing; Enter while an IME is composing belongs to the IME.
+ */
+function TypingRow(props: { columns: number; onAddRow: (title: string) => Promise<void> }) {
+  const t = useT();
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const add = async () => {
+    const title = draft.trim();
+    if (!title || busy) return;
+    setBusy(true);
+    try {
+      await props.onAddRow(title);
+      setDraft("");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="base-tr base-typing-row" role="row" data-testid="base-typing-row">
+      <div className="base-td base-td-title" role="cell">
+        <span className="base-typing-icon" aria-hidden="true">
+          <Icon name="plus" size={14} />
+        </span>
+        <input
+          className="base-typing-input"
+          data-testid="base-typing-input"
+          aria-label={t("bases.typeName")}
+          placeholder={t("bases.typeName")}
+          value={draft}
+          readOnly={busy}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void add();
+            } else if (event.key === "Escape" && draft) {
+              event.preventDefault();
+              setDraft("");
+            }
+          }}
+        />
+      </div>
+      {Array.from({ length: Math.max(0, props.columns - 1) }, (_, index) => (
+        <div className="base-td" role="cell" key={index} />
+      ))}
+      <div className="base-td base-td-fill" role="cell" />
     </div>
   );
 }
