@@ -894,8 +894,19 @@ test('the same page in two windows: the second save asks Reload / Keep mine (no 
     await expect.poll(states, { timeout: 15_000 }).toEqual(['conflict', 'saved']);
     const onDisk = readFileSync(join(vault, 'Shared.md'), 'utf8');
     expect(onDisk.includes('One.') !== onDisk.includes('Two.')).toBe(true);
+
+    // The conflicted window chooses Reload, so nothing is left unsaved and the app can quit
+    // (with a conflict open, quitting rightly asks first, and that dialog would hold the close).
+    const conflicted = (await window.getByTestId('save-status').getAttribute('data-state')) === 'conflict' ? window : second;
+    await conflicted.getByTestId('conflict-reload').click();
+    await expect(conflicted.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict', { timeout: 10_000 });
+    await expect(conflicted.getByTestId('editor-content')).toContainText(onDisk.includes('One.') ? 'One.' : 'Two.');
+    await quitAndWait(app, 'quit');
   } finally {
-    await app.close();
+    // If a step above failed with the conflict still open, the quit would wait on its dialog:
+    // stop this app instead, so the failure shows as itself rather than as a test timeout.
+    const child = launched.get(app);
+    if (child) stopProcess(child);
   }
 });
 
