@@ -405,7 +405,13 @@ async function confirmUnsaved(action: "switchVaults" | "close" | "quit"): Promis
     cancelId: 1,
     message: tr("unsaved.message"),
     detail: named
-      ? tr("unsaved.detailWindows", { detail: tr("unsaved.detail"), windows: unsavedDialog.windows.map((name) => `“${name}”`).join(", ") })
+      ? tr("unsaved.detailWindows", {
+          detail: tr("unsaved.detail"),
+          // Each name in the language's own quotes (“…” / «…»).
+          windows: unsavedDialog.windows.map((name) => tr("unsaved.windowName", { name })).join(", "),
+          // One window or several: ru says «в окне» / «в окнах».
+          count: unsavedDialog.windows.length,
+        })
       : tr("unsaved.detail"),
   };
   unsavedDialog.open = true;
