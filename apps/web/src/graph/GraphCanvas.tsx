@@ -365,9 +365,11 @@ export function GraphCanvas({
   const gestureTimerRef = useRef(0);
   // force-graph's onZoom: every camera change, by the user (wheel, pan, pinch,
   // the + / − / Fit buttons) or by code (the settle's fit tween).
-  const markGesture = useCallback((): void => {
-    if (!bigGraphRef.current) return;
-    gestureRef.current = true;
+  // The links come back GESTURE_IDLE_MS after the camera last changed *and* the last
+  // frame ended (#9x4duwmg B-fix): at DPR 2 a gesture frame takes ~1 s at 4×, so a
+  // timer counted from the input alone fired between two wheel steps, and the next
+  // frame drew every link mid-gesture.
+  const armGestureEnd = useCallback((): void => {
     window.clearTimeout(gestureTimerRef.current);
     gestureTimerRef.current = window.setTimeout(() => {
       gestureTimerRef.current = 0;
@@ -375,6 +377,11 @@ export function GraphCanvas({
       setLinkEpoch((epoch) => epoch + 1);
     }, GESTURE_IDLE_MS);
   }, []);
+  const markGesture = useCallback((): void => {
+    if (!bigGraphRef.current) return;
+    gestureRef.current = true;
+    armGestureEnd();
+  }, [armGestureEnd]);
   useEffect(() => () => window.clearTimeout(gestureTimerRef.current), []);
   const linkVisible = useCallback(
     () => !gestureRef.current,
@@ -941,6 +948,15 @@ export function GraphCanvas({
     },
     [colors, highlightId, hoveredId, neighbours, labelIds, linkPaint],
   );
+  // After each painted frame: if the camera is still moving, the idle wait starts over
+  // from here (#9x4duwmg B-fix), so a slow frame can't outlast it.
+  const onFramePost = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number): void => {
+      drawNodes(ctx, scale);
+      if (gestureRef.current) armGestureEnd();
+    },
+    [drawNodes, armGestureEnd],
+  );
 
   /**
    * force-graph only repaints when it thinks something changed. Our node layer
@@ -1345,7 +1361,7 @@ export function GraphCanvas({
             nodeId="id"
             backgroundColor="transparent"
             nodeVisibility={hideBuiltInNodes}
-            onRenderFramePost={drawNodes}
+            onRenderFramePost={onFramePost}
             linkVisibility={nodes.length > STREAM_MAX_NODES ? linkVisible : true}
             onZoom={markGesture}
             linkColor={linkColor}
