@@ -12,6 +12,8 @@ import { API_URL, BASE_URL, E2E_VAULT } from './support/env';
  * lines; dots, outlines and ghosts are arcs).
  */
 const NOTES = 5_200; // over STREAM_MAX_NODES (5,000)
+/** GraphCanvas's GESTURE_IDLE_MS: the camera counts as resting after this long. */
+const IDLE_MS = 150;
 
 // The notes are written straight to disk: take them away again, so later specs start from a small vault.
 test.afterEach(async ({ request }) => {
@@ -48,8 +50,13 @@ async function openCounted(page: Page) {
   await expect(canvas).not.toHaveAttribute('data-graph-arranging', 'true');
   await page.waitForTimeout(1_500); // the fit tween, and its links drawn again
   await page.evaluate(() => {
-    const w = window as unknown as { __lines: number };
+    const w = window as unknown as { __lines: number; __inputs: number[] };
     w.__lines = 0;
+    // When each camera input reached the page (its event time), to check the test's own premise.
+    w.__inputs = [];
+    for (const type of ['wheel', 'click']) {
+      document.addEventListener(type, (event) => w.__inputs.push(event.timeStamp), { capture: true });
+    }
     const proto = CanvasRenderingContext2D.prototype;
     const lineTo = proto.lineTo;
     proto.lineTo = function (this: CanvasRenderingContext2D, x: number, y: number) {
@@ -59,9 +66,31 @@ async function openCounted(page: Page) {
   });
   const lines = () => page.evaluate(() => (window as unknown as { __lines: number }).__lines);
   const reset = () => page.evaluate(() => {
-    (window as unknown as { __lines: number }).__lines = 0;
+    const w = window as unknown as { __lines: number; __inputs: number[] };
+    w.__lines = 0;
+    w.__inputs = [];
   });
-  return { canvas, lines, reset };
+  /**
+   * The longest pause the camera had since `reset`: between two inputs, and from the last one
+   * to now. Each step must come before the links' idle delay, or the camera really rested and
+   * drawing the links was right. A traced or very loaded run spaces the steps out
+   * (#9x4duwmg: --trace on gave 390–450 ms), so it is skipped with a note, not failed.
+   */
+  const linesMidGesture = async (what: string): Promise<number> => {
+    // One read: the count and the pauses up to the moment it was taken.
+    const { count, gap } = await page.evaluate(() => {
+      const w = window as unknown as { __lines: number; __inputs: number[] };
+      const times = [...w.__inputs, performance.now()];
+      let max = 0;
+      for (let i = 1; i < times.length; i++) max = Math.max(max, times[i]! - times[i - 1]!);
+      return { count: w.__lines, gap: Math.round(max) };
+    });
+    const note = `${what}: gesture too slow to test (${gap} ms gaps, idle delay ${IDLE_MS} ms)`;
+    if (gap >= IDLE_MS) test.info().annotations.push({ type: 'skip-reason', description: note });
+    test.skip(gap >= IDLE_MS, note);
+    return count;
+  };
+  return { canvas, lines, reset, linesMidGesture };
 }
 
 /** A burst of wheel steps, each closer than the idle delay to the last: no frame may draw a link. */
@@ -76,7 +105,7 @@ test('a big graph hides its links while the camera moves and draws them again af
   test.setTimeout(420_000);
   await vault.reset();
   await writeBigVault(request);
-  const { canvas, lines, reset } = await openCounted(page);
+  const { canvas, lines, reset, linesMidGesture } = await openCounted(page);
   const box = (await canvas.boundingBox())!;
 
   // The pointer goes there first, and any hover repaint it causes is left out of the count.
@@ -84,7 +113,7 @@ test('a big graph hides its links while the camera moves and draws them again af
   await page.waitForTimeout(1_500);
   await reset();
   await wheelBurst(page, box, 6);
-  expect(await lines()).toBe(0);
+  expect(await linesMidGesture('wheel')).toBe(0);
 
   // Once the camera rests, the links come back (two per note here).
   await expect.poll(lines, { timeout: 10_000 }).toBeGreaterThan(NOTES);
@@ -93,7 +122,7 @@ test('a big graph hides its links while the camera moves and draws them again af
   await reset();
   await page.getByTestId('graph-zoom-in').click();
   await page.waitForTimeout(60);
-  expect(await lines()).toBe(0);
+  expect(await linesMidGesture('zoom button')).toBe(0);
   await expect.poll(lines, { timeout: 10_000 }).toBeGreaterThan(NOTES);
 });
 
