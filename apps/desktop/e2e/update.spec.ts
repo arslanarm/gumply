@@ -495,7 +495,8 @@ if (isLinux) {
 
       // #acbwryxf: an install by an older version (before this fix) left its download behind; N+1's
       // first start removes it. Put such a leftover back, as 0.9.2 → 0.9.3 leaves it.
-      writeFileSync(join(pendingDir, newFile), readFileSync(join(feedDir, newFile)));
+      mkdirSync(pendingDir, { recursive: true });
+      copyFileSync(join(feedDir, newFile), join(pendingDir, newFile));
       writeFileSync(join(pendingDir, 'update-info.json'), JSON.stringify({ fileName: newFile, sha512: sha512(join(feedDir, newFile)), isAdminRightsRequired: false }));
       await startApp();
       expect((await health()).version).toBe(newVersion);
