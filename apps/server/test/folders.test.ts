@@ -142,6 +142,26 @@ describe("plain folders (D33)", () => {
     expect(await readFile(join(dir, "Media/In.md"), "utf8")).toBe("![i](a.png) and [d](doc.pdf)\n");
   });
 
+  it("a note that moves deeper or shallower re-points its relative links to any file (#sj5a2trb)", async () => {
+    const { app, dir, store } = await createTestServer();
+    for (const d of ["Files", "Other", "Archive", "Notes", "Deep/Er"]) await mkdir(join(dir, d), { recursive: true });
+    await writeFile(join(dir, "Other/c.png"), "png", "utf8");
+    await writeFile(join(dir, "Archive/Keep.md"), "x\n", "utf8");
+    await writeFile(join(dir, "Deep/Er/Keep.md"), "x\n", "utf8");
+    await writeFile(join(dir, "Files/In.md"), "![c](../Other/c.png) [doc](../Other/c.png)\n", "utf8");
+    await writeFile(join(dir, "Notes/P.md"), "![c](../Other/c.png)\n", "utf8");
+    await store.rescan();
+
+    // a folder moved one level deeper (the note inside moves with it)
+    expect((await jsonRequest(app, "POST", `/api/pages/${encodeId("Files")}/move`, { parentId: "Archive" })).status).toBe(200);
+    expect(await readFile(join(dir, "Archive/Files/In.md"), "utf8")).toBe("![c](../../Other/c.png) [doc](../../Other/c.png)\n");
+    // a single page moved deeper, then back out to the root
+    expect((await jsonRequest(app, "POST", `/api/pages/${encodeId("Notes/P")}/move`, { parentId: "Deep/Er" })).status).toBe(200);
+    expect(await readFile(join(dir, "Deep/Er/P.md"), "utf8")).toBe("![c](../../Other/c.png)\n");
+    expect((await jsonRequest(app, "POST", `/api/pages/${encodeId("Deep/Er/P")}/move`, { parentId: null })).status).toBe(200);
+    expect(await readFile(join(dir, "P.md"), "utf8")).toBe("![c](Other/c.png)\n");
+  });
+
   it("a rename onto a taken name gets a ` 2` suffix; a body edit is refused", async () => {
     const { app } = await obsidianVault();
     const renamed = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Home")}`, { title: "Work" });
