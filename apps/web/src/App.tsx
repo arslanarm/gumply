@@ -1690,6 +1690,33 @@ export function App() {
     if (!found) setToast({ message: t("page.headingNotFound"), icon: "info" });
   }, []);
 
+  /**
+   * #ekp8ns58 (A): the one place that reloads the open page after a rename rewrote its own body. The
+   * rename calls it, and so does the editor when it drops a save typed during that rename (it had the
+   * old links), so a drop never happens without a reload. Text kept in History gets a notice.
+   */
+  const ownRewriteReload = useRef<Promise<void> | null>(null);
+  const reloadAfterOwnRewrite = useCallback(() => {
+    // Both callers fire for one rename (the rename first, the dropped save a microtask later): one reload.
+    if (ownRewriteReload.current) return;
+    const running = reloadOpenPage.current("replace").then((kept) => {
+      if (!kept) return;
+      const renamedId = selectedRef.current;
+      setToast({
+        message: t("save.typedDuringRename"),
+        icon: "info",
+        actionLabel: t("save.openHistory"),
+        undo: async () => {
+          const meta = pagesRef.current.find((item) => item.id === renamedId);
+          if (meta) setHistoryTarget(meta);
+        },
+      });
+    });
+    ownRewriteReload.current = running.finally(() => {
+      ownRewriteReload.current = null;
+    });
+  }, [t]);
+
   const handleRename = useCallback(
     async (id: PageId, title: string) => {
       setActionError(null);
@@ -1764,20 +1791,7 @@ export function App() {
         // so its next save would pass the version check and silently put the old links back (D37).
         // Reload it; text typed during the rename is kept in History first ("replace").
         if ((open === id || open === updated.id) && (updated.rewrittenPages?.includes(updated.id) ?? false)) {
-          const renamedId = updated.id;
-          void reloadOpenPage.current("replace").then((kept) => {
-            if (!kept) return;
-            // Typed during the rename: not lost, but not on the page either. Say where it is.
-            setToast({
-              message: t("save.typedDuringRename"),
-              icon: "info",
-              actionLabel: t("save.openHistory"),
-              undo: async () => {
-                const meta = pagesRef.current.find((item) => item.id === renamedId);
-                if (meta) setHistoryTarget(meta);
-              },
-            });
-          });
+          reloadAfterOwnRewrite();
         }
       } catch (error) {
         if (previousTitle !== null) showTitle(previousTitle);
@@ -1785,7 +1799,7 @@ export function App() {
         void loadPages();
       }
     },
-    [applySavedPage, loadPages, pages, requestPageReload, t],
+    [applySavedPage, loadPages, pages, reloadAfterOwnRewrite, requestPageReload],
   );
 
   // v0.7 A (D34): properties are saved like any page edit: the editor's
@@ -2866,6 +2880,7 @@ export function App() {
                     onSaveState={setSaveState}
                     onSaved={handlePageSaved}
                     waitForRename={waitForRename}
+                    onRenameRewroteOwn={reloadAfterOwnRewrite}
                     onConflictBackup={handleConflictBackup}
                     onReady={handleEditorReady}
                     onOpenLink={handleOpenLink}

@@ -58,6 +58,8 @@ test('typing during the rename: no stale link; the typed text goes to History, a
   await page.keyboard.press('End');
   await page.keyboard.type(' Typed during.');
   await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
+  // @opus-editor: keep typing ~300 ms right after the rename answers, inside the autosave delay and the reload.
+  await page.keyboard.type(' Just after.', { delay: 25 });
   await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('[[Moved/Sub]]');
   await page.waitForTimeout(3_000); // any late save has had its chance
   // (A): the held save is not sent (it had the old link); the reload keeps the typing in History and says so.
@@ -74,6 +76,19 @@ test('typing during the rename: no stale link; the typed text goes to History, a
   // The notice's History button opens it.
   await notice.getByRole('button', { name: 'History' }).click();
   await expect(page.getByTestId('history-dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('history-dialog')).toBeHidden();
+  // The typing right after the answer is never lost either: in the file, or kept by the reload.
+  const versionTexts = await Promise.all(items.map(async (item) => (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(item.file)}`)).text()));
+  expect(text.includes('Just after.') || versionTexts.some((version) => version.includes('Just after.')), '"Just after." is kept').toBe(true);
+  // Typing on in the reloaded page lands, with the rewrite kept.
+  await page.getByTestId('editor-content').getByText('here.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Typed later.');
+  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8'), { timeout: 15_000 }).toContain('Typed later.');
+  const later = await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8');
+  expect(later).toContain('[[Moved/Sub]]');
+  expect(later).not.toContain('[[Parent/Sub]]');
 });
 
 test('a self-link in the renamed page is never put back to an older form by the editor (@lead)', async ({ page, vault }) => {
