@@ -1,6 +1,6 @@
 /** Pure helpers for the “Linked from” panel (spec/ux §8). */
 import { parseWikiLinkText } from "./wikilinks.js";
-import { WIKILINK_INNER } from "@gumply/core";
+import { WIKILINK_INNER, wikilinkTargetPart } from "@gumply/core";
 
 export interface SnippetPart {
   text: string;
@@ -12,7 +12,7 @@ function wikiLinkLabel(raw: string): string {
   // A board embed (D30): `![[Plan/Map.canvas|480]]` reads as "Map"; what
   // follows `|` is its height, not an alias.
   if (raw.startsWith("!")) {
-    const target = raw.slice(3, -2).split("|")[0] ?? "";
+    const target = wikilinkTargetPart(raw.slice(3, -2)); // #siuwzhwy: `\|` in a table cell
     return (target.split("/").pop() ?? target).replace(/\.canvas$/i, "").trim() || target;
   }
   const parsed = parseWikiLinkText(raw);

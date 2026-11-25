@@ -15,6 +15,7 @@ import {
   type FileInfo,
   WIKILINK_INNER,
   WIKILINK_TARGET,
+  wikilinkTargetPart,
 } from "@gumply/core";
 import { notFound } from "./errors.js";
 import type { VaultStore } from "./vault-store.js";
@@ -89,7 +90,7 @@ export class BaseQueries {
       types,
       now: options.now,
       resolveLink: (target) => {
-        const clean = target.replace(/^\[\[|\]\]$/g, "").split("|")[0]!.split("#")[0]!.trim();
+        const clean = wikilinkTargetPart(target.replace(/^\[\[|\]\]$/g, "")).split("#")[0]!.trim();
         return titles.get(clean.toLowerCase()) ?? null;
       },
     });

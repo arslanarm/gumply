@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parseEmbeds } from "../src/embeds";
 import { formatWikilink, rewriteLinksToPage } from "../src/link-target";
-import { collectLinkEdges, extractWikilinks, resolveWikilink, rewriteWikilinkTargets } from "../src/links";
+import { obsidianFileLinks } from "../src/link-files";
+import { collectLinkEdges, extractWikilinks, resolveWikilink, rewriteWikilinkFolder, rewriteWikilinkTargets } from "../src/links";
+import { propertyLinks } from "../src/property-links";
 import type { PageMeta } from "../src/types";
 
 /**
@@ -131,5 +133,31 @@ describe("a link in a Markdown table cell, with its alias pipe written \\| (#siu
     expect(embeds[0]?.path).toBe("attachments/report.pdf");
     const [board] = extractWikilinks(String.raw`| ![[Map.canvas\|480]] |`);
     expect(board).toMatchObject({ targetTitle: "Map.canvas", size: "480", embed: true });
+  });
+
+  it("a link in a quoted table (a callout) that gains an alias gets \\| too", () => {
+    const renamed = page("Memo 2", "Memo: 2");
+    const text = "> [!note]\n> | a | [[Note]] |\n> > | b | [[Note]] |\n> Quoted prose [[Note]]\n";
+    const out = rewriteLinksToPage(text, (link) => link.targetTitle === "Note", renamed, [renamed, page("Source")], "Note");
+    expect(out.content).toBe(
+      String.raw`> [!note]` + "\n" + String.raw`> | a | [[Memo 2\|Memo: 2]] |` + "\n" + String.raw`> > | b | [[Memo 2\|Memo: 2]] |` + "\n> Quoted prose [[Memo 2|Memo: 2]]\n",
+    );
+  });
+
+  it("a folder move (pages, boards) keeps \\| byte for byte", () => {
+    const text = String.raw`| [[Files/doc\|Doc]] | ![[Files/Map.canvas\|480]] | [[Files/doc#Part\|P]] |` + "\n";
+    const out = rewriteWikilinkFolder(text, "Files", "Archive/Files");
+    expect(out.content).toBe(String.raw`| [[Archive/Files/doc\|Doc]] | ![[Archive/Files/Map.canvas\|480]] | [[Archive/Files/doc#Part\|P]] |` + "\n");
+    expect(out.count).toBe(3);
+  });
+
+  it("attachments in a table cell get their file edges (obsidianFileLinks)", () => {
+    const links = obsidianFileLinks(String.raw`| ![[a.png\|300]] | [[doc.pdf\|My doc]] | ![[b.png#x\|40]] |`, (text) => text);
+    expect(links).toEqual(["a.png", "doc.pdf", "b.png"]);
+  });
+
+  it("a property link written with \\| names its page (propertyLinks)", () => {
+    const links = propertyLinks(String.raw`related: '[[Note\|shown]]'`);
+    expect(links?.pages.map((entry) => entry.link.targetTitle)).toEqual(["Note"]);
   });
 });

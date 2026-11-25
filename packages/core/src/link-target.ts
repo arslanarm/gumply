@@ -54,10 +54,15 @@ export function linkTargetFor(page: PageMeta, pages: readonly PageMeta[]): LinkT
   return { target, alias: alias === target || alias.length === 0 ? "" : alias };
 }
 
-/** #siuwzhwy: whether the line holding `index` is a Markdown table row (starts with `|`). */
+/**
+ * #siuwzhwy: whether the link at `index` sits in a Markdown table row, where its alias pipe
+ * must be written `\|` or it splits the cell. A row starts with `|`, also inside a quote or
+ * callout (`> | a | [[X]] |`, nested `> >`). Known limit: a GFM table written without
+ * leading pipes (`a | [[X]]`) isn't detected; Gumply and Obsidian always write the `|`.
+ */
 function inTableRow(markdown: string, index: number): boolean {
   const start = markdown.lastIndexOf("\n", index - 1) + 1;
-  return markdown.slice(start, index).trimStart().startsWith("|");
+  return markdown.slice(start, index).replace(/^\s*(?:>\s*)+/, "").trimStart().startsWith("|");
 }
 
 /** The Markdown for a link to `page` (keeping an explicit alias and heading). */
