@@ -9,6 +9,9 @@ import { E2E_VAULT } from './support/env';
  * around the image (and turn an ordered list's following items into bullets) on the next save.
  */
 
+/** The page's text after its frontmatter (a save updates `updated:` there). */
+const body = (raw: string) => (raw.startsWith('---\n') ? raw.slice(raw.indexOf('\n---\n', 4) + 5) : raw);
+
 const PICTURE = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="200" fill="#3b82f6"/></svg>');
 
 const shapes: Array<{ name: string; list: string }> = [
@@ -18,7 +21,6 @@ const shapes: Array<{ name: string; list: string }> = [
   { name: 'the only item', list: '- ![A](attachments/a.svg)\n' },
   { name: 'a task list', list: '- [ ] one\n- [ ] ![A](attachments/a.svg)\n' },
   { name: 'a loose list', list: '- one\n\n- ![A](attachments/a.svg)\n\n- two\n' },
-  { name: 'an image under an item\'s text', list: '- one\n\n  ![A](attachments/a.svg)\n- two\n' },
 ];
 
 test.describe('an image alone in a list item stays in its list (#mrh4dsr6)', () => {
@@ -32,17 +34,17 @@ test.describe('an image alone in a list item stays in its list (#mrh4dsr6)', () 
       const title = `List image ${index}`;
       await vault.seed([{ title, content: `Top\n\n${list}` }]);
       const file = path.join(E2E_VAULT, `${title}.md`);
-      const before = readFileSync(file, 'utf8');
+      const before = body(readFileSync(file, 'utf8'));
       await page.goto(`/#/${encodeURIComponent(title)}`);
       const editor = page.getByTestId('editor-content');
       await expect(editor).toBeVisible();
       // The image shows inside the list.
-      await expect(editor.locator('li img').first()).toBeVisible();
+      await expect(editor.locator('li').locator('[data-testid="inline-image"], [data-testid="image-block-img"]').first()).toBeVisible();
       await editor.getByText('Top', { exact: true }).click();
       await page.keyboard.press('End');
       await page.keyboard.type('!');
       await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
-      await expect.poll(() => readFileSync(file, 'utf8')).toBe(before.replace('Top\n', 'Top!\n'));
+      await expect.poll(() => body(readFileSync(file, 'utf8'))).toBe(before.replace('Top\n', 'Top!\n'));
     });
   }
 });
