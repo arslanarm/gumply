@@ -92,6 +92,7 @@ import type { LinkSuggestion } from "../lib/wikilinks.js";
 import { normalizeEditorMarkdown } from "../lib/markdown.js";
 import { taskCheckboxLabel } from "../lib/task.js";
 import { createExitTopExtension, focusStartNow } from "../editor/title-navigation.js";
+import { DocEdgeKeys } from "../editor/doc-edge-keys.js";
 import { t } from "../i18n/index.js";
 import { scrollBehavior } from "../lib/motion.js";
 
@@ -829,6 +830,7 @@ export function Editor({
       wikiLinkExtension,
       emojiExtension,
       BlockEditing,
+      DocEdgeKeys,
       MarkdownTaskListFix,
       TaskListTight,
       TaskShortcut,
