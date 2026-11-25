@@ -34,6 +34,29 @@ describe("relinkFolderFiles: Markdown links into a moved folder (#x8awsxev)", ()
     expect(out.count).toBe(0);
   });
 
+  it("only the folder's own segments change: ./ and an encoded tail are kept as written (review)", () => {
+    const tail = "%D0%A4%D0%BE%D1%82%D0%BE.png";
+    const out = relinkFolderFiles(`![a](./Files/a.png) ![b](Files/${tail}) ![c](<./Files/my pic.png>)\n`, "Out", "Out", "Files", "Media");
+    expect(out.content).toBe(`![a](./Media/a.png) ![b](Media/${tail}) ![c](<./Media/my pic.png>)\n`);
+  });
+
+  it("a note that moved with the folder: relative links into it are never rewritten, even ./a.png (D37, review)", () => {
+    const text = "![a](./a.png) ![b](sub/../a.png) ![c](a.png)\n";
+    const out = relinkFolderFiles(text, "Files/In", "Media/In", "Files", "Media");
+    expect(out.content).toBe(text);
+    expect(out.count).toBe(0);
+  });
+
+  it("a note that moved with the folder: /absolute links into it do follow", () => {
+    const out = relinkFolderFiles("![a](/Files/a.png)\n", "Files/In", "Media/In", "Files", "Media");
+    expect(out.content).toBe("![a](/Media/a.png)\n");
+  });
+
+  it("when part of the folder is the note's own folder, the relative path is rebuilt", () => {
+    const out = relinkFolderFiles("![a](Files/a.png)\n", "Notes/X", "Notes/X", "Notes/Files", "Archive/Files");
+    expect(out.content).toBe("![a](../Archive/Files/a.png)\n");
+  });
+
   it("a moved SUBfolder rewrites only links under it", () => {
     const out = relinkFolderFiles("![a](Files/a.png) ![b](Files/Sub/b.png) ![c](Files/Subway/c.png)\n", "Out", "Out", "Files/Sub", "Archive/Sub");
     expect(out.content).toBe("![a](Files/a.png) ![b](Archive/Sub/b.png) ![c](Files/Subway/c.png)\n");
