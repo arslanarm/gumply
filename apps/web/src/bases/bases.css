@@ -423,6 +423,38 @@
   margin: 0.5rem 0;
 }
 
+/* #hrdgchfb: focus comes back to the view after the inline choice; no ring for that alone. */
+.base-view:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* #hrdgchfb: an embedded view's own save conflict, asked in place (no save bar there). */
+.base-conflict {
+  position: static;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--text);
+}
+
+.base-conflict > span {
+  flex: 1;
+}
+
+.base-conflict-button {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.base-conflict-button:hover {
+  background: var(--hover);
+}
+
 .base-notice {
   display: flex;
   align-items: center;

@@ -1447,7 +1447,8 @@
     "undated_one": "{{count}} page has no date and isn't shown.",
     "undated_few": "{{count}} pages have no date and aren't shown.",
     "undated_many": "{{count}} pages have no date and aren't shown.",
-    "undated_other": "{{count}} pages have no date and aren't shown."
+    "undated_other": "{{count}} pages have no date and aren't shown.",
+    "conflict": "This database view changed on disk."
   },
   "tags": {
     "title": "Tags",
