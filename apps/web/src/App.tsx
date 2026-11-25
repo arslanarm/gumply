@@ -1701,7 +1701,7 @@ export function App() {
    * old links), so a drop never happens without a reload. Text kept in History gets a notice.
    */
   const ownRewriteReload = useRef<Promise<void> | null>(null);
-  const reloadAfterOwnRewrite = useCallback(() => {
+  const reloadAfterOwnRewrite = useCallback((renamedId: PageId) => {
     // Both callers fire for one rename (the rename first, the dropped save a microtask later): one reload.
     if (ownRewriteReload.current) return;
     // The reload remounts the editor: put the caret back where the user is typing (as the disk poll's
@@ -1709,11 +1709,10 @@ export function App() {
     const active = document.activeElement;
     const selection =
       active instanceof HTMLElement && active.closest('[data-testid="editor-content"]') ? (editorControls.current?.getSelection() ?? null) : null;
-    const openId = selectedRef.current;
-    caretAfterOwnRewrite.current = selection && openId !== null ? { id: openId, to: selection.to, until: Date.now() + 3_000 } : null;
+    // Keyed by the page's new id: the remounts are of it, while the selection may still name the old one.
+    caretAfterOwnRewrite.current = selection ? { id: renamedId, to: selection.to, until: Date.now() + 3_000 } : null;
     const running = reloadOpenPage.current("replace").then((kept) => {
       if (!kept) return;
-      const renamedId = selectedRef.current;
       setToast({
         message: t("save.typedDuringRename"),
         icon: "info",
@@ -1803,7 +1802,7 @@ export function App() {
         // so its next save would pass the version check and silently put the old links back (D37).
         // Reload it; text typed during the rename is kept in History first ("replace").
         if ((open === id || open === updated.id) && (updated.rewrittenPages?.includes(updated.id) ?? false)) {
-          reloadAfterOwnRewrite();
+          reloadAfterOwnRewrite(updated.id);
         }
       } catch (error) {
         if (previousTitle !== null) showTitle(previousTitle);
