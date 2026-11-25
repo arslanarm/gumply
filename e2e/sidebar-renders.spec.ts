@@ -12,6 +12,9 @@ import { expectPageTitle } from './support/ui';
  * which in a 5,200-page vault froze the app for seconds. The dev build counts row renders.
  */
 const ROWS = 300;
+// The dev build runs React's StrictMode, which renders every component twice: a changed row
+// counts 2. Main renders all 300 rows several times per step (~1,200); these bounds allow a few rows.
+const FEW_ROWS = 12;
 
 const renders = (page: Page) => page.evaluate(() => (window as unknown as { __gumplyRowRenders?: number }).__gumplyRowRenders ?? 0);
 const resetRenders = (page: Page) => page.evaluate(() => ((window as unknown as { __gumplyRowRenders?: number }).__gumplyRowRenders = 0));
@@ -40,7 +43,7 @@ test.describe('the sidebar renders only the rows that changed (#8gudbajp)', () =
     await page.getByTestId('page-item-Big/Item 005').click();
     await expectPageTitle(page, 'Item 005');
     await page.waitForTimeout(500);
-    expect(await renders(page)).toBeLessThanOrEqual(6);
+    expect(await renders(page)).toBeLessThanOrEqual(FEW_ROWS);
   });
 
   test('going to the graph renders a handful of rows at most', async ({ page }) => {
@@ -48,7 +51,7 @@ test.describe('the sidebar renders only the rows that changed (#8gudbajp)', () =
     await page.getByTestId('sidebar-graph').click();
     await expect(page).toHaveURL(/#graph/);
     await page.waitForTimeout(500);
-    expect(await renders(page)).toBeLessThanOrEqual(6);
+    expect(await renders(page)).toBeLessThanOrEqual(FEW_ROWS);
   });
 
   test('a page added outside renders its own row and its folder, not every row', async ({ page }) => {
@@ -56,7 +59,7 @@ test.describe('the sidebar renders only the rows that changed (#8gudbajp)', () =
     writeFileSync(path.join(E2E_VAULT, 'Big', 'Item new.md'), 'New\n');
     await expect(page.getByTestId('page-item-Big/Item new')).toBeAttached({ timeout: 10_000 });
     await page.waitForTimeout(500);
-    expect(await renders(page)).toBeLessThanOrEqual(10);
+    expect(await renders(page)).toBeLessThanOrEqual(FEW_ROWS + 8);
   });
 
   test('the row menu still opens from the mouse and the keyboard', async ({ page }) => {
