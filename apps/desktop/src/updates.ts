@@ -19,7 +19,7 @@
  */
 import { spawnSync } from "node:child_process";
 import * as nodeFs from "node:fs";
-import { basename, dirname, join, sep, win32 } from "node:path";
+import { basename, dirname, join, resolve, sep, win32 } from "node:path";
 import type { DesktopUpdatesState, UpdateInstallKind, UpdateMode, UpdateStatus } from "@gumply/core";
 import type { UpdateSettings } from "./settings.js";
 import { sha256FileSync, type VerifyOutcome } from "./update-signature.js";
@@ -107,6 +107,14 @@ export function replaceAppImage(downloaded: string, target: string, fs: ReplaceF
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EACCES" || code === "EPERM" || code === "EROFS") return "read-only";
     throw error;
+  }
+  // #acbwryxf: the download was copied, not moved (the cache can be on another filesystem), so the
+  // updater's pending/ kept a second full image (~121 MB) for good. Installed now: it's spent. Only
+  // after the rename, so a failure above leaves it for the next quit; failing to remove it is harmless.
+  try {
+    if (resolve(downloaded) !== resolve(target)) fs.rmSync(downloaded, { force: true });
+  } catch {
+    // the install stands; the cache keeps a copy, as before
   }
   return "installed";
 }
