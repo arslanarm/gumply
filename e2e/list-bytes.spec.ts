@@ -134,6 +134,13 @@ test.describe('a loose list keeps each item\'s own blank lines (#fy7pas58)', () 
     'one blank line between two items only': 'Target paragraph.\n\n- a\n- b\n\n- c\n',
     'a numbered list with mixed gaps': 'Target paragraph.\n\n1. one\n\n   more\n2. two\n\n3. three\n',
     'a fully loose list (control)': 'Target paragraph.\n\n- a\n\n- b\n\n- c\n',
+    // @opus-hunter's D37 sweep shapes (#fy7pas58).
+    'mixed gaps: bullets loose then tight': '- one\n\n- two\n- three\n\nTarget paragraph.\n',
+    'mixed gaps: bullets tight then loose': '- one\n- two\n\n- three\n- four\n\nTarget paragraph.\n',
+    'mixed gaps: heading alternating': '## Plan\n- one\n\n- two\n- three\n\n- four\n\nTarget paragraph.\n',
+    'mixed gaps: nested': '- one\n  - nested a\n  - nested b\n\n- two\n- three\n\nTarget paragraph.\n',
+    'mixed gaps: ordered': '1. one\n2. two\n\n3. three\n4. four\n\nTarget paragraph.\n',
+    'mixed gaps: tasks': '- [ ] one\n- [x] two\n\n- [ ] three\n\nTarget paragraph.\n',
   };
 
   for (const [name, text] of Object.entries(MIXED)) {
