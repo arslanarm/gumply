@@ -35,13 +35,19 @@ function isContent(token: any): boolean {
  * other images, so they render as inline images instead of blocks.
  */
 export function inlineImageRule(state: any): void {
-  for (const block of state.tokens as any[]) {
+  const tokens = state.tokens as any[];
+  for (const [index, block] of tokens.entries()) {
     if (block.type !== "inline" || !block.children) continue;
     const children = block.children as any[];
     const images = children.filter((token) => IMAGE_TOKENS.has(token.type));
     if (images.length === 0) continue;
     const others = children.some((token) => !IMAGE_TOKENS.has(token.type) && isContent(token));
-    if (!others && images.length === 1) continue;
+    // #mrh4dsr6 (D37): an image alone in a list item's first paragraph
+    // (`- ![A](a.png)`, Obsidian's way to put an image in a list) stays in the
+    // item. As a block it can't open the item (its content starts with a
+    // paragraph), so it was lifted out and the list split on the next save.
+    const opensListItem = tokens[index - 1]?.type === "paragraph_open" && tokens[index - 2]?.type === "list_item_open";
+    if (!others && images.length === 1 && !opensListItem) continue;
     for (const image of images) image.attrSet(INLINE_IMAGE_ATTR, "1");
   }
 }
