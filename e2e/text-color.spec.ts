@@ -283,6 +283,19 @@ test.describe('colour on links says why (#gcba75f4)', () => {
     expect(fileBytes('Wiki tools')).not.toContain('`');
   });
 
+  test('Mod+E on a lone wiki link leaves it a link (no backticks)', async ({ page, vault }) => {
+    await vault.seed([{ title: 'Target', content: 'x' }, { title: 'Wiki code key', content: 'Top\n\n[[Target]]' }]);
+    await openPage(page, 'Wiki code key');
+    await selectLineUnderTop(page);
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+e`);
+    await page.getByTestId('editor-content').getByText('Top', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('!');
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+    expect(fileBytes('Wiki code key')).toContain('Top!\n\n[[Target]]');
+    expect(fileBytes('Wiki code key')).not.toContain('`');
+  });
+
   test('two wiki links with a space between them count as links only', async ({ page, vault }) => {
     await vault.seed([{ title: 'A', content: 'a' }, { title: 'B', content: 'b' }, { title: 'Two links', content: 'Top\n\n[[A]] [[B]]' }]);
     await openPage(page, 'Two links');
