@@ -39,6 +39,24 @@ export interface DesktopUpdatesState {
   releaseUrl: string | null;
   lastChecked: string | null;
   error: string | null;
+  /**
+   * #7vyqfcpn: the controller's change counter, raised on every change. The window
+   * gets states two ways (its own requests' answers and the pushed events), in no
+   * guaranteed order; it keeps the newer one (`pickUpdateState`), so a late answer
+   * can't put back a state that has already moved on.
+   */
+  seq?: number;
+}
+
+/**
+ * #7vyqfcpn: which of two update states the window should show. The incoming one,
+ * unless both are stamped and it's older (a Check now answer taken mid-download
+ * that arrives after the failure's push). Equal counters are the same state, or a
+ * local patch of it (the window's "checking" before its request goes out).
+ */
+export function pickUpdateState(current: DesktopUpdatesState | null, incoming: DesktopUpdatesState): DesktopUpdatesState {
+  if (current && typeof current.seq === "number" && typeof incoming.seq === "number" && incoming.seq < current.seq) return current;
+  return incoming;
 }
 
 /** `PUT /api/desktop/updates/settings` body. */

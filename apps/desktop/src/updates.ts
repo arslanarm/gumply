@@ -243,6 +243,8 @@ export class UpdateController {
   private downloadFailed: { version: string | null; error: string } | null = null;
   private timer: unknown = null;
   private checking: Promise<void> | null = null;
+  /** #7vyqfcpn: raised on every state change (`DesktopUpdatesState.seq`). */
+  private seq = 0;
 
   constructor(private readonly deps: ControllerDeps) {
     const saved = deps.load();
@@ -319,7 +321,7 @@ export class UpdateController {
   }
 
   getState(): UpdateState {
-    return { ...this.state, modes: [...this.state.modes] };
+    return { ...this.state, modes: [...this.state.modes], seq: this.seq };
   }
 
   /** Checks 30 s after start, then once a day (spec §3). Nothing at all when off. */
@@ -466,6 +468,8 @@ export class UpdateController {
 
   private set(patch: Partial<UpdateState>): void {
     this.state = { ...this.state, ...patch };
+    // #7vyqfcpn: every change gets a newer stamp, so the window can tell a late answer from a fresh push.
+    this.seq += 1;
     this.deps.onChange?.(this.getState());
   }
 }
