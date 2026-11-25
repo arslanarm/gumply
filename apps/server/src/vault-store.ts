@@ -3908,6 +3908,19 @@ export class VaultStore {
     }
   }
 
+  /**
+   * N10: the version a rename's next recorded rewrite of `record` chains from, so a Keep mine from the
+   * editor's version before the rename walks every step. If a rewrite was already recorded up to the
+   * page's current version (another phase-A pass of the same rename), continue from there; otherwise
+   * skip the rename's own write (the version it replaced, as `versionMatches` does).
+   */
+  private renameChainStart(record: PageRecord): string {
+    const recorded = this.renameRewrites.get(record.id) ?? [];
+    if (recorded.some((entry) => entry.versionAfter === record.updated)) return record.updated;
+    const own = record.ownWrite;
+    return own && own.version === record.updated ? own.replaced : record.updated;
+  }
+
   /** N10: remember a rename's rewrite of page `id` (pruned by age). */
   private rememberRenameRewrite(id: PageId, before: string, after: string, versionBefore: string, versionAfter: string, title: string): void {
     const now = Date.now();
@@ -4361,7 +4374,7 @@ export class VaultStore {
       const before = own?.content ?? null;
       // N10: a Keep mine from the editor's version before its rename merges this change, so the chain
       // starts where the rename's own write began (the version that write replaced), as versionMatches does.
-      const chainFrom = own ? (own.ownWrite && own.ownWrite.version === own.updated ? own.ownWrite.replaced : own.updated) : null;
+      const chainFrom = own ? this.renameChainStart(own) : null;
       const others = new Set([...this.pages.keys()].filter((key) => key !== newId));
       // Never let this one page drop the rename's batched rewrite of all the others (#xgnvipyd's rule for
       // phase A): a failure is logged, and the batches, whose folder part covers this page too, try it again.

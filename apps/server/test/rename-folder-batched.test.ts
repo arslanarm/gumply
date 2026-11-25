@@ -155,6 +155,24 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     for (const i of [0, 199, 200, 449]) expect(files[join("L", `Linker ${i}.md`)]).toBe(expected(i));
   });
 
+  it("a later phase-A pass on the renamed page chains its N10 step from this pass's version, not the rename's (@opus-editor)", async () => {
+    const dir = await vault();
+    const store = await open(dir);
+    const start = store.get("Hub");
+    const internal = store as unknown as {
+      pages: Map<string, { updated: string }>;
+      renameRewrites: Map<string, Array<{ versionBefore: string; versionAfter: string }>>;
+      renameChainStart(record: unknown): string;
+    };
+    await store.update("Hub", { title: "Hub 2" });
+    const pairs = internal.renameRewrites.get("Hub 2") ?? [];
+    expect(pairs[0]?.versionBefore).toBe(start.updated); // from the editor's version before the rename
+    const page = internal.pages.get("Hub 2")!;
+    expect(pairs[0]?.versionAfter).toBe(page.updated);
+    // The next pass (e.g. #h7j39kka's self-links) continues the chain from here.
+    expect(internal.renameChainStart(page)).toBe(page.updated);
+  });
+
   it("a crash after the first batch: the next start finishes the folder links too, byte for byte", async () => {
     const dir = await vault();
     const crashing = await open(dir);
