@@ -27,7 +27,7 @@ const linker = (i: number) => `See [[Hub]] (${i}), its [[Hub/Sub]], ![[Hub/a.png
 async function vault() {
   const dir = await mkdtemp(join(tmpdir(), "gumply-rename-folder-"));
   dirs.push(dir);
-  await writeFile(join(dir, "Hub.md"), "The hub. Its own sub-page: [[Hub/Sub]].\n");
+  await writeFile(join(dir, "Hub.md"), "The hub.\nIts own sub-page: [[Hub/Sub]].\n");
   await mkdir(join(dir, "Hub"));
   await writeFile(join(dir, "Hub", "Sub.md"), "A sub-page.\n");
   await writeFile(join(dir, "Hub", "a.png"), "png");
@@ -79,7 +79,7 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
 
     const files = await markdown(dir);
     expect(stillOld(files)).toBe(0);
-    expect(files["Hub 2.md"]).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    expect(files["Hub 2.md"]).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].\n");
     expect(files[join("Hub 2", "Sub.md")]).toBe("A sub-page.\n");
     for (const i of [0, 199, 200, 449]) expect(files[join("L", `Linker ${i}.md`)]).toBe(expected(i));
   });
@@ -94,22 +94,23 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     const answer = await store.update("Hub", { title: "Hub 2" });
     // No batch changed it: every batch saw it already rewritten.
     expect(ownAtBatch.length).toBeGreaterThan(1);
-    for (const text of ownAtBatch) expect(text).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    for (const text of ownAtBatch) expect(text).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].\n");
     // The answer's body is the page's text without the file's final newline (kept as a flag, D37).
-    expect(answer.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].");
+    expect(answer.content).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].");
     expect(answer.updated).toBe(store.get("Hub 2").updated);
     // The client reloads its live editor only when the answer lists the renamed page itself (#ekp8ns58's
     // App.tsx fix): without that, its next save from the old editor text would put [[Hub/Sub]] back.
     expect(answer.rewrittenPages).toContain("Hub 2");
     // The editor saves from the version it was answered with: no "changed on disk".
     await store.update("Hub 2", { content: `${answer.content}\nMore.`, expectedUpdated: answer.updated });
-    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\nMore.\n");
+    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].\nMore.\n");
   });
 
   it("a save in flight during the batches, from the version before the rename: a conflict, never the stale link written back; Keep mine keeps the edit and [[Hub 2/Sub]] (@lead, @opus-hunter)", async () => {
     const dir = await vault();
     const store = await open(dir);
     const start = store.get("Hub");
+    // The edit is on another line than the link: N10 keeps the user's own lines as they typed them.
     const edited = start.content.replace("The hub.", "The hub, edited.");
     let inFlight: Promise<unknown> | null = null;
     store.afterRenameBatch = async () => {
@@ -125,11 +126,11 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     // (b) would be the stale [[Hub/Sub]] back on disk: never.
     expect(onDisk).not.toContain("[[Hub/Sub]]");
     if (outcome === "saved") {
-      expect(onDisk).toBe("The hub, edited. Its own sub-page: [[Hub 2/Sub]].\n"); // (c): merged
+      expect(onDisk).toBe("The hub, edited.\nIts own sub-page: [[Hub 2/Sub]].\n"); // (c): merged
     } else {
       expect(outcome).toBe(409); // (a): the user is asked
       await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
-      expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub, edited. Its own sub-page: [[Hub 2/Sub]].\n");
+      expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub, edited.\nIts own sub-page: [[Hub 2/Sub]].\n");
     }
   });
 
@@ -151,7 +152,7 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     expect(failed).toBe(true);
     const files = await markdown(dir);
     expect(stillOld(files)).toBe(0);
-    expect(files["Hub 2.md"]).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    expect(files["Hub 2.md"]).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].\n");
     for (const i of [0, 199, 200, 449]) expect(files[join("L", `Linker ${i}.md`)]).toBe(expected(i));
   });
 
@@ -166,9 +167,12 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     };
     await store.update("Hub", { title: "Hub 2" });
     const pairs = internal.renameRewrites.get("Hub 2") ?? [];
-    expect(pairs[0]?.versionBefore).toBe(start.updated); // from the editor's version before the rename
     const page = internal.pages.get("Hub 2")!;
-    expect(pairs[0]?.versionAfter).toBe(page.updated);
+    // The rename's own write (no line changed), then the folder links: one chain from the editor's
+    // version before the rename to the page's version now.
+    expect(pairs[0]?.versionBefore).toBe(start.updated);
+    for (let k = 1; k < pairs.length; k++) expect(pairs[k]!.versionBefore).toBe(pairs[k - 1]!.versionAfter);
+    expect(pairs.at(-1)?.versionAfter).toBe(page.updated);
     // The next pass (e.g. #h7j39kka's self-links) continues the chain from here.
     expect(internal.renameChainStart(page)).toBe(page.updated);
   });
@@ -190,7 +194,7 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     await open(dir); // the next start resumes it
     const files = await markdown(dir);
     expect(stillOld(files)).toBe(0);
-    expect(files["Hub 2.md"]).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    expect(files["Hub 2.md"]).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].\n");
     for (const i of [0, 199, 200, 449]) expect(files[join("L", `Linker ${i}.md`)]).toBe(expected(i));
   });
 });

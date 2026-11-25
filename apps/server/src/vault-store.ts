@@ -3597,6 +3597,12 @@ export class VaultStore {
     record.fileMtimeMs = fileMtimeMs;
     if (patch.writer) record.ownWrite = { version: record.updated, replaced, writer: patch.writer };
     else delete record.ownWrite;
+    // #ber4hvce (N10): a rename's own write is the chain's first step, recorded as a step that changes no
+    // line, so a Keep mine from the editor's version before the rename walks into this rename's link
+    // rewrites of the page (folder links, self-links) whether or not the rename came with a writer.
+    if (this.deferRewrites && replaced !== record.updated) {
+      this.rememberRenameRewrite(targetId, record.content, record.content, replaced, record.updated, nextTitle);
+    }
     record.explicitTitle = record.explicitTitle || written.titleKey;
     record.fmTags = fmTags;
     this.setPropertyLinks(record, written.text);
