@@ -5,6 +5,7 @@
  */
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { altParts } from "../editor/attachments/image-width.js";
 
 export type BlockDirection = "up" | "down";
 
@@ -97,6 +98,40 @@ export function moveBlockTo(
   return tr.setMeta(BLOCK_MOVE_META, true);
 }
 
+/** Copy the attributes the target node type has (an image block ↔ an inline image share src, alt, the raw…). */
+function imageAttrs(from: Record<string, unknown>, spec: Record<string, unknown> | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(spec ?? {})) if (key in from) out[key] = from[key];
+  return out;
+}
+
+/**
+ * #p6i94g2r: the inline image a plain list item holds when it holds nothing else (`- ![A](a.png)`).
+ * A to-do isn't one: dragged out it keeps its checkbox, as a one-item task list.
+ */
+function imageOfItem(item: ProseMirrorNode): ProseMirrorNode | null {
+  if (item.type.name !== "listItem" || item.childCount !== 1) return null;
+  const paragraph = item.firstChild!;
+  if (paragraph.type.name !== "paragraph" || paragraph.childCount !== 1) return null;
+  const only = paragraph.firstChild!;
+  return only.type.name === "inlineImage" ? only : null;
+}
+
+/**
+ * #p6i94g2r: an image block as an item's content, a paragraph holding the image inline; null for
+ * an image the inline image can't carry as it is. A width written in the alt (`![A|300](a.png)`)
+ * or an escaped caption (`![A\|300](a.png)`) is read by the image block only, so such an image
+ * isn't put in a list (the drop is refused) rather than lose its width. An embed's `|300` lives in
+ * its `![[a.png|300]]` text, which the inline image keeps and shows.
+ */
+function imageItemParagraph(state: EditorState, image: ProseMirrorNode): ProseMirrorNode | null {
+  const { inlineImage, paragraph } = state.schema.nodes;
+  if (!inlineImage || !paragraph) return null;
+  const embed = typeof image.attrs.obsidian === "string" && image.attrs.obsidian !== "";
+  if (!embed && (image.attrs.altLiteral === true || altParts(image.attrs).width !== null)) return null;
+  return paragraph.create(null, inlineImage.create(imageAttrs(image.attrs, inlineImage.spec.attrs)));
+}
+
 /**
  * #2kafk39m: a drop `moveBlockTo` refuses because the block can't stand there as it is, converted
  * the way Notion does, changing only the moved block's lines (D37):
@@ -105,7 +140,10 @@ export function moveBlockTo(
  * - a paragraph dropped between the items of a list becomes an item of that list: a to-do (unchecked)
  *   in a task list, else a list item; in a numbered list it takes the number its neighbours imply,
  *   and the other items keep theirs.
- * Anything else (a heading, code, table, image… into a list) is null: the caller shows no drop.
+ * - an image block dropped between the items of a list becomes an item holding the image inline, as
+ *   Obsidian writes it (`- ![A](a.png)`, #p6i94g2r); an item that is only an image, dragged out of
+ *   its list, is the image block again. An image with a width in its alt stays out of lists.
+ * Anything else (a heading, code, table… into a list) is null: the caller shows no drop.
  */
 export function moveBlockConverting(
   state: EditorState,
@@ -133,20 +171,30 @@ export function moveBlockConverting(
   const into = $target.parent;
 
   let node: ProseMirrorNode | null = null;
+  const imageBlock = state.schema.nodes.image;
   if (ITEM_NAMES.has(name) && LIST_NAMES.has(sourceParent.type.name) && !LIST_NAMES.has(into.type.name)) {
-    // A list item out of its list: its own one-item list of the same kind.
-    const list = sourceParent.type.createAndFill(null, block.node);
-    if (list && into.canReplaceWith(at, at, list.type)) node = list;
-  } else if (name === "paragraph" && LIST_NAMES.has(into.type.name)) {
+    // #p6i94g2r: an item that is just an image comes out as the image block it was.
+    const image = imageOfItem(block.node);
+    const asBlock = image && imageBlock ? imageBlock.create(imageAttrs(image.attrs, imageBlock.spec.attrs)) : null;
+    if (asBlock && into.canReplaceWith(at, at, asBlock.type)) node = asBlock;
+    else {
+      // A list item out of its list: its own one-item list of the same kind.
+      const list = sourceParent.type.createAndFill(null, block.node);
+      if (list && into.canReplaceWith(at, at, list.type)) node = list;
+    }
+  } else if ((name === "paragraph" || name === "image") && LIST_NAMES.has(into.type.name)) {
     const itemType = into.type.name === "taskList" ? state.schema.nodes.taskItem : state.schema.nodes.listItem;
-    if (itemType) {
+    // #p6i94g2r: an image block becomes an item holding the image, as Obsidian
+    // writes it (`- ![A](a.png)`, an inline image in the item; #mrh4dsr6).
+    const content = name === "image" ? imageItemParagraph(state, block.node) : withoutSourceIndent(block.node);
+    if (itemType && content) {
       const attrs: Record<string, unknown> = {};
       if (itemType.name === "taskItem") attrs.checked = false;
       if (into.type.name === "orderedList") {
         const number = impliedNumber(into, at);
         if (number !== null) attrs.markdownNumber = number;
       }
-      const item = itemType.createAndFill(attrs, withoutSourceIndent(block.node));
+      const item = itemType.createAndFill(attrs, content);
       if (item && into.canReplaceWith(at, at, item.type)) node = item;
     }
   }

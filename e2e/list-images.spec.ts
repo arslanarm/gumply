@@ -65,3 +65,52 @@ test.describe('an image alone in a list item stays in its list (#mrh4dsr6)', () 
       .toBe(before.replace('- ![A](attachments/a.svg)\n', '- ![A](attachments/a.svg) x\n'));
   });
 });
+
+/**
+ * #p6i94g2r: ⋮⋮ an image block between two bullets makes it a bullet holding the image, written as
+ * Obsidian writes it; one undo puts it back, and dragged out again it is the image block it was.
+ */
+test.describe('an image dragged into a list and out again (#p6i94g2r)', () => {
+  test.beforeEach(() => {
+    mkdirSync(path.join(E2E_VAULT, 'attachments'), { recursive: true });
+    writeFileSync(path.join(E2E_VAULT, 'attachments', 'a.svg'), PICTURE);
+  });
+
+  test('into the list: a bullet with the image; undo; out again: the image block', async ({ page, vault }) => {
+    const title = 'Image into list';
+    await vault.seed([{ title, content: '![A](attachments/a.svg)\n\n- one\n- two\n\nEnd\n' }]);
+    const file = path.join(E2E_VAULT, `${title}.md`);
+    const lines = () => body(readFileSync(file, 'utf8')).split('\n').filter((line) => line.trim() !== '');
+    const saved = () => expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+    await page.goto(`/#/${encodeURIComponent(title)}`);
+    const editor = page.getByTestId('editor-content');
+
+    // ⋮⋮ of the image, dropped on the lower half of "one" (inside its text, where every drop works).
+    await page.getByTestId('image-block').hover();
+    await expect(page.getByTestId('block-gutter')).toBeVisible();
+    const one = editor.getByText('one', { exact: true });
+    const box = (await one.boundingBox())!;
+    await page.getByTestId('block-handle').dragTo(one, { targetPosition: { x: 20, y: box.height - 2 } });
+    await saved();
+    await expect.poll(lines).toEqual(['- one', '- ![A](attachments/a.svg)', '- two', 'End']);
+    await expect(editor.locator('li').getByTestId('inline-image')).toBeVisible();
+
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+z`);
+    await saved();
+    await expect.poll(lines).toEqual(['![A](attachments/a.svg)', '- one', '- two', 'End']);
+
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta+Shift' : 'Control+Shift'}+z`);
+    await saved();
+    await expect.poll(lines).toEqual(['- one', '- ![A](attachments/a.svg)', '- two', 'End']);
+
+    // Its item's ⋮⋮, dropped below "End": the image block again, its Markdown as written.
+    await editor.locator('li').getByTestId('inline-image').hover();
+    await expect(page.getByTestId('block-gutter')).toBeVisible();
+    const end = editor.getByText('End', { exact: true });
+    const endBox = (await end.boundingBox())!;
+    await page.getByTestId('block-handle').dragTo(end, { targetPosition: { x: 20, y: endBox.height - 2 } });
+    await saved();
+    await expect.poll(lines).toEqual(['- one', '- two', 'End', '![A](attachments/a.svg)']);
+    await expect(page.getByTestId('image-block')).toHaveCount(1);
+  });
+});
