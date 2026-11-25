@@ -265,6 +265,11 @@ export interface CreateBoardInput {
   title: string;
   parentId?: string | null;
   icon?: string;
+  /**
+   * #2gyhwfjh: the board's starting content (a JSON Canvas object), written in the same single
+   * write as the file. Internal (the demo seed); `POST /boards` doesn't pass it.
+   */
+  content?: unknown;
 }
 
 export interface UpdateBoardInput {
@@ -1871,13 +1876,12 @@ export class VaultStore {
       if (demo.title === copy.welcome) welcomeId = created.id;
     }
     // D25: one example whiteboard linking the demo pages (#dvnb8n2n).
-    const board = await this.createBoard({
+    // #2gyhwfjh: created with its content, in one write (an empty board, then an update, left two history versions).
+    await this.createBoard({
       title: copy.board,
       parentId: childPageId(null, copy.folder),
       icon: "🗺️",
-    });
-    await this.updateBoard(board.meta.id, {
-      board: { ...buildDemoBoard(language), gumply: board.board.gumply },
+      content: buildDemoBoard(language),
     });
     await this.writeDemoMarker();
     this.newVaultPage = welcomeId;
@@ -3063,7 +3067,17 @@ export class VaultStore {
       stem.toLowerCase().startsWith(segment.toLowerCase()) && / \d+$/.test(stem.slice(segment.length))
         ? stem.slice(segment.length)
         : "";
-    const board = withBoardTitle(emptyCanvas(icon ? { icon } : undefined), `${title}${suffix}`, stem);
+    // #2gyhwfjh: a board created with content is written once, so no empty first version lands in its history.
+    let start = emptyCanvas(icon ? { icon } : undefined);
+    if (input.content !== undefined) {
+      try {
+        start = parseCanvas(JSON.stringify(input.content));
+      } catch (error) {
+        throw badRequest(error instanceof Error ? error.message : "Invalid board");
+      }
+      if (icon) start = withCanvasMeta(start, { icon });
+    }
+    const board = withBoardTitle(start, `${title}${suffix}`, stem);
     await mkdir(dirname(filePath), { recursive: true });
     // #eq2ug2vr: a trashed board of this name keeps its history; this new one starts its own (as pages do).
     await this.freshHistory(filePath);
