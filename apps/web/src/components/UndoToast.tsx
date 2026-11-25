@@ -8,6 +8,8 @@ export interface UndoToastProps {
   icon?: IconName;
   duration?: number;
   onUndo?: () => void;
+  /** The action button's label (default "Undo"). */
+  actionLabel?: string;
   onDismiss: () => void;
 }
 
@@ -20,6 +22,7 @@ export function UndoToast({
   icon = "trash",
   duration = 8000,
   onUndo,
+  actionLabel,
   onDismiss,
 }: UndoToastProps) {
   const t = useT();
@@ -69,7 +72,7 @@ export function UndoToast({
             onUndo();
           }}
         >
-          {t("common.undo")}
+          {actionLabel ?? t("common.undo")}
         </button>
       ) : null}
     </div>
