@@ -1719,6 +1719,11 @@ export function App() {
   const reloadAfterOwnRewrite = useCallback(() => {
     // Both callers fire for one rename (the rename first, the dropped save a microtask later): one reload.
     if (ownRewriteReload.current) return;
+    // The reload remounts the editor: put the caret back where the user is typing (as the disk poll's
+    // reload does), or the keys typed next land on the title heading and are lost.
+    const active = document.activeElement;
+    restoreSelection.current =
+      active instanceof HTMLElement && active.closest('[data-testid="editor-content"]') ? (editorControls.current?.getSelection() ?? null) : null;
     const running = reloadOpenPage.current("replace").then((kept) => {
       if (!kept) return;
       const renamedId = selectedRef.current;
