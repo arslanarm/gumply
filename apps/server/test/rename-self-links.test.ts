@@ -110,4 +110,25 @@ describe("a rename rewrites the page's own self-links (#h7j39kka)", () => {
     if (outcome === "saved") expect(onDisk).toBe(MOVED.replace("Text.", "Text, edited."));
     else expect(outcome).toBe(409);
   });
+
+  it("a write error in the self pass never stops the other pages' rewrite (@opus-editor's review)", async () => {
+    const dir = await vault(false);
+    const store = await open(dir);
+    const internals = store as unknown as { writeRewrittenBody: (record: { id: string }, ...rest: unknown[]) => Promise<void> };
+    const real = internals.writeRewrittenBody.bind(store);
+    let failed = false;
+    vi.spyOn(internals, "writeRewrittenBody").mockImplementation(async (record, ...rest) => {
+      if (!failed && record.id === "Moved") {
+        failed = true;
+        throw new Error("disk full (test)");
+      }
+      return real(record, ...rest);
+    });
+    const answer = await store.update("Parent", { title: "Moved" });
+    expect(failed).toBe(true);
+    expect(await readFile(join(dir, "Other.md"), "utf8")).toBe("To [[Moved]] and [[Moved#Part|p]].\n");
+    expect(answer.rewrittenPages).toContain("Other");
+    // The renamed page keeps its text (its self-links stay as they were), and nothing else changed.
+    expect(await readFile(join(dir, "Moved.md"), "utf8")).toBe(SELF);
+  });
 });

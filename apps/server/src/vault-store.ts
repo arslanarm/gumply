@@ -3833,8 +3833,17 @@ export class VaultStore {
     const before = own.board ? null : own.content;
     // N10: the chain starts where the rename's own write began (the version that write replaced).
     const chainFrom = own.ownWrite && own.ownWrite.version === own.updated ? own.ownWrite.replaced : own.updated;
+    // rewriteEverywhere with every other id skipped: it also sets the history reason and leaves conflict copies alone.
     const others = new Set([...this.pages.keys()].filter((key) => key !== record.id));
-    const written = await this.rewriteEverywhere(others, rewriteText, {}, { frontmatter: true });
+    let written: PageId[];
+    try {
+      written = await this.rewriteEverywhere(others, rewriteText, {}, { frontmatter: true });
+    } catch (error) {
+      // @opus-editor's review: the page is already renamed on disk, so a failed write here must never
+      // stop the vault-wide rewrite (or its capture) that comes next. Stale self-links are the lesser harm.
+      console.warn(`[gumply] rename: the self-links in ${record.id} not rewritten:`, error instanceof Error ? error.message : error);
+      return [];
+    }
     const after = this.pages.get(record.id);
     if (written.length > 0 && before !== null && after && after.content !== before) {
       this.rememberRenameRewrite(record.id, before, after.content, chainFrom, after.updated, record.id.slice(record.id.lastIndexOf("/") + 1));
