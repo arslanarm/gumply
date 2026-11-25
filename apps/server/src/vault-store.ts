@@ -142,6 +142,7 @@ import {
   readHistory,
   saveVersion,
   setAsideHistory,
+  trashedItemHistory,
   setPinned,
   sha256,
   usage,
@@ -4787,7 +4788,15 @@ export class VaultStore {
     if (newId !== entry.id) {
       const moves = entry.deleted.map((id) => ({ from: id, to: remap(id) })).filter(({ to }) => this.pages.has(to));
       // D20: the history comes back with it, unless another page has that place (and history) now.
-      for (const { from, to } of moves) if (!this.pages.has(from)) await this.followHistory(from, to);
+      for (const { from, to } of moves) {
+        if (!this.pages.has(from)) {
+          await this.followHistory(from, to);
+          continue;
+        }
+        // #4n2j4irt: the new item there set this one's history aside when it was created; take it back.
+        const aside = await trashedItemHistory(this.root, from, entry.deletedAt);
+        if (aside) await moveHistoryDir(this.root, aside, from, to, parentOf(from) === parentOf(to) ? "rename" : "move");
+      }
       // D23: in another folder now, so attachment links are rewritten.
       await this.relinkMoved(moves);
       // D25: board cards that pointed at its old place follow it, unless
@@ -4837,7 +4846,15 @@ export class VaultStore {
     if (newId !== entry.id) {
       const moves = entry.deleted.map((id) => ({ from: id, to: remap(id) })).filter(({ to }) => this.pages.has(to));
       // D20: the history comes back with it, unless another page has that place (and history) now.
-      for (const { from, to } of moves) if (!this.pages.has(from)) await this.followHistory(from, to);
+      for (const { from, to } of moves) {
+        if (!this.pages.has(from)) {
+          await this.followHistory(from, to);
+          continue;
+        }
+        // #4n2j4irt: the new item there set this one's history aside when it was created; take it back.
+        const aside = await trashedItemHistory(this.root, from, entry.deletedAt);
+        if (aside) await moveHistoryDir(this.root, aside, from, to, parentOf(from) === parentOf(to) ? "rename" : "move");
+      }
       await this.relinkMoved(moves);
       await this.rewriteBoardCards(moves.filter(({ from }) => !this.pages.has(from)));
       this.reindexAll();

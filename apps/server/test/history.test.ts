@@ -472,3 +472,54 @@ describe("#eq2ug2vr: a restore keeps the item's place; a new board doesn't take 
     expect(keys.some((key) => key.startsWith("Map.canvas~"))).toBe(true);
   });
 });
+
+describe("#4n2j4irt: an item restored from the Trash under a new name gets its own history back", () => {
+  /** Every version's text in `id`'s history. */
+  async function texts(dir: string, id: string): Promise<string[]> {
+    return Promise.all((await entries(dir, id)).map((entry) => readFile(join(historyDir(dir, id), entry.file), "utf8")));
+  }
+
+  it("a page: Trash it, make a new page of that name, restore the old one → each lists only its own versions", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Gone.md"), "old one\n");
+    await store.rescan();
+    await store.update("Gone", { content: "old two" });
+    const { trashId } = await store.remove("Gone");
+
+    await store.create({ title: "Gone" });
+    await store.update("Gone", { content: "new one" });
+    const restored = await store.restore(trashId);
+    expect(restored.id).toBe("Gone 2");
+
+    expect((await texts(dir, "Gone 2")).join("\n")).toContain("old");
+    expect((await texts(dir, "Gone 2")).join("\n")).not.toContain("new one");
+    expect((await texts(dir, "Gone")).join("\n")).not.toContain("old");
+  });
+
+  it("a board: the same", async () => {
+    const { store, dir } = await createTestServer();
+    const card = (text: string) => ({ nodes: [{ id: "a", type: "text" as const, text, x: 0, y: 0, width: 100, height: 50 }], edges: [] });
+    const old = await store.createBoard({ title: "Map" });
+    await store.updateBoard(old.meta.id, { board: card("Old card") });
+    const { trashId } = await store.remove(old.meta.id);
+
+    const fresh = await store.createBoard({ title: "Map" });
+    await store.updateBoard(fresh.meta.id, { board: card("New card") });
+    const restored = await store.restore(trashId);
+    expect(restored.id).toBe("Map 2.canvas");
+
+    expect((await texts(dir, "Map 2.canvas")).join("\n")).toContain("Old card");
+    expect((await texts(dir, "Map 2.canvas")).join("\n")).not.toContain("New card");
+    expect((await texts(dir, "Map.canvas")).join("\n")).not.toContain("Old card");
+  });
+
+  it("a Trash restore to its own place (nobody took the name) is unchanged", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Solo.md"), "solo\n");
+    await store.rescan();
+    await store.update("Solo", { content: "solo two" });
+    const { trashId } = await store.remove("Solo");
+    expect((await store.restore(trashId)).id).toBe("Solo");
+    expect((await texts(dir, "Solo")).join("\n")).toContain("solo");
+  });
+});
