@@ -107,12 +107,16 @@ describe("plain folders (D33)", () => {
     await writeFile(join(dir, "Files/doc.pdf"), "pdf", "utf8");
     const gallery = "Pictures: ![[Files/a.png]] and ![[Files/a.png|300]], a file [[Files/doc.pdf|the doc]], a page [[Files/Notes]].\n\n| Pic | Doc |\n|---|---|\n| ![[Files/a.png\\|40]] | [[Files/doc.pdf\\|Doc]] |\n";
     await writeFile(join(dir, "Gallery.md"), gallery, "utf8");
+    // A cover in the frontmatter follows too (the folder rewrite runs with { frontmatter: true }; @graph-dev's review).
+    const covered = '---\ncover: "[[Files/a.png]]"\n---\nA page with a cover.\n';
+    await writeFile(join(dir, "Covered.md"), covered, "utf8");
     await store.rescan();
 
     const response = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Files")}`, { title: "Media" });
     expect(response.status).toBe(200);
     expect(await readFile(join(dir, "Media/a.png"), "utf8")).toBe("png");
     expect(await readFile(join(dir, "Gallery.md"), "utf8")).toBe(gallery.replaceAll("Files/", "Media/"));
+    expect(await readFile(join(dir, "Covered.md"), "utf8")).toBe(covered.replace("Files/", "Media/"));
   });
 
   it("a rename onto a taken name gets a ` 2` suffix; a body edit is refused", async () => {
