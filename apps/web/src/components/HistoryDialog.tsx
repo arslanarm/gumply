@@ -3,7 +3,7 @@ import { parseCanvas, parseFrontmatter, type BoardDocument, type CanvasBoard, ty
 import { LazyBoardPreview, type BoardPageOption } from "../board/index.js";
 import { boardCardLabel, boardDiffView, type BoardDiffMark } from "../lib/board-diff.js";
 import { vaultPathOf } from "../lib/boards.js";
-import { api, ApiRequestError, type HistoryDiff, type HistoryItem, type HistoryList } from "../api/client.js";
+import { api, ApiRequestError, type HistoryDiff, type HistoryItem, type HistoryList, type BaseDocument } from "../api/client.js";
 import { dateFormat, relativeTime, useT } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
 import { flushAllSaves, hasUnsavedChanges } from "../lib/pending-saves.js";
@@ -23,7 +23,7 @@ export interface HistoryDialogProps {
   pages: readonly PageMeta[];
   onClose: () => void;
   /** A restore wrote the file: the open page reloads from the result. */
-  onRestored: (result: Page | BoardDocument) => void;
+  onRestored: (result: Page | BoardDocument | BaseDocument) => void;
   /**
    * #2xx3uae4: bumped when Gumply's local server answers again after it was
    * down. Whatever failed to load (the list, a version, its changes) loads again.
@@ -66,6 +66,8 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
   const id = useId();
   const sourceLabel = useHistorySourceLabel();
   const board = target.kind === "whiteboard";
+  // N1 (#kw8th869): a database view's versions are its YAML, shown as text.
+  const base = target.kind === "base";
   const [list, setList] = useState<HistoryList | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
@@ -150,7 +152,9 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
       selected === null
         ? board
           ? api.getBoard(target.id).then((doc) => JSON.stringify(doc.board))
-          : api.getPage(target.id).then((page) => page.content)
+          : base
+            ? api.historyText(target.id, "current")
+            : api.getPage(target.id).then((page) => page.content)
         : api.historyText(target.id, selected);
     textRequest
       .then((value) => {
@@ -339,6 +343,13 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
           </div>
           <p className="history-board-caption">{t("history.boardObjects", { count: versionBoard.nodes.length })}</p>
         </div>
+      );
+    }
+    if (base) {
+      return (
+        <pre className="history-yaml" data-testid="history-base-preview">
+          {text}
+        </pre>
       );
     }
     const content = selected === null ? text : parseFrontmatter(text).content;

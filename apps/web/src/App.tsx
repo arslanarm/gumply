@@ -2333,10 +2333,10 @@ export function App() {
   // G1: Cmd+K → Export page as HTML, for the open page (not a board or a database view).
   const openPageMeta =
     page && page.id === selectedId ? (pages.find((item) => item.id === page.id && (item.kind ?? "page") === "page") ?? null) : null;
-  // D41: Cmd+K → Show page history, for the open page or board.
+  // D41 + N1 (#kw8th869): Cmd+K → Show page history, for the open page, board or database view.
   const openHistoryMeta =
     page && page.id === selectedId
-      ? (pages.find((item) => item.id === page.id && ((item.kind ?? "page") === "page" || item.kind === "whiteboard")) ?? null)
+      ? (pages.find((item) => item.id === page.id && ((item.kind ?? "page") === "page" || item.kind === "whiteboard" || item.kind === "base")) ?? null)
       : null;
 
   // v0.9 H (#snuin2ja): every action in Cmd+K, from one registry (lib/commands.ts).

@@ -74,7 +74,7 @@ describe("versions on save (§3)", () => {
     expect(await readFile(join(historyDir(dir, "Note"), list.at(-1)!.file), "utf8")).toBe("two\n");
   });
 
-  it("boards get .canvas versions; .base files never get history (D41)", async () => {
+  it("boards get .canvas versions; database views get .base versions too (D41 + N1, #kw8th869)", async () => {
     const { store, dir } = await createTestServer();
     const board = await store.createBoard({ title: "Map" });
     await store.updateBoard(board.meta.id, { board: { nodes: [{ id: "a", type: "text", text: "A", x: 0, y: 0, width: 100, height: 50 }], edges: [] } });
@@ -84,9 +84,14 @@ describe("versions on save (§3)", () => {
 
     await writeFile(join(dir, "View.base"), "views:\n  - type: table\n    name: T\n");
     await store.rescan();
+    // A different mtime (same size): the rescan must see the second write.
+    await new Promise((resolve) => setTimeout(resolve, 20));
     await writeFile(join(dir, "View.base"), "views:\n  - type: table\n    name: U\n");
     await store.rescan();
-    expect(await readdir(join(dir, ".gumply", "history")).catch(() => [])).not.toContain("View.base");
+    // An outside edit of a view is an "Outside edit" version, with the new bytes, as for a page.
+    const views = await entries(dir, "View.base");
+    expect(views.length).toBeGreaterThanOrEqual(1);
+    expect(views.at(-1)!.file).toMatch(/\.base$/);
   });
 
   it("an outside edit is an external version of the new bytes", async () => {

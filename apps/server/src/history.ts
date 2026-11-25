@@ -1,7 +1,7 @@
 /**
  * Version history (spec/version-history, D35 + D41).
  *
- *   .gumply/history/<page key>/<YYYYMMDDTHHMMSSmmmZ>.<md|canvas>   exact bytes of the file then
+ *   .gumply/history/<page key>/<YYYYMMDDTHHMMSSmmmZ>.<md|canvas|base>   exact bytes of the file then
  *   .gumply/history/<page key>/index.jsonl                         one JSON line per entry
  *
  * The layout is D35's (MCP wrote the first entries); 0.9 adds the app's own
@@ -70,7 +70,7 @@ interface PinLine {
   at: string;
 }
 
-const VERSION_FILE = /^\d{8}T\d{9}Z(-\d+)?\.(md|canvas)$/;
+const VERSION_FILE = /^\d{8}T\d{9}Z(-\d+)?\.(md|canvas|base)$/;
 const INDEX_FILE = "index.jsonl";
 /** Folder-sync conflict copies of the index (Syncthing, Dropbox, OneDrive, iCloud…). */
 const INDEX_COPY = /^index.+\.jsonl$/;
@@ -107,7 +107,7 @@ export const sha256 = (bytes: Buffer | string) => createHash("sha256").update(by
  * (`…Z.md` is 1, `…Z-2.md` is 2), so a clash sorts after its base.
  */
 export const fileOrder = (name: string) =>
-  name.replace(/(?:-(\d+))?\.(md|canvas)$/, (_all, n: string | undefined) => `#${(n ?? "1").padStart(6, "0")}`);
+  name.replace(/(?:-(\d+))?\.(md|canvas|base)$/, (_all, n: string | undefined) => `#${(n ?? "1").padStart(6, "0")}`);
 const byFile = (a: { file: string }, b: { file: string }) => {
   const x = fileOrder(a.file);
   const y = fileOrder(b.file);
@@ -196,7 +196,8 @@ export async function readIndex(dir: string): Promise<HistoryEntry[]> {
 
 export interface SaveVersion {
   id: string;
-  ext: "md" | "canvas";
+  /** N1 (#kw8th869): `base` for a database view. */
+  ext: "md" | "canvas" | "base";
   bytes: Buffer;
   version: string;
   source?: HistorySource;

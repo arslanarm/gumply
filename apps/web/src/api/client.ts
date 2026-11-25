@@ -613,7 +613,7 @@ export const api = {
 
   /** Restore a version into the current file (byte-exact, never renames); 409 when the page changed. */
   /** `why` (spec/api v1.34): "undo-keep-copy" when this restore undoes a conflict's Keep copy. */
-  restoreVersion: (id: PageId, file: string, expectedUpdated: string, why?: "undo-keep-copy"): Promise<Page | BoardDocument> =>
+  restoreVersion: (id: PageId, file: string, expectedUpdated: string, why?: "undo-keep-copy"): Promise<Page | BoardDocument | BaseDocument> =>
     mutate(() =>
       request(`${historyPath(id)}/${encodeURIComponent(file)}/restore`, { method: "POST", body: JSON.stringify({ expectedUpdated, ...(why ? { why } : {}) }) }),
     ),

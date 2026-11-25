@@ -86,7 +86,7 @@ All of these are hidden, and none of them are your notes. When Gumply replaces o
 
 | Path | What it is | Can you delete it? |
 |---|---|---|
-| `.gumply/history/<page>/` | Earlier versions of each page and board, as exact copies of the file, plus `index.jsonl` (when, who, why). Old versions are thinned automatically: all of the last day, one an hour for a week, one a day for 90 days (very large versions, over 5 MB: one a day, at most 10), within max(200 MB, half the vault). Versions you keep are never thinned. | Yes. You only lose the versions. |
+| `.gumply/history/<page>/` | Earlier versions of each page, board and database view, as exact copies of the file, plus `index.jsonl` (when, who, why). Old versions are thinned automatically: all of the last day, one an hour for a week, one a day for 90 days (very large versions, over 5 MB: one a day, at most 10), within max(200 MB, half the vault). Versions you keep are never thinned. | Yes. You only lose the versions. |
 | `.trash/<id>/` | Deleted pages, boards and folders, with `meta.json` (what was deleted, when). Restore moves them back. | Yes (or use Empty trash). |
 | `.gumply/conflicts/` | When you choose **Keep mine**, the other program's version is kept here, byte for byte, named after the page (`Заметки-<time>.md`, `Map-<time>.canvas`). It's also in the page's history. | Yes. |
 | `.gumply/mcp.json` | AI app access for this vault: `{"enabled": true, "access": "read"}` (`read`, `append` or `edit`). Missing means read-only. | Yes. AI apps go back to read-only. |

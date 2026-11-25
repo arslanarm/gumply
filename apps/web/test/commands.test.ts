@@ -96,7 +96,8 @@ describe("context", () => {
     expect(board).not.toContain("page.new-from-template");
 
     const base = ids(context(meta("Tasks.base", "base")));
-    expect(base).not.toContain("page.history");
+    // N1 (#kw8th869): database views have version history too.
+    expect(base).toContain("page.history");
 
     const folder = ids(context(meta("Folder", "folder")));
     expect(folder).not.toContain("page.duplicate");
