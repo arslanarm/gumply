@@ -150,6 +150,39 @@ describe("conflict copies are recognised and kept out of the vault's indexes (§
   });
 });
 
+describe("Yandex Disk's `(копия с компьютера X)` copies (#f5n87bfd)", () => {
+  const COPY = "Заметки/Сад/План (копия с компьютера LAPTOP-RU)";
+  const files: Record<string, string> = {
+    "Заметки/Сад/План.md": "Мой текст.\n",
+    [`${COPY}.md`]: "Их текст.\n",
+    "Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2).md": "Ещё одна копия.\n",
+    // A copy whose original lives in another folder: a same-named page elsewhere must not be taken for it.
+    "План.md": "Another page with the same name, at the root.\n",
+    "Elsewhere/План (копия с компьютера LAPTOP-RU).md": "A copy with no original in its own folder.\n",
+  };
+
+  it("pairs a copy with the original in its own folder only; elsewhere it's an orphan, never a same-named page", async () => {
+    const { app, dir } = await vault(files);
+    const before = await snapshot(dir);
+    const list = await getJson<ConflictsList>(app, "/api/conflicts");
+    expect(list.copies.map((copy) => [copy.copyId, copy.originalId, copy.tool, copy.device])).toEqual([
+      ["Elsewhere/План (копия с компьютера LAPTOP-RU)", null, "yandex", "LAPTOP-RU"],
+      [COPY, "Заметки/Сад/План", "yandex", "LAPTOP-RU"],
+      ["Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2)", "Заметки/Сад/План", "yandex", "LAPTOP-RU"],
+    ]);
+    // The page list marks them (the client hides marked copies from the tree): paired copies point at their
+    // original; the orphan has no original (an ordinary page); the same-named root page is no copy and has none.
+    const byId = new Map((await getJson<PageMeta[]>(app, "/api/pages")).map((page) => [page.id, page]));
+    expect(byId.get(COPY)?.conflictOf).toBe("Заметки/Сад/План");
+    expect(byId.get("Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2)")?.conflictOf).toBe("Заметки/Сад/План");
+    expect(byId.get("Заметки/Сад/План")?.conflicts).toBe(2);
+    expect(byId.get("Elsewhere/План (копия с компьютера LAPTOP-RU)")?.conflictOf).toBeNull();
+    expect(byId.get("План")?.conflictOf).toBeUndefined();
+    expect(byId.get("План")?.conflicts ?? 0).toBe(0);
+    expect(await snapshot(dir)).toEqual(before); // reading writes nothing (D37)
+  });
+});
+
 describe("resolving a copy (§4.4)", () => {
   async function fresh(app: ReturnType<typeof createApp>, copyId: string) {
     const list = await getJson<ConflictsList>(app, "/api/conflicts");

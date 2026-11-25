@@ -47,6 +47,28 @@ describe("conflictCopyOf: certain copies, by name", () => {
   }
 });
 
+describe("conflictCopyOf: Yandex Disk's `(копия с компьютера X)` copies (#f5n87bfd)", () => {
+  // Seen in a real vault (Yandex Disk's Russian desktop client, confirmed by a user; its public docs
+  // only show `document (2).docx`). The further copies of one conflict get ` (n)`.
+  const recognised: Array<[string, ReturnType<typeof conflictCopyOf>]> = [
+    ["План сада (копия с компьютера LAPTOP-RU).md", { tool: "yandex", originalName: "План сада.md", device: "LAPTOP-RU" }],
+    ["Note (копия с компьютера LAPTOP-RU) (2).md", { tool: "yandex", originalName: "Note.md", device: "LAPTOP-RU" }],
+    ["Note (копия с компьютера LAPTOP-RU) (4).md", { tool: "yandex", originalName: "Note.md", device: "LAPTOP-RU" }],
+    ["Map (копия с компьютера DESKTOP-7Q2).canvas", { tool: "yandex", originalName: "Map.canvas", device: "DESKTOP-7Q2" }],
+    ["Tasks (копия с компьютера Мой ноутбук).base", { tool: "yandex", originalName: "Tasks.base", device: "Мой ноутбук" }],
+    ["photo (копия с компьютера PC).png", { tool: "yandex", originalName: "photo.png", device: "PC" }],
+  ];
+  for (const [name, expected] of recognised) {
+    it(name, () => expect(conflictCopyOf(name)).toEqual(expected));
+  }
+  it("is a certain copy, so never also a possible one", () => {
+    expect(possibleCopyOf("Note (копия с компьютера LAPTOP-RU) (2).md")).toBeNull();
+  });
+  for (const name of ["(копия с компьютера X).md", "Note копия с компьютера X.md", "Note (копия с компьютера ).md", "Note (копия).md"]) {
+    it(`not: ${name}`, () => expect(conflictCopyOf(name)).toBeNull());
+  }
+});
+
 describe("possibleCopyOf: names that might be iCloud / Google Drive / OneDrive copies", () => {
   it("recognises the three forms, before the extension", () => {
     expect(possibleCopyOf("Note 2.md")).toEqual({ form: "number", originalName: "Note.md" });
