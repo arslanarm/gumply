@@ -85,6 +85,8 @@ async function openCounted(page: Page) {
       for (let i = 1; i < times.length; i++) max = Math.max(max, times[i]! - times[i - 1]!);
       return { count: w.__lines, gap: Math.round(max) };
     });
+    // Always noted, so a report shows how close a run came to the idle delay.
+    test.info().annotations.push({ type: 'gesture-gap', description: `${what}: longest pause ${gap} ms` });
     const note = `${what}: gesture too slow to test (${gap} ms gaps, idle delay ${IDLE_MS} ms)`;
     if (gap >= IDLE_MS) test.info().annotations.push({ type: 'skip-reason', description: note });
     test.skip(gap >= IDLE_MS, note);
