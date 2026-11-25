@@ -81,6 +81,39 @@ describe("replaceAppImage: the same path, atomically", () => {
     expect(readdirSync(apps)).toEqual(["Gumply-0.9.0-x86_64.AppImage"]);
   });
 
+  it("once installed, the download is gone from the updater's cache (#acbwryxf: 121 MB stayed in pending/)", () => {
+    const apps = join(dir, "Apps");
+    const pending = join(dir, "cache", "@gumplydesktop-updater", "pending");
+    mkdirSync(apps);
+    mkdirSync(pending, { recursive: true });
+    const target = join(apps, "Gumply-0.9.0-x86_64.AppImage");
+    writeFileSync(target, "old", { mode: 0o755 });
+    const downloaded = join(pending, "Gumply-0.9.1-x86_64.AppImage");
+    writeFileSync(downloaded, "new");
+    writeFileSync(join(pending, "update-info.json"), '{"fileName":"Gumply-0.9.1-x86_64.AppImage"}');
+
+    expect(replaceAppImage(downloaded, target)).toBe("installed");
+    expect(readFileSync(target, "utf8")).toBe("new");
+    // The copy at the AppImage's path is the install; the cache's 121 MB copy is spent. (electron-updater's
+    // update-info.json may stay: a cache entry whose file is missing is cleared at its next download.)
+    expect(readdirSync(pending)).toEqual(["update-info.json"]);
+  });
+
+  it("not installed (read-only): the download stays in the cache for the next quit", () => {
+    const target = join(dir, "Gumply.AppImage");
+    writeFileSync(target, "old", { mode: 0o755 });
+    const pending = mkdtempSync(join(tmpdir(), "gumply-pending-"));
+    const downloaded = join(pending, "Gumply-0.9.1-x86_64.AppImage");
+    writeFileSync(downloaded, "new");
+    chmodSync(dir, 0o555);
+    try {
+      expect(replaceAppImage(downloaded, target)).toBe("read-only");
+      expect(readFileSync(downloaded, "utf8")).toBe("new");
+    } finally {
+      rmSync(pending, { recursive: true, force: true });
+    }
+  });
+
   it("a folder it can't write to: read-only, and the old image is untouched", () => {
     const target = join(dir, "Gumply.AppImage");
     writeFileSync(target, "old", { mode: 0o755 });
