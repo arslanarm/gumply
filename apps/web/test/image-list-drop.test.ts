@@ -89,4 +89,45 @@ describe("an image block dropped between list items (#p6i94g2r)", () => {
     const out = moveBlockConverting(s, blockAt(s.doc, 2)!, s.doc.content.size)!;
     expect(shape(out.doc).at(-1)).toBe("bulletList/listItem: see ");
   });
+
+  it("a to-do holding only an image keeps its checkbox when dragged out: a one-item task list", () => {
+    const done = schema.nodes.taskItem!.create({ checked: true }, schema.nodes.paragraph!.create(null, schema.nodes.inlineImage!.create({ src: "a.png", alt: "A" })));
+    const s = state(schema.nodes.taskList!.create(null, [done, schema.nodes.taskItem!.create({ checked: false }, p("two"))]), p("End"));
+    const out = moveBlockConverting(s, blockAt(s.doc, 2)!, s.doc.content.size)!;
+    const last = out.doc.lastChild!;
+    expect(last.type.name).toBe("taskList");
+    expect(last.firstChild!.attrs.checked).toBe(true);
+    expect(last.firstChild!.firstChild!.firstChild!.type.name).toBe("inlineImage");
+  });
+
+  it("an image with a width in its alt isn't put in a list (the drop is refused, its width kept)", () => {
+    const sized = schema.nodes.image!.create({ src: "a.png", alt: "A|300", markdownRaw: "![A|300](a.png)", markdownRawKey: ["a.png", "A|300", ""].join("\u0000") });
+    const s = state(sized, schema.nodes.bulletList!.create(null, [li("one"), li("two")]));
+    expect(moveBlockConverting(s, blockAt(s.doc, 0)!, betweenItems(s))).toBeNull();
+  });
+
+  it("an escaped caption ending in |digits isn't put in a list either (it would read as a width)", () => {
+    const caption = schema.nodes.image!.create({ src: "a.png", alt: "A|301", altLiteral: true });
+    const s = state(caption, schema.nodes.bulletList!.create(null, [li("one"), li("two")]));
+    expect(moveBlockConverting(s, blockAt(s.doc, 0)!, betweenItems(s))).toBeNull();
+  });
+
+  it("a resized embed goes in and comes back out with its |300 (it lives in the embed's text)", () => {
+    const embed = schema.nodes.image!.create({ src: "a.png", alt: "", obsidian: "![[a.png|300]]" });
+    const s = state(embed, schema.nodes.bulletList!.create(null, [li("one"), li("two")]), p("End"));
+    const into = moveBlockConverting(s, blockAt(s.doc, 0)!, betweenItems(s))!;
+    let inline: ProseMirrorNode | null = null;
+    let itemPos = -1;
+    into.doc.descendants((node, pos) => {
+      if (!inline && node.type.name === "inlineImage") {
+        inline = node;
+        itemPos = pos;
+      }
+    });
+    expect((inline as ProseMirrorNode | null)?.attrs.obsidian).toBe("![[a.png|300]]");
+    const t = EditorState.create({ schema, doc: into.doc });
+    const out = moveBlockConverting(t, blockAt(t.doc, itemPos)!, t.doc.content.size)!;
+    expect(out.doc.lastChild!.type.name).toBe("image");
+    expect(out.doc.lastChild!.attrs.obsidian).toBe("![[a.png|300]]");
+  });
 });
