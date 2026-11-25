@@ -64,6 +64,7 @@ test('a re-arrange of a big graph without new data is not "ready" until the work
   // The veil never takes the pointer (hover, click, drag and zoom reach the graph) or focus.
   await expect(canvas).toHaveAttribute('data-graph-arranging', 'true', { timeout: 10_000 });
   const veil = canvas.locator('.graph-arranging-veil');
+  await veil.waitFor({ state: 'attached', timeout: 10_000 }); // #8gudbajp: wait before expecting
   await expect(veil).toHaveCount(1);
   const hit = await page.evaluate(() => {
     const el = document.querySelector('[data-testid="graph-canvas"]')!;
