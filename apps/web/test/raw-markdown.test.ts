@@ -183,8 +183,9 @@ describe("list source attributes (#fmmght8w)", () => {
   it("records numbers as written, upper-case checks and blank lines before items", () => {
     const ordered = render(" 9. nine\n10. ten");
     expect(ordered).toContain('<li data-md-number=" 9">');
-    expect(ordered).toContain('<li data-md-number="10">');
-    expect(render("1. one\n\n10. ten")).toMatch(/<li data-md-gap="1" data-md-number="10">/);
+    // (#fy7pas58: a later item also records its blank lines, `data-md-blank-before`.)
+    expect(ordered).toMatch(/<li data-md-number="10"[ >]/);
+    expect(render("1. one\n\n10. ten")).toMatch(/<li data-md-gap="1" data-md-number="10"[ >]/);
     expect(render("- [X] done\n- [x] low")).toMatch(/data-md-check="X"[^>]*>[^]*<li(?![^>]*data-md-check)/);
     expect(render("> - a\n>\n> - b")).toContain('data-md-gap="1"');
     expect(render("- a\n- b")).not.toContain("data-md-gap");

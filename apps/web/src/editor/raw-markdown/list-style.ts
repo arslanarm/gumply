@@ -10,6 +10,7 @@ import BulletList from "@tiptap/extension-bullet-list";
 import TaskList from "@tiptap/extension-task-list";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { renderListKeepingGaps } from "./list-source.js";
 
 export interface ListStyle {
   marker: "-" | "*" | "+";
@@ -131,7 +132,7 @@ function serializeBullets(
   const sameMarker =
     !!previous && HALVES.has(previous.type.name) && bulletMarker(this.editor, previous, parent, index! - 1) === marker;
   separateFromPreviousList(state, node, sameMarker);
-  state.renderList(node, styleOf(this.editor).indent, () => `${marker} `);
+  renderListKeepingGaps(state as never, node, styleOf(this.editor).indent, () => `${marker} `);
 }
 
 // No `parse` key below: tiptap-markdown merges this spec over its default

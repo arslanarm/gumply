@@ -18,7 +18,9 @@
  *   it (relative padding is worked out when writing);
  * - `data-md-check`: `X` for an upper-case check;
  * - `data-md-gap`: blank lines before the item, used when splitting a mixed
- *   list (see markdown-task-list-fix).
+ *   list (see markdown-task-list-fix);
+ * - `data-md-blank-before`: the same count, `0` included, on every item but a
+ *   list's first: a loose list writes each item's own gap back (#fy7pas58).
  *
  * And on a list: `data-md-after-text` when it starts right under a line of
  * text with no blank line (a nested list under its item's text, even in a
@@ -30,6 +32,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 export const NUMBER_ATTR = "data-md-number";
 export const CHECK_ATTR = "data-md-check";
 export const GAP_ATTR = "data-md-gap";
+export const BLANK_BEFORE_ATTR = "data-md-blank-before";
 /** On the second half of a split list: a blank line separated the halves. */
 /* Not `data-md-join`: that's the block-join stamp (#54prcupx), and sharing
  * the name made the list split drop it (#q7ajxdr4). */
@@ -81,6 +84,7 @@ export function listSourceRule(state: any): void {
     if (paragraph && /^\[X\][ \t]/.test(inline.content)) {
       token.attrSet(CHECK_ATTR, "X");
     }
+    if (!LIST_OPEN.has(tokens[index - 1]?.type)) token.attrSet(BLANK_BEFORE_ATTR, String(gap));
   });
 }
 
@@ -92,6 +96,15 @@ export const MarkdownListSource = Extension.create({
       {
         types: ["listItem"],
         attributes: {
+          markdownGapBefore: {
+            default: null,
+            keepOnSplit: false,
+            parseHTML: (element: HTMLElement) => {
+              const gap = element.getAttribute(BLANK_BEFORE_ATTR);
+              return gap !== null && /^\d+$/.test(gap) ? Number(gap) : null;
+            },
+            renderHTML: () => ({}),
+          },
           markdownNumber: {
             default: null,
             keepOnSplit: false,
@@ -103,6 +116,15 @@ export const MarkdownListSource = Extension.create({
       {
         types: ["taskItem"],
         attributes: {
+          markdownGapBefore: {
+            default: null,
+            keepOnSplit: false,
+            parseHTML: (element: HTMLElement) => {
+              const gap = element.getAttribute(BLANK_BEFORE_ATTR);
+              return gap !== null && /^\d+$/.test(gap) ? Number(gap) : null;
+            },
+            renderHTML: () => ({}),
+          },
           markdownCheck: {
             default: null,
             keepOnSplit: false,
@@ -157,4 +179,45 @@ export function recordedNumbers(node: PMNode, start: number): string[] | null {
   // Keep padding relative to the least-indented number.
   const least = Math.min(...recorded.map((value) => value.length - value.trimStart().length));
   return recorded.map((value) => value.slice(least));
+}
+
+interface RenderListState {
+  closed?: unknown;
+  inTightList?: boolean;
+  options?: { tightLists?: boolean };
+  flushClose(size?: number): void;
+  wrapBlock(delim: string, firstDelim: string | null, node: PMNode, render: () => void): void;
+  render(node: PMNode, parent: PMNode, index: number): void;
+}
+
+/**
+ * prosemirror-markdown's `renderList`, keeping each item's own gap (#fy7pas58).
+ *
+ * Tightness is the whole list's: one item holding two blocks with a blank line
+ * between them makes the list loose, and every item then got a blank line
+ * before it, also where the source had none. In a loose list an item now gets
+ * the blank lines it was read with; an item with no record (a new one) follows
+ * the list, as before. A tight list is written as before.
+ */
+export function renderListKeepingGaps(
+  state: RenderListState,
+  node: PMNode,
+  delim: string,
+  firstDelim: (index: number) => string,
+): void {
+  const closed = state.closed as PMNode | null | undefined;
+  if (closed && closed.type === node.type) state.flushClose(3);
+  else if (state.inTightList) state.flushClose(1);
+  const tight = typeof node.attrs.tight !== "undefined" ? Boolean(node.attrs.tight) : Boolean(state.options?.tightLists);
+  const previousTight = state.inTightList;
+  state.inTightList = tight;
+  node.forEach((child, _offset, index) => {
+    if (index) {
+      const gap = child.attrs.markdownGapBefore as number | null | undefined;
+      if (tight) state.flushClose(1);
+      else if (typeof gap === "number") state.flushClose(gap + 1);
+    }
+    state.wrapBlock(delim, firstDelim(index), node, () => state.render(child, node, index));
+  });
+  state.inTightList = previousTight;
 }
