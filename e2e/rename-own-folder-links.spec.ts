@@ -78,9 +78,15 @@ test('typing during the rename: no stale link; the typed text goes to History, a
   await expect(page.getByTestId('history-dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('history-dialog')).toBeHidden();
-  // The typing right after the answer is never lost either: in the file, or kept by the reload.
+  // The typing right after the answer is never lost either: the caret is back in the reloaded editor,
+  // so it lands in the page (or, if typed before the reload, is kept with the rest in History).
   const versionTexts = await Promise.all(items.map(async (item) => (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(item.file)}`)).text()));
-  expect(text.includes('Just after.') || versionTexts.some((version) => version.includes('Just after.')), '"Just after." is kept').toBe(true);
+  // Every key, once: the first k in a "Before reload" version (after "Typed during."), the rest in the page.
+  const typed = ' Just after.';
+  const split = [...Array(typed.length + 1).keys()].find(
+    (k) => versionTexts.some((version) => version.includes(`Typed during.${typed.slice(0, k)}`)) && text.includes(`here.${typed.slice(k)}`),
+  );
+  expect(split, `"${typed}" is kept: History has its start, the page the rest (file: ${JSON.stringify(text)})`).toBeDefined();
   // Typing on in the reloaded page lands, with the rewrite kept.
   await page.getByTestId('editor-content').getByText('here.').click();
   await page.keyboard.press('End');
