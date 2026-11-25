@@ -138,7 +138,7 @@ test.describe('blocks move when dragged the way people drag them (#5634v3df)', (
     await caption.selectText();
     const box = (await caption.boundingBox())!;
     const last = await boxOf(page, 'Last');
-    await mouseDrag(page, { x: box.x + 12, y: box.y + box.height / 2 }, { x: last.x + last.width + 2, y: last.y + last.height / 2 });
+    await mouseDrag(page, { x: box.x + 12, y: box.y + box.height / 2 }, { x: last.x + 80, y: last.y + last.height / 2 });
     await expect(page.getByTestId('editor-content')).toContainText('LastCaption');
     await saved(page);
     const after = lines(title);
