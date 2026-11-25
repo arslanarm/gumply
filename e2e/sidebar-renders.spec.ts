@@ -86,9 +86,10 @@ test.describe('the sidebar renders only the rows that changed (#8gudbajp)', () =
     for (let step = 0; step < 10; step += 1) await page.keyboard.press('ArrowLeft');
     await input.pressSequentially('MID', { delay: 0 });
     await page.keyboard.press('End');
+    await input.pressSequentially(' щука-ёлка', { delay: 0 });
     await page.keyboard.insertText(' ёжик и чай');
-    await expect(input).toHaveValue('abcdefghijklmnopqrstMIDuvwxyz0123 ёжик и чай');
+    await expect(input).toHaveValue('abcdefghijklmnopqrstMIDuvwxyz0123 щука-ёлка ёжик и чай');
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('page-item-Big/abcdefghijklmnopqrstMIDuvwxyz0123 ёжик и чай')).toBeAttached({ timeout: 10_000 });
+    await expect(page.getByTestId('page-item-Big/abcdefghijklmnopqrstMIDuvwxyz0123 щука-ёлка ёжик и чай')).toBeAttached({ timeout: 10_000 });
   });
 });
