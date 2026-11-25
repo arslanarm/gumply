@@ -94,6 +94,44 @@ test('Settings → Updates: the three choices, Check now and the last check', as
   await expect(dialog).toBeHidden();
 });
 
+test('a Check now answer that arrives after a newer push never puts the older state back (#7vyqfcpn)', async ({ page }) => {
+  // The v0.9.2 tag build: the route answered "downloading" (taken mid-download), but the sha512
+  // failure's push ("available" + error) reached the window first; the late answer then put
+  // "downloading" back for good. Every state is stamped (seq); the window keeps the newer one.
+  await page.route('**/api/health', async (route) => {
+    try {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), desktop: true } });
+    } catch {
+      // The page closed while the request was in flight.
+    }
+  });
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/desktop/updates**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/check')) {
+      await held; // answered only after the newer push is in
+      return route.fulfill({ json: state({ status: 'downloading', version: '0.9.3', seq: 3 }) });
+    }
+    return route.fulfill({ json: state({ status: 'up-to-date', seq: 1 }) });
+  });
+  await page.goto('/');
+  await openUpdates(page);
+  const status = page.getByTestId('updates-status');
+  const answered = page.waitForResponse((response) => response.url().endsWith('/api/desktop/updates/check'));
+  await page.getByTestId('updates-check').click();
+  await push(page, state({ status: 'available', version: '0.9.3', error: 'sha512 checksum mismatch', seq: 5 }));
+  await expect(status).toContainText('Gumply 0.9.3 is available.');
+  release();
+  await answered;
+  await page.waitForTimeout(500); // the late answer has had every chance to apply
+  await expect(status).toContainText('Gumply 0.9.3 is available.');
+  await expect(status).not.toContainText('is downloading');
+});
+
 test('macOS and .deb get no automatic choice, and a download hint', async ({ page }) => {
   await stubDesktop(
     page,
