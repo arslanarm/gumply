@@ -192,3 +192,22 @@ test('a save in flight from before the rename: the rename waits for it, so no co
   expect(text).toContain('[[Moved/Sub]]');
   expect(text).not.toContain('[[Parent/Sub]]');
 });
+
+test('the reload after the rename never pulls focus into the body when the user is elsewhere (the sidebar) (@lead)', async ({ page, vault }) => {
+  void vault; // resets the vault before and after
+  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
+  await page.goto('/#/Parent');
+  await expect(page.getByTestId('editor-content')).toContainText('See');
+  // Renamed from the sidebar: focus is there, not in the body.
+  await page.getByTestId('page-item-Parent').hover();
+  await page.getByTestId('page-menu-button-Parent').click();
+  await page.getByTestId('rename-page-Parent').click();
+  await page.getByTestId('page-rename-input-Parent').fill('Moved');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('[[Moved/Sub]]');
+  await expect(page.getByTestId('editor-content')).toContainText('Moved/Sub'); // reloaded
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="editor-content"]'))), 'focus stays out of the body').toBe(false);
+});

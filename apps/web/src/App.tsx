@@ -404,6 +404,11 @@ export function App() {
   const paletteFocus = useRef<{ id: PageId; until: number } | null>(null);
   const focusBaseAfterOpen = useRef<PageId | null>(null);
   const restoreSelection = useRef<{ from: number; to: number } | null>(null);
+  /**
+   * #ekp8ns58: the caret to put back after the own-body reload of a rename. That page mounts twice
+   * then (the reload and the rename's navigation), so it applies to every mount of it, briefly.
+   */
+  const caretAfterOwnRewrite = useRef<{ id: PageId; to: number; until: number } | null>(null);
   const backlinksRequest = useRef(0);
   const initialLoadStarted = useRef(false);
   // The landing page's request, started as soon as the list arrives instead of
@@ -1722,8 +1727,10 @@ export function App() {
     // The reload remounts the editor: put the caret back where the user is typing (as the disk poll's
     // reload does), or the keys typed next land on the title heading and are lost.
     const active = document.activeElement;
-    restoreSelection.current =
+    const selection =
       active instanceof HTMLElement && active.closest('[data-testid="editor-content"]') ? (editorControls.current?.getSelection() ?? null) : null;
+    const openId = selectedRef.current;
+    caretAfterOwnRewrite.current = selection && openId !== null ? { id: openId, to: selection.to, until: Date.now() + 3_000 } : null;
     const running = reloadOpenPage.current("replace").then((kept) => {
       if (!kept) return;
       const renamedId = selectedRef.current;
@@ -2198,7 +2205,11 @@ export function App() {
     editorControls.current = controls;
     setOutlineTick((value) => value + 1);
     const fromPalette = paletteFocus.current;
-    if (fromPalette && fromPalette.id === controls.pageId && Date.now() < fromPalette.until) {
+    const caret = caretAfterOwnRewrite.current;
+    if (caret && caret.id === controls.pageId && Date.now() < caret.until) {
+      // Kept for the page's next mount too (see caretAfterOwnRewrite); expires on its own.
+      controls.focusAt(caret.to);
+    } else if (fromPalette && fromPalette.id === controls.pageId && Date.now() < fromPalette.until) {
       paletteFocus.current = null;
       focusBodyAfterOpen.current = false;
       const caret = lastCaret.current.get(controls.pageId);
