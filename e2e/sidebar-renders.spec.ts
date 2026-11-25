@@ -71,4 +71,24 @@ test.describe('the sidebar renders only the rows that changed (#8gudbajp)', () =
     await expect(page.getByTestId('page-menu-Big/Item 007')).toBeVisible();
     await expect(page.getByTestId('page-menu-Big/Item 007').getByRole('menuitem').first()).toBeFocused();
   });
+
+  test('renaming: fast typing, typing mid-word and an IME-style commit all land, character for character', async ({ page }) => {
+    // The rename text reaches the row through the store (keystroke → Sidebar → store → row):
+    // nothing may be dropped, reordered or jump the caret (@opus-editor's review).
+    const row = page.getByTestId('page-item-Big/Item 009');
+    await row.hover();
+    await page.getByTestId('page-menu-button-Big/Item 009').click();
+    await page.getByTestId('rename-page-Big/Item 009').click();
+    const input = page.getByTestId('page-rename-input-Big/Item 009');
+    await expect(input).toBeFocused();
+    await page.keyboard.press('ControlOrMeta+a');
+    await input.pressSequentially('abcdefghijklmnopqrstuvwxyz0123', { delay: 0 });
+    for (let step = 0; step < 10; step += 1) await page.keyboard.press('ArrowLeft');
+    await input.pressSequentially('MID', { delay: 0 });
+    await page.keyboard.press('End');
+    await page.keyboard.insertText(' ёжик и чай');
+    await expect(input).toHaveValue('abcdefghijklmnopqrstMIDuvwxyz0123 ёжик и чай');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('page-item-Big/abcdefghijklmnopqrstMIDuvwxyz0123 ёжик и чай')).toBeAttached({ timeout: 10_000 });
+  });
 });
