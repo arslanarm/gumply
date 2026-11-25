@@ -6,6 +6,7 @@ import { pickUpdateState, type DesktopUpdatesState } from "@gumply/core";
 import type { UpdateSettings } from "../src/settings.js";
 import {
   CHECK_INTERVAL_MS,
+  clearStalePendingUpdate,
   effectiveMode,
   FIRST_CHECK_DELAY_MS,
   installKind,
@@ -16,6 +17,7 @@ import {
   UpdateController,
   type ProcessInfo,
   type UpdaterLike,
+  updaterCacheBase,
 } from "../src/updates.js";
 
 /** spec/auto-update (D42), #a7qepp99. */
@@ -127,6 +129,58 @@ describe("replaceAppImage: the same path, atomically", () => {
     } finally {
       rmSync(downloaded, { force: true });
     }
+  });
+});
+
+describe("clearStalePendingUpdate: a leftover download from an earlier install (#acbwryxf)", () => {
+  // 0.9.2 installed 0.9.3 with 0.9.2's code, which left the image in pending/; 0.9.3 removes it at its first start.
+  let pending: string;
+  beforeEach(() => {
+    pending = join(mkdtempSync(join(tmpdir(), "gumply-cache-")), "@gumplydesktop-updater", "pending");
+    mkdirSync(pending, { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(join(pending, "..", ".."), { recursive: true, force: true });
+  });
+  const leave = (fileName: string) => {
+    writeFileSync(join(pending, fileName), "image");
+    writeFileSync(join(pending, "update-info.json"), JSON.stringify({ fileName, sha512: "x", isAdminRightsRequired: false }));
+  };
+
+  it("the running version's own download (installed): emptied", () => {
+    leave("Gumply-0.9.3-x86_64.AppImage");
+    expect(clearStalePendingUpdate(pending, "0.9.3")).toBe("cleared");
+    expect(readdirSync(pending)).toEqual([]);
+  });
+
+  it("an older version's download (Windows installer too): emptied", () => {
+    leave("Gumply-Setup-0.9.2-x64.exe");
+    expect(clearStalePendingUpdate(pending, "0.9.10")).toBe("cleared");
+    expect(readdirSync(pending)).toEqual([]);
+  });
+
+  it("a newer version, still to install at a later quit: kept", () => {
+    leave("Gumply-0.9.4-x86_64.AppImage");
+    expect(clearStalePendingUpdate(pending, "0.9.3")).toBe("kept");
+    expect(readdirSync(pending).sort()).toEqual(["Gumply-0.9.4-x86_64.AppImage", "update-info.json"]);
+  });
+
+  it("nothing it can read (no folder, no info, a broken info, no version in the name): left alone", () => {
+    expect(clearStalePendingUpdate(join(pending, "missing"), "0.9.3")).toBe("none");
+    writeFileSync(join(pending, "Gumply-0.9.1-x86_64.AppImage"), "image");
+    expect(clearStalePendingUpdate(pending, "0.9.3")).toBe("none");
+    writeFileSync(join(pending, "update-info.json"), "{broken");
+    expect(clearStalePendingUpdate(pending, "0.9.3")).toBe("none");
+    writeFileSync(join(pending, "update-info.json"), JSON.stringify({ fileName: "Gumply.AppImage" }));
+    expect(clearStalePendingUpdate(pending, "0.9.3")).toBe("none");
+    expect(readdirSync(pending)).toHaveLength(2);
+  });
+
+  it("the cache base is electron-updater's (XDG_CACHE_HOME, LOCALAPPDATA, Library/Caches)", () => {
+    expect(updaterCacheBase("linux", { XDG_CACHE_HOME: "/x/cache" }, "/home/u")).toBe("/x/cache");
+    expect(updaterCacheBase("linux", {}, "/home/u")).toBe(join("/home/u", ".cache"));
+    expect(updaterCacheBase("win32", { LOCALAPPDATA: "C:\\L" }, "C:\\Users\\u")).toBe("C:\\L");
+    expect(updaterCacheBase("darwin", {}, "/Users/u")).toBe(join("/Users/u", "Library", "Caches"));
   });
 });
 
