@@ -119,6 +119,47 @@ export function replaceAppImage(downloaded: string, target: string, fs: ReplaceF
   return "installed";
 }
 
+// --- the updater's cache: a leftover from an earlier install (#acbwryxf) -----
+
+/** electron-updater's cache base (its `getAppCacheDir`), where `<updaterCacheDirName>/pending/` lives. */
+export function updaterCacheBase(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: string): string {
+  if (platform === "win32") return env.LOCALAPPDATA || join(home, "AppData", "Local");
+  if (platform === "darwin") return join(home, "Library", "Caches");
+  return env.XDG_CACHE_HOME || join(home, ".cache");
+}
+
+const versionParts = (version: string): number[] | null => {
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(version);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+};
+
+/**
+ * At start: an update that's already installed can leave its download in
+ * `pending/` (Gumply before 0.9.3 copied it into place and never removed it,
+ * and the install runs the OLD version's code). When `update-info.json` names
+ * the running version or an older one, the folder is emptied. A newer one
+ * (installed at a later quit) and anything unreadable are left alone.
+ */
+export function clearStalePendingUpdate(
+  pendingDir: string,
+  runningVersion: string,
+  fs: Pick<typeof nodeFs, "readFileSync" | "readdirSync" | "rmSync"> = nodeFs,
+): "cleared" | "kept" | "none" {
+  let fileName: unknown;
+  try {
+    fileName = (JSON.parse(fs.readFileSync(join(pendingDir, "update-info.json"), "utf8")) as { fileName?: unknown }).fileName;
+  } catch {
+    return "none";
+  }
+  const pending = typeof fileName === "string" ? versionParts(fileName) : null;
+  const running = versionParts(runningVersion);
+  if (!pending || !running) return "none";
+  const at = pending.findIndex((part, i) => part !== running[i]);
+  if (at !== -1 && pending[at]! > running[at]!) return "kept"; // newer: still to install
+  for (const entry of fs.readdirSync(pendingDir)) fs.rmSync(join(pendingDir, entry), { recursive: true, force: true });
+  return "cleared";
+}
+
 // --- Windows: other Gumply processes from the install folder ----------------
 
 export interface ProcessInfo {

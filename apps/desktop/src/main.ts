@@ -12,7 +12,7 @@
  */
 import { appendFileSync, createReadStream, createWriteStream, existsSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,7 +36,7 @@ import { spellcheckLanguages } from "./spellcheck.js";
 import { classifyNavigation, userGuideUrl, vaultFileAction } from "./urls.js";
 import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
-import { installKind, listWindowsProcesses, REQUEST_HEADERS, RELEASES_URL, UpdateController, type UpdaterLike } from "./updates.js";
+import { clearStalePendingUpdate, installKind, listWindowsProcesses, REQUEST_HEADERS, RELEASES_URL, UpdateController, updaterCacheBase, type UpdaterLike } from "./updates.js";
 import { UPDATE_PUBLIC_KEYS } from "./update-keys.js";
 import { HttpStatusError, installerName, makeVerifier, publicKeyEntry, readCapped, SIGNED_FILE_TIMEOUT_MS } from "./update-signature.js";
 
@@ -803,6 +803,16 @@ async function setUpUpdates(): Promise<void> {
         .catch(() => undefined);
     },
   });
+  // #acbwryxf: a download an earlier version installed but left behind (it copied it into place).
+  try {
+    const dirName = /^updaterCacheDirName:\s*["']?([^"'\r\n]+?)["']?\s*$/m.exec(readFileSync(join(process.resourcesPath, "app-update.yml"), "utf8"))?.[1];
+    if (dirName && !dirName.includes("..") && !/[\\/]/.test(dirName)) {
+      const result = clearStalePendingUpdate(join(updaterCacheBase(process.platform, process.env, homedir()), dirName, "pending"), app.getVersion());
+      if (result === "cleared") console.error("[gumply] update: removed an installed update's download from the cache");
+    }
+  } catch {
+    // the cache is only tidied; nothing depends on it
+  }
   updates.start();
   buildMenu();
 }
