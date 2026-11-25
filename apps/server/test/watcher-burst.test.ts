@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { VaultStore } from "../src/vault-store";
-import { cleanupVaults, createTestServer } from "./helpers";
+import { cleanupVaults, createTestServer, trackStore } from "./helpers";
 
 /**
  * spec/sync-conflicts §8 (D43): during a sync tool's burst the watcher still
@@ -24,7 +24,7 @@ interface Internals {
 describe("the watcher during a sync burst (§8)", () => {
   it("a long burst (an event every 60 ms, under the 120 ms quiet gap) still refreshes within ~2 s", async () => {
     const { dir } = await createTestServer();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     store.startWatching();
     try {
@@ -45,7 +45,7 @@ describe("the watcher during a sync burst (§8)", () => {
 
   it("over 50 events in 2 s is \"syncing\": GET /api/pages says so, and it ends once the vault is quiet", async () => {
     const { dir } = await createTestServer();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const app = createApp({ vaultPath: dir, store });
     store.startWatching();
@@ -65,7 +65,7 @@ describe("the watcher during a sync burst (§8)", () => {
     const { dir } = await createTestServer();
     await writeFile(join(dir, "Hub.md"), "The hub.\n", "utf8");
     for (let i = 0; i < 80; i++) await writeFile(join(dir, `Linker ${i}.md`), `See [[Hub]] (${i}).\n`, "utf8");
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     store.startWatching();
     try {
@@ -90,7 +90,7 @@ describe("the watcher during a sync burst (§8)", () => {
   it("a save during a burst on the same file: written once, never interleaved with a running rescan, D22 intact", async () => {
     const { dir } = await createTestServer();
     await writeFile(join(dir, "Note.md"), "Before.\n", "utf8");
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     store.startWatching();
     try {
@@ -121,7 +121,7 @@ describe("the watcher during a sync burst (§8)", () => {
   it("a scheduled rescan waits for a save that is already waiting (save priority)", async () => {
     const { dir } = await createTestServer();
     await writeFile(join(dir, "Mine.md"), "Draft.\n", "utf8");
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const internal = store as unknown as Internals;
     const order: string[] = [];

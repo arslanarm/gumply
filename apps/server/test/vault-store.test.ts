@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VaultStore } from "../src/vault-store";
+import { drainStores, RM_VAULT, trackStore } from "./helpers";
 
 const dirs: string[] = [];
 
@@ -15,7 +16,8 @@ async function tempVault(seed?: (dir: string) => Promise<void>): Promise<string>
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await drainStores();
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, RM_VAULT)));
 });
 
 describe("VaultStore index on start", () => {
@@ -29,7 +31,7 @@ describe("VaultStore index on start", () => {
       await writeFile(join(root, "other.md"), "Other page", "utf8");
     });
 
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
 
     const pages = store.list();
@@ -47,7 +49,7 @@ describe("VaultStore index on start", () => {
       await writeFile(join(root, "my-note.md"), "Hello", "utf8");
     });
 
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     // Verbatim, as in Obsidian (#bayuasqq).
     expect(store.get("my-note").title).toBe("my-note");
@@ -60,7 +62,7 @@ describe("VaultStore index on start", () => {
       await writeFile(join(root, "folder.md"), "Folder", "utf8");
     });
 
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     expect(store.get("folder/child").parentId).toBe("folder");
     expect(store.get("folder").parentId).toBeNull();
@@ -68,7 +70,7 @@ describe("VaultStore index on start", () => {
 
   it("serialises concurrent creates without id clashes", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
 
     const pages = await Promise.all(
@@ -80,7 +82,7 @@ describe("VaultStore index on start", () => {
 
   it("keeps created time and bumps updated on writes", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
 
     const created = await store.create({ title: "Timed" });
@@ -110,7 +112,7 @@ describe("VaultStore index on start", () => {
     const dir = await tempVault(async (root) => {
       await writeFile(join(root, "imported.md"), original, "utf8");
     });
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
 
     const updated = await store.update("imported", { content: "New body." });
@@ -141,7 +143,7 @@ describe("VaultStore index on start", () => {
     const dir = await tempVault(async (root) => {
       await writeFile(join(root, "imported.md"), original, "utf8");
     });
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
 
     const updated = await store.update("imported", { title: "Renamed", content: "Body." });
@@ -160,7 +162,7 @@ describe("VaultStore index on start", () => {
     const dir = await tempVault(async (root) => {
       await writeFile(join(root, "win.md"), original, "utf8");
     });
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
 
     const updated = await store.update("win", { content: "Body" });
@@ -173,7 +175,7 @@ describe("VaultStore index on start", () => {
 
   it("ignores .trash on start and restores entries after a restart", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const parent = await store.create({ title: "A", content: "keep me" });
     await store.create({ title: "Child", parentId: parent.id });
@@ -182,7 +184,7 @@ describe("VaultStore index on start", () => {
     expect(store.list()).toEqual([]);
 
     // A new process only sees the vault: .trash must stay invisible…
-    const reopened = new VaultStore(dir);
+    const reopened = trackStore(new VaultStore(dir));
     await reopened.init();
     expect(reopened.list()).toEqual([]);
     expect(reopened.search("keep me")).toEqual([]);
@@ -197,7 +199,7 @@ describe("VaultStore index on start", () => {
 
   it("renames the file with the title and moves the child folder", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const parent = await store.create({ title: "Old title" });
     const child = await store.create({ title: "Child", parentId: parent.id });
@@ -218,7 +220,7 @@ describe("VaultStore index on start", () => {
 
   it("keeps unsafe characters out of the file name", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const page = await store.create({ title: "Plan: Q1? <draft>" });
     expect(page.id).toBe("Plan Q1 draft");
@@ -239,7 +241,7 @@ describe("VaultStore index on start", () => {
         "utf8",
       );
     });
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
 
     const dry = await store.syncFilenames(false);
@@ -266,7 +268,7 @@ describe("VaultStore index on start", () => {
 
   it("treats a page whose file is already gone as deleted instead of throwing", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const page = await store.create({ title: "Gone", content: "already removed" });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -285,7 +287,7 @@ describe("VaultStore index on start", () => {
 
   it("still surfaces a real filesystem error and keeps the page", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const page = await store.create({ title: "Keep" });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -317,7 +319,7 @@ async function waitFor(predicate: () => boolean, timeout = 15_000): Promise<void
 describe("external vault changes", () => {
   it("watches created, changed and deleted Markdown files", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     store.startWatching();
     try {
@@ -338,7 +340,7 @@ describe("external vault changes", () => {
 
   it("rejects a stale conditional save and allows Keep mine", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const page = await store.create({ title: "Conflict", content: "original" });
 
@@ -371,7 +373,7 @@ describe("external vault changes", () => {
 
   it("writes atomically without leaving temporary files", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const page = await store.create({ title: "Atomic", content: "one" });
     await store.update(page.id, { content: "two" });
@@ -382,7 +384,7 @@ describe("external vault changes", () => {
 
   it("picks up several external files in one rescan", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     store.startWatching();
     try {
@@ -412,7 +414,7 @@ describe("D20 follow-ups (#73xpk354)", () => {
         await writeFile(join(root, path), text, "utf8");
       }
     });
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     return { dir, store };
   }
@@ -525,7 +527,7 @@ describe("D20 follow-ups (#73xpk354)", () => {
       expect(await store.syncFilenames(true)).toEqual([]);
 
       // Also stable for a fresh process reading the result.
-      const reopened = new VaultStore(dir);
+      const reopened = trackStore(new VaultStore(dir));
       await reopened.init();
       expect(await reopened.syncFilenames(false)).toEqual([]);
       reopened.stopWatching();
@@ -568,7 +570,7 @@ describe("D20 follow-ups (#73xpk354)", () => {
 describe("D20 redirects", () => {
   it("a page that takes a previously redirected id is served, not the redirect", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     const a = await store.create({ title: "Gamma" });
     await store.update(a.id, { title: "Gamma two" });
@@ -592,7 +594,7 @@ describe("D23: attachment links follow the note's folder (#gma39xw2)", () => {
         await writeFile(join(root, path), text, "utf8");
       }
     });
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     return { dir, store };
   }
@@ -719,7 +721,7 @@ describe("D23: attachment links follow the note's folder (#gma39xw2)", () => {
 describe("watcher after the app's own atomic saves (#3ugdxhzu, Node 20/22)", () => {
   it("still sees an outside edit to a page Gumply saved, in a folder created later, and to a board", async () => {
     const dir = await tempVault();
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     store.startWatching();
     try {

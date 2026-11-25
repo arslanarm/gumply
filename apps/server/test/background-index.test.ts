@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app";
 import { VaultStore } from "../src/vault-store";
+import { drainStores, RM_VAULT, trackStore } from "./helpers";
 
 /**
  * #g95wkd9y (offenders 3+4): a cold open answers once the files are read;
@@ -19,7 +20,8 @@ beforeEach(async () => {
 afterEach(async () => {
   store?.stopWatching();
   store = null;
-  await rm(dir, { recursive: true, force: true });
+  await drainStores();
+  await rm(dir, RM_VAULT);
 });
 
 type Internals = { beforeIndex: (() => Promise<void>) | undefined; mentionWordsOf: (...args: unknown[]) => void };
@@ -33,7 +35,7 @@ async function vault(): Promise<void> {
 async function heldOpen(): Promise<{ store: VaultStore; release: () => void }> {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
-  const opened = new VaultStore(dir);
+  const opened = trackStore(new VaultStore(dir));
   (opened as unknown as Internals).beforeIndex = () => gate;
   await opened.init({ background: true });
   store = opened;
@@ -87,7 +89,7 @@ describe("cold open: answer first, index links in the background (#g95wkd9y)", (
     await vault();
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const opened = new VaultStore(dir);
+      const opened = trackStore(new VaultStore(dir));
       (opened as unknown as Internals).beforeIndex = async () => {
         throw new Error("boom");
       };
@@ -129,7 +131,7 @@ describe("cold open: answer first, index links in the background (#g95wkd9y)", (
 
   it("init() without background is unchanged: indexed before it returns", async () => {
     await vault();
-    const opened = new VaultStore(dir);
+    const opened = trackStore(new VaultStore(dir));
     await opened.init();
     store = opened;
     expect(opened.indexing).toBe(false);

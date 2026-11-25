@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { VaultStore } from "../src/vault-store";
-import { cleanupVaults, createTestServer, encodeId, jsonRequest } from "./helpers";
+import { cleanupVaults, createTestServer, encodeId, jsonRequest, trackStore } from "./helpers";
 
 /** v0.8 C2 (#u84ebtf3): renaming a heading rewrites [[Page#Old]] across the vault. */
 
@@ -15,7 +15,7 @@ async function vault(files: Record<string, string>) {
     await mkdir(join(server.dir, path, ".."), { recursive: true });
     await writeFile(join(server.dir, path), body, "utf8");
   }
-  const store = new VaultStore(server.dir);
+  const store = trackStore(new VaultStore(server.dir));
   await store.init();
   return { dir: server.dir, store, app: createApp({ vaultPath: server.dir, store }) };
 }
