@@ -33,6 +33,14 @@ import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, layoutInputFor } from "./layout-forces.js";
 import { linkWidthFor } from "./link-width.js";
 import { startLayout } from "./layout-client.js";
+import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
+
+let layoutStore: LayoutStore | null | undefined;
+/** The browser's graph layout cache, opened on first use (N6). */
+function graphLayoutStore(): LayoutStore | null {
+  if (layoutStore === undefined) layoutStore = browserLayoutStore();
+  return layoutStore;
+}
 import { t, useT } from "../i18n/index.js";
 
 export type CanvasNode = GraphNode | GhostNode;
@@ -1143,28 +1151,58 @@ export function GraphCanvas({
     const { width, height } = sizeRef.current;
     const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion });
     // Above STREAM_MAX_NODES (or with reduced motion) the graph is drawn once,
-    // settled; meanwhile its start layout shows dimmed with a status.
-    setArranging(input.stream ? null : 0);
-    const cancel = startLayout(input, (update) => {
-      if (update.type === "progress") {
-        setArranging(update.progress);
-        return;
-      }
+    // settled; meanwhile its start layout shows dimmed with a status. With a
+    // layout cache, only once the cache has no layout for it (no "Arranging"
+    // flash before a kept layout).
+    const arrange = () => setArranging(input.stream ? null : 0);
+    const place = (x: Float32Array, y: Float32Array) => {
       for (let i = 0; i < drawn.length; i += 1) {
         const node = drawn[i]!;
-        node.x = update.x[i];
-        node.y = update.y[i];
+        node.x = x[i];
+        node.y = y[i];
         node.vx = 0;
         node.vy = 0;
       }
       setLayoutFrame((frame) => frame + 1);
-      if (update.done) {
-        workerRunning.current = false;
-        setArranging(null);
-        settleLayoutRef.current();
+    };
+    const settled = () => {
+      workerRunning.current = false;
+      setArranging(null);
+      settleLayoutRef.current();
+    };
+    // N6 (#9x4duwmg): a big graph laid out before, unchanged, shows its kept
+    // positions at once. The key is taken before the worker gets (and
+    // detaches) the input's arrays.
+    const store = cachesLayout(drawn.length) ? graphLayoutStore() : null;
+    const keyStart = performance.now();
+    const key = store ? layoutCacheKey(drawn.map((node) => node.id), input.links, `${centerId ?? ""}|${reducedMotion ? 1 : 0}`) : "";
+    // Its main-thread cost, readable by the perf probes (`graph-layout-key`).
+    if (store) performance.measure?.("graph-layout-key", { start: keyStart });
+    let cancelled = false;
+    let cancel: () => void = () => {};
+    if (!store) arrange();
+    void cachedLayout(store, key, drawn.length).then((kept) => {
+      if (cancelled) return;
+      if (kept) {
+        place(kept.x, kept.y);
+        settled();
+        return;
       }
+      if (store) arrange();
+      cancel = startLayout(input, (update) => {
+        if (update.type === "progress") {
+          setArranging(update.progress);
+          return;
+        }
+        place(update.x, update.y);
+        if (update.done) {
+          void keepLayout(store, key, update);
+          settled();
+        }
+      });
     });
     return () => {
+      cancelled = true;
       workerRunning.current = false;
       cancel();
       setArranging(null);
