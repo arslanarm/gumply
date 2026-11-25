@@ -4551,6 +4551,9 @@ export class VaultStore {
   private async rewriteFolderLinks(from: PageId, to: PageId): Promise<PageId[]> {
     // #x8awsxev: Markdown links to files in the folder too. A note that moved with it resolves its
     // links from where it was (its id before the move).
+    // Frontmatter: wikilink values only. `{ frontmatter: true }` hands this only the `[[…]]` spans of
+    // property values (rewritePropertyLinks), so a Markdown-form value (`source: "[doc](Files/doc.pdf)"`)
+    // is left as text, as Obsidian reads it; D38 `banner:` paths are never written.
     const before = (id: PageId) => (id.startsWith(`${to}/`) ? `${from}${id.slice(to.length)}` : id);
     const exists = (path: string) => existsSync(join(this.root, path));
     return this.rewriteEverywhere(
