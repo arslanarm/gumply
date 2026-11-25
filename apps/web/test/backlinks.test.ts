@@ -37,6 +37,14 @@ describe("splitSnippet", () => {
     ]);
   });
 
+  it("reads an embed in a table cell, its pipe written \\|, without the backslash (#siuwzhwy)", () => {
+    expect(splitSnippet(String.raw`| ![[Projects/Map.canvas\|480]] |`)).toEqual([
+      { text: "| ", highlight: false },
+      { text: "Map", highlight: true },
+      { text: " |", highlight: false },
+    ]);
+  });
+
   it("leaves malformed brackets alone", () => {
     expect(splitSnippet("An empty [[]] and array[0].")).toEqual([
       { text: "An empty ", highlight: false },

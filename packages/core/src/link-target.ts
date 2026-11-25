@@ -17,7 +17,17 @@ export function pageBasename(page: Pick<PageMeta, "id">): string {
 }
 
 function same(a: string, b: string): boolean {
-  return a.trim().toLowerCase().replace(/\s+/g, " ") === b.trim().toLowerCase().replace(/\s+/g, " ");
+  const key = (value: string) => value.normalize("NFC").trim().toLowerCase().replace(/\s+/g, " ");
+  return key(a) === key(b);
+}
+
+/**
+ * #siuwzhwy: a title as a link alias. `[` and `]` can't appear inside `[[…]]` (a `]`
+ * ends the link early, so `[[draft|[draft]]]` wasn't a link at all); they're dropped
+ * from the alias. The page keeps its title; only the link's shown text loses them.
+ */
+function aliasFor(title: string): string {
+  return title.replace(/[[\]]/g, "").replace(/\s+/g, " ").trim();
 }
 
 export interface LinkTarget {
@@ -40,7 +50,19 @@ export function linkTargetFor(page: PageMeta, pages: readonly PageMeta[]): LinkT
   const baseShared = others.some((other) => same(pageBasename(other), base) || same(other.title, base));
   const target = baseShared ? page.id : base;
   // `[[Plan|Plan]]` is just noise: an alias equal to the target is dropped.
-  return { target, alias: target === page.title ? "" : page.title };
+  const alias = aliasFor(page.title);
+  return { target, alias: alias === target || alias.length === 0 ? "" : alias };
+}
+
+/**
+ * #siuwzhwy: whether the link at `index` sits in a Markdown table row, where its alias pipe
+ * must be written `\|` or it splits the cell. A row starts with `|`, also inside a quote or
+ * callout (`> | a | [[X]] |`, nested `> >`). Known limit: a GFM table written without
+ * leading pipes (`a | [[X]]`) isn't detected; Gumply and Obsidian always write the `|`.
+ */
+function inTableRow(markdown: string, index: number): boolean {
+  const start = markdown.lastIndexOf("\n", index - 1) + 1;
+  return markdown.slice(start, index).replace(/^\s*(?:>\s*)+/, "").trimStart().startsWith("|");
 }
 
 /** The Markdown for a link to `page` (keeping an explicit alias and heading). */
@@ -103,7 +125,10 @@ export function rewriteLinksToPage(
     const userAlias = link.alias && !same(link.alias, oldTitle) && !same(link.alias, page.title) ? link.alias : "";
     const shown = userAlias && userAlias !== target ? userAlias : autoAlias;
     const heading = link.heading ? `#${link.heading}` : "";
-    const replacement = `[[${target}${heading}${shown ? `|${shown}` : ""}]]`;
+    // #siuwzhwy: in a Markdown table a bare `|` would split the cell, so the alias pipe
+    // is `\|` there (kept as written, or for a link that gains an alias in a table row).
+    const separator = link.escapedPipe || inTableRow(content, link.index) ? "\\|" : "|";
+    const replacement = `[[${target}${heading}${shown ? `${separator}${shown}` : ""}]]`;
     content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
   }
   return { content, count: links.length };

@@ -1,7 +1,7 @@
 /** Public API of `@gumply/core`. */
 
 export const APP_NAME = "Gumply";
-export const CORE_VERSION = "0.9.3";
+export const CORE_VERSION = "0.9.4";
 
 export type {
   ApiError,
@@ -229,7 +229,7 @@ export {
 } from "./property-links.js";
 export { LinkFileIndex, isLinkableFile, obsidianFileLinks, resolveLinkedFile, shortestLinkText } from "./link-files.js";
 export { linkSourceFolder, pickLinkTarget, preferredLinkPath } from "./link-order.js";
-export { isWholeWikilink, isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
+export { isWholeWikilink, isWikilinkInner, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, WIKILINK_UNESCAPED, wikilinkTargetPart } from "./wikilink-syntax.js";
 export { graphItemPath, matchesGraphQuery, parseGraphQuery, type GraphQuery, type GraphQueryItem, type GraphQueryOp, type GraphQueryTerm } from "./graph-query.js";
 export {
   DEFAULT_GRAPH_FILTERS,

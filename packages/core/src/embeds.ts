@@ -9,7 +9,7 @@
  */
 import { hasAttachmentExtension, maskCode } from "./links.js";
 import type { Embed, EmbedKind } from "./types.js";
-import { WIKILINK_INNER } from "./wikilink-syntax.js";
+import { WIKILINK_INNER, wikilinkTargetPart } from "./wikilink-syntax.js";
 
 const IMAGE_EXTENSIONS = new Set([
   "avif",
@@ -88,7 +88,7 @@ export function parseEmbeds(markdown: string): Embed[] {
   const obsidianPattern = new RegExp(String.raw`(!?)\[\[(${WIKILINK_INNER}+)\]\]`, "g");
   while ((match = obsidianPattern.exec(text)) !== null) {
     const embedded = match[1] === "!";
-    const inner = (match[2] ?? "").split("|")[0]?.trim() ?? "";
+    const inner = wikilinkTargetPart(match[2] ?? "").trim();
     if (!hasAttachmentExtension(inner)) continue;
     const path = inner.includes("/") ? inner : `attachments/${inner}`;
     const raw = markdown.slice(match.index, match.index + match[0].length);

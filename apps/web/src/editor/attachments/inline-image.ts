@@ -47,7 +47,11 @@ export function inlineImageRule(state: any): void {
     // item. As a block it can't open the item (its content starts with a
     // paragraph), so it was lifted out and the list split on the next save.
     const opensListItem = tokens[index - 1]?.type === "paragraph_open" && tokens[index - 2]?.type === "list_item_open";
-    if (!others && images.length === 1 && !opensListItem) continue;
+    // #sv5cwevx (D37): the same for an image alone in a table cell (`| ![[a.png]] |`). A cell holds
+    // one paragraph, so a block image was lifted out of it to the end of the page, and every save
+    // appended another copy there (the table itself is written back from its source).
+    const inTableCell = tokens[index - 1]?.type === "td_open" || tokens[index - 1]?.type === "th_open";
+    if (!others && images.length === 1 && !opensListItem && !inTableCell) continue;
     for (const image of images) image.attrSet(INLINE_IMAGE_ATTR, "1");
   }
 }

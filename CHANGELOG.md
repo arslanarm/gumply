@@ -2,6 +2,16 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.4: links and pictures in tables (2026-11-25)
+
+A fix release, recommended for everyone on 0.9, especially if your pages have tables with links or pictures.
+
+**Fixed**
+- **A link in a table now counts as a link.** In a table cell, a link with its own text is written `[[page\|Text]]`. Gumply opened it correctly, but the graph showed its page as "not created yet", backlinks missed it, and clicking that node made a new, empty page that came back after you deleted it. The link now counts in the graph, in backlinks and when a page is renamed; pictures and files in table cells too. An extra page made earlier can now be deleted for good.
+- **Renaming a page no longer damages tables that link to it** (also inside a quote or a callout). A rename could split the link's cell, so the row showed broken and its other links disappeared from view. The link is now written back with its `\|`.
+- **A picture alone in a table cell is no longer copied to the end of the page** on every save. Copies added by earlier versions aren't removed; delete them by hand. A picture alone in a cell with its width in the alt text (`![name|300](photo.png)`) shows at its natural size in the table; the file keeps the width.
+- **More link forms find their page:** `[[Note.md]]`, names with decomposed letters (macOS), and Copy link on a title with square brackets.
+
 ## 0.9.3: lists with pictures stay intact (2026-11-25)
 
 A fix release, recommended for everyone on 0.9.

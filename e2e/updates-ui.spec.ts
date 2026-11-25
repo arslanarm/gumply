@@ -24,15 +24,27 @@ function state(overrides: Partial<DesktopUpdatesState> = {}): DesktopUpdatesStat
   };
 }
 
+/**
+ * #4jqxt78q: the notice needs two round trips through this test process (the health answer saying
+ * `desktop: true`, then the first updates state), and only then does the window listen for pushes.
+ * Under a full-suite load that took longer than an assertion's 5 s, so `loaded` resolves once the
+ * window has its first state: wait on it before asserting the notice (or its absence) or pushing.
+ */
 async function stubDesktop(page: Page, initial: DesktopUpdatesState) {
   let current = initial;
   const calls: string[] = [];
+  let markLoaded: () => void = () => {};
+  const loaded = new Promise<void>((resolve) => {
+    markLoaded = resolve;
+  });
   await page.route('**/api/health', async (route) => {
     try {
       const response = await route.fetch();
       await route.fulfill({ response, json: { ...(await response.json()), desktop: true } });
     } catch {
-      // The page closed while the request was in flight (the test ended).
+      // The page closed while the request was in flight (the test ended). Otherwise let the request
+      // through rather than leave it hanging: the test then fails on the notice, not by waiting forever.
+      if (!page.isClosed()) await route.continue().catch(() => {});
     }
   });
   await page.route('**/api/desktop/updates**', async (route) => {
@@ -46,9 +58,10 @@ async function stubDesktop(page: Page, initial: DesktopUpdatesState) {
     } else if (request.method() === 'POST' && path.endsWith('/restart')) {
       return route.fulfill({ status: 202, json: { ok: true } });
     }
-    return route.fulfill({ json: current });
+    await route.fulfill({ json: current });
+    if (request.method() === 'GET') markLoaded();
   });
-  return { calls };
+  return { calls, loaded };
 }
 
 /** What the desktop app sends when the state changes. */
@@ -73,8 +86,9 @@ test('the browser app has no Updates settings and no notice', async ({ page, vau
 });
 
 test('Settings → Updates: the three choices, Check now and the last check', async ({ page }) => {
-  const { calls } = await stubDesktop(page, state());
+  const { calls, loaded } = await stubDesktop(page, state());
   await page.goto('/');
+  await loaded;
   await openUpdates(page);
   const dialog = page.getByTestId('updates-settings');
   await expect(dialog).toContainText('You have Gumply 0.9.0.');
@@ -133,11 +147,12 @@ test('a Check now answer that arrives after a newer push never puts the older st
 });
 
 test('macOS and .deb get no automatic choice, and a download hint', async ({ page }) => {
-  await stubDesktop(
+  const { loaded } = await stubDesktop(
     page,
     state({ kind: 'mac', mode: 'notify', modes: ['notify', 'off'], status: 'available', version: '0.9.1', releaseUrl: 'https://github.com/arslanarm/gumply/releases/tag/v0.9.1' }),
   );
   await page.goto('/');
+  await loaded;
   await openUpdates(page);
   await expect(page.getByTestId('updates-mode-auto')).toHaveCount(0);
   await expect(page.getByTestId('updates-settings').getByRole('radio')).toHaveCount(2);
@@ -147,8 +162,11 @@ test('macOS and .deb get no automatic choice, and a download hint', async ({ pag
 
 test('the notice: ready → Restart now goes through the app; Later hides it; it never takes focus', async ({ page, vault }) => {
   await vault.seed([{ title: 'Notes', content: 'Hello.' }]);
-  const { calls } = await stubDesktop(page, state());
+  const { calls, loaded } = await stubDesktop(page, state());
   await page.goto('/');
+  // The window listens for pushes once it knows it's the desktop app (a push before that is lost),
+  // and it opens the start page only after the health answer too: wait for both, then the editor.
+  await loaded;
   await expect(page.getByTestId('editor-content')).toBeVisible();
   await expect(page.getByTestId('update-notice')).toHaveCount(0);
 
@@ -169,16 +187,19 @@ test('the notice: ready → Restart now goes through the app; Later hides it; it
 });
 
 test('the notice: an AI app still running keeps the update pending, and says so', async ({ page }) => {
-  await stubDesktop(page, state({ status: 'pending-running', version: '0.9.1' }));
+  const { loaded } = await stubDesktop(page, state({ status: 'pending-running', version: '0.9.1' }));
   await page.goto('/');
+  await loaded;
   await expect(page.getByTestId('update-notice')).toHaveText(/Update ready, will install when Gumply and AI apps using it are closed\./);
   await expect(page.getByTestId('update-notice-restart')).toHaveCount(0);
 });
 
 test('with updates off, no notice; Settings still shows the state', async ({ page }) => {
-  await stubDesktop(page, state({ mode: 'off', status: 'available', version: '0.9.1', releaseUrl: 'https://github.com/arslanarm/gumply/releases/tag/v0.9.1' }));
+  const { loaded } = await stubDesktop(page, state({ mode: 'off', status: 'available', version: '0.9.1', releaseUrl: 'https://github.com/arslanarm/gumply/releases/tag/v0.9.1' }));
   await page.goto('/');
   await expect(page.getByTestId('sidebar')).toBeVisible();
+  // No notice once the window has the state (before that, its absence would prove nothing).
+  await loaded;
   await expect(page.getByTestId('update-notice')).toHaveCount(0);
   await openUpdates(page);
   await expect(page.getByTestId('updates-status')).toHaveText('Gumply 0.9.1 is available.');
@@ -186,8 +207,9 @@ test('with updates off, no notice; Settings still shows the state', async ({ pag
 
 test('Russian: the notice and Settings → Updates', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
-  await stubDesktop(page, state({ kind: 'deb', mode: 'notify', modes: ['notify', 'off'], status: 'available', version: '0.9.1', releaseUrl: 'https://github.com/arslanarm/gumply/releases/tag/v0.9.1' }));
+  const { loaded } = await stubDesktop(page, state({ kind: 'deb', mode: 'notify', modes: ['notify', 'off'], status: 'available', version: '0.9.1', releaseUrl: 'https://github.com/arslanarm/gumply/releases/tag/v0.9.1' }));
   await page.goto('/');
+  await loaded;
   const notice = page.getByTestId('update-notice');
   await expect(notice).toContainText('Вышла версия Gumply 0.9.1.');
   await expect(notice).toContainText('Установлено из .deb: обновите через менеджер пакетов или новым .deb.');
