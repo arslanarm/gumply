@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -78,6 +78,27 @@ describe("server-side demo seeding", () => {
     // A second call in the same process sees the marker.
     expect(await store.seedDemoIfFirstRun()).toBeNull();
     expect(store.list()).toHaveLength(5);
+  });
+
+  it("seeding writes no version history: the demo board isn't created empty, then filled (#2gyhwfjh)", async () => {
+    const dir = await tempVault();
+    const store = new VaultStore(dir);
+    await store.init();
+    await store.seedDemoIfFirstRun();
+    // What a quit does: end every edit session (each would leave a "session" version).
+    await store.flushHistory();
+
+    let entries: string[] = [];
+    try {
+      entries = await readdir(join(dir, ".gumply", "history"), { recursive: true });
+    } catch {
+      entries = []; // no history folder at all: fine
+    }
+    expect(entries.filter((entry) => !entry.endsWith("index.jsonl") && /\.(md|canvas)$/.test(entry))).toEqual([]);
+    // The board itself is written whole, with its icon.
+    const board = parseCanvas(await readFile(join(dir, "Gumply demo", "Project map.canvas"), "utf8"));
+    expect(board.nodes.length).toBeGreaterThan(0);
+    expect(serializeCanvas(board)).toContain("🗺️");
   });
 
   it("never re-seeds after the user deletes the demo", async () => {
