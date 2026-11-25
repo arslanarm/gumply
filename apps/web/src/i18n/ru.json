@@ -1888,7 +1888,8 @@
       "syncthing": "Syncthing",
       "dropbox": "Dropbox",
       "nextcloud": "Nextcloud",
-      "obsidian": "Obsidian Sync"
+      "obsidian": "Obsidian Sync",
+      "cloud": "Облачный диск"
     },
     "badge_one": "{{count}} конфликтующая копия",
     "badge_few": "{{count}} конфликтующие копии",
@@ -1902,7 +1903,8 @@
     "sidebarWithCount_few": "Конфликты, {{count}} копии",
     "sidebarWithCount_many": "Конфликты, {{count}} копий",
     "sidebarWithCount_other": "Конфликты, {{count}} копии",
-    "dropboxCopy": "копия {{who}}"
+    "dropboxCopy": "копия {{who}}",
+    "computerCopy": "с компьютера {{who}}"
   },
   "commands": {
     "section": "Команды",
