@@ -3831,8 +3831,9 @@ export class VaultStore {
     const own = this.pages.get(record.id);
     if (!own) return [];
     const before = own.board ? null : own.content;
-    // N10: the chain starts where the rename's own write began (the version that write replaced).
-    const chainFrom = own.ownWrite && own.ownWrite.version === own.updated ? own.ownWrite.replaced : own.updated;
+    // N10: one rule for every phase-A pass (#ber4hvce's renameChainStart): continue from a step this
+    // rename already recorded (its folder pass), else from the version the rename's own write replaced.
+    const chainFrom = this.renameChainStart(own);
     // rewriteEverywhere with every other id skipped: it also sets the history reason and leaves conflict copies alone.
     const others = new Set([...this.pages.keys()].filter((key) => key !== record.id));
     let written: PageId[];
