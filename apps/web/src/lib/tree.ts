@@ -76,6 +76,32 @@ export function buildPageTree(pages: readonly PageMeta[]): PageTreeNode[] {
   return roots;
 }
 
+/**
+ * #8gudbajp: keep the node objects of everything that didn't change since the last build, so the
+ * sidebar rows (memoised by their node) don't all render again when one page changes. A node is
+ * kept when its page has the same data and its children are the very same nodes; otherwise it is
+ * new (and so are its ancestors). `previous` maps ids to the last build's nodes.
+ */
+export function shareTree(
+  next: readonly PageTreeNode[],
+  previous: ReadonlyMap<PageId, PageTreeNode>,
+): { roots: PageTreeNode[]; nodes: Map<PageId, PageTreeNode> } {
+  const nodes = new Map<PageId, PageTreeNode>();
+  const share = (node: PageTreeNode): PageTreeNode => {
+    const children = node.children.map(share);
+    const before = previous.get(node.page.id);
+    const same =
+      before !== undefined &&
+      before.children.length === children.length &&
+      before.children.every((child, index) => child === children[index]) &&
+      JSON.stringify(before.page) === JSON.stringify(node.page);
+    const kept = same ? before : { page: node.page, children };
+    nodes.set(kept.page.id, kept);
+    return kept;
+  };
+  return { roots: next.map(share), nodes };
+}
+
 function wouldCycle(id: PageId, parentId: PageId, nodes: Map<PageId, PageTreeNode>): boolean {
   let current: PageId | null = parentId;
   const seen = new Set<PageId>();

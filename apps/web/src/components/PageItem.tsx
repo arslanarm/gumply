@@ -4,9 +4,10 @@ import type { PageId, PageMeta } from "@gumply/core";
 import { BOARD_DRAG_MIME } from "../board/constants.js";
 import { isBoard, vaultPathOf } from "../lib/boards.js";
 import { isBase } from "../lib/bases.js";
-import { canMovePage, type PageTreeNode } from "../lib/tree.js";
+import type { PageTreeNode } from "../lib/tree.js";
 import { Icon } from "./Icon.js";
 import { placeMenu, type MenuPlacement } from "../lib/menu-placement.js";
+import { countRowRender, useRowRename, useRowSelected, type RowStateStore } from "./sidebar-row-state.js";
 import { useT } from "../i18n/index.js";
 import { commandApplies, menuLabel, ROW_MENU, ROW_TEST_IDS, type PageCommandId } from "../lib/commands.js";
 import { openInNewWindow, wantsNewWindow } from "../lib/desktop-app.js";
@@ -14,10 +15,10 @@ import { openInNewWindow, wantsNewWindow } from "../lib/desktop-app.js";
 export interface PageItemProps {
   node: PageTreeNode;
   depth: number;
-  pages: readonly PageMeta[];
-  selectedId: PageId | null;
-  renamingId: PageId | null;
-  renameDraft: string;
+  /** #8gudbajp: the selection and the rename, read per row through a selector. */
+  rowState: RowStateStore;
+  /** Whether the page being dragged can be dropped on this row (reads the page list itself). */
+  canDropOn: (draggingId: PageId, targetId: PageId) => boolean;
   draggingId: PageId | null;
   /**
    * Rows toggled away from their default: pages with sub-pages start
@@ -64,7 +65,8 @@ export const PageItem = memo(PageItemRow);
 
 function PageItemRow(props: PageItemProps) {
   const t = useT();
-  const { node, depth, pages, selectedId, renamingId, draggingId, toggled } = props;
+  countRowRender();
+  const { node, depth, draggingId, toggled } = props;
   const page = node.page;
   const base = isBase(page);
   // Boards and database views have no sub-pages (D25, D34).
@@ -74,8 +76,9 @@ function PageItemRow(props: PageItemProps) {
   // D43: a page with sync conflict copies beside it, or an orphan copy.
   const conflictLabel = page.conflicts ? t("conflicts.badge", { count: page.conflicts }) : page.conflictOf === null ? t("conflicts.orphan") : null;
   const hasChildren = node.children.length > 0;
-  const isSelected = selectedId === page.id;
-  const isRenaming = renamingId === page.id;
+  const isSelected = useRowSelected(props.rowState, page.id);
+  const renameValue = useRowRename(props.rowState, page.id);
+  const isRenaming = renameValue !== null;
   const expanded = hasChildren && (folder ? toggled.has(page.id) : !toggled.has(page.id));
   const [dropTarget, setDropTarget] = useState(false);
   // The ⋯ menu: under the button, or at the pointer for a right-click
@@ -95,7 +98,7 @@ function PageItemRow(props: PageItemProps) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
 
-  const canDrop = draggingId !== null && canMovePage(pages, draggingId, page.id);
+  const canDrop = draggingId !== null && props.canDropOn(draggingId, page.id);
 
   // Rename opens with the whole title selected, so typing replaces it instead
   // of appending to the end (walkthrough #7up8t6gm).
@@ -207,34 +210,38 @@ function PageItemRow(props: PageItemProps) {
     </button>
   );
 
-  // What each row does for this page; a missing handler leaves its row out.
-  const rowActions: Record<PageCommandId, (() => void) | undefined> = {
-    "page.rename": () => props.onStartRename(page.id, page.title),
-    "page.duplicate": () => props.onDuplicate(page.id),
-    "page.copy-link": () => props.onCopyLink(page.id),
-    "page.move": () => props.onStartMove(page.id),
-    "page.open-window": () => openInNewWindow(page.id),
-    "page.add-page": () => props.onCreateChild(page.id),
-    "page.add-board": () => props.onCreateBoardChild(page.id),
-    "page.add-base": props.onCreateBaseChild ? () => props.onCreateBaseChild?.(page.id) : undefined,
-    "page.new-from-template": () => props.onNewFromTemplate(page.id),
-    "page.import-notion": props.onImportNotion ? () => props.onImportNotion?.(page.id) : undefined,
-    "page.export-html": props.onExportHtml ? () => props.onExportHtml?.(page.id) : undefined,
-    "page.export-pdf": props.onExportPdf ? () => props.onExportPdf?.(page.id) : undefined,
-    "page.history": props.onShowHistory ? () => props.onShowHistory?.(page.id) : undefined,
-    "page.delete": () => props.onDelete(page.id),
-  };
+  // #8gudbajp: built only while the menu is open; every row used to build its closed menu on each render.
+  const buildMenuGroups = (): ReactNode[][] => {
+    // What each row does for this page; a missing handler leaves its row out.
+    const rowActions: Record<PageCommandId, (() => void) | undefined> = {
+      "page.rename": () => props.onStartRename(page.id, page.title),
+      "page.duplicate": () => props.onDuplicate(page.id),
+      "page.copy-link": () => props.onCopyLink(page.id),
+      "page.move": () => props.onStartMove(page.id),
+      "page.open-window": () => openInNewWindow(page.id),
+      "page.add-page": () => props.onCreateChild(page.id),
+      "page.add-board": () => props.onCreateBoardChild(page.id),
+      "page.add-base": props.onCreateBaseChild ? () => props.onCreateBaseChild?.(page.id) : undefined,
+      "page.new-from-template": () => props.onNewFromTemplate(page.id),
+      "page.import-notion": props.onImportNotion ? () => props.onImportNotion?.(page.id) : undefined,
+      "page.export-html": props.onExportHtml ? () => props.onExportHtml?.(page.id) : undefined,
+      "page.export-pdf": props.onExportPdf ? () => props.onExportPdf?.(page.id) : undefined,
+      "page.history": props.onShowHistory ? () => props.onShowHistory?.(page.id) : undefined,
+      "page.delete": () => props.onDelete(page.id),
+    };
 
-  // Notion-style groups, separated by a line (#sjts42ue): edit, add inside,
-  // import/export, delete. The rows and when they apply come from the command
-  // registry (#snuin2ja), the same as Cmd+K's page commands.
-  const rowContext = { page, editor: false, board: false, desktop: false };
-  const menuGroups: ReactNode[][] = ROW_MENU.map((group) =>
-    group.flatMap((id) => {
-      const action = rowActions[id];
-      return action && commandApplies(id, rowContext) ? [menuItem(id, action)] : [];
-    }),
-  ).filter((group) => group.length > 0);
+    // Notion-style groups, separated by a line (#sjts42ue): edit, add inside,
+    // import/export, delete. The rows and when they apply come from the command
+    // registry (#snuin2ja), the same as Cmd+K's page commands.
+    const rowContext = { page, editor: false, board: false, desktop: false };
+    return ROW_MENU.map((group) =>
+      group.flatMap((id) => {
+        const action = rowActions[id];
+        return action && commandApplies(id, rowContext) ? [menuItem(id, action)] : [];
+      }),
+    ).filter((group) => group.length > 0);
+  };
+  const menuGroups: ReactNode[][] = menuOpen ? buildMenuGroups() : [];
 
   /** Right-click or Shift+F10 / the context-menu key: the same menu as ⋯, placed by `placeMenu`. */
   const openMenuAt = (x: number, y: number, focus: boolean) => {
@@ -345,7 +352,7 @@ function PageItemRow(props: PageItemProps) {
             ref={renameInputRef}
             className="page-rename-input"
             data-testid={`page-rename-input-${page.id}`}
-            value={props.renameDraft}
+            value={renameValue ?? ""}
             onChange={(event) => props.onRenameDraft(event.target.value)}
             onClick={(event) => event.stopPropagation()}
             onBlur={props.onCommitRename}
