@@ -2,6 +2,16 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.5: links follow moved folders (2026-11-25)
+
+A fix release, recommended for everyone on 0.9.
+
+**Fixed**
+- **Moving a folder keeps the links to the pictures and files in it.** Embeds (`![[Files/a.png|300]]`, also in tables), file links, Markdown-form pictures and links (`![pic](Files/a.png)`), and a page cover now follow the folder. Only the folder part of each link changes.
+- **Moving a page deeper or shallower keeps its relative links to files elsewhere** (`![c](../Other/c.png)`), also when another app moved it. Links that already work are left as they are.
+- **Yandex Disk conflict copies are recognised.** Files like `Name (копия с компьютера X).md` now show in Conflicts beside their original, instead of as duplicate pages.
+- **A property value typed right after changing its type is no longer lost.**
+
 ## 0.9.4: links and pictures in tables (2026-11-25)
 
 A fix release, recommended for everyone on 0.9, especially if your pages have tables with links or pictures.
