@@ -73,4 +73,27 @@ test.describe('an image in a table cell stays in its cell (#sv5cwevx)', () => {
       .toBe('| A | B |\n|---|---|\n| text more | ![[a.png\\|300]] |\n\nTarget paragraph.\n');
     await expect(page.getByTestId('image-block')).toHaveCount(0);
   });
+
+  test('typing inside the image\'s own cell keeps the image there, with its escaped pipe', async ({ page, vault }) => {
+    const title = 'Table image edit cell';
+    await vault.seed([{ title, content: '| A | B |\n|---|---|\n| x | ![[a.png\\|300]] |\n\nTarget paragraph.\n' }]);
+    const file = path.join(E2E_VAULT, `${title}.md`);
+    await page.goto(`/#/${encodeURIComponent(title)}`);
+    const image = page.getByTestId('editor-content').locator('td').getByTestId('inline-image');
+    await expect(image).toBeVisible();
+    await image.click();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.type('text more ');
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+    const expected = '| A | B |\n|---|---|\n| x | text more ![[a.png\\|300]] |\n\nTarget paragraph.\n';
+    await expect.poll(() => body(readFileSync(file, 'utf8'))).toBe(expected);
+    await page.reload();
+    await expect(page.getByTestId('editor-content').locator('td').getByTestId('inline-image')).toBeVisible();
+    await page.getByTestId('editor-content').getByText(/^Target paragraph\./).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('!');
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+    await expect.poll(() => body(readFileSync(file, 'utf8'))).toBe(expected.replace('Target paragraph.', 'Target paragraph.!'));
+    await expect(page.getByTestId('image-block')).toHaveCount(0);
+  });
 });
