@@ -117,6 +117,7 @@ export {
   normaliseVaultPath,
   noteFolder,
   relinkAttachments,
+  relinkFolderFiles,
   resolveAttachmentHref,
   type RelinkOptions,
 } from "./attachment-paths.js";

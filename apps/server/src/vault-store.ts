@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
@@ -62,6 +62,7 @@ import {
   ATTACHMENTS_DIR,
   noteFolder,
   relinkAttachments,
+  relinkFolderFiles,
   type RelinkOptions,
   canvasLinks,
   canvasMeta,
@@ -4548,7 +4549,20 @@ export class VaultStore {
 
   /** Rewrite `[[from/…]]` links to `[[to/…]]` in every page and board (D33), frontmatter values included (#3c86ify2). */
   private async rewriteFolderLinks(from: PageId, to: PageId): Promise<PageId[]> {
-    return this.rewriteEverywhere(new Set(), (markdown) => rewriteWikilinkFolder(markdown, from, to), {}, { frontmatter: true });
+    // #x8awsxev: Markdown links to files in the folder too. A note that moved with it resolves its
+    // links from where it was (its id before the move).
+    const before = (id: PageId) => (id.startsWith(`${to}/`) ? `${from}${id.slice(to.length)}` : id);
+    const exists = (path: string) => existsSync(join(this.root, path));
+    return this.rewriteEverywhere(
+      new Set(),
+      (markdown, source) => {
+        const wiki = rewriteWikilinkFolder(markdown, from, to);
+        const files = relinkFolderFiles(wiki.content, before(source), source, from, to, exists);
+        return { content: files.content, count: wiki.count + files.count };
+      },
+      {},
+      { frontmatter: true },
+    );
   }
 
   private async renameTagNow(fromInput: string, toInput: string, skip: readonly PageId[]): Promise<TagRenameResult> {

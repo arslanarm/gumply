@@ -56,15 +56,19 @@ function decodeHref(href: string): string {
   }
 }
 
-/** The link a note writes for a vault file: relative to the note's folder. */
-export function attachmentHref(noteId: string, vaultPath: string): string {
+/** A vault file's path relative to a note's folder, not encoded. */
+function relativePath(noteId: string, vaultPath: string): string {
   const from = noteFolder(noteId).split("/").filter(Boolean);
   const to = (normaliseVaultPath(vaultPath) ?? vaultPath).split("/").filter(Boolean);
   let common = 0;
   while (common < from.length && common < to.length - 1 && from[common] === to[common]) common += 1;
   const up = from.length - common;
-  const relative = [...Array<string>(up).fill(".."), ...to.slice(common)].join("/");
-  return encodeHref(relative);
+  return [...Array<string>(up).fill(".."), ...to.slice(common)].join("/");
+}
+
+/** The link a note writes for a vault file: relative to the note's folder. */
+export function attachmentHref(noteId: string, vaultPath: string): string {
+  return encodeHref(relativePath(noteId, vaultPath));
 }
 
 /** External (scheme, protocol-relative) links are not vault files. */
@@ -176,4 +180,71 @@ export function relinkAttachments(
     last = match.index + match[0].length;
   }
   return last === 0 ? markdown : out + markdown.slice(last);
+}
+
+/**
+ * #x8awsxev: after folder `from` moved to `to`, rewrite this note's Markdown links and images that point
+ * at files inside it (`![pic](Files/a.png)`, `[doc](../Files/doc%20one.pdf)`). The note was `noteBefore`
+ * and is `noteAfter` (the same unless it was in the folder). Each link keeps its form: note-relative stays
+ * relative, `/absolute` stays absolute, a vault-root path from a nested note stays vault-root, `<…>` stays
+ * wrapped (not encoded), the rest is percent-encoded as D23 writes it; a `#`/`?` suffix and a title are
+ * kept. A link whose target is unchanged (inside the folder, relative) is left as it is. `exists` (the
+ * vault's files after the move is fine: only paths outside the folder are asked) keeps a note-relative
+ * file from being read as a vault-root one. Code is never touched.
+ */
+export function relinkFolderFiles(
+  markdown: string,
+  noteBefore: string,
+  noteAfter: string,
+  from: string,
+  to: string,
+  exists?: (vaultPath: string) => boolean,
+): { content: string; count: number } {
+  const prefix = `${from.toLowerCase()}/`;
+  const inFolder = (path: string | null): path is string => path !== null && path.toLowerCase().startsWith(prefix);
+  const masked = maskCode(markdown);
+  let out = "";
+  let last = 0;
+  let count = 0;
+  MARKDOWN_LINK.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_LINK.exec(masked)) !== null) {
+    const href = match[3] ?? "";
+    const wrapped = href.startsWith("<") && href.endsWith(">");
+    const raw = wrapped ? href.slice(1, -1) : href;
+    if (raw.length === 0 || isExternal(raw)) continue;
+    const cut = raw.search(/[?#]/);
+    const pathPart = cut === -1 ? raw : raw.slice(0, cut);
+    const suffix = cut === -1 ? "" : raw.slice(cut);
+    const path = wrapped ? pathPart : decodeHref(pathPart);
+    const folder = noteFolder(noteBefore);
+    let target: string | null;
+    let form: "absolute" | "relative" | "root";
+    if (path.startsWith("/")) {
+      target = normaliseVaultPath(path);
+      form = "absolute";
+    } else {
+      const relative = normaliseVaultPath(folder ? `${folder}/${path}` : path);
+      const root = folder ? normaliseVaultPath(path) : null;
+      if (inFolder(relative)) {
+        target = relative;
+        form = "relative";
+      } else if (inFolder(root) && !(relative !== null && exists?.(relative))) {
+        target = root;
+        form = "root";
+      } else continue;
+    }
+    if (!inFolder(target)) continue;
+    const moved = `${to}${target.slice(from.length)}`;
+    const nextPath = form === "absolute" ? `/${moved}` : form === "root" ? moved : relativePath(noteAfter, moved);
+    const next = wrapped ? `<${nextPath}${suffix}>` : `${encodeHref(nextPath)}${suffix}`;
+    if (next === href) continue;
+    const original = markdown.slice(match.index, match.index + match[0].length);
+    const hrefIndex = original.indexOf(href, original.indexOf("](") + 2);
+    if (hrefIndex === -1) continue;
+    out += markdown.slice(last, match.index) + original.slice(0, hrefIndex) + next + original.slice(hrefIndex + href.length);
+    last = match.index + match[0].length;
+    count += 1;
+  }
+  return last === 0 ? { content: markdown, count: 0 } : { content: out + markdown.slice(last), count };
 }
