@@ -110,3 +110,68 @@ test('moving the open page deeper or shallower: its relinked ../ links survive t
   expect(text).toContain('![c](Other/c.png)');
   expect(text).not.toContain('../Other/c.png');
 });
+
+test('a save in flight from before the rename: if it meets a conflict, Keep mine keeps the typing and the rewritten [[Moved/Sub]] stays in History (D22, 0.9.x)', async ({ page, request }) => {
+  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
+  // The first content save (not the title PUT) is held for 2.5 s, so the rename starts while it is in flight.
+  let held = false;
+  let saveStarted!: () => void;
+  const started = new Promise<void>((resolve) => (saveStarted = resolve));
+  await page.route(
+    (url) => url.pathname === '/api/pages/Parent',
+    async (route) => {
+      const sent = route.request();
+      const body = sent.method() === 'PUT' ? (sent.postDataJSON() as { title?: string; content?: string } | null) : null;
+      if (!held && body && body.title === undefined && body.content !== undefined) {
+        held = true;
+        saveStarted();
+        await new Promise((resolve) => setTimeout(resolve, 2_500));
+      }
+      await route.continue();
+    },
+  );
+  await page.goto('/#/Parent');
+  await expect(page.getByTestId('editor-content')).toContainText('See');
+  await page.evaluate(() => {
+    const states = new Set<string>();
+    (window as unknown as { __states: Set<string> }).__states = states;
+    setInterval(() => {
+      const state = document.querySelector('[data-testid="save-status"]')?.getAttribute('data-state');
+      if (state) states.add(state);
+    }, 50);
+  });
+  await page.getByTestId('editor-content').getByText('here.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Typed before.');
+  await started; // the autosave is on its way, with the pre-rename version
+  await page.getByTestId('page-title').click();
+  const input = page.getByTestId('page-title-input');
+  await input.fill('Moved');
+  await input.press('Enter');
+  await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
+  await page.waitForTimeout(4_000); // the held save has landed (or failed)
+
+  const states = await page.evaluate(() => [...(window as unknown as { __states: Set<string> }).__states]);
+  const sawConflict = states.includes('conflict') || (await page.getByTestId('conflict-keep-mine').isVisible());
+  test.info().annotations.push({ type: 'path', description: sawConflict ? 'conflict, Keep mine' : 'no conflict' });
+  if (sawConflict) {
+    await page.getByTestId('conflict-keep-mine').click();
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 15_000 });
+  }
+  await page.waitForTimeout(2_000);
+  const text = await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8');
+  const items = ((await (await request.get(`${API_URL}/api/history/Moved`)).json()) as { items: Array<{ file: string; reason?: string }> }).items;
+  const versions = await Promise.all(items.map(async (item) => ({ reason: item.reason, text: await (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(item.file)}`)).text() })));
+  // Nothing is lost either way: the typing, and the server's rewritten link.
+  expect(text.includes('Typed before.') || versions.some((version) => version.text.includes('Typed before.')), 'the typing is kept').toBe(true);
+  if (sawConflict) {
+    // D22 on 0.9.x: "mine" wins in the file; the rewritten version is kept as the conflict's other side.
+    expect(text).toContain('Typed before.');
+    expect(versions.some((version) => version.reason === 'conflict' && version.text.includes('[[Moved/Sub]]')), 'the rewrite is in History').toBe(true);
+  } else {
+    expect(text, 'no conflict: the rewrite stays in the file').toContain('[[Moved/Sub]]');
+    expect(text).not.toContain('[[Parent/Sub]]');
+  }
+});
