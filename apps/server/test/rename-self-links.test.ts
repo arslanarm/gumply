@@ -131,4 +131,24 @@ describe("a rename rewrites the page's own self-links (#h7j39kka)", () => {
     // The renamed page keeps its text (its self-links stay as they were), and nothing else changed.
     expect(await readFile(join(dir, "Moved.md"), "utf8")).toBe(SELF);
   });
+
+  it("self-links and links into its folder, with a save from before the rename: Keep mine keeps the edit and both new links (@graph-dev's combined case)", async () => {
+    // Two phase-A writes to the renamed page (#ber4hvce's folder pass, then the self pass): an editor's
+    // save from before the rename must merge both, never write either old link back (N10 chain).
+    const dir = await vault(true);
+    const store = await open(dir);
+    const start = store.get("Parent");
+    await store.update("Parent", { title: "Moved" });
+    const edited = start.content.replace("Text.", "Text, edited.");
+    const outcome = await store.update("Parent", { content: edited, expectedUpdated: start.updated }).then(
+      () => "saved" as const,
+      (error: { status?: number }) => error.status ?? "error",
+    );
+    if (outcome !== "saved") {
+      expect(outcome).toBe(409);
+      await store.update("Moved", { content: edited, expectedUpdated: start.updated, force: true });
+    }
+    const onDisk = await readFile(join(dir, "Moved.md"), "utf8");
+    expect(onDisk).toBe(`${MOVED.replace("Text.", "Text, edited.")}Sub: [[Moved/Sub]].\n`);
+  });
 });
