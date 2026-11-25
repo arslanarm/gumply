@@ -4351,10 +4351,16 @@ export class VaultStore {
     // folder move: path links to sub-pages (`[[P/Sub]]`), file embeds and links (`![[P/a.png]]`, the
     // table's `\|`) and Markdown links (`![](P/a.png)`), bytes kept. `[[P]]` itself is the title
     // rewrite's (rewriteLinksTo); this only matches the `P/` prefix.
-    // #ber4hvce: during a rename (N9) it joins the rename's batches and journal instead.
+    // #ber4hvce: during a rename (N9) the other pages' pass joins the rename's batches and journal. The
+    // renamed page's own links into its folder (`[[P/Sub]]`) follow here, in the rename's first step, so
+    // the page it answers with is the one on disk: an editor's next save carries that version and never
+    // meets a conflict from its own rename. Before the rewrite is captured, so I/O may fail here.
     let folderLinks: PageId[] = [];
-    if (hasChildren && this.deferRewrites) this.deferredFolder = { from: id, to: newId };
-    else if (hasChildren) folderLinks = await this.rewriteFolderLinks(id, newId);
+    if (hasChildren && this.deferRewrites) {
+      const others = new Set([...this.pages.keys()].filter((key) => key !== newId));
+      folderLinks = await this.rewriteEverywhere(others, this.folderRewriteText(id, newId), {}, { frontmatter: true });
+      this.deferredFolder = { from: id, to: newId };
+    } else if (hasChildren) folderLinks = await this.rewriteFolderLinks(id, newId);
     return [...new Set([...relinked, ...boards, ...folderLinks])];
   }
 

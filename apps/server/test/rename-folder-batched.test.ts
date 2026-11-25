@@ -84,6 +84,24 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     for (const i of [0, 199, 200, 449]) expect(files[join("L", `Linker ${i}.md`)]).toBe(expected(i));
   });
 
+  it("the renamed page's own [[Hub/Sub]] follows in the rename's first step: the answer is what's on disk, and the next save meets no conflict (@opus-hunter)", async () => {
+    const dir = await vault();
+    const store = await open(dir);
+    const ownAtBatch: string[] = [];
+    store.afterRenameBatch = async () => {
+      ownAtBatch.push(await readFile(join(dir, "Hub 2.md"), "utf8"));
+    };
+    const answer = await store.update("Hub", { title: "Hub 2" });
+    // No batch changed it: every batch saw it already rewritten.
+    expect(ownAtBatch.length).toBeGreaterThan(1);
+    for (const text of ownAtBatch) expect(text).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    expect(answer.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    expect(answer.updated).toBe(store.get("Hub 2").updated);
+    // The editor saves from the version it was answered with: no "changed on disk".
+    const saved = await store.update("Hub 2", { content: `${answer.content}More.\n`, expectedUpdated: answer.updated });
+    expect(saved.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\nMore.\n");
+  });
+
   it("a crash after the first batch: the next start finishes the folder links too, byte for byte", async () => {
     const dir = await vault();
     const crashing = await open(dir);
