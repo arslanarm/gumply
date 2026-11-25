@@ -30,7 +30,7 @@ import {
   type FitItem,
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
-import { engineTicks, layoutInputFor } from "./layout-forces.js";
+import { engineTicks, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
 import { linkWidthFor } from "./link-width.js";
 import { startLayout } from "./layout-client.js";
 import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
@@ -42,6 +42,9 @@ function graphLayoutStore(): LayoutStore | null {
   return layoutStore;
 }
 import { t, useT } from "../i18n/index.js";
+
+/** N6 B (#9x4duwmg): how long after the last camera change of a big graph its links come back. */
+export const GESTURE_IDLE_MS = 150;
 
 export type CanvasNode = GraphNode | GhostNode;
 
@@ -347,6 +350,36 @@ export function GraphCanvas({
   const [layoutFrame, setLayoutFrame] = useState(0);
   /** A big graph being laid out without streaming: its progress (0–1), else null. */
   const [arranging, setArranging] = useState<number | null>(null);
+
+  // N6 B (#9x4duwmg): above STREAM_MAX_NODES a full repaint with every link costs
+  // ~3.4 s per zoom step at 4× (headless; 5.9 s at DPR 2), all of it the links'
+  // raster. So the links are hidden while the camera moves and drawn again
+  // GESTURE_IDLE_MS after the last change; dots, labels and node drags are as before.
+  // A ref, not state: the frame force-graph draws right after a zoom event must
+  // see it (a state update landed only after that ~1 s frame).
+  const gestureRef = useRef(false);
+  // Bumped when a gesture ends: a new `linkVisible` makes force-graph draw the links again.
+  const [linkEpoch, setLinkEpoch] = useState(0);
+  const bigGraphRef = useRef(false);
+  bigGraphRef.current = nodes.length > STREAM_MAX_NODES;
+  const gestureTimerRef = useRef(0);
+  // force-graph's onZoom: every camera change, by the user (wheel, pan, pinch,
+  // the + / − / Fit buttons) or by code (the settle's fit tween).
+  const markGesture = useCallback((): void => {
+    if (!bigGraphRef.current) return;
+    gestureRef.current = true;
+    window.clearTimeout(gestureTimerRef.current);
+    gestureTimerRef.current = window.setTimeout(() => {
+      gestureTimerRef.current = 0;
+      gestureRef.current = false;
+      setLinkEpoch((epoch) => epoch + 1);
+    }, GESTURE_IDLE_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(gestureTimerRef.current), []);
+  const linkVisible = useCallback(
+    () => !gestureRef.current,
+    [linkEpoch], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   /** Set once the user zooms, pans or drags: auto-fit then stops moving the camera. */
@@ -995,6 +1028,9 @@ export function GraphCanvas({
     const updateHover = (): void => {
       hoverFrame = 0;
       if (drag || !lastPointer) return;
+      // N6 B: no hover picking while a big graph's camera moves (a hover change
+      // re-renders and repaints); the next pointer move after it picks again.
+      if (gestureRef.current) return;
       const node = pick(lastPointer);
       setHover(node);
       showTooltip(node, lastPointer);
@@ -1310,6 +1346,8 @@ export function GraphCanvas({
             backgroundColor="transparent"
             nodeVisibility={hideBuiltInNodes}
             onRenderFramePost={drawNodes}
+            linkVisibility={nodes.length > STREAM_MAX_NODES ? linkVisible : true}
+            onZoom={markGesture}
             linkColor={linkColor}
             linkWidth={linkWidth}
             linkLineDash={linkLineDash}
