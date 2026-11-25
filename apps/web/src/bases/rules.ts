@@ -203,15 +203,23 @@ export function withClauses(view: BaseView, clauses: FilterClause[], typeOf: (id
   return next;
 }
 
-export type BaseSource = { kind: "all" } | { kind: "folder"; folder: string } | { kind: "tag"; tag: string };
+/**
+ * Where a base's pages come from. A folder source is `file.inFolder("X")` (X and its subfolders),
+ * or with `direct` `file.folder == "X"` (only X itself), as the Notion import and "New database"
+ * write it; each is written back in the form it was read.
+ */
+export type BaseSource = { kind: "all" } | { kind: "folder"; folder: string; direct?: true } | { kind: "tag"; tag: string };
 
 const IN_FOLDER = /^file\.inFolder\(\s*"((?:[^"\\]|\\.)*)"\s*\)$/;
+const FOLDER_IS = /^file\.folder\s*==\s*"((?:[^"\\]|\\.)*)"$/;
 const HAS_TAG = /^file\.hasTag\(\s*"((?:[^"\\]|\\.)*)"\s*\)$/;
 
 function sourceClause(item: BaseFilter): BaseSource | null {
   if (typeof item !== "string") return null;
   const folder = IN_FOLDER.exec(item.trim());
   if (folder) return { kind: "folder", folder: unquote(folder[1]!) };
+  const exact = FOLDER_IS.exec(item.trim());
+  if (exact) return { kind: "folder", folder: unquote(exact[1]!), direct: true };
   const tag = HAS_TAG.exec(item.trim());
   if (tag) return { kind: "tag", tag: unquote(tag[1]!) };
   return null;
@@ -242,7 +250,9 @@ export function hasOtherGlobalFilters(config: BaseConfig): boolean {
 export function withSource(config: BaseConfig, source: BaseSource): BaseConfig {
   const clause =
     source.kind === "folder"
-      ? `file.inFolder(${JSON.stringify(source.folder)})`
+      ? source.direct
+        ? `file.folder == ${JSON.stringify(source.folder)}`
+        : `file.inFolder(${JSON.stringify(source.folder)})`
       : source.kind === "tag"
         ? `file.hasTag(${JSON.stringify(source.tag.replace(/^#/, ""))})`
         : null;

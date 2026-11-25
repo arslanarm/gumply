@@ -1,7 +1,7 @@
 /** Public API of `@gumply/core`. */
 
 export const APP_NAME = "Gumply";
-export const CORE_VERSION = "0.9.1";
+export const CORE_VERSION = "0.9.2";
 
 export type {
   ApiError,

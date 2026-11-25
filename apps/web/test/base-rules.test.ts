@@ -81,4 +81,18 @@ describe("a base's source", () => {
     expect(withFolder.filters).toEqual({ and: ['file.inFolder("Notes/2026")'] });
     expect(withSource(withFolder, { kind: "all" }).filters).toBeUndefined();
   });
+
+  it("reads `file.folder == \"X\"` (the Notion import's rows folder) as that folder, and writes it back in the same form", () => {
+    const notion = parseBase('filters:\n  and:\n    - file.folder == "Notion import/Tasks"\nviews: []\n');
+    expect(baseSource(notion)).toEqual({ kind: "folder", folder: "Notion import/Tasks", direct: true });
+    expect(hasOtherGlobalFilters(notion)).toBe(false);
+    // Another folder keeps the direct form; switching to a tag or all replaces it.
+    expect(withSource(notion, { kind: "folder", folder: "Other", direct: true }).filters).toEqual({ and: ['file.folder == "Other"'] });
+    expect(withSource(notion, { kind: "tag", tag: "work" }).filters).toEqual({ and: ['file.hasTag("work")'] });
+    expect(withSource(notion, { kind: "all" }).filters).toBeUndefined();
+    // Spacing as Obsidian may write it, and quotes inside the name.
+    expect(baseSource(parseBase('filters:\n  and:\n    - \'file.folder=="A \\"q\\" B"\'\nviews: []\n'))).toEqual({ kind: "folder", folder: 'A "q" B', direct: true });
+    // Other comparisons on file.folder aren't a source.
+    expect(baseSource(parseBase('filters:\n  and:\n    - file.folder != "X"\nviews: []\n'))).toEqual({ kind: "all" });
+  });
 });

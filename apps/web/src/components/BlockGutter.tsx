@@ -110,6 +110,15 @@ function firstLineOffset(dom: HTMLElement): number {
   return Math.max(0, borderTop + paddingTop + (lineHeight - GUTTER_HEIGHT) / 2);
 }
 
+/**
+ * The editor column plus the left margin where the gutter sits: where the
+ * pointer hovers a block, and where a dragged block can be dropped.
+ */
+function inBlockZone(host: HTMLElement, x: number, y: number): boolean {
+  const rect = host.getBoundingClientRect();
+  return y >= rect.top && y <= rect.bottom && x >= rect.left - GUTTER_ZONE && x <= rect.right + 24;
+}
+
 function inRect(rect: DOMRect, x: number, y: number, pad = 6): boolean {
   return x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
 }
@@ -168,13 +177,7 @@ export function BlockGutter({ editor }: BlockGutterProps) {
 
       // Hover zone = the editor column plus the left margin where the gutter
       // sits, so moving from the text to `+`/`⋮⋮` never drops the gutter.
-      const hostRect = host.getBoundingClientRect();
-      if (
-        event.clientY < hostRect.top ||
-        event.clientY > hostRect.bottom ||
-        event.clientX < hostRect.left - GUTTER_ZONE ||
-        event.clientX > hostRect.right + 24
-      ) {
+      if (!inBlockZone(host, event.clientX, event.clientY)) {
         clear();
         return;
       }
@@ -219,9 +222,49 @@ export function BlockGutter({ editor }: BlockGutterProps) {
       if (!draggingRef.current) setMenu(null);
     };
 
+    /**
+     * #5634v3df: an image block dragged by the image itself moves like its ⋮⋮
+     * (a decision: one undo step, no copy). ProseMirror's own node drag is
+     * not used; inline images keep ⋮⋮ only.
+     */
+    const onDragStart = (event: DragEvent) => {
+      if (draggingRef.current) return;
+      const target = event.target instanceof Element ? event.target : null;
+      // Selected caption text dragged out stays a text drag; a resize handle
+      // (#e9bd64bb) never starts a move.
+      if (target?.closest("input, textarea, .image-resize-handle")) return;
+      const nodeView = target?.closest(".node-image");
+      if (!nodeView || !editor.view.dom.contains(nodeView) || !editor.isEditable) return;
+      let block: BlockRef | null = null;
+      try {
+        block = blockAt(editor.state.doc, editor.view.posAtDOM(nodeView, 0));
+      } catch {
+        block = null;
+      }
+      if (!block || block.node.type.name !== "image" || !event.dataTransfer) return;
+      // Before ProseMirror's dragstart (bubble phase on the editor).
+      event.stopPropagation();
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/x-gumply-block", "1");
+      draggingRef.current = block;
+      setDragging(block);
+      setHover(null);
+      setMenu(null);
+    };
+
+    /**
+     * #5634v3df: listened for on the whole document. Dragging ⋮⋮ straight up
+     * or down keeps the pointer in the gutter, outside the editor host, and a
+     * drop there used to be refused, so nothing moved.
+     */
     const onDragOver = (event: DragEvent) => {
       const source = draggingRef.current;
       if (!source) return;
+      if (!inBlockZone(host, event.clientX, event.clientY)) {
+        dropRef.current = null;
+        setDrop(null);
+        return;
+      }
       // Capture phase: stop ProseMirror's own drop handler from inserting the
       // dragged data as text as well as moving the block.
       event.preventDefault();
@@ -259,18 +302,20 @@ export function BlockGutter({ editor }: BlockGutterProps) {
 
     document.addEventListener("mousemove", onMove);
     document.documentElement.addEventListener("mouseleave", onLeave);
-    host.addEventListener("dragover", onDragOver, true);
-    host.addEventListener("drop", onDrop, true);
-    host.addEventListener("dragend", onDragEnd);
+    host.addEventListener("dragstart", onDragStart, true);
+    document.addEventListener("dragover", onDragOver, true);
+    document.addEventListener("drop", onDrop, true);
+    document.addEventListener("dragend", onDragEnd, true);
     document.addEventListener("scroll", onHide, true);
     window.addEventListener("resize", onHide);
     editor.on("update", onUpdate);
     return () => {
       document.removeEventListener("mousemove", onMove);
       document.documentElement.removeEventListener("mouseleave", onLeave);
-      host.removeEventListener("dragover", onDragOver, true);
-      host.removeEventListener("drop", onDrop, true);
-      host.removeEventListener("dragend", onDragEnd);
+      host.removeEventListener("dragstart", onDragStart, true);
+      document.removeEventListener("dragover", onDragOver, true);
+      document.removeEventListener("drop", onDrop, true);
+      document.removeEventListener("dragend", onDragEnd, true);
       document.removeEventListener("scroll", onHide, true);
       window.removeEventListener("resize", onHide);
       editor.off("update", onUpdate);
@@ -378,7 +423,16 @@ export function BlockGutter({ editor }: BlockGutterProps) {
     const rect = dom.getBoundingClientRect();
     // spec/columns: near a block's left or right edge, the drop goes beside it.
     if (!sourceIsItem && !targetIsItem) {
-      const side = event.clientX < rect.left + 12 ? "left" : event.clientX > rect.right - SIDE_ZONE ? "right" : null;
+      // #5634v3df: left of the block (the gutter, where ⋮⋮ is dragged straight
+      // up or down) is between blocks, not beside one.
+      const side =
+        event.clientX < rect.left
+          ? null
+          : event.clientX < rect.left + 12
+            ? "left"
+            : event.clientX > rect.right - SIDE_ZONE
+              ? "right"
+              : null;
       if (side && dropBeside(editor.state, source, block, side)) {
         return {
           left: side === "left" ? rect.left - 8 : rect.right + 5,

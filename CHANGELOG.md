@@ -2,6 +2,14 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.2: blocks move again (2026-11-25)
+
+A fix release, recommended for everyone on 0.9.
+
+**Fixed**
+- **Dragging a block by ⋮⋮ straight up or down moves it again.** In 0.9, a block dragged by its handle straight up or down (the usual way) didn't move at all; only a drag that ended over the text worked. This affected every kind of block, not just images. An image block can now also be dragged by the image itself.
+- **Databases imported from Notion:** "+ New" now adds the row to the database's own folder, so it shows in the table (before, it was created next to the database and vanished from view), and the source button shows that folder instead of "All pages".
+
 ## 0.9.1: big graphs open again (2026-11-24)
 
 A fix release, recommended for everyone on 0.9.0.
