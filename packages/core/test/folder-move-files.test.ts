@@ -28,6 +28,13 @@ describe("rewriteWikilinkFolder: files in the moved folder (#baxuimsi)", () => {
     expect(out.count).toBe(0);
   });
 
+  it("a moved SUBfolder rewrites only links under it, never its parent's own files", () => {
+    const text = "![[Files/a.png]] ![[Files/Sub/b.png]] [[Files/Sub/c.pdf|c]] ![[Files/Subway/d.png]]\n";
+    const out = rewriteWikilinkFolder(text, "Files/Sub", "Archive/Sub");
+    expect(out.content).toBe("![[Files/a.png]] ![[Archive/Sub/b.png]] [[Archive/Sub/c.pdf|c]] ![[Files/Subway/d.png]]\n");
+    expect(out.count).toBe(2);
+  });
+
   it("pages and files in one note, both moved", () => {
     const out = rewriteWikilinkFolder("[[Files/Notes]] with ![[Files/a.png]]\n", "Files", "Media");
     expect(out.content).toBe("[[Media/Notes]] with ![[Media/a.png]]\n");
