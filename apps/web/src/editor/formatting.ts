@@ -48,7 +48,8 @@ export function canFormat(editor: Editor): boolean {
   if ("node" in selection && selection.node) return false;
   let hasText = false;
   editor.state.doc.nodesBetween(selection.from, selection.to, (node) => {
-    if (node.isText) hasText = true;
+    // #gcba75f4: a line holding only a wiki link has no text node, yet it can be highlighted.
+    if (node.isText || node.type.name === "wikiLink") hasText = true;
     return !hasText;
   });
   return hasText;

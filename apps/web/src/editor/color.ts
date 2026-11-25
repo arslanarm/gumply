@@ -313,6 +313,34 @@ export function currentColor(editor: Editor, kind: ColorKind): string | null {
 }
 
 /**
+ * #gcba75f4: how much of the selection is links (a Markdown link's text, a wiki link). In Obsidian
+ * only `==…==` colours a link without breaking it (a span around or inside a link turns it into
+ * plain text in live preview), so links keep their colour: "only" means there's nothing else to
+ * colour, "some" that the links in it will stay as they are.
+ */
+export function linkCoverage(editor: Editor): "none" | "some" | "only" {
+  const { state } = editor;
+  const { from, to } = state.selection;
+  if (from === to) return "none";
+  const link = state.schema.marks.link;
+  let links = 0;
+  let other = 0;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isInline) return true;
+    if (node.type.name === "wikiLink" || (node.isText && link && link.isInSet(node.marks))) links += 1;
+    else if (node.isText) other += 1;
+    return false;
+  });
+  if (links === 0) return "none";
+  return other === 0 ? "only" : "some";
+}
+
+/** #gcba75f4: a link can take Default (no colour) and the yellow highlight only. */
+export function linkCanTake(kind: ColorKind, name: ColorName | null): boolean {
+  return name === null || (kind === "background" && name === "yellow");
+}
+
+/**
  * Colour the selection (null = Default: remove the colour). The yellow
  * background is Obsidian's own highlight, `==text==` (#h368c8ni), so it is
  * the highlight mark; Default background removes that too.

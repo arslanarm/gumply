@@ -219,3 +219,82 @@ test.describe('text and background colour', () => {
     expect(await styleOf(page, 'blue', 'backgroundColor')).toBe('rgba(2, 122, 255, 0.2)');
   });
 });
+
+/**
+ * #gcba75f4: in Obsidian only `==…==` colours a link without breaking it (a span around or inside a
+ * link turns it into plain text in live preview), so links keep their colour. The palette says so
+ * instead of doing nothing: on a link-only selection the colours a link can't take are unavailable,
+ * with the reason; on a mixed one, a note says the links keep theirs.
+ */
+test.describe('colour on links says why (#gcba75f4)', () => {
+  /** Select the line under "Top" with the keyboard (clicking a link would follow it). */
+  async function selectLineUnderTop(page: Page) {
+    await page.getByTestId('editor-content').getByText('Top', { exact: true }).click();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Shift+End');
+    await expect(page.getByTestId('selection-toolbar')).toBeVisible();
+  }
+
+  test('a selection that is only a link: text colours and other backgrounds are unavailable, with the reason; yellow works', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Link only', content: 'Top\n\n[label](https://example.com)' }]);
+    await openPage(page, 'Link only');
+    await selectLineUnderTop(page);
+    await page.getByTestId('format-color').click();
+    const palette = page.getByTestId('selection-color-palette');
+    await expect(palette.getByTestId('color-text-red')).toHaveAttribute('aria-disabled', 'true');
+    await expect(palette.getByTestId('color-background-blue')).toHaveAttribute('aria-disabled', 'true');
+    await expect(palette.getByTestId('color-background-yellow')).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(palette.getByTestId('color-link-note')).toHaveText('Links can only be highlighted in yellow, so they keep working in Obsidian.');
+    // An unavailable colour does nothing, and the palette stays open.
+    await palette.getByTestId('color-text-red').click();
+    await expect(palette).toBeVisible();
+    await page.waitForTimeout(800);
+    expect(fileBytes('Link only')).not.toContain('<span');
+    await palette.getByTestId('color-background-yellow').click();
+    await expectSaved(request, 'Link only', 'Top\n\n[==label==](https://example.com)');
+  });
+
+  test('a line holding only a wiki link gets the toolbar, and yellow highlights the link', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Target', content: 'x' }, { title: 'Wiki only', content: 'Top\n\n[[Target]]' }]);
+    await openPage(page, 'Wiki only');
+    await selectLineUnderTop(page);
+    await page.getByTestId('format-color').click();
+    const palette = page.getByTestId('selection-color-palette');
+    await expect(palette.getByTestId('color-text-green')).toHaveAttribute('aria-disabled', 'true');
+    await palette.getByTestId('color-background-yellow').click();
+    await expectSaved(request, 'Wiki only', 'Top\n\n==[[Target]]==');
+    await page.reload();
+    await expect(page.getByTestId('editor-content').locator('mark')).toContainText('Target');
+  });
+
+  test('text and a link together: the text is coloured, and a note says the link keeps its colour', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Mixed', content: 'Top\n\nsee [label](https://example.com) here' }]);
+    await openPage(page, 'Mixed');
+    await selectLineUnderTop(page);
+    await page.getByTestId('format-color').click();
+    const palette = page.getByTestId('selection-color-palette');
+    await expect(palette.getByTestId('color-link-note')).toHaveText('Links in the selection keep their colour: only yellow can highlight a link.');
+    await expect(palette.getByTestId('color-text-red')).not.toHaveAttribute('aria-disabled', 'true');
+    await palette.getByTestId('color-text-red').click();
+    await expectSaved(request, 'Mixed', `Top\n\n${RED_TEXT}see </span>[label](https://example.com)${RED_TEXT} here</span>`);
+  });
+
+  test('plain text: no note', async ({ page, vault }) => {
+    await vault.seed([{ title: 'Plain', content: 'Top\n\njust words' }]);
+    await openPage(page, 'Plain');
+    await selectLineUnderTop(page);
+    await page.getByTestId('format-color').click();
+    await expect(page.getByTestId('selection-color-palette')).toBeVisible();
+    await expect(page.getByTestId('color-link-note')).toHaveCount(0);
+  });
+
+  test('Russian: the reason is translated', async ({ page, vault }) => {
+    await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+    await vault.seed([{ title: 'Link ru', content: 'Top\n\n[label](https://example.com)' }]);
+    await openPage(page, 'Link ru');
+    await selectLineUnderTop(page);
+    await page.getByTestId('format-color').click();
+    await expect(page.getByTestId('color-link-note')).toHaveText('Ссылку можно выделить только жёлтым: так она продолжит работать в Obsidian.');
+  });
+});

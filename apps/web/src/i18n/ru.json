@@ -1197,6 +1197,8 @@
     "background": "Фон",
     "colorDefault": "По умолчанию",
     "lastUsed": "Недавний",
+    "linkOnlyYellow": "Ссылку можно выделить только жёлтым: так она продолжит работать в Obsidian.",
+    "linksKeepColour": "Ссылки в выделении сохранят свой цвет: выделить ссылку можно только жёлтым.",
     "textColorNamed": "{{name}}: текст",
     "backgroundNamed": "{{name}}: фон",
     "colors": {
