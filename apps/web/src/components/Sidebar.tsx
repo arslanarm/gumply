@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { preloadGraph } from "../lazy-parts.js";
-import { buildPageTree, pageTrail } from "../lib/tree.js";
+import { buildPageTree, canMovePage, pageTrail, shareTree, type PageTreeNode } from "../lib/tree.js";
+import { createRowStateStore } from "./sidebar-row-state.js";
 import { Icon } from "./Icon.js";
 import { PageItem, TreeChunks } from "./PageItem.js";
 import { TagsPane, type TagRenameRequest } from "./TagsPane.js";
@@ -70,13 +71,27 @@ export interface SidebarProps {
 export function Sidebar(props: SidebarProps) {
   const t = useT();
   const { pages, selectedId, status, error, focusTarget } = props;
-  const tree = useMemo(() => buildPageTree(pages), [pages]);
+  // #8gudbajp: unchanged nodes keep their identity across list refreshes, so only changed rows render.
+  const sharedNodes = useRef<ReadonlyMap<PageId, PageTreeNode>>(new Map());
+  const tree = useMemo(() => {
+    const shared = shareTree(buildPageTree(pages), sharedNodes.current);
+    sharedNodes.current = shared.nodes;
+    return shared.roots;
+  }, [pages]);
 
   const [renamingId, setRenamingId] = useState<PageId | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [draggingId, setDraggingId] = useState<PageId | null>(null);
   // Rows toggled away from their default (pages expanded, D33 folders collapsed).
   const [toggled, setToggled] = useState<ReadonlySet<PageId>>(() => new Set());
+  // #8gudbajp: rows read the selection and the rename through this store, not as props.
+  const rowState = useMemo(() => createRowStateStore({ selectedId, renamingId: null, renameDraft: "" }), []);
+  useLayoutEffect(() => {
+    rowState.set({ selectedId, renamingId, renameDraft });
+  }, [rowState, selectedId, renamingId, renameDraft]);
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const canDropOn = useCallback((draggingId: PageId, targetId: PageId) => canMovePage(pagesRef.current, draggingId, targetId), []);
   const isFolderId = (id: PageId) => pages.some((page) => page.id === id && page.kind === "folder");
 
   /** Show `ids`' children: a folder is open when toggled, a page when not. */
@@ -468,10 +483,8 @@ export function Sidebar(props: SidebarProps) {
               key={node.page.id}
               node={node}
               depth={0}
-              pages={pages}
-              selectedId={selectedId}
-              renamingId={renamingId}
-              renameDraft={renameDraft}
+              rowState={rowState}
+              canDropOn={canDropOn}
               draggingId={draggingId}
               toggled={toggled}
               {...rowHandlers}
