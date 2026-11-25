@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app";
 import { VaultStore } from "../src/vault-store";
+import { RM_VAULT } from "./helpers";
 
 /**
  * #g95wkd9y (offenders 3+4): a cold open answers once the files are read;
@@ -19,7 +20,7 @@ beforeEach(async () => {
 afterEach(async () => {
   store?.stopWatching();
   store = null;
-  await rm(dir, { recursive: true, force: true });
+  await rm(dir, RM_VAULT);
 });
 
 type Internals = { beforeIndex: (() => Promise<void>) | undefined; mentionWordsOf: (...args: unknown[]) => void };

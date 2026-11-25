@@ -6,6 +6,15 @@ import { createApp } from "../src/app";
 import { VaultStore } from "../src/vault-store";
 
 const createdDirs: string[] = [];
+const createdStores: VaultStore[] = [];
+
+/**
+ * #inrd797i: `rm` options for a test vault. A store's queued work (a watcher refresh and the history
+ * version it writes for an outside edit) can still be writing when a test ends; `rm` then fails with
+ * ENOTEMPTY. Draining the store first (`cleanupVaults`) closes that; the retries are a backstop for
+ * tests that make their own stores.
+ */
+export const RM_VAULT = { recursive: true, force: true, maxRetries: 5, retryDelay: 50 } as const;
 
 export interface TestServer {
   app: Hono;
@@ -19,11 +28,18 @@ export async function createTestServer(): Promise<TestServer> {
   createdDirs.push(dir);
   const store = new VaultStore(dir);
   await store.init();
+  createdStores.push(store);
   return { app: createApp({ vaultPath: dir, store }), store, dir };
 }
 
 export async function cleanupVaults(): Promise<void> {
-  await Promise.all(createdDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  // #inrd797i: stop each store's watcher and wait for its queue to empty before removing its folder.
+  // Any queued call waits for everything queued before it; listTrash only reads.
+  for (const store of createdStores.splice(0)) {
+    store.stopWatching();
+    await store.listTrash().catch(() => undefined);
+  }
+  await Promise.all(createdDirs.splice(0).map((dir) => rm(dir, RM_VAULT)));
 }
 
 export function jsonRequest(

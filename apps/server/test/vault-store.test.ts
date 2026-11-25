@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VaultStore } from "../src/vault-store";
+import { RM_VAULT } from "./helpers";
 
 const dirs: string[] = [];
 
@@ -15,7 +16,7 @@ async function tempVault(seed?: (dir: string) => Promise<void>): Promise<string>
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, RM_VAULT)));
 });
 
 describe("VaultStore index on start", () => {

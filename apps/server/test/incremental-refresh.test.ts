@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VaultStore } from "../src/vault-store";
+import { RM_VAULT } from "./helpers";
 
 /**
  * #g95wkd9y: a refresh re-reads only what changed, and reindexes only the
@@ -15,7 +16,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "gumply-refresh-"));
 });
 afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
+  await rm(dir, RM_VAULT);
 });
 
 type Internals = {

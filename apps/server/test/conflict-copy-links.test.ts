@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VaultStore } from "../src/vault-store";
+import { RM_VAULT } from "./helpers";
 
 /**
  * #2badjmxf (D43): a sync tool's conflict copy beside its original holds no links. A cold start
@@ -23,7 +24,7 @@ beforeEach(async () => {
 afterEach(async () => {
   store?.stopWatching();
   store = null;
-  await rm(dir, { recursive: true, force: true });
+  await rm(dir, RM_VAULT);
 });
 
 async function coldStart(): Promise<VaultStore> {
