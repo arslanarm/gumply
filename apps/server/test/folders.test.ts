@@ -119,6 +119,29 @@ describe("plain folders (D33)", () => {
     expect(await readFile(join(dir, "Covered.md"), "utf8")).toBe(covered.replace("Files/", "Media/"));
   });
 
+  it("renaming a folder also rewrites Markdown links to files in it (#x8awsxev), each in its own form", async () => {
+    const { app, dir, store } = await createTestServer();
+    await mkdir(join(dir, "Files"), { recursive: true });
+    await mkdir(join(dir, "Sub"), { recursive: true });
+    await writeFile(join(dir, "Files/In.md"), "![i](a.png) and [d](doc.pdf)\n", "utf8");
+    await writeFile(join(dir, "Files/a.png"), "png", "utf8");
+    await writeFile(join(dir, "Files/doc one.pdf"), "pdf", "utf8");
+    const out = '![pic](Files/a.png "A title") [doc](Files/doc%20one.pdf) ![sp](<Files/a.png>) ![k](FilesOld/a.png) [w](https://example.com/Files/a.png)\n';
+    const deep = "![r](../Files/a.png) ![abs](/Files/a.png)\n";
+    await writeFile(join(dir, "Out.md"), out, "utf8");
+    await writeFile(join(dir, "Sub/Deep.md"), deep, "utf8");
+    await store.rescan();
+
+    const response = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Files")}`, { title: "Media" });
+    expect(response.status).toBe(200);
+    expect(await readFile(join(dir, "Out.md"), "utf8")).toBe(
+      '![pic](Media/a.png "A title") [doc](Media/doc%20one.pdf) ![sp](<Media/a.png>) ![k](FilesOld/a.png) [w](https://example.com/Files/a.png)\n',
+    );
+    expect(await readFile(join(dir, "Sub/Deep.md"), "utf8")).toBe("![r](../Media/a.png) ![abs](/Media/a.png)\n");
+    // Inside the folder, relative links still point at the same files: untouched.
+    expect(await readFile(join(dir, "Media/In.md"), "utf8")).toBe("![i](a.png) and [d](doc.pdf)\n");
+  });
+
   it("a rename onto a taken name gets a ` 2` suffix; a body edit is refused", async () => {
     const { app } = await obsidianVault();
     const renamed = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Home")}`, { title: "Work" });
