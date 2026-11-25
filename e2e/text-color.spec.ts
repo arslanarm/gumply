@@ -246,8 +246,9 @@ test.describe('colour on links says why (#gcba75f4)', () => {
     await expect(palette.getByTestId('color-background-blue')).toHaveAttribute('aria-disabled', 'true');
     await expect(palette.getByTestId('color-background-yellow')).not.toHaveAttribute('aria-disabled', 'true');
     await expect(palette.getByTestId('color-link-note')).toHaveText('Links can only be highlighted in yellow, so they keep working in Obsidian.');
-    // An unavailable colour does nothing, and the palette stays open.
-    await palette.getByTestId('color-text-red').click();
+    // An unavailable colour does nothing, and the palette stays open (force: Playwright itself won't
+    // click an aria-disabled button; a person's click must do nothing).
+    await palette.getByTestId('color-text-red').click({ force: true });
     await expect(palette).toBeVisible();
     await page.waitForTimeout(800);
     expect(fileBytes('Link only')).not.toContain('<span');
@@ -286,7 +287,11 @@ test.describe('colour on links says why (#gcba75f4)', () => {
   test('Mod+E on a lone wiki link leaves it a link (no backticks)', async ({ page, vault }) => {
     await vault.seed([{ title: 'Target', content: 'x' }, { title: 'Wiki code key', content: 'Top\n\n[[Target]]' }]);
     await openPage(page, 'Wiki code key');
-    await selectLineUnderTop(page);
+    // Select the line without waiting for the toolbar (on main a lone wiki link gets none).
+    await page.getByTestId('editor-content').getByText('Top', { exact: true }).click();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Shift+End');
     await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+e`);
     await page.getByTestId('editor-content').getByText('Top', { exact: true }).click();
     await page.keyboard.press('End');
