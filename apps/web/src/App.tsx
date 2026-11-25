@@ -352,10 +352,12 @@ export function App() {
   // #im3em6tq: each rename in flight, settling with the renamed page (null if it
   // failed). A save of that page, or of a page under it, waits for it and then
   // goes to the new id with the new version, never against the rename (a 409).
-  const renameWaits = useRef(new Map<PageId, Promise<Page | null>>());
-  const waitForRename = useCallback((id: PageId): Promise<{ id: PageId; updated: string | null } | null> | null => {
+  const renameWaits = useRef(new Map<PageId, Promise<(Page & { rewrittenPages?: PageId[] }) | null>>());
+  const waitForRename = useCallback((id: PageId): Promise<{ id: PageId; updated: string | null; rewroteOwn?: boolean } | null> | null => {
     for (const [renamed, settled] of renameWaits.current) {
-      if (id === renamed) return settled.then((page) => (page ? { id: page.id, updated: page.updated } : null));
+      // #ekp8ns58: `rewroteOwn`: the rename also rewrote this page's own body (its links into its moved
+      // folder), so the answer's version is newer than the text the waiting save holds.
+      if (id === renamed) return settled.then((page) => (page ? { id: page.id, updated: page.updated, rewroteOwn: page.rewrittenPages?.includes(page.id) ?? false } : null));
       if (id.startsWith(`${renamed}/`)) {
         // A sub-page moves with its parent: a new id, the same version.
         return settled.then((page) => (page ? { id: `${page.id}${id.slice(renamed.length)}`, updated: null } : null));
@@ -1701,8 +1703,8 @@ export function App() {
 
         renamesInFlight.current.add(id);
         renameEpoch.current += 1;
-        let settle: (page: Page | null) => void = () => undefined;
-        renameWaits.current.set(id, new Promise<Page | null>((resolve) => (settle = resolve)));
+        let settle: (page: (Page & { rewrittenPages?: PageId[] }) | null) => void = () => undefined;
+        renameWaits.current.set(id, new Promise<(Page & { rewrittenPages?: PageId[] }) | null>((resolve) => (settle = resolve)));
         setRenaming({ id, title: previousTitle ?? title, count: null });
         // How many pages link here (the link rewrites the server is doing), for the status.
         void api

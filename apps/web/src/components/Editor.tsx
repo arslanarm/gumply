@@ -142,7 +142,7 @@ export interface EditorProps {
    * waits for it, then goes to the new id (and, for the page itself, the
    * rename's version) instead of meeting the rename as a 409.
    */
-  waitForRename?: (id: string) => Promise<{ id: string; updated: string | null } | null> | null;
+  waitForRename?: (id: string) => Promise<{ id: string; updated: string | null; rewroteOwn?: boolean } | null> | null;
   onConflictBackup?: (path: string) => void;
   onReady?: (controls: EditorControls) => void;
   onOpenLink: (link: { targetTitle: string; heading: string }) => void;
@@ -290,6 +290,13 @@ export function Editor({
           const renaming = waitForRenameRef.current?.(pageIdRef.current);
           if (renaming) {
             const renamed = await renaming;
+            if (renamed?.rewroteOwn) {
+              // #ekp8ns58: the rename rewrote this page's own body; this text was typed during it and
+              // still has the old links. Sending it with the answer's version would put them back (D37).
+              // Not sent: the app's "replace" reload keeps it in History first and loads the rewrite.
+              pageIdRef.current = renamed.id;
+              return;
+            }
             if (renamed) {
               pageIdRef.current = renamed.id;
               // The rename is the newest write of this page (our edits were flushed before it).
