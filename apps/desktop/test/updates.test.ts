@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, s
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pickUpdateState, type DesktopUpdatesState } from "@gumply/core";
 import type { UpdateSettings } from "../src/settings.js";
 import {
   CHECK_INTERVAL_MS,
@@ -213,6 +214,51 @@ describe("UpdateController policy", () => {
     await instance.check(true);
     await vi.waitFor(() => expect(instance.getState().status).not.toBe("downloading"));
     expect(instance.getState()).toMatchObject({ status: "available", version: "0.9.1", error: expect.stringContaining("sha512 checksum mismatch") });
+  });
+
+  it("a Check now answer taken mid-download can't undo the failure's push in the window (#7vyqfcpn, v0.9.2 tag build)", async () => {
+    // main.ts answers POST /desktop/updates/check with getState() right after check() resolves,
+    // which is already "downloading". The sha512 failure's push ("available" + error) can reach the
+    // window first; the window then applied the late answer and showed "downloading" for good.
+    const pushes: DesktopUpdatesState[] = [];
+    const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage", onChange: (state) => pushes.push(state) });
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    let fail: (error: Error) => void = () => {};
+    updater.downloadUpdate.mockImplementation(() => new Promise((_, reject) => { fail = reject; }));
+    let shown: DesktopUpdatesState | null = instance.getState(); // the window's first GET
+    await instance.check(true);
+    const answer = instance.getState(); // the route's snapshot
+    expect(answer.status).toBe("downloading");
+    const error = new Error("sha512 checksum mismatch");
+    updater.emit("error", error);
+    fail(error);
+    await vi.waitFor(() => expect(instance.getState()).toMatchObject({ status: "available", error: "sha512 checksum mismatch" }));
+    // The window: every push in order, then the late answer, each through the same rule.
+    for (const pushed of pushes) shown = pickUpdateState(shown, pushed);
+    shown = pickUpdateState(shown, answer);
+    expect(shown).toMatchObject({ status: "available", error: "sha512 checksum mismatch" });
+    // In the order the bug didn't need (the answer first), the push still wins.
+    expect(pickUpdateState(answer, pushes.at(-1)!)).toMatchObject({ status: "available" });
+  });
+
+  it("every state change gets a newer stamp (#7vyqfcpn)", async () => {
+    const pushes: DesktopUpdatesState[] = [];
+    const { instance, updater } = controller("appimage", undefined, { appImagePath: "/apps/Gumply.AppImage", onChange: (state) => pushes.push(state) });
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.9.1" });
+      return undefined;
+    });
+    await instance.check(true);
+    const seqs = pushes.map((state) => state.seq!);
+    expect(seqs.length).toBeGreaterThan(2);
+    for (let i = 1; i < seqs.length; i += 1) expect(seqs[i]).toBeGreaterThan(seqs[i - 1]!);
+    expect(instance.getState().seq).toBe(seqs.at(-1));
+    // An unstamped state (an older app) is always taken; equal stamps are the same state.
+    expect(pickUpdateState({ ...instance.getState(), seq: 5 }, { ...instance.getState(), seq: undefined, status: "error" }).status).toBe("error");
+    expect(pickUpdateState({ ...instance.getState(), seq: 5 }, { ...instance.getState(), seq: 5, status: "checking" }).status).toBe("checking");
   });
 
   it("a second download that joins one already failing (electron-updater's \"already in progress\") isn't left stuck on downloading", async () => {

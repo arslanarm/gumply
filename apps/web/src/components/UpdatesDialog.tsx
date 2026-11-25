@@ -4,8 +4,8 @@
  * checked, and what's waiting. The state comes from the desktop app
  * (`/api/desktop/updates`) and follows its `gumply:updates` events.
  */
-import type { DesktopUpdatesState, UpdateMode } from "@gumply/core";
-import { useEffect, useId, useRef, useState } from "react";
+import { pickUpdateState, type DesktopUpdatesState, type UpdateMode } from "@gumply/core";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import { relativeTime, useT, type MessageKey } from "../i18n/index.js";
 import { Icon } from "./Icon.js";
@@ -19,13 +19,13 @@ export function useDesktopUpdates(desktop: boolean): [DesktopUpdatesState | null
     let live = true;
     api.desktopUpdates().then(
       (next) => {
-        if (live) setState(next);
+        if (live) setState((current) => pickUpdateState(current, next));
       },
       () => undefined, // 404: this install doesn't update
     );
     const onUpdates = (event: Event) => {
       const next = (event as CustomEvent<DesktopUpdatesState>).detail;
-      if (next && typeof next === "object") setState(next);
+      if (next && typeof next === "object") setState((current) => pickUpdateState(current, next));
     };
     window.addEventListener("gumply:updates", onUpdates);
     return () => {
@@ -33,7 +33,10 @@ export function useDesktopUpdates(desktop: boolean): [DesktopUpdatesState | null
       window.removeEventListener("gumply:updates", onUpdates);
     };
   }, [desktop]);
-  return [state, setState];
+  // #7vyqfcpn: answers to the window's own requests (Check now, a mode change) go through the
+  // same rule as pushes, so one taken mid-download can't undo a newer pushed state.
+  const apply = useCallback((next: DesktopUpdatesState) => setState((current) => pickUpdateState(current, next)), []);
+  return [state, apply];
 }
 
 const MODE_LABEL: Record<UpdateMode, MessageKey> = {

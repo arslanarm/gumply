@@ -265,6 +265,7 @@ export {
 
 export {
   isUpdateMode,
+  pickUpdateState,
   UPDATE_MODES,
   type DesktopUpdatesSettingsPatch,
   type DesktopUpdatesState,
