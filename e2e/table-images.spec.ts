@@ -57,4 +57,20 @@ test.describe('an image in a table cell stays in its cell (#sv5cwevx)', () => {
       await expect(page.getByTestId('image-block')).toHaveCount(0);
     });
   }
+
+  test('an edit in the row next to a resized embed writes the row back with its escaped pipe', async ({ page, vault }) => {
+    const title = 'Table image edit row';
+    await vault.seed([{ title, content: '| A | B |\n|---|---|\n| text | ![[a.png\\|300]] |\n\nTarget paragraph.\n' }]);
+    const file = path.join(E2E_VAULT, `${title}.md`);
+    await page.goto(`/#/${encodeURIComponent(title)}`);
+    const cell = page.getByTestId('editor-content').getByText('text', { exact: true });
+    await cell.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' more');
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+    await expect
+      .poll(() => body(readFileSync(file, 'utf8')))
+      .toBe('| A | B |\n|---|---|\n| text more | ![[a.png\\|300]] |\n\nTarget paragraph.\n');
+    await expect(page.getByTestId('image-block')).toHaveCount(0);
+  });
 });

@@ -21,6 +21,11 @@ describe("an image alone in a table cell stays in the cell", () => {
     expect(cells("| ![A](a.png) | B |\n|---|---|\n| x | y |\n")[0]).toMatch(/^<img [^>]*data-inline-image="1"/);
   });
 
+  it("a table inside a quote (or callout) takes the same path", () => {
+    const html = md.render("> | A | B |\n> |---|---|\n> | x | ![A](a.png) |\n");
+    expect(html).toMatch(/<td[^>]*>\s*<img [^>]*data-inline-image="1"/);
+  });
+
   it("an image with text in the cell was already inline (unchanged)", () => {
     expect(cells("| A |\n|---|\n| see ![A](a.png) |\n")[1]).toMatch(/data-inline-image="1"/);
   });
