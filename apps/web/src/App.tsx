@@ -124,6 +124,8 @@ interface ToastState {
   /** What happened: deleting shows a bin, moving an arrow, notices an "i". */
   icon?: IconName;
   undo?: () => Promise<void>;
+  /** The undo button's label when it does something else ("History"). */
+  actionLabel?: string;
 }
 
 /** v0.9 F: today's note opens at most once per launch, however often the vault list reloads. */
@@ -634,7 +636,11 @@ export function App() {
    * `reloadDecision`). Every reload that isn't the user's own "Reload anyway"
    * goes through this. A ref, so callbacks defined above its body can use it.
    */
-  const reloadOpenPage = useRef<(kind: ReloadKind) => Promise<void>>(async () => requestPageReload());
+  /** Resolves true when the editor's unsaved text was kept in History first ("Before reload"). */
+  const reloadOpenPage = useRef<(kind: ReloadKind) => Promise<boolean>>(async () => {
+    requestPageReload();
+    return false;
+  });
 
   /**
    * #2xx3uae4: load a page that couldn't be fetched again (Retry, or the server
@@ -821,10 +827,11 @@ export function App() {
     const id = selectedRef.current;
     const controls = documentControls();
     const decision = reloadDecision(kind, id !== null && (controls?.isDirty() ?? false));
-    if (decision === "leave") return;
+    if (decision === "leave") return false;
+    let kept = false;
     if (decision === "flush-then-reload") {
       await controls?.flush().catch(() => undefined);
-      if (documentControls()?.isDirty()) return;
+      if (documentControls()?.isDirty()) return false;
     }
     if (decision === "keep-then-reload" && id !== null) {
       const board = isBoardId(id) ? (boardControls.current?.getBoard() ?? null) : null;
@@ -839,13 +846,15 @@ export function App() {
       if (input) {
         try {
           await api.keepUnsaved(id, input);
+          kept = true;
         } catch {
           setReloadNotKept(true);
-          return;
+          return false;
         }
       }
     }
     requestPageReload();
+    return kept;
   };
   const handleConflictReload = useCallback(async () => {
     await reloadOpenPage.current("replace");
@@ -1775,7 +1784,20 @@ export function App() {
         // so its next save would pass the version check and silently put the old links back (D37).
         // Reload it; text typed during the rename is kept in History first ("replace").
         if ((open === id || open === updated.id) && (updated.rewrittenPages?.includes(updated.id) ?? false)) {
-          void reloadOpenPage.current("replace");
+          const renamedId = updated.id;
+          void reloadOpenPage.current("replace").then((kept) => {
+            if (!kept) return;
+            // Typed during the rename: not lost, but not on the page either. Say where it is.
+            setToast({
+              message: t("save.typedDuringRename"),
+              icon: "info",
+              actionLabel: t("save.openHistory"),
+              undo: async () => {
+                const meta = pagesRef.current.find((item) => item.id === renamedId);
+                if (meta) setHistoryTarget(meta);
+              },
+            });
+          });
         }
       } catch (error) {
         if (previousTitle !== null) showTitle(previousTitle);
@@ -1783,7 +1805,7 @@ export function App() {
         void loadPages();
       }
     },
-    [applySavedPage, loadPages, pages, requestPageReload],
+    [applySavedPage, loadPages, pages, requestPageReload, t],
   );
 
   // v0.7 A (D34): properties are saved like any page edit: the editor's
@@ -3050,6 +3072,7 @@ export function App() {
           message={toast.message}
           icon={toast.icon}
           onUndo={toast.undo ? () => void toast.undo?.() : undefined}
+          actionLabel={toast.actionLabel}
           onDismiss={dismissToast}
         />
       ) : null}

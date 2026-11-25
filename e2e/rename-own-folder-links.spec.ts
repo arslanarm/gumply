@@ -34,7 +34,7 @@ test('renaming a parent from its title keeps the rewrite of its own [[P/Sub]] wh
   expect(text).not.toContain('[[Parent/Sub]]');
 });
 
-test('typing during the rename: no stale link, and the typed text is kept (in the file or in History on the renamed page)', async ({ page, request, vault }) => {
+test('typing during the rename: no stale link; the typed text goes to History, and a notice says so (#ekp8ns58 (A))', async ({ page, request, vault }) => {
   void vault; // resets the vault before and after
   await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
   await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
@@ -60,16 +60,20 @@ test('typing during the rename: no stale link, and the typed text is kept (in th
   await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
   await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('[[Moved/Sub]]');
   await page.waitForTimeout(3_000); // any late save has had its chance
+  // (A): the held save is not sent (it had the old link); the reload keeps the typing in History and says so.
+  const notice = page.getByTestId('undo-toast');
+  await expect(notice).toContainText('Your typing during the rename was saved in History.');
   const text = await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8');
   expect(text, 'the rewrite stays').toContain('[[Moved/Sub]]');
   expect(text).not.toContain('[[Parent/Sub]]');
-  if (!text.includes('Typed during.')) {
-    // @opus-editor: kept in History as "Before reload", on the renamed page (the old id redirected).
-    const items = ((await (await request.get(`${API_URL}/api/history/Moved`)).json()) as { items: Array<{ file: string; reason?: string }> }).items;
-    const kept = items.find((item) => item.reason === 'before-reload');
-    expect(kept, 'the typed text is in History').toBeDefined();
-    expect(await (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(kept!.file)}`)).text()).toContain('Typed during.');
-  }
+  expect(text, 'the stale body was not saved').not.toContain('Typed during.');
+  const items = ((await (await request.get(`${API_URL}/api/history/Moved`)).json()) as { items: Array<{ file: string; reason?: string }> }).items;
+  const kept = items.find((item) => item.reason === 'before-reload');
+  expect(kept, 'the typed text is in History').toBeDefined();
+  expect(await (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(kept!.file)}`)).text()).toContain('Typed during.');
+  // The notice's History button opens it.
+  await notice.getByRole('button', { name: 'History' }).click();
+  await expect(page.getByTestId('history-dialog')).toBeVisible();
 });
 
 test('a self-link in the renamed page is never put back to an older form by the editor (@lead)', async ({ page, vault }) => {

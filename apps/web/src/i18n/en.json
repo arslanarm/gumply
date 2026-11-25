@@ -737,6 +737,8 @@
     "conflictShort": "Changed on disk",
     "reload": "Reload",
     "keepMine": "Keep mine",
+    "typedDuringRename": "Your typing during the rename was saved in History.",
+    "openHistory": "History",
     "reloadNotKept": {
       "heading": "Your unsaved text couldn't be kept in History.",
       "body": "If you reload now, the text you haven't saved is lost.",
