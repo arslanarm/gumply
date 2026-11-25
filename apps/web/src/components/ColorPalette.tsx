@@ -8,9 +8,9 @@
  * around it.
  */
 import type { Editor } from "@tiptap/core";
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { t } from "../i18n/index.js";
-import { applyColor, COLOR_NAMES, currentColor, paletteName, type ColorKind, type ColorName } from "../editor/color.js";
+import { applyColor, COLOR_NAMES, currentColor, linkCanTake, linkCoverage, paletteName, type ColorKind, type ColorName } from "../editor/color.js";
 
 export interface ColorChoice {
   kind: ColorKind;
@@ -77,7 +77,11 @@ export interface ColorPaletteProps {
 
 export function ColorPalette({ editor, onPick, autoFocus, testId = "color-palette" }: ColorPaletteProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const noteId = useId();
   const last = lastUsedColor();
+  // #gcba75f4: links keep their colour (only yellow highlights one and keeps it working in Obsidian).
+  const links = linkCoverage(editor);
+  const blocked = (choice: ColorChoice) => links === "only" && !linkCanTake(choice.kind, choice.name);
   const current: Record<ColorKind, ColorName | null> = {
     text: paletteName("text", currentColor(editor, "text")),
     background: paletteName("background", currentColor(editor, "background")),
@@ -88,6 +92,7 @@ export function ColorPalette({ editor, onPick, autoFocus, testId = "color-palett
   }, [autoFocus]);
 
   const pick = (choice: ColorChoice) => {
+    if (blocked(choice)) return;
     pickColor(editor, choice);
     onPick();
   };
@@ -118,14 +123,18 @@ export function ColorPalette({ editor, onPick, autoFocus, testId = "color-palett
   const swatch = (choice: ColorChoice, extraClass = "") => {
     const selected = current[choice.kind] === choice.name;
     const label = colorLabel(choice);
+    const off = blocked(choice);
     return (
       <button
         key={`${choice.kind}-${choice.name ?? "default"}`}
         type="button"
-        className={`color-swatch${selected ? " is-selected" : ""}${extraClass}`}
+        className={`color-swatch${selected ? " is-selected" : ""}${off ? " is-unavailable" : ""}${extraClass}`}
         aria-label={label}
         aria-pressed={selected}
-        data-tooltip={label}
+        // Still focusable, so the keyboard grid keeps its shape and the reason can be read.
+        aria-disabled={off || undefined}
+        aria-describedby={off ? noteId : undefined}
+        data-tooltip={off ? `${label}: ${t("format.linkOnlyYellow")}` : label}
         data-testid={`color-${choice.kind}-${choice.name ?? "default"}`}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => pick(choice)}
@@ -152,8 +161,10 @@ export function ColorPalette({ editor, onPick, autoFocus, testId = "color-palett
           <div className="color-palette-row">
             <button
               type="button"
-              className="color-last"
+              className={`color-last${blocked(last) ? " is-unavailable" : ""}`}
               data-testid="color-last-used"
+              aria-disabled={blocked(last) || undefined}
+              aria-describedby={blocked(last) ? noteId : undefined}
               aria-label={`${t("format.lastUsed")}: ${colorLabel(last)}`}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pick(last)}
@@ -166,6 +177,11 @@ export function ColorPalette({ editor, onPick, autoFocus, testId = "color-palett
       ) : null}
       {section("text")}
       {section("background")}
+      {links !== "none" ? (
+        <p className="color-palette-note" id={noteId} role="note" data-testid="color-link-note">
+          {t(links === "only" ? "format.linkOnlyYellow" : "format.linksKeepColour")}
+        </p>
+      ) : null}
     </div>
   );
 }

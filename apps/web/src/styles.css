@@ -4372,6 +4372,26 @@ input {
   padding: 4px 2px 2px;
 }
 
+/* #gcba75f4: what a link can't take (links keep their colour in Obsidian), and why. */
+.color-swatch.is-unavailable,
+.color-last.is-unavailable {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.color-swatch.is-unavailable:hover,
+.color-last.is-unavailable:hover {
+  background: transparent;
+}
+
+.color-palette-note {
+  max-width: 17rem;
+  margin: 2px 4px 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
 .color-palette-title {
   padding: 0 4px 3px;
   color: var(--muted);
