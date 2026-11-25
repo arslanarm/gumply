@@ -1,6 +1,6 @@
 {
   "name": "@gumply/core",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "private": true,
   "description": "Shared types, note/frontmatter parsing and wikilink helpers for Gumply.",
   "license": "MIT",

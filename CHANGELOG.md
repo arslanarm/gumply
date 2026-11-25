@@ -2,6 +2,15 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.3: lists with pictures stay intact (2026-11-25)
+
+A fix release, recommended for everyone on 0.9.
+
+**Fixed**
+- **A list item that's just a picture is no longer rewritten.** In a list written the Obsidian way (`- ![A](a.png)` or `- ![[a.png]]`), saving any other edit on the page used to move the picture out of the list, split the list in two, and turn the rest of a numbered list into bullets. The picture now stays in its item, as in Obsidian, and the file keeps its bytes. Lists already split by an earlier version aren't repaired.
+- **An update that failed to download no longer looks stuck.** Settings could keep showing "…is downloading" with no way to retry until a restart. It now shows the update as available, with the error, and Check now tries again.
+- **On Linux (AppImage), updates no longer leave a copy behind.** The installed update's download (about 120 MB) stayed in the updater's cache; it's now removed, and a copy left by an earlier update is removed when 0.9.3 starts.
+
 ## 0.9.2: blocks move again (2026-11-25)
 
 A fix release, recommended for everyone on 0.9.
