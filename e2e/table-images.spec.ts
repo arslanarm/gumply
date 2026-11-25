@@ -62,6 +62,7 @@ test.describe('an image in a table cell stays in its cell (#sv5cwevx)', () => {
     const title = 'Table image edit row';
     await vault.seed([{ title, content: '| A | B |\n|---|---|\n| text | ![[a.png\\|300]] |\n\nTarget paragraph.\n' }]);
     const file = path.join(E2E_VAULT, `${title}.md`);
+    const before = body(readFileSync(file, 'utf8'));
     await page.goto(`/#/${encodeURIComponent(title)}`);
     const cell = page.getByTestId('editor-content').getByText('text', { exact: true });
     await cell.click();
@@ -70,7 +71,7 @@ test.describe('an image in a table cell stays in its cell (#sv5cwevx)', () => {
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
     await expect
       .poll(() => body(readFileSync(file, 'utf8')))
-      .toBe('| A | B |\n|---|---|\n| text more | ![[a.png\\|300]] |\n\nTarget paragraph.\n');
+      .toBe(before.replace('| text |', '| text more |'));
     await expect(page.getByTestId('image-block')).toHaveCount(0);
   });
 
@@ -78,6 +79,7 @@ test.describe('an image in a table cell stays in its cell (#sv5cwevx)', () => {
     const title = 'Table image edit cell';
     await vault.seed([{ title, content: '| A | B |\n|---|---|\n| x | ![[a.png\\|300]] |\n\nTarget paragraph.\n' }]);
     const file = path.join(E2E_VAULT, `${title}.md`);
+    const before = body(readFileSync(file, 'utf8'));
     await page.goto(`/#/${encodeURIComponent(title)}`);
     const image = page.getByTestId('editor-content').locator('td').getByTestId('inline-image');
     await expect(image).toBeVisible();
@@ -85,7 +87,7 @@ test.describe('an image in a table cell stays in its cell (#sv5cwevx)', () => {
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.type('text more ');
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
-    const expected = '| A | B |\n|---|---|\n| x | text more ![[a.png\\|300]] |\n\nTarget paragraph.\n';
+    const expected = before.replace('| x | ![[a.png', '| x | text more ![[a.png');
     await expect.poll(() => body(readFileSync(file, 'utf8'))).toBe(expected);
     await page.reload();
     await expect(page.getByTestId('editor-content').locator('td').getByTestId('inline-image')).toBeVisible();
