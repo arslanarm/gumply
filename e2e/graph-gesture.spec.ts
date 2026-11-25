@@ -97,7 +97,7 @@ test('a big graph hides its links while the camera moves and draws them again af
   await expect.poll(lines, { timeout: 10_000 }).toBeGreaterThan(NOTES);
 });
 
-test('frames slower than the idle delay (DPR 2, 4× CPU) still draw no link mid-gesture (B-fix)', async ({ browser, request, vault }) => {
+test('frames slower than the idle delay (DPR 2, 16× CPU) still draw no link mid-gesture (B-fix)', async ({ browser, request, vault }) => {
   // A gesture frame at DPR 2 on a slow laptop takes ~1 s. The idle wait used to count from the
   // last input only, so it ran out during a frame, between two wheel steps, and the next frame
   // drew every link. It now starts over at the end of each frame while the camera moves.
@@ -112,7 +112,7 @@ test('frames slower than the idle delay (DPR 2, 4× CPU) still draw no link mid-
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.waitForTimeout(1_500);
     const cdp = await context.newCDPSession(page);
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 16 });
     await reset();
     await wheelBurst(page, box, 6);
     // Each step's frame is now slower than the idle delay: still no link until the camera rests.
