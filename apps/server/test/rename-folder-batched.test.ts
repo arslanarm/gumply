@@ -122,16 +122,13 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     };
     await store.update("Hub", { title: "Hub 2" });
     const outcome = await inFlight;
-    const onDisk = await readFile(join(dir, "Hub 2.md"), "utf8");
-    // (b) would be the stale [[Hub/Sub]] back on disk: never.
-    expect(onDisk).not.toContain("[[Hub/Sub]]");
-    if (outcome === "saved") {
-      expect(onDisk).toBe("The hub, edited.\nIts own sub-page: [[Hub 2/Sub]].\n"); // (c): merged
-    } else {
-      expect(outcome).toBe(409); // (a): the user is asked
-      await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
-      expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub, edited.\nIts own sub-page: [[Hub 2/Sub]].\n");
-    }
+    // Deterministic: the save is held until the rename's rewrite ends (N9), and its version is the one
+    // before the rename (no writer, so no ownWrite to match): it is always a conflict, never luck.
+    expect(outcome).toBe(409);
+    // (b) would be the stale [[Hub/Sub]] back on disk: never, not before Keep mine and not after.
+    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).not.toContain("[[Hub/Sub]]");
+    await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
+    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub, edited.\nIts own sub-page: [[Hub 2/Sub]].\n");
   });
 
   it("the renamed page's own pass failing once (a write error) never drops the batched rewrite; the batches retry it (@lead, @opus-editor)", async () => {
