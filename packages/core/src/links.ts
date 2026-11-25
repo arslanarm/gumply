@@ -324,7 +324,9 @@ export function rewriteWikilinkFolder(markdown: string, from: string, to: string
 }
 
 function normalise(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  // #siuwzhwy: NFC on both sides, so a title or file name in decomposed form (NFD:
+  // macOS file names, some imports; `й`, `ё`, accents) matches a link typed composed.
+  return value.normalize("NFC").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 /**
@@ -354,6 +356,15 @@ function preferred(a: PageMeta, b: PageMeta, folder: string): boolean {
  * wins a tie); without it, as from the vault root.
  */
 export function resolveWikilink(targetTitle: string, pages: readonly PageMeta[], from?: string | null): PageMeta | null {
+  const found = resolveWikilinkExact(targetTitle, pages, from);
+  if (found) return found;
+  // #siuwzhwy: `[[Note.md]]` / `[[Folder/Note.md]]` mean the page, as in Obsidian. Only
+  // when nothing matches as written, so a page really titled "Note.md" still wins.
+  const bare = targetTitle.trim().replace(/\.md$/i, "");
+  return bare !== targetTitle.trim() && bare.length > 0 ? resolveWikilinkExact(bare, pages, from) : null;
+}
+
+function resolveWikilinkExact(targetTitle: string, pages: readonly PageMeta[], from?: string | null): PageMeta | null {
   const target = normalise(targetTitle);
   if (target.length === 0) return null;
   const folder = linkSourceFolder(from);

@@ -17,7 +17,17 @@ export function pageBasename(page: Pick<PageMeta, "id">): string {
 }
 
 function same(a: string, b: string): boolean {
-  return a.trim().toLowerCase().replace(/\s+/g, " ") === b.trim().toLowerCase().replace(/\s+/g, " ");
+  const key = (value: string) => value.normalize("NFC").trim().toLowerCase().replace(/\s+/g, " ");
+  return key(a) === key(b);
+}
+
+/**
+ * #siuwzhwy: a title as a link alias. `[` and `]` can't appear inside `[[…]]` (a `]`
+ * ends the link early, so `[[draft|[draft]]]` wasn't a link at all); they're dropped
+ * from the alias. The page keeps its title; only the link's shown text loses them.
+ */
+function aliasFor(title: string): string {
+  return title.replace(/[[\]]/g, "").replace(/\s+/g, " ").trim();
 }
 
 export interface LinkTarget {
@@ -40,7 +50,8 @@ export function linkTargetFor(page: PageMeta, pages: readonly PageMeta[]): LinkT
   const baseShared = others.some((other) => same(pageBasename(other), base) || same(other.title, base));
   const target = baseShared ? page.id : base;
   // `[[Plan|Plan]]` is just noise: an alias equal to the target is dropped.
-  return { target, alias: target === page.title ? "" : page.title };
+  const alias = aliasFor(page.title);
+  return { target, alias: alias === target || alias.length === 0 ? "" : alias };
 }
 
 /** The Markdown for a link to `page` (keeping an explicit alias and heading). */
