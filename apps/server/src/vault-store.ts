@@ -999,6 +999,11 @@ export class VaultStore {
    */
   private deferRewrites = false;
   private deferredRewrite: RenameRewrite | null = null;
+  /**
+   * #ber4hvce: a rename moved the page's folder (`P/` → `Q/`) while rewrites were deferred: the pass
+   * over links into it (#ekp8ns58) joins the rename's batches instead of running all at once.
+   */
+  private deferredFolder: { from: PageId; to: PageId } | null = null;
   /** D47: this installation's id (app data, never the vault); a recent journal entry is only resumed by its own. */
   private readonly instance: InstanceId;
   private readonly renameJournal: RenameJournal;
@@ -2496,10 +2501,18 @@ export class VaultStore {
       const { result, job } = await this.enqueue(async () => {
         this.deferRewrites = true;
         this.deferredRewrite = null;
+        this.deferredFolder = null;
         try {
           const result = await renameNow();
           // Set by rewriteLinksTo during renameNow (TS narrows the field to null across the await).
-          return { result, job: this.deferredRewrite as RenameRewrite | null };
+          const captured = this.deferredRewrite as RenameRewrite | null;
+          const folder = this.deferredFolder as { from: PageId; to: PageId } | null;
+          if (folder && !captured) {
+            // No batched rewrite to join: the folder's links follow now, as before #ber4hvce.
+            const linked = await this.rewriteFolderLinks(folder.from, folder.to);
+            return { result: { ...result, rewrittenPages: [...new Set([...result.rewrittenPages, ...linked])] }, job: null };
+          }
+          return { result, job: captured && folder ? this.withFolderRewrite(captured, folder.from, folder.to) : captured };
         } catch (error) {
           // Failed after the rewrite was captured: no batches will run, so drop its alias now.
           const captured = this.deferredRewrite as RenameRewrite | null;
@@ -2508,6 +2521,7 @@ export class VaultStore {
         } finally {
           this.deferRewrites = false;
           this.deferredRewrite = null;
+          this.deferredFolder = null;
         }
       });
       if (!job) return result;
@@ -3728,7 +3742,7 @@ export class VaultStore {
           const meta = metas.find((candidate) => candidate.id === newId);
           if (meta) metas.push({ ...meta, title: entry.oldTitle });
         }
-        return {
+        const resumed = {
           skip: new Set([oldId, newId]),
           rewriteText: rewriteWith(metas, new Set([oldId])),
           rewriteWith,
@@ -3740,6 +3754,12 @@ export class VaultStore {
           oldTitle: entry.oldTitle,
           newTitle: entry.newTitle,
         } satisfies RenameRewrite;
+        // #ber4hvce: the page's folder moved with it (its sub-pages are at the new id, none left at the old
+        // one): links into it follow too. Derived from the entry's ids, so the journal's shape is unchanged.
+        const keys = [...this.pages.keys()];
+        const folderMoved =
+          oldId !== newId && keys.some((key) => key.startsWith(`${newId}/`)) && !keys.some((key) => key.startsWith(`${oldId}/`));
+        return folderMoved ? this.withFolderRewrite(resumed, oldId, newId) : resumed;
       });
       if (!job) return;
       const current = job;
@@ -4331,7 +4351,10 @@ export class VaultStore {
     // folder move: path links to sub-pages (`[[P/Sub]]`), file embeds and links (`![[P/a.png]]`, the
     // table's `\|`) and Markdown links (`![](P/a.png)`), bytes kept. `[[P]]` itself is the title
     // rewrite's (rewriteLinksTo); this only matches the `P/` prefix.
-    const folderLinks = hasChildren ? await this.rewriteFolderLinks(id, newId) : [];
+    // #ber4hvce: during a rename (N9) it joins the rename's batches and journal instead.
+    let folderLinks: PageId[] = [];
+    if (hasChildren && this.deferRewrites) this.deferredFolder = { from: id, to: newId };
+    else if (hasChildren) folderLinks = await this.rewriteFolderLinks(id, newId);
     return [...new Set([...relinked, ...boards, ...folderLinks])];
   }
 
@@ -5216,18 +5239,43 @@ export class VaultStore {
     // Frontmatter: wikilink values only. `{ frontmatter: true }` hands this only the `[[…]]` spans of
     // property values (rewritePropertyLinks), so a Markdown-form value (`source: "[doc](Files/doc.pdf)"`)
     // is left as text, as Obsidian reads it; D38 `banner:` paths are never written.
+    return this.rewriteEverywhere(new Set(), this.folderRewriteText(from, to), {}, { frontmatter: true });
+  }
+
+  /** The text rewrite for folder `from` moved to `to`: path wikilinks, file embeds and Markdown links into it. */
+  private folderRewriteText(from: PageId, to: PageId): (markdown: string, source: PageId) => { content: string; count: number } {
     const before = (id: PageId) => (id.startsWith(`${to}/`) ? `${from}${id.slice(to.length)}` : id);
     const exists = (path: string) => existsSync(join(this.root, path));
-    return this.rewriteEverywhere(
-      new Set(),
-      (markdown, source) => {
-        const wiki = rewriteWikilinkFolder(markdown, from, to);
-        const files = relinkFolderFiles(wiki.content, before(source), source, from, to, exists);
-        return { content: files.content, count: wiki.count + files.count };
-      },
-      {},
-      { frontmatter: true },
-    );
+    return (markdown, source) => {
+      const wiki = rewriteWikilinkFolder(markdown, from, to);
+      const files = relinkFolderFiles(wiki.content, before(source), source, from, to, exists);
+      return { content: files.content, count: wiki.count + files.count };
+    };
+  }
+
+  /**
+   * #ber4hvce: a rename's batched job that also rewrites links into the page's moved folder. The title
+   * rewrite still leaves out the pages it skipped (the renamed page itself); the folder rewrite covers
+   * every page, the renamed one too (its own `[[P/Sub]]`). Both are idempotent, so a resumed job may
+   * pass a page twice.
+   */
+  private withFolderRewrite(job: RenameRewrite, from: PageId, to: PageId): RenameRewrite {
+    const folder = this.folderRewriteText(from, to);
+    const titleSkip = job.skip;
+    const skipped = (source: PageId) => [...titleSkip].some((id) => this.resolveId(id) === source);
+    const both =
+      (title: (markdown: string, source: PageId) => { content: string; count: number }) =>
+      (markdown: string, source: PageId) => {
+        const first = skipped(source) ? { content: markdown, count: 0 } : title(markdown, source);
+        const second = folder(first.content, source);
+        return { content: second.content, count: first.count + second.count };
+      };
+    return {
+      ...job,
+      skip: new Set<PageId>(),
+      rewriteText: both(job.rewriteText),
+      rewriteWith: (metas, targets) => both(job.rewriteWith(metas, targets)),
+    };
   }
 
   private async renameTagNow(fromInput: string, toInput: string, skip: readonly PageId[]): Promise<TagRenameResult> {
