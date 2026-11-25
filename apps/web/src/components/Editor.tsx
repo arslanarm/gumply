@@ -145,6 +145,8 @@ export interface EditorProps {
    * rename's version) instead of meeting the rename as a 409.
    */
   waitForRename?: (id: string) => Promise<{ id: string; updated: string | null; rewroteOwn?: boolean } | null> | null;
+  /** #ekp8ns58 (A): a save typed during a rename that rewrote this page's own body was dropped; the app reloads. */
+  onRenameRewroteOwn?: () => void;
   /**
    * After Keep mine: where the other version was kept (null: nowhere), and (N10) the rename link
    * changes the server kept in the user's text.
@@ -230,6 +232,7 @@ export function Editor({
   onSaveState,
   onSaved,
   waitForRename,
+  onRenameRewroteOwn,
   onConflictBackup,
   onReady,
   onOpenLink,
@@ -260,6 +263,8 @@ export function Editor({
   onSavedRef.current = onSaved;
   const waitForRenameRef = useRef(waitForRename);
   waitForRenameRef.current = waitForRename;
+  const onRenameRewroteOwnRef = useRef(onRenameRewroteOwn);
+  onRenameRewroteOwnRef.current = onRenameRewroteOwn;
   const onConflictBackupRef = useRef(onConflictBackup);
   onConflictBackupRef.current = onConflictBackup;
   const onHeadingResultRef = useRef(onHeadingResult);
@@ -310,8 +315,10 @@ export function Editor({
             if (renamed?.rewroteOwn) {
               // #ekp8ns58: the rename rewrote this page's own body; this text was typed during it and
               // still has the old links. Sending it with the answer's version would put them back (D37).
-              // Not sent: the app's "replace" reload keeps it in History first and loads the rewrite.
+              // Not sent: the app's "replace" reload keeps it in History first and loads the rewrite. The
+              // drop asks for that reload itself, so it never happens without one.
               pageIdRef.current = renamed.id;
+              onRenameRewroteOwnRef.current?.();
               return;
             }
             if (renamed) {
