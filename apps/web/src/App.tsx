@@ -1768,6 +1768,13 @@ export function App() {
         if (open !== id && openPageNeedsReload(updated.rewrittenPages, openNow, updated.id)) {
           void reloadOpenPage.current("auto");
         }
+        // #ekp8ns58: the rename rewrote the renamed page's OWN body (links into its moved folder,
+        // `[[P/Sub]]` → `[[Q/Sub]]`). The editor took the answer's version but still holds the old text,
+        // so its next save would pass the version check and silently put the old links back (D37).
+        // Reload it; text typed during the rename is kept in History first ("replace").
+        if ((open === id || open === updated.id) && (updated.rewrittenPages?.includes(updated.id) ?? false)) {
+          void reloadOpenPage.current("replace");
+        }
       } catch (error) {
         if (previousTitle !== null) showTitle(previousTitle);
         setActionError(errorMessage(error));
