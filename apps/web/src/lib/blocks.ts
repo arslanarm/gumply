@@ -107,6 +107,29 @@ export function moveBlockTo(
  *   and the other items keep theirs.
  * Anything else (a heading, code, table, image… into a list) is null: the caller shows no drop.
  */
+/** Copy the attributes the target node type has (an image block ↔ an inline image share src, alt, the raw…). */
+function imageAttrs(from: Record<string, unknown>, spec: Record<string, unknown> | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(spec ?? {})) if (key in from) out[key] = from[key];
+  return out;
+}
+
+/** #p6i94g2r: the inline image an item holds when it holds nothing else (`- ![A](a.png)`). */
+function imageOfItem(item: ProseMirrorNode): ProseMirrorNode | null {
+  if (item.childCount !== 1) return null;
+  const paragraph = item.firstChild!;
+  if (paragraph.type.name !== "paragraph" || paragraph.childCount !== 1) return null;
+  const only = paragraph.firstChild!;
+  return only.type.name === "inlineImage" ? only : null;
+}
+
+/** #p6i94g2r: an image block as an item's content, a paragraph holding the image inline. */
+function imageItemParagraph(state: EditorState, image: ProseMirrorNode): ProseMirrorNode | null {
+  const { inlineImage, paragraph } = state.schema.nodes;
+  if (!inlineImage || !paragraph) return null;
+  return paragraph.create(null, inlineImage.create(imageAttrs(image.attrs, inlineImage.spec.attrs)));
+}
+
 export function moveBlockConverting(
   state: EditorState,
   block: BlockRef,
@@ -133,20 +156,30 @@ export function moveBlockConverting(
   const into = $target.parent;
 
   let node: ProseMirrorNode | null = null;
+  const imageBlock = state.schema.nodes.image;
   if (ITEM_NAMES.has(name) && LIST_NAMES.has(sourceParent.type.name) && !LIST_NAMES.has(into.type.name)) {
-    // A list item out of its list: its own one-item list of the same kind.
-    const list = sourceParent.type.createAndFill(null, block.node);
-    if (list && into.canReplaceWith(at, at, list.type)) node = list;
-  } else if (name === "paragraph" && LIST_NAMES.has(into.type.name)) {
+    // #p6i94g2r: an item that is just an image comes out as the image block it was.
+    const image = imageOfItem(block.node);
+    const asBlock = image && imageBlock ? imageBlock.create(imageAttrs(image.attrs, imageBlock.spec.attrs)) : null;
+    if (asBlock && into.canReplaceWith(at, at, asBlock.type)) node = asBlock;
+    else {
+      // A list item out of its list: its own one-item list of the same kind.
+      const list = sourceParent.type.createAndFill(null, block.node);
+      if (list && into.canReplaceWith(at, at, list.type)) node = list;
+    }
+  } else if ((name === "paragraph" || name === "image") && LIST_NAMES.has(into.type.name)) {
     const itemType = into.type.name === "taskList" ? state.schema.nodes.taskItem : state.schema.nodes.listItem;
-    if (itemType) {
+    // #p6i94g2r: an image block becomes an item holding the image, as Obsidian
+    // writes it (`- ![A](a.png)`, an inline image in the item; #mrh4dsr6).
+    const content = name === "image" ? imageItemParagraph(state, block.node) : withoutSourceIndent(block.node);
+    if (itemType && content) {
       const attrs: Record<string, unknown> = {};
       if (itemType.name === "taskItem") attrs.checked = false;
       if (into.type.name === "orderedList") {
         const number = impliedNumber(into, at);
         if (number !== null) attrs.markdownNumber = number;
       }
-      const item = itemType.createAndFill(attrs, withoutSourceIndent(block.node));
+      const item = itemType.createAndFill(attrs, content);
       if (item && into.canReplaceWith(at, at, item.type)) node = item;
     }
   }
