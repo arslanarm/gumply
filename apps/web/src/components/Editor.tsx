@@ -146,7 +146,7 @@ export interface EditorProps {
    */
   waitForRename?: (id: string) => Promise<{ id: string; updated: string | null; rewroteOwn?: boolean } | null> | null;
   /** #ekp8ns58 (A): a save typed during a rename that rewrote this page's own body was dropped; the app reloads. */
-  onRenameRewroteOwn?: () => void;
+  onRenameRewroteOwn?: (renamedId: string) => void;
   /**
    * After Keep mine: where the other version was kept (null: nowhere), and (N10) the rename link
    * changes the server kept in the user's text.
@@ -318,7 +318,7 @@ export function Editor({
               // Not sent: the app's "replace" reload keeps it in History first and loads the rewrite. The
               // drop asks for that reload itself, so it never happens without one.
               pageIdRef.current = renamed.id;
-              onRenameRewroteOwnRef.current?.();
+              onRenameRewroteOwnRef.current?.(renamed.id);
               return;
             }
             if (renamed) {

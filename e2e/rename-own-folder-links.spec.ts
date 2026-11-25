@@ -84,7 +84,13 @@ test('typing during the rename: no stale link; the typed text goes to History, a
   // Every key, once: the first k in a "Before reload" version (after "Typed during."), the rest in the page.
   const typed = ' Just after.';
   const split = [...Array(typed.length + 1).keys()].find(
-    (k) => versionTexts.some((version) => version.includes(`Typed during.${typed.slice(0, k)}`)) && text.includes(`here.${typed.slice(k)}`),
+    // Whitespace at the split itself is not counted: Markdown drops a paragraph's trailing space, so a
+    // space typed at the remount can't be told apart there. Every other key must be in exactly one side.
+    (k) => {
+      const [start, rest] = [typed.slice(0, k), typed.slice(k)];
+      const inHistory = versionTexts.some((version) => version.includes(`Typed during.${start}`) || version.includes(`Typed during.${start.trimEnd()}`));
+      return inHistory && (text.includes(`here.${rest}`) || text.includes(`here.${rest.trimStart()}`));
+    },
   );
   expect(split, `"${typed}" is kept: History has its start, the page the rest (file: ${JSON.stringify(text)})`).toBeDefined();
   // Typing on in the reloaded page lands, with the rewrite kept.
