@@ -99,6 +99,22 @@ describe("plain folders (D33)", () => {
     expect((await getJson<PageMeta>(app, `/api/pages/${encodeId("Work/Plan")}`)).id).toBe("Office/Plan");
   });
 
+  it("renaming a folder also rewrites embeds and links to FILES in it (#baxuimsi), the table form's \\| kept", async () => {
+    const { app, dir, store } = await createTestServer();
+    await mkdir(join(dir, "Files"), { recursive: true });
+    await writeFile(join(dir, "Files/Notes.md"), "Notes in the folder.\n", "utf8");
+    await writeFile(join(dir, "Files/a.png"), "png", "utf8");
+    await writeFile(join(dir, "Files/doc.pdf"), "pdf", "utf8");
+    const gallery = "Pictures: ![[Files/a.png]] and ![[Files/a.png|300]], a file [[Files/doc.pdf|the doc]], a page [[Files/Notes]].\n\n| Pic | Doc |\n|---|---|\n| ![[Files/a.png\\|40]] | [[Files/doc.pdf\\|Doc]] |\n";
+    await writeFile(join(dir, "Gallery.md"), gallery, "utf8");
+    await store.rescan();
+
+    const response = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Files")}`, { title: "Media" });
+    expect(response.status).toBe(200);
+    expect(await readFile(join(dir, "Media/a.png"), "utf8")).toBe("png");
+    expect(await readFile(join(dir, "Gallery.md"), "utf8")).toBe(gallery.replaceAll("Files/", "Media/"));
+  });
+
   it("a rename onto a taken name gets a ` 2` suffix; a body edit is refused", async () => {
     const { app } = await obsidianVault();
     const renamed = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Home")}`, { title: "Work" });
