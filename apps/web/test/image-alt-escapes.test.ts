@@ -29,13 +29,18 @@ const altOf = (source: string) =>
 describe("a caption Gumply writes reads back the same", () => {
   for (const caption of ["A|300", "my_photo", "a*b*", "x [1]", "a & b", "back\\slash"]) {
     it(JSON.stringify(caption), () => {
-      const written = write({ src: "a.png", alt: caption });
+      // #e9bd64bb (D46): a typed caption is literal (`altLiteral`); a bare `|N` alt is a width.
+      const written = write({ src: "a.png", alt: caption, altLiteral: true });
       expect(altOf(written)).toBe(caption);
     });
   }
 
   it("an edited caption keeps the escapes it needs", () => {
-    expect(write({ src: "a.png", alt: "A|301" })).toBe("![A\\|301](a.png)");
+    expect(write({ src: "a.png", alt: "A|301", altLiteral: true })).toBe("![A\\|301](a.png)");
     expect(write({ src: "a.png", alt: "a*b*" })).toBe("![a\\*b\\*](a.png)");
+  });
+
+  it("an alt ending in |N that isn't marked literal is a caption plus a width (#e9bd64bb, D46)", () => {
+    expect(write({ src: "a.png", alt: "A|301" })).toBe("![A|301](a.png)");
   });
 });

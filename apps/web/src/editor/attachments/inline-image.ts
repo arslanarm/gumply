@@ -13,6 +13,7 @@ import { Node, mergeAttributes } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { urlForLink } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
+import { altParts } from "./image-width.js";
 import { getWikiLinkEnvironment, subscribeWikiLinkEnvironment } from "../wikilink/link-store.js";
 
 export const INLINE_IMAGE_ATTR = "data-inline-image";
@@ -97,9 +98,11 @@ export const InlineImage = Node.create({
       const render = () => {
         dom.src =
           urlForLink(String(current.attrs.src), getWikiLinkEnvironment(), "image", current.attrs.obsidian as string | null) ?? "";
-        dom.alt = String(current.attrs.alt ?? "");
+        // #e9bd64bb (D46): `![icon|16](x.png)` is 16 px wide, as in Obsidian.
+        const fromAlt = altParts(current.attrs);
+        dom.alt = fromAlt.text;
         if (current.attrs.title) dom.title = String(current.attrs.title);
-        const width = obsidianWidth(current.attrs.obsidian as string | null);
+        const width = obsidianWidth(current.attrs.obsidian as string | null) ?? fromAlt.width;
         if (width) dom.width = width;
         else dom.removeAttribute("width");
       };
@@ -139,8 +142,10 @@ export const InlineImage = Node.create({
           }
           const src = String(node.attrs.src ?? "");
           const title = String(node.attrs.title ?? "");
+          // #e9bd64bb: a size (`icon|16`) stays unescaped after the caption.
+          const { text, size } = altParts(node.attrs);
           state.write(
-            `![${String(node.attrs.alt ?? "").replace(/[[\]\\|]/g, "\\$&")}](${src.replace(/[()]/g, "\\$&")}${
+            `![${text.replace(/[[\]\\|]/g, "\\$&")}${size === null ? "" : `|${size}`}](${src.replace(/[()]/g, "\\$&")}${
               title ? ` "${title.replace(/"/g, '\\"')}"` : ""
             })`,
           );

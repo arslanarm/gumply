@@ -10,6 +10,11 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 
 const RAW = "data-md-raw";
 
+/** What `markdownRawKey` holds for these attributes (#e9bd64bb: a resize updates both). */
+export function rawKey(src: unknown, alt: unknown, title: unknown): string {
+  return key(src, alt, title);
+}
+
 function key(src: unknown, alt: unknown, title: unknown): string {
   return [String(src ?? ""), String(alt ?? ""), String(title ?? "")].join("\u0000");
 }

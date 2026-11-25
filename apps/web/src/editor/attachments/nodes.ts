@@ -11,6 +11,9 @@ import { FileAttachmentView } from "../../components/FileAttachmentView.js";
 import { ImageBlockView } from "../../components/ImageBlockView.js";
 import { hrefForAttachment, obsidianVaultPath } from "../../lib/attachment-links.js";
 import { imageRawAttributes, unchangedImageMarkdown } from "./image-raw.js";
+import { NodeSelection } from "@tiptap/pm/state";
+import { altLiteralAttribute, altParts, embedWidth, imageWidthOf, steppedWidth, widthPatch } from "./image-width.js";
+import { IMAGE_WIDTH_LIMIT_EVENT, imageColumnWidth, imageFigureOf, naturalImageWidth, renderedImageWidth } from "./image-measure.js";
 import { markdownFileLinkPath } from "../wikilink/markdown-plugin.js";
 
 /** `|` escaped in a written label, so the link is safe inside a table cell too (#eg65ktng). */
@@ -52,6 +55,8 @@ export const ImageBlock = Node.create({
       uploadId: { default: "", parseHTML: () => "", renderHTML: () => ({}) },
       obsidian: OBSIDIAN_ATTR,
       ...imageRawAttributes,
+      // #e9bd64bb: a caption typed ending in `|digits` is text, not a width (see altFor).
+      altLiteral: altLiteralAttribute,
     };
   },
 
@@ -67,6 +72,33 @@ export const ImageBlock = Node.create({
 
   addNodeView() {
     return ReactNodeViewRenderer(ImageBlockView);
+  },
+
+  addKeyboardShortcuts() {
+    // #e9bd64bb: with an image block selected, Shift+←/→ step its width through
+    // 25/50/75/100% of the column (100% writes no size). One undo step each.
+    const step = (direction: 1 | -1) => () => {
+      const { state, view } = this.editor;
+      const selection = state.selection;
+      if (!(selection instanceof NodeSelection) || selection.node.type.name !== this.name) return false;
+      const figure = imageFigureOf(view.nodeDOM(selection.from) as Element | null);
+      const column = imageColumnWidth(figure);
+      if (column <= 0) return false;
+      const current = imageWidthOf(selection.node.attrs);
+      // No width: the image shows at its natural size (capped), so step from what's drawn.
+      const next = steppedWidth(current ?? renderedImageWidth(figure), column, direction, naturalImageWidth(figure));
+      if (next === current) {
+        // Already at 25% or the full column: say so, so a screen reader hears the limit.
+        figure?.dispatchEvent(new CustomEvent(IMAGE_WIDTH_LIMIT_EVENT, { detail: { direction } }));
+        return true;
+      }
+      const attrs = { ...selection.node.attrs, ...widthPatch(selection.node.attrs, next) };
+      const tr = state.tr.setNodeMarkup(selection.from, undefined, attrs);
+      tr.setSelection(NodeSelection.create(tr.doc, selection.from));
+      view.dispatch(tr);
+      return true;
+    };
+    return { "Shift-ArrowLeft": step(-1), "Shift-ArrowRight": step(1) };
   },
 
   addStorage() {
@@ -94,8 +126,13 @@ export const ImageBlock = Node.create({
           // #8k4ssrkb: the file it resolves to, wherever it lives (else the old guess).
           const href = node.attrs.obsidian ? hrefForAttachment(obsidianVaultPath(node.attrs.obsidian as string) ?? src) : src;
           const escaped = href.replace(/[()]/g, "\\$&");
+          // #e9bd64bb (D46): the width ends the alt, `![Caption|300](…)`, unescaped; an
+          // embed's `|300` comes along when it becomes Markdown.
+          const { text, size } = altParts(node.attrs);
+          const embedded = node.attrs.obsidian ? embedWidth(node.attrs.obsidian as string) : null;
+          const sizeText = size ?? (embedded === null ? null : String(embedded));
           state.write(
-            `![${escapePipes(state.esc(alt))}](${escaped}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`,
+            `![${escapePipes(state.esc(text))}${sizeText === null ? "" : `|${sizeText}`}](${escaped}${title ? ` "${title.replace(/"/g, '\\"')}"` : ""})`,
           );
           state.closeBlock(node);
         },
