@@ -170,11 +170,15 @@ describe("Yandex Disk's `(копия с компьютера X)` copies (#f5n87b
       [COPY, "Заметки/Сад/План", "yandex", "LAPTOP-RU"],
       ["Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2)", "Заметки/Сад/План", "yandex", "LAPTOP-RU"],
     ]);
-    // The paired copies leave the tree; the orphan and the root page stay ordinary pages.
-    const tree = (await getJson<PageMeta[]>(app, "/api/pages")).map((page) => page.id);
-    expect(tree).not.toContain(COPY);
-    expect(tree).toContain("План");
-    expect(tree).toContain("Elsewhere/План (копия с компьютера LAPTOP-RU)");
+    // The page list marks them (the client hides marked copies from the tree): paired copies point at their
+    // original; the orphan has no original (an ordinary page); the same-named root page is no copy and has none.
+    const byId = new Map((await getJson<PageMeta[]>(app, "/api/pages")).map((page) => [page.id, page]));
+    expect(byId.get(COPY)?.conflictOf).toBe("Заметки/Сад/План");
+    expect(byId.get("Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2)")?.conflictOf).toBe("Заметки/Сад/План");
+    expect(byId.get("Заметки/Сад/План")?.conflicts).toBe(2);
+    expect(byId.get("Elsewhere/План (копия с компьютера LAPTOP-RU)")?.conflictOf).toBeNull();
+    expect(byId.get("План")?.conflictOf).toBeUndefined();
+    expect(byId.get("План")?.conflicts ?? 0).toBe(0);
     expect(await snapshot(dir)).toEqual(before); // reading writes nothing (D37)
   });
 });
