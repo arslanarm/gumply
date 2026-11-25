@@ -3716,7 +3716,8 @@ export class VaultStore {
     options: RelinkOptions,
   ): Promise<PageId[]> {
     const files = await this.attachmentFiles();
-    const exists = (path: string) => files.has(path);
+    // #sj5a2trb: relative links to any vault file follow the note, so `exists` sees the whole vault.
+    const exists = (path: string) => files.has(path) || existsSync(join(this.root, path));
     const changed: PageId[] = [];
     const copies = this.copyIds();
     for (const { from, to } of relevant) {

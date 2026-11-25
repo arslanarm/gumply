@@ -166,11 +166,20 @@ export function relinkAttachments(
     const href = match[3] ?? "";
     if (options.keepValidAtDestination && exists) {
       const here = strictTarget(toNoteId, href);
-      if (isAttachmentPath(here) && exists(here)) continue;
+      // #sj5a2trb: any file, not only attachments/, already valid at the destination stays as written.
+      if (here !== null && exists(here)) continue;
     }
     const target = resolveAttachmentHref(fromNoteId, href, exists);
-    if (!isAttachmentPath(target)) continue;
-    const next = attachmentHref(toNoteId, target);
+    let next: string;
+    if (isAttachmentPath(target)) next = attachmentHref(toNoteId, target);
+    else {
+      // #sj5a2trb: any other note-relative link to an EXISTING vault file follows the note too (`../Other/c.png`).
+      // Only the strict relative reading counts: a vault-root path doesn't depend on where the note is, and a
+      // link to a missing file is left as written. `<…>`, a `#`/`?` suffix and the title are kept.
+      const moved = exists ? relinkedOtherFile(href, fromNoteId, toNoteId, exists) : null;
+      if (moved === null) continue;
+      next = moved;
+    }
     const original = markdown.slice(match.index, match.index + match[0].length);
     const hrefStart = original.indexOf("](") + 2;
     const hrefIndex = original.indexOf(href, hrefStart);
@@ -298,4 +307,22 @@ function swapFolderSegments(rawPath: string, base: readonly string[], from: stri
     return [...raw.slice(0, by[0]), ...replacement, ...raw.slice(by[by.length - 1]! + 1)].join("/");
   }
   return null;
+}
+
+/** #sj5a2trb: `href` re-pointed from `toNoteId` when it strictly resolves (from `fromNoteId`) to an existing file. */
+function relinkedOtherFile(href: string, fromNoteId: string, toNoteId: string, exists: (vaultPath: string) => boolean): string | null {
+  const wrapped = href.startsWith("<") && href.endsWith(">");
+  const raw = wrapped ? href.slice(1, -1) : href;
+  if (raw.length === 0 || isExternal(raw)) return null;
+  const cut = raw.search(/[?#]/);
+  const pathPart = cut === -1 ? raw : raw.slice(0, cut);
+  const suffix = cut === -1 ? "" : raw.slice(cut);
+  const path = wrapped ? pathPart : decodeHref(pathPart);
+  if (path.startsWith("/")) return null; // absolute: not note-relative
+  const folder = noteFolder(fromNoteId);
+  const target = normaliseVaultPath(folder ? `${folder}/${path}` : path);
+  if (target === null || !exists(target)) return null;
+  const relative = relativePath(toNoteId, target);
+  const next = wrapped ? `<${relative}${suffix}>` : `${encodeHref(relative)}${suffix}`;
+  return next === href ? null : next;
 }
