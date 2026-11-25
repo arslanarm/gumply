@@ -189,3 +189,94 @@ test.describe('properties', () => {
     expect(read('Odd')).toBe('---\nrank: lots\n---\nx\n');
   });
 });
+
+/**
+ * #uyd7nsct (a lost edit): changing a property's type re-reads the page for the new types. That
+ * read could be answered with the value from before a save that landed meanwhile; putting it back
+ * lost the save, and the type change's conversion then wrote the old value over the new one.
+ */
+test.describe('a property edit around a type change is never lost (#uyd7nsct)', () => {
+  function deferred() {
+    let resolve: () => void = () => {};
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  test('a value typed right after the type change survives a page read answered with the older value', async ({ page, vault }) => {
+    void vault;
+    writeFileSync(file('Rank'), '---\nrank: "3"\n---\n\nThe body.\n');
+    await page.goto('/#/Rank');
+    await expectPageTitle(page, 'Rank');
+    const getFetched = deferred();
+    const putDone = deferred();
+    const getReleased = deferred();
+    let armed = false;
+    let getHeld = false;
+    let putHeld = false;
+    // The page read after the type change is taken from the server first (still "3"), and handed
+    // to the window only after the save of "5" has been answered: the order a busy machine gives.
+    await page.route('**/api/pages/Rank', async (route) => {
+      const method = route.request().method();
+      if (armed && method === 'GET' && !getHeld) {
+        getHeld = true;
+        const response = await route.fetch();
+        getFetched.resolve();
+        await putDone.promise;
+        await route.fulfill({ response });
+        getReleased.resolve();
+        return;
+      }
+      if (armed && method === 'PUT' && !putHeld) {
+        putHeld = true;
+        await getFetched.promise;
+        const response = await route.fetch();
+        await route.fulfill({ response });
+        putDone.resolve();
+        return;
+      }
+      await route.fallback();
+    });
+    await page.getByTestId('property-key-rank').click();
+    armed = true;
+    await page.getByTestId('property-type-number').click();
+    await expect(page.getByTestId('property-key-rank').locator('svg')).toBeVisible();
+    const rank = page.getByTestId('property-value-rank').locator('input');
+    await rank.fill('5');
+    await rank.press('Enter');
+    await getReleased.promise;
+    // Give the type change's conversion its turn, then the file and the field must still say 5.
+    await page.waitForTimeout(1_500);
+    await expect.poll(() => read('Rank'), { timeout: 5_000 }).toMatch(/\nrank: 5\n/);
+    await expect(rank).toHaveValue('5');
+  });
+
+  test('a value typed just before the type change, still being saved, is converted, not lost', async ({ page, vault }) => {
+    void vault;
+    writeFileSync(file('Rank'), '---\nrank: "3"\n---\n\nThe body.\n');
+    await page.goto('/#/Rank');
+    await expectPageTitle(page, 'Rank');
+    const typeChosen = deferred();
+    let putHeld = false;
+    await page.route('**/api/pages/Rank', async (route) => {
+      if (route.request().method() === 'PUT' && !putHeld) {
+        putHeld = true;
+        await typeChosen.promise; // the save of "7" is still on its way when the type changes
+        await route.continue();
+        return;
+      }
+      await route.fallback();
+    });
+    const rank = page.getByTestId('property-value-rank').locator('input');
+    await rank.fill('7');
+    await rank.press('Enter');
+    await page.getByTestId('property-key-rank').click();
+    await page.getByTestId('property-type-number').click();
+    typeChosen.resolve();
+    await expect.poll(() => read('Rank'), { timeout: 8_000 }).toMatch(/\nrank: 7\n/);
+    await page.waitForTimeout(1_000);
+    expect(read('Rank')).toMatch(/\nrank: 7\n/);
+    await expect(rank).toHaveValue('7');
+  });
+});
