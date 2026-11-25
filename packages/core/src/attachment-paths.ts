@@ -323,6 +323,18 @@ function relinkedOtherFile(href: string, fromNoteId: string, toNoteId: string, e
   const target = normaliseVaultPath(folder ? `${folder}/${path}` : path);
   if (target === null || !exists(target)) return null;
   const relative = relativePath(toNoteId, target);
-  const next = wrapped ? `<${relative}${suffix}>` : `${encodeHref(relative)}${suffix}`;
+  // D37 (@opus-editor): the ../ prefix must change, but the tail is kept as written. From the end, every
+  // rebuilt segment that decodes equal to the raw one takes the raw bytes (an encoded name stays encoded);
+  // a leading `./` stays when the new path doesn't climb.
+  const rawSegments = pathPart.split("/");
+  const built = relative.split("/");
+  const out = built.map((segment) => (wrapped ? segment : encodeHref(segment)));
+  for (let k = 1; k <= built.length && k <= rawSegments.length; k++) {
+    const rawSegment = rawSegments[rawSegments.length - k]!;
+    if ((wrapped ? rawSegment : decodeHref(rawSegment)) !== built[built.length - k]) break;
+    out[out.length - k] = rawSegment;
+  }
+  const kept = pathPart.startsWith("./") && !relative.startsWith("../") ? `./${out.join("/")}` : out.join("/");
+  const next = wrapped ? `<${kept}${suffix}>` : `${kept}${suffix}`;
   return next === href ? null : next;
 }
