@@ -71,25 +71,30 @@ async function openCounted(page: Page) {
     w.__inputs = [];
   });
   /**
-   * The longest pause the camera had since `reset`: between two inputs, and from the last one
-   * to now. Each step must come before the links' idle delay, or the camera really rested and
-   * drawing the links was right. A traced or very loaded run spaces the steps out
-   * (#9x4duwmg: --trace on gave 390–450 ms), so it is skipped with a note, not failed.
+   * The links drawn since `reset`, read mid-gesture. Each step must come before the links'
+   * idle delay, or the camera really rested and drawing the links was right. So only when
+   * links were drawn *and* some pause (between inputs, by event time, or from the last input
+   * to this read) reached the delay is the case skipped with a note instead of failed
+   * (#9x4duwmg: --trace on spaced the steps 390-450 ms apart). No link drawn passes however
+   * slow the run, so the guard never hides the product check.
    */
   const linesMidGesture = async (what: string): Promise<number> => {
     // One read: the count and the pauses up to the moment it was taken.
-    const { count, gap } = await page.evaluate(() => {
+    const { count, between, toRead } = await page.evaluate(() => {
       const w = window as unknown as { __lines: number; __inputs: number[] };
-      const times = [...w.__inputs, performance.now()];
+      const times = w.__inputs;
       let max = 0;
       for (let i = 1; i < times.length; i++) max = Math.max(max, times[i]! - times[i - 1]!);
-      return { count: w.__lines, gap: Math.round(max) };
+      const last = times.at(-1);
+      return { count: w.__lines, between: Math.round(max), toRead: last === undefined ? 0 : Math.round(performance.now() - last) };
     });
+    const gap = Math.max(between, toRead);
     // Always noted, so a report shows how close a run came to the idle delay.
-    test.info().annotations.push({ type: 'gesture-gap', description: `${what}: longest pause ${gap} ms` });
-    const note = `${what}: gesture too slow to test (${gap} ms gaps, idle delay ${IDLE_MS} ms)`;
-    if (gap >= IDLE_MS) test.info().annotations.push({ type: 'skip-reason', description: note });
-    test.skip(gap >= IDLE_MS, note);
+    test.info().annotations.push({ type: 'gesture-gap', description: `${what}: ${between} ms between inputs, ${toRead} ms to the read, ${count} lineTo` });
+    const rested = count > 0 && gap >= IDLE_MS;
+    const note = `${what}: gesture too slow to test (${gap} ms pause, idle delay ${IDLE_MS} ms)`;
+    if (rested) test.info().annotations.push({ type: 'skip-reason', description: note });
+    test.skip(rested, note);
     return count;
   };
   return { canvas, lines, reset, linesMidGesture };
