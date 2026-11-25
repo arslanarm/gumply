@@ -162,6 +162,28 @@ describe("plain folders (D33)", () => {
     expect(await readFile(join(dir, "P.md"), "utf8")).toBe("![c](Other/c.png)\n");
   });
 
+  it("renaming or moving a PAGE with sub-pages rewrites other pages' links to files in its folder (#ekp8ns58)", async () => {
+    const { app, dir, store } = await createTestServer();
+    await mkdir(join(dir, "P"), { recursive: true });
+    await mkdir(join(dir, "Archive"), { recursive: true });
+    await writeFile(join(dir, "P.md"), "The page.\n", "utf8");
+    await writeFile(join(dir, "P/Sub.md"), "A sub-page.\n", "utf8");
+    await writeFile(join(dir, "P/a.png"), "png", "utf8");
+    await writeFile(join(dir, "Archive/Keep.md"), "x\n", "utf8");
+    const other = "![[P/a.png]] ![[P/a.png|300]] ![pic](P/a.png) [[P/Sub]]\n\n| Pic |\n|---|\n| ![[P/a.png\\|40]] |\n";
+    await writeFile(join(dir, "Other.md"), other, "utf8");
+    await store.rescan();
+
+    // rename P → Q (the page and its folder move together)
+    expect((await jsonRequest(app, "PUT", `/api/pages/${encodeId("P")}`, { title: "Q" })).status).toBe(200);
+    expect(await readFile(join(dir, "Q/a.png"), "utf8")).toBe("png");
+    expect(await readFile(join(dir, "Other.md"), "utf8")).toBe(other.replaceAll("P/", "Q/"));
+
+    // then move Q under Archive
+    expect((await jsonRequest(app, "POST", `/api/pages/${encodeId("Q")}/move`, { parentId: "Archive" })).status).toBe(200);
+    expect(await readFile(join(dir, "Other.md"), "utf8")).toBe(other.replaceAll("P/", "Archive/Q/"));
+  });
+
   it("a rename onto a taken name gets a ` 2` suffix; a body edit is refused", async () => {
     const { app } = await obsidianVault();
     const renamed = await jsonRequest(app, "PUT", `/api/pages/${encodeId("Home")}`, { title: "Work" });
