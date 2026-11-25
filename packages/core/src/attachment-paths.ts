@@ -285,6 +285,15 @@ function swapFolderSegments(rawPath: string, base: readonly string[], from: stri
     if (stack.length !== want.length || !stack.every((entry, k) => entry.name.toLowerCase() === want[k])) continue;
     const by = stack.map((entry) => entry.by);
     if (by[0] === -1 || by.some((index, k) => k > 0 && index !== by[k - 1]! + 1)) return null;
+    // A later `..` that climbs back out of the folder (`Files/../Files/a.png`) means these raw segments
+    // aren't the folder the link ends up in: rebuild. One that stays inside (`Files/x/../a.png`) is fine.
+    let depth = stack.length;
+    for (let j = i + 1; j < raw.length; j++) {
+      const rest = wrapped ? raw[j]! : decodeHref(raw[j]!);
+      if (rest === "" || rest === ".") continue;
+      depth += rest === ".." ? -1 : 1;
+      if (depth < want.length) return null;
+    }
     const replacement = to.split("/").map((part) => (wrapped ? part : encodeHref(part)));
     return [...raw.slice(0, by[0]), ...replacement, ...raw.slice(by[by.length - 1]! + 1)].join("/");
   }
