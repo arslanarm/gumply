@@ -184,8 +184,12 @@ function isAttachmentFileTarget(title: string): boolean {
   return hasAttachmentExtension(title);
 }
 
-/** Extract all page wikilinks from a Markdown body, in document order. */
-export function extractWikilinks(markdown: string): WikiLink[] {
+/**
+ * Extract all page wikilinks from a Markdown body, in document order.
+ * `files: true` (#baxuimsi) also returns links and embeds whose target is a file (`![[a.png]]`,
+ * `[[doc.pdf]]`), which graph and backlinks leave out (D19); a folder move rewrites them too.
+ */
+export function extractWikilinks(markdown: string, options: { files?: boolean } = {}): WikiLink[] {
   const text = maskCode(markdown);
   const links: WikiLink[] = [];
   // `![[file.png]]` is an attachment embed, not a page link: parseEmbeds owns
@@ -208,7 +212,7 @@ export function extractWikilinks(markdown: string): WikiLink[] {
     const hash = targetPart.indexOf("#");
     const title = (hash === -1 ? targetPart : targetPart.slice(0, hash)).trim().replace(/\s+/g, " ");
     if (title.length === 0) continue;
-    if (isAttachmentFileTarget(title)) continue;
+    if (!options.files && isAttachmentFileTarget(title)) continue;
 
     const heading = hash === -1 ? "" : targetPart.slice(hash + 1).trim();
     const alias = aliasPart.trim();
@@ -312,7 +316,8 @@ export function rewriteWikilinkTargets(
 export function rewriteWikilinkFolder(markdown: string, from: string, to: string): RewriteResult {
   const prefix = `${from.toLowerCase()}/`;
   const moved: WikiLink[] = [];
-  for (const link of extractWikilinks(markdown)) {
+  // #baxuimsi: files in the folder too (`![[Files/a.png]]`, `[[Files/doc.pdf]]`), not only its pages.
+  for (const link of extractWikilinks(markdown, { files: true })) {
     if (link.targetTitle.toLowerCase().startsWith(prefix)) moved.push(link);
   }
   if (moved.length === 0) return { content: markdown, count: 0 };
