@@ -4357,8 +4357,17 @@ export class VaultStore {
     // meets a conflict from its own rename. Before the rewrite is captured, so I/O may fail here.
     let folderLinks: PageId[] = [];
     if (hasChildren && this.deferRewrites) {
+      const own = this.pages.get(newId);
+      const before = own?.content ?? null;
+      // N10: a Keep mine from the editor's version before its rename merges this change, so the chain
+      // starts where the rename's own write began (the version that write replaced), as versionMatches does.
+      const chainFrom = own ? (own.ownWrite && own.ownWrite.version === own.updated ? own.ownWrite.replaced : own.updated) : null;
       const others = new Set([...this.pages.keys()].filter((key) => key !== newId));
       folderLinks = await this.rewriteEverywhere(others, this.folderRewriteText(id, newId), {}, { frontmatter: true });
+      const after = this.pages.get(newId);
+      if (before !== null && chainFrom !== null && after && after.content !== before) {
+        this.rememberRenameRewrite(newId, before, after.content, chainFrom, after.updated, newId.slice(newId.lastIndexOf("/") + 1));
+      }
       this.deferredFolder = { from: id, to: newId };
     } else if (hasChildren) folderLinks = await this.rewriteFolderLinks(id, newId);
     return [...new Set([...relinked, ...boards, ...folderLinks])];

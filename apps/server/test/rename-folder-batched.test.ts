@@ -102,6 +102,33 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     expect(saved.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\nMore.\n");
   });
 
+  it("a save in flight during the batches, from the version before the rename: a conflict, never the stale link written back; Keep mine keeps the edit and [[Hub 2/Sub]] (@lead, @opus-hunter)", async () => {
+    const dir = await vault();
+    const store = await open(dir);
+    const start = store.get("Hub");
+    const edited = start.content.replace("The hub.", "The hub, edited.");
+    let inFlight: Promise<unknown> | null = null;
+    store.afterRenameBatch = async () => {
+      // The editor, still on the version before the rename, saves while the batches run (held until they end).
+      inFlight ??= store.update("Hub", { content: edited, expectedUpdated: start.updated }).then(
+        () => "saved",
+        (error: { status?: number }) => error.status ?? "error",
+      );
+    };
+    await store.update("Hub", { title: "Hub 2" });
+    const outcome = await inFlight;
+    const onDisk = await readFile(join(dir, "Hub 2.md"), "utf8");
+    // (b) would be the stale [[Hub/Sub]] back on disk: never.
+    expect(onDisk).not.toContain("[[Hub/Sub]]");
+    if (outcome === "saved") {
+      expect(onDisk).toBe("The hub, edited. Its own sub-page: [[Hub 2/Sub]].\n"); // (c): merged
+    } else {
+      expect(outcome).toBe(409); // (a): the user is asked
+      const kept = await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
+      expect(kept.content).toBe("The hub, edited. Its own sub-page: [[Hub 2/Sub]].\n");
+    }
+  });
+
   it("a crash after the first batch: the next start finishes the folder links too, byte for byte", async () => {
     const dir = await vault();
     const crashing = await open(dir);
