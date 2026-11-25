@@ -1839,9 +1839,25 @@ export function App() {
       const before = pageRef.current?.properties?.find((item) => item.key === key);
       await api.setPropertyType(key, type);
       if (!id) return;
-      // Types are vault-wide: refresh just this page's properties.
+      // Types are vault-wide: take this page's types from the server. Only the types (#uyd7nsct):
+      // this read can be answered with a value from before a save that landed meanwhile, and
+      // putting that value back lost the save (the conversion below then wrote the old value over
+      // it). Values come from the save queue's own answers.
       const fresh = await api.getPage(id);
-      setPage((previous) => (previous && previous.id === fresh.id ? { ...previous, properties: fresh.properties ?? [] } : previous));
+      // Only the type: everything else a property carries (its value, the tags hint parsed from that
+      // value, editable) comes from the value, and the page's own value is the newest one.
+      const freshTypes = new Map((fresh.properties ?? []).map((item) => [item.key, item.type] as const));
+      setPage((previous) =>
+        previous && previous.id === fresh.id && previous.properties
+          ? {
+              ...previous,
+              properties: previous.properties.map((item) => {
+                const freshType = freshTypes.get(item.key);
+                return freshType && freshType !== item.type ? { ...item, type: freshType } : item;
+              }),
+            }
+          : previous,
+      );
       // This page's value follows when it converts cleanly ("2" → 2, a
       // single value → a list): only that line is written. Other pages keep
       // theirs, as in Obsidian; a value that doesn't convert shows a hint.
