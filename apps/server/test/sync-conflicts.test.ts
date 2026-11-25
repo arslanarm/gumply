@@ -150,6 +150,35 @@ describe("conflict copies are recognised and kept out of the vault's indexes (§
   });
 });
 
+describe("a cloud drive's `(копия с компьютера X)` copies (#f5n87bfd)", () => {
+  const COPY = "Заметки/Сад/План (копия с компьютера LAPTOP-RU)";
+  const files: Record<string, string> = {
+    "Заметки/Сад/План.md": "Мой текст.\n",
+    [`${COPY}.md`]: "Их текст.\n",
+    "Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2).md": "Ещё одна копия.\n",
+    // A copy whose original lives in another folder: a same-named page elsewhere must not be taken for it.
+    "План.md": "Another page with the same name, at the root.\n",
+    "Elsewhere/План (копия с компьютера LAPTOP-RU).md": "A copy with no original in its own folder.\n",
+  };
+
+  it("pairs a copy with the original in its own folder only; elsewhere it's an orphan, never a same-named page", async () => {
+    const { app, dir } = await vault(files);
+    const before = await snapshot(dir);
+    const list = await getJson<ConflictsList>(app, "/api/conflicts");
+    expect(list.copies.map((copy) => [copy.copyId, copy.originalId, copy.tool, copy.device])).toEqual([
+      ["Elsewhere/План (копия с компьютера LAPTOP-RU)", null, "cloud", "LAPTOP-RU"],
+      [COPY, "Заметки/Сад/План", "cloud", "LAPTOP-RU"],
+      ["Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2)", "Заметки/Сад/План", "cloud", "LAPTOP-RU"],
+    ]);
+    // The paired copies leave the tree; the orphan and the root page stay ordinary pages.
+    const tree = (await getJson<PageMeta[]>(app, "/api/pages")).map((page) => page.id);
+    expect(tree).not.toContain(COPY);
+    expect(tree).toContain("План");
+    expect(tree).toContain("Elsewhere/План (копия с компьютера LAPTOP-RU)");
+    expect(await snapshot(dir)).toEqual(before); // reading writes nothing (D37)
+  });
+});
+
 describe("resolving a copy (§4.4)", () => {
   async function fresh(app: ReturnType<typeof createApp>, copyId: string) {
     const list = await getJson<ConflictsList>(app, "/api/conflicts");
