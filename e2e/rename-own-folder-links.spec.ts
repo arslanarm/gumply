@@ -8,7 +8,8 @@ import { API_URL, E2E_VAULT } from './support/env';
  * (`[[P/Sub]]`). The server rewrites that link to `[[Q/Sub]]`; the editor must not put the old link
  * back with its next save (D37).
  */
-test('renaming a parent from its title keeps the rewrite of its own [[P/Sub]] when typing on', async ({ page }) => {
+test('renaming a parent from its title keeps the rewrite of its own [[P/Sub]] when typing on', async ({ page, vault }) => {
+  void vault; // resets the vault before and after
   await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
   await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
   await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
@@ -33,7 +34,8 @@ test('renaming a parent from its title keeps the rewrite of its own [[P/Sub]] wh
   expect(text).not.toContain('[[Parent/Sub]]');
 });
 
-test('typing during the rename: no stale link, and the typed text is kept (in the file or in History on the renamed page)', async ({ page, request }) => {
+test('typing during the rename: no stale link, and the typed text is kept (in the file or in History on the renamed page)', async ({ page, request, vault }) => {
+  void vault; // resets the vault before and after
   await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
   await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
   await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
@@ -70,7 +72,8 @@ test('typing during the rename: no stale link, and the typed text is kept (in th
   }
 });
 
-test('a self-link in the renamed page is never put back to an older form by the editor (@lead)', async ({ page }) => {
+test('a self-link in the renamed page is never put back to an older form by the editor (@lead)', async ({ page, vault }) => {
+  void vault; // resets the vault before and after
   await fs.writeFile(path.join(E2E_VAULT, 'Selfy.md'), 'Me: [[Selfy]] and [[Selfy#Part|part]].\n\n## Part\n');
   await page.goto('/#/Selfy');
   await expect(page.getByTestId('editor-content')).toContainText('Me:');
@@ -89,7 +92,8 @@ test('a self-link in the renamed page is never put back to an older form by the 
   expect((await fs.readFile(path.join(E2E_VAULT, 'Selfish.md'), 'utf8')).split('\n')[0]).toBe(`${server} Typed.`);
 });
 
-test('moving the open page deeper or shallower: its relinked ../ links survive typing on (#sj5a2trb, 0.9.5)', async ({ page }) => {
+test('moving the open page deeper or shallower: its relinked ../ links survive typing on (#sj5a2trb, 0.9.5)', async ({ page, vault }) => {
+  void vault; // resets the vault before and after
   await fs.mkdir(path.join(E2E_VAULT, 'Notes'), { recursive: true });
   await fs.mkdir(path.join(E2E_VAULT, 'Other'), { recursive: true });
   await fs.writeFile(path.join(E2E_VAULT, 'Other', 'c.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
@@ -111,7 +115,8 @@ test('moving the open page deeper or shallower: its relinked ../ links survive t
   expect(text).not.toContain('../Other/c.png');
 });
 
-test('a save in flight from before the rename: if it meets a conflict, Keep mine keeps the typing and the rewritten [[Moved/Sub]] stays in History (D22, 0.9.x)', async ({ page, request }) => {
+test('a save in flight from before the rename: the rename waits for it, so no conflict, and the file has the typing and [[Moved/Sub]] (0.9.x)', async ({ page, vault }) => {
+  void vault; // resets the vault before and after
   await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
   await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
   await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
@@ -153,25 +158,12 @@ test('a save in flight from before the rename: if it meets a conflict, Keep mine
   await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
   await page.waitForTimeout(4_000); // the held save has landed (or failed)
 
+  // Pinned on 0.9.x (slot run, 3/3): the rename waits for the save in flight, so it lands first and the
+  // rename's rewrite applies on top. No conflict, the typing and [[Moved/Sub]] both in the file.
   const states = await page.evaluate(() => [...(window as unknown as { __states: Set<string> }).__states]);
-  const sawConflict = states.includes('conflict') || (await page.getByTestId('conflict-keep-mine').isVisible());
-  test.info().annotations.push({ type: 'path', description: sawConflict ? 'conflict, Keep mine' : 'no conflict' });
-  if (sawConflict) {
-    await page.getByTestId('conflict-keep-mine').click();
-    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 15_000 });
-  }
-  await page.waitForTimeout(2_000);
+  expect(states, 'never "changed on disk"').not.toContain('conflict');
   const text = await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8');
-  const items = ((await (await request.get(`${API_URL}/api/history/Moved`)).json()) as { items: Array<{ file: string; reason?: string }> }).items;
-  const versions = await Promise.all(items.map(async (item) => ({ reason: item.reason, text: await (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(item.file)}`)).text() })));
-  // Nothing is lost either way: the typing, and the server's rewritten link.
-  expect(text.includes('Typed before.') || versions.some((version) => version.text.includes('Typed before.')), 'the typing is kept').toBe(true);
-  if (sawConflict) {
-    // D22 on 0.9.x: "mine" wins in the file; the rewritten version is kept as the conflict's other side.
-    expect(text).toContain('Typed before.');
-    expect(versions.some((version) => version.reason === 'conflict' && version.text.includes('[[Moved/Sub]]')), 'the rewrite is in History').toBe(true);
-  } else {
-    expect(text, 'no conflict: the rewrite stays in the file').toContain('[[Moved/Sub]]');
-    expect(text).not.toContain('[[Parent/Sub]]');
-  }
+  expect(text).toContain('Typed before.');
+  expect(text).toContain('[[Moved/Sub]]');
+  expect(text).not.toContain('[[Parent/Sub]]');
 });
