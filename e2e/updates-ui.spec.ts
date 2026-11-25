@@ -164,9 +164,10 @@ test('the notice: ready → Restart now goes through the app; Later hides it; it
   await vault.seed([{ title: 'Notes', content: 'Hello.' }]);
   const { calls, loaded } = await stubDesktop(page, state());
   await page.goto('/');
-  await expect(page.getByTestId('editor-content')).toBeVisible();
-  // The window listens for pushes once it knows it's the desktop app; a push before that is lost.
+  // The window listens for pushes once it knows it's the desktop app (a push before that is lost),
+  // and it opens the start page only after the health answer too: wait for both, then the editor.
   await loaded;
+  await expect(page.getByTestId('editor-content')).toBeVisible();
   await expect(page.getByTestId('update-notice')).toHaveCount(0);
 
   // Typing in a page: a notice arriving mustn't move the caret.
