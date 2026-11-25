@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { parseCanvas, type CanvasBoard } from "@gumply/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { VaultStore } from "../src/vault-store";
-import { cleanupVaults, createTestServer } from "./helpers";
+import { cleanupVaults, createTestServer, trackStore } from "./helpers";
 
 afterEach(cleanupVaults);
 
@@ -30,7 +30,7 @@ async function vault(files: Record<string, string> = {}) {
     await mkdir(join(server.dir, path, ".."), { recursive: true });
     await writeFile(join(server.dir, path), body, "utf8");
   }
-  const store = new VaultStore(server.dir);
+  const store = trackStore(new VaultStore(server.dir));
   await store.init();
   return { ...server, store };
 }
@@ -344,7 +344,7 @@ describe("display titles the file name can't hold (#phvu6zt9)", () => {
     expect(await readFile(join(dir, "Notes.md"), "utf8")).toBe("See [[Roadmap Q3.canvas|Roadmap: Q3?]]\n");
 
     // Survives a restart, a save that drops the key (a client), and search.
-    const reopened = new VaultStore(dir);
+    const reopened = trackStore(new VaultStore(dir));
     await reopened.init();
     expect(reopened.getBoard("Roadmap Q3.canvas").meta.title).toBe("Roadmap: Q3?");
     const loaded = reopened.getBoard("Roadmap Q3.canvas");
@@ -375,7 +375,7 @@ describe("display titles the file name can't hold (#phvu6zt9)", () => {
       "Renamed in Obsidian.canvas": canvasFile({ nodes: [], edges: [], gumply: { title: "Roadmap: Q3?" } }),
       "Roadmap Q3 2.canvas": canvasFile({ nodes: [], edges: [], gumply: { title: "Roadmap: Q3?" } }),
     });
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     expect(store.getBoard("Renamed in Obsidian.canvas").meta.title).toBe("Renamed in Obsidian");
     // A duplicate suffix still belongs to the stored title.

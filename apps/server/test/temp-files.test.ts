@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { isGumplyTempName, sweepTempFiles, tempPathBeside } from "../src/temp-files";
 import { VaultStore } from "../src/vault-store";
-import { cleanupVaults, createTestServer, getJson, jsonRequest } from "./helpers";
+import { cleanupVaults, createTestServer, getJson, jsonRequest, trackStore } from "./helpers";
 
 /**
  * #e9hs2zgq (spec/sync-conflicts §7): atomic writes go through a hidden
@@ -150,7 +150,7 @@ describe("a temp file a crash left behind (#e9hs2zgq)", () => {
     const { dir } = await createTestServer();
     await writeFile(join(dir, ".~gumply-1-2-3.tmp"), "x", "utf8");
     await age(join(dir, ".~gumply-1-2-3.tmp"), 2 * DAY);
-    const store = new VaultStore(dir);
+    const store = trackStore(new VaultStore(dir));
     await store.init();
     expect((await store.tempSweep).map((path) => relative(dir, path))).toEqual([".~gumply-1-2-3.tmp"]);
     expect(await allFiles(dir)).not.toContain(".~gumply-1-2-3.tmp");

@@ -14,7 +14,7 @@ const createdStores: VaultStore[] = [];
  * ENOTEMPTY. Draining the store first (`cleanupVaults`) closes that; the retries are a backstop for
  * tests that make their own stores.
  */
-export const RM_VAULT = { recursive: true, force: true, maxRetries: 5, retryDelay: 50 } as const;
+export const RM_VAULT = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 } as const;
 
 export interface TestServer {
   app: Hono;
@@ -32,13 +32,25 @@ export async function createTestServer(): Promise<TestServer> {
   return { app: createApp({ vaultPath: dir, store }), store, dir };
 }
 
-export async function cleanupVaults(): Promise<void> {
-  // #inrd797i: stop each store's watcher and wait for its queue to empty before removing its folder.
-  // Any queued call waits for everything queued before it; listTrash only reads.
+/** #inrd797i: a store a test builds itself; `cleanupVaults` (or `drainStores`) stops and drains it. */
+export function trackStore<T extends VaultStore>(store: T): T {
+  createdStores.push(store);
+  return store;
+}
+
+/**
+ * #inrd797i: stop each tracked store's watcher and wait for its queue to empty. Any queued call waits
+ * for everything queued before it; listTrash only reads. Call before removing a vault's folder.
+ */
+export async function drainStores(): Promise<void> {
   for (const store of createdStores.splice(0)) {
     store.stopWatching();
     await store.listTrash().catch(() => undefined);
   }
+}
+
+export async function cleanupVaults(): Promise<void> {
+  await drainStores();
   await Promise.all(createdDirs.splice(0).map((dir) => rm(dir, RM_VAULT)));
 }
 

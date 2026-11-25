@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { VaultStore } from "../src/vault-store";
+import { trackStore, drainStores } from "./helpers";
 
 /**
  * #35q6kt6e (@opus-hunter's P1): `git checkout` in a watched vault removes,
@@ -22,10 +23,11 @@ const hasGit = (() => {
 
 let vault: string | null = null;
 let store: VaultStore | null = null;
-afterEach(() => {
+afterEach(async () => {
   store?.stopWatching();
   store = null;
-  if (vault) rmSync(vault, { recursive: true, force: true });
+  await drainStores();
+  if (vault) rmSync(vault, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   vault = null;
 });
 
@@ -51,7 +53,7 @@ describe.skipIf(!hasGit)("a git checkout in the vault (#35q6kt6e)", () => {
     git("commit", "-qm", "two");
     git("checkout", "-q", "one");
 
-    store = new VaultStore(root);
+    store = trackStore(new VaultStore(root));
     await store.init();
     store.startWatching();
     const ids = () => new Set(store!.list().map((meta) => meta.id));
@@ -80,7 +82,7 @@ describe("a folder that starts being watched late (#35q6kt6e, @opus-hunter's sce
   it("files written into a new folder after the walk, before its watcher exists, still come in", async () => {
     const root = mkdtempSync(join(tmpdir(), "gumply-late-"));
     vault = root;
-    store = new VaultStore(root);
+    store = trackStore(new VaultStore(root));
     await store.init();
     store.startWatching();
     // Right after a refresh walks the vault (and before the new folder's watcher
