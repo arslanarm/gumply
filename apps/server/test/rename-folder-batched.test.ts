@@ -133,6 +133,28 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     }
   });
 
+  it("the renamed page's own pass failing once (a write error) never drops the batched rewrite; the batches retry it (@lead, @opus-editor)", async () => {
+    const dir = await vault();
+    const store = await open(dir);
+    const internal = store as unknown as { writeRewrittenBody(...args: unknown[]): Promise<void> };
+    const original = internal.writeRewrittenBody.bind(store);
+    let failed = false;
+    vi.spyOn(internal, "writeRewrittenBody").mockImplementation(async (...args: unknown[]) => {
+      // Phase A's only rewrite is the renamed page itself: its first write fails.
+      if (!failed) {
+        failed = true;
+        throw new Error("disk full (test)");
+      }
+      return original(...args);
+    });
+    await store.update("Hub", { title: "Hub 2" });
+    expect(failed).toBe(true);
+    const files = await markdown(dir);
+    expect(stillOld(files)).toBe(0);
+    expect(files["Hub 2.md"]).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    for (const i of [0, 199, 200, 449]) expect(files[join("L", `Linker ${i}.md`)]).toBe(expected(i));
+  });
+
   it("a crash after the first batch: the next start finishes the folder links too, byte for byte", async () => {
     const dir = await vault();
     const crashing = await open(dir);

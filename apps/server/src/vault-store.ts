@@ -4363,12 +4363,18 @@ export class VaultStore {
       // starts where the rename's own write began (the version that write replaced), as versionMatches does.
       const chainFrom = own ? (own.ownWrite && own.ownWrite.version === own.updated ? own.ownWrite.replaced : own.updated) : null;
       const others = new Set([...this.pages.keys()].filter((key) => key !== newId));
-      folderLinks = await this.rewriteEverywhere(others, this.folderRewriteText(id, newId), {}, { frontmatter: true });
-      const after = this.pages.get(newId);
-      if (before !== null && chainFrom !== null && after && after.content !== before) {
-        this.rememberRenameRewrite(newId, before, after.content, chainFrom, after.updated, newId.slice(newId.lastIndexOf("/") + 1));
-      }
+      // Never let this one page drop the rename's batched rewrite of all the others (#xgnvipyd's rule for
+      // phase A): a failure is logged, and the batches, whose folder part covers this page too, try it again.
       this.deferredFolder = { from: id, to: newId };
+      try {
+        folderLinks = await this.rewriteEverywhere(others, this.folderRewriteText(id, newId), {}, { frontmatter: true });
+        const after = this.pages.get(newId);
+        if (before !== null && chainFrom !== null && after && after.content !== before) {
+          this.rememberRenameRewrite(newId, before, after.content, chainFrom, after.updated, newId.slice(newId.lastIndexOf("/") + 1));
+        }
+      } catch (error) {
+        console.warn(`[gumply] rename: ${newId}'s own links into its folder not rewritten yet (the rename's batches try again):`, error instanceof Error ? error.message : error);
+      }
     } else if (hasChildren) folderLinks = await this.rewriteFolderLinks(id, newId);
     return [...new Set([...relinked, ...boards, ...folderLinks])];
   }
