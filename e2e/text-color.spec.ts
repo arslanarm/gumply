@@ -268,6 +268,30 @@ test.describe('colour on links says why (#gcba75f4)', () => {
     await expect(page.getByTestId('editor-content').locator('mark')).toContainText('Target');
   });
 
+  test('on a line holding only a wiki link, no Code or Link button, and Mod+K leaves it alone', async ({ page, vault }) => {
+    await vault.seed([{ title: 'Target', content: 'x' }, { title: 'Wiki tools', content: 'Top\n\n[[Target]]' }]);
+    await openPage(page, 'Wiki tools');
+    await selectLineUnderTop(page);
+    await expect(page.getByTestId('format-bold')).toBeVisible();
+    await expect(page.getByTestId('format-highlight')).toBeVisible();
+    await expect(page.getByTestId('format-code')).toHaveCount(0);
+    await expect(page.getByTestId('format-link')).toHaveCount(0);
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+k`);
+    await expect(page.getByTestId('selection-link')).toHaveCount(0);
+    await page.waitForTimeout(800);
+    expect(fileBytes('Wiki tools')).toContain('Top\n\n[[Target]]');
+    expect(fileBytes('Wiki tools')).not.toContain('`');
+  });
+
+  test('two wiki links with a space between them count as links only', async ({ page, vault }) => {
+    await vault.seed([{ title: 'A', content: 'a' }, { title: 'B', content: 'b' }, { title: 'Two links', content: 'Top\n\n[[A]] [[B]]' }]);
+    await openPage(page, 'Two links');
+    await selectLineUnderTop(page);
+    await page.getByTestId('format-color').click();
+    await expect(page.getByTestId('selection-color-palette').getByTestId('color-text-red')).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByTestId('color-link-note')).toHaveText('Links can only be highlighted in yellow, so they keep working in Obsidian.');
+  });
+
   test('text and a link together: the text is coloured, and a note says the link keeps its colour', async ({ page, request, vault }) => {
     await vault.seed([{ title: 'Mixed', content: 'Top\n\nsee [label](https://example.com) here' }]);
     await openPage(page, 'Mixed');

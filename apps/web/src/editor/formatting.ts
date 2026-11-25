@@ -48,11 +48,29 @@ export function canFormat(editor: Editor): boolean {
   if ("node" in selection && selection.node) return false;
   let hasText = false;
   editor.state.doc.nodesBetween(selection.from, selection.to, (node) => {
-    // #gcba75f4: a line holding only a wiki link has no text node, yet it can be highlighted.
-    if (node.isText || node.type.name === "wikiLink") hasText = true;
+    if (node.isText) hasText = true;
     return !hasText;
   });
   return hasText;
+}
+
+/**
+ * #gcba75f4: the selection can be highlighted or coloured: formattable text, or a wiki link (a line
+ * holding only `[[Target]]` has no text node, yet `==[[Target]]==` works in Obsidian). Narrower than
+ * it sounds on purpose: code or a link around a wiki link would break it, so `canFormat` (the
+ * whole toolbar, Mod+K, the context menu) stays text-only.
+ */
+export function canHighlight(editor: Editor): boolean {
+  if (canFormat(editor)) return true;
+  const { selection } = editor.state;
+  if (selection.empty || ("node" in selection && selection.node)) return false;
+  if (selection.$from.parent.type.spec.code || selection.$to.parent.type.spec.code) return false;
+  let wiki = false;
+  editor.state.doc.nodesBetween(selection.from, selection.to, (node) => {
+    if (node.type.name === "wikiLink") wiki = true;
+    return !wiki;
+  });
+  return wiki;
 }
 
 /** What the user typed into the link field: a web/mail link, or null (then it's a page search). */

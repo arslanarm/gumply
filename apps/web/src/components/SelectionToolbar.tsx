@@ -16,6 +16,7 @@ import { buildLinkSuggestions, type LinkSuggestion } from "../lib/wikilinks.js";
 import { TURN_INTO, turnInto } from "../editor/block-editing.js";
 import {
   canFormat,
+  canHighlight,
   linkKeys,
   linkSelectionToPage,
   markActions,
@@ -77,7 +78,7 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
       return;
     }
     if (!focused) return;
-    if (pointerDown.current || !canFormat(editor) || dismissed.current === selectionKey()) {
+    if (pointerDown.current || !canHighlight(editor) || dismissed.current === selectionKey()) {
       setPlace(null);
       setMode("buttons");
       return;
@@ -266,7 +267,10 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
             <Icon name="chevronDown" size={13} />
           </button>
           <span className="selection-toolbar-divider" aria-hidden="true" />
-          {markActions().map((action) => {
+          {markActions()
+            // #gcba75f4: on wiki links alone, no code (it would turn the link into literal text).
+            .filter((action) => canFormat(editor) || action.mark !== "code")
+            .map((action) => {
             const active = editor.isActive(action.mark);
             return (
               <button
@@ -300,17 +304,19 @@ export function SelectionToolbar({ editor }: SelectionToolbarProps) {
             <ColorSample choice={{ kind: "text", name: paletteName("text", currentColor(editor, "text")) }} />
             <Icon name="chevronDown" size={11} />
           </button>
-          <button
-            type="button"
-            className={`selection-toolbar-button${linkActive ? " is-active" : ""}`}
-            aria-label={t("format.link")}
-            aria-pressed={linkActive}
-            data-tooltip={t("format.linkTooltip", { keys: linkKeys() })}
-            data-testid="format-link"
-            onClick={() => setMode("link")}
-          >
-            <Icon name="link" size={16} />
-          </button>
+          {canFormat(editor) ? (
+            <button
+              type="button"
+              className={`selection-toolbar-button${linkActive ? " is-active" : ""}`}
+              aria-label={t("format.link")}
+              aria-pressed={linkActive}
+              data-tooltip={t("format.linkTooltip", { keys: linkKeys() })}
+              data-testid="format-link"
+              onClick={() => setMode("link")}
+            >
+              <Icon name="link" size={16} />
+            </button>
+          ) : null}
         </div>
       )}
       {mode === "turn" ? (

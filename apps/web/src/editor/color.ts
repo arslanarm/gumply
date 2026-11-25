@@ -328,7 +328,8 @@ export function linkCoverage(editor: Editor): "none" | "some" | "only" {
   state.doc.nodesBetween(from, to, (node) => {
     if (!node.isInline) return true;
     if (node.type.name === "wikiLink" || (node.isText && link && link.isInSet(node.marks))) links += 1;
-    else if (node.isText) other += 1;
+    // Spaces between links aren't text to colour ([[A]] [[B]] is links only).
+    else if (node.isText && (node.text ?? "").trim() !== "") other += 1;
     return false;
   });
   if (links === 0) return "none";
