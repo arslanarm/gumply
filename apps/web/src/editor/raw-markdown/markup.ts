@@ -13,7 +13,7 @@ import Heading from "@tiptap/extension-heading";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import OrderedList from "@tiptap/extension-ordered-list";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { recordedNumbers } from "./list-source.js";
+import { recordedNumbers, renderListKeepingGaps } from "./list-source.js";
 import { separateFromPreviousList } from "./list-style.js";
 
 export const MARKUP_ATTR = "data-md-markup";
@@ -102,11 +102,11 @@ export const MarkdownOrderedList = OrderedList.extend({
           const recorded = recordedNumbers(node, start);
           if (recorded) {
             const widest = Math.max(...recorded.map((number) => number.length));
-            state.renderList(node, state.repeat(" ", widest + 2), (i) => `${recorded[i]}${separator} `);
+            renderListKeepingGaps(state as never, node, state.repeat(" ", widest + 2), (i) => `${recorded[i]}${separator} `);
             return;
           }
           const width = String(start + node.childCount - 1).length;
-          state.renderList(node, state.repeat(" ", width + 2), (i) => {
+          renderListKeepingGaps(state as never, node, state.repeat(" ", width + 2), (i) => {
             const number = String(start + i);
             return `${state.repeat(" ", width - number.length)}${number}${separator} `;
           });

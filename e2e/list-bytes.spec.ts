@@ -122,3 +122,75 @@ test.describe('edits inside a list change only what was edited (#fmmght8w)', () 
     await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('1. one\n\n10. ten!\n');
   });
 });
+
+/**
+ * #fy7pas58: in a loose list (one item holds two blocks with a blank line between them) each item
+ * keeps the blank lines it was written with; an item with none stays right under the one before.
+ */
+test.describe('a loose list keeps each item\'s own blank lines (#fy7pas58)', () => {
+  const MIXED: Record<string, string> = {
+    'an image under an item\'s text': 'Target paragraph.\n\n- one\n\n  ![A](attachments/a.svg)\n- two\n',
+    'a second paragraph under an item\'s text': 'Target paragraph.\n\n- one\n\n  more text\n- two\n',
+    'one blank line between two items only': 'Target paragraph.\n\n- a\n- b\n\n- c\n',
+    'a numbered list with mixed gaps': 'Target paragraph.\n\n1. one\n\n   more\n2. two\n\n3. three\n',
+    'a fully loose list (control)': 'Target paragraph.\n\n- a\n\n- b\n\n- c\n',
+  };
+
+  for (const [name, text] of Object.entries(MIXED)) {
+    test(name, async ({ page, request, vault }) => {
+      void vault;
+      await fs.mkdir(path.join(E2E_VAULT, 'attachments'), { recursive: true });
+      await fs.writeFile(path.join(E2E_VAULT, 'attachments', 'a.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"/>');
+      await open(page, request, text);
+      await editTarget(page);
+      expect(await fs.readFile(file(), 'utf8')).toBe(text.replace('Target paragraph.', 'Target paragraph. X'));
+    });
+  }
+
+  test('a new item added with Enter in a loose list gets a blank line, as before (control)', async ({ page, request, vault }) => {
+    void vault;
+    const editor = await open(page, request, '- a\n\n- b\n');
+    await editor.getByText('b', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('c');
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('- a\n\n- b\n\n- c\n');
+  });
+
+  test('deleting a middle item keeps the other items\' gaps', async ({ page, request, vault }) => {
+    void vault;
+    const editor = await open(page, request, '- a\n- b\n\n- c\n- d\n');
+    await editor.getByText('b', { exact: true }).hover();
+    await page.getByTestId('block-handle').click();
+    await page.getByTestId('block-menu-item-delete').click();
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('- a\n\n- c\n- d\n');
+  });
+
+  test('an item moved with ⋮⋮ takes its own gap along', async ({ page, request, vault }) => {
+    void vault;
+    const editor = await open(page, request, '- a\n- b\n\n- c\n- d\n');
+    await editor.getByText('c', { exact: true }).hover();
+    const d = editor.getByText('d', { exact: true });
+    const box = (await d.boundingBox())!;
+    await page.getByTestId('block-handle').dragTo(d, { targetPosition: { x: 5, y: box.height - 2 } });
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('- a\n- b\n- d\n\n- c\n');
+  });
+
+  test('pasting a loose list writes it loose, as before', async ({ page, request, vault }) => {
+    void vault;
+    const editor = await open(page, request, 'Target paragraph.\n');
+    await editor.getByText('Target paragraph.', { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await page.evaluate(() => {
+      const data = new DataTransfer();
+      data.setData('text/plain', '- x\n\n- y\n');
+      document.querySelector('.ProseMirror')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await saved(page);
+    await expect.poll(() => fs.readFile(file(), 'utf8')).toBe('Target paragraph.\n\n- x\n\n- y\n');
+  });
+});
