@@ -1820,7 +1820,8 @@
       "syncthing": "Syncthing",
       "dropbox": "Dropbox",
       "nextcloud": "Nextcloud",
-      "obsidian": "Obsidian Sync"
+      "obsidian": "Obsidian Sync",
+      "cloud": "Cloud drive"
     },
     "badge_one": "{{count}} conflicting copy",
     "badge_few": "{{count}} conflicting copies",
@@ -1834,7 +1835,8 @@
     "sidebarWithCount_few": "Conflicts, {{count}} copies",
     "sidebarWithCount_many": "Conflicts, {{count}} copies",
     "sidebarWithCount_other": "Conflicts, {{count}} copies",
-    "dropboxCopy": "{{who}}'s copy"
+    "dropboxCopy": "{{who}}'s copy",
+    "computerCopy": "from computer {{who}}"
   },
   "commands": {
     "section": "Commands",

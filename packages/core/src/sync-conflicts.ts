@@ -1,15 +1,16 @@
 /**
  * Sync tools' conflict copies (spec/sync-conflicts §1, §3; D43).
  *
- * When two devices change one file, Syncthing, Nextcloud, Obsidian Sync and
- * Dropbox keep the losing side beside it under a recognisable name, with the
+ * When two devices change one file, Syncthing, Nextcloud, Obsidian Sync,
+ * Dropbox and a cloud drive's Russian client (`(копия с компьютера X)`) keep
+ * the losing side beside it under a recognisable name, with the
  * marker before the last extension (`Board.sync-conflict-….canvas`). iCloud
  * (`Note 2.md`), OneDrive (`Note-PC.md`) and Google Drive (`Note (1).md`)
  * names can't be told from real pages: those are only *possible* copies,
  * which also need the original beside them and mostly the same content.
  */
 
-export type ConflictTool = "syncthing" | "nextcloud" | "obsidian" | "dropbox";
+export type ConflictTool = "syncthing" | "nextcloud" | "obsidian" | "dropbox" | "cloud";
 
 export interface ConflictCopyName {
   tool: ConflictTool;
@@ -66,6 +67,14 @@ const PATTERNS: Array<{ tool: ConflictTool; pattern: RegExp; read: (match: RegEx
     tool: "dropbox",
     pattern: /^(.+) \((.+?)['’]s [Cc]onflicted copy (\d{4}-\d{2}-\d{2})\)(?: \(\d+\))?$/,
     read: (m) => ({ device: m[2], at: m[3] }),
+  },
+  {
+    // #f5n87bfd: a cloud drive's Russian desktop client (very likely Yandex Disk; its public docs only show
+    // `document (2).docx`): `(копия с компьютера <computer>)`, further copies of one conflict ` (n)`.
+    // Seen in a real vault; there's no time in the name. The English form isn't confirmed, so it isn't here.
+    tool: "cloud",
+    pattern: /^(.+) \(копия с компьютера (.+?)\)(?: \(\d+\))?$/,
+    read: (m) => ({ device: m[2]!.trim() }),
   },
 ];
 

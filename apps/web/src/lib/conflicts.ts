@@ -26,11 +26,14 @@ export function conflictTime(at: string | undefined): string | null {
  * Where a copy came from, as its name says:
  * - Syncthing, Obsidian Sync, Nextcloud: "Syncthing ABCDEFG, 22 Nov 2026, 14:30 (time on ABCDEFG)",
  *   the device's own clock, so it's labelled as such;
- * - Dropbox: "Dropbox, Ann's copy, 21 Nov 2026": a person or computer and a date only, never a time.
+ * - Dropbox: "Dropbox, Ann's copy, 21 Nov 2026": a person or computer and a date only, never a time;
+ * - a cloud drive's `(копия с компьютера X)`: "Cloud drive, from computer X", no date (the name has none).
  */
 export function conflictSource(copy: Pick<ConflictCopy, "tool" | "device" | "at">): string {
   const tool = conflictToolName(copy.tool);
   const time = conflictTime(copy.at);
+  // #f5n87bfd: `(копия с компьютера X)`: a computer, and no date in the name.
+  if (copy.tool === "cloud") return copy.device ? `${tool}, ${t("conflicts.computerCopy", { who: copy.device })}` : tool;
   if (copy.tool === "dropbox") {
     return [tool, copy.device ? t("conflicts.dropboxCopy", { who: copy.device }) : null, time].filter(Boolean).join(", ");
   }

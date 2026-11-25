@@ -317,7 +317,7 @@ export interface ConflictCopy {
   copyId: PageId;
   /** The original's id, or null when it's gone (an orphan copy). */
   originalId: PageId | null;
-  tool: "syncthing" | "nextcloud" | "obsidian" | "dropbox";
+  tool: "syncthing" | "nextcloud" | "obsidian" | "dropbox" | "cloud";
   /** Device or user as the tool wrote it. */
   device?: string;
   /** The tool's own local time as written in the name (`YYYY-MM-DD[THH:MM[:SS]]`, no zone). */
