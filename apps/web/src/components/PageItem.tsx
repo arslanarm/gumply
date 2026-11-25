@@ -9,6 +9,7 @@ import { Icon } from "./Icon.js";
 import { placeMenu, type MenuPlacement } from "../lib/menu-placement.js";
 import { useT } from "../i18n/index.js";
 import { commandApplies, menuLabel, ROW_MENU, ROW_TEST_IDS, type PageCommandId } from "../lib/commands.js";
+import { openInNewWindow, wantsNewWindow } from "../lib/desktop-app.js";
 
 export interface PageItemProps {
   node: PageTreeNode;
@@ -212,6 +213,7 @@ function PageItemRow(props: PageItemProps) {
     "page.duplicate": () => props.onDuplicate(page.id),
     "page.copy-link": () => props.onCopyLink(page.id),
     "page.move": () => props.onStartMove(page.id),
+    "page.open-window": () => openInNewWindow(page.id),
     "page.add-page": () => props.onCreateChild(page.id),
     "page.add-board": () => props.onCreateBoardChild(page.id),
     "page.add-base": props.onCreateBaseChild ? () => props.onCreateBaseChild?.(page.id) : undefined,
@@ -253,7 +255,12 @@ function PageItemRow(props: PageItemProps) {
         aria-level={depth + 1}
         ref={rowRef}
         style={{ paddingLeft: `${6 + depth * 14}px` }}
-        onClick={() => {
+        onClick={(event) => {
+          // N8: Cmd/Ctrl+click opens the page in a new desktop window; this one stays as it is.
+          if (!folder && wantsNewWindow(event)) {
+            openInNewWindow(page.id);
+            return;
+          }
           // D33: a folder click opens and closes it, and shows its overview.
           if (folder && hasChildren && (isSelected || !expanded)) props.onToggle(page.id);
           props.onOpen(page.id);

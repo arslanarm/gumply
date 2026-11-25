@@ -90,6 +90,7 @@ import { windowTitle } from "./lib/title.js";
 import { buildPageTree, isSelfOrDescendant, pageTrail } from "./lib/tree.js";
 import { currentLanguage, t, useT } from "./i18n/index.js";
 import { ExportDialog } from "./components/ExportDialog.js";
+import { openInNewWindow, setDesktopApp } from "./lib/desktop-app.js";
 import { focusMainRegion, isFocusReturnTarget } from "./lib/focus-fallback.js";
 import { HistoryDialog } from "./components/HistoryDialog.js";
 import { ConflictBanner, ConflictCopyBanner } from "./components/ConflictBanner.js";
@@ -1068,7 +1069,10 @@ export function App() {
   useEffect(() => {
     void loadTrash();
     api.health().then(
-      (health) => setDesktop(health.desktop === true),
+      (health) => {
+        setDesktop(health.desktop === true);
+        setDesktopApp(health.desktop === true);
+      },
       () => undefined,
     );
   }, [loadTrash]);
@@ -2370,6 +2374,9 @@ export function App() {
     },
     "page.move": () => {
       if (commandPage) startMove(commandPage.id);
+    },
+    "page.open-window": () => {
+      if (commandPage) openInNewWindow(commandPage.id);
     },
     "page.add-page": () => {
       if (commandPage) void handleCreate(commandPage.id);

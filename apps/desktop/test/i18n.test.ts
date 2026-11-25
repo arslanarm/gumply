@@ -32,3 +32,17 @@ describe("desktop menus and dialogs in the interface language (#7h5utv23)", () =
     expect(resolveDesktopLanguage(undefined, "de-DE")).toBe("en");
   });
 });
+
+describe("the unsaved dialog names its windows in the language's own form (#vhdp68sm)", () => {
+  it("one window or several; quotes per language", () => {
+    const name = (language: string, value: string) => desktopT(language, "unsaved.windowName", { name: value });
+    expect(name("en", "Notes")).toBe("“Notes”");
+    expect(name("ru", "Заметки")).toBe("«Заметки»");
+    const ru = (count: number, windows: string) => desktopT("ru", "unsaved.detailWindows", { detail: "D.", windows, count });
+    expect(ru(1, "«Заметки»")).toBe("D. Не сохранено в окне «Заметки».");
+    expect(ru(2, "«А», «Б»")).toBe("D. Не сохранено в окнах: «А», «Б».");
+    expect(ru(5, "…")).toBe("D. Не сохранено в окнах: ….");
+    expect(desktopT("en", "unsaved.detailWindows", { detail: "D.", windows: "“A”", count: 1 })).toBe("D. Not saved yet in: “A”.");
+    expect(desktopT("en", "unsaved.detailWindows", { detail: "D.", windows: "“A”, “B”", count: 2 })).toBe("D. Not saved yet in: “A”, “B”.");
+  });
+});

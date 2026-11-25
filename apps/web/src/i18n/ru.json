@@ -144,7 +144,8 @@
     "newPageInside": "Новая страница внутри",
     "deleteFolder": "Удалить папку",
     "today": "Сегодня",
-    "newFromTemplate": "Новая страница из шаблона…"
+    "newFromTemplate": "Новая страница из шаблона…",
+    "openInNewWindow": "Открыть в новом окне"
   },
   "delete": {
     "boardDeleted": "Доска удалена",
@@ -983,7 +984,8 @@
       "exportPdf": "Экспорт в PDF…",
       "userGuide": "Руководство пользователя",
       "licences": "Лицензии открытого ПО",
-      "checkUpdates": "Проверить обновления…"
+      "checkUpdates": "Проверить обновления…",
+      "newWindow": "Новое окно"
     },
     "about": {
       "detail": "Заметки в обычном Markdown — со ссылками, графом и досками."
@@ -1013,7 +1015,12 @@
       "leave": "Всё равно уйти",
       "stay": "Остаться",
       "leaveMessage": "Несохранённые изменения",
-      "leaveDetail": "Некоторые изменения не удалось сохранить. Если уйти, они пропадут."
+      "leaveDetail": "Некоторые изменения не удалось сохранить. Если уйти, они пропадут.",
+      "detailWindows_one": "{{detail}} Не сохранено в окне {{windows}}.",
+      "detailWindows_few": "{{detail}} Не сохранено в окнах: {{windows}}.",
+      "detailWindows_many": "{{detail}} Не сохранено в окнах: {{windows}}.",
+      "detailWindows_other": "{{detail}} Не сохранено в окнах: {{windows}}.",
+      "windowName": "«{{name}}»"
     },
     "export": {
       "saveTitle": "Экспорт доски"
@@ -1921,7 +1928,8 @@
       "addBoard": "Добавить доску внутрь",
       "addBase": "Добавить представление базы внутрь",
       "newFromTemplate": "Новая страница из шаблона внутри…",
-      "delete": "Удалить страницу"
+      "delete": "Удалить страницу",
+      "openWindow": "Открыть страницу в новом окне"
     },
     "new": {
       "page": "Новая страница",

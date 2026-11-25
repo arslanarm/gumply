@@ -12,6 +12,7 @@
  * Families that mirror another list (Insert = the `/` menu, Turn into, the
  * board tools) are built from that list, so they grow with it.
  */
+import { isDesktopApp } from "./desktop-app.js";
 import type { PageMeta } from "@gumply/core";
 import { t, tEnglish, type MessageKey } from "../i18n/index.js";
 import type { IconName } from "../components/Icon.js";
@@ -83,6 +84,9 @@ const PAGE_COMMANDS = {
   "page.duplicate": { group: "page", icon: "copy", label: "commands.page.duplicate", en: "duplicate copy clone", when: (c) => !!kind(c.page) && !kind(c.page)!.folder },
   "page.copy-link": { group: "page", icon: "link", label: "commands.page.copyLink", en: "copy link wikilink", when: (c) => !!kind(c.page) && !kind(c.page)!.folder },
   "page.move": { group: "page", icon: "move", label: "commands.page.move", en: "move to folder parent", when: (c) => c.page !== null },
+  // #vhdp68sm (N8): the desktop app only (a browser would open a tab). `c.desktop` is set where the
+  // palette knows it (it's narrower: an install that can update); isDesktopApp() covers every desktop run.
+  "page.open-window": { group: "page", icon: "externalLink", label: "commands.page.openWindow", en: "open in new window window", when: (c) => (c.desktop || isDesktopApp()) && !!kind(c.page) && !kind(c.page)!.folder },
   // #ifcn6pvx: the row's + as a menu item, so the keyboard reaches it from the row.
   "page.add-page": { group: "page", icon: "plus", label: "commands.page.addPage", en: "add page inside new sub page child", when: (c) => !!kind(c.page) && !kind(c.page)!.leaf },
   "page.add-board": { group: "page", icon: "board", label: "commands.page.addBoard", en: "add whiteboard board inside", when: (c) => !!kind(c.page) && !kind(c.page)!.leaf },
@@ -99,7 +103,7 @@ export type PageCommandId = keyof typeof PAGE_COMMANDS;
 
 /** The ⋯ menu: groups of page commands, separated by a line (#sjts42ue). */
 export const ROW_MENU: readonly (readonly PageCommandId[])[] = [
-  ["page.rename", "page.duplicate", "page.copy-link", "page.move"],
+  ["page.rename", "page.duplicate", "page.copy-link", "page.move", "page.open-window"],
   ["page.add-page", "page.add-board", "page.add-base", "page.new-from-template"],
   ["page.import-notion", "page.export-html", "page.export-pdf", "page.history"],
   ["page.delete"],
@@ -116,6 +120,8 @@ export function menuLabel(id: PageCommandId, page: PageMeta): string {
       return t("sidebar.copyLink");
     case "page.move":
       return t("sidebar.moveTo");
+    case "page.open-window":
+      return t("sidebar.openInNewWindow");
     case "page.add-page":
       return page.kind === "folder" ? t("sidebar.newPageInside") : t("sidebar.newSubPage");
     case "page.add-board":
@@ -145,6 +151,7 @@ export const ROW_TEST_IDS: Record<PageCommandId, string> = {
   "page.duplicate": "duplicate-page",
   "page.copy-link": "copy-link",
   "page.move": "move-page",
+  "page.open-window": "open-window",
   "page.add-page": "add-page",
   "page.add-board": "add-board",
   "page.add-base": "add-base",

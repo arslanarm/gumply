@@ -31,10 +31,10 @@ import {
   type WindowState,
 } from "./settings.js";
 import { isAppDownload, isPrintDownload, pdfName, suggestedName } from "./downloads.js";
-import { describeFlush, flushSaved, NO_ANSWER } from "./flush-report.js";
+import { describeFlushes, flushAllSaved, NO_ANSWER, unsavedWindowNames, type WindowFlush } from "./flush-report.js";
 import { desktopT, resolveDesktopLanguage } from "./i18n.js";
 import { spellcheckLanguages } from "./spellcheck.js";
-import { classifyNavigation, userGuideUrl, vaultFileAction } from "./urls.js";
+import { classifyNavigation, userGuideUrl, vaultFileAction, newWindowUrl } from "./urls.js";
 import { exitMcp, hasFusermount, MCP_MODE_USAGE, mcpLaunchCommand, mcpModeArgs, mcpTracer, userNamespacesWork, type McpModeArgs } from "./mcp-mode.js";
 import { runMcp } from "../../mcp/src/run.js";
 import { installKind, listWindowsProcesses, REQUEST_HEADERS, RELEASES_URL, UpdateController, type UpdaterLike } from "./updates.js";
@@ -126,7 +126,26 @@ const printToken = randomBytes(12).toString("hex");
 let settings: DesktopSettings;
 let server: RunningServer | null = null;
 let vaultPath: string | null = null;
-let window: BrowserWindow | null = null;
+/**
+ * #vhdp68sm (N8): the app's windows, all on the same vault and server. The first is the main
+ * window: its size and position are remembered, and it's the one a vault switch reloads. Commands
+ * from the menu go to the window in front.
+ */
+const windows = new Set<BrowserWindow>();
+let mainWindow: BrowserWindow | null = null;
+
+/** Every window still open. */
+function liveWindows(): BrowserWindow[] {
+  return [...windows].filter((win) => !win.isDestroyed());
+}
+
+/** The window in front (focused), else the main one, else any: menus, dialogs and commands go here. */
+function activeWindow(): BrowserWindow | null {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && windows.has(focused) && !focused.isDestroyed()) return focused;
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  return liveWindows()[0] ?? null;
+}
 /** Set once the pages are flushed and the app may really quit (#3t6v62cb). */
 let quitting = false;
 /** Auto-update (spec/auto-update, D42); null in development, unpacked and `--mcp` runs. */
@@ -317,12 +336,14 @@ async function openVault(path: string): Promise<void> {
   buildMenu();
 
   themeForFirstPaint();
-  if (!window) {
-    createWindow();
+  // A vault switch keeps only the main window, on the new vault (other windows showed the old one).
+  for (const win of liveWindows()) if (win !== mainWindow) win.destroy();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow({ main: true });
     launchPhase("window-created");
   }
   try {
-    await window!.loadURL(`${server.url}/`);
+    await mainWindow!.loadURL(`${server.url}/`);
     launchPhase("page-loaded");
   } finally {
     nativeTheme.themeSource = "system";
@@ -337,22 +358,36 @@ async function openVault(path: string): Promise<void> {
  */
 const FLUSH_WAIT_MS = 11_000;
 
-async function flushRenderer(): Promise<boolean> {
-  if (!window || window.isDestroyed()) return true;
+/** Ask one window's page to save everything; its answer, or NO_ANSWER after the wait. */
+async function flushWindow(win: BrowserWindow): Promise<WindowFlush> {
+  const name = win.isDestroyed() ? "" : win.getTitle();
+  if (win.isDestroyed()) return { name, result: true };
   try {
     const result: unknown = await Promise.race([
-      window.webContents.executeJavaScript(
+      win.webContents.executeJavaScript(
         "window.__gumplyFlush ? window.__gumplyFlush() : (document.activeElement instanceof HTMLElement && document.activeElement.blur(), new Promise((r) => setTimeout(() => r(true), 800)))",
       ),
       new Promise((resolve) => setTimeout(() => resolve(NO_ANSWER), FLUSH_WAIT_MS)),
     ]);
-    // Why the dialog will show (#ms44vnit): logged, and readable by the tests.
-    unsavedDialog.reason = describeFlush(result, FLUSH_WAIT_MS);
-    if (unsavedDialog.reason) console.warn(`Not everything is saved: ${unsavedDialog.reason}`);
-    return flushSaved(result);
+    return { name, result };
   } catch {
-    return true; // the page is gone already: nothing left to save
+    return { name, result: true }; // the page is gone already: nothing left to save
   }
+}
+
+/**
+ * Save what the given windows (default: all of them, at once) still hold and wait for the server
+ * (#3t6v62cb). True when everything is on disk. Quitting and a vault switch ask every window;
+ * closing one window asks only it.
+ */
+async function flushRenderer(only?: BrowserWindow): Promise<boolean> {
+  const targets = only ? [only] : liveWindows();
+  const results = await Promise.all(targets.map((win) => flushWindow(win)));
+  // Why the dialog will show (#ms44vnit): logged, and readable by the tests.
+  unsavedDialog.reason = describeFlushes(results, FLUSH_WAIT_MS);
+  unsavedDialog.windows = unsavedWindowNames(results);
+  if (unsavedDialog.reason) console.warn(`Not everything is saved: ${unsavedDialog.reason}`);
+  return flushAllSaved(results);
 }
 
 /**
@@ -361,23 +396,33 @@ async function flushRenderer(): Promise<boolean> {
  * (`globalThis.__gumplyUnsavedDialog`) so a test that waits for the app to
  * quit can say why it didn't, instead of timing out blind.
  */
-const unsavedDialog: { open: boolean; reason: string | null } = { open: false, reason: null };
+const unsavedDialog: { open: boolean; reason: string | null; windows: string[] } = { open: false, reason: null, windows: [] };
 (globalThis as { __gumplyUnsavedDialog?: typeof unsavedDialog }).__gumplyUnsavedDialog = unsavedDialog;
 
 /** The flush failed: ask before losing those edits. */
 async function confirmUnsaved(action: "switchVaults" | "close" | "quit"): Promise<boolean> {
+  // N8: with several windows open, say which ones hold the unsaved work.
+  const named = liveWindows().length > 1 && unsavedDialog.windows.length > 0;
   const options = {
     type: "warning" as const,
     buttons: [tr(`unsaved.${action}`), tr("unsaved.cancel")],
     defaultId: 1,
     cancelId: 1,
     message: tr("unsaved.message"),
-    detail: tr("unsaved.detail"),
+    detail: named
+      ? tr("unsaved.detailWindows", {
+          detail: tr("unsaved.detail"),
+          // Each name in the language's own quotes (“…” / «…»).
+          windows: unsavedDialog.windows.map((name) => tr("unsaved.windowName", { name })).join(", "),
+          // One window or several: ru says «в окне» / «в окнах».
+          count: unsavedDialog.windows.length,
+        })
+      : tr("unsaved.detail"),
   };
   unsavedDialog.open = true;
   try {
-    const { response } =
-      window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+    const parent = activeWindow();
+    const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
     return response === 0;
   } finally {
     unsavedDialog.open = false;
@@ -405,9 +450,10 @@ function initialBounds(): Partial<WindowState> {
   return saved;
 }
 
-function createWindow(): void {
-  const bounds = initialBounds();
-  window = new BrowserWindow({
+function createWindow({ main }: { main: boolean }): BrowserWindow {
+  // Only the main window opens where it was; another opens at the default size, placed by the system.
+  const bounds = main ? initialBounds() : {};
+  const window = new BrowserWindow({
     ...(bounds.x !== undefined && bounds.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
     width: bounds.width ?? 1280,
     height: bounds.height ?? 820,
@@ -426,10 +472,12 @@ function createWindow(): void {
       devTools: isDev,
     },
   });
-  if (settings.window?.maximized) window.maximize();
+  windows.add(window);
+  if (main) mainWindow = window;
+  if (main && settings.window?.maximized) window.maximize();
   // The window title is the page's own `document.title` (the web app names
   // the page and the vault, #ux5cukze).
-  window.once("ready-to-show", () => window?.show());
+  window.once("ready-to-show", () => window.show());
 
   const contents = window.webContents;
   // N3: Chromium starts its spellcheck service with the first page, and may set
@@ -452,7 +500,13 @@ function createWindow(): void {
     if (!handle(url)) event.preventDefault();
   });
   contents.setWindowOpenHandler(({ url }) => {
-    // New windows are never created; links are handed to the system.
+    // N8: "Open in new window" (the app's own page) becomes a Gumply window on the same vault.
+    const page = newWindowUrl(url, appOrigin());
+    if (page) {
+      openAppWindow(page);
+      return { action: "deny" };
+    }
+    // Anything else never opens a window; links are handed to the system.
     const action = classifyNavigation(url, appOrigin());
     if (action.kind === "external") void shell.openExternal(action.url);
     else if (action.kind === "vault-file" && vaultPath) openVaultFile(action.path);
@@ -461,7 +515,8 @@ function createWindow(): void {
   });
 
   const saveState = () => {
-    if (!window || window.isDestroyed()) return;
+    // Only the main window's place is remembered (N8).
+    if (window !== mainWindow || window.isDestroyed()) return;
     const maximized = window.isMaximized();
     const normal = window.getNormalBounds();
     persist({ ...settings, window: { x: normal.x, y: normal.y, width: normal.width, height: normal.height, maximized } });
@@ -473,15 +528,16 @@ function createWindow(): void {
     if (closeReady || quitting) return;
     event.preventDefault();
     void (async () => {
-      if (!(await flushRenderer()) && !(await confirmUnsaved("close"))) return;
+      // N8: closing one window saves only what that window holds.
+      if (!(await flushRenderer(window)) && !(await confirmUnsaved("close"))) return;
       closeReady = true;
-      window?.close();
+      if (!window.isDestroyed()) window.close();
     })();
   });
   // The page asks to stay ("Leave site?", only when a save can't go out):
   // Electron would just cancel the close silently, so ask natively.
   contents.on("will-prevent-unload", (event) => {
-    const target = window && !window.isDestroyed() ? window : null;
+    const target = !window.isDestroyed() ? window : null;
     const options = {
       type: "warning" as const,
       buttons: [tr("unsaved.leave"), tr("unsaved.stay")],
@@ -494,8 +550,18 @@ function createWindow(): void {
     if (choice === 0) event.preventDefault();
   });
   window.on("closed", () => {
-    window = null;
+    windows.delete(window);
+    // The main window went first: another one takes its place (and its remembered bounds from now on).
+    if (mainWindow === window) mainWindow = [...windows].find((win) => !win.isDestroyed()) ?? null;
   });
+  return window;
+}
+
+/** N8: another window on the open vault, at `url` (the app's page; File → New Window opens its start). */
+function openAppWindow(url?: string): void {
+  if (!server) return;
+  const win = createWindow({ main: false });
+  void win.loadURL(url ?? `${server.url}/`).catch((error: unknown) => console.error("[gumply] new window failed:", error));
 }
 
 /**
@@ -584,7 +650,8 @@ async function printToPdf(htmlPath: string, name: string, scratchDir: string): P
         defaultPath: join(app.getPath("downloads"), name),
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       };
-      const answer = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+      const parent = activeWindow();
+      const answer = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
       target = answer.canceled ? undefined : answer.filePath;
     }
     if (target) writeFileSync(target, pdf);
@@ -599,8 +666,10 @@ async function printToPdf(htmlPath: string, name: string, scratchDir: string): P
 
 /** #snuin2ja: the web app's command ids (lib/commands.ts), so the menu and Cmd+K run the same action. */
 function sendCommand(command: "new.page" | "new.board" | "view.search" | "page.import-notion" | "page.export-pdf"): void {
-  if (!window || window.isDestroyed()) return;
-  void window.webContents.executeJavaScript(
+  // N8: the menu acts on the window in front.
+  const target = activeWindow();
+  if (!target) return;
+  void target.webContents.executeJavaScript(
     `window.dispatchEvent(new CustomEvent("gumply:command", { detail: ${JSON.stringify(command)} }))`,
   );
 }
@@ -624,6 +693,8 @@ function buildMenu(): void {
       submenu: [
         { id: "new-page", label: tr("menu.newPage"), accelerator: "CmdOrCtrl+N", click: () => sendCommand("new.page") },
         { id: "new-whiteboard", label: tr("menu.newBoard"), accelerator: "CmdOrCtrl+Shift+N", click: () => sendCommand("new.board") },
+        // N8: another window on the same vault.
+        { id: "new-window", label: tr("menu.newWindow"), click: () => openAppWindow() },
         { type: "separator" },
         // B4: the in-app "Import from Notion…" dialog.
         { id: "import-notion", label: tr("menu.importNotion"), click: () => sendCommand("page.import-notion") },
@@ -799,11 +870,13 @@ async function setUpUpdates(): Promise<void> {
     ...(firstCheckDelayMs !== undefined ? { firstCheckDelayMs } : {}),
     ...(verify ? { verify } : {}),
     // The window's notice and Settings follow every change.
+    // N8: every window shows the same update state.
     onChange: (state) => {
-      if (!window || window.isDestroyed()) return;
-      void window.webContents
-        .executeJavaScript(`window.dispatchEvent(new CustomEvent("gumply:updates", { detail: ${JSON.stringify(state)} }))`)
-        .catch(() => undefined);
+      for (const win of liveWindows()) {
+        void win.webContents
+          .executeJavaScript(`window.dispatchEvent(new CustomEvent("gumply:updates", { detail: ${JSON.stringify(state)} }))`)
+          .catch(() => undefined);
+      }
     },
   });
   updates.start();
@@ -834,7 +907,8 @@ async function checkForUpdatesNow(): Promise<void> {
   const version = state.version ?? state.currentVersion;
   const show = (message: string, buttons: string[], detail?: string) => {
     const options = { type: "info" as const, message, buttons, defaultId: 0, cancelId: buttons.length - 1, ...(detail ? { detail } : {}) };
-    return window && !window.isDestroyed() ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options);
+    const parent = activeWindow();
+    return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
   };
   switch (state.status) {
     case "up-to-date":
@@ -958,9 +1032,10 @@ if (mcpMode) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!window) return;
-    if (window.isMinimized()) window.restore();
-    window.focus();
+    const target = activeWindow();
+    if (!target) return;
+    if (target.isMinimized()) target.restore();
+    target.focus();
   });
 
   app.on("web-contents-created", (_event, contents) => {

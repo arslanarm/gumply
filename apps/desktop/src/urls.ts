@@ -52,6 +52,24 @@ export function classifyNavigation(target: string, appOrigin: string): Navigatio
 }
 
 /**
+ * #vhdp68sm (N8): an in-app `window.open` that should become a new Gumply window: the app's own
+ * page (`/`, with an optional `#/<page id>` route) on its own origin. Anything else (files, the API,
+ * a blob, another site) never opens a window.
+ */
+export function newWindowUrl(target: string, appOrigin: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(target);
+  } catch {
+    return null;
+  }
+  if (!appOrigin || url.origin !== appOrigin || url.protocol === "blob:") return null;
+  if (url.pathname !== "/" || url.search !== "") return null;
+  if (url.hash !== "" && !url.hash.startsWith("#/")) return null;
+  return url.toString();
+}
+
+/**
  * Vault files open with the system's default app only when they are plain
  * documents (#utq9azsq review). Opening a script or program (`.exe`, `.bat`,
  * `.desktop`, `.AppImage`, `.sh`, `.js`…) would run it, so everything not on

@@ -132,7 +132,8 @@
     "newPageInside": "New page inside",
     "deleteFolder": "Delete folder",
     "today": "Today",
-    "newFromTemplate": "New page from template…"
+    "newFromTemplate": "New page from template…",
+    "openInNewWindow": "Open in new window"
   },
   "delete": {
     "boardDeleted": "Whiteboard deleted",
@@ -965,7 +966,8 @@
       "exportPdf": "Export as PDF…",
       "userGuide": "User Guide",
       "licences": "Open-Source Licences",
-      "checkUpdates": "Check for Updates…"
+      "checkUpdates": "Check for Updates…",
+      "newWindow": "New Window"
     },
     "about": {
       "detail": "Notes as plain Markdown, with links, a graph and whiteboards."
@@ -995,7 +997,10 @@
       "leave": "Leave anyway",
       "stay": "Stay",
       "leaveMessage": "Unsaved changes",
-      "leaveDetail": "Some changes couldn't be saved. If you leave, they're lost."
+      "leaveDetail": "Some changes couldn't be saved. If you leave, they're lost.",
+      "detailWindows_one": "{{detail}} Not saved yet in: {{windows}}.",
+      "detailWindows_other": "{{detail}} Not saved yet in: {{windows}}.",
+      "windowName": "“{{name}}”"
     },
     "export": {
       "saveTitle": "Export board"
@@ -1870,7 +1875,8 @@
       "addBoard": "Add whiteboard inside",
       "addBase": "Add database view inside",
       "newFromTemplate": "New page from template inside…",
-      "delete": "Delete page"
+      "delete": "Delete page",
+      "openWindow": "Open page in new window"
     },
     "new": {
       "page": "New page",

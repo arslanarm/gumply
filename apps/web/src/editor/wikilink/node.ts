@@ -4,6 +4,7 @@
  * during editor lifecycle work.
  */
 import { hasAttachmentExtension, linkTargetFor, resolveWikilink, WIKILINK_INNER } from "@gumply/core";
+import { openInNewWindow, wantsNewWindow } from "../../lib/desktop-app.js";
 import { InputRule, Node, mergeAttributes } from "@tiptap/core";
 import type { Node as ProseMirrorNode, Schema } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
@@ -231,6 +232,15 @@ export const WikiLink = Node.create({
       const activate = (event?: Event) => {
         event?.preventDefault();
         const { targetTitle, heading } = attrs();
+        // N8: Cmd/Ctrl+click on a link to an existing page opens it in a new desktop window.
+        if (event instanceof MouseEvent && wantsNewWindow(event)) {
+          const env = getWikiLinkEnvironment();
+          const target = resolveWikilink(targetTitle, env.pages, env.pageId);
+          if (target) {
+            openInNewWindow(target.id);
+            return;
+          }
+        }
         getWikiLinkEnvironment().openLink({ targetTitle, heading });
       };
 

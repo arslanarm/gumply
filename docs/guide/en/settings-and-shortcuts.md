@@ -24,6 +24,12 @@ Open them with the gear at the top right.
 
 Settings are kept per device: in the desktop app, in your user settings folder; in a browser, in the browser. They're never stored in your vault.
 
+## Several windows (desktop app)
+
+Open a page in a window of its own with **Open in new window** in its ⋯ menu, with Ctrl/Cmd+K → "Open page in new window", or with `Ctrl`+click (`Cmd`+click on a Mac) on a sidebar row or a link. **File → New Window** opens another window on the same vault. Every window saves on its own, and quitting saves them all.
+
+The same page open in two windows isn't edited together: if both change it, the second one to save asks you to **Reload** or **Keep mine**, as when another app changed the page.
+
 ## Keyboard shortcuts
 
 Press `?` anywhere (outside a text field) to see them all. `Ctrl` is `Cmd` on a Mac.
@@ -68,6 +74,7 @@ Press `?` anywhere (outside a text field) to see them all. `Ctrl` is `Cmd` on a 
 | `Shift+F10` or the menu key on a sidebar row | Open the row's menu |
 | `↑` `↓` `←` `→`, `Home` / `End` in the sidebar | Move between pages; open and close sub-pages |
 | Typing in the sidebar | Jump to the page whose title starts with it |
+| `Ctrl`+click on a sidebar row or a link (desktop app) | Open the page in a new window |
 
 ### Boards
 

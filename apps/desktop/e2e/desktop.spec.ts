@@ -832,3 +832,118 @@ test('a save that never confirms asks before quitting; Cancel keeps the app, "Qu
   await quitAndWait(app, 'quit');
 });
 
+
+// ---- #vhdp68sm (N8): several windows on one vault ------------------------------------------
+
+/** Make a page through the app's own API (the window's server), and wait for the tree to list it. */
+async function makePage(window: Page, title: string, content: string): Promise<void> {
+  await window.evaluate(async ({ title: name, content: body }) => {
+    const response = await fetch('/api/pages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: name, content: body }) });
+    if (!response.ok) throw new Error(`create ${name}: ${response.status}`);
+  }, { title, content });
+  await expect(window.getByTestId(`page-item-${title}`)).toBeVisible({ timeout: 15_000 });
+}
+
+/** "Open in new window" from a tree row's ⋯ menu; the new window, once its page shows. */
+async function openInNewWindow(app: ElectronApplication, window: Page, id: string): Promise<Page> {
+  const next = app.waitForEvent('window');
+  await window.getByTestId(`page-item-${id}`).hover();
+  await window.getByTestId(`page-menu-button-${id}`).click();
+  await window.getByTestId(`open-window-${id}`).click();
+  const opened = await next;
+  await expectPageTitle(opened, id);
+  return opened;
+}
+
+async function typeAtEnd(window: Page, text: string, anchor: string): Promise<void> {
+  await window.getByTestId('editor-content').getByText(anchor, { exact: false }).click();
+  await window.keyboard.press('End');
+  await window.keyboard.type(text);
+}
+
+test('two windows on one vault: each edits its own page, and quitting saves both (N8)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  await expectPageTitle(window, 'Welcome');
+  await makePage(window, 'Second', 'The second page.');
+  const second = await openInNewWindow(app, window, 'Second');
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(2);
+
+  await typeAtEnd(window, ' From window one.', 'Gumply is a quiet place for notes');
+  await typeAtEnd(second, ' From window two.', 'The second page.');
+  // Quit at once: the flush over every window saves both before the app goes.
+  await quitAndWait(app, 'quit');
+  expect(readFileSync(join(vault, 'Welcome.md'), 'utf8')).toContain('From window one.');
+  expect(readFileSync(join(vault, 'Second.md'), 'utf8')).toContain('From window two.');
+});
+
+test('the same page in two windows: the second save asks Reload / Keep mine (no co-editing, N8)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    await makePage(window, 'Shared', 'A shared page.');
+    await window.getByTestId('page-item-Shared').click();
+    await expectPageTitle(window, 'Shared');
+    const second = await openInNewWindow(app, window, 'Shared');
+
+    // Both windows type before either has saved, so neither reloads the other's change first.
+    await typeAtEnd(window, ' One.', 'A shared page.');
+    await typeAtEnd(second, ' Two.', 'A shared page.');
+    const states = async () =>
+      (await Promise.all([window, second].map((page) => page.getByTestId('save-status').getAttribute('data-state')))).sort();
+    // Whichever saves first wins; the other meets the conflict prompt, never a silent overwrite.
+    await expect.poll(states, { timeout: 15_000 }).toEqual(['conflict', 'saved']);
+    const onDisk = readFileSync(join(vault, 'Shared.md'), 'utf8');
+    expect(onDisk.includes('One.') !== onDisk.includes('Two.')).toBe(true);
+
+    // The conflicted window chooses Reload, so nothing is left unsaved and the app can quit
+    // (with a conflict open, quitting rightly asks first, and that dialog would hold the close).
+    const conflicted = (await window.getByTestId('save-status').getAttribute('data-state')) === 'conflict' ? window : second;
+    await conflicted.getByTestId('conflict-reload').click();
+    await expect(conflicted.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict', { timeout: 10_000 });
+    await expect(conflicted.getByTestId('editor-content')).toContainText(onDisk.includes('One.') ? 'One.' : 'Two.');
+    await quitAndWait(app, 'quit');
+  } finally {
+    // If a step above failed with the conflict still open, the quit would wait on its dialog:
+    // stop this app instead, so the failure shows as itself rather than as a test timeout.
+    const child = launched.get(app);
+    if (child) stopProcess(child);
+  }
+});
+
+test('closing one window leaves the other working; File → New Window opens another (N8)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    const next = app.waitForEvent('window');
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('new-window')!.click());
+    const second = await next;
+    await expect(second.getByTestId('editor-content')).toBeVisible({ timeout: 15_000 });
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(2);
+
+    // Close the first window: the app keeps running, and the second one still saves.
+    await window.close();
+    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+    await second.getByTestId('page-item-Welcome').click();
+    await expectPageTitle(second, 'Welcome');
+    await typeAtEnd(second, ' After the other window closed.', 'Gumply is a quiet place for notes');
+    await expect(second.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+    expect(readFileSync(join(vault, 'Welcome.md'), 'utf8')).toContain('After the other window closed.');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Cmd/Ctrl+click on a tree row opens the page in a new window, and this window stays where it was (N8)', async () => {
+  const { app, window } = await launch({ GUMPLY_DESKTOP_VAULT: vault });
+  try {
+    await expectPageTitle(window, 'Welcome');
+    await makePage(window, 'Elsewhere', 'Opened elsewhere.');
+    const next = app.waitForEvent('window');
+    await window.getByTestId('page-item-Elsewhere').click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+    const opened = await next;
+    await expectPageTitle(opened, 'Elsewhere');
+    await expectPageTitle(window, 'Welcome');
+  } finally {
+    await app.close();
+  }
+});
