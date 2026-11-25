@@ -78,6 +78,21 @@ test.describe('Ctrl+End / Ctrl+Home reach the end and start of the page (#k9dwsq
     await expect.poll(() => lines('Comment mid')).toEqual(['# Daily', '%% note %%', 'Text.', 'PROBE']);
   });
 
+  test('from inside a code block or a table cell, Ctrl+End still goes to the end of the page', async ({ page, vault }) => {
+    const code = ['```', 'let a = 1', '```'];
+    const table = ['| a | b |', '| --- | --- |', '| one | two |'];
+    await vault.seed([
+      { title: 'From code', content: `# Daily\n\n${code.join('\n')}\n\nText.\n\n%% end %%\n` },
+      { title: 'From table', content: `# Daily\n\n${table.join('\n')}\n\n%% end %%\n` },
+    ]);
+    await open(page, 'From code');
+    await typeAfter(page, 'let a = 1', endKey);
+    await expect.poll(() => lines('From code')).toEqual(['# Daily', ...code, 'Text.', '%% end %%', 'PROBE']);
+    await open(page, 'From table');
+    await typeAfter(page, 'one', endKey);
+    await expect.poll(() => lines('From table')).toEqual(['# Daily', ...table, '%% end %%', 'PROBE']);
+  });
+
   test('Ctrl+End alone changes nothing on disk', async ({ page, vault }) => {
     const title = 'Just the key';
     await vault.seed([{ title, content: '# Daily\n\nText.\n\n%% an Obsidian comment %%\n' }]);
