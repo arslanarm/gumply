@@ -1824,14 +1824,17 @@ export function App() {
       // putting that value back lost the save (the conversion below then wrote the old value over
       // it). Values come from the save queue's own answers.
       const fresh = await api.getPage(id);
-      const freshTypes = new Map((fresh.properties ?? []).map((item) => [item.key, item.type] as const));
+      // The fields derived from the type come along (the tags hint, editable); the value never does.
+      const freshByKey = new Map((fresh.properties ?? []).map((item) => [item.key, item] as const));
       setPage((previous) =>
         previous && previous.id === fresh.id && previous.properties
           ? {
               ...previous,
               properties: previous.properties.map((item) => {
-                const freshType = freshTypes.get(item.key);
-                return freshType && freshType !== item.type ? { ...item, type: freshType } : item;
+                const typed = freshByKey.get(item.key);
+                if (!typed) return item;
+                const { issue: _oldIssue, ...rest } = item;
+                return { ...rest, type: typed.type, editable: typed.editable, ...(typed.issue ? { issue: typed.issue } : {}) };
               }),
             }
           : previous,
