@@ -17,6 +17,11 @@ describe("conflictSource", () => {
     expect(text).toContain("(time on ABCDEFG)");
   });
 
+  it("a cloud drive's copy (#f5n87bfd): the computer it came from, no date (the name has none)", () => {
+    expect(conflictSource({ tool: "cloud", device: "LAPTOP-RU" })).toBe("Cloud drive, from computer LAPTOP-RU");
+    expect(conflictSource({ tool: "cloud" })).toBe("Cloud drive");
+  });
+
   it("a date without a time is never labelled with a device's clock", () => {
     expect(conflictSource({ tool: "nextcloud", device: "ann", at: "2026-11-22" })).not.toContain("time on");
     expect(conflictSource({ tool: "nextcloud", at: "2026-11-22T14:30:05" })).not.toContain("time on");
