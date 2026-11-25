@@ -446,7 +446,14 @@ function SourcePanel(props: {
           aria-label={t("bases.folderPlaceholder")}
           data-testid="base-source-folder"
           value={props.source.kind === "folder" ? props.source.folder : ""}
-          onChange={(event) => props.onChange({ kind: "folder", folder: event.target.value })}
+          onChange={(event) =>
+            // A `file.folder ==` base (only that folder's own pages) stays one when another folder is picked.
+            props.onChange({
+              kind: "folder",
+              folder: event.target.value,
+              ...(props.source.kind === "folder" && props.source.direct ? { direct: true as const } : {}),
+            })
+          }
         >
           {(props.source.kind === "folder" && !folders.includes(props.source.folder)
             ? [props.source.folder, ...folders]

@@ -226,6 +226,35 @@ test.describe('database views (.base, D34)', () => {
     expect(await read('Untitled database.base')).toBe('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n');
   });
 
+  test('a base of one folder\'s own pages (file.folder ==, as the Notion import writes) shows that folder, and + New adds its row there', async ({ page, request, vault }) => {
+    void vault;
+    // As the Notion import lays it out: Reading.base next to its rows folder Reading/.
+    const base = 'filters:\n  and:\n    - file.folder == "Library/Reading"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n';
+    await writeVault(request, {
+      'Library/Reading.base': base,
+      'Library/Reading/Dune.md': 'A book.\n',
+      'Library/Reading/Emma.md': 'A book.\n',
+      'Library/Shelf.md': 'Next to the rows folder, not a row.\n',
+    });
+    await page.goto('/#/Library/Reading.base');
+    await expect(titles(page)).toHaveText(['Dune', 'Emma']);
+    // It used to say "All pages": the source button only knew file.inFolder(…).
+    await expect(page.getByTestId('base-source-button')).toContainText('In Library/Reading');
+
+    // + New: the row goes into the rows folder, so it shows in the table (it used to land next to
+    // the .base, in Library/, outside the filter, and vanish).
+    await page.getByTestId('base-new-row').click();
+    const title = page.locator('[data-testid^="base-title-input-"]');
+    await expect(title).toBeFocused();
+    await title.fill('Faust');
+    await title.press('Enter');
+    await expect(titles(page)).toHaveText(['Dune', 'Emma', 'Faust']);
+    await expect.poll(() => exists('Library/Reading/Faust.md')).toBe(true);
+    expect(await exists('Library/Faust.md')).toBe(false);
+    // Nothing rewrote the filter.
+    expect(await read('Library/Reading.base')).toBe(base);
+  });
+
   test('a filter Gumply cannot evaluate is skipped and named; a broken file is shown, never written', async ({ page, request, vault }) => {
     void vault;
     const odd = 'filters:\n  and:\n    - file.backlinks.length > 1\nviews:\n  - type: table\n    name: T\n';
