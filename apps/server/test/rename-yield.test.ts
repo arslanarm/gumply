@@ -207,7 +207,8 @@ describe("@opus-editor's review cases (#xgnvipyd)", { timeout: 60_000 }, () => {
     await store.update("Area/Hub", { title: "Hub renamed" }).then(() => order.push("rename"));
     await move;
     expect(order).toEqual(["rename", "move"]);
-    expect(store.get("Shelf/Area/Hub renamed").content).toContain("[[Hub]] itself"); // its own body isn't rewritten
+    // #h7j39kka: its own self-link follows the rename too (it was left as `[[Hub]]`, pointing at no page).
+    expect(store.get("Shelf/Area/Hub renamed").content).toContain("[[Hub renamed]] itself");
     expect(await readFile(join(dir, "L", "Linker 399.md"), "utf8")).toMatch(/\[\[(Shelf\/Area\/)?Hub renamed/);
   });
 

@@ -3800,6 +3800,10 @@ export class VaultStore {
     const rewriteWith = this.renameRewriteWith(record, previousTitle);
     const rewriteText = rewriteWith(beforeMetas, new Set([oldId]));
     const skip = new Set([oldId, record.id]);
+    // #h7j39kka: the renamed page's own self-links (`[[Old]]`, `[[Old#H|x]]`, `![[Old#H]]`) follow too,
+    // as Obsidian does; they pointed at no page once the session redirect was gone. Done here, in the
+    // rename's first step and before a deferred rewrite is captured (#xgnvipyd: its I/O may fail).
+    const self = await this.rewriteRenamedSelf(record, rewriteText);
     // #xgnvipyd: when deferred, the rename's own step (phase A) must not do anything that can fail
     // for real (I/O) after this point: a failure there drops the captured rewrite, and the page would
     // be renamed on disk with no link rewritten. If such a step is ever added after the rewrite in
@@ -3809,9 +3813,33 @@ export class VaultStore {
       const aliased = oldId !== record.id || previousTitle !== record.title;
       this.deferredRewrite = { skip, rewriteText, rewriteWith, ids: [...this.pages.keys()], aliasKey: aliased ? record.id : null, failed: [], oldId, touched: new Set(), oldTitle: previousTitle, newTitle: record.title };
       if (aliased) this.renameAliases.set(record.id, { fromId: oldId, fromTitle: previousTitle });
-      return [];
+      return self;
     }
-    return this.rewriteEverywhere(skip, rewriteText, {}, { frontmatter: true });
+    return [...self, ...(await this.rewriteEverywhere(skip, rewriteText, {}, { frontmatter: true }))];
+  }
+
+  /**
+   * #h7j39kka: rewrite only the renamed page's (or board's) own text with the rename's title rewrite,
+   * and answer with its id when it changed, so the client reloads it (#ekp8ns58). Like #ber4hvce's
+   * pass over its links into its folder: an editor's next save carries this version, and a save from
+   * before the rename merges this change (N10) instead of writing the old text back.
+   */
+  private async rewriteRenamedSelf(
+    record: PageRecord,
+    rewriteText: (markdown: string, source: PageId) => { content: string; count: number },
+  ): Promise<PageId[]> {
+    const own = this.pages.get(record.id);
+    if (!own) return [];
+    const before = own.board ? null : own.content;
+    // N10: the chain starts where the rename's own write began (the version that write replaced).
+    const chainFrom = own.ownWrite && own.ownWrite.version === own.updated ? own.ownWrite.replaced : own.updated;
+    const others = new Set([...this.pages.keys()].filter((key) => key !== record.id));
+    const written = await this.rewriteEverywhere(others, rewriteText, {}, { frontmatter: true });
+    const after = this.pages.get(record.id);
+    if (written.length > 0 && before !== null && after && after.content !== before) {
+      this.rememberRenameRewrite(record.id, before, after.content, chainFrom, after.updated, record.id.slice(record.id.lastIndexOf("/") + 1));
+    }
+    return written;
   }
 
   /**
