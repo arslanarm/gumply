@@ -121,6 +121,8 @@ interface ToastState {
   /** What happened: deleting shows a bin, moving an arrow, notices an "i". */
   icon?: IconName;
   undo?: () => Promise<void>;
+  /** The undo button's label when it does something else ("History"). */
+  actionLabel?: string;
 }
 
 /** v0.9 F: today's note opens at most once per launch, however often the vault list reloads. */
@@ -352,10 +354,12 @@ export function App() {
   // #im3em6tq: each rename in flight, settling with the renamed page (null if it
   // failed). A save of that page, or of a page under it, waits for it and then
   // goes to the new id with the new version, never against the rename (a 409).
-  const renameWaits = useRef(new Map<PageId, Promise<Page | null>>());
-  const waitForRename = useCallback((id: PageId): Promise<{ id: PageId; updated: string | null } | null> | null => {
+  const renameWaits = useRef(new Map<PageId, Promise<(Page & { rewrittenPages?: PageId[] }) | null>>());
+  const waitForRename = useCallback((id: PageId): Promise<{ id: PageId; updated: string | null; rewroteOwn?: boolean } | null> | null => {
     for (const [renamed, settled] of renameWaits.current) {
-      if (id === renamed) return settled.then((page) => (page ? { id: page.id, updated: page.updated } : null));
+      // #ekp8ns58: `rewroteOwn`: the rename also rewrote this page's own body (its links into its moved
+      // folder), so the answer's version is newer than the text the waiting save holds.
+      if (id === renamed) return settled.then((page) => (page ? { id: page.id, updated: page.updated, rewroteOwn: page.rewrittenPages?.includes(page.id) ?? false } : null));
       if (id.startsWith(`${renamed}/`)) {
         // A sub-page moves with its parent: a new id, the same version.
         return settled.then((page) => (page ? { id: `${page.id}${id.slice(renamed.length)}`, updated: null } : null));
@@ -397,6 +401,11 @@ export function App() {
   const paletteFocus = useRef<{ id: PageId; until: number } | null>(null);
   const focusBaseAfterOpen = useRef<PageId | null>(null);
   const restoreSelection = useRef<{ from: number; to: number } | null>(null);
+  /**
+   * #ekp8ns58: the caret to put back after the own-body reload of a rename. That page mounts twice
+   * then (the reload and the rename's navigation), so it applies to every mount of it, briefly.
+   */
+  const caretAfterOwnRewrite = useRef<{ id: PageId; to: number; until: number } | null>(null);
   const backlinksRequest = useRef(0);
   const initialLoadStarted = useRef(false);
   // The landing page's request, started as soon as the list arrives instead of
@@ -623,7 +632,11 @@ export function App() {
    * `reloadDecision`). Every reload that isn't the user's own "Reload anyway"
    * goes through this. A ref, so callbacks defined above its body can use it.
    */
-  const reloadOpenPage = useRef<(kind: ReloadKind) => Promise<void>>(async () => requestPageReload());
+  /** Resolves true when the editor's unsaved text was kept in History first ("Before reload"). */
+  const reloadOpenPage = useRef<(kind: ReloadKind) => Promise<boolean>>(async () => {
+    requestPageReload();
+    return false;
+  });
 
   /**
    * #2xx3uae4: load a page that couldn't be fetched again (Retry, or the server
@@ -810,10 +823,11 @@ export function App() {
     const id = selectedRef.current;
     const controls = documentControls();
     const decision = reloadDecision(kind, id !== null && (controls?.isDirty() ?? false));
-    if (decision === "leave") return;
+    if (decision === "leave") return false;
+    let kept = false;
     if (decision === "flush-then-reload") {
       await controls?.flush().catch(() => undefined);
-      if (documentControls()?.isDirty()) return;
+      if (documentControls()?.isDirty()) return false;
     }
     if (decision === "keep-then-reload" && id !== null) {
       const board = isBoardId(id) ? (boardControls.current?.getBoard() ?? null) : null;
@@ -828,13 +842,15 @@ export function App() {
       if (input) {
         try {
           await api.keepUnsaved(id, input);
+          kept = true;
         } catch {
           setReloadNotKept(true);
-          return;
+          return false;
         }
       }
     }
     requestPageReload();
+    return kept;
   };
   const handleConflictReload = useCallback(async () => {
     await reloadOpenPage.current("replace");
@@ -1679,6 +1695,39 @@ export function App() {
     if (!found) setToast({ message: t("page.headingNotFound"), icon: "info" });
   }, []);
 
+  /**
+   * #ekp8ns58 (A): the one place that reloads the open page after a rename rewrote its own body. The
+   * rename calls it, and so does the editor when it drops a save typed during that rename (it had the
+   * old links), so a drop never happens without a reload. Text kept in History gets a notice.
+   */
+  const ownRewriteReload = useRef<Promise<void> | null>(null);
+  const reloadAfterOwnRewrite = useCallback((renamedId: PageId) => {
+    // Both callers fire for one rename (the rename first, the dropped save a microtask later): one reload.
+    if (ownRewriteReload.current) return;
+    // The reload remounts the editor: put the caret back where the user is typing (as the disk poll's
+    // reload does), or the keys typed next land on the title heading and are lost.
+    const active = document.activeElement;
+    const selection =
+      active instanceof HTMLElement && active.closest('[data-testid="editor-content"]') ? (editorControls.current?.getSelection() ?? null) : null;
+    // Keyed by the page's new id: the remounts are of it, while the selection may still name the old one.
+    caretAfterOwnRewrite.current = selection ? { id: renamedId, to: selection.to, until: Date.now() + 3_000 } : null;
+    const running = reloadOpenPage.current("replace").then((kept) => {
+      if (!kept) return;
+      setToast({
+        message: t("save.typedDuringRename"),
+        icon: "info",
+        actionLabel: t("save.openHistory"),
+        undo: async () => {
+          const meta = pagesRef.current.find((item) => item.id === renamedId);
+          if (meta) setHistoryTarget(meta);
+        },
+      });
+    });
+    ownRewriteReload.current = running.finally(() => {
+      ownRewriteReload.current = null;
+    });
+  }, [t]);
+
   const handleRename = useCallback(
     async (id: PageId, title: string) => {
       setActionError(null);
@@ -1701,8 +1750,8 @@ export function App() {
 
         renamesInFlight.current.add(id);
         renameEpoch.current += 1;
-        let settle: (page: Page | null) => void = () => undefined;
-        renameWaits.current.set(id, new Promise<Page | null>((resolve) => (settle = resolve)));
+        let settle: (page: (Page & { rewrittenPages?: PageId[] }) | null) => void = () => undefined;
+        renameWaits.current.set(id, new Promise<(Page & { rewrittenPages?: PageId[] }) | null>((resolve) => (settle = resolve)));
         setRenaming({ id, title: previousTitle ?? title, count: null });
         // How many pages link here (the link rewrites the server is doing), for the status.
         void api
@@ -1748,13 +1797,20 @@ export function App() {
         if (open !== id && openPageNeedsReload(updated.rewrittenPages, openNow, updated.id)) {
           void reloadOpenPage.current("auto");
         }
+        // #ekp8ns58: the rename rewrote the renamed page's OWN body (links into its moved folder,
+        // `[[P/Sub]]` → `[[Q/Sub]]`). The editor took the answer's version but still holds the old text,
+        // so its next save would pass the version check and silently put the old links back (D37).
+        // Reload it; text typed during the rename is kept in History first ("replace").
+        if ((open === id || open === updated.id) && (updated.rewrittenPages?.includes(updated.id) ?? false)) {
+          reloadAfterOwnRewrite(updated.id);
+        }
       } catch (error) {
         if (previousTitle !== null) showTitle(previousTitle);
         setActionError(errorMessage(error));
         void loadPages();
       }
     },
-    [applySavedPage, loadPages, pages, requestPageReload],
+    [applySavedPage, loadPages, pages, reloadAfterOwnRewrite, requestPageReload],
   );
 
   // v0.7 A (D34): properties are saved like any page edit: the editor's
@@ -2128,7 +2184,11 @@ export function App() {
     editorControls.current = controls;
     setOutlineTick((value) => value + 1);
     const fromPalette = paletteFocus.current;
-    if (fromPalette && fromPalette.id === controls.pageId && Date.now() < fromPalette.until) {
+    const caret = caretAfterOwnRewrite.current;
+    if (caret && caret.id === controls.pageId && Date.now() < caret.until) {
+      // Kept for the page's next mount too (see caretAfterOwnRewrite); expires on its own.
+      controls.focusAt(caret.to);
+    } else if (fromPalette && fromPalette.id === controls.pageId && Date.now() < fromPalette.until) {
       paletteFocus.current = null;
       focusBodyAfterOpen.current = false;
       const caret = lastCaret.current.get(controls.pageId);
@@ -2851,6 +2911,7 @@ export function App() {
                     onSaveState={setSaveState}
                     onSaved={handlePageSaved}
                     waitForRename={waitForRename}
+                    onRenameRewroteOwn={reloadAfterOwnRewrite}
                     onConflictBackup={handleConflictBackup}
                     onReady={handleEditorReady}
                     onOpenLink={handleOpenLink}
@@ -3006,6 +3067,7 @@ export function App() {
           message={toast.message}
           icon={toast.icon}
           onUndo={toast.undo ? () => void toast.undo?.() : undefined}
+          actionLabel={toast.actionLabel}
           onDismiss={dismissToast}
         />
       ) : null}
