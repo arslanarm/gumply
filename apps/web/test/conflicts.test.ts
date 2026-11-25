@@ -17,9 +17,9 @@ describe("conflictSource", () => {
     expect(text).toContain("(time on ABCDEFG)");
   });
 
-  it("a cloud drive's copy (#f5n87bfd): the computer it came from, no date (the name has none)", () => {
-    expect(conflictSource({ tool: "cloud", device: "LAPTOP-RU" })).toBe("Cloud drive, from computer LAPTOP-RU");
-    expect(conflictSource({ tool: "cloud" })).toBe("Cloud drive");
+  it("a Yandex Disk copy (#f5n87bfd): the computer it came from, no date (the name has none)", () => {
+    expect(conflictSource({ tool: "yandex", device: "LAPTOP-RU" })).toBe("Yandex Disk, from computer LAPTOP-RU");
+    expect(conflictSource({ tool: "yandex" })).toBe("Yandex Disk");
   });
 
   it("a date without a time is never labelled with a device's clock", () => {

@@ -1836,7 +1836,7 @@
       "dropbox": "Dropbox",
       "nextcloud": "Nextcloud",
       "obsidian": "Obsidian Sync",
-      "cloud": "Cloud drive"
+      "yandex": "Yandex Disk"
     },
     "badge_one": "{{count}} conflicting copy",
     "badge_few": "{{count}} conflicting copies",

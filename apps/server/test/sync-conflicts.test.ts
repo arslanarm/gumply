@@ -150,7 +150,7 @@ describe("conflict copies are recognised and kept out of the vault's indexes (§
   });
 });
 
-describe("a cloud drive's `(копия с компьютера X)` copies (#f5n87bfd)", () => {
+describe("Yandex Disk's `(копия с компьютера X)` copies (#f5n87bfd)", () => {
   const COPY = "Заметки/Сад/План (копия с компьютера LAPTOP-RU)";
   const files: Record<string, string> = {
     "Заметки/Сад/План.md": "Мой текст.\n",
@@ -166,9 +166,9 @@ describe("a cloud drive's `(копия с компьютера X)` copies (#f5n8
     const before = await snapshot(dir);
     const list = await getJson<ConflictsList>(app, "/api/conflicts");
     expect(list.copies.map((copy) => [copy.copyId, copy.originalId, copy.tool, copy.device])).toEqual([
-      ["Elsewhere/План (копия с компьютера LAPTOP-RU)", null, "cloud", "LAPTOP-RU"],
-      [COPY, "Заметки/Сад/План", "cloud", "LAPTOP-RU"],
-      ["Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2)", "Заметки/Сад/План", "cloud", "LAPTOP-RU"],
+      ["Elsewhere/План (копия с компьютера LAPTOP-RU)", null, "yandex", "LAPTOP-RU"],
+      [COPY, "Заметки/Сад/План", "yandex", "LAPTOP-RU"],
+      ["Заметки/Сад/План (копия с компьютера LAPTOP-RU) (2)", "Заметки/Сад/План", "yandex", "LAPTOP-RU"],
     ]);
     // The paired copies leave the tree; the orphan and the root page stay ordinary pages.
     const tree = (await getJson<PageMeta[]>(app, "/api/pages")).map((page) => page.id);
