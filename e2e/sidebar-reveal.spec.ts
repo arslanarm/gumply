@@ -40,6 +40,9 @@ test.describe('the sidebar follows the opened page', () => {
 
   test('by URL and by Cmd+K, a row far down scrolls into view', async ({ page }) => {
     await page.goto('/#/Big/Note 1950');
+    // #8gudbajp: wait before expecting. An expect on an element that doesn't exist yet snapshots the
+    // whole page on every poll (Playwright 1.65); over a big sidebar that holds the page for seconds.
+    await page.getByTestId('page-title').first().waitFor({ timeout: 20_000 });
     await expect(page.getByTestId('page-title').first()).toBeVisible({ timeout: 20_000 });
     await expectPageTitle(page, 'Note 1950');
     await expect.poll(() => rowInView(page, 'Big/Note 1950')).toBe(true);
@@ -47,6 +50,7 @@ test.describe('the sidebar follows the opened page', () => {
     // Cmd+K to another far row (towards the top this time).
     await page.keyboard.press(`${MOD}+k`);
     await page.keyboard.type('Note 0040');
+    await page.getByTestId('quick-switcher').waitFor();
     await expect(page.getByTestId('quick-switcher')).toContainText('Note 0040');
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('page-title').first()).toHaveText('Note 0040', { timeout: 20_000 });
@@ -55,6 +59,7 @@ test.describe('the sidebar follows the opened page', () => {
 
   test('clicking a row that is already visible never moves the list', async ({ page }) => {
     await page.goto('/#/Big/Note 1000');
+    await page.getByTestId('page-title').first().waitFor({ timeout: 20_000 });
     await expect(page.getByTestId('page-title').first()).toBeVisible({ timeout: 20_000 });
     await expect.poll(() => rowInView(page, 'Big/Note 1000')).toBe(true);
     // Where the row sits on screen (scrollTop itself may shift as chunks

@@ -29,6 +29,9 @@ test('typing during a slow rename saves to the renamed file: no conflict, no "Sy
   await expect.poll(async () => (await request.get(`${API_URL}/api/pages`)).headers()['x-gumply-syncing'] ?? 'off', { timeout: 15_000 }).toBe('off');
 
   await page.goto('/#/Hub');
+  // #8gudbajp: wait before expecting. An expect on an element that doesn't exist yet snapshots the
+  // whole page on every poll (Playwright 1.65); over a 1,200-row sidebar that holds the page for seconds.
+  await page.getByTestId('editor-content').waitFor();
   await expect(page.getByTestId('editor-content')).toContainText('The hub.');
 
   // Everything the save status and the sidebar status show, sampled until the end.
@@ -87,6 +90,7 @@ test('a rename that fails: the typing held behind it still saves, to the old fil
     },
   );
   await page.goto('/#/Solo');
+  await page.getByTestId('editor-content').waitFor();
   await expect(page.getByTestId('editor-content')).toContainText('Start.');
   await page.evaluate(() => {
     const states = new Set<string>();
@@ -122,6 +126,7 @@ test('renaming a page the open page links to, right after typing in it: the typi
     { title: 'Writer', content: 'Notes about [[Hub]].' },
   ]);
   await page.goto('/#/Writer');
+  await page.getByTestId('editor-content').waitFor();
   await expect(page.getByTestId('editor-content')).toContainText('Notes about');
   await page.getByTestId('editor-content').click();
   await page.keyboard.press('ControlOrMeta+End');
@@ -165,6 +170,7 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10): neve
 
   // The user is writing in a page that links Hub, and renames Hub from the sidebar.
   await page.goto('/#/Writer');
+  await page.getByTestId('editor-content').waitFor();
   await expect(page.getByTestId('editor-content')).toContainText('Notes about');
   await page.getByTestId('page-item-Hub').hover();
   await page.getByTestId('page-menu-button-Hub').click();

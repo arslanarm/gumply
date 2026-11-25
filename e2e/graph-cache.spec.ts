@@ -36,6 +36,11 @@ async function openGraph(page: Page, timeout: number): Promise<{ arranged: boole
   const started = Date.now();
   await page.getByTestId('sidebar-graph').click();
   const canvas = page.getByTestId('graph-canvas');
+  // #8gudbajp: wait for the canvas to exist before any expect on it. An expect whose locator matches
+  // nothing builds a whole-page aria snapshot on every poll (Playwright 1.65), and over a 5,200-row
+  // sidebar each one blocks the page for 10-25 s, so the graph never got to mount in time.
+  // waitFor (waitForSelector) takes no snapshot.
+  await canvas.waitFor({ state: 'attached', timeout: 60_000 });
   await expect(canvas).toHaveAttribute('data-graph-layout', 'worker', { timeout: 60_000 });
   await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout });
   await expect(canvas).not.toHaveAttribute('data-graph-arranging', 'true');

@@ -31,8 +31,12 @@ test.describe('sidebar with a big folder expanded', () => {
       .toBe(200);
     await page.goto('/#/Big/Long read');
     // A 2,000-file vault: the first load takes a few seconds on a busy machine.
+    // #8gudbajp: wait before expecting. An expect on an element that doesn't exist yet snapshots the
+    // whole page on every poll (Playwright 1.65); over a big sidebar that holds the page for seconds.
+    await page.getByTestId('page-title').first().waitFor({ timeout: 20_000 });
     await expect(page.getByTestId('page-title').first()).toBeVisible({ timeout: 20_000 });
     await expectPageTitle(page, 'Long read');
+    await page.getByTestId('page-item-Big/Item 1999').waitFor({ state: 'attached', timeout: 20_000 });
     await expect(page.getByTestId('page-item-Big/Item 1999')).toBeAttached({ timeout: 20_000 });
 
     // The pointer rests over the page, as when someone scrolls with a wheel:
