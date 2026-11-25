@@ -8,7 +8,7 @@ import { relinkAttachments } from "../src/attachment-paths";
  * `<…>`, suffix and title. Vault-root paths (they don't depend on the note) and links to missing files
  * stay as written.
  */
-const files = new Set(["Other/c.png", "Other/my c.png", "Other/Page.md", "attachments/a.png"]);
+const files = new Set(["Other/c.png", "Other/my c.png", "Other/Page.md", "Other/Фото.png", "A/B/c.png", "attachments/a.png"]);
 const exists = (path: string) => files.has(path);
 
 describe("relinkAttachments: any existing vault file (#sj5a2trb)", () => {
@@ -21,6 +21,12 @@ describe("relinkAttachments: any existing vault file (#sj5a2trb)", () => {
 
   it("back out to the root: ../ shrinks", () => {
     expect(relinkAttachments("![c](../../Other/c.png)\n", "Deep/Er/P", "P", exists)).toBe("![c](Other/c.png)\n");
+  });
+
+  it("keeps the raw tail as written: an encoded name stays encoded, and ./ stays when the path doesn't climb (D37, review)", () => {
+    const encoded = "%D0%A4%D0%BE%D1%82%D0%BE.png";
+    expect(relinkAttachments(`![f](../Other/${encoded})\n`, "Files/In", "Archive/Files/In", exists)).toBe(`![f](../../Other/${encoded})\n`);
+    expect(relinkAttachments("![c](./c.png)\n", "A/B/x", "A/x", exists)).toBe("![c](./B/c.png)\n");
   });
 
   it("leaves vault-root paths, missing files, external links and code alone", () => {
