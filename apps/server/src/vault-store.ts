@@ -3600,6 +3600,7 @@ export class VaultStore {
     // #ber4hvce (N10): a rename's own write is the chain's first step, recorded as a step that changes no
     // line, so a Keep mine from the editor's version before the rename walks into this rename's link
     // rewrites of the page (folder links, self-links) whether or not the rename came with a writer.
+    // `deferRewrites` = inside a user rename (renameInBatches); other relocations have no editor save in flight.
     if (this.deferRewrites && replaced !== record.updated) {
       this.rememberRenameRewrite(targetId, record.content, record.content, replaced, record.updated, nextTitle);
     }
