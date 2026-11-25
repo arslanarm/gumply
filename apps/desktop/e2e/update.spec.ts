@@ -481,19 +481,29 @@ if (isLinux) {
       await checkNow(/is ready/);
       // A good signature (the test key): verified before "ready".
       expect(feedRequests.filter(isSignatureRequest).sort()).toEqual(['SHA256SUMS.txt', 'SHA256SUMS.txt.sig']);
+      const pendingDir = dirname(await poll('The cached download', cachedInstaller, 10_000));
       await quitApp();
 
       const newFile = readdirSync(feedDir).find((name) => name.endsWith('.AppImage'))!;
       expect(sha512(installed)).toBe(sha512(join(feedDir, newFile)));
       expect(statSync(installed).mode & 0o777).toBe(0o755);
       expect(readdirSync(dirname(installed))).toEqual([basename(installed)]);
+      // #acbwryxf: installed, so the cache's copy is spent (N's own code did the install).
+      expect(cachedInstaller()).toBeUndefined();
       // The old file's mount is still there for the running AI app's server.
       expect((await mcp.listTools()).tools.length).toBeGreaterThan(0);
 
+      // #acbwryxf: an install by an older version (before this fix) left its download behind; N+1's
+      // first start removes it. Put such a leftover back, as 0.9.2 → 0.9.3 leaves it.
+      mkdirSync(pendingDir, { recursive: true });
+      copyFileSync(join(feedDir, newFile), join(pendingDir, newFile));
+      writeFileSync(join(pendingDir, 'update-info.json'), JSON.stringify({ fileName: newFile, sha512: sha512(join(feedDir, newFile)), isAdminRightsRequired: false }));
       await startApp();
       expect((await health()).version).toBe(newVersion);
+      await poll('The leftover download removed at start', () => (readdirSync(pendingDir).length === 0 ? true : undefined), 10_000);
       await quitApp();
       record('AppImage N→N+1', `${oldVersion} → ${newVersion} at ${installed}; the --mcp from the old file kept answering`);
+      record('pending cleared', `${newFile} not left in the updater cache after the install; a leftover from an older install removed at the next start`);
     } finally {
       await mcp.close().catch(() => undefined);
     }

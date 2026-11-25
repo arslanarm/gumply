@@ -47,4 +47,21 @@ test.describe('an image alone in a list item stays in its list (#mrh4dsr6)', () 
       await expect.poll(() => body(readFileSync(file, 'utf8'))).toBe(before.replace('Top\n', 'Top!\n'));
     });
   }
+
+  test('typing after the image in its own bullet changes only that line', async ({ page, vault }) => {
+    const title = 'List image typed';
+    await vault.seed([{ title, content: 'Top\n\n- one\n- ![A](attachments/a.svg)\n- two\n' }]);
+    const file = path.join(E2E_VAULT, `${title}.md`);
+    const before = body(readFileSync(file, 'utf8'));
+    await page.goto(`/#/${encodeURIComponent(title)}`);
+    const image = page.getByTestId('editor-content').locator('li').getByTestId('inline-image');
+    await expect(image).toBeVisible();
+    await image.click();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.type(' x');
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
+    await expect
+      .poll(() => body(readFileSync(file, 'utf8')))
+      .toBe(before.replace('- ![A](attachments/a.svg)\n', '- ![A](attachments/a.svg) x\n'));
+  });
 });
