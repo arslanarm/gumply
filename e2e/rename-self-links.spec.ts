@@ -30,15 +30,16 @@ test('renaming from the title rewrites the page\'s self-links, and typing right 
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('Moved');
   await page.keyboard.press('Enter');
-  // Straight into the body, before the rename's answer has come back.
-  await page.keyboard.type('Typed. ');
+  // Straight into the body, before the rename's answer has come back: on the last line (not the links' line).
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' Typed.');
   await expectPageTitle(page, 'Moved');
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
 
   const file = path.join(E2E_VAULT, 'Moved.md');
   await expect
     .poll(() => body(readFileSync(file, 'utf8')).replace(/^\n/, ''), { timeout: 10_000 })
-    .toBe('Typed. Me: [[Moved]] and [[Moved#Part|part]].\n\n## Part\n\nText.\n');
+    .toBe('Me: [[Moved]] and [[Moved#Part|part]].\n\n## Part\n\nText. Typed.\n');
   expect(states).not.toContain('conflict');
   // The editor shows the new self-link, not the old one.
   await expect(page.getByTestId('editor-content')).not.toContainText('Parent');
