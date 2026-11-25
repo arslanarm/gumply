@@ -1395,6 +1395,8 @@ export class VaultStore {
       // Let a save that was just handed in reach the queue first.
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
+    // #inrd797i: stopped while it waited (the watch timer had already fired): a stopped store starts no refresh.
+    if (this.stopped) return false;
     return this.enqueue(
       async () => {
         // #g95wkd9y: the scope is taken when the job runs, so events that came in
