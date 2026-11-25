@@ -95,14 +95,15 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     // No batch changed it: every batch saw it already rewritten.
     expect(ownAtBatch.length).toBeGreaterThan(1);
     for (const text of ownAtBatch) expect(text).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
-    expect(answer.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
+    // The answer's body is the page's text without the file's final newline (kept as a flag, D37).
+    expect(answer.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].");
     expect(answer.updated).toBe(store.get("Hub 2").updated);
     // The client reloads its live editor only when the answer lists the renamed page itself (#ekp8ns58's
     // App.tsx fix): without that, its next save from the old editor text would put [[Hub/Sub]] back.
     expect(answer.rewrittenPages).toContain("Hub 2");
     // The editor saves from the version it was answered with: no "changed on disk".
-    const saved = await store.update("Hub 2", { content: `${answer.content}More.\n`, expectedUpdated: answer.updated });
-    expect(saved.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\nMore.\n");
+    await store.update("Hub 2", { content: `${answer.content}\nMore.`, expectedUpdated: answer.updated });
+    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\nMore.\n");
   });
 
   it("a save in flight during the batches, from the version before the rename: a conflict, never the stale link written back; Keep mine keeps the edit and [[Hub 2/Sub]] (@lead, @opus-hunter)", async () => {
@@ -127,8 +128,8 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
       expect(onDisk).toBe("The hub, edited. Its own sub-page: [[Hub 2/Sub]].\n"); // (c): merged
     } else {
       expect(outcome).toBe(409); // (a): the user is asked
-      const kept = await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
-      expect(kept.content).toBe("The hub, edited. Its own sub-page: [[Hub 2/Sub]].\n");
+      await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
+      expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub, edited. Its own sub-page: [[Hub 2/Sub]].\n");
     }
   });
 
