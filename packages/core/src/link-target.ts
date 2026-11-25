@@ -54,6 +54,12 @@ export function linkTargetFor(page: PageMeta, pages: readonly PageMeta[]): LinkT
   return { target, alias: alias === target || alias.length === 0 ? "" : alias };
 }
 
+/** #siuwzhwy: whether the line holding `index` is a Markdown table row (starts with `|`). */
+function inTableRow(markdown: string, index: number): boolean {
+  const start = markdown.lastIndexOf("\n", index - 1) + 1;
+  return markdown.slice(start, index).trimStart().startsWith("|");
+}
+
 /** The Markdown for a link to `page` (keeping an explicit alias and heading). */
 export function formatWikilink(
   page: PageMeta,
@@ -114,7 +120,10 @@ export function rewriteLinksToPage(
     const userAlias = link.alias && !same(link.alias, oldTitle) && !same(link.alias, page.title) ? link.alias : "";
     const shown = userAlias && userAlias !== target ? userAlias : autoAlias;
     const heading = link.heading ? `#${link.heading}` : "";
-    const replacement = `[[${target}${heading}${shown ? `|${shown}` : ""}]]`;
+    // #siuwzhwy: in a Markdown table a bare `|` would split the cell, so the alias pipe
+    // is `\|` there (kept as written, or for a link that gains an alias in a table row).
+    const separator = link.escapedPipe || inTableRow(content, link.index) ? "\\|" : "|";
+    const replacement = `[[${target}${heading}${shown ? `${separator}${shown}` : ""}]]`;
     content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
   }
   return { content, count: links.length };

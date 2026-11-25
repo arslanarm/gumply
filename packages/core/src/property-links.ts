@@ -12,7 +12,7 @@
 import { isMap, isScalar, isSeq, parseDocument, type Node } from "yaml";
 import { extractWikilinks, hasAttachmentExtension, type WikiLink } from "./links.js";
 import { HEADER_KEYS } from "./properties.js";
-import { WIKILINK_INNER } from "./wikilink-syntax.js";
+import { WIKILINK_INNER, wikilinkTargetPart } from "./wikilink-syntax.js";
 
 export type PropertyLinkStyle = "double" | "single" | "plain" | "flow-link";
 
@@ -134,7 +134,7 @@ export function propertyLinks(yaml: string | null | undefined): PropertyLinks | 
     }
     if (links.length > 0) continue;
     const whole = WHOLE_LINK.exec(span.value);
-    const name = whole ? whole[1]!.split("|")[0]!.split("#")[0]!.trim() : "";
+    const name = whole ? wikilinkTargetPart(whole[1]!).split("#")[0]!.trim() : "";
     if (name && hasAttachmentExtension(name)) files.push({ key: span.key, name });
   }
   return pages.length > 0 || files.length > 0 ? { pages, files } : null;

@@ -39,3 +39,15 @@ export function isWikilinkInner(text: string): boolean {
 export function isWholeWikilink(text: string): boolean {
   return text.startsWith("[[") && text.endsWith("]]") && text.length > 4 && isWikilinkInner(text.slice(2, -2));
 }
+
+/**
+ * #siuwzhwy: what's before a wikilink's alias, from its inner text (between `[[` and
+ * `]]`). In a Markdown table the alias pipe is written `\|` (Obsidian's form, and what
+ * a table cell holds), so a `\` right before the first `|` belongs to the separator,
+ * never to the target: `[[Note\|Shown]]` is the page `Note`.
+ */
+export function wikilinkTargetPart(inner: string): string {
+  const pipe = inner.indexOf("|");
+  if (pipe === -1) return inner;
+  return pipe > 0 && inner[pipe - 1] === "\\" ? inner.slice(0, pipe - 1) : inner.slice(0, pipe);
+}

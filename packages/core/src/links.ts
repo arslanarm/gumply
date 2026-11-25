@@ -8,7 +8,7 @@ import type { LinkEdge, PageMeta } from "./types.js";
 import { legacySlugTitle, slugify } from "./ids.js";
 import { findInlineTags } from "./tags.js";
 import { linkSourceFolder, preferredLinkPath } from "./link-order.js";
-import { WIKILINK_INNER, WIKILINK_UNESCAPED } from "./wikilink-syntax.js";
+import { WIKILINK_INNER, WIKILINK_UNESCAPED, wikilinkTargetPart } from "./wikilink-syntax.js";
 
 export interface WikiLink {
   /** Page title the link points at (without alias/heading). */
@@ -27,6 +27,8 @@ export interface WikiLink {
    */
   embed?: true;
   size?: string;
+  /** #siuwzhwy: the alias pipe was written `\|` (a link in a Markdown table cell). */
+  escapedPipe?: true;
 }
 
 /** True for a link target naming a board file (`Map.canvas`, `Projects/Map.canvas`). */
@@ -198,7 +200,9 @@ export function extractWikilinks(markdown: string): WikiLink[] {
     const embed = match[1] === "!";
     const inner = match[2] ?? "";
     const pipe = inner.indexOf("|");
-    const targetPart = pipe === -1 ? inner : inner.slice(0, pipe);
+    // #siuwzhwy: `\|` (a table cell) is the alias pipe too; its `\` isn't part of the target.
+    const escapedPipe = pipe > 0 && inner[pipe - 1] === "\\";
+    const targetPart = pipe === -1 ? inner : inner.slice(0, escapedPipe ? pipe - 1 : pipe);
     const aliasPart = pipe === -1 ? "" : inner.slice(pipe + 1);
 
     const hash = targetPart.indexOf("#");
@@ -222,6 +226,7 @@ export function extractWikilinks(markdown: string): WikiLink[] {
       }
     } else if (alias.length > 0) link.alias = alias;
     if (heading.length > 0) link.heading = heading;
+    if (escapedPipe) link.escapedPipe = true;
     links.push(link);
   }
 
@@ -284,11 +289,13 @@ export function rewriteWikilinkTargets(
     const inner = link.raw.slice(2, -2);
     const pipe = inner.indexOf("|");
     const alias = pipe === -1 ? undefined : inner.slice(pipe + 1);
-    const beforePipe = pipe === -1 ? inner : inner.slice(0, pipe);
+    const beforePipe = wikilinkTargetPart(inner);
     const hash = beforePipe.indexOf("#");
     const heading = hash === -1 ? undefined : beforePipe.slice(hash + 1);
+    // #siuwzhwy: a table cell's `\|` stays `\|` (D37), or the cell would split.
+    const separator = link.escapedPipe ? "\\|" : "|";
 
-    const suffix = `${heading !== undefined ? `#${heading}` : ""}${alias !== undefined ? `|${alias}` : ""}`;
+    const suffix = `${heading !== undefined ? `#${heading}` : ""}${alias !== undefined ? `${separator}${alias}` : ""}`;
     const replacement = `[[${title}${suffix}]]`;
     content = content.slice(0, link.index) + replacement + content.slice(link.index + link.raw.length);
   }

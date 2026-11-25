@@ -16,7 +16,7 @@
  */
 import { hasAttachmentExtension } from "./links.js";
 import { pickLinkTarget } from "./link-order.js";
-import { WIKILINK_INNER } from "./wikilink-syntax.js";
+import { WIKILINK_INNER, wikilinkTargetPart } from "./wikilink-syntax.js";
 
 /** Whether a vault path may be a link target: an allowlisted file outside dot folders. */
 export function isLinkableFile(path: string): boolean {
@@ -75,7 +75,7 @@ export class LinkFileIndex {
    * (`Projects/Plan.md`; null or unknown: as from the vault root).
    */
   resolve(link: string, fromNote: string | null): string | null {
-    const clean = link.split("|")[0]!.split("#")[0]!.trim().replace(/^\/+/, "").replace(/\\/g, "/");
+    const clean = wikilinkTargetPart(link).split("#")[0]!.trim().replace(/^\/+/, "").replace(/\\/g, "/");
     if (!clean || !hasAttachmentExtension(clean)) return null;
     const lower = clean.toLowerCase();
     // 1. A whole vault path.
@@ -118,7 +118,7 @@ export function obsidianFileLinks(markdown: string, mask: (text: string) => stri
   const pattern = new RegExp(String.raw`!?\[\[(${WIKILINK_INNER}+)\]\]`, "g");
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    const inner = (match[1] ?? "").split("|")[0]!.split("#")[0]!.trim();
+    const inner = wikilinkTargetPart(match[1] ?? "").split("#")[0]!.trim();
     if (inner && hasAttachmentExtension(inner)) out.add(inner);
   }
   return [...out];

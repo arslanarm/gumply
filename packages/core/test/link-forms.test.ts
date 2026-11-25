@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formatWikilink } from "../src/link-target";
-import { collectLinkEdges, extractWikilinks, resolveWikilink } from "../src/links";
+import { parseEmbeds } from "../src/embeds";
+import { formatWikilink, rewriteLinksToPage } from "../src/link-target";
+import { collectLinkEdges, extractWikilinks, resolveWikilink, rewriteWikilinkTargets } from "../src/links";
 import type { PageMeta } from "../src/types";
 
 /**
@@ -79,5 +80,56 @@ describe("Copy link writes a link that resolves back to its page, whatever the t
     expect(formatWikilink(pages[0]!, pages)).toBe("[[draft v2]]");
     const more = [page("Notes 2", "Notes: [v2]"), page("Source")];
     expect(formatWikilink(more[0]!, more)).toBe("[[Notes 2|Notes: v2]]");
+  });
+});
+
+describe("a link in a Markdown table cell, with its alias pipe written \\| (#siuwzhwy, @plony's root cause)", () => {
+  const T = "Поход: Северный ветер";
+  const file = "Полка - список/Книги/Повести/Поход Северный ветер";
+  const pages = [page(file, T), page("Source")];
+  const row = String.raw`| [[Поход Северный ветер\|Поход: Северный ветер]] | В планах |`;
+
+  it("the target loses the escaping backslash, the alias is kept", () => {
+    const [link] = extractWikilinks(row);
+    expect(link?.targetTitle).toBe("Поход Северный ветер");
+    expect(link?.alias).toBe(T);
+    expect(link?.escapedPipe).toBe(true);
+  });
+
+  it("the server's edge (the graph) is the page, not a ghost", () => {
+    expect(edgeTarget(`| Title | Status |\n|---|---|\n${row}\n`, pages)).toBe(file);
+  });
+
+  it("with a heading too", () => {
+    const [link] = extractWikilinks(String.raw`| [[Note#Part\|shown]] |`);
+    expect(link).toMatchObject({ targetTitle: "Note", heading: "Part", alias: "shown" });
+    expect(edgeTarget(String.raw`| [[Note#Part\|shown]] |`, [page("Note"), page("Source")])).toBe("Note");
+  });
+
+  it("a link outside a table is unchanged: a plain | and a backslash in the alias stay as they are", () => {
+    const [link] = extractWikilinks(String.raw`See [[Note|a \ b]].`);
+    expect(link).toMatchObject({ targetTitle: "Note", alias: String.raw`a \ b` });
+    expect(link?.escapedPipe).toBeUndefined();
+  });
+
+  it("a rename keeps the table's \\| (rewriteWikilinkTargets): the cell isn't split", () => {
+    const text = String.raw`| [[Note\|shown]] | x |` + "\n";
+    const out = rewriteWikilinkTargets(text, (link) => link.targetTitle === "Note", "Memo");
+    expect(out.content).toBe(String.raw`| [[Memo\|shown]] | x |` + "\n");
+  });
+
+  it("a rename keeps \\| (rewriteLinksToPage), and a link that gains an alias in a table row gets \\|", () => {
+    const renamed = page("Memo 2", "Memo: 2");
+    const all = [renamed, page("Source")];
+    const text = String.raw`| [[Note\|shown]] | [[Note]] |` + "\nOutside: [[Note]]\n";
+    const out = rewriteLinksToPage(text, (link) => link.targetTitle === "Note", renamed, all, "Note");
+    expect(out.content).toBe(String.raw`| [[Memo 2\|shown]] | [[Memo 2\|Memo: 2]] |` + "\nOutside: [[Memo 2|Memo: 2]]\n");
+  });
+
+  it("a board embed and an attachment link in a table cell name their file without the backslash", () => {
+    const embeds = parseEmbeds(String.raw`| ![[report.pdf\|Report]] |`);
+    expect(embeds[0]?.path).toBe("attachments/report.pdf");
+    const [board] = extractWikilinks(String.raw`| ![[Map.canvas\|480]] |`);
+    expect(board).toMatchObject({ targetTitle: "Map.canvas", size: "480", embed: true });
   });
 });
