@@ -57,6 +57,11 @@ describe("relinkFolderFiles: Markdown links into a moved folder (#x8awsxev)", ()
     expect(out.content).toBe("![a](../Archive/Files/a.png)\n");
   });
 
+  it("a later .. that climbs out of the folder and back in is rebuilt; one that stays inside keeps its bytes (review)", () => {
+    const out = relinkFolderFiles("![a](Files/../Files/a.png) ![b](Files/x/../../Files/b.png) ![c](Files/x/../c.png)\n", "Out", "Out", "Files", "Media");
+    expect(out.content).toBe("![a](Media/a.png) ![b](Media/b.png) ![c](Media/x/../c.png)\n");
+  });
+
   it("a moved SUBfolder rewrites only links under it", () => {
     const out = relinkFolderFiles("![a](Files/a.png) ![b](Files/Sub/b.png) ![c](Files/Subway/c.png)\n", "Out", "Out", "Files/Sub", "Archive/Sub");
     expect(out.content).toBe("![a](Files/a.png) ![b](Archive/Sub/b.png) ![c](Files/Subway/c.png)\n");
