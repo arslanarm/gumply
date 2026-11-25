@@ -1,7 +1,7 @@
 /** Public API of `@gumply/core`. */
 
 export const APP_NAME = "Gumply";
-export const CORE_VERSION = "0.9.4";
+export const CORE_VERSION = "0.9.5";
 
 export type {
   ApiError,
@@ -117,6 +117,7 @@ export {
   normaliseVaultPath,
   noteFolder,
   relinkAttachments,
+  relinkFolderFiles,
   resolveAttachmentHref,
   type RelinkOptions,
 } from "./attachment-paths.js";

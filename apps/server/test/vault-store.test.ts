@@ -686,6 +686,34 @@ describe("D23: attachment links follow the note's folder (#gma39xw2)", () => {
       store.stopWatching();
     }
   });
+
+  it("#sj5a2trb: a note moved deeper outside Gumply re-points ../Other/c.png; a link the other tool fixed keeps its bytes", async () => {
+    const { dir, store } = await vaultWith({
+      "Notes/Note.md": "---\ntitle: Note\n---\n![c](../Other/c.png)\n",
+      "Notes/Fixed.md": "---\ntitle: Fixed\n---\n![c](../Other/c.png)\n",
+      "Other/c.png": "png",
+      "Notes/Deep/Keep.md": "---\ntitle: Keep\n---\nK\n",
+    });
+    store.startWatching();
+    try {
+      const fs = await import("node:fs/promises");
+      // Moved one level deeper, link untouched: it no longer resolves, so Gumply re-points it.
+      await fs.rename(join(dir, "Notes", "Note.md"), join(dir, "Notes", "Deep", "Note.md"));
+      await waitFor(() => store.list().some((page) => page.id === "Notes/Deep/Note"));
+      await waitFor(() => store.get("Notes/Deep/Note").content.includes("../../Other/c.png"));
+      await expect(readFile(join(dir, "Notes", "Deep", "Note.md"), "utf8")).resolves.toBe("---\ntitle: Note\n---\n![c](../../Other/c.png)\n");
+
+      // Another tool moved it AND fixed the link: it resolves at the destination, so the bytes stay.
+      const fixed = "---\ntitle: Fixed\n---\n![c](../../Other/c.png)\n";
+      await fs.rm(join(dir, "Notes", "Fixed.md"));
+      await writeFile(join(dir, "Notes", "Deep", "Fixed.md"), fixed, "utf8");
+      await waitFor(() => store.list().some((page) => page.id === "Notes/Deep/Fixed"));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await expect(readFile(join(dir, "Notes", "Deep", "Fixed.md"), "utf8")).resolves.toBe(fixed);
+    } finally {
+      store.stopWatching();
+    }
+  });
 });
 
 describe("watcher after the app's own atomic saves (#3ugdxhzu, Node 20/22)", () => {

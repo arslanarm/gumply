@@ -56,15 +56,19 @@ function decodeHref(href: string): string {
   }
 }
 
-/** The link a note writes for a vault file: relative to the note's folder. */
-export function attachmentHref(noteId: string, vaultPath: string): string {
+/** A vault file's path relative to a note's folder, not encoded. */
+function relativePath(noteId: string, vaultPath: string): string {
   const from = noteFolder(noteId).split("/").filter(Boolean);
   const to = (normaliseVaultPath(vaultPath) ?? vaultPath).split("/").filter(Boolean);
   let common = 0;
   while (common < from.length && common < to.length - 1 && from[common] === to[common]) common += 1;
   const up = from.length - common;
-  const relative = [...Array<string>(up).fill(".."), ...to.slice(common)].join("/");
-  return encodeHref(relative);
+  return [...Array<string>(up).fill(".."), ...to.slice(common)].join("/");
+}
+
+/** The link a note writes for a vault file: relative to the note's folder. */
+export function attachmentHref(noteId: string, vaultPath: string): string {
+  return encodeHref(relativePath(noteId, vaultPath));
 }
 
 /** External (scheme, protocol-relative) links are not vault files. */
@@ -162,11 +166,20 @@ export function relinkAttachments(
     const href = match[3] ?? "";
     if (options.keepValidAtDestination && exists) {
       const here = strictTarget(toNoteId, href);
-      if (isAttachmentPath(here) && exists(here)) continue;
+      // #sj5a2trb: any file, not only attachments/, already valid at the destination stays as written.
+      if (here !== null && exists(here)) continue;
     }
     const target = resolveAttachmentHref(fromNoteId, href, exists);
-    if (!isAttachmentPath(target)) continue;
-    const next = attachmentHref(toNoteId, target);
+    let next: string;
+    if (isAttachmentPath(target)) next = attachmentHref(toNoteId, target);
+    else {
+      // #sj5a2trb: any other note-relative link to an EXISTING vault file follows the note too (`../Other/c.png`).
+      // Only the strict relative reading counts: a vault-root path doesn't depend on where the note is, and a
+      // link to a missing file is left as written. `<…>`, a `#`/`?` suffix and the title are kept.
+      const moved = exists ? relinkedOtherFile(href, fromNoteId, toNoteId, exists) : null;
+      if (moved === null) continue;
+      next = moved;
+    }
     const original = markdown.slice(match.index, match.index + match[0].length);
     const hrefStart = original.indexOf("](") + 2;
     const hrefIndex = original.indexOf(href, hrefStart);
@@ -176,4 +189,152 @@ export function relinkAttachments(
     last = match.index + match[0].length;
   }
   return last === 0 ? markdown : out + markdown.slice(last);
+}
+
+/**
+ * #x8awsxev: after folder `from` moved to `to`, rewrite this note's Markdown links and images that point
+ * at files inside it (`![pic](Files/a.png)`, `[doc](../Files/doc%20one.pdf)`). The note was `noteBefore`
+ * and is `noteAfter` (the same unless it was in the folder). Each link keeps its form: note-relative stays
+ * relative, `/absolute` stays absolute, a vault-root path from a nested note stays vault-root, `<…>` stays
+ * wrapped (not encoded), the rest is percent-encoded as D23 writes it; a `#`/`?` suffix and a title are
+ * kept. A link whose target is unchanged (inside the folder, relative) is left as it is. `exists` (the
+ * vault's files after the move is fine: only paths outside the folder are asked) keeps a note-relative
+ * file from being read as a vault-root one. Code is never touched.
+ *
+ * Known limit (shared with `relinkAttachments`, the same `MARKDOWN_LINK`): a link label can't hold `]`,
+ * so in a linked image `[![alt](Files/a.png)](Files/b.png)` the inner image is rewritten but the outer
+ * link's href isn't.
+ */
+export function relinkFolderFiles(
+  markdown: string,
+  noteBefore: string,
+  noteAfter: string,
+  from: string,
+  to: string,
+  exists?: (vaultPath: string) => boolean,
+): { content: string; count: number } {
+  const prefix = `${from.toLowerCase()}/`;
+  const inFolder = (path: string | null): path is string => path !== null && path.toLowerCase().startsWith(prefix);
+  const masked = maskCode(markdown);
+  let out = "";
+  let last = 0;
+  let count = 0;
+  MARKDOWN_LINK.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_LINK.exec(masked)) !== null) {
+    const href = match[3] ?? "";
+    const wrapped = href.startsWith("<") && href.endsWith(">");
+    const raw = wrapped ? href.slice(1, -1) : href;
+    if (raw.length === 0 || isExternal(raw)) continue;
+    const cut = raw.search(/[?#]/);
+    const pathPart = cut === -1 ? raw : raw.slice(0, cut);
+    const suffix = cut === -1 ? "" : raw.slice(cut);
+    const path = wrapped ? pathPart : decodeHref(pathPart);
+    const folder = noteFolder(noteBefore);
+    let target: string | null;
+    let form: "absolute" | "relative" | "root";
+    if (path.startsWith("/")) {
+      target = normaliseVaultPath(path);
+      form = "absolute";
+    } else {
+      const relative = normaliseVaultPath(folder ? `${folder}/${path}` : path);
+      const root = folder ? normaliseVaultPath(path) : null;
+      if (inFolder(relative)) {
+        target = relative;
+        form = "relative";
+      } else if (inFolder(root) && !(relative !== null && exists?.(relative))) {
+        target = root;
+        form = "root";
+      } else continue;
+    }
+    if (!inFolder(target)) continue;
+    // D37: a note that moved with the folder keeps its relative links into it as written (`./a.png`,
+    // `sub/../a.png`): they still point at the same files.
+    if (form === "relative" && inFolder(`${noteBefore}`)) continue;
+    // Only the raw segments that spell the folder change; `./`, `../` and an encoded tail stay as written.
+    const base = form === "relative" ? folder.split("/").filter(Boolean) : [];
+    const swapped = swapFolderSegments(pathPart, base, from, to, wrapped);
+    let nextPath: string;
+    if (swapped !== null) nextPath = swapped;
+    else {
+      // Part of the folder comes from the note's own location: rebuild the path.
+      const moved = `${to}${target.slice(from.length)}`;
+      const rebuilt = form === "absolute" ? `/${moved}` : form === "root" ? moved : relativePath(noteAfter, moved);
+      nextPath = wrapped ? rebuilt : encodeHref(rebuilt);
+    }
+    const next = wrapped ? `<${nextPath}${suffix}>` : `${nextPath}${suffix}`;
+    if (next === href) continue;
+    const original = markdown.slice(match.index, match.index + match[0].length);
+    const hrefIndex = original.indexOf(href, original.indexOf("](") + 2);
+    if (hrefIndex === -1) continue;
+    out += markdown.slice(last, match.index) + original.slice(0, hrefIndex) + next + original.slice(hrefIndex + href.length);
+    last = match.index + match[0].length;
+    count += 1;
+  }
+  return last === 0 ? { content: markdown, count: 0 } : { content: out + markdown.slice(last), count };
+}
+
+/**
+ * The raw path with only the segments that spell `from` replaced by `to`'s (encoded unless `wrapped`), or
+ * null when `from` isn't spelled out by contiguous raw segments (part of it is the note's own folder).
+ * `base` is the folder the path starts from (the note's folder for a relative link; [] otherwise).
+ */
+function swapFolderSegments(rawPath: string, base: readonly string[], from: string, to: string, wrapped: boolean): string | null {
+  const raw = rawPath.split("/");
+  const want = from.toLowerCase().split("/");
+  const stack: Array<{ name: string; by: number }> = base.map((name) => ({ name, by: -1 }));
+  for (let i = 0; i < raw.length; i++) {
+    const segment = wrapped ? raw[i]! : decodeHref(raw[i]!);
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      stack.pop();
+      continue;
+    }
+    stack.push({ name: segment, by: i });
+    if (stack.length !== want.length || !stack.every((entry, k) => entry.name.toLowerCase() === want[k])) continue;
+    const by = stack.map((entry) => entry.by);
+    if (by[0] === -1 || by.some((index, k) => k > 0 && index !== by[k - 1]! + 1)) return null;
+    // A later `..` that climbs back out of the folder (`Files/../Files/a.png`) means these raw segments
+    // aren't the folder the link ends up in: rebuild. One that stays inside (`Files/x/../a.png`) is fine.
+    let depth = stack.length;
+    for (let j = i + 1; j < raw.length; j++) {
+      const rest = wrapped ? raw[j]! : decodeHref(raw[j]!);
+      if (rest === "" || rest === ".") continue;
+      depth += rest === ".." ? -1 : 1;
+      if (depth < want.length) return null;
+    }
+    const replacement = to.split("/").map((part) => (wrapped ? part : encodeHref(part)));
+    return [...raw.slice(0, by[0]), ...replacement, ...raw.slice(by[by.length - 1]! + 1)].join("/");
+  }
+  return null;
+}
+
+/** #sj5a2trb: `href` re-pointed from `toNoteId` when it strictly resolves (from `fromNoteId`) to an existing file. */
+function relinkedOtherFile(href: string, fromNoteId: string, toNoteId: string, exists: (vaultPath: string) => boolean): string | null {
+  const wrapped = href.startsWith("<") && href.endsWith(">");
+  const raw = wrapped ? href.slice(1, -1) : href;
+  if (raw.length === 0 || isExternal(raw)) return null;
+  const cut = raw.search(/[?#]/);
+  const pathPart = cut === -1 ? raw : raw.slice(0, cut);
+  const suffix = cut === -1 ? "" : raw.slice(cut);
+  const path = wrapped ? pathPart : decodeHref(pathPart);
+  if (path.startsWith("/")) return null; // absolute: not note-relative
+  const folder = noteFolder(fromNoteId);
+  const target = normaliseVaultPath(folder ? `${folder}/${path}` : path);
+  if (target === null || !exists(target)) return null;
+  const relative = relativePath(toNoteId, target);
+  // D37 (@opus-editor): the ../ prefix must change, but the tail is kept as written. From the end, every
+  // rebuilt segment that decodes equal to the raw one takes the raw bytes (an encoded name stays encoded);
+  // a leading `./` stays when the new path doesn't climb.
+  const rawSegments = pathPart.split("/");
+  const built = relative.split("/");
+  const out = built.map((segment) => (wrapped ? segment : encodeHref(segment)));
+  for (let k = 1; k <= built.length && k <= rawSegments.length; k++) {
+    const rawSegment = rawSegments[rawSegments.length - k]!;
+    if ((wrapped ? rawSegment : decodeHref(rawSegment)) !== built[built.length - k]) break;
+    out[out.length - k] = rawSegment;
+  }
+  const kept = pathPart.startsWith("./") && !relative.startsWith("../") ? `./${out.join("/")}` : out.join("/");
+  const next = wrapped ? `<${kept}${suffix}>` : `${kept}${suffix}`;
+  return next === href ? null : next;
 }
