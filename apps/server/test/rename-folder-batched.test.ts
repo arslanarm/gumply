@@ -97,6 +97,9 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     for (const text of ownAtBatch) expect(text).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
     expect(answer.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\n");
     expect(answer.updated).toBe(store.get("Hub 2").updated);
+    // The client reloads its live editor only when the answer lists the renamed page itself (#ekp8ns58's
+    // App.tsx fix): without that, its next save from the old editor text would put [[Hub/Sub]] back.
+    expect(answer.rewrittenPages).toContain("Hub 2");
     // The editor saves from the version it was answered with: no "changed on disk".
     const saved = await store.update("Hub 2", { content: `${answer.content}More.\n`, expectedUpdated: answer.updated });
     expect(saved.content).toBe("The hub. Its own sub-page: [[Hub 2/Sub]].\nMore.\n");
