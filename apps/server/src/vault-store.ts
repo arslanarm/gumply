@@ -3689,7 +3689,12 @@ export class VaultStore {
     const relinked = await this.relinkMoved(moves);
     // D25: board cards pointing at moved pages/boards follow them.
     const boards = await this.rewriteBoardCards(moves);
-    return [...new Set([...relinked, ...boards])];
+    // #ekp8ns58: the page's folder moved with it, so other pages' links INTO it follow, as for a plain
+    // folder move: path links to sub-pages (`[[P/Sub]]`), file embeds and links (`![[P/a.png]]`, the
+    // table's `\|`) and Markdown links (`![](P/a.png)`), bytes kept. `[[P]]` itself is the title
+    // rewrite's (rewriteLinksTo); this only matches the `P/` prefix.
+    const folderLinks = hasChildren ? await this.rewriteFolderLinks(id, newId) : [];
+    return [...new Set([...relinked, ...boards, ...folderLinks])];
   }
 
   /**
@@ -4305,6 +4310,8 @@ export class VaultStore {
     await this.relinkMoved(moves);
     // D25: board cards pointing at them follow.
     await this.rewriteBoardCards(moves);
+    // #ekp8ns58: its folder moved too, so other pages' links into it follow (as in relocateNow).
+    if (hasChildren) await this.rewriteFolderLinks(id, newId);
 
     this.reindexAll();
     return this.getAny(newId);
