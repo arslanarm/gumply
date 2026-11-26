@@ -64,6 +64,7 @@ import { Callout, CalloutTitle } from "../editor/callout/callout.js";
 import { Column, Columns } from "../editor/columns/columns.js";
 import { lastParsedTableSources } from "../editor/raw-markdown/markdown-plugin.js";
 import { applyMergedRenameLinks, type RenameMergeIo } from "../editor/rename-merge-apply.js";
+import { mergeRenameLinks } from "@gumply/core";
 import {
   GumplyTable,
   GumplyTableCell,
@@ -109,6 +110,12 @@ export interface EditorControls {
   focusAt: (position: number) => void;
   /** True while local edits are newer than the last save. */
   isDirty: () => boolean;
+  /**
+   * #z9hufufn: a rename rewrote this page's own body (`written`, now at version `updated`). Take that in
+   * place, keeping anything typed since the last save (the line merge N10 uses), with no reload. False
+   * when it can't be carried over whole: the caller reloads instead.
+   */
+  applyOwnRewrite: (written: string, updated: string) => boolean;
   /** Force-save the current buffer after a conflict ("Keep mine"). */
   keepMine: () => Promise<void>;
   /**
@@ -144,7 +151,7 @@ export interface EditorProps {
    * waits for it, then goes to the new id (and, for the page itself, the
    * rename's version) instead of meeting the rename as a 409.
    */
-  waitForRename?: (id: string) => Promise<{ id: string; updated: string | null; rewroteOwn?: boolean } | null> | null;
+  waitForRename?: (id: string) => Promise<{ id: string; updated: string | null; rewroteOwn?: boolean; appliedInPlace?: boolean; written?: string } | null> | null;
   /** #ekp8ns58 (A): a save typed during a rename that rewrote this page's own body was dropped; the app reloads. */
   onRenameRewroteOwn?: (renamedId: string) => void;
   /**
@@ -210,6 +217,18 @@ function readMarkdown(editor: TipTapEditor): string {
 }
 
 /** N10: how the in-place apply reads and parses this editor's Markdown. */
+/**
+ * #z9hufufn: whether every line the server's rewrite changed (`sent` → `written`) is carried into
+ * `current` by the line merge, so taking it in place loses none of the rename's link changes.
+ */
+function mergesWhole(sent: string, written: string, current: string): boolean {
+  const before = sent.split("\n");
+  const after = written.split("\n");
+  if (before.length !== after.length) return false;
+  const changed = before.filter((line, i) => line !== after[i]).length;
+  return mergeRenameLinks(sent, written, current).applied === changed;
+}
+
 const renameMergeIo: RenameMergeIo = {
   read: (editor) => readMarkdown(editor as TipTapEditor),
   parse: (editor, markdown) => {
@@ -312,6 +331,13 @@ export function Editor({
           const renaming = waitForRenameRef.current?.(pageIdRef.current);
           if (renaming) {
             const renamed = await renaming;
+            if (renamed?.rewroteOwn && renamed.appliedInPlace && typeof renamed.written === "string") {
+              // #z9hufufn: the editor already took the rewrite in place (applyOwnRewrite, before this
+              // save was released), merged with the typing. This held text is stale: not sent. The
+              // server's text is the baseline; the merged text, if it differs, is saved next.
+              pageIdRef.current = renamed.id;
+              return renamed.written;
+            }
             if (renamed?.rewroteOwn) {
               // #ekp8ns58: the rename rewrote this page's own body; this text was typed during it and
               // still has the old links. Sending it with the answer's version would put them back (D37).
@@ -1015,6 +1041,17 @@ export function Editor({
         });
       },
       isDirty: () => autosave.isDirty(),
+      applyOwnRewrite: (written: string, updated: string) => {
+        if (editor.isDestroyed) return false;
+        const sent = autosave.baseline();
+        const current = renameMergeIo.read(editor);
+        // Typed since the last save: the rename's line changes must carry over whole, else reload.
+        if (current !== sent && !mergesWhole(sent, written, current)) return false;
+        autosave.rebase(written);
+        versionRef.current = updated;
+        applyMergedRenameLinks(editor, sent, written, renameMergeIo);
+        return true;
+      },
       keepMine: async () => {
         forceRef.current = true;
         await autosave.retry();

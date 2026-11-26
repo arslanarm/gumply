@@ -357,12 +357,23 @@ export function App() {
   // #im3em6tq: each rename in flight, settling with the renamed page (null if it
   // failed). A save of that page, or of a page under it, waits for it and then
   // goes to the new id with the new version, never against the rename (a 409).
-  const renameWaits = useRef(new Map<PageId, Promise<(Page & { rewrittenPages?: PageId[] }) | null>>());
-  const waitForRename = useCallback((id: PageId): Promise<{ id: PageId; updated: string | null; rewroteOwn?: boolean } | null> | null => {
+  const renameWaits = useRef(new Map<PageId, Promise<(Page & { rewrittenPages?: PageId[]; appliedInPlace?: boolean }) | null>>());
+  const waitForRename = useCallback((id: PageId): Promise<{ id: PageId; updated: string | null; rewroteOwn?: boolean; appliedInPlace?: boolean; written?: string } | null> | null => {
     for (const [renamed, settled] of renameWaits.current) {
       // #ekp8ns58: `rewroteOwn`: the rename also rewrote this page's own body (its links into its moved
       // folder), so the answer's version is newer than the text the waiting save holds.
-      if (id === renamed) return settled.then((page) => (page ? { id: page.id, updated: page.updated, rewroteOwn: page.rewrittenPages?.includes(page.id) ?? false } : null));
+      // #z9hufufn: `appliedInPlace`: the open editor already took that rewrite in place (`written`).
+      if (id === renamed)
+        return settled.then((page) =>
+          page
+            ? {
+                id: page.id,
+                updated: page.updated,
+                rewroteOwn: page.rewrittenPages?.includes(page.id) ?? false,
+                ...(page.appliedInPlace ? { appliedInPlace: true, written: page.content } : {}),
+              }
+            : null,
+        );
       if (id.startsWith(`${renamed}/`)) {
         // A sub-page moves with its parent: a new id, the same version.
         return settled.then((page) => (page ? { id: `${page.id}${id.slice(renamed.length)}`, updated: null } : null));
@@ -1770,8 +1781,8 @@ export function App() {
 
         renamesInFlight.current.add(id);
         renameEpoch.current += 1;
-        let settle: (page: (Page & { rewrittenPages?: PageId[] }) | null) => void = () => undefined;
-        renameWaits.current.set(id, new Promise<(Page & { rewrittenPages?: PageId[] }) | null>((resolve) => (settle = resolve)));
+        let settle: (page: (Page & { rewrittenPages?: PageId[]; appliedInPlace?: boolean }) | null) => void = () => undefined;
+        renameWaits.current.set(id, new Promise<(Page & { rewrittenPages?: PageId[]; appliedInPlace?: boolean }) | null>((resolve) => (settle = resolve)));
         setRenaming({ id, title: previousTitle ?? title, count: null });
         // How many pages link here (the link rewrites the server is doing), for the status.
         void api
@@ -1782,6 +1793,7 @@ export function App() {
           })
           .catch(() => undefined);
         let updated: Page & { rewrittenPages?: PageId[] };
+        let appliedOwnInPlace = false;
         try {
           if (isBoardId(id)) {
             // A board's title is its file name: the server renames the file.
@@ -1796,7 +1808,15 @@ export function App() {
             updated = await api.updatePage(id, { title });
           }
           applySavedPage(id, updated);
-          settle(updated);
+          // #z9hufufn: the rename rewrote the open page's own body (`[[P/Sub]]` → `[[Q/Sub]]`, self-links):
+          // the editor takes it in place, with anything typed meanwhile, before held saves go on (no
+          // reload, no remount). If it can't carry it over whole, the reload below does it as before.
+          const ownRewritten = (updated.rewrittenPages?.includes(updated.id) ?? false) && typeof updated.content === "string";
+          const controls = editorControls.current;
+          if (ownRewritten && controls && (controls.pageId === id || controls.pageId === updated.id)) {
+            appliedOwnInPlace = controls.applyOwnRewrite(updated.content, updated.updated);
+          }
+          settle(appliedOwnInPlace ? { ...updated, appliedInPlace: true } : updated);
         } finally {
           settle(null);
           renameWaits.current.delete(id);
@@ -1821,7 +1841,7 @@ export function App() {
         // `[[P/Sub]]` → `[[Q/Sub]]`). The editor took the answer's version but still holds the old text,
         // so its next save would pass the version check and silently put the old links back (D37).
         // Reload it; text typed during the rename is kept in History first ("replace").
-        if ((open === id || open === updated.id) && (updated.rewrittenPages?.includes(updated.id) ?? false)) {
+        if (!appliedOwnInPlace && (open === id || open === updated.id) && (updated.rewrittenPages?.includes(updated.id) ?? false)) {
           reloadAfterOwnRewrite(updated.id);
         }
       } catch (error) {

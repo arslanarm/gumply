@@ -119,6 +119,19 @@ export class Autosave {
     return this.flush();
   }
 
+  /** #z9hufufn: the persisted baseline (what the server last had from or gave this editor). */
+  baseline(): string {
+    return this.lastSaved;
+  }
+
+  /**
+   * #z9hufufn: the server rewrote the page itself (a rename's link changes) and the editor took that in
+   * place: `value` is the new baseline. Pending and in-flight writes are left as they are.
+   */
+  rebase(value: string): void {
+    this.lastSaved = value;
+  }
+
   /** True while local edits are newer than the last successful save. */
   isDirty(): boolean {
     return this.pending !== null || this.writing || this.exiting !== null;
