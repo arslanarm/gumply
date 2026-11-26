@@ -1,6 +1,6 @@
 import { copyFile, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { historyDir, readHistory } from "../src/history";
 import { cleanupVaults, createTestServer } from "./helpers";
 
@@ -64,6 +64,58 @@ describe("outside renames are followed (#3c444g85)", () => {
     await utimes(join(dir, "Fresh.md"), new Date(), new Date(Date.now() + 5_000));
     await store.rescan();
     expect(() => store.get("Gone")).toThrow();
+  });
+
+  // #zggrmydn F1: a sync tool replays the other device's rename as a delete and a create, and the
+  // two can land in different refreshes (Syncthing does deletions last; a 120 ms quiet gap splits them).
+  for (const order of ["create, then delete", "delete, then create"] as const) {
+    it(`a rename a sync tool replays as ${order}, in two separate refreshes, still pairs: redirect and history (#zggrmydn)`, async () => {
+      const { store, dir } = await createTestServer();
+      await writeFile(join(dir, "Trip plan.md"), "Day one: the coast.\n");
+      await store.rescan();
+      await store.update("Trip plan", { content: "Day one: the coast. Saved first." });
+      const bytes = await readFile(join(dir, "Trip plan.md"));
+      const before = (await readHistory(historyDir(dir, "Trip plan"))).entries.length;
+      expect(before).toBeGreaterThan(0);
+      await pause();
+
+      if (order === "create, then delete") {
+        await writeFile(join(dir, "Trip plan 2026.md"), bytes);
+        await store.rescan();
+        await rm(join(dir, "Trip plan.md"));
+        await store.rescan();
+      } else {
+        await rm(join(dir, "Trip plan.md"));
+        await store.rescan();
+        await writeFile(join(dir, "Trip plan 2026.md"), bytes);
+        await store.rescan();
+      }
+
+      expect(store.get("Trip plan").id).toBe("Trip plan 2026");
+      expect((await readHistory(historyDir(dir, "Trip plan 2026"))).entries.length).toBeGreaterThanOrEqual(before);
+      expect((await readHistory(historyDir(dir, "Trip plan"))).entries).toEqual([]);
+    });
+  }
+
+  it("the late pairing window closes: the same title with other content 11 s after the delete is a new page, not a rename; 9 s after, it pairs (#zsk48sie, @lead)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      for (const [gapMs, pairs] of [[11_000, false], [9_000, true]] as const) {
+        const { store, dir } = await createTestServer();
+        await writeFile(join(dir, "Plan.md"), "---\ntitle: Plan\n---\nThe first plan.\n");
+        await store.rescan();
+        await rm(join(dir, "Plan.md"));
+        await store.rescan();
+        vi.setSystemTime(Date.now() + gapMs);
+        await writeFile(join(dir, "Plan B.md"), "---\ntitle: Plan\n---\nA different plan.\n");
+        await store.rescan();
+        if (pairs) expect(store.get("Plan").id).toBe("Plan B");
+        else expect(() => store.get("Plan"), `${gapMs} ms`).toThrow();
+        expect(store.get("Plan B").id).toBe("Plan B");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a renamed note keeps its frontmatter-title pairing, and a board is matched by content", async () => {
