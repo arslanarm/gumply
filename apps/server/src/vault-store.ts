@@ -975,7 +975,12 @@ export class VaultStore {
   /** Watcher rescans that failed in a row (reset by one that succeeds). */
   private rescanFailures = 0;
   /** Parsed properties per file, valid while the file's mtime is unchanged. */
-  private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[] }>();
+  /**
+   * #dqdwz9qw: also keyed by the record it was read for. The file time alone can't tell an outside write
+   * that keeps it, and a read that started before such a write finishes after the refresh re-read the file:
+   * its late entry belongs to the old record, so the new one never takes it.
+   */
+  private readonly rawPropertyCache = new Map<string, { mtimeMs: number; raw: RawProperty[]; of: PageRecord }>();
   /**
    * #kguq5bc5: each page's frontmatter YAML as the scan read it (path → its
    * mtime then), so its properties are parsed without reading the file again;
@@ -2107,7 +2112,7 @@ export class VaultStore {
 
   private async rawPropertiesOf(record: PageRecord): Promise<RawProperty[]> {
     const cached = this.rawPropertyCache.get(record.filePath);
-    if (cached && cached.mtimeMs === record.fileMtimeMs) return cached.raw;
+    if (cached && cached.of === record && cached.mtimeMs === record.fileMtimeMs) return cached.raw;
     const scanned = this.rawPropertiesFromScan(record);
     if (scanned) return scanned;
     let raw: RawProperty[] = [];
@@ -2117,7 +2122,7 @@ export class VaultStore {
     } catch {
       raw = [];
     }
-    this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw });
+    this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw, of: record });
     return raw;
   }
 
@@ -2133,7 +2138,7 @@ export class VaultStore {
     } catch {
       raw = [];
     }
-    this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw });
+    this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw, of: record });
     return raw;
   }
 
