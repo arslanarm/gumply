@@ -450,8 +450,10 @@ export interface OwnedRowsPaste {
   refused: Array<{ id: PageId; title: string }>;
   /** Rows that couldn't be put back (they keep the pasted values, or a new row stayed). */
   stuck: Array<{ id: PageId; title: string }>;
-  /** After a refusal: new rows that changed meanwhile, so they went to the Trash (unchanged ones are deleted outright). */
+  /** After a refusal: new rows that changed meanwhile (named; they're in the Trash with the others). */
   trashed: Array<{ id: PageId; title: string }>;
+  /** After a refusal (#f4jkpja6): how many new rows went to the Trash, as one "N rows from …" item. Absent when none. */
+  inTrash?: number;
   /** The new columns couldn't be added (the base changed meanwhile): the rows were put back too. */
   baseRefused?: boolean;
   /** #7prbquxu phase 4b: existing rows (and the base) written, with versions before and after. */
@@ -3209,8 +3211,9 @@ export class VaultStore {
   }
 
   /**
-   * #7prbquxu phase 4b (@lead's point 3): the rows one table undo drops go to the Trash as **one** item, "N rows
-   * from People" (never deleted outright; their History stays), as our own write, without a rebuild per row.
+   * #7prbquxu phase 4b (@lead's point 3): the rows one table undo drops (and, #f4jkpja6, the new rows of a refused
+   * paste) go to the Trash as **one** item, "N rows from People" (never deleted outright; their History stays), as
+   * our own write, without a rebuild per row.
    * A redo, or Restore, brings them back. A move failing part way puts the moved rows back and throws.
    */
   private async trashRowsForUndo(folder: PageId, records: readonly PageRecord[]): Promise<string> {
@@ -4365,39 +4368,75 @@ export class VaultStore {
         if (record) stuck.push({ id: record.id, title: record.title });
       }
     }
-    // A new row this job made goes to the Trash (#f4jkpja6: nothing deleted outright). One still exactly as this
-    // job left it is only counted; one changed meanwhile is also named (@lead).
+    // A new row this job made goes to the Trash (#f4jkpja6: nothing deleted outright), all of them as **one** item,
+    // "N rows from People", as an undo's dropped rows are (@lead), counted for the alert. One changed meanwhile is
+    // also named. A row with sub-pages goes on its own, with them.
     const trashed: Array<{ id: PageId; title: string }> = [];
-    let dropped = 0;
+    const grouped: PageRecord[] = [];
+    let inTrash = 0;
+    let gone = false;
     for (const row of created) {
-      try {
-        if (await this.dropPastedRow(row.id, row.updated)) dropped += 1;
-        else {
-          await this.removeNow(row.id);
-          trashed.push({ id: row.id, title: row.title });
+      // Already gone (deleted in another app meanwhile, whether or not the watcher has caught up): nothing to take
+      // back, and nothing stuck (@opus-hunter's note a).
+      const record = this.pages.get(row.id);
+      if (!record || !(await pathExists(record.filePath))) {
+        if (record && !this.hasChildren(row.id)) {
+          this.pages.delete(row.id);
+          this.forgetSessionBytes(row.id);
+          gone = true;
         }
+        continue;
+      }
+      try {
+        if (!(await this.pastedRowUnchanged(record, row.updated))) trashed.push({ id: row.id, title: row.title });
+        if (!this.hasChildren(row.id)) {
+          grouped.push(record);
+          continue;
+        }
+        this.markOwnWrite(record.filePath);
+        await this.removeNow(row.id);
+        inTrash += 1;
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: removing the new row ${row.id} failed:`, error);
         stuck.push({ id: row.id, title: row.title });
       }
     }
-    if (putBack || dropped) this.reindexAll();
-    return { changed: [], created: [], refused: named(refused), stuck, trashed, files: [], made: [], ...(baseRefused ? { baseRefused: true } : {}) };
+    if (grouped.length) {
+      try {
+        // One Trash entry; a move failing part way puts the moved rows back and throws (then they're stuck).
+        await this.trashRowsForUndo(folder, grouped);
+        inTrash += grouped.length;
+      } catch (error) {
+        console.warn(`[gumply] database paste: moving the new rows to the Trash failed:`, error);
+        for (const record of grouped) {
+          stuck.push({ id: record.id, title: record.title });
+          const at = trashed.findIndex((row) => row.id === record.id);
+          if (at >= 0) trashed.splice(at, 1);
+        }
+      }
+    }
+    if (grouped.length && inTrash) await this.syncFolders();
+    if (putBack || inTrash || gone) this.reindexAll();
+    return {
+      changed: [],
+      created: [],
+      refused: named(refused),
+      stuck,
+      trashed,
+      ...(inTrash ? { inTrash } : {}),
+      files: [],
+      made: [],
+      ...(baseRefused ? { baseRefused: true } : {}),
+    };
   }
 
   /**
-   * #7prbquxu phase 2 (@lead), #f4jkpja6: a refused paste's new row, to the Trash as our own write with its History
-   * kept, while it's exactly as this job left it (`version`, no outside change, no sub-pages). False when it changed
-   * meanwhile: the caller then sends it to the Trash too, and names it.
+   * #7prbquxu phase 2 (@lead), #f4jkpja6: whether a refused paste's new row is exactly as this job left it
+   * (`version`, no outside change). Either way it goes to the Trash; one that changed meanwhile is also named.
    */
-  private async dropPastedRow(id: PageId, version: string): Promise<boolean> {
-    const record = this.pages.get(id);
-    if (!record || record.updated !== version || this.hasChildren(id)) return false;
-    if (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null))) return false;
-    // #f4jkpja6 (@lead: nothing deleted outright): to the Trash like any delete, as our own write, its History kept.
-    this.markOwnWrite(record.filePath);
-    await this.removeNow(id);
-    return true;
+  private async pastedRowUnchanged(record: PageRecord, version: string): Promise<boolean> {
+    if (record.updated !== version) return false;
+    return !(await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null)));
   }
 
   /**

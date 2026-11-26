@@ -580,8 +580,10 @@ export const api = {
     created: PageId[];
     refused: Array<{ id: PageId; title: string }>;
     stuck: Array<{ id: PageId; title: string }>;
-    /** After a refusal: new rows that changed meanwhile, so they went to the Trash (unchanged ones are gone). */
+    /** After a refusal: new rows that changed meanwhile (named; they're in the Trash with the others). */
     trashed: Array<{ id: PageId; title: string }>;
+    /** After a refusal (#f4jkpja6): how many new rows went to the Trash, as one "N rows from …" item. */
+    inTrash?: number;
     baseRefused?: boolean;
     files: UndoFile[];
     /** The new rows made, at the version this paste left them. */

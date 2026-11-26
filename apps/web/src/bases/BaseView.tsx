@@ -379,6 +379,8 @@ export function BaseView(props: BaseViewProps) {
         }
         if (result.refused.length && !result.baseRefused) {
           const parts = [t("bases.pasteRefused", { titles: titleList(result.refused) })];
+          // #f4jkpja6: the new rows it made are in the Trash, as one item; those changed meanwhile are named.
+          if (result.inTrash) parts.push(t("bases.pasteInTrash", { count: result.inTrash }));
           if (result.trashed.length) parts.push(t("bases.pasteTrashed", { titles: titleList(result.trashed) }));
           if (result.stuck.length) parts.push(t("bases.pasteStuck", { titles: titleList(result.stuck) }));
           props.onError?.(parts.join(" "));
