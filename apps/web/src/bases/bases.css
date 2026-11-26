@@ -630,6 +630,12 @@
   padding: 0;
 }
 
+/* #pzqmduua: a Select cell being edited shows its chips in place (the picker is in a portal), so it keeps the cell's
+   padding and its chips stay in line with the other rows'. */
+.base-td.is-editing:has(> .base-chips) {
+  padding: 0 0.5rem;
+}
+
 .base-value {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -714,6 +720,8 @@
 .base-chips {
   display: flex;
   gap: 0.25rem;
+  /* #pzqmduua: may shrink to its cell, so a long chip ends in "…" inside the cell's padding. */
+  min-width: 0;
   overflow: hidden;
 }
 
