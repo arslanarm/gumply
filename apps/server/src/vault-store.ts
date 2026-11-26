@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants, existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { access, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   MAX_PASTE_OPTIONS,
@@ -1083,6 +1083,30 @@ async function pathExists(path: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Error codes of a file system that can't make a hard link here (FAT/exFAT, some network or FUSE mounts). */
+const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV", "EMLINK"]);
+
+/**
+ * #bfy92cu6 (from #zy9dqwwz): move one file to `to` only if nothing is there, never replacing a file another
+ * app made at that name since we checked (`rename` would). `link` fails with EEXIST atomically; then the source
+ * goes. Throws an error with code EEXIST when the name is taken. Where hard links aren't available, a check right
+ * before `rename` narrows the window (it can't close it without RENAME_NOREPLACE, which Node doesn't expose).
+ */
+async function moveFileNoReplace(from: string, to: string): Promise<void> {
+  try {
+    await link(from, to);
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (!NO_HARD_LINKS.has(code)) throw error;
+    if (await lstat(to).then(() => true, () => false)) throw Object.assign(new Error(`EEXIST: file already exists, ${to}`), { code: "EEXIST" });
+    await rename(from, to);
+    return;
+  }
+  await unlink(from);
+}
+
+const isEexist = (error: unknown) => (error as { code?: string } | null)?.code === "EEXIST";
 
 /**
  * Markdown vault with an in-memory page + link index (D2/D4).
@@ -3096,7 +3120,9 @@ export class VaultStore {
       const stuck = await this.putUndoBack(written, trashed, brought);
       console.error(`[gumply] undo in ${id} failed part way; put back${stuck.length ? `, except ${stuck.join(", ")}` : ""}:`, error);
       if (stuck.length) throw conflict(`The undo failed part way, and these couldn't be put back: ${stuck.join(", ")}`);
-      throw conflict("The undo failed part way; everything was put back as it was.");
+      // A named refusal from the write phase (#bfy92cu6: a row's name taken meanwhile) keeps its reason.
+      const reason = error instanceof VaultError && error.status === 409 ? `${error.message} ` : "";
+      throw conflict(`${reason}The undo failed part way; everything was put back as it was.`);
     }
     // Done: the brought rows leave their Trash entries; an entry with nothing left goes.
     const byEntry = new Map<string, { entry: TrashEntry; ids: Set<PageId> }>();
@@ -3163,7 +3189,13 @@ export class VaultStore {
     const source = resolve(entry.dir, this.trashedFileOf(entry, id));
     const target = this.filePathFor(id);
     this.markOwnWrite(target);
-    await rename(source, target);
+    try {
+      // #bfy92cu6: never over a file another app made at this name since the check.
+      await moveFileNoReplace(source, target);
+    } catch (error) {
+      if (isEexist(error)) throw conflict(`“${id.split("/").pop() ?? id}” exists again (made in another app meanwhile).`);
+      throw error;
+    }
     const record = await this.readRecord(target, id);
     record.parentId = parentOf(id);
     this.pages.set(id, record);
@@ -6252,16 +6284,29 @@ export class VaultStore {
     const name = entry.id.split("/").pop() ?? entry.id;
     const stem = name.slice(0, name.length - idExtension(kind).length);
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = targetId ?? (await this.restoreTarget(folder, stem, hasFolder, taken, kind));
-
-    const pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
-    const childTarget = join(this.root, newId);
-    if (!pageTarget.startsWith(`${this.root}${sep}`) || !childTarget.startsWith(`${this.root}${sep}`)) {
-      throw notFound("Trash entry not found");
+    let newId = targetId ?? (await this.restoreTarget(folder, stem, hasFolder, taken, kind));
+    let pageTarget = "";
+    let childTarget = "";
+    // #bfy92cu6: the file never replaces one another app made at its name since the check; then the next " 2".
+    for (let attempt = 0; ; attempt += 1) {
+      pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
+      childTarget = join(this.root, newId);
+      if (!pageTarget.startsWith(`${this.root}${sep}`) || !childTarget.startsWith(`${this.root}${sep}`)) {
+        throw notFound("Trash entry not found");
+      }
+      await mkdir(dirname(pageTarget), { recursive: true });
+      try {
+        await moveFileNoReplace(pageSource, pageTarget);
+        break;
+      } catch (error) {
+        if (!isEexist(error) || targetId !== undefined || attempt >= 20) {
+          if (isEexist(error)) throw conflict(`“${newId}” was made in another app meanwhile; nothing was restored.`);
+          throw error;
+        }
+        taken.add(collisionKey(newId));
+        newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
+      }
     }
-
-    await mkdir(dirname(pageTarget), { recursive: true });
-    await rename(pageSource, pageTarget);
     if (hasFolder) {
       await mkdir(dirname(childTarget), { recursive: true });
       try {
@@ -6332,12 +6377,21 @@ export class VaultStore {
         const name = id.split("/").pop() ?? id;
         const kind = record.kind;
         const stem = name.slice(0, name.length - idExtension(kind).length);
-        const to = await this.restoreTarget(folder, stem, false, taken, kind);
-        taken.add(collisionKey(to));
-        const target = this.filePathFor(to);
-        this.markOwnWrite(target);
-        await rename(resolve(entry.dir, this.trashedFileOf(entry, id)), target);
-        moved.push({ from: id, to });
+        const source = resolve(entry.dir, this.trashedFileOf(entry, id));
+        // #bfy92cu6: never over a file another app made at the name since the check; then the next " 2".
+        for (let attempt = 0; ; attempt += 1) {
+          const to = await this.restoreTarget(folder, stem, false, taken, kind);
+          taken.add(collisionKey(to));
+          const target = this.filePathFor(to);
+          this.markOwnWrite(target);
+          try {
+            await moveFileNoReplace(source, target);
+            moved.push({ from: id, to });
+            break;
+          } catch (error) {
+            if (!isEexist(error) || attempt >= 20) throw error;
+          }
+        }
       }
       finished = true;
     } finally {
