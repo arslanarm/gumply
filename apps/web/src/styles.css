@@ -6598,6 +6598,36 @@ input {
   white-space: nowrap;
 }
 
+/* #jtck4izu: a long chip (a tag, a name) shrinks to its row with an ellipsis instead of running
+   off a narrow window; the remove button stays whole. */
+.property-chip {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.property-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.property-chip-remove {
+  flex: none;
+}
+
+/* #jtck4izu: a long text value ends in an ellipsis while it isn't being edited. */
+.property-input {
+  text-overflow: ellipsis;
+}
+
+/* #jtck4izu: on a narrow window the key column gives the value more room. */
+@media (max-width: 600px) {
+  .property-row {
+    grid-template-columns: minmax(96px, 38%) minmax(0, 1fr);
+  }
+}
+
 .property-chip.is-tag {
   background: var(--accent-soft);
   border-color: transparent;
