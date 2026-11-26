@@ -12,8 +12,8 @@ export interface Vault {
 }
 
 /**
- * `vault` gives every test a clean vault and a fast way to build fixtures
- * through the API instead of the UI. See wiki `spec/e2e-tests`.
+ * `vault` gives every test a clean vault (it runs for every test, asked for or not) and a fast way to build
+ * fixtures through the API instead of the UI. See wiki `spec/e2e-tests`.
  */
 export const test = base.extend<{ vault: Vault }, { settingsBaseline: SettingsSnapshot }>({
   // #w284vn2u: the vault's settings files as the run started (taken once, in the main process), put back
@@ -25,7 +25,10 @@ export const test = base.extend<{ vault: Vault }, { settingsBaseline: SettingsSn
     waitForBootOnNavigation(page, testInfo);
     await use(page);
   },
-  vault: async ({ request, settingsBaseline }, use) => {
+  // #dh3jdu7g: automatic, so every test (named `vault` or not) starts from an empty vault and leaves one behind;
+  // a page or board created by a test that never asked for `vault` can't change what `/` opens or what a
+  // listing shows in a later spec (trial-main21: board-engine opened whiteboards.spec's leftover "Drops").
+  vault: [async ({ request, settingsBaseline }, use) => {
     const vault: Vault = {
       reset: () => apiClient.resetVault(request),
       pages: () => apiClient.listPages(request),
@@ -44,7 +47,7 @@ export const test = base.extend<{ vault: Vault }, { settingsBaseline: SettingsSn
     // Don't mask a failed test with a cleanup error (e.g. server crashed).
     await vault.reset().catch(() => {});
     await restoreSettings(settingsBaseline).catch(() => {});
-  },
+  }, { auto: true }],
 });
 
 export { expect };
