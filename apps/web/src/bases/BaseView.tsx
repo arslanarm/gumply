@@ -344,7 +344,11 @@ export function BaseView(props: BaseViewProps) {
 
   /** #7prbquxu phase 2: a block pasted into the grid, in one server request; refused rows are named. */
   const pasteRows = useCallback(
-    async (rows: PastedRow[], columns?: { view: string; keys: string[] }, types?: Record<string, PropertyType>) => {
+    async (
+      rows: PastedRow[],
+      columns?: { view: string; keys: string[]; selects?: Record<string, { kind: SelectKind; values: string[] }> },
+      types?: Record<string, PropertyType>,
+    ) => {
       try {
         await saverRef.current?.flush();
         const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer, ...(columns ? { columns } : {}) });
@@ -834,7 +838,8 @@ export function BaseView(props: BaseViewProps) {
                   recordStep({ kind: "config", from: docRef.current.config, to: before });
                 },
                 onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
-                onPastePreview: (previewed: PreviewResult, viewName: string) => pasteRows(previewed.rows, { view: viewName, keys: previewed.keys }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
+                onPastePreview: (previewed: PreviewResult, viewName: string) =>
+                  pasteRows(previewed.rows, { view: viewName, keys: previewed.keys, selects: previewed.selects }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
             : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}

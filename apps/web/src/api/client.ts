@@ -570,7 +570,11 @@ export const api = {
     baseId: PageId,
     /** Existing rows carry the version they were shown at (`expectedUpdated`); new rows a title. */
     rows: Array<{ id?: PageId; expectedUpdated?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>,
-    options: { expectedUpdated: string; writer: string; columns?: { view: string; keys: string[] } },
+    options: {
+      expectedUpdated: string;
+      writer: string;
+      columns?: { view: string; keys: string[]; selects?: Record<string, { kind: "select" | "multiselect"; values: string[] }> };
+    },
   ): Promise<{
     changed: PageId[];
     created: PageId[];

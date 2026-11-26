@@ -125,6 +125,19 @@ export function guessType(values: readonly string[]): GuessedType {
   return "text";
 }
 
+export { MAX_PASTE_OPTIONS } from "@gumply/core";
+
+/** A Select's options from a pasted column: each distinct non-empty value (a Multi-select's items split), in order. */
+export function pastedOptions(values: readonly string[], kind: "select" | "multiselect"): string[] {
+  const out: string[] = [];
+  for (const cell of values) {
+    const parsed = pastedValue(cell, kind === "select" ? "text" : "multitext");
+    const items = parsed === null || parsed.value === null ? [] : Array.isArray(parsed.value) ? parsed.value : [String(parsed.value)];
+    for (const item of items) if (item !== "" && !out.includes(item)) out.push(item);
+  }
+  return out;
+}
+
 /** Whether a column repeats few enough values to offer Select (≤ 12 distinct, some repeated). */
 export function offersSelect(values: readonly string[]): boolean {
   const filled = values.map((value) => value.trim()).filter((value) => value !== "");

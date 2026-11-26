@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessHeaderRow, guessType, offersSelect, parseCsv, parseHtmlTable, pastedValue, plannedPaste, parseTsv, readPaste } from "../src/bases/paste";
+import { MAX_PASTE_OPTIONS, guessHeaderRow, guessType, offersSelect, parseCsv, pastedOptions, parseHtmlTable, pastedValue, plannedPaste, parseTsv, readPaste } from "../src/bases/paste";
 
 /** #7prbquxu phase 2 (spec/database-tables §5): reading a paste from a spreadsheet. Invented data. */
 
@@ -76,6 +76,12 @@ describe("type guesses (never Select silently)", () => {
     expect(offersSelect(["Todo", "Doing", "Todo", "Done"])).toBe(true);
     expect(offersSelect(["a", "b", "c"])).toBe(false);
     expect(offersSelect(Array.from({ length: 30 }, (_, i) => `v${i % 13}`))).toBe(false);
+  });
+
+  it("a Select's options from a pasted column: distinct, non-empty, a Multi-select's items split; capped at 200 (@lead, note f)", () => {
+    expect(pastedOptions(["Todo", " Done ", "", "Todo"], "select")).toEqual(["Todo", "Done"]);
+    expect(pastedOptions(["Go, Rust", "Go", ""], "multiselect")).toEqual(["Go", "Rust"]);
+    expect(MAX_PASTE_OPTIONS).toBe(200);
   });
 
   it("the first row is headers when it's unique non-empty text and a later column isn't text", () => {

@@ -19,6 +19,12 @@ import type { BaseConfig } from "./format.js";
 
 export type SelectKind = "select" | "multiselect";
 
+/**
+ * #7prbquxu (@lead, data safety for the base file): the most options a paste makes for one Select. A mostly
+ * unique column of thousands of rows would otherwise write thousands of options into the `.base`.
+ */
+export const MAX_PASTE_OPTIONS = 200;
+
 /** Colour names, mapped to theme variables by the app (readable in both themes). */
 export const SELECT_COLORS = ["gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red"] as const;
 export type SelectColor = (typeof SELECT_COLORS)[number];

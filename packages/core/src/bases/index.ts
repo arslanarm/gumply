@@ -1,6 +1,7 @@
 /** Obsidian Bases (`.base` database views, spec/api-bases, #sg36ng2d). */
 export { dropKeyFromConfig, renameKeyInConfig } from "./columns.js";
 export {
+  MAX_PASTE_OPTIONS,
   SELECT_COLORS,
   nextOptionColor,
   selectSettings,

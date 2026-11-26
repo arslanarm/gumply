@@ -326,8 +326,9 @@ export function TableView(props: TableViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.importBlock?.n]);
   const knownKeys = useMemo(
-    () => new Map(columns.filter((column) => column.id.startsWith("note.")).map((column) => [column.id.slice(5), column.type] as const)),
-    [columns],
+    // A column that's a Select in this base reads as one (its kind), so the preview keeps it.
+    () => new Map(columns.filter((column) => column.id.startsWith("note.")).map((column) => [column.id.slice(5), selects.get(column.id)?.kind ?? column.type] as const)),
+    [columns, selects],
   );
   const closeHeaderMenu = () => {
     setHeaderMenu(null);
