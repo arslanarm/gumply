@@ -104,3 +104,24 @@ test('Escape in a cell editor only cancels the edit (the cell stays active); a s
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('base-typing-input')).toBeFocused();
 });
+
+test('Escape during an IME composition only ends the composition: the cell editor stays open with its text (@graph-dev\'s nit 2)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page);
+  await page.getByTestId('base-row-People/Ann').locator('[data-grid-col]').nth(1).click();
+  const input = page.getByTestId('base-cell-editor-People/Ann-note.role').locator('input').first();
+  await expect(input).toBeFocused();
+  await input.fill('Бейкер');
+  // The Escape a composition ends with (the IME's own; isComposing is set on it).
+  await input.evaluate((element) => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true }));
+  });
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('Бейкер');
+  expect(await fs.readFile(path.join(E2E_VAULT, 'People/Ann.md'), 'utf8')).toBe(PEOPLE['People/Ann.md']);
+  // A plain Escape then cancels the edit.
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
+  expect(await fs.readFile(path.join(E2E_VAULT, 'People/Ann.md'), 'utf8')).toBe(PEOPLE['People/Ann.md']);
+});
