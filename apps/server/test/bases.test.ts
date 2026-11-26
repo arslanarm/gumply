@@ -189,6 +189,16 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(view.rows.map((row) => row.title)).toEqual(["Ada"]);
   });
 
+  it("names the first view as the request says (the interface language), one trimmed line, else \"Table\" (#7prbquxu, @polish-dev)", async () => {
+    const { app, dir } = await vault();
+    await jsonRequest(app, "POST", "/api/bases", { title: "Люди", rows: true, viewName: "Таблица" });
+    expect(await readFile(join(dir, "Люди.base"), "utf8")).toContain("    name: Таблица\n");
+    await jsonRequest(app, "POST", "/api/bases", { title: "Plain", viewName: "  Two\nlines  " });
+    expect(await readFile(join(dir, "Plain.base"), "utf8")).toContain("    name: Two lines\n");
+    await jsonRequest(app, "POST", "/api/bases", { title: "Old client" });
+    expect(await readFile(join(dir, "Old client.base"), "utf8")).toContain("    name: Table\n");
+  });
+
   it("renaming a database that owns its rows folder takes the folder along (#7prbquxu)", async () => {
     const { app, dir, store } = await vault({ "Elsewhere/People.md": "Not in the way\n", "Ref.md": "See [[Untitled database/Ada]].\n" });
     await jsonRequest(app, "POST", "/api/bases", { title: "Untitled database", rows: true });

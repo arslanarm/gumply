@@ -485,3 +485,16 @@ test('typing on a Select cell opens its picker: Enter picks the match, or adds a
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Diver\nage: 41\n---\nBo\n');
   await expect.poll(() => read('People.base')).toContain('      - value: Diver\n        color: yellow\n');
 });
+
+test('a new database in Russian names its first view «Таблица» (@polish-dev)', async ({ page, request, vault }) => {
+  void vault;
+  void request;
+  await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+  await page.goto('/');
+  await page.getByTestId('new-base-button').click();
+  await expect(page.getByTestId('page-title-input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-table')).toBeVisible();
+  const file = (await fs.readdir(E2E_VAULT)).find((name) => name.endsWith('.base'))!;
+  expect(await read(file)).toContain('    name: Таблица\n');
+});
