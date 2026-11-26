@@ -245,6 +245,65 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(existsSync(join(dir, "People 2/Ann.md"))).toBe(true);
   });
 
+  it("undoes a property delete byte for byte (rows and base), redoes it, and refuses as a whole when a row changed since (#7prbquxu phase 4b)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - role\n';
+    const ann = "---\nrole: Cook # head cook\nage: 30\n---\nAnn\n";
+    const bo = "---\nrole: Pilot\n---\nBo\n";
+    const { dir, store } = await vault({ "People.base": base, "People/Ann.md": ann, "People/Bo.md": bo });
+    const read = (path: string) => readFile(join(dir, path), "utf8");
+    // An edit just before (the History session would have coalesced it): the "database" reason keeps the bytes anyway.
+    await store.update("People/Bo", { content: "Bo, edited\n", expectedUpdated: store.get("People/Bo").updated });
+    const boBefore = await read("People/Bo.md");
+    const done = await store.changeOwnedRowsProperty("People.base", { remove: "role" });
+    expect(done.files.map((file) => file.id).sort()).toEqual(["People.base", "People/Ann", "People/Bo"]);
+
+    const undo = await store.undoDatabaseChange("People.base", { files: done.files.map((file) => ({ id: file.id, from: file.after, to: file.before })) });
+    expect(undo.refused).toEqual([]);
+    expect(await read("People/Ann.md")).toBe(ann);
+    expect(await read("People/Bo.md")).toBe(boBefore);
+    expect(await read("People.base")).toBe(base);
+
+    // Redo: the inverse from the undo's answer.
+    const redo = await store.undoDatabaseChange("People.base", { files: undo.files.map((file) => ({ id: file.id, from: file.after, to: file.before })) });
+    expect(redo.refused).toEqual([]);
+    expect(await read("People/Ann.md")).not.toContain("role");
+    expect(await read("People.base")).not.toContain("role");
+
+    // A row edited since: the whole undo refuses, names it, and writes nothing.
+    await store.update("People/Ann", { content: "Ann, edited\n", expectedUpdated: store.get("People/Ann").updated });
+    const annNow = await read("People/Ann.md");
+    const refused = await store.undoDatabaseChange("People.base", { files: redo.files.map((file) => ({ id: file.id, from: file.after, to: file.before })) });
+    expect(refused.refused.map((row) => row.title)).toEqual(["Ann"]);
+    expect(await read("People/Ann.md")).toBe(annNow);
+    expect(await read("People.base")).not.toContain("role");
+  });
+
+  it("undoes a paste (new rows dropped, set rows back) and redoes it (the rows made again) (#7prbquxu phase 4b)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n';
+    const ann = "---\nrole: Cook\n---\nAnn\n";
+    const { dir, store } = await vault({ "People.base": base, "People/Ann.md": ann });
+    const pasted = await store.pasteIntoOwnedRows("People.base", {
+      rows: [
+        { id: "People/Ann", expectedUpdated: store.get("People/Ann").updated, set: { role: "Chef" } },
+        { title: "Bo", set: { role: "Pilot" } },
+      ],
+    });
+    const undo = await store.undoDatabaseChange("People.base", {
+      files: pasted.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
+      drop: pasted.made.map((row) => ({ id: row.id, from: row.after })),
+    });
+    expect(undo.refused).toEqual([]);
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe(ann);
+    expect(existsSync(join(dir, "People/Bo.md"))).toBe(false);
+    const redo = await store.undoDatabaseChange("People.base", {
+      files: undo.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
+      create: undo.dropped.map((row) => ({ id: row.id, to: row.before })),
+    });
+    expect(redo.refused).toEqual([]);
+    expect(await readFile(join(dir, "People/Bo.md"), "utf8")).toContain("role: Pilot");
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toContain("role: Chef");
+  });
+
   it("renaming a database that owns its rows folder takes the folder along (#7prbquxu)", async () => {
     const { app, dir, store } = await vault({ "Elsewhere/People.md": "Not in the way\n", "Ref.md": "See [[Untitled database/Ada]].\n" });
     await jsonRequest(app, "POST", "/api/bases", { title: "Untitled database", rows: true });
