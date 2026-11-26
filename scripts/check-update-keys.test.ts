@@ -55,6 +55,15 @@ describe("scripts/check-update-keys.mjs --require (the tag guard)", () => {
     expect(result.stdout).toContain("primary 7d231848158a2a02, backup 3806c70f4944286f");
   });
 
+  it('reads a key whose base64 contains "//", with comments after the entries and in between (#kziv42ti)', () => {
+    // A fixed ed25519 SPKI whose 32 key bytes are 0xff: its base64 has "////" (random test keys hit "//" a few % per run).
+    const slashes = publicKeyEntry(Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.alloc(32, 0xff)]).toString("base64"));
+    expect(slashes.spki).toContain("//");
+    expect(readKeys(keysFileText([slashes, primary.entry]))).toEqual([slashes, primary.entry]);
+    const commented = keysFileText([primary.entry, slashes]).replace("// backup (offline)", "// backup (offline) // still a comment\n  /* a block comment: { id: \"x\", spki: \"y\" } */");
+    expect(readKeys(commented)).toEqual([primary.entry, slashes]);
+  });
+
   it("an empty list fails the tag", () => {
     const dir = scratch();
     writeFileSync(join(dir, "update-keys.ts"), keysFileText([]));
