@@ -2158,13 +2158,17 @@ input {
     font-size: 2rem;
   }
 
+  /* #kwqfr693: the actions get their own row under the title. Laid over the title's right half,
+     they took taps on it even while transparent, and covered the name being typed. A phone has no
+     hover to reveal them, so they're always shown here. */
+  .page-heading {
+    flex-wrap: wrap;
+  }
+
   .page-header-actions {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    padding-left: 0.5rem;
-    background: var(--surface-page);
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    opacity: 1;
   }
 }
 

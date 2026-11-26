@@ -1357,7 +1357,7 @@
     "addColumn": "Добавить свойство",
     "columnName": "Название свойства",
     "addColumnSubmit": "Добавить",
-    "columnExists": "Столбец «{{name}}» уже есть.",
+    "columnExists": "В этой базе данных уже есть свойство «{{name}}».",
     "typeElsewhere": "В других заметках хранилища у свойства «{{name}}» тип «{{type}}», и он сохранится.",
     "deleteColumn": "Удалить из всех строк",
     "deleteColumnHeading": "Удалить «{{name}}» из всех строк?",
