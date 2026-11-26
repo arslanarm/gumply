@@ -104,5 +104,8 @@ describe("the last two unguarded writes in database ops (#f4jkpja6)", () => {
     inject.failMoveTo = null;
     expect(inject.outsideAt, "the move back was reached").toBeNull();
     expect(await readFile(join(dir, "People", "Bo.md"), "utf8")).toBe(OUTSIDE);
+    // And Bo's own bytes are still restorable: it stays in the Trash (@opus-editor).
+    const ids = (await store.listTrash()).flatMap((item) => [item.id, ...item.children.map((child) => child.id)]);
+    expect(ids).toContain("People/Bo");
   });
 });
