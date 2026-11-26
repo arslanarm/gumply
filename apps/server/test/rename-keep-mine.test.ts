@@ -103,13 +103,13 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     let answer: unknown = null;
     store.afterRenameBatch = async () => {
       if (answer || !store.get(target).content.includes("[[Hub renamed]]")) return; // after its batch ran
-      answer = await store.update(target, { content: `${start.content}x`, expectedUpdated: start.updated }).catch((error: unknown) => error);
+      answer = await store.update(target, { content: `${start.content}\nx`, expectedUpdated: start.updated }).catch((error: unknown) => error);
     };
     await store.update("Hub", { title: "Hub renamed" });
     expect(answer).toMatchObject({ renameLinksMerged: { links: 1, titles: ["Hub renamed"] } });
     const text = await readFile(join(dir, `${target}.md`), "utf8");
     expect(text).toContain("See [[Hub renamed]] for more.");
-    expect(text).toMatch(/\nx\n?$/);
+    expect(text).toMatch(/Notes\.\nx\n$/);
   });
 
   it("an ordinary save the rename's change can't be carried into (the link typed twice on its line): still a conflict, never a partial merge (#z9hufufn, @lead)", async () => {

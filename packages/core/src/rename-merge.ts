@@ -1,4 +1,5 @@
 import { maskCode } from "./links.js";
+import { WIKILINK_INNER } from "./wikilink-syntax.js";
 
 /**
  * N10 (#5pgmziyc): Keep mine in a page a rename rewrote while it was being
@@ -93,8 +94,8 @@ export function mergeRenameLinks(base: string, theirs: string, ours: string): { 
   return applied === 0 ? { content: ours, applied: 0 } : { content: ourLines.join("\n"), applied };
 }
 
-/** A wikilink, embed or Markdown link, as written. */
-const LINK = /!?\[\[[^\]\n]*\]\]|!?\[[^\]\n]*\]\([^)\n]*\)/g;
+/** A wikilink, embed or Markdown link, as written (the wikilink part from the one shared definition). */
+const LINK = new RegExp(String.raw`!?\[\[${WIKILINK_INNER}*\]\]|!?\[[^\]\n]*\]\([^)\n]*\)`, "g");
 
 /**
  * The link changes between two versions of a line (old link text → new), by position outside code; null
