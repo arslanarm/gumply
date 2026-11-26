@@ -6689,7 +6689,9 @@ input {
 
 .property-chip-remove {
   display: inline-flex;
-  padding: 2px;
+  /* #jtck4izu (@opus-hunter's read): a 24×24 hit target (WCAG 2.5.8) in the same 16×16 of layout. */
+  padding: 6px;
+  margin: -4px;
   border: 0;
   border-radius: 3px;
   background: transparent;
