@@ -128,7 +128,7 @@ test('the paste preview is wide enough for its columns on a wide window (pass 8,
   for (const col of [1, 2]) expect(await onTop(page, page.getByTestId(`base-paste-type-${col}`)), `column ${col}'s type`).toBe(true);
 });
 
-test('"Edit options…": the delete question comes into sight, with focus on its first choice (pass 8, 3)', async ({ page, request, vault }) => {
+test('"Edit options…": the delete question comes into sight, with focus on Cancel (pass 8, 3)', async ({ page, request, vault }) => {
   void vault;
   await page.setViewportSize({ width: 1280, height: 800 });
   await writeVault(request, TEAM);
@@ -137,11 +137,14 @@ test('"Edit options…": the delete question comes into sight, with focus on its
   await page.getByTestId('base-edit-options').click();
   await expect(page.getByTestId('base-options-editor')).toBeVisible();
   await page.getByTestId('base-option-delete-Stage 9').click();
-  const clear = page.getByTestId('base-option-delete-clear');
-  await expect(clear).toBeFocused();
-  // Inside the popover's visible box, not below its scrolled fold.
-  await expect.poll(() => onTop(page, clear), { timeout: 2_000 }).toBe(true);
-  expect(await onTop(page, page.getByTestId('base-option-delete-keep'))).toBe(true);
+  // The safe choice has focus (a stray Enter must not clear the value from every row), as in the app's other
+  // delete questions (@opus-editor, @lead).
+  const cancel = page.getByTestId('base-option-delete-cancel');
+  await expect(cancel).toBeFocused();
+  // Every choice is inside the popover's visible box, not below its scrolled fold.
+  for (const id of ['base-option-delete-clear', 'base-option-delete-keep', 'base-option-delete-cancel']) {
+    await expect.poll(() => onTop(page, page.getByTestId(id)), { timeout: 2_000, message: id }).toBe(true);
+  }
 });
 
 test('the picker is a combobox a screen reader can follow, and Escape gives focus back to the cell (pass 8, 1, @lead)', async ({ page, request, vault }) => {
