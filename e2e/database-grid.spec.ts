@@ -535,3 +535,46 @@ test('"Edit options…" renames an option in the rows, recolours and reorders it
   await expect.poll(() => read('People/Bo.md')).not.toContain('Pilot');
   await expect.poll(() => read('People.base')).not.toContain('value: Pilot');
 });
+
+test('Cmd/Ctrl+Z undoes table operations and Shift redoes them; an undo over a row changed since is refused, named (phase 4b)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  const undo = (shift = false) => page.keyboard.press(`ControlOrMeta+${shift ? 'Shift+' : ''}KeyZ`);
+
+  // A cell edit: undone, then redone.
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await typing.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.type('Chef');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Chef\nage: 41\n---\nBo\n');
+  await page.getByTestId('base-table').click({ position: { x: 5, y: 5 } });
+  await undo();
+  await expect.poll(() => read('People/Bo.md')).toBe(PEOPLE['People/Bo.md']);
+  await undo(true);
+  await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Chef\nage: 41\n---\nBo\n');
+
+  // Delete a property from all rows, then undo: every row and the base come back byte for byte.
+  const before = { ann: await read('People/Ann.md'), bo: await read('People/Bo.md'), base: await read('People.base') };
+  await page.getByTestId('base-th-note.age').click();
+  await page.getByTestId('base-delete-column').click();
+  await page.getByTestId('base-delete-column-dialog-confirm').click();
+  await expect.poll(() => read('People/Ann.md')).not.toContain('age');
+  await undo();
+  await expect.poll(() => read('People/Ann.md')).toBe(before.ann);
+  expect(await read('People/Bo.md')).toBe(before.bo);
+  await expect.poll(() => read('People.base')).toBe(before.base);
+
+  // Redo, then another app edits Ann: the undo refuses as a whole and names her.
+  await undo(true);
+  await expect.poll(() => read('People/Ann.md')).not.toContain('age');
+  const ann = path.join(E2E_VAULT, 'People/Ann.md');
+  await fs.writeFile(`${ann}.tmp-outside`, (await read('People/Ann.md')) + 'Edited elsewhere.\n', 'utf8');
+  await fs.rename(`${ann}.tmp-outside`, ann);
+  await expect.poll(async () => (await api.getPage(request, 'People/Ann')).content, { timeout: 15_000 }).toContain('Edited elsewhere');
+  await undo();
+  await expect(page.getByRole('alert')).toContainText('Ann');
+  expect(await read('People/Bo.md')).not.toContain('age');
+});
