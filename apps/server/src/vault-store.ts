@@ -95,6 +95,7 @@ import {
   type WikiLink,
   newBaseSource,
   ownedRowsFolder,
+  rowsShown,
   parseBase,
   updateBaseSource,
   renameKeyInConfig,
@@ -2320,7 +2321,23 @@ export class VaultStore {
       if (own) meta.conflicts = own;
       return meta;
     });
+    // #7prbquxu phase 4: which database owns which rows folder (the sidebar hides those folders by default).
+    const ownerOf = new Map<PageId, PageId>();
+    for (const meta of metas) {
+      if (meta.kind !== "base") continue;
+      const record = this.pages.get(meta.id);
+      const rows = record ? this.ownedRowsOf(record, meta.id) : null;
+      if (!rows || !record) continue;
+      meta.rowsFolder = rows;
+      try {
+        if (rowsShown(parseBase(record.baseSource ?? ""))) meta.showRows = true;
+      } catch {
+        // ownedRowsOf parsed it already; a parse error means it isn't owned.
+      }
+      ownerOf.set(rows, meta.id);
+    }
     for (const folder of this.folders.values()) {
+      const owner = ownerOf.get(folder.id);
       metas.push({
         id: folder.id,
         kind: "folder",
@@ -2331,6 +2348,7 @@ export class VaultStore {
         created: FOLDER_TIME,
         updated: FOLDER_TIME,
         otherFiles: folder.otherFiles,
+        ...(owner ? { ownedBy: owner } : {}),
       });
     }
     return metas.sort((a, b) => a.id.localeCompare(b.id));

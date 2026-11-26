@@ -46,6 +46,14 @@ export interface PageMeta {
   conflictOf?: PageId | null;
   /** v1.29: on an original, how many conflict copies sit beside it. */
   conflicts?: number;
+  /**
+   * #7prbquxu phase 4 (spec/database-tables §3): on a database that owns its rows folder, that folder's id,
+   * and whether its marker asks to show the rows in the sidebar (they're hidden there by default).
+   */
+  rowsFolder?: PageId;
+  showRows?: boolean;
+  /** #7prbquxu phase 4: on a folder an owned database keeps its rows in, that database's id. */
+  ownedBy?: PageId;
 }
 
 /** Full page: metadata plus the Markdown body (without frontmatter). */

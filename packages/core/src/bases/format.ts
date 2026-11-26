@@ -120,6 +120,20 @@ export function ownedRowsFolder(config: BaseConfig): string | null {
   return list.some((item) => typeof item === "string" && item.replace(/\s*==\s*/, " == ").trim() === wanted) ? rows : null;
 }
 
+/** #7prbquxu phase 4: whether an owned database's marker asks to show its rows in the sidebar (`showRows: true`). */
+export function rowsShown(config: BaseConfig): boolean {
+  const marker = config.gumply;
+  return isRecord(marker) && marker.showRows === true;
+}
+
+/** The config with the marker's `showRows` set (true) or removed (false); everything else as it was. */
+export function withRowsShown(config: BaseConfig, shown: boolean): BaseConfig {
+  const marker = isRecord(config.gumply) ? { ...config.gumply } : {};
+  if (shown) marker.showRows = true;
+  else delete marker.showRows;
+  return { ...config, gumply: marker };
+}
+
 /**
  * The config of an owned database whose rows folder moved to `rows` (#7prbquxu): the
  * marker and the `file.folder ==` clause follow; everything else is kept, so
