@@ -12,7 +12,7 @@ import { cleanupVaults, createTestServer } from "./helpers";
  * just before the move. Synthetic vault.
  */
 
-const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string } }));
+const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string; dir?: boolean } }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -20,8 +20,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     const plan = outside.before;
     if (plan && String(to).endsWith(plan.target)) {
       outside.before = null;
-      // Another app saves a file at that name a moment before the move.
-      await actual.writeFile(String(to), plan.text, "utf8");
+      // Another app saves a file (or a folder holding one) at that name a moment before the move.
+      if (plan.dir) {
+        await actual.mkdir(String(to), { recursive: true });
+        await actual.writeFile(`${String(to)}/Outside.md`, plan.text, "utf8");
+      } else await actual.writeFile(String(to), plan.text, "utf8");
     }
     return actual.rename(from, to);
   };
@@ -82,6 +85,18 @@ describe("a row brought back never replaces a file another app just made at its 
     const texts = await Promise.all((await readdir(server.dir)).filter((name) => name.endsWith(".md")).map((name) => readFile(join(server.dir, name), "utf8")));
     expect(texts).toContain(OUTSIDE);
     expect(texts).toContain("Mine, trashed.\n");
+  });
+
+  it("Restore of a plain folder from the Trash (@lead: the same pattern)", async () => {
+    const server = await createTestServer();
+    await mkdir(join(server.dir, "Projects"), { recursive: true });
+    await writeFile(join(server.dir, "Projects", "Plan.md"), "Mine, trashed.\n", "utf8");
+    await server.store.rescan();
+    const { trashId } = await server.store.remove("Projects");
+    outside.before = { target: "Projects", text: OUTSIDE, dir: true };
+    await server.store.restore(trashId!).catch(() => undefined);
+    expect(outside.before, "the move was reached").toBeNull();
+    expect(await readFile(join(server.dir, "Projects", "Outside.md"), "utf8")).toBe(OUTSIDE);
   });
 
   it("Restore of an undo's group of rows from the Trash", async () => {
