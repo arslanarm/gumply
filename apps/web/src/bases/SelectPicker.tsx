@@ -10,6 +10,9 @@ import { useT } from "../i18n/index.js";
  * highlighted match, or adds what was typed as a new option when nothing matches. A Select closes on a pick; a Multi-select stays
  * open for the next. A value outside the options (typed in Obsidian) is offered as "Add as option".
  */
+/** How long after a resize a scroll is taken as the browser's own (scroll anchoring), not the user's. */
+const RESIZE_SETTLE_MS = 500;
+
 export function SelectPicker(props: {
   settings: SelectSettings;
   value: BaseValue;
@@ -70,16 +73,26 @@ export function SelectPicker(props: {
       const maxHeight = Math.max(96, (up ? box.top : below) - 8);
       setPlace(up ? { left, width, maxHeight, bottom: window.innerHeight - box.top } : { left, width, maxHeight, top: box.bottom });
     };
+    // A resize (a phone keyboard showing) can make the browser move the table's scroll by itself (scroll
+    // anchoring), which fires a scroll event: one that soon after a resize only places the picker
+    // (trial-main25). `visualViewport` is what a phone's keyboard resizes.
+    let resizedAt = -Infinity;
+    const onResize = () => {
+      resizedAt = performance.now();
+      placeIt();
+    };
     const onScroll = () => {
-      if (scrolledAway()) closeRef.current();
+      if (performance.now() - resizedAt > RESIZE_SETTLE_MS && scrolledAway()) closeRef.current();
       else placeIt();
     };
     placeIt();
     window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", placeIt);
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", placeIt);
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
     };
   }, []);
 
