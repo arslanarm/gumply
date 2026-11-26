@@ -14,8 +14,10 @@ test.use({ viewport: { width: 420, height: 800 } });
 
 test('the rename notice (ru, the longest string) spans the narrow window, not half of it', async ({ page, vault }) => {
   await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
-  await vault.seed([{ title: 'Plan', content: 'Me: [[Plan]] here.\n' }]);
-  // The title PUT is held, so the typing lands during the rename and the notice shows.
+  await vault.seed([{ title: 'Plan', content: 'Intro.\n\nMe: [[Plan]] here.\n' }]);
+  // The title PUT is held, so the editing lands during the rename. #z9hufufn: typing the rename's
+  // rewrite can carry over is taken in place (no notice), so this deletes the self-link's line: that
+  // can't be merged whole, and the reload keeps the typing in History, with the notice.
   await page.route(
     (url) => url.pathname === '/api/pages/Plan',
     async (route) => {
@@ -25,11 +27,14 @@ test('the rename notice (ru, the longest string) spans the narrow window, not ha
     },
   );
   await page.goto('/#/Plan');
-  await expect(page.getByTestId('editor-content')).toContainText('here.');
+  await expect(page.getByTestId('editor-content')).toContainText('Intro.');
   await page.getByTestId('page-title').click();
   await page.getByTestId('page-title-input').fill('Plan 2');
   await page.getByTestId('page-title-input').press('Enter');
-  await page.getByTestId('editor-content').getByText('here.').click();
+  await page.getByTestId('editor-content').getByText('here.').click({ clickCount: 3 });
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.getByTestId('editor-content').getByText('Intro.').click();
   await page.keyboard.press('End');
   await page.keyboard.type(' Typed.');
   const notice = page.getByTestId('undo-toast');
