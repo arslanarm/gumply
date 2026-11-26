@@ -4,7 +4,7 @@
  * scroll as smoothly as 20. Note properties are edited in place and written
  * to the page's frontmatter; file properties and formulas are read-only.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
@@ -14,7 +14,7 @@ import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
-import { BaseText } from "./values.js";
+import { BaseSelects, BaseText, SelectChips } from "./values.js";
 import { AddColumn, COLUMN_TYPES } from "./AddColumn.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
@@ -992,6 +992,7 @@ function ValueCell(props: {
   onEditDone?: () => void;
 }) {
   const t = useT();
+  const select = useContext(BaseSelects).get(props.column.id);
   const { row, column } = props;
   const value = row.values[column.id] ?? null;
   const editable = column.editable && !props.readOnly;
@@ -1074,8 +1075,9 @@ function ValueCell(props: {
   }
 
   const lists = column.type === "multitext" || column.type === "tags" || column.type === "aliases";
-  const content =
-    lists && Array.isArray(value) ? (
+  const content = select ? (
+    <SelectChips value={value} settings={select} />
+  ) : lists && Array.isArray(value) ? (
       <span className="base-chips">
         {value.map((item, index) => (
           <span className="base-chip" key={`${item}-${index}`}>

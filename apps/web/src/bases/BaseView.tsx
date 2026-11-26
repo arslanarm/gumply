@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta, PropertyType } from "@gumply/core";
-import { nextOptionColor, ownedRowsFolder, selectedValues, selectSettings, withSelectSettings, type SelectKind, type SelectOption } from "@gumply/core";
+import { nextOptionColor, ownedRowsFolder, propertyId, selectedValues, selectSettings, withSelectSettings, type SelectKind, type SelectOption, type SelectSettings } from "@gumply/core";
 import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
 import { t as translate, useT, type MessageKey } from "../i18n/index.js";
@@ -18,7 +18,7 @@ import { ViewToolbar, type Panel } from "./ViewToolbar.js";
 import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
-import { BaseLinks } from "./values.js";
+import { BaseLinks, BaseSelects } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
 import { parseCsv, type PastedRow } from "./paste.js";
 import type { PreviewResult } from "./PastePreview.js";
@@ -86,6 +86,16 @@ export function BaseView(props: BaseViewProps) {
   const docRef = useRef(doc);
   docRef.current = doc;
   const config = doc.config;
+  // #7prbquxu phase 3: this base's Select and Multi-select columns, for the chips in every layout.
+  const selects = useMemo(() => {
+    const map = new Map<string, SelectSettings>();
+    for (const id of Object.keys(config.properties ?? {})) {
+      const key = propertyId(id).startsWith("note.") ? propertyId(id).slice(5) : null;
+      const settings = key ? selectSettings(config, key) : null;
+      if (key && settings) map.set(`note.${key}`, settings);
+    }
+    return map;
+  }, [config]);
   const views = config.views;
   const [activeName, setActiveName] = useState<string | null>(() => embed?.viewName ?? views[0]?.name ?? null);
   const active = views.find((view) => view.name === activeName) ?? views[0] ?? null;
@@ -532,6 +542,7 @@ export function BaseView(props: BaseViewProps) {
 
   return (
     <BaseLinks.Provider value={baseLinks}>
+    <BaseSelects.Provider value={selects}>
     <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1}>
       {inlineConflict ? (
         <div className="banner base-banner base-conflict" role="alert" data-testid="base-conflict" ref={conflictRef}>
@@ -671,6 +682,7 @@ export function BaseView(props: BaseViewProps) {
         <div className="base-loading" aria-busy="true" />
       )}
     </div>
+    </BaseSelects.Provider>
     </BaseLinks.Provider>
   );
 }

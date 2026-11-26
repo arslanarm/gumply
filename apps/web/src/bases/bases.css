@@ -1506,3 +1506,34 @@ ol.base-list {
   opacity: 0.6;
   pointer-events: none;
 }
+
+/* #7prbquxu phase 3: Select and Multi-select chips; colours by name, soft fills readable in both themes. */
+.base-option {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0 0.45rem;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--option-hue, var(--muted)) 18%, transparent);
+  color: var(--text);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-option[data-color="gray"] { --option-hue: #8a8f98; }
+.base-option[data-color="brown"] { --option-hue: #9a6b4b; }
+.base-option[data-color="orange"] { --option-hue: #e07b2e; }
+.base-option[data-color="yellow"] { --option-hue: #d6a51c; }
+.base-option[data-color="green"] { --option-hue: #3f9b5a; }
+.base-option[data-color="blue"] { --option-hue: #3b7fd9; }
+.base-option[data-color="purple"] { --option-hue: #8a5cd1; }
+.base-option[data-color="pink"] { --option-hue: #d1559a; }
+.base-option[data-color="red"] { --option-hue: #d64545; }
+
+.base-option.is-unknown {
+  border: 1px dashed var(--border);
+  background: transparent;
+}
