@@ -474,6 +474,8 @@ test('typing on a Select cell opens its picker: Enter picks the match, or adds a
   await expect(page.getByTestId('base-select-picker')).toContainText('Cook');
   await page.keyboard.press('Enter');
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Cook\nage: 41\n---\nBo\n');
+  // A pick closes a Select's picker for good: the grid's request is used up, so it doesn't open again (@opus-hunter).
+  await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
 
   // A value that isn't an option yet: Enter adds it to the base's options and picks it.
   await page.getByTestId('base-typing-input').click();
