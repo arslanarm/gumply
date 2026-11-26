@@ -88,15 +88,53 @@ describe("an outside edit whose file time doesn't move the version (#y5k39njn)",
     expect(await readFile(file, "utf8")).toContain("Edited elsewhere.");
   });
 
-  it("our own saves are unaffected: save after save from the editor, with the refresh in between, never a conflict", async () => {
-    const { store, id, version } = await saved("editor-1");
-    let current = version;
-    for (let n = 0; n < 5; n += 1) {
+  // @graph-dev's review: every kind of our own write, re-read by a full rescan, is never taken for an
+  // outside edit (no moved-on version, so no false conflict, and no "external" History version).
+  const externals = async (dir: string, id: string) =>
+    (await readHistory(historyDir(dir, id)).catch(() => ({ entries: [] as Array<{ source?: string }> }))).entries.filter((entry) => entry.source === "external").length;
+  it("our own writes of every kind, then a rescan, then a save from the answer's version: never a conflict, never an outside version", async () => {
+    const { store, dir } = await createTestServer();
+    const other = await store.create({ title: "Index", content: "See [[Ledger]]." });
+    const page = await store.create({ title: "Ledger", content: "Balance: ten." });
+    let id = page.id;
+    let version = (await store.update(id, { content: "Balance: ten. A.", writer: "w" })).updated;
+    const step = async (label: string, write: () => Promise<{ id?: string; updated: string }>) => {
+      const answer = await write();
+      if (answer.id) id = answer.id;
+      version = answer.updated;
       await store.rescan();
-      const next = await store.update(id, { content: `Balance: ten. Saved ${n}.`, expectedUpdated: current, writer: "editor-1" });
-      current = next.updated;
-    }
-    expect(store.get(id).content).toContain("Saved 4.");
+      const next = await store.update(id, { content: `Balance: ten. After ${label}.`, expectedUpdated: version, writer: "w" }).catch((error: Error) => error);
+      expect(next instanceof Error ? `${label}: ${next.message}` : "ok", label).toBe("ok");
+      version = (next as { updated: string }).updated;
+    };
+    await step("a body save", () => store.update(id, { content: "Balance: ten. Body.", expectedUpdated: version, writer: "w" }));
+    await step("an icon set", () => store.update(id, { icon: "  📒 ", expectedUpdated: version, writer: "w" }));
+    await step("an icon cleared", () => store.update(id, { icon: null, expectedUpdated: version, writer: "w" }));
+    await step("tags", () => store.update(id, { tags: ["  money ", "Money"], expectedUpdated: version, writer: "w" }));
+    await step("a properties patch", () =>
+      store.update(id, { properties: { set: { status: "open", related: "[[Index]]" } }, expectedUpdated: version, writer: "w" }),
+    );
+    await step("a title rename (rewrites Index's link)", () => store.update(id, { title: "  Ledger 2026 ", expectedUpdated: version, writer: "w" }));
+    // The page whose link the rename rewrote saves from its version too.
+    await store.rescan();
+    const index = store.get(other.id);
+    expect(await store.update(other.id, { content: `${index.content} More.`, expectedUpdated: index.updated }).then(() => "ok", (error: Error) => error.message)).toBe("ok");
+    const { entries } = await readHistory(historyDir(dir, id));
+    const restorable = entries.find((entry) => entry.source === "app");
+    if (restorable) await step("a restore", () => store.restoreVersion(id, restorable.file, { expectedUpdated: version, writer: "w" }) as Promise<{ updated: string }>);
+    expect(await externals(dir, id)).toBe(0);
+    expect(await externals(dir, other.id)).toBe(0);
+
+    // A board and a base, saved, rescanned and saved again.
+    const board = await store.createBoard({ title: "Map" });
+    let boardVersion = (await store.updateBoard(board.meta.id, { board: { nodes: [{ id: "a", type: "text", text: "Hi", x: 0, y: 0, width: 100, height: 40 }], edges: [] }, expectedUpdated: board.meta.updated })).meta.updated;
+    await store.rescan();
+    boardVersion = (await store.updateBoard(board.meta.id, { board: { nodes: [], edges: [] }, expectedUpdated: boardVersion })).meta.updated;
+    expect(boardVersion).toBeTruthy();
+    const base = await store.createBase({ title: "Accounts" });
+    await store.rescan();
+    const fresh = store.list().find((meta) => meta.id === base.meta.id)!;
+    expect(await store.updateBase(base.meta.id, { config: base.config, expectedUpdated: fresh.updated }).then(() => "ok", (error: Error) => error.message)).toBe("ok");
   });
 
   it("the outside text is kept in History as an outside version", async () => {
