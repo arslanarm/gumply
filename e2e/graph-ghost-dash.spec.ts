@@ -9,7 +9,7 @@ import { API_URL, E2E_VAULT } from './support/env';
  * dashed when a big graph is zoomed in. Chrome strokes a dashed path in one go
  * and, past ~1-2 M dash intervals, silently strokes it solid: a synthetic page
  * showed one path of 4,000 long dashed segments stroked solid at every zoom
- * (1,000 still dashed; `scripts/perf/zz-znab-dashcap.mjs`, task thread), and on
+ * (1,000 still dashed; the probe and its numbers are in the #znabmb8n task thread), and on
  * the 10k perf vault zoomed in ~4.6× main drew its ghost links solid. The link
  * picture now cuts every link to the view before pathing it, so its dashed path
  * holds only on-screen lengths. This vault (20 missing pages linked from notes
