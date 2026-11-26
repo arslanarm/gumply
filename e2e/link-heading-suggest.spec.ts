@@ -53,6 +53,29 @@ test('[[Page# lists its headings; picking one writes [[Page#Heading]]', async ({
   expect((await vault.pages()).some((meta) => meta.title.includes('#'))).toBe(false);
 });
 
+test('#2zugp8qc: Enter while the last letter\'s headings are still loading writes the whole link, nothing left outside it', async ({ page, vault, request }) => {
+  await vault.seed([{ title: 'Target', content: '## Goals\n\nText.\n\n## Risks\n\nMore.\n' }]);
+  const [note] = await vault.seed([{ title: 'Note', content: '' }]);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Note');
+
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.type('[[Target#R');
+  const menu = page.getByTestId('link-menu');
+  // Only Risks is left after "R" (Goals has no R).
+  await expect(menu.getByRole('option', { name: 'Risks' })).toBeVisible({ timeout: 15_000 });
+  await expect(menu.getByRole('option')).toHaveCount(1);
+  // From now on Target's headings answer slowly (a loaded machine): the menu still shows the "R" answer when Enter comes.
+  await page.route(`**/api/pages/${encodeURIComponent('Target')}*`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.keyboard.type('i');
+  await page.keyboard.press('Enter');
+
+  await expectSaved(request, note!.id, '[[Target#Risks]]');
+});
+
 test('[[# lists the open note\'s own headings and writes [[#Heading]]', async ({ page, vault, request }) => {
   const [note] = await vault.seed([{ title: 'Note', content: '## Alpha\n\nFirst.\n' }]);
   await page.goto(`/#/${encodeURIComponent(note!.id)}`);
