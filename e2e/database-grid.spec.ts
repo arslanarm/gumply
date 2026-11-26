@@ -498,3 +498,38 @@ test('a new database in Russian names its first view «Таблица» (@polish
   const file = (await fs.readdir(E2E_VAULT)).find((name) => name.endsWith('.base'))!;
   expect(await read(file)).toContain('    name: Таблица\n');
 });
+
+test('"Edit options…" renames an option in the rows, recolours and reorders it in the base, and deletes one with its values (phase 3)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  await page.getByTestId('base-th-note.role').click();
+  await page.getByTestId('base-column-type-select').click();
+  await expect.poll(() => read('People.base')).toContain('gumplyType: select');
+
+  const openEditor = async () => {
+    await page.getByTestId('base-th-note.role').click();
+    await page.getByTestId('base-edit-options').click();
+    await expect(page.getByTestId('base-options-editor')).toBeVisible();
+  };
+  // Rename Cook → Chef: Ann's row follows, and so does the option.
+  await openEditor();
+  const name = page.getByTestId('base-option-name-Cook');
+  await name.fill('Chef');
+  await name.press('Enter');
+  await expect.poll(() => read('People/Ann.md')).toBe('---\nrole: Chef\nage: 30\n---\nAnn\n');
+  await expect.poll(() => read('People.base')).toContain('      - value: Chef\n        color: brown\n');
+
+  // Recolour Pilot and move Chef below it: the base only.
+  await page.getByTestId('base-option-color-Pilot-green').click();
+  await expect.poll(() => read('People.base')).toContain('      - value: Pilot\n        color: green\n');
+  await page.getByTestId('base-option-down-Chef').click();
+  await expect.poll(() => read('People.base')).toMatch(/- value: Pilot\n {8}color: green\n {6}- value: Chef\n/);
+  expect(await read('People/Bo.md')).toBe(PEOPLE['People/Bo.md']);
+
+  // Delete Pilot and clear it from the rows: Bo loses the value.
+  await page.getByTestId('base-option-delete-Pilot').click();
+  await page.getByTestId('base-option-delete-clear').click();
+  await expect.poll(() => read('People/Bo.md')).not.toContain('Pilot');
+  await expect.poll(() => read('People.base')).not.toContain('value: Pilot');
+});
