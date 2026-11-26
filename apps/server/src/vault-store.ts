@@ -899,6 +899,12 @@ export class VaultStore {
    * into the directory on every Node version and platform.
    */
   private readonly directoryWatchers = new Map<string, FSWatcher>();
+  /**
+   * #zh87z4pf: the directory each watcher was made for (its inode). A watch follows the directory, not
+   * its path: a folder moved away (the Trash, a sync tool, git) and made again at the same path keeps
+   * the old watcher, which then watches the moved one. A path whose directory changed is watched anew.
+   */
+  private readonly watchedInodes = new Map<string, number>();
   private watching = false;
   private watchTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -1067,6 +1073,7 @@ export class VaultStore {
     }
     for (const watcher of this.directoryWatchers.values()) watcher.close();
     this.directoryWatchers.clear();
+    this.watchedInodes.clear();
     if (this.pruneTimer) clearTimeout(this.pruneTimer);
     this.pruneTimer = null;
   }
@@ -1097,22 +1104,37 @@ export class VaultStore {
     if (!this.watching) return 0;
     let added = 0;
     const wanted = new Set(this.vaultDirectories());
+    const inodeOf = (dir: string): number | null => {
+      try {
+        return statSync(dir).ino;
+      } catch {
+        return null;
+      }
+    };
     for (const [dir, watcher] of this.directoryWatchers) {
-      if (wanted.has(dir)) continue;
+      // #zh87z4pf: still wanted, and still the same directory (a folder made again at this path is another one).
+      if (wanted.has(dir) && inodeOf(dir) === this.watchedInodes.get(dir)) continue;
       watcher.close();
       this.directoryWatchers.delete(dir);
+      this.watchedInodes.delete(dir);
     }
     for (const dir of wanted) {
       if (this.directoryWatchers.has(dir)) continue;
       try {
+        const ino = inodeOf(dir);
         const watcher = watch(dir, (_event, filename) => this.onWatchEvent(dir, filename));
         watcher.on("error", () => {
           watcher.close();
-          this.directoryWatchers.delete(dir);
+          // Only this watcher's entry: a newer one for the same path stays.
+          if (this.directoryWatchers.get(dir) === watcher) {
+            this.directoryWatchers.delete(dir);
+            this.watchedInodes.delete(dir);
+          }
           this.pendingFull = true;
           this.scheduleRescan();
         });
         this.directoryWatchers.set(dir, watcher);
+        if (ino !== null) this.watchedInodes.set(dir, ino);
         added += 1;
       } catch {
         // Gone already (or no permission): the next rescan settles it.
