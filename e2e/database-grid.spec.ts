@@ -587,6 +587,8 @@ test('the paste preview offers Select for a column of repeated values, and makes
   const typing = page.getByTestId('base-typing-input');
   await typing.click();
   await paste(page, 'Name\tstage\nIvy\tTodo\nOtto\tDone\nAl\tTodo\n');
+  // Every column is text, so the header row isn't guessed (spec §5): say so.
+  await page.getByTestId('base-paste-headers').check();
   // Guessed as text, with the hint (never a Select by itself).
   await expect(page.getByTestId('base-paste-type-1')).toHaveValue('text');
   await expect(page.getByTestId('base-paste-select-hint-1')).toBeVisible();
