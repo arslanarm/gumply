@@ -1311,6 +1311,8 @@
     "addBaseInside": "Add view of pages inside",
     "deleteBase": "Delete database view",
     "deleted": "Database view deleted",
+    "deleteDatabase": "Delete database",
+    "deletedDatabase": "Database deleted",
     "views": "Views",
     "addView": "Add view",
     "viewType": {

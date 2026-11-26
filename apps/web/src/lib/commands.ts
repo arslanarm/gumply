@@ -144,6 +144,8 @@ export function menuLabel(id: PageCommandId, page: PageMeta): string {
       return t("history.menuItem");
     case "page.delete": {
       const k = kind(page)!;
+      // #959nz9nr: a database that owns its rows is deleted as a database (with them, by default), not as a view.
+      if (k.base && page.rowsFolder) return t("bases.deleteDatabase");
       return k.board ? t("sidebar.deleteBoard") : k.base ? t("bases.deleteBase") : k.folder ? t("sidebar.deleteFolder") : t("sidebar.deletePage");
     }
   }
