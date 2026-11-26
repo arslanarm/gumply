@@ -5243,11 +5243,6 @@ input {
   background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
-.trash-empty-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .trash-intro {
   margin: 0.45rem 0 0;
   color: var(--muted);

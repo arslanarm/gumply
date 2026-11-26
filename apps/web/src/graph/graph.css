@@ -700,11 +700,6 @@
   margin-top: 0.15rem;
 }
 
-.graph-forces-reset:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .graph-legend-query {
   overflow: hidden;
   text-overflow: ellipsis;
