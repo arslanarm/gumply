@@ -172,6 +172,15 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10, #z9hu
   await page.goto('/#/Writer');
   await page.getByTestId('editor-content').waitFor();
   await expect(page.getByTestId('editor-content')).toContainText('Notes about');
+  // #z9hufufn (@opus-hunter): every save state, sampled until the end, so a conflict can't pass unseen.
+  await page.evaluate(() => {
+    const states = new Set<string>();
+    (window as unknown as { __states: Set<string> }).__states = states;
+    setInterval(() => {
+      const state = document.querySelector('[data-testid="save-status"]')?.getAttribute('data-state');
+      if (state) states.add(state);
+    }, 50);
+  });
   await page.getByTestId('page-item-Hub').hover();
   await page.getByTestId('page-menu-button-Hub').click();
   await page.getByTestId('rename-page-Hub').click();
@@ -194,6 +203,8 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10, #z9hu
   // the save is merged (the typing, and the new link on the line it didn't touch): no conflict at all.
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 30_000 });
   await expect(page.getByTestId('conflict-keep-mine')).toHaveCount(0);
+  const states = await page.evaluate(() => [...(window as unknown as { __states: Set<string> }).__states]);
+  expect(states, 'never "This page changed on disk", at any moment').not.toContain('conflict');
   const text = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
   expect(text).toContain(' last');
   expect(text).toContain('[[Hub renamed]]');
