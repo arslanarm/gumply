@@ -46,6 +46,8 @@ export interface BoardViewProps {
   initial?: BoardDocument;
   pages?: readonly BoardPageOption[];
   onSaveState: (state: SaveState) => void;
+  /** #bajn9rna: the error a failed save ended with (App shows its reason). */
+  onSaveError?: (error: unknown) => void;
   /** After a save: the server's metadata and the id it was saved under. */
   onSaved?: (meta: PageMeta, savedId: string) => void;
   onConflictBackup?: (path: string) => void;
@@ -129,6 +131,7 @@ export function BoardView(props: BoardViewProps) {
           );
         },
         isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
+        onError: (error) => latest.current.onSaveError?.(error),
         onState: (state) => latest.current.onSaveState(state),
       }),
     [],

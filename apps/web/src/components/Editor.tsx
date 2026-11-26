@@ -145,6 +145,8 @@ export interface EditorProps {
   page: Page;
   pages: readonly PageMeta[];
   onSaveState: (state: SaveState) => void;
+  /** #bajn9rna: the error a failed save ended with (App shows its reason). */
+  onSaveError?: (error: unknown) => void;
   /** After a save: the server's page and the id it was saved under. */
   onSaved?: (page: Page, savedId: string) => void;
   /**
@@ -250,6 +252,7 @@ export function Editor({
   page,
   pages,
   onSaveState,
+  onSaveError,
   onSaved,
   waitForRename,
   onRenameRewroteOwn,
@@ -279,6 +282,8 @@ export function Editor({
 
   const onSaveStateRef = useRef(onSaveState);
   onSaveStateRef.current = onSaveState;
+  const onSaveErrorRef = useRef(onSaveError);
+  onSaveErrorRef.current = onSaveError;
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
   const waitForRenameRef = useRef(waitForRename);
@@ -413,6 +418,7 @@ export function Editor({
         );
       },
       isConflict: (error) => error instanceof ApiRequestError && error.status === 409,
+      onError: (error) => onSaveErrorRef.current?.(error),
       onState: (state) => onSaveStateRef.current(state),
     });
     instance.reset(page.content);

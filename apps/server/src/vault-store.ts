@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { constants as fsConstants, existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
+import { access, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   coercePropertyValue,
@@ -125,7 +125,7 @@ import {
   type ConflictsList,
   type PossibleCopy,
 } from "@gumply/core";
-import { badRequest, conflict, notFound, payloadTooLarge } from "./errors.js";
+import { badRequest, conflict, notFound, payloadTooLarge, readOnly } from "./errors.js";
 import {
   boardDiff,
   budgetFor,
@@ -822,6 +822,21 @@ function hasHistory(kind: PageKind): boolean {
 
 function historyExt(kind: PageKind): "md" | "canvas" | "base" {
   return kind === "whiteboard" ? "canvas" : kind === "base" ? "base" : "md";
+}
+
+/**
+ * #bajn9rna: a file the user or another tool made read-only is never replaced.
+ * (On Unix the atomic temp + rename needs only a writable folder, so without
+ * this check a save replaced it and dropped its mode.) A file that doesn't
+ * exist yet is fine.
+ */
+async function assertWritable(file: string): Promise<void> {
+  try {
+    await access(file, fsConstants.W_OK);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EACCES" || code === "EPERM") throw readOnly("This file is read-only on disk. Make it writable to save; your text is kept.");
+  }
 }
 
 function mtimeVersion(mtimeMs: number): string {
@@ -3321,6 +3336,7 @@ export class VaultStore {
     board: CanvasBoard,
     options: { minimal?: boolean; base?: string } = {},
   ): Promise<string | undefined> {
+    await assertWritable(record.filePath);
     let repairBackup: string | undefined;
     let text: string | null = null;
     if (options.minimal && !record.boardRepaired && record.board) {
@@ -3519,6 +3535,7 @@ export class VaultStore {
   }
 
   private async writeBaseFile(record: PageRecord, text: string): Promise<void> {
+    await assertWritable(record.filePath);
     const temporary = tempPathBeside(record.filePath);
     let stats: import("node:fs").Stats;
     try {
@@ -6745,6 +6762,7 @@ export class VaultStore {
     /** #3c86ify2: the existing frontmatter YAML with rewritten link values (used as the template's YAML). */
     frontmatterYaml?: string,
   ): Promise<{ mtimeMs: number; frontmatter: boolean; titleKey: boolean; text: string }> {
+    await assertWritable(filePath);
     await mkdir(dirname(filePath), { recursive: true });
     // Use the current file as the byte template so unknown frontmatter keys,
     // comments, key order, flow style, CRLF and the trailing newline survive
