@@ -171,4 +171,28 @@ test.describe('Import from Notion (B4)', () => {
     await page.getByTestId('notion-import-start').click();
     await expect(page.getByTestId('notion-import-error')).toHaveText('That file is too large to import (over 1 GB).');
   });
+
+  for (const language of ['en', 'ru'] as const) {
+    test(`a damaged export (#4zzay6mn, ${language}): its own words naming the file, no English detail, nothing written`, async ({ page, vault }) => {
+      if (language === 'ru') await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+      await vault.seed([{ title: 'Home', content: 'Hi' }]);
+      await page.goto('/#/Home');
+      await expectPageTitle(page, 'Home');
+      await openFromCmdK(page);
+      // @polish-dev's #x8uddj3z repro: 64 bytes overwritten a third of the way in.
+      const zip = await fixtureZip();
+      const at = Math.floor(zip.length / 3);
+      zip.fill(0x41, at, at + 64);
+      await page.getByTestId('notion-import-file').setInputFiles({ name: 'Export-1234.zip', mimeType: 'application/zip', buffer: zip });
+      await page.getByTestId('notion-import-start').click();
+      const message =
+        language === 'en'
+          ? /^The export looks damaged \(file [^)]+\)\. Download it again from Notion\.$/
+          : /^Похоже, экспорт повреждён \(файл [^)]+\)\. Скачайте его из Notion заново\.$/;
+      await expect(page.getByTestId('notion-import-error')).toHaveText(message, { timeout: 15_000 });
+      await expect(page.getByTestId('notion-import-failed')).not.toContainText(language === 'en' ? 'Details:' : 'Подробности:');
+      await expect(fs.access(path.join(E2E_VAULT, 'Notion import'))).rejects.toThrow();
+      await expect(fs.access(path.join(E2E_VAULT, 'attachments', 'Notion import'))).rejects.toThrow();
+    });
+  }
 });

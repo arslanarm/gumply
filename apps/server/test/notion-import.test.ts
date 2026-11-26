@@ -461,6 +461,8 @@ describe("a damaged export (#4zzay6mn)", () => {
     for (const keep of [0.3, 0.6, 0.9]) expect(() => readNotionZip(intact.subarray(0, Math.floor(intact.length * keep))), `${keep}`).toThrow(damagedMessage());
     expect(() => readNotionZip(intact.subarray(0, intact.length - 10))).toThrow(damagedMessage());
     await expectDamaged(intact.slice(0, Math.floor(intact.length * 0.6)), undefined);
+    // A file that was never a zip keeps the general failure (the dialog's "couldn't use this file").
+    expect(() => readNotionZip(new TextEncoder().encode("this is not a zip"))).toThrow(/invalid zip data/);
   });
 
   it("64 bytes overwritten a third of the way in (@polish-dev's #x8uddj3z export) fails; started in Russian, the API reason stays English", async () => {

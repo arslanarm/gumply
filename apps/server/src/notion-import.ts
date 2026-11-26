@@ -223,7 +223,9 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
   try {
     out = unzipSync(zip, { filter });
   } catch (error) {
-    // Cut short (no end-of-directory record), or an entry that doesn't inflate.
+    // Not a zip at all (no zip signature at the start): the general failure, as before.
+    if (zip.length < 4 || new DataView(zip.buffer, zip.byteOffset, zip.byteLength).getUint32(0, true) !== 0x04034b50) throw error;
+    // A zip cut short (no end-of-directory record), or an entry that doesn't inflate.
     const code = (error as { code?: unknown }).code;
     throw new NotionZipDamaged(typeof code === "number" && ENTRY_ERRORS.has(code) ? reading : undefined);
   }
