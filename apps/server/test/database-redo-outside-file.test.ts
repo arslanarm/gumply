@@ -12,7 +12,7 @@ import { cleanupVaults, createTestServer } from "./helpers";
  * just before the move. Synthetic vault.
  */
 
-const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string; dir?: boolean }, noHardLinks: false }));
+const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string; dir?: boolean }, noHardLinks: false, trashBusy: false }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -37,16 +37,23 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     if (outside.noHardLinks) throw Object.assign(new Error("EPERM: operation not permitted, link (test)"), { code: "EPERM" });
     return actual.link(from, to);
   };
-  return { ...actual, rename, link, default: { ...actual, rename, link } };
+  // A file in the Trash that can't be removed (a Windows lock, a read-only folder).
+  const unlink: typeof actual.unlink = async (path) => {
+    if (outside.trashBusy && String(path).includes(".trash")) throw Object.assign(new Error("EBUSY: resource busy or locked, unlink (test)"), { code: "EBUSY" });
+    return actual.unlink(path);
+  };
+  return { ...actual, rename, link, unlink, default: { ...actual, rename, link, unlink } };
 });
 
 beforeEach(() => {
   outside.before = null;
   outside.noHardLinks = false;
+  outside.trashBusy = false;
 });
 afterEach(async () => {
   outside.before = null;
   outside.noHardLinks = false;
+  outside.trashBusy = false;
   await cleanupVaults();
 });
 
@@ -146,5 +153,18 @@ describe("on a file system without hard links (FAT/exFAT; `link` throws EPERM) a
     expect(outside.before, "the move was reached").toBeNull();
     expect(await readFile(join(server.dir, "Note.md"), "utf8")).toBe(OUTSIDE);
     expect(await readFile(join(server.dir, "Note 2.md"), "utf8")).toBe("Mine, trashed.\n");
+  });
+
+  it("the Trash copy can't be removed (EBUSY): the Restore fails cleanly, the page stays in the Trash and nothing new is in the vault (@opus-editor)", async () => {
+    const server = await createTestServer();
+    await writeFile(join(server.dir, "Note.md"), "Mine, trashed.\n", "utf8");
+    await server.store.rescan();
+    const { trashId } = await server.store.remove("Note");
+    outside.trashBusy = true;
+    await expect(server.store.restore(trashId!)).rejects.toThrow();
+    outside.trashBusy = false;
+    const { readdir } = await import("node:fs/promises");
+    expect((await readdir(server.dir)).filter((name) => name.endsWith(".md"))).toEqual([]);
+    expect((await server.store.listTrash()).map((item) => item.trashId)).toEqual([trashId]);
   });
 });
