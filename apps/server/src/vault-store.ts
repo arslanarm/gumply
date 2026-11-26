@@ -373,12 +373,45 @@ export interface OwnedRowsChange {
   baseRefused?: boolean;
   /** The base as it is now (its version for the caller's next save). */
   base: BaseDocument;
+  /** #7prbquxu phase 4b: each file written, with its version before and after (the table's undo). */
+  files: UndoFile[];
 }
 
 /** A new base's first view name from the request: one line, trimmed, at most 64 characters; else none. */
 function viewNameOf(input: { viewName?: unknown }): { viewName?: string } {
   const name = typeof input.viewName === "string" ? input.viewName.replace(/[\r\n]+/g, " ").trim().slice(0, 64) : "";
   return name ? { viewName: name } : {};
+}
+
+/** #7prbquxu phase 4b: one undo (or redo) step of the table (`POST /api/bases/:id/undo`). */
+export interface UndoInput {
+  /** Files back to an earlier version `to`, each only while at `from`. */
+  files?: Array<{ id: PageId; from: string; to: string }>;
+  /** Rows a paste made, deleted while still at `from`. */
+  drop?: Array<{ id: PageId; from: string }>;
+  /** Rows made again from their History version `to` (a redo of a paste). */
+  create?: Array<{ id: PageId; to: string }>;
+}
+
+/** What an undo step did; `files`, `dropped` and `created` give its inverse (redo). Empty with `refused`. */
+export interface UndoResult {
+  refused: Array<{ id: PageId; title: string }>;
+  files: UndoFile[];
+  dropped: Array<{ id: PageId; before: string }>;
+  created: Array<{ id: PageId; after: string }>;
+  base?: BaseDocument;
+}
+
+/** #7prbquxu phase 4b: a file a database op wrote, with its version before and after (History keeps both). */
+export interface UndoFile {
+  id: PageId;
+  before: string;
+  after: string;
+}
+
+/** The written rows (and the base, when written) as undo files. */
+function filesOf(rows: ReadonlyArray<{ id: PageId; before: string; updated: string }>, base: UndoFile | null): UndoFile[] {
+  return [...rows.map((row) => ({ id: row.id, before: row.before, after: row.updated })), ...(base ? [base] : [])];
 }
 
 /** #7prbquxu phase 3: what an option rename or clear did (`POST /api/bases/:id/rows-option`). */
@@ -391,6 +424,8 @@ export interface OwnedRowsOption {
   baseRefused?: boolean;
   /** The base as it is now (its options and version). */
   base: BaseDocument;
+  /** #7prbquxu phase 4b: each file written, with its version before and after (the table's undo). */
+  files: UndoFile[];
 }
 
 /** #7prbquxu phase 2: the most rows one paste may write (the client asks once more above 1,000). */
@@ -410,6 +445,10 @@ export interface OwnedRowsPaste {
   trashed: Array<{ id: PageId; title: string }>;
   /** The new columns couldn't be added (the base changed meanwhile): the rows were put back too. */
   baseRefused?: boolean;
+  /** #7prbquxu phase 4b: existing rows (and the base) written, with versions before and after. */
+  files: UndoFile[];
+  /** #7prbquxu phase 4b: the new rows made, with the version this paste left them at. */
+  made: Array<{ id: PageId; after: string }>;
 }
 
 interface PageRecord extends Omit<Page, "childCount"> {
@@ -2920,6 +2959,124 @@ export class VaultStore {
   }
 
   /**
+   * #7prbquxu phase 4b (spec/database-tables §7, @lead): the table's undo (and redo), one queued job, all or nothing.
+   * `files` go back to an earlier History version (`to`), each only while it's still at `from`; `drop` deletes rows
+   * a paste made, only while unchanged; `create` makes rows again from their History version (a redo of a paste).
+   * Everything is checked before any write: a row changed since, a missing History version, or a name taken
+   * refuses the whole step and names the rows. Each file's current bytes are kept as a History version first, so
+   * the answer's inverse (redo) can always be applied.
+   */
+  undoDatabaseChange(id: PageId, input: UndoInput): Promise<UndoResult> {
+    return this.enqueue(() => this.asDatabaseChange(() => this.undoDatabaseChangeNow(this.resolveId(id), input)));
+  }
+
+  private async historyBytes(id: PageId, version: string): Promise<Buffer | null> {
+    const dir = historyDir(this.root, id);
+    const { entries } = await readHistory(dir).catch(() => ({ entries: [] as HistoryEntry[] }));
+    const entry = [...entries].reverse().find((candidate) => candidate.version === version);
+    return entry ? readFile(join(dir, entry.file)).catch(() => null) : null;
+  }
+
+  private async undoDatabaseChangeNow(id: PageId, input: UndoInput): Promise<UndoResult> {
+    const base = this.requireBase(id);
+    const folder = this.ownedRowsOf(base, id);
+    const files = Array.isArray(input?.files) ? input.files : [];
+    const drop = Array.isArray(input?.drop) ? input.drop : [];
+    const create = Array.isArray(input?.create) ? input.create : [];
+    const inRows = (rowId: PageId) => folder !== null && rowId.startsWith(`${folder}/`) && !rowId.slice(folder.length + 1).includes("/");
+    const refused: Array<{ id: PageId; title: string }> = [];
+    const titleOf = (rowId: PageId) => this.pages.get(rowId)?.title ?? (rowId.split("/").pop() ?? rowId);
+
+    // Check everything first.
+    const planned: Array<{ record: PageRecord; from: string; bytes: Buffer }> = [];
+    for (const file of files) {
+      if (typeof file?.id !== "string" || typeof file.from !== "string" || typeof file.to !== "string") throw badRequest("each file needs id, from and to");
+      if (file.id !== id && !inRows(file.id)) throw badRequest(`not this database or one of its rows: ${file.id}`);
+      const record = this.pages.get(file.id);
+      const bytes = record && record.updated === file.from ? await this.historyBytes(file.id, file.to) : null;
+      if (!record || !bytes || record.updated !== file.from || (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null)))) {
+        refused.push({ id: file.id, title: titleOf(file.id) });
+        continue;
+      }
+      planned.push({ record, from: file.from, bytes });
+    }
+    const dropping: Array<{ record: PageRecord; from: string }> = [];
+    for (const row of drop) {
+      if (typeof row?.id !== "string" || typeof row.from !== "string") throw badRequest("each dropped row needs id and from");
+      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
+      const record = this.pages.get(row.id);
+      if (!record || record.updated !== row.from || this.hasChildren(row.id) || (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null)))) {
+        refused.push({ id: row.id, title: titleOf(row.id) });
+        continue;
+      }
+      dropping.push({ record, from: row.from });
+    }
+    const creating: Array<{ id: PageId; bytes: Buffer }> = [];
+    for (const row of create) {
+      if (typeof row?.id !== "string" || typeof row.to !== "string") throw badRequest("each row to make needs id and to");
+      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
+      const bytes = await this.historyBytes(row.id, row.to);
+      if (!bytes || this.pages.has(row.id) || (await pathExists(this.filePathFor(row.id)))) {
+        refused.push({ id: row.id, title: titleOf(row.id) });
+        continue;
+      }
+      creating.push({ id: row.id, bytes });
+    }
+    if (refused.length) return { refused, files: [], dropped: [], created: [] };
+
+    // Then write; each file's current bytes go into History first (redo reads them).
+    const written: UndoFile[] = [];
+    for (const { record, from, bytes } of planned) {
+      if (record.kind === "base") {
+        await this.writeBaseFile(record, bytes.toString("utf8"));
+        written.push({ id: record.id, before: from, after: record.updated });
+        continue;
+      }
+      await this.versionBeforeWrite(record.filePath, await readFile(record.filePath));
+      if (!(await this.putPasteBytesBack(record.id, bytes, from))) throw conflict(`${record.id} changed while it was being undone`);
+      written.push({ id: record.id, before: from, after: this.pages.get(record.id)!.updated });
+    }
+    const dropped: Array<{ id: PageId; before: string }> = [];
+    for (const { record, from } of dropping) {
+      await this.versionBeforeWrite(record.filePath, await readFile(record.filePath));
+      await rm(record.filePath);
+      this.pages.delete(record.id);
+      this.forgetSessionBytes(record.id);
+      dropped.push({ id: record.id, before: from });
+    }
+    const created: Array<{ id: PageId; after: string }> = [];
+    for (const { id: rowId, bytes } of creating) {
+      const filePath = this.filePathFor(rowId);
+      await mkdir(dirname(filePath), { recursive: true });
+      this.markOwnWrite(filePath);
+      await writeFile(filePath, bytes, { flag: "wx" });
+      const record = await this.readRecord(filePath, rowId);
+      record.parentId = parentOf(rowId);
+      this.pages.set(rowId, record);
+      created.push({ id: rowId, after: record.updated });
+    }
+    if (written.length || dropped.length || created.length) {
+      await this.syncFolders();
+      this.reindexAll();
+    }
+    return { refused: [], files: written, dropped, created, base: this.getBase(id) };
+  }
+
+  /**
+   * #7prbquxu phase 4b (@lead): a database op's writes keep each file's bytes before it as a History version,
+   * never coalesced into an edit session (reason "database"), so the table's undo can always find them.
+   */
+  private async asDatabaseChange<T>(work: () => Promise<T>): Promise<T> {
+    const saved = this.historyReason;
+    this.historyReason = "database";
+    try {
+      return await work();
+    } finally {
+      this.historyReason = saved;
+    }
+  }
+
+  /**
    * #7prbquxu phase 4 (spec/database-tables §1): delete a database and its rows folder together. The folder goes
    * to the Trash first, then the base; their two entries are linked, so the Trash lists one item and restoring
    * it brings both back. A base that owns no folder is an ordinary delete.
@@ -3679,7 +3836,7 @@ export class VaultStore {
     change: { rename: { from: string; to: string } } | { remove: string },
     options: { expectedUpdated?: string; writer?: string } = {},
   ): Promise<OwnedRowsChange> {
-    return this.enqueue(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change, options));
+    return this.enqueue(() => this.asDatabaseChange(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change, options)));
   }
 
   private async changeOwnedRowsPropertyNow(
@@ -3722,15 +3879,16 @@ export class VaultStore {
     }
     const named = (records: PageRecord[]) => records.map((record) => ({ id: record.id, title: record.title }));
     const answer = (result: Omit<OwnedRowsChange, "base">): OwnedRowsChange => ({ ...result, base: this.getBase(id) });
-    if (clash.length) return answer({ changed: [], skipped: [], clash: named(clash), stuck: [] });
+    if (clash.length) return answer({ changed: [], skipped: [], clash: named(clash), stuck: [], files: [] });
 
-    const changed: Array<{ id: PageId; updated: string }> = [];
+    const changed: Array<{ id: PageId; updated: string; before: string }> = [];
     const skipped: PageRecord[] = [];
     for (const record of rows) {
       try {
         const patch = to !== null ? { rename: [{ from: key, to }] } : { remove: [key] };
+        const before = record.updated;
         const page = await this.updateNow(record.id, { properties: patch, expectedUpdated: record.updated });
-        changed.push({ id: page.id, updated: page.updated });
+        changed.push({ id: page.id, updated: page.updated, before });
       } catch (error) {
         // Any error (a refusal, a lock, I/O): this row didn't change. One the store didn't expect is logged.
         if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: ${record.id} failed:`, error);
@@ -3740,12 +3898,14 @@ export class VaultStore {
 
     const next = to !== null ? renameKeyInConfig(config, key, to) : dropKeyFromConfig(config, key);
     const text = updateBaseSource(base.baseSource ?? "", next);
+    let baseFile: { id: PageId; before: string; after: string } | null = null;
     const writeBase = async (): Promise<boolean> => {
       if (text === base.baseSource) return true;
       if (!(await baseUnchanged())) return false;
       try {
         const replaced = base.updated;
         await this.writeBaseFile(base, text);
+        baseFile = { id: base.id, before: replaced, after: base.updated };
         if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
         else delete base.ownWrite;
         return true;
@@ -3758,10 +3918,17 @@ export class VaultStore {
     if (to === null) {
       // A delete: the column goes only when every row lost the key.
       const baseWritten = skipped.length === 0 ? await writeBase() : false;
-      return answer({ changed: changed.map((row) => row.id), skipped: named(skipped), clash: [], stuck: [], ...(skipped.length === 0 && !baseWritten ? { baseRefused: true } : {}) });
+      return answer({
+        changed: changed.map((row) => row.id),
+        skipped: named(skipped),
+        clash: [],
+        stuck: [],
+        files: filesOf(changed, baseFile),
+        ...(skipped.length === 0 && !baseWritten ? { baseRefused: true } : {}),
+      });
     }
     const baseWritten = skipped.length === 0 && (await writeBase());
-    if (baseWritten) return answer({ changed: changed.map((row) => row.id), skipped: [], clash: [], stuck: [] });
+    if (baseWritten) return answer({ changed: changed.map((row) => row.id), skipped: [], clash: [], stuck: [], files: filesOf(changed, baseFile) });
     // All or nothing: the rows already renamed go back. One that can't (changed again, locked, an error)
     // keeps the new name and is named, so nothing is silently half-renamed (@lead).
     const stuck: PageRecord[] = [];
@@ -3774,7 +3941,7 @@ export class VaultStore {
         if (record) stuck.push(record);
       }
     }
-    return answer({ changed: [], skipped: named(skipped), clash: [], stuck: named(stuck), ...(skipped.length === 0 ? { baseRefused: true } : {}) });
+    return answer({ changed: [], skipped: named(skipped), clash: [], stuck: named(stuck), files: [], ...(skipped.length === 0 ? { baseRefused: true } : {}) });
   }
 
   /**
@@ -3790,7 +3957,7 @@ export class VaultStore {
     input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: { view: string; keys: string[] } },
     options: { expectedUpdated?: string; writer?: string } = {},
   ): Promise<OwnedRowsPaste> {
-    return this.enqueue(() => this.pasteIntoOwnedRowsNow(this.resolveId(id), input, options));
+    return this.enqueue(() => this.asDatabaseChange(() => this.pasteIntoOwnedRowsNow(this.resolveId(id), input, options)));
   }
 
   private async pasteIntoOwnedRowsNow(
@@ -3850,12 +4017,13 @@ export class VaultStore {
     const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
     const refused: Array<{ id: PageId; title: string }> = [];
     // Each set row's bytes before the paste, to put back exactly (D37), and the version our write left.
-    const done: Array<{ id: PageId; updated: string; bytes: Buffer }> = [];
+    const done: Array<{ id: PageId; updated: string; bytes: Buffer; before: string }> = [];
     for (const { record, set, expected } of existing) {
       try {
         const bytes = await readFile(record.filePath);
+        const before = record.updated;
         const page = await this.updateNow(record.id, { properties: { set }, expectedUpdated: expected });
-        done.push({ id: page.id, updated: page.updated, bytes });
+        done.push({ id: page.id, updated: page.updated, bytes, before });
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: ${record.id} failed:`, error);
         refused.push({ id: record.id, title: record.title });
@@ -3882,11 +4050,24 @@ export class VaultStore {
     }
     // New columns (a paste's headers): added to the view's order in the same job, after the rows.
     let baseRefused = false;
+    let baseFile: UndoFile | null = null;
     if (refused.length === 0 && input.columns && input.columns.keys.length) {
-      baseRefused = !(await this.addColumnsToView(base, input.columns, options));
+      const written = await this.addColumnsToView(base, input.columns, options);
+      baseRefused = written === false;
+      if (typeof written === "object") baseFile = written;
       if (baseRefused) refused.push({ id, title: base.title });
     }
-    if (refused.length === 0) return { changed: done.map((row) => row.id), created: created.map((row) => row.id), refused: [], stuck: [], trashed: [] };
+    if (refused.length === 0) {
+      return {
+        changed: done.map((row) => row.id),
+        created: created.map((row) => row.id),
+        refused: [],
+        stuck: [],
+        trashed: [],
+        files: filesOf(done, baseFile),
+        made: created.map((row) => ({ id: row.id, after: row.updated })),
+      };
+    }
 
     // All or nothing: the set rows get their exact earlier bytes back (only while the file is still as our
     // write left it), the new rows go to the Trash (counted, so the alert can say so).
@@ -3922,7 +4103,7 @@ export class VaultStore {
       }
     }
     if (putBack || dropped) this.reindexAll();
-    return { changed: [], created: [], refused: named(refused), stuck, trashed, ...(baseRefused ? { baseRefused: true } : {}) };
+    return { changed: [], created: [], refused: named(refused), stuck, trashed, files: [], made: [], ...(baseRefused ? { baseRefused: true } : {}) };
   }
 
   /**
@@ -3975,7 +4156,7 @@ export class VaultStore {
     base: PageRecord,
     columns: { view: string; keys: string[] },
     options: { expectedUpdated?: string; writer?: string },
-  ): Promise<boolean> {
+  ): Promise<boolean | UndoFile> {
     for (const key of columns.keys) if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
     let config: BaseConfig;
     try {
@@ -3997,7 +4178,7 @@ export class VaultStore {
       await this.writeBaseFile(base, text);
       if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
       else delete base.ownWrite;
-      return true;
+      return { id: base.id, before: replaced, after: base.updated };
     } catch (error) {
       if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: writing ${base.id} failed:`, error);
       return false;
@@ -4017,7 +4198,7 @@ export class VaultStore {
     change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string },
     options: { expectedUpdated?: string; writer?: string } = {},
   ): Promise<OwnedRowsOption> {
-    return this.enqueue(() => this.changeOwnedRowsOptionNow(this.resolveId(id), change, options));
+    return this.enqueue(() => this.asDatabaseChange(() => this.changeOwnedRowsOptionNow(this.resolveId(id), change, options)));
   }
 
   private async changeOwnedRowsOptionNow(
@@ -4046,12 +4227,12 @@ export class VaultStore {
     const settings = selectSettings(config, key);
     if (!settings) throw badRequest(`"${key}" isn't a Select in this database`);
     // A rename to the same name (after trimming) is nothing to do (@opus-hunter).
-    if (to === from) return { changed: [], refused: [], stuck: [], base: this.getBase(id) };
+    if (to === from) return { changed: [], refused: [], stuck: [], files: [], base: this.getBase(id) };
     if (to !== null && to !== from && settings.options.some((option) => option.value === to)) throw badRequest(`there's already an option "${to}"`);
 
     const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
     const prefix = `${folder}/`;
-    const done: Array<{ id: PageId; updated: string; bytes: Buffer }> = [];
+    const done: Array<{ id: PageId; updated: string; bytes: Buffer; before: string }> = [];
     const refused: Array<{ id: PageId; title: string }> = [];
     for (const [rowId, record] of this.pages) {
       if ((record.kind ?? "page") !== "page" || !rowId.startsWith(prefix) || rowId.slice(prefix.length).includes("/")) continue;
@@ -4065,8 +4246,9 @@ export class VaultStore {
           const items = selectedValues(raw.value).flatMap((item) => (item === from ? (to === null ? [] : [to]) : [item]));
           next = items.filter((item, index) => items.indexOf(item) === index);
         } else next = to;
+        const before = record.updated;
         const page = await this.updateNow(record.id, { properties: { set: { [key]: next } }, expectedUpdated: record.updated });
-        done.push({ id: page.id, updated: page.updated, bytes });
+        done.push({ id: page.id, updated: page.updated, bytes, before });
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: ${record.id} failed:`, error);
         refused.push({ id: record.id, title: record.title });
@@ -4076,6 +4258,7 @@ export class VaultStore {
     }
 
     let baseRefused = false;
+    let baseFile: UndoFile | null = null;
     if (refused.length === 0) {
       const nextOptions =
         to === null
@@ -4088,6 +4271,7 @@ export class VaultStore {
           try {
             const replaced = base.updated;
             await this.writeBaseFile(base, text);
+            baseFile = { id: base.id, before: replaced, after: base.updated };
             if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
             else delete base.ownWrite;
           } catch (error) {
@@ -4096,7 +4280,7 @@ export class VaultStore {
           }
         }
       }
-      if (!baseRefused) return { changed: done.map((row) => row.id), refused: [], stuck: [], base: this.getBase(id) };
+      if (!baseRefused) return { changed: done.map((row) => row.id), refused: [], stuck: [], files: filesOf(done, baseFile), base: this.getBase(id) };
     }
 
     // All or nothing: every written row gets its exact earlier bytes back.
@@ -4116,7 +4300,7 @@ export class VaultStore {
       }
     }
     if (putBack) this.reindexAll();
-    return { changed: [], refused: named(refused), stuck, ...(baseRefused ? { baseRefused: true } : {}), base: this.getBase(id) };
+    return { changed: [], refused: named(refused), stuck, files: [], ...(baseRefused ? { baseRefused: true } : {}), base: this.getBase(id) };
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {

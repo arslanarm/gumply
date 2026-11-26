@@ -551,6 +551,12 @@ export function createApiRoutes(store: VaultStore): Hono {
     throw badRequest("expected rename: {from, to} or clear: <value>");
   });
 
+  // #7prbquxu phase 4b: one step of the table's undo or redo (files back to a History version, rows dropped or made).
+  api.post("/bases/:id/undo", async (c) => {
+    const body = await readJson(c);
+    return c.json(await store.undoDatabaseChange(c.req.param("id"), body as never));
+  });
+
   // #g95wkd9y: links are complete once the background index is done.
   api.get("/pages/:id/backlinks", async (c) => {
     await store.whenIndexed();
