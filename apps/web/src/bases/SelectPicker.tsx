@@ -10,6 +10,28 @@ import { useT } from "../i18n/index.js";
  * highlighted match, or adds what was typed as a new option when nothing matches. A Select closes on a pick; a Multi-select stays
  * open for the next. A value outside the options (typed in Obsidian) is offered as "Add as option".
  */
+/**
+ * #7prbquxu (@polish-dev, @lead): where a Select cell's picker goes. Under the cell, or above it when it doesn't fit
+ * below and there's more room above, never taller than the room on its side. Measured against the **visual**
+ * viewport (`view`): on iOS the keyboard shrinks it, not the window, and the page may be scrolled inside it.
+ * `windowHeight` turns "above" into a CSS `bottom` for the fixed position.
+ */
+export function pickerPlacement(
+  box: { top: number; bottom: number; left: number; width: number },
+  natural: number,
+  view: { width: number; height: number; offsetTop: number; offsetLeft?: number },
+  windowHeight: number,
+): { left: number; width: number; maxHeight: number; top?: number; bottom?: number } {
+  const below = view.offsetTop + view.height - box.bottom;
+  const above = box.top - view.offsetTop;
+  const up = below < natural + 8 && above > below;
+  const width = Math.max(box.width, 224);
+  const offsetLeft = view.offsetLeft ?? 0;
+  const left = Math.max(offsetLeft + 8, Math.min(box.left, offsetLeft + view.width - width - 8));
+  const maxHeight = Math.max(96, (up ? above : below) - 8);
+  return up ? { left, width, maxHeight, bottom: windowHeight - box.top } : { left, width, maxHeight, top: box.bottom };
+}
+
 /** How long after a resize a scroll is taken as the browser's own (scroll anchoring), not the user's. */
 const RESIZE_SETTLE_MS = 500;
 
@@ -54,24 +76,22 @@ export function SelectPicker(props: {
       const box = cell.getBoundingClientRect();
       const frame = scroller.getBoundingClientRect();
       const head = scroller.querySelector(".base-table-head")?.getBoundingClientRect().bottom ?? frame.top;
+      // The footer row is sticky too (@polish-dev): a cell under it is out of view.
+      const foot = scroller.querySelector(".base-table-foot")?.getBoundingClientRect().top ?? frame.bottom;
       const middle = (box.top + box.bottom) / 2;
-      return middle < Math.max(frame.top, head) || middle > frame.bottom;
+      return middle < Math.max(frame.top, head) || middle > Math.min(frame.bottom, foot);
     };
     const placeIt = () => {
       const cell = anchorRef.current?.parentElement;
       const picker = pickerRef.current;
       if (!cell || !picker) return;
-      const box = cell.getBoundingClientRect();
-      // Its own height, from before any cap below (so a scroll doesn't flip it back and forth).
+      // Its own height, from before any cap (so a scroll doesn't flip it back and forth).
       natural ??= picker.offsetHeight;
-      const height = natural;
-      const below = window.innerHeight - box.bottom;
-      const up = below < height + 8 && box.top > below;
-      const width = Math.max(box.width, 224);
-      const left = Math.max(8, Math.min(box.left, window.innerWidth - width - 8));
-      // Never taller than the room on its side (its list scrolls inside): on a short window it stays whole.
-      const maxHeight = Math.max(96, (up ? box.top : below) - 8);
-      setPlace(up ? { left, width, maxHeight, bottom: window.innerHeight - box.top } : { left, width, maxHeight, top: box.bottom });
+      const visual = window.visualViewport;
+      const view = visual
+        ? { width: visual.width, height: visual.height, offsetTop: visual.offsetTop, offsetLeft: visual.offsetLeft }
+        : { width: window.innerWidth, height: window.innerHeight, offsetTop: 0 };
+      setPlace(pickerPlacement(cell.getBoundingClientRect(), natural, view, window.innerHeight));
     };
     // A resize (a phone keyboard showing) can make the browser move the table's scroll by itself (scroll
     // anchoring), which fires a scroll event: one that soon after a resize only places the picker
@@ -84,11 +104,16 @@ export function SelectPicker(props: {
     let recheck: number | undefined;
     const bringBack = () => {
       const cell = anchorRef.current?.parentElement;
-      const head = cell?.closest(".base-table-scroll")?.querySelector<HTMLElement>(".base-table-head");
+      const scroller = cell?.closest(".base-table-scroll");
+      const head = scroller?.querySelector<HTMLElement>(".base-table-head");
+      const foot = scroller?.querySelector<HTMLElement>(".base-table-foot");
       if (!cell) return;
+      // Clear of both sticky rows: the head above, the foot below (@polish-dev).
       cell.style.scrollMarginTop = `${head?.offsetHeight ?? 0}px`;
+      cell.style.scrollMarginBottom = `${foot?.offsetHeight ?? 0}px`;
       cell.scrollIntoView({ block: "nearest" });
       cell.style.scrollMarginTop = "";
+      cell.style.scrollMarginBottom = "";
     };
     const onResize = () => {
       resizedAt = performance.now();

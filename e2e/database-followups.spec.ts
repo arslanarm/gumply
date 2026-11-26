@@ -160,6 +160,22 @@ test('a resize (a phone keyboard showing) doesn\'t close an open picker, even wh
   await expect(page.getByTestId('base-select-search')).toBeFocused();
 });
 
+test('a resize that leaves the cell below the fold brings it back above the sticky footer row, the picker open (@polish-dev)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await writeVault(request, team(TABLE));
+  await openTeam(page);
+  await expect(page.getByTestId('base-table').locator('.base-title-text').first()).toHaveText(NAMES[0]!);
+  await page.locator('[data-row-id="Team/Person 15"] [data-grid-col="1"]').click();
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  // The window shrinks (a phone keyboard) and nothing else scrolls: the row is now below the fold, and is brought
+  // back from below. It must stop above the sticky "N rows" foot, not under it.
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  expect(await pickerAndCellInView(page, 'Team/Person 15')).toEqual({ picker: true, cell: true });
+});
+
 test('a resize whose own scroll moves the cell up under the sticky header brings it back below it, and the picker stays open (@polish-dev, @lead)', async ({ page, request, vault }) => {
   void vault;
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -180,7 +196,7 @@ test('a resize whose own scroll moves the cell up under the sticky header brings
 
 /**
  * Whether the open picker lies inside the window, and the row's Select cell's middle inside the table's visible
- * box (below the sticky head, above the scroller's bottom): seen, not just present.
+ * box (below the sticky head, above the sticky foot and the scroller's bottom): seen, not just present.
  */
 async function pickerAndCellInView(page: Page, rowId: string): Promise<{ picker: boolean; cell: boolean }> {
   return page.evaluate((id) => {
@@ -188,8 +204,10 @@ async function pickerAndCellInView(page: Page, rowId: string): Promise<{ picker:
     const inWindow = picker.top >= 0 && picker.bottom <= window.innerHeight && picker.height > 0;
     const scroller = document.querySelector('[data-testid="base-table-scroll"]')!.getBoundingClientRect();
     const head = document.querySelector('.base-table-head')!.getBoundingClientRect();
+    // The footer row is sticky too (@polish-dev): a cell under it isn't seen either.
+    const foot = document.querySelector('.base-table-foot')?.getBoundingClientRect();
     const cell = document.querySelector(`[data-row-id="${id}"] [data-grid-col="1"]`)!.getBoundingClientRect();
     const middle = (cell.top + cell.bottom) / 2;
-    return { picker: inWindow, cell: middle >= Math.max(scroller.top, head.bottom) && middle <= scroller.bottom };
+    return { picker: inWindow, cell: middle >= Math.max(scroller.top, head.bottom) && middle <= Math.min(scroller.bottom, foot?.top ?? Infinity) };
   }, rowId);
 }
