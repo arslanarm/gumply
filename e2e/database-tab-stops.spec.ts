@@ -61,13 +61,14 @@ test('the rows are one Tab stop: from "+" one Tab reaches the first row\'s Name,
   await page.keyboard.press('Shift+Tab');
   await expect(page.getByTestId('base-add-column-button')).toBeFocused();
 
-  // No cell or row button of the table is a Tab stop of its own.
+  // No cell or row button of the table is a Tab stop of its own: the only one in the rows, while no cell is active,
+  // is the way in (the first row's Name cell).
   const stops = await page.getByTestId('base-table-scroll').evaluate((table) =>
-    [...table.querySelectorAll<HTMLElement>('button, [tabindex], input')].filter(
-      (element) => element.tabIndex >= 0 && !element.closest('.base-table-head') && element.dataset.testid !== 'base-typing-input' && element.dataset.testid !== 'base-grid-cell',
-    ).length,
+    [...table.querySelectorAll<HTMLElement>('button, [tabindex], input')]
+      .filter((element) => element.tabIndex >= 0 && !element.closest('.base-table-head') && element.dataset.testid !== 'base-typing-input' && element.dataset.testid !== 'base-grid-cell')
+      .map((element) => `${element.closest('[data-row-id]')?.getAttribute('data-row-id')}|${element.getAttribute('data-grid-col')}`),
   );
-  expect(stops).toBe(0);
+  expect(stops).toEqual(['People/Ann|0']);
 });
 
 test('Ctrl/Cmd+Enter on any cell of a row opens that row\'s page', async ({ page, request, vault }) => {
