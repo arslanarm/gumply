@@ -60,3 +60,33 @@ test('a table cell edit after another app changed that property (same size, time
   await page.waitForTimeout(2000);
   expect(await read('Crew/Ann.md'), 'the outside value stays').toBe('---\nrole: Chef\n---\nAnn\n');
 });
+
+/**
+ * #bs6j2kzv: the case above waits for the server to have read the outside value, which on 0.9.x means waiting for
+ * the watcher's rescan. Here the cell's save is sent before the watcher has caught up (the outside write lands
+ * between typing and Enter), the moment a real user hits: the save must still be refused and the outside value
+ * stay. The server's answer is checked too.
+ */
+test('a table cell edit sent right after another app changed that property, before the watcher caught up, never overwrites it', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, FILES);
+  await page.goto('/#/Crew.base');
+  await expect(page.getByTestId('base-cell-Crew/Ann-note.role')).toHaveText('Cook');
+  await page.route('**/api/bases/**/view**', () => undefined);
+
+  await page.getByTestId('base-cell-Crew/Ann-note.role').click();
+  const input = page.getByTestId('base-cell-editor-Crew/Ann-note.role').locator('input');
+  await input.fill('Baker');
+  // Another app saves Ann now: same size, the file time put back.
+  const ann = path.join(E2E_VAULT, 'Crew/Ann.md');
+  const { atime, mtime } = await fs.stat(ann);
+  await fs.writeFile(ann, '---\nrole: Chef\n---\nAnn\n', 'utf8');
+  await fs.utimes(ann, atime, mtime);
+  const saved = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().includes('/api/pages/'));
+  await input.press('Enter');
+  const answer = await saved;
+  await page.waitForTimeout(1500);
+  expect(await read('Crew/Ann.md'), `the outside value stays (the save answered ${answer.status()})`).toBe('---\nrole: Chef\n---\nAnn\n');
+  expect(answer.status()).toBe(409);
+});
+
