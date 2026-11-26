@@ -18,7 +18,7 @@ import { ViewToolbar, type Panel } from "./ViewToolbar.js";
 import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
-import { BaseLinks, BaseSelects } from "./values.js";
+import { BaseLinks, BaseSelectActions, BaseSelects } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
 import { parseCsv, type PastedRow } from "./paste.js";
 import type { PreviewResult } from "./PastePreview.js";
@@ -431,6 +431,20 @@ export function BaseView(props: BaseViewProps) {
     [load, saveConfig],
   );
 
+  /** #7prbquxu phase 3: a new option for a Select column, with the next colour (saved in the base). */
+  const selectActions = useMemo(
+    () => ({
+      addOption: async (columnId: string, value: string) => {
+        const key = columnId.replace(/^note\./, "");
+        const config = docRef.current.config;
+        const settings = selectSettings(config, key);
+        if (!settings || settings.options.some((option) => option.value === value)) return;
+        await saveConfig(withSelectSettings(config, key, { ...settings, options: [...settings.options, { value, color: nextOptionColor(settings.options) }] }));
+      },
+    }),
+    [saveConfig],
+  );
+
   /** Kanban drop, calendar move: one note property of one page. */
   const setValue = useCallback(
     async (row: BaseRow, key: string, value: BaseValue) => {
@@ -543,6 +557,7 @@ export function BaseView(props: BaseViewProps) {
   return (
     <BaseLinks.Provider value={baseLinks}>
     <BaseSelects.Provider value={selects}>
+    <BaseSelectActions.Provider value={selectActions}>
     <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1}>
       {inlineConflict ? (
         <div className="banner base-banner base-conflict" role="alert" data-testid="base-conflict" ref={conflictRef}>
@@ -682,6 +697,7 @@ export function BaseView(props: BaseViewProps) {
         <div className="base-loading" aria-busy="true" />
       )}
     </div>
+    </BaseSelectActions.Provider>
     </BaseSelects.Provider>
     </BaseLinks.Provider>
   );

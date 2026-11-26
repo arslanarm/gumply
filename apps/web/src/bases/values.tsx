@@ -19,6 +19,8 @@ export const BaseLinks = createContext<{ pages: readonly PageMeta[]; onOpen: (id
 
 /** #7prbquxu phase 3: this base's Select and Multi-select columns by column id (`note.status`). */
 export const BaseSelects = createContext<ReadonlyMap<string, SelectSettings>>(new Map());
+/** #7prbquxu phase 3: changes to a Select's options (they live in the base). */
+export const BaseSelectActions = createContext<{ addOption: (columnId: string, value: string) => Promise<void> } | null>(null);
 
 /**
  * A Select or Multi-select value as coloured chips (spec §6). A value that isn't one of the options

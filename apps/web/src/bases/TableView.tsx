@@ -14,7 +14,8 @@ import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
-import { BaseSelects, BaseText, SelectChips } from "./values.js";
+import { BaseSelectActions, BaseSelects, BaseText, SelectChips } from "./values.js";
+import { SelectPicker } from "./SelectPicker.js";
 import { AddColumn, COLUMN_TYPES } from "./AddColumn.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
@@ -139,7 +140,8 @@ export function TableView(props: TableViewProps) {
   const offsets = widths.map((_, index) => widths.slice(0, index).reduce((a, b) => a + b, 0));
   const [active, setActive] = useState<{ rowId: string; col: number } | null>(null);
   const [typing, setTyping] = useState(false);
-  const [editRequest, setEditRequest] = useState<{ rowId: string; col: number } | null>(null);
+  const [editRequest, setEditRequest] = useState<{ rowId: string; col: number; seed?: string } | null>(null);
+  const selects = useContext(BaseSelects);
   const [pendingActive, setPendingActive] = useState<{ rowId: string; col: number } | null>(null);
   const sinkRef = useRef<HTMLInputElement | null>(null);
   const typingInputRef = useRef<HTMLInputElement | null>(null);
@@ -292,7 +294,11 @@ export function TableView(props: TableViewProps) {
     if (event.key.length === 1) {
       const starts = title ? "type" : typingStarts(activeColumn.type, activeColumn.editable);
       if (starts === "none") event.preventDefault();
-      else if (starts === "editor") {
+      else if (!title && activeColumn.editable && selects.has(activeColumn.id)) {
+        // #7prbquxu phase 3: a Select opens its picker with the typed character as the search.
+        event.preventDefault();
+        setEditRequest({ rowId: activeRow.id, col: activePos.col, seed: event.key });
+      } else if (starts === "editor") {
         event.preventDefault();
         setEditRequest({ rowId: activeRow.id, col: activePos.col });
       }
@@ -428,6 +434,7 @@ export function TableView(props: TableViewProps) {
                 readOnly={props.readOnly}
                 renaming={props.renameRowId === row.id}
                 editCol={editRequest?.rowId === row.id ? editRequest.col : null}
+                editSeed={editRequest?.rowId === row.id ? editRequest.seed : undefined}
                 onOpen={props.onOpen}
                 onEditValue={props.onEditValue}
                 onRename={props.onRename}
@@ -869,6 +876,8 @@ interface TableRowProps {
   renaming: boolean;
   /** #7prbquxu: the column whose editor the database grid asked to open in this row. */
   editCol?: number | null;
+  /** #7prbquxu phase 3: the character typed to open it (a Select picker's first search letter). */
+  editSeed?: string | undefined;
   onOpen: (id: string) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   onRename: (row: BaseRow, title: string) => Promise<string | void>;
@@ -895,6 +904,7 @@ const TableRow = memo(function TableRow(props: TableRowProps) {
             readOnly={props.readOnly}
             onEditValue={props.onEditValue}
             editRequested={props.editCol === col}
+            {...(props.editCol === col && props.editSeed ? { editSeed: props.editSeed } : {})}
             {...(props.onRequestEdit ? { onRequestEdit: props.onRequestEdit } : {})}
             {...(props.onEditDone ? { onEditDone: props.onEditDone } : {})}
           />
@@ -988,11 +998,13 @@ function ValueCell(props: {
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   /** #7prbquxu: the database grid asks this cell's editor to open (Enter, F2, a date typed). */
   editRequested?: boolean;
+  editSeed?: string;
   onRequestEdit?: (rowId: string, col: number) => void;
   onEditDone?: () => void;
 }) {
   const t = useT();
   const select = useContext(BaseSelects).get(props.column.id);
+  const selectActions = useContext(BaseSelectActions);
   const { row, column } = props;
   const value = row.values[column.id] ?? null;
   const editable = column.editable && !props.readOnly;
@@ -1030,6 +1042,31 @@ function ValueCell(props: {
           checked={value === true}
           disabled={!editable}
           onChange={() => void props.onEditValue(row, column, value !== true)}
+        />
+      </div>
+    );
+  }
+
+  if (editing && select) {
+    return (
+      <div
+        className="base-td is-editing"
+        role="cell"
+        data-grid-col={props.col}
+        data-testid={`base-cell-editor-${row.id}-${column.id}`}
+        onBlur={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Element | null)) return;
+          setEditing(false);
+        }}
+      >
+        <SelectChips value={value} settings={select} />
+        <SelectPicker
+          settings={select}
+          value={value}
+          {...(props.editSeed ? { initialQuery: props.editSeed } : {})}
+          onChange={(next) => props.onEditValue(row, column, next)}
+          onAddOption={(option) => selectActions?.addOption(column.id, option) ?? Promise.resolve()}
+          onClose={() => setEditing(false)}
         />
       </div>
     );

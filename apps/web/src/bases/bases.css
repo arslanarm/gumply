@@ -1537,3 +1537,59 @@ ol.base-list {
   border: 1px dashed var(--border);
   background: transparent;
 }
+
+/* #7prbquxu phase 3: the Select picker, under its cell. */
+.base-td.is-editing:has(.base-select-picker) {
+  position: relative;
+  overflow: visible;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+}
+
+.base-select-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: max(100%, 14rem);
+  max-height: 18rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-page);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+}
+
+.base-select-options {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.base-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.base-select-option:hover,
+.base-select-option.is-highlighted {
+  background: var(--hover);
+}
+
+.base-select-option.is-add {
+  justify-content: flex-start;
+  color: var(--muted);
+}
