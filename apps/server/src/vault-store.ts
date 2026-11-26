@@ -4374,10 +4374,19 @@ export class VaultStore {
     const trashed: Array<{ id: PageId; title: string }> = [];
     const grouped: PageRecord[] = [];
     let inTrash = 0;
+    let gone = false;
     for (const row of created) {
-      // Already gone (deleted in another app meanwhile): nothing to take back, and nothing stuck (@opus-hunter).
+      // Already gone (deleted in another app meanwhile, whether or not the watcher has caught up): nothing to take
+      // back, and nothing stuck (@opus-hunter's note a).
       const record = this.pages.get(row.id);
-      if (!record) continue;
+      if (!record || !(await pathExists(record.filePath))) {
+        if (record && !this.hasChildren(row.id)) {
+          this.pages.delete(row.id);
+          this.forgetSessionBytes(row.id);
+          gone = true;
+        }
+        continue;
+      }
       try {
         if (!(await this.pastedRowUnchanged(record, row.updated))) trashed.push({ id: row.id, title: row.title });
         if (!this.hasChildren(row.id)) {
@@ -4407,7 +4416,7 @@ export class VaultStore {
       }
     }
     if (grouped.length && inTrash) await this.syncFolders();
-    if (putBack || inTrash) this.reindexAll();
+    if (putBack || inTrash || gone) this.reindexAll();
     return {
       changed: [],
       created: [],
