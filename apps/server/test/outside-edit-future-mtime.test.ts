@@ -75,6 +75,30 @@ for (const how of ["in place", "as an atomic rename"] as const) {
       }
     });
 
+    it("a database view over the page (GET /api/bases/:id/view) shows the new value, with the watcher on", async () => {
+      const { app, store, file } = await setup();
+      const created = await store.createBase({ title: "Staff list" });
+      // The view must show the property: a new base's default view has only file.name.
+      const base = await store.updateBase(created.meta.id, {
+        config: { ...created.config, views: [{ type: "table", name: "Table", order: ["file.name", "role"] }] },
+        expectedUpdated: created.meta.updated,
+      });
+      const roleInView = async () => {
+        const view = (await (await app.request(`/api/bases/${encodeURIComponent(base.meta.id)}/view`)).json()) as { rows: Array<{ id: string; values: Record<string, unknown> }> };
+        return view.rows.find((row) => row.id === "Staff")?.values["note.role"];
+      };
+      expect(await roleInView(), "the view shows the value before the outside save").toBe("Cook");
+      store.startWatching();
+      try {
+        await sleep(100);
+        await outsideSave(file);
+        const shown = await waitFor(async () => (await roleInView()) === "Chef", 8000);
+        expect(shown, `view still says ${String(await roleInView())}`).toBe(true);
+      } finally {
+        store.stopWatching();
+      }
+    }, 15_000);
+
     it("a save from the version before it is a conflict, and the outside text stays", async () => {
       const { app, file, version } = await setup();
       await outsideSave(file);
