@@ -1062,6 +1062,9 @@ export function Editor({
         if (sendingRef.current > 0) return false;
         // Never under an IME composition (ru phonetic, CJK): a transaction then can cancel or double it.
         if (editor.view.composing) {
+          // The page's version effect may move `versionRef` to this very answer meanwhile (the rename has
+          // already shown it): that's allowed; any other version means something else wrote (@opus-hunter).
+          const held = versionRef.current;
           const ended = await new Promise<boolean>((resolve) => {
             const dom = editor.view.dom;
             const timer = window.setTimeout(() => {
@@ -1076,7 +1079,8 @@ export function Editor({
             }
             dom.addEventListener("compositionend", done);
           });
-          if (!ended || editor.isDestroyed || from !== versionRef.current || sendingRef.current > 0) return false;
+          const now = versionRef.current;
+          if (!ended || editor.isDestroyed || sendingRef.current > 0 || !(now === held || now === updated)) return false;
         }
         const sent = autosave.baseline();
         const current = renameMergeIo.read(editor);
