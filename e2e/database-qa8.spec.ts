@@ -76,6 +76,39 @@ test('a Select cell\'s picker can be seen and clicked, on the last row too (pass
   await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Team/Blake.md'), 'utf8')).toBe('---\nstage: Stage 5\n---\nBlake\n');
 });
 
+test('near the bottom of the window the picker opens above its cell, whole (pass 8, 1)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  const picker = page.getByTestId('base-select-picker');
+  await expect(page.getByTestId('base-select-search')).toBeFocused();
+  const cell = (await page.locator('[data-testid^="base-cell-editor-"]').boundingBox())!;
+  const box = (await picker.boundingBox())!;
+  expect(box.y + box.height, 'it ends above the cell').toBeLessThanOrEqual(cell.y + 1);
+  expect(box.y, 'and starts inside the window').toBeGreaterThanOrEqual(0);
+  expect(await onTop(page, picker.getByTestId('base-select-option-Stage 1'))).toBe(true);
+});
+
+test('a value too long for its cell ends in an ellipsis inside the cell, not cut mid-letter (pass 8, 4)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { ...TEAM, 'Team/Blake.md': '---\nstage: Someday, typed in another app, far too long for this cell\n---\nBlake\n' });
+  await openTeam(page);
+  const chip = page.locator('.base-option.is-unknown').first();
+  await expect(chip).toBeVisible();
+  const fit = await chip.evaluate((element) => {
+    const cell = element.closest('[role="cell"]')!.getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    return { inside: box.right <= cell.right + 0.5, overflow: getComputedStyle(element).textOverflow, cut: element.scrollWidth > element.clientWidth };
+  });
+  expect(fit.inside, 'the chip, its border too, stays inside its cell').toBe(true);
+  expect(fit).toMatchObject({ overflow: 'ellipsis', cut: true });
+});
+
 test('the paste preview is wide enough for its columns on a wide window (pass 8, 2)', async ({ page, request, vault }) => {
   void vault;
   await page.setViewportSize({ width: 1280, height: 800 });
