@@ -43,6 +43,19 @@ Choose **Graph** in the sidebar to see every page as a dot and every link as a l
 - **Graph settings** (the filter button) hide or show tags, attachments, pages that don't exist yet and pages without links. **Groups** colour pages by a query such as `tag:#work` or `path:Projects`. The settings are saved per vault.
 - **Move around:** scroll to zoom, drag to move, **Fit** to see it all. Click a dot to open its page.
 
+### Forces
+
+**Graph settings** also has **Forces**, a section that starts collapsed (click its heading to open it), with four sliders that change how the graph arranges itself. Each is a percentage of Gumply's own layout, so **100%** leaves it as it is, at any size of vault.
+
+| Slider | What it does | Range |
+|---|---|---|
+| **Center force** | How strongly every page is pulled towards the middle. At 0%, groups of pages that don't link to each other drift apart; the view zooms out to show them all, so each group looks smaller. | 0–200% |
+| **Repel force** | How strongly pages push each other away. More spreads the graph out. | 0–300% |
+| **Link force** | How tightly a link holds two pages together. | 0–200% |
+| **Link distance** | How long a link likes to be. | 25–400% |
+
+The graph re-arranges when you let go of a slider (or a moment after you stop pressing the arrow keys), so a big graph does it once, not at every step. **Reset forces** puts all four back to 100%. Your forces are saved per vault, like the other graph settings. Obsidian has sliders with the same names, but its values aren't read: the two apps lay out graphs differently. Forces change the global graph; the local graph keeps its own layout.
+
 ### The local graph
 
 On any page, the **Local graph** button in the header shows just that page and its neighbours, one or two links away, in a column beside the page.
