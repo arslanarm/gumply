@@ -4,11 +4,12 @@ A database view shows a set of your pages as a table, a board, a list, cards or 
 
 ![A table of task pages with their status, due date and a checkbox](../img/base-table.en.png)
 
+To fill a table of your own instead, row by row or by pasting from a spreadsheet, make a [database](databases.md).
+
 ## Create a view
 
-- In the sidebar, choose **New database view**.
-- Inside a page: its **⋯** menu → **Add database view inside**, or type `/database` in the page.
-- In search (`Ctrl/Cmd+K`): **Create database view “…”**.
+- In search (`Ctrl/Cmd+K`): **New view of pages…**, or **Create database view “…”** with the name you typed.
+- Inside a page: its **⋯** menu → **Add view of pages inside**, or type `/database` in the page.
 
 ## Choose which pages it shows
 

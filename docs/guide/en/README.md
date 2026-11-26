@@ -13,24 +13,25 @@ Gumply keeps your notes as plain Markdown files in a folder you choose. You writ
 
 ## Organise
 
-5. [Database views](database-views.md): tables, cards, lists, Kanban and calendars of your pages.
-6. [Properties, tags and templates](properties-tags-templates.md)
-7. [Daily notes](daily-notes.md)
-8. [Columns, math and diagrams](columns-math-diagrams.md)
+5. [Databases](databases.md): tables of your own, like a spreadsheet: paste from a sheet, Select options, undo.
+6. [Database views](database-views.md): tables, cards, lists, Kanban and calendars of your pages.
+7. [Properties, tags and templates](properties-tags-templates.md)
+8. [Daily notes](daily-notes.md)
+9. [Columns, math and diagrams](columns-math-diagrams.md)
 
 ## Move in and out
 
-9. [Import from Notion](import-from-notion.md)
-10. [Export as HTML or PDF](export.md)
+10. [Import from Notion](import-from-notion.md)
+11. [Export as HTML or PDF](export.md)
 
 ## Keep your work safe
 
-11. [Version history](version-history.md): see and restore earlier versions of a page or board.
-12. [Sync with other apps](sync-with-other-apps.md): Syncthing, Dropbox, iCloud, OneDrive, and conflict copies.
-13. [AI apps](ai-apps.md): let Claude and other AI apps use your vault.
+12. [Version history](version-history.md): see and restore earlier versions of a page or board.
+13. [Sync with other apps](sync-with-other-apps.md): Syncthing, Dropbox, iCloud, OneDrive, and conflict copies.
+14. [AI apps](ai-apps.md): let Claude and other AI apps use your vault.
 
 ## Reference
 
-14. [Settings and keyboard shortcuts](settings-and-shortcuts.md)
-15. [Accessibility](accessibility.md)
-16. [Troubleshooting, and where your data lives](troubleshooting.md)
+15. [Settings and keyboard shortcuts](settings-and-shortcuts.md)
+16. [Accessibility](accessibility.md)
+17. [Troubleshooting, and where your data lives](troubleshooting.md)
