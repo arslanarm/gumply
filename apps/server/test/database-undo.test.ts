@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TrashItem } from "@gumply/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -142,6 +142,19 @@ describe("the table's undo, all or nothing (#7prbquxu phase 4b)", () => {
     // A second Restore brings the last one.
     await store.restore(group!.trashId);
     expect(await read("People/Dee.md")).toBe(dee);
+    expect(await store.listTrash()).toEqual([]);
+  });
+
+  it("a Restore that finishes leaves no item behind, also when a listed row was no longer in the entry (@opus-hunter)", async () => {
+    const { dir, store, read } = await vault({ "People.base": BASE });
+    const pasted = await store.pasteIntoOwnedRows("People.base", { rows: [{ title: "Bo", set: { role: "Pilot" } }, { title: "Cy", set: { role: "Cook" } }] });
+    const cy = await read("People/Cy.md");
+    await store.undoDatabaseChange("People.base", { drop: pasted.made.map((row) => ({ id: row.id, from: row.after })) });
+    const [group] = await store.listTrash();
+    // Bo's file left the entry some other way (say, a redo whose manifest rewrite failed); the manifest still lists it.
+    await rm(join(dir, ".trash", group!.trashId, "People/Bo.md"));
+    await store.restore(group!.trashId);
+    expect(await read("People/Cy.md")).toBe(cy);
     expect(await store.listTrash()).toEqual([]);
   });
 
