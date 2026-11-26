@@ -164,3 +164,28 @@ test('the column menu renames a property in the rows, changes its type, and dele
   await expect.poll(() => read('People.base')).not.toContain('age');
   await expect(page.getByTestId('base-th-note.age')).toHaveCount(0);
 });
+
+test('an IME composition on an active cell starts the edit and keeps every character (ru)', async ({ page, context, request, vault }) => {
+  test.skip(test.info().project.name !== 'chromium', 'CDP input methods are Chromium-only');
+  void vault;
+  await writeVault(request, PEOPLE);
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await typing.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  const cell = page.getByTestId('base-grid-cell');
+  await expect(cell).toHaveAttribute('data-active', /^People\/Bo\|.*role$/);
+
+  // A composition on the active cell (no key typed first): the edit starts with it, nothing is lost.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Input.imeSetComposition', { text: 'п', selectionStart: 1, selectionEnd: 1 });
+  await expect(cell).toHaveClass(/is-typing/);
+  await cdp.send('Input.imeSetComposition', { text: 'пов', selectionStart: 3, selectionEnd: 3 });
+  await cdp.send('Input.insertText', { text: 'повар' }); // commits the composition
+  await expect(cell).toHaveValue('повар');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: повар\nage: 41\n---\nBo\n');
+});
