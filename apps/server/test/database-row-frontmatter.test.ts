@@ -34,6 +34,11 @@ describe("a database row's frontmatter (#bg7c9bzk)", () => {
     expect(yaml).not.toMatch(/^tags:/m);
     expect(store.get(row.id).title).toBe("Dune");
     expect(store.list().find((meta) => meta.id === row.id)?.title).toBe("Dune");
+    // Links and search find it by that title.
+    await store.create({ title: "Reading", content: "Next: [[Dune]]." });
+    await store.whenIndexed();
+    expect(store.backlinks(row.id).map((link) => link.page.id)).toEqual(["Reading"]);
+    expect(store.search("Dune").map((hit) => hit.page.id)).toContain(row.id);
   });
 
   it('"Dune: Part 2" (the file name can\'t carry the colon): title: kept, no tags: []; it reads back the same after a rescan', async () => {
