@@ -3684,15 +3684,15 @@ export class VaultStore {
 
   /**
    * #7prbquxu phase 2 (spec/database-tables §5, @lead): a block pasted into an owned database, in one
-   * queued job. Existing rows get their values set (each from its current version, so a row another app
-   * changed meanwhile refuses); then new rows are made in the rows folder with theirs. All or nothing: on
+   * queued job. Existing rows get their values set (each from the version the table showed, so a row
+   * another app changed since refuses, even at the same size and time once #vqm6gqpu's byte check is in); then new rows are made in the rows folder with theirs. All or nothing: on
    * any refusal or error, the rows already set get their old values back (keys they didn't have are
    * removed again) and the new rows go to the Trash; the refused rows are named, and any that can't be
    * put back are `stuck`.
    */
   pasteIntoOwnedRows(
     id: PageId,
-    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue> }> },
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }> },
     options: { expectedUpdated?: string; writer?: string } = {},
   ): Promise<OwnedRowsPaste> {
     return this.enqueue(() => this.pasteIntoOwnedRowsNow(this.resolveId(id), input, options));
@@ -3700,7 +3700,7 @@ export class VaultStore {
 
   private async pasteIntoOwnedRowsNow(
     id: PageId,
-    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue> }> },
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }> },
     options: { expectedUpdated?: string; writer?: string },
   ): Promise<OwnedRowsPaste> {
     const base = this.requireBase(id);
@@ -3712,7 +3712,7 @@ export class VaultStore {
       throw conflict("This database view changed on disk.");
     }
     const prefix = `${folder}/`;
-    const existing: Array<{ record: PageRecord; set: Record<string, PropertyValue> }> = [];
+    const existing: Array<{ record: PageRecord; set: Record<string, PropertyValue>; expected: string }> = [];
     const fresh: Array<{ title: string; set: Record<string, PropertyValue> }> = [];
     for (const row of input.rows) {
       if (!row || typeof row.set !== "object" || row.set === null || Array.isArray(row.set)) throw badRequest("each row needs a set object");
@@ -3724,7 +3724,8 @@ export class VaultStore {
         if (!record || (record.kind ?? "page") !== "page" || !record.id.startsWith(prefix) || record.id.slice(prefix.length).includes("/")) {
           throw badRequest(`not a row of this database: ${row.id}`);
         }
-        existing.push({ record, set: row.set });
+        // The version the table showed: values are set over what the user saw, never over a newer outside edit.
+        existing.push({ record, set: row.set, expected: typeof row.expectedUpdated === "string" ? row.expectedUpdated : record.updated });
       } else {
         const title = typeof row.title === "string" ? row.title.trim() : "";
         if (!title) throw badRequest("a new row needs a title");
@@ -3736,7 +3737,7 @@ export class VaultStore {
     const refused: Array<{ id: PageId; title: string }> = [];
     // What each set row had before, to put back: the old value, or "absent" (the key is removed again).
     const done: Array<{ id: PageId; updated: string; old: Record<string, PropertyValue>; absent: string[] }> = [];
-    for (const { record, set } of existing) {
+    for (const { record, set, expected } of existing) {
       try {
         const raw = readRawProperties(parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml);
         const had = new Map(raw.map((property) => [property.key, property]));
@@ -3747,7 +3748,7 @@ export class VaultStore {
           if (before === undefined) absent.push(key);
           else old[key] = before.value;
         }
-        const page = await this.updateNow(record.id, { properties: { set }, expectedUpdated: record.updated });
+        const page = await this.updateNow(record.id, { properties: { set }, expectedUpdated: expected });
         done.push({ id: page.id, updated: page.updated, old, absent });
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: ${record.id} failed:`, error);

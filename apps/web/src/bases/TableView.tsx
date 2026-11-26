@@ -19,7 +19,7 @@ import { AddColumn, COLUMN_TYPES } from "./AddColumn.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
 import { api } from "../api/client.js";
-import { plannedPaste, readPaste } from "./paste.js";
+import { plannedPaste, readPaste, type PastedRow } from "./paste.js";
 import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
 
@@ -57,7 +57,7 @@ export interface TableViewProps {
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
   onSetColumnType?: (column: BaseColumn, type: PropertyType) => Promise<void>;
   /** #7prbquxu phase 2: a block pasted at the active cell (one server request). */
-  onPasteRows?: (rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>) => Promise<void>;
+  onPasteRows?: (rows: PastedRow[]) => Promise<void>;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
   onRenameDone?: () => void;
@@ -448,7 +448,7 @@ export function TableView(props: TableViewProps) {
                   read.rows,
                   activePos,
                   columns,
-                  rowOrder.map((entry) => result.rows[entry.row]!.id),
+                  rowOrder.map((entry) => ({ id: result.rows[entry.row]!.id, updated: result.rows[entry.row]!.updated })),
                   t("defaults.untitledPage"),
                 );
                 setPasteNote(plan.left || plan.pastLast ? t("bases.pasteLeftOut", { count: plan.left + plan.pastLast }) : null);

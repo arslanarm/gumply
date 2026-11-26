@@ -167,6 +167,14 @@ export function pastedValue(text: string, type: string): { value: string | numbe
   return { value: trimmed };
 }
 
+/** One row of a paste: an existing row (its id and the version it was shown at) or a new one (its title). */
+export interface PastedRow {
+  id?: string;
+  expectedUpdated?: string;
+  title?: string;
+  set: Record<string, string | number | boolean | string[] | null>;
+}
+
 /** A column as the paste sees it. */
 export interface PasteColumn {
   id: string;
@@ -184,16 +192,17 @@ export function plannedPaste(
   block: readonly string[][],
   start: { row: number; col: number },
   columns: readonly PasteColumn[],
-  rowIds: readonly string[],
+  /** The view's rows in order, with the version each was shown at (a paste sets values over what was seen). */
+  existing: ReadonlyArray<{ id: string; updated: string }>,
   untitled: string,
-): { rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>; left: number; pastLast: number } {
-  const rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }> = [];
+): { rows: PastedRow[]; left: number; pastLast: number } {
+  const rows: PastedRow[] = [];
   let left = 0;
   let pastLast = 0;
   block.forEach((cells, r) => {
-    const at = start.row + r;
-    const id = rowIds[at];
-    const row: { id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> } = id === undefined ? { set: {} } : { id, set: {} };
+    const shown = existing[start.row + r];
+    const id = shown?.id;
+    const row: PastedRow = shown === undefined ? { set: {} } : { id: shown.id, expectedUpdated: shown.updated, set: {} };
     cells.forEach((text, c) => {
       const column = columns[start.col + c];
       if (!column) {

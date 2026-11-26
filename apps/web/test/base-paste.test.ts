@@ -111,9 +111,13 @@ describe("plannedPaste", () => {
   ];
 
   it("overwrites down and right from the active cell; rows past the end become new rows named by the title column", () => {
-    const plan = plannedPaste([["Ann", "Chef", "30"], ["Bo", "Pilot", "41"], ["Cy", "Diver", "7"]], { row: 1, col: 0 }, columns, ["Rows/Zed", "Rows/Ann"], "Untitled");
+    const shown = [
+      { id: "Rows/Zed", updated: "v1" },
+      { id: "Rows/Ann", updated: "v2" },
+    ];
+    const plan = plannedPaste([["Ann", "Chef", "30"], ["Bo", "Pilot", "41"], ["Cy", "Diver", "7"]], { row: 1, col: 0 }, columns, shown, "Untitled");
     expect(plan.rows).toEqual([
-      { id: "Rows/Ann", set: { role: "Chef", age: 30 } },
+      { id: "Rows/Ann", expectedUpdated: "v2", set: { role: "Chef", age: 30 } },
       { title: "Bo", set: { role: "Pilot", age: 41 } },
       { title: "Cy", set: { role: "Diver", age: 7 } },
     ]);
@@ -123,9 +127,9 @@ describe("plannedPaste", () => {
   });
 
   it("counts what it leaves out: a value that doesn't fit, a column past the last; new rows without a title get one", () => {
-    const plan = plannedPaste([["Chef", "abc", "extra"], ["Pilot", "41", "more"]], { row: 0, col: 1 }, columns, ["Rows/Ann"], "Untitled");
+    const plan = plannedPaste([["Chef", "abc", "extra"], ["Pilot", "41", "more"]], { row: 0, col: 1 }, columns, [{ id: "Rows/Ann", updated: "v1" }], "Untitled");
     expect(plan.rows).toEqual([
-      { id: "Rows/Ann", set: { role: "Chef" } },
+      { id: "Rows/Ann", expectedUpdated: "v1", set: { role: "Chef" } },
       { title: "Untitled", set: { role: "Pilot", age: 41 } },
     ]);
     expect(plan.left).toBe(1);

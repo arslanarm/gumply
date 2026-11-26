@@ -548,7 +548,8 @@ export const api = {
   /** #7prbquxu phase 2: a block pasted into an owned database: existing rows set, new rows made, all or nothing. */
   pasteRows: (
     baseId: PageId,
-    rows: Array<{ id?: PageId; title?: string; set: Record<string, string | number | boolean | string[] | null> }>,
+    /** Existing rows carry the version they were shown at (`expectedUpdated`); new rows a title. */
+    rows: Array<{ id?: PageId; expectedUpdated?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>,
     options: { expectedUpdated: string; writer: string },
   ): Promise<{ changed: PageId[]; created: PageId[]; refused: Array<{ id: PageId; title: string }>; stuck: Array<{ id: PageId; title: string }> }> =>
     mutate(() => request(`${basePath(baseId)}/rows-paste`, { method: "POST", body: JSON.stringify({ rows, ...options }) })),

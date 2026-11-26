@@ -20,6 +20,7 @@ import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
 import { BaseLinks } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
+import type { PastedRow } from "./paste.js";
 import { registerSaver } from "../lib/pending-saves.js";
 import type { SaveState } from "../editor/autosave.js";
 import "./bases.css";
@@ -311,7 +312,7 @@ export function BaseView(props: BaseViewProps) {
 
   /** #7prbquxu phase 2: a block pasted into the grid, in one server request; refused rows are named. */
   const pasteRows = useCallback(
-    async (rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>) => {
+    async (rows: PastedRow[]) => {
       try {
         await saverRef.current?.flush();
         const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer });
