@@ -297,6 +297,9 @@ export function BaseView(props: BaseViewProps) {
     [active, saveConfig],
   );
 
+  /** #5q4vaacm: each row's cell writes in flight (chained), and the versions this view's own writes replaced. */
+  const rowWrites = useRef(new Map<string, Promise<void>>());
+  const ownWrites = useRef(new Map<string, { replaced: Set<string>; latest: string }>());
   const editValue = useCallback(
     async (row: BaseRow, column: BaseColumn, value: BaseValue): Promise<boolean> => {
       if (!column.id.startsWith("note.")) return false;
@@ -311,13 +314,32 @@ export function BaseView(props: BaseViewProps) {
             }
           : current,
       );
+      // #5q4vaacm: Tab or Enter moves on while the cell's save is still on its way, so the next cell of the same row
+      // can be written before the table has the version that save made. One row's writes go one after another, and
+      // a write whose row still shows a version **our own** earlier write replaced goes out from the version that
+      // write made. An outside change in between still makes it a 409, as before.
+      const previous = rowWrites.current.get(row.id) ?? Promise.resolve();
+      let done!: () => void;
+      const mine = new Promise<void>((resolve) => (done = resolve));
+      const chained = previous.then(() => mine);
+      rowWrites.current.set(row.id, chained);
+      await previous;
       let saved = true;
       try {
-        const saved = await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, row.updated);
+        const own = ownWrites.current.get(row.id);
+        const from = own && own.replaced.has(row.updated) ? own.latest : row.updated;
+        const saved = await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, from);
+        const entry = ownWrites.current.get(saved.id) ?? { replaced: new Set<string>(), latest: saved.updated };
+        entry.replaced.add(from);
+        entry.latest = saved.updated;
+        ownWrites.current.set(saved.id, entry);
         recordStep({ kind: "cell", rowId: saved.id, key: column.id.slice(5), before: row.values[column.id] ?? null, after: value, version: saved.updated });
       } catch (error) {
         saved = false;
         props.onError?.(errorText(error));
+      } finally {
+        done();
+        if (rowWrites.current.get(row.id) === chained) rowWrites.current.delete(row.id);
       }
       await load();
       return saved;
@@ -555,13 +577,14 @@ export function BaseView(props: BaseViewProps) {
     const missing = (error: unknown) => error instanceof ApiRequestError && error.status === 404;
     // The row is still where the step left it, under the name it gave it.
     const current = await api.getPage(step.toId).catch((error: unknown) => (missing(error) ? null : Promise.reject(error)));
-    if (!current || current.title !== step.toTitle) {
+    if (!current || current.id !== step.toId || current.title !== step.toTitle) {
       props.onError?.(t("bases.undoChanged"));
       return null;
     }
-    // The name to go back to is free (another app, or the typing row, may have made a row with it meanwhile).
+    // The name to go back to is free (another app, or the typing row, may have made a row with it meanwhile). The
+    // server answers an old id with the page renamed from it, so only a page **at** that id counts as taking it.
     const taken = await api.getPage(step.fromId).then(
-      () => true,
+      (page) => page.id === step.fromId,
       (error: unknown) => (missing(error) ? false : Promise.reject(error)),
     );
     if (taken) {
