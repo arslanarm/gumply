@@ -1,19 +1,27 @@
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { E2E_VAULT } from './env';
 
 /**
  * #w284vn2u: the vault-level settings files tests change (a property's type, graph groups, the AI-app
- * settings, templates and daily notes, "not a copy"), snapshotted once per worker and put back before and
- * after every test, so file order can't change what a test sees. The server reads these per request
- * (the types file is cached by its mtime), so a put-back file is read again.
+ * settings, templates and daily notes, "not a copy"), put back before and after every test, so file order
+ * can't change what a test sees. The server reads these per request (the types file is cached by its
+ * mtime), so a put-back file is read again.
  *
  * - `.gumply/<name>` for the names below: the bytes, or absent.
  * - `.obsidian/`: absent, or its top-level files (bytes); a test may create the folder or add a file there.
  *
+ * **The baseline is taken once per run**, in the Playwright main process when the config loads (before the
+ * web server starts and before any worker), and handed to the workers through a file named in
+ * `GUMPLY_E2E_SETTINGS_BASELINE`. A per-worker snapshot would be wrong: Playwright starts a new worker after a
+ * failed test, and that worker would take the failed test's leftovers as its baseline (@lead's review).
+ *
  * History, conflicts, Trash and logs aren't settings, and the `vault` fixture's reset already clears pages.
  */
 const GUMPLY_FILES = ['types.json', 'graph.json', 'mcp.json', 'templates.json', 'daily-notes.json', 'sync-dismissed.json'];
+const BASELINE_ENV = 'GUMPLY_E2E_SETTINGS_BASELINE';
 
 export interface SettingsSnapshot {
   gumply: Map<string, string | null>;
@@ -23,6 +31,60 @@ export interface SettingsSnapshot {
 const gumplyPath = (name: string) => path.join(E2E_VAULT, '.gumply', name);
 const obsidianDir = () => path.join(E2E_VAULT, '.obsidian');
 const readOrNull = (file: string) => readFile(file, 'utf8').catch(() => null);
+const readOrNullSync = (file: string): string | null => {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+};
+
+function snapshotSettingsSync(): SettingsSnapshot {
+  const gumply = new Map<string, string | null>();
+  for (const name of GUMPLY_FILES) gumply.set(name, readOrNullSync(gumplyPath(name)));
+  let obsidian: Map<string, string> | null = null;
+  try {
+    const entries = readdirSync(obsidianDir(), { withFileTypes: true });
+    obsidian = new Map();
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const text = readOrNullSync(path.join(obsidianDir(), entry.name));
+      if (text !== null) obsidian.set(entry.name, text);
+    }
+  } catch {
+    obsidian = null;
+  }
+  return { gumply, obsidian };
+}
+
+/**
+ * The run's baseline. The first call (the main process, from the config) snapshots the vault and writes it to
+ * a temp file named in the env; the workers inherit the env and read that file. Without it (a config that
+ * didn't call this), a worker snapshots on its own.
+ */
+export function runSettingsBaseline(): SettingsSnapshot {
+  const file = process.env[BASELINE_ENV];
+  if (file) {
+    try {
+      const data = JSON.parse(readFileSync(file, 'utf8')) as { gumply: Array<[string, string | null]>; obsidian: Array<[string, string]> | null };
+      return { gumply: new Map(data.gumply), obsidian: data.obsidian === null ? null : new Map(data.obsidian) };
+    } catch {
+      // Unreadable: fall through and take one now.
+    }
+  }
+  const snapshot = snapshotSettingsSync();
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'gumply-e2e-settings-'));
+  const target = path.join(dir, 'baseline.json');
+  writeFileSync(target, JSON.stringify({ gumply: [...snapshot.gumply], obsidian: snapshot.obsidian === null ? null : [...snapshot.obsidian] }));
+  process.env[BASELINE_ENV] = target;
+  return snapshot;
+}
+
+/** Global teardown: remove the baseline's temp folder. */
+export function removeRunSettingsBaseline(): void {
+  const file = process.env[BASELINE_ENV];
+  if (file) rmSync(path.dirname(file), { recursive: true, force: true });
+}
 
 async function obsidianFiles(): Promise<Map<string, string> | null> {
   let entries;
@@ -38,12 +100,6 @@ async function obsidianFiles(): Promise<Map<string, string> | null> {
     if (text !== null) files.set(entry.name, text);
   }
   return files;
-}
-
-export async function snapshotSettings(): Promise<SettingsSnapshot> {
-  const gumply = new Map<string, string | null>();
-  for (const name of GUMPLY_FILES) gumply.set(name, await readOrNull(gumplyPath(name)));
-  return { gumply, obsidian: await obsidianFiles() };
 }
 
 /** Put the settings files back as `snapshot` had them. A file already equal is left alone (no mtime churn). */

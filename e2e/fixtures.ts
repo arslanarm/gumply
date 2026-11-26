@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import * as apiClient from './support/api';
 import { waitForBootOnNavigation } from './support/nav';
-import { restoreSettings, snapshotSettings, type SettingsSnapshot } from './support/vault-settings';
+import { restoreSettings, runSettingsBaseline, type SettingsSnapshot } from './support/vault-settings';
 
 export interface Vault {
   /** Delete every page, leaving an empty vault. */
@@ -16,8 +16,9 @@ export interface Vault {
  * through the API instead of the UI. See wiki `spec/e2e-tests`.
  */
 export const test = base.extend<{ vault: Vault }, { settingsBaseline: SettingsSnapshot }>({
-  // #w284vn2u: the vault's settings files as the worker found them, put back around every test.
-  settingsBaseline: [async ({}, use) => use(await snapshotSettings()), { scope: 'worker' }],
+  // #w284vn2u: the vault's settings files as the run started (taken once, in the main process), put back
+  // around every test.
+  settingsBaseline: [async ({}, use) => use(runSettingsBaseline()), { scope: 'worker' }],
   // #rqtacq4d: `page.goto` / `page.reload` return once the app has booted, with a
   // load-aware budget (support/nav.ts); in-page assertions keep the strict 5 s.
   page: async ({ page }, use, testInfo) => {

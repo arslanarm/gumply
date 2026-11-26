@@ -2,6 +2,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 import { API_PORT, BASE_URL, E2E_VAULT, IMAGE_STUB_PORT, WEB_PORT } from './support/env';
+import { runSettingsBaseline } from './support/vault-settings';
+
+// #w284vn2u: the vault's settings files as the run starts, once, before the server and any worker.
+runSettingsBaseline();
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
