@@ -293,3 +293,60 @@ test('an outside edit made before a column rename is kept, and the key follows i
   await expect.poll(() => read('People/Ann.md')).toBe('---\njob: Chef\nage: 30\n---\nAnn\n');
   await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\nage: 41\n---\nBo\n');
 });
+
+/** A paste on the focused element, as a spreadsheet's copy puts it on the clipboard. */
+async function paste(page: import('@playwright/test').Page, text: string, html = '') {
+  await page.evaluate(
+    ([plain, rich]) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', plain);
+      if (rich) data.setData('text/html', rich);
+      document.activeElement?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    },
+    [text, html] as const,
+  );
+}
+
+test('a block pasted at the active cell overwrites down and right, and rows past the end become new rows (phase 2)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await typing.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  const cell = page.getByTestId('base-grid-cell');
+  await expect(cell).toHaveAttribute('data-active', /^People\/Bo\|.*role$/);
+
+  // From Bo's role: Bo gets role and age; the next line becomes a new row (no name pasted: Untitled).
+  await paste(page, 'Chef\t50\r\nDiver\t7\r\n');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Chef\nage: 50\n---\nBo\n');
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Untitled']);
+  await expect.poll(() => read('People/Untitled.md')).toMatch(/role: Diver\n[^]*age: 7\n|age: 7\n[^]*role: Diver\n/);
+
+  // A value that isn't a number is left out, and the note says so.
+  await page.getByTestId('base-typing-input').click();
+  await page.getByTestId('base-typing-input').press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await expect(cell).toHaveAttribute('data-active', /^People\/Bo\|.*role$/);
+  await paste(page, 'Pilot\tlots');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Pilot\nage: 50\n---\nBo\n');
+  await expect(page.getByTestId('base-paste-note')).toContainText('1 pasted cell was left out');
+});
+
+test('one pasted value goes into the active cell as typing would, commas and all (phase 2)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await typing.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  const cell = page.getByTestId('base-grid-cell');
+  await paste(page, 'Cook, head');
+  await expect(cell).toHaveClass(/is-typing/);
+  await expect(cell).toHaveValue('Cook, head');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Bo.md')).toMatch(/^---\nrole: "?Cook, head"?\nage: 41\n---\nBo\n$/);
+});
