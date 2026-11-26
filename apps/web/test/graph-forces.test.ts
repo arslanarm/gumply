@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_GRAPH_FORCES } from "@gumply/core";
+import { DEFAULT_GRAPH_FORCES, type GraphForces } from "@gumply/core";
 import { createLayout, forcesToken, forceStrengths, layoutInputFor } from "../src/graph/layout-forces";
 
 /**
@@ -20,10 +20,11 @@ function twoGroups() {
 }
 
 /** The distance between the two groups' centroids once the layout has settled. */
-function groupGap(forces?: { center?: number; repel?: number; linkStrength?: number; linkDistance?: number }): number {
+function groupGap(change: Partial<GraphForces> = {}): number {
   const { nodes, links } = twoGroups();
-  const options = { centerId: null, width: 1200, height: 800, reducedMotion: false, forces } as Parameters<typeof layoutInputFor>[2];
-  const layout = createLayout(layoutInputFor(nodes, links, options));
+  // Whole forces, as the app always passes them (normalised settings): a partial set would leave NaN strengths.
+  const forces: GraphForces = { ...DEFAULT_GRAPH_FORCES, ...change };
+  const layout = createLayout(layoutInputFor(nodes, links, { centerId: null, width: 1200, height: 800, reducedMotion: false, forces }));
   while (!layout.tick());
   const { x, y } = layout.positions();
   const centroid = (from: number) => {
@@ -44,7 +45,8 @@ describe("graph Forces (#nadk3urm)", () => {
   it("Center at 0 lets two unlinked groups drift apart; the default pull keeps them close", () => {
     const pulled = groupGap();
     const free = groupGap({ center: 0 });
-    expect(free).toBeGreaterThan(pulled * 1.5);
+    // Measured (2026-11-26): 142 → 533 px for these groups of 20 (×3.75); ×2.9–3.75 for groups of 10–200.
+    expect(free).toBeGreaterThan(pulled * 2.5);
   });
 
   it("at the defaults every force is exactly the one used before the Forces existed, at every size", () => {
