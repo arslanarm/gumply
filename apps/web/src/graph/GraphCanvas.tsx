@@ -32,7 +32,7 @@ import {
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, forcesToken, forceStrengths, LAYOUT_SETTINGS, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
 import { ghostStrokeWidth, linkWidthFor, restingLinkWidth } from "./link-width.js";
-import { GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, type LayerLink } from "./link-layer.js";
+import { buildLinkIndex, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, visibleGraphRect, type LayerLink, type LinkIndex } from "./link-layer.js";
 import { startLayout } from "./layout-client.js";
 import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
 
@@ -1316,6 +1316,8 @@ export function GraphCanvas({
   }, [graphData]);
   const graphDataVersionRef = useRef(graphDataVersion);
   graphDataVersionRef.current = graphDataVersion;
+  /** #znabmb8n: the links as typed index pairs, rebuilt when the data version changes. */
+  const linkIndexRef = useRef<{ version: number; index: LinkIndex | null }>({ version: -1, index: null });
 
   /**
    * #pifuz5zs: the resting links as a picture. Built from the frame that would
@@ -1387,12 +1389,24 @@ export function GraphCanvas({
         lctx.setTransform(1, 0, 0, 1, 0, 0);
         lctx.clearRect(0, 0, width, height);
         lctx.setTransform(transform);
-        paintRestingLinks(lctx, graphDataRef.current.links as unknown as LayerLink[], {
+        // #znabmb8n: the links as typed index pairs, once per data version.
+        const version = graphDataVersionRef.current;
+        if (linkIndexRef.current.version !== version) {
+          const data = graphDataRef.current;
+          linkIndexRef.current = {
+            version,
+            index: buildLinkIndex(data.nodes as never, data.links as unknown as LayerLink[], (link) =>
+              linkDashFor(endpointId(link.target as Parameters<typeof endpointId>[0])) !== null,
+            ),
+          };
+        }
+        paintRestingLinks(lctx, linkIndexRef.current.index!, {
           color,
           widthCss: restingLinkWidth(dpr),
           scale,
           dash: GHOST_LINK_DASH,
-          isDashed: (link) => linkDashFor(endpointId(link.target as Parameters<typeof endpointId>[0])) !== null,
+          // Only what can show: zoomed in, most links lie wholly outside the view.
+          view: visibleGraphRect(transform, width, height),
         });
         return layer;
       };

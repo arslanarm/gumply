@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, type LinkColors, type LinkLayerInputs, type LinkPainter } from "../src/graph/link-layer";
+import { buildLinkIndex, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, visibleGraphRect, type LinkColors, type LinkLayerInputs, type LinkPainter } from "../src/graph/link-layer";
 import { linkWidthFor, restingLinkWidth } from "../src/graph/link-width";
 
 /** #pifuz5zs: the cached link picture's key and its drawing (as force-graph strokes resting links). */
@@ -58,11 +58,14 @@ describe("the cached link picture (#pifuz5zs)", () => {
     expect(linkLayerKey({ ...base, transform: { ...base.transform } })).toBe(linkLayerKey(base));
   });
 
+  const dashedByTarget = (link: { target: unknown }) => String((link.target as { id: string }).id).startsWith("?");
+
   it("draws every placed link once: plain ones in one path, links to a page not created yet in a dashed one", () => {
     const a = { id: "A", x: 0, y: 0 };
     const b = { id: "B", x: 10, y: 0 };
     const ghost = { id: "?Ghost", x: 5, y: 5 };
     const unplaced = { id: "C" };
+    const nodes = [a, b, ghost, unplaced];
     const links = [
       { source: a, target: b },
       { source: b, target: a },
@@ -70,7 +73,7 @@ describe("the cached link picture (#pifuz5zs)", () => {
       { source: a, target: unplaced },
     ];
     const { painter, calls, dashes } = recorder();
-    paintRestingLinks(painter, links, { color: "#123", widthCss: 0.99, scale: 0.5, dash: [4, 3], isDashed: (link) => (link.target as { id: string }).id.startsWith("?") });
+    paintRestingLinks(painter, buildLinkIndex(nodes, links, dashedByTarget), { color: "#123", widthCss: 0.99, scale: 0.5, dash: [4, 3] });
     expect(calls.filter((call) => call === "line")).toHaveLength(3);
     expect(calls.filter((call) => call === "stroke")).toHaveLength(2);
     expect(dashes).toEqual([[], [4, 3], []]);
@@ -80,10 +83,62 @@ describe("the cached link picture (#pifuz5zs)", () => {
   });
 
   it("with nothing placed it draws nothing (and leaves no dash behind)", () => {
+    const nodes = [{ id: "A", x: Number.NaN, y: 0 }, { id: "B", x: 1, y: 1 }];
     const { painter, calls, dashes } = recorder();
-    paintRestingLinks(painter, [{ source: { x: Number.NaN, y: 0 }, target: { x: 1, y: 1 } }], { color: "#000", widthCss: 1, scale: 1, dash: [4, 3], isDashed: () => false });
+    paintRestingLinks(painter, buildLinkIndex(nodes, [{ source: nodes[0], target: nodes[1] }], () => false), { color: "#000", widthCss: 1, scale: 1, dash: [4, 3] });
     expect(calls).toEqual([]);
     expect(dashes).toEqual([[]]);
+  });
+
+  it("the index finds a link's ends by node or by id (before force-graph has bound them), and drops links to nodes not drawn", () => {
+    const nodes = [{ id: "A", x: 0, y: 0 }, { id: "B", x: 1, y: 0 }];
+    const index = buildLinkIndex(nodes, [{ source: nodes[0], target: nodes[1] }, { source: "B", target: "A" }, { source: "A", target: "Gone" }], () => false);
+    expect(index.count).toBe(2);
+    expect([...index.source.subarray(0, 2)]).toEqual([0, 1]);
+    expect([...index.target.subarray(0, 2)]).toEqual([1, 0]);
+  });
+
+  // #znabmb8n: zoomed in, links wholly outside the view are not pathed (they cost Skia's stroke, clip and dash work).
+  describe("culling to the view", () => {
+    const view = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    const lines = (segments: Array<[[number, number], [number, number]]>, widthCss = 1, scale = 1) => {
+      const nodes = segments.flatMap(([p, q], i) => [{ id: `s${i}`, x: p[0], y: p[1] }, { id: `t${i}`, x: q[0], y: q[1] }]);
+      const links = segments.map((_, i) => ({ source: nodes[i * 2], target: nodes[i * 2 + 1] }));
+      const { painter, calls } = recorder();
+      paintRestingLinks(painter, buildLinkIndex(nodes, links, () => false), { color: "#000", widthCss, scale, dash: [4, 3], view });
+      return calls.filter((call) => call === "line").length;
+    };
+
+    it("a link inside is drawn; one wholly left, right, above or below is not", () => {
+      expect(lines([[[10, 10], [20, 20]]])).toBe(1);
+      expect(lines([[[-50, 10], [-20, 90]]])).toBe(0);
+      expect(lines([[[150, 10], [120, 90]]])).toBe(0);
+      expect(lines([[[10, -50], [90, -20]]])).toBe(0);
+      expect(lines([[[10, 150], [90, 120]]])).toBe(0);
+    });
+
+    it("a link crossing the view is kept, even with both ends outside (nothing visible goes missing)", () => {
+      expect(lines([[[-50, 50], [150, 50]]])).toBe(1);
+      expect(lines([[[50, -50], [50, 150]]])).toBe(1);
+      expect(lines([[[-10, 50], [50, -10]]])).toBe(1);
+    });
+
+    it("a link just outside, within one line width, is kept (its stroke can still touch the edge)", () => {
+      expect(lines([[[-0.5, 10], [-0.4, 90]]], 1, 1)).toBe(1);
+      expect(lines([[[-3, 10], [-2, 90]]], 1, 1)).toBe(0);
+    });
+
+    it("without a view every placed link is drawn (as before)", () => {
+      const nodes = [{ id: "A", x: -500, y: -500 }, { id: "B", x: -400, y: -400 }];
+      const { painter, calls } = recorder();
+      paintRestingLinks(painter, buildLinkIndex(nodes, [{ source: nodes[0], target: nodes[1] }], () => false), { color: "#000", widthCss: 1, scale: 1, dash: [] });
+      expect(calls.filter((call) => call === "line")).toHaveLength(1);
+    });
+
+    it("the visible rectangle comes from the canvas transform (device px)", () => {
+      // Zoom 2 at DPR 1, the graph's origin at (400, 300): the 800×600 canvas shows x -200…200, y -150…150.
+      expect(visibleGraphRect({ a: 2, d: 2, e: 400, f: 300 }, 800, 600)).toEqual({ minX: -200, maxX: 200, minY: -150, maxY: 150 });
+    });
   });
 
   // The pin (@opus-editor, @lead): a resting link's look comes only from what the key holds. If a link's colour,
