@@ -16,7 +16,7 @@ Gumply writes two things next to each other:
 
 ```
 Team.base     the table's settings: its columns, views and options
-Team/         one note per row, e.g. Team/Ada Lovelace.md
+Team/         one note per row, e.g. Team/Mira Okonkwo.md
 ```
 
 A row's values are the note's [properties](properties-tags-templates.md), at the top of its file. The button above the table says **Rows: Team**, so you can tell a database from a view of existing pages. Clicking it opens a short note about where the rows live.
@@ -43,7 +43,7 @@ The name cell is the note's title: changing it renames the note, and links to it
 
 ## Properties (the columns)
 
-**Add a property:** click **+** at the end of the header, type a name and choose its type: Text, Number, Checkbox, Date, Date & time, List, **Select** or **Multi-select**. If the name is already used elsewhere in your vault with another type, Gumply says so and keeps that type, so the two don't disagree.
+**Add a property:** click **+** at the end of the header, type a name and choose its type: Text, Number, Checkbox, Date, Date & time, **Select**, **Multi-select** or List. A new Select starts with no options: the first value you type in a cell becomes the first one. If the name is already used elsewhere in your vault with another type, Gumply says so and keeps that type, so the two don't disagree.
 
 **Change one:** click a column's header.
 
@@ -98,15 +98,15 @@ To see them in the sidebar too, choose **Show rows in the sidebar** in the datab
 
 ## Undo
 
-While the table is open, **Ctrl/Cmd+Z** undoes your last change to it, and **Ctrl/Cmd+Shift+Z** redoes it: a cell, a paste, a new row, a property added, renamed or deleted, an option renamed. A paste of 40 rows, or a rename across 12 rows, is one step.
+While the table is open, **Ctrl/Cmd+Z** undoes your last change to it, and **Ctrl/Cmd+Shift+Z** redoes it: a cell's value, a paste, a property added, renamed or deleted, a property made a Select (or no longer one), and options renamed, cleared, recoloured or reordered. A paste of 40 rows, or a rename across 12 rows, is one step. A new row isn't an undo step: to remove one you just made, delete it.
 
 **An undo can be refused.** If a row changed after your change (in another app, or by a sync), undoing would overwrite that newer text, so Gumply doesn't, and says which rows: *Can't undo: these rows changed since: …*. Nothing is written. The row's [history](version-history.md) still has every version.
 
-Undo lasts while the table is open; reloading or closing it starts afresh. In a row's history, these changes are labelled **Database change**.
+Undo lasts while the table is open; reloading or closing it starts afresh. Changes the table makes across rows (a paste, a property renamed or deleted, an option renamed or cleared, and their undo) are labelled **Database change** in a row's history; a single cell edit is an ordinary edit there.
 
 ## Delete and restore
 
-**Delete database** in its **⋯** menu asks whether to **also move its N rows to the Trash**, ticked by default. If the rows folder also holds other files (images, PDFs), it names them.
+**Delete database** in its **⋯** menu asks whether to **also move its N rows to the Trash**, ticked by default. If the rows folder also holds other files (images, PDFs), it names them. A database whose rows folder is empty goes to the Trash with it, without asking.
 
 - **With its rows:** the database and its folder go to the Trash as one item, *Team, with its 6 rows*. **Restore** brings both back together.
 - **Without:** only the database goes. The rows stay, as an ordinary folder the sidebar now shows.
