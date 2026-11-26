@@ -455,3 +455,33 @@ test('the column menu makes a column a Select: its options come from the rows, i
   await page.getByTestId('base-column-type-text').click();
   await expect.poll(() => read('People.base')).not.toContain('gumplyType');
 });
+
+test('typing on a Select cell opens its picker: Enter picks the match, or adds a new option (phase 3)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  await page.getByTestId('base-th-note.role').click();
+  await page.getByTestId('base-column-type-select').click();
+  await expect.poll(() => read('People.base')).toContain('gumplyType: select');
+
+  // Bo's role: "C" opens the picker searching for it; Enter picks Cook.
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await typing.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('C');
+  await expect(page.getByTestId('base-select-search')).toHaveValue('C');
+  await expect(page.getByTestId('base-select-picker')).toContainText('Cook');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Cook\nage: 41\n---\nBo\n');
+
+  // A value that isn't an option yet: Enter adds it to the base's options and picks it.
+  await page.getByTestId('base-typing-input').click();
+  await page.getByTestId('base-typing-input').press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('D');
+  await page.keyboard.type('iver');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Diver\nage: 41\n---\nBo\n');
+  await expect.poll(() => read('People.base')).toContain('      - value: Diver\n        color: yellow\n');
+});
