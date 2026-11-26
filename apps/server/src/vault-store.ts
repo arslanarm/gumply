@@ -125,7 +125,7 @@ import {
   type ConflictsList,
   type PossibleCopy,
 } from "@gumply/core";
-import { badRequest, conflict, notFound, payloadTooLarge, readOnly } from "./errors.js";
+import { badRequest, conflict, notFound, payloadTooLarge, readOnly, VaultError } from "./errors.js";
 import {
   boardDiff,
   budgetFor,
@@ -4027,11 +4027,32 @@ export class VaultStore {
   ): Promise<void> {
     // D37/D43: a conflict copy is never rewritten; nothing is written until the user resolves it.
     const copies = this.copyIds();
-    for (const other of [...this.pages.values()]) {
-      if (skip.has(other.id) || copies.has(other.id)) continue;
-      const apply = await this.planRewrite(other, rewriteText, boardNodes, options);
+    for (const listed of [...this.pages.values()]) {
+      if (skip.has(listed.id) || copies.has(listed.id)) continue;
+      let other: PageRecord | undefined = listed;
+      let apply = await this.planRewrite(other, rewriteText, boardNodes, options);
       if (!apply) continue;
-      await apply();
+      // #y5k39njn (as N9's batches do): a page about to be rewritten is first checked against the
+      // disk. Changed outside since it was read (a moved file time, or other bytes under the same
+      // one): take the file as it is now and rewrite that, never the stale text.
+      if (await this.changedOnDiskSince(other, await stat(other.filePath).catch(() => null))) {
+        await this.refreshFromDisk({ kind: "paths", paths: new Set([other.filePath]) });
+        other = this.pages.get(other.id);
+        if (!other || copies.has(other.id)) continue;
+        apply = await this.planRewrite(other, rewriteText, boardNodes, options);
+        if (!apply) continue;
+      }
+      try {
+        await apply();
+      } catch (error) {
+        // #bajn9rna: a read-only page keeps its link (it's never replaced); the others still get theirs,
+        // as N9's batches skip a page whose write fails. Any other error stops the pass as before.
+        if (error instanceof VaultError && error.status === 423) {
+          console.warn(`[gumply] links in ${other.id} not rewritten: the file is read-only`);
+          continue;
+        }
+        throw error;
+      }
       rewritten.push(other.id);
     }
   }
@@ -6070,6 +6091,9 @@ export class VaultStore {
       const ext = historyExt(record.kind);
       const current = await readFile(record.filePath);
       if (!current.equals(bytes)) {
+        // #bajn9rna (@graph-dev's review): a read-only file is never replaced by a restore either,
+        // and nothing is recorded first (no before-restore version).
+        await assertWritable(record.filePath);
         await saveVersion(this.root, { id: record.id, ext, bytes: current, version: record.updated, source: "restore", reason: "before-restore" });
         const temporary = tempPathBeside(record.filePath);
         try {

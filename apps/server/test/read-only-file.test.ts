@@ -1,6 +1,7 @@
-import { chmod, readFile, readdir, stat } from "node:fs/promises";
+import { chmod, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { historyDir, readHistory } from "../src/history";
 import { cleanupVaults, createTestServer, jsonRequest } from "./helpers";
 
 /**
@@ -48,6 +49,54 @@ describe.skipIf(asRoot)("a read-only file is never replaced (#bajn9rna)", () => 
     expect(response.status).toBe(423);
     expect(((await response.json()) as { error: string }).error).toMatch(/read-only/);
     await chmod(join(dir, `${page.id}.md`), 0o644);
+  });
+
+  it("a heading rename with a read-only linking page: the save is done, the other pages are rewritten, the read-only one is kept (@graph-dev)", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Plan.md"), "# Plan\n\n## Goals\n\nShip it.\n");
+    await writeFile(join(dir, "Notes.md"), "Read [[Plan#Goals]].\n");
+    await writeFile(join(dir, "Daily.md"), "Today: [[Plan#Goals]].\n");
+    await store.rescan();
+    const notes = join(dir, "Notes.md");
+    await chmod(notes, 0o444);
+    try {
+      const plan = store.get("Plan");
+      const saved = await store.update("Plan", { content: plan.content.replace("## Goals", "## Objectives"), expectedUpdated: plan.updated });
+      expect(saved.rewrittenPages).toEqual(["Daily"]);
+      expect(await readFile(join(dir, "Plan.md"), "utf8")).toContain("## Objectives");
+      expect(await readFile(join(dir, "Daily.md"), "utf8")).toBe("Today: [[Plan#Objectives]].\n");
+      expect(await readFile(notes, "utf8")).toBe("Read [[Plan#Goals]].\n");
+      expect(await mode(notes)).toBe(0o444);
+    } finally {
+      await chmod(notes, 0o644);
+    }
+  });
+
+  it("History restore on a read-only page: refused (423), the file keeps its bytes and mode, no before-restore version (@graph-dev)", async () => {
+    const { store, dir } = await createTestServer();
+    const page = await store.create({ title: "Ledger", content: "Balance: one." });
+    const second = await store.update(page.id, { content: "Balance: two." });
+    const third = await store.update(page.id, { content: "Balance: three.", expectedUpdated: second.updated });
+    const file = join(dir, `${page.id}.md`);
+    const { entries } = await readHistory(historyDir(dir, page.id));
+    let older: (typeof entries)[number] | undefined;
+    for (const entry of entries) {
+      if ((await readFile(join(historyDir(dir, page.id), entry.file), "utf8")).includes("Balance: one.")) older = entry;
+    }
+    expect(older).toBeDefined();
+    const before = await readFile(file, "utf8");
+    const count = entries.length;
+    await chmod(file, 0o444);
+    try {
+      const status = await store.restoreVersion(page.id, older!.file, { expectedUpdated: third.updated }).then(() => 0, (error: { status?: number }) => error.status);
+      expect(status).toBe(423);
+      expect(await readFile(file, "utf8")).toBe(before);
+      expect(await mode(file)).toBe(0o444);
+      expect((await readHistory(historyDir(dir, page.id))).entries.filter((entry) => entry.reason === "before-restore")).toEqual([]);
+      expect((await readHistory(historyDir(dir, page.id))).entries.length).toBe(count);
+    } finally {
+      await chmod(file, 0o644);
+    }
   });
 
   it("a board and a base are refused the same way, and keep their bytes", async () => {
