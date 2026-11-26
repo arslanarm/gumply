@@ -8,6 +8,7 @@
  * formula is empty.
  */
 import type { BaseConfig, BaseFilter, BaseView, BaseViewType } from "./format.js";
+import { selectSettings } from "./select.js";
 import {
   UnsupportedError,
   compareValues,
@@ -345,6 +346,18 @@ export function runBaseView(options: RunBaseOptions): BaseViewResult {
         const label = entry === null ? "" : String(entry);
         return byLabel.get(label) ?? { value: entry === null ? null : String(entry), label, rows: [] };
       });
+    } else if (selectOrderFor(config, id)) {
+      // #7prbquxu phase 3 (spec/database-tables §6): a Select's options are the default order, each a
+      // column even when empty; values outside them follow, then "no value".
+      const options = selectOrderFor(config, id)!;
+      const known = new Set(options);
+      const outside = [...byLabel.values()].filter((group) => group.label !== "" && !known.has(group.label));
+      const none = byLabel.get("");
+      groups = [
+        ...options.map((value) => byLabel.get(value) ?? { value, label: value, rows: [] }),
+        ...outside,
+        ...(none ? [none] : []),
+      ];
     } else {
       groups = [...byLabel.values()].sort((a, b) => {
         if ((a.label === "") !== (b.label === "")) return a.label === "" ? 1 : -1;
@@ -416,3 +429,10 @@ function toValue(raw: unknown, type?: string): Value {
 }
 
 const emptyFile: FileInfo = { path: "", title: "", ctime: 0, mtime: 0, tags: [], links: [], props: new Map() };
+
+/** A single-value Select's option order for a column id (`note.stage`), or null when it isn't one. */
+function selectOrderFor(config: BaseConfig, id: string): string[] | null {
+  if (!id.startsWith("note.")) return null;
+  const settings = selectSettings(config, id.slice(5));
+  return settings && settings.kind === "select" ? settings.options.map((option) => option.value) : null;
+}
