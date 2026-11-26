@@ -29,6 +29,8 @@ export interface PageItemProps {
   onCreateChild: (id: PageId) => void;
   /** "Add whiteboard inside" (spec/whiteboard §4). */
   onCreateBoardChild: (id: PageId) => void;
+  /** #7prbquxu phase 4: show or hide an owned database's rows folder in the sidebar. */
+  onToggleRows?: (baseId: PageId, shown: boolean) => void;
   /** "Add database view inside" (D34). */
   onCreateBaseChild?: (id: PageId) => void;
   onDelete: (id: PageId) => void;
@@ -227,6 +229,7 @@ function PageItemRow(props: PageItemProps) {
       "page.export-html": props.onExportHtml ? () => props.onExportHtml?.(page.id) : undefined,
       "page.export-pdf": props.onExportPdf ? () => props.onExportPdf?.(page.id) : undefined,
       "page.history": props.onShowHistory ? () => props.onShowHistory?.(page.id) : undefined,
+      "page.show-rows": props.onToggleRows ? () => props.onToggleRows?.(page.id, !page.showRows) : undefined,
       "page.delete": () => props.onDelete(page.id),
     };
 

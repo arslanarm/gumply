@@ -4,6 +4,7 @@ import {
   formatWikilink,
   pageLook,
   resolveWikilink,
+  withRowsShown,
   type Backlink,
   type BoardDocument,
   type Page,
@@ -1372,6 +1373,24 @@ export function App() {
   );
 
   /** D34: "New view of pages…" (was "New database view"): a table of the folder it's created in. */
+  /**
+   * #7prbquxu phase 4 (spec/database-tables §3): "Show rows in the sidebar" writes the marker's showRows (only
+   * that line, from the base's version), and the tree follows the listing.
+   */
+  const handleToggleRows = useCallback(
+    async (baseId: PageId, shown: boolean) => {
+      try {
+        const doc = await api.getBase(baseId);
+        await api.saveBase(baseId, { config: withRowsShown(doc.config, shown), expectedUpdated: doc.meta.updated });
+        await loadPages();
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const handleCreateBase = useCallback(
     async (parentId: PageId | null, title?: string) => {
       setActionError(null);
@@ -2523,6 +2542,9 @@ export function App() {
     "page.add-base": () => {
       if (commandPage) void handleCreateBase(commandPage.id);
     },
+    "page.show-rows": () => {
+      if (commandPage) void handleToggleRows(commandPage.id, !commandPage.showRows);
+    },
     "page.new-from-template": () => setTemplatePicker({ mode: "new", parentId: commandPage?.id ?? null }),
     "page.import-notion": () => setNotionImport({ target: importDefaultTarget }),
     "page.export-html": () => {
@@ -2692,6 +2714,7 @@ export function App() {
           footer={<UpdateNotice state={updates} hidden={hiddenUpdate} onHide={setHiddenUpdate} />}
           onCreateBoard={closingSidebar((parentId: PageId | null) => setGalleryParent({ parentId }))}
           onCreateBase={(parentId) => void handleCreateBase(parentId)}
+          onToggleRows={(baseId, shown) => void handleToggleRows(baseId, shown)}
           onCreateDatabase={(parentId) => void handleCreateDatabase(parentId)}
           pages={pages}
           selectedId={selectedId}

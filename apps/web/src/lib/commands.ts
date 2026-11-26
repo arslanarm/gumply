@@ -96,6 +96,8 @@ const PAGE_COMMANDS = {
   "page.export-html": { group: "page", icon: "download", label: "export.command", words: "search.exportWords", en: "export as html page save", testId: "search-export-html", when: (c) => !!kind(c.page)?.note },
   "page.export-pdf": { group: "page", icon: "file", label: "export.pdf.command", words: "search.pdfWords", en: "export as pdf print page", testId: "search-export-pdf", when: (c) => !!kind(c.page)?.note },
   "page.history": { group: "page", icon: "clock", label: "history.command", words: "search.historyWords", en: "history page history show page history version history versions restore version", testId: "search-history", when: (c) => !!kind(c.page) && !kind(c.page)!.folder },
+  // #7prbquxu phase 4: a database that owns its rows folder shows or hides it in the sidebar.
+  "page.show-rows": { group: "page", icon: "sidebar", label: "commands.page.toggleRows", en: "show hide rows in the sidebar database folder", when: (c) => c.page?.kind === "base" && !!c.page.rowsFolder },
   "page.delete": { group: "page", icon: "trash", label: "commands.page.delete", en: "delete remove trash", when: (c) => c.page !== null },
 } satisfies Record<string, StaticCommand>;
 
@@ -103,7 +105,7 @@ export type PageCommandId = keyof typeof PAGE_COMMANDS;
 
 /** The ⋯ menu: groups of page commands, separated by a line (#sjts42ue). */
 export const ROW_MENU: readonly (readonly PageCommandId[])[] = [
-  ["page.rename", "page.duplicate", "page.copy-link", "page.move", "page.open-window"],
+  ["page.rename", "page.duplicate", "page.copy-link", "page.move", "page.open-window", "page.show-rows"],
   ["page.add-page", "page.add-board", "page.add-base", "page.new-from-template"],
   ["page.import-notion", "page.export-html", "page.export-pdf", "page.history"],
   ["page.delete"],
@@ -128,6 +130,8 @@ export function menuLabel(id: PageCommandId, page: PageMeta): string {
       return t("sidebar.addBoardInside");
     case "page.add-base":
       return t("bases.addBaseInside");
+    case "page.show-rows":
+      return page.showRows ? t("bases.hideRowsInSidebar") : t("bases.showRowsInSidebar");
     case "page.new-from-template":
       return t("sidebar.newFromTemplate");
     case "page.import-notion":
@@ -160,6 +164,7 @@ export const ROW_TEST_IDS: Record<PageCommandId, string> = {
   "page.export-html": "export-html",
   "page.export-pdf": "export-pdf",
   "page.history": "page-history",
+  "page.show-rows": "toggle-rows",
   "page.delete": "delete-page",
 };
 
