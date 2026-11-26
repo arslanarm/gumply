@@ -3758,6 +3758,24 @@ input {
   text-decoration-color: currentColor;
 }
 
+/* #zvwk8irb (@plony): a coloured link's text colour replaces the link's own, underline included. The
+   colour span is inside the link, so the underline moves onto it (the link's own would keep the
+   link's colour). Hover only strengthens the underline; the colour stays. */
+.gumply-editor a[href]:not(.file-card-link):has(.md-text-color) {
+  text-decoration-color: transparent;
+}
+
+.gumply-editor a[href]:not(.file-card-link) .md-text-color {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+.gumply-editor a[href]:not(.file-card-link):hover .md-text-color {
+  text-decoration-color: currentColor;
+}
+
 /* ---------- M2: wiki links, link menu, backlinks ---------- */
 
 .wiki-link {

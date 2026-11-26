@@ -257,6 +257,12 @@ test.describe('every colour works on links (#zvwk8irb)', () => {
     await expect(label).toBeVisible();
     expect(await label.evaluate((element) => element.closest('a')?.getAttribute('href'))).toBe('https://example.com');
     expect(await label.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(233, 49, 71)');
+    // The underline takes the colour too, and hover keeps it (@plony: the colour replaces the link's own).
+    expect(await label.evaluate((element) => getComputedStyle(element).textDecorationLine)).toContain('underline');
+    // The link's own underline (in the line's colour) is hidden; the coloured span draws its own.
+    expect(await label.evaluate((element) => getComputedStyle(element.closest('a')!).textDecorationColor)).toBe('rgba(0, 0, 0, 0)');
+    await label.hover();
+    expect(await label.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(233, 49, 71)');
     await selectLineUnderTop(page);
     await pick(page, 'color-text-default');
     await expectSaved(request, 'Md link', 'Top\n\n[label](https://example.com)');
@@ -271,6 +277,9 @@ test.describe('every colour works on links (#zvwk8irb)', () => {
     await page.reload();
     const link = page.getByTestId('editor-content').locator('.wiki-link-label', { hasText: 'Target' });
     await expect(link).toBeVisible();
+    expect(await link.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(8, 185, 78)');
+    expect(await link.evaluate((element) => getComputedStyle(element).textDecorationLine)).toContain('underline');
+    await link.hover();
     expect(await link.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(8, 185, 78)');
     await selectLineUnderTop(page);
     await pick(page, 'color-text-default');
@@ -294,6 +303,35 @@ test.describe('every colour works on links (#zvwk8irb)', () => {
     await expectSaved(request, 'Wiki bg', 'Top\n\n==[[Target]]==');
     await page.reload();
     await expect(page.getByTestId('editor-content').locator('mark')).toContainText('Target');
+  });
+
+  test('a text colour and a highlight on one link, each alone and together, for both kinds', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Target', content: 'x' }, { title: 'Both md', content: 'Top\n\n[label](https://example.com)' }, { title: 'Both wiki', content: 'Top\n\n[[Target]]' }]);
+    await openPage(page, 'Both md');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-background-blue');
+    await expectSaved(request, 'Both md', `Top\n\n[${BLUE_BG}label</span>](https://example.com)`);
+    await selectLineUnderTop(page);
+    await pick(page, 'color-text-red');
+    await expect.poll(async () => (await api.getPage(request, 'Both md')).content, { timeout: 8_000 }).toMatch(/^Top\n\n\[<span[^>]*><span[^>]*>label<\/span><\/span>\]\(https:\/\/example\.com\)$/);
+    const md = (await api.getPage(request, 'Both md')).content;
+    expect(md).toContain(RED_TEXT);
+    expect(md).toContain(BLUE_BG);
+    const label = page.getByTestId('editor-content').getByText('label', { exact: true });
+    expect(await label.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(233, 49, 71)');
+
+    await openPage(page, 'Both wiki');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-background-blue');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-text-red');
+    await expect.poll(async () => (await api.getPage(request, 'Both wiki')).content, { timeout: 8_000 }).toMatch(/^Top\n\n<span[^>]*><span[^>]*>\[\[Target\]\]<\/span><\/span>$/);
+    const wiki = (await api.getPage(request, 'Both wiki')).content;
+    expect(wiki).toContain(RED_TEXT);
+    expect(wiki).toContain(BLUE_BG);
+    await page.reload();
+    const link = page.getByTestId('editor-content').locator('.wiki-link-label', { hasText: 'Target' });
+    expect(await link.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(233, 49, 71)');
   });
 
   test('text and a link together: both are coloured', async ({ page, request, vault }) => {
