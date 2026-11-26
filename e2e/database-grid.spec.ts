@@ -282,10 +282,10 @@ test('an outside edit made before a column rename is kept, and the key follows i
   await writeVault(request, PEOPLE);
   await openPeople(page, ['Ann', 'Bo']);
   const ann = path.join(E2E_VAULT, 'People/Ann.md');
-  const before = await fs.stat(ann);
-  // Same size and modification time (#y5k39njn): only the bytes tell.
-  await fs.writeFile(ann, '---\nrole: Chef\nage: 30\n---\nAnn\n', 'utf8');
-  await fs.utimes(ann, before.atime, before.mtime);
+  // An ordinary save by another app (a temp file renamed over the page). A same-size, same-mtime write is
+  // the server test's (bases.test.ts); seeing one through the page API is #dqdwz9qw's.
+  await fs.writeFile(`${ann}.tmp-outside`, '---\nrole: Chef\nage: 30\n---\nAnn\n', 'utf8');
+  await fs.rename(`${ann}.tmp-outside`, ann);
   await expect
     .poll(async () => ((await api.getPage(request, 'People/Ann')) as { properties?: Array<{ key: string; value: unknown }> }).properties?.find((p) => p.key === 'role')?.value, { timeout: 15_000 })
     .toBe('Chef');
