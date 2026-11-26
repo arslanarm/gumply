@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SELECT_COLORS, type SelectColor, type SelectOption, type SelectSettings } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
@@ -25,6 +25,15 @@ export function OptionsEditor(props: {
   const [names, setNames] = useState<Record<string, string>>({});
   const [deleting, setDeleting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // #pzqmduua: the question opens under the list, which can be below the popover's scrolled fold (ten options);
+  // bring it into sight and put focus on Cancel, so the bin visibly does something and keys reach the question,
+  // while a stray Enter can't clear the value from every row (the app's safe default, as in DeleteDialog).
+  const confirmRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (deleting === null) return;
+    confirmRef.current?.scrollIntoView({ block: "nearest" });
+    confirmRef.current?.querySelector<HTMLButtonElement>('[data-testid="base-option-delete-cancel"]')?.focus({ preventScroll: true });
+  }, [deleting]);
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
     try {
@@ -116,7 +125,7 @@ export function OptionsEditor(props: {
         </div>
       ))}
       {deleting !== null ? (
-        <div className="base-options-confirm" role="alert" data-testid="base-option-delete-confirm">
+        <div ref={confirmRef} className="base-options-confirm" role="alert" data-testid="base-option-delete-confirm">
           <p>{t("bases.optionDeleteAsk", { value: deleting })}</p>
           <button
             type="button"
@@ -142,7 +151,7 @@ export function OptionsEditor(props: {
           >
             {t("bases.optionDeleteKeep")}
           </button>
-          <button type="button" className="button-secondary" onClick={() => setDeleting(null)}>
+          <button type="button" className="button-secondary" data-testid="base-option-delete-cancel" onClick={() => setDeleting(null)}>
             {t("common.cancel")}
           </button>
         </div>

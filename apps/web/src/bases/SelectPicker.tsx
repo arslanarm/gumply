@@ -1,4 +1,5 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { selectedValues, type BaseValue, type SelectSettings } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
@@ -24,8 +25,43 @@ export function SelectPicker(props: {
   const [query, setQuery] = useState(props.initialQuery ?? "");
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // A combobox (the search) that controls the listbox: a screen reader hears the options and the highlighted one
+  // wherever the picker sits in the page (it is in a portal).
+  const listId = useId();
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const [place, setPlace] = useState<CSSProperties>({ top: 0, left: 0 });
   // Before the next key reaches the page (typing on an active cell opens this mid-word): no letter is lost.
-  useLayoutEffect(() => inputRef.current?.focus(), []);
+  useLayoutEffect(() => inputRef.current?.focus({ preventScroll: true }), []);
+  // #pzqmduua: the picker lives on the page's top layer (a portal), placed by its cell. Inside the table a row's paint
+  // containment and the table's own scroll box clipped it, so it was focused and taking keys but couldn't be seen.
+  // Under the cell, or above it when it doesn't fit below and there's more room above; it follows a scroll.
+  useLayoutEffect(() => {
+    let natural: number | undefined;
+    const placeIt = () => {
+      const cell = anchorRef.current?.parentElement;
+      const picker = pickerRef.current;
+      if (!cell || !picker) return;
+      const box = cell.getBoundingClientRect();
+      // Its own height, from before any cap below (so a scroll doesn't flip it back and forth).
+      natural ??= picker.offsetHeight;
+      const height = natural;
+      const below = window.innerHeight - box.bottom;
+      const up = below < height + 8 && box.top > below;
+      const width = Math.max(box.width, 224);
+      const left = Math.max(8, Math.min(box.left, window.innerWidth - width - 8));
+      // Never taller than the room on its side (its list scrolls inside): on a short window it stays whole.
+      const maxHeight = Math.max(96, (up ? box.top : below) - 8);
+      setPlace(up ? { left, width, maxHeight, bottom: window.innerHeight - box.top } : { left, width, maxHeight, top: box.bottom });
+    };
+    placeIt();
+    window.addEventListener("scroll", placeIt, true);
+    window.addEventListener("resize", placeIt);
+    return () => {
+      window.removeEventListener("scroll", placeIt, true);
+      window.removeEventListener("resize", placeIt);
+    };
+  }, []);
 
   const current = selectedValues(props.value);
   const trimmed = query.trim();
@@ -34,6 +70,9 @@ export function SelectPicker(props: {
     [props.settings.options, trimmed],
   );
   const exact = props.settings.options.some((option) => option.value === trimmed);
+  // #pzqmduua: when nothing matches, Enter adds the query; that item is then the active option, so a screen reader
+  // hears what Enter will do (and it's shown highlighted).
+  const adding = shown.length === 0 && trimmed !== "" && !exact;
   const unknown = current.filter((item) => !props.settings.options.some((option) => option.value === item));
 
   const pick = async (value: string) => {
@@ -49,14 +88,31 @@ export function SelectPicker(props: {
     await pick(value);
   };
 
-  return (
-    <div className="base-select-picker" data-testid="base-select-picker" role="dialog" aria-label={t("bases.selectSearch")}>
+  const picker = (
+    <div
+      ref={pickerRef}
+      className="base-select-picker"
+      style={place}
+      data-testid="base-select-picker"
+      role="dialog"
+      aria-label={t("bases.selectSearch")}
+      onBlur={(event) => {
+        // The cell closes its editor when focus leaves it; focus moving inside the picker (in a portal now, so
+        // outside the cell's DOM) mustn't count as leaving.
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) event.stopPropagation();
+      }}
+    >
       <input
         ref={inputRef}
         className="base-input"
         data-testid="base-select-search"
         placeholder={t("bases.selectSearch")}
         aria-label={t("bases.selectSearch")}
+        role="combobox"
+        aria-expanded={true}
+        aria-autocomplete="list"
+        aria-controls={listId}
+        aria-activedescendant={shown[highlight] ? `${listId}-${highlight}` : adding ? `${listId}-add` : undefined}
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -82,12 +138,13 @@ export function SelectPicker(props: {
           }
         }}
       />
-      <div className="base-select-options" role="listbox" aria-multiselectable={multi || undefined}>
+      <div className="base-select-options" id={listId} role="listbox" aria-multiselectable={multi || undefined}>
         {shown.map((option, index) => {
           const selected = current.includes(option.value);
           return (
             <button
               key={option.value}
+              id={`${listId}-${index}`}
               type="button"
               role="option"
               aria-selected={selected}
@@ -105,8 +162,11 @@ export function SelectPicker(props: {
         })}
         {trimmed && !exact ? (
           <button
+            id={`${listId}-add`}
             type="button"
-            className="base-select-option is-add"
+            role="option"
+            aria-selected={false}
+            className={`base-select-option is-add${adding ? " is-highlighted" : ""}`}
             data-testid="base-select-add"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void add(trimmed)}
@@ -119,6 +179,8 @@ export function SelectPicker(props: {
           <button
             key={`unknown-${item}`}
             type="button"
+            role="option"
+            aria-selected={false}
             className="base-select-option is-add"
             data-testid="base-select-add-unknown"
             onMouseDown={(event) => event.preventDefault()}
@@ -130,5 +192,12 @@ export function SelectPicker(props: {
         ))}
       </div>
     </div>
+  );
+
+  return (
+    <>
+      <span ref={anchorRef} hidden />
+      {createPortal(picker, document.body)}
+    </>
   );
 }

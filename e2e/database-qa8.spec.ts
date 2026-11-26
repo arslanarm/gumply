@@ -1,0 +1,243 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import { api, expect, test } from './fixtures';
+import { E2E_VAULT } from './support/env';
+
+/**
+ * #pzqmduua (visual QA pass 8, New database phases 2-3): what the tests of those phases didn't look at.
+ * 1. A Select cell's picker is seen: the row's paint containment clipped it to the row, so it was there, focused and
+ *    taking keys, but invisible (Enter then added the typed text as an option).
+ * 2. The paste preview has its own width: the generic modal width (420 px) won over it on every window, so its
+ *    columns were cut off.
+ * 3. "Edit options…": the delete question is brought into sight; it opened below the popover's scrolled fold.
+ * Invented content.
+ */
+
+const COLOURS = ['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red'];
+const TEAM = {
+  'Team.base':
+    'gumply:\n  rows: Team\nfilters:\n  and:\n    - file.folder == "Team"\n' +
+    'properties:\n  note.stage:\n    gumplyType: select\n    gumplyOptions:\n' +
+    COLOURS.map((c, i) => `      - value: Stage ${i + 1}\n        color: ${c}\n`).join('') +
+    'views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - stage\n',
+  'Team/Avery.md': '---\nstage: Stage 1\n---\nAvery\n',
+  'Team/Blake.md': '---\nstage: Stage 2\n---\nBlake\n',
+};
+
+async function writeVault(request: APIRequestContext, files: Record<string, string>) {
+  for (const [relative, content] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(E2E_VAULT, relative)), { recursive: true });
+    await fs.writeFile(path.join(E2E_VAULT, relative), content, 'utf8');
+  }
+  const ids = Object.keys(files).filter((file) => file.endsWith('.md')).map((file) => file.replace(/\.md$/, ''));
+  await expect
+    .poll(async () => {
+      const listed = new Set((await api.listPages(request)).map((meta) => meta.id));
+      return ids.every((id) => listed.has(id));
+    }, { timeout: 10_000 })
+    .toBe(true);
+}
+
+async function openTeam(page: Page) {
+  await page.goto(`/#/${encodeURIComponent('Team.base')}`);
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Avery', 'Blake']);
+}
+
+/** The element on top at the centre of `target` is `target` or inside it: nothing clips or covers it. */
+async function onTop(page: Page, target: Locator): Promise<boolean> {
+  const box = (await target.boundingBox())!;
+  const handle = await target.elementHandle();
+  return page.evaluate(
+    ([x, y, element]) => {
+      const hit = document.elementFromPoint(x as number, y as number);
+      return Boolean(hit && (element as Element).contains(hit));
+    },
+    [box.x + box.width / 2, box.y + box.height / 2, handle] as const,
+  );
+}
+
+test('a Select cell\'s picker can be seen and clicked, on the last row too (pass 8, 1)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  // Blake's stage (the last row): Enter opens the picker.
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  const picker = page.getByTestId('base-select-picker');
+  await expect(page.getByTestId('base-select-search')).toBeFocused();
+  expect(await onTop(page, page.getByTestId('base-select-search')), 'the search field is not clipped or covered').toBe(true);
+  // The open cell's chip stays where the other rows' chips are (not flush against the cell's edge).
+  const editingChip = (await page.locator('[data-testid^="base-cell-editor-"] .base-option').boundingBox())!;
+  const otherChip = (await page.locator('[role="cell"]:not([data-testid^="base-cell-editor-"]) .base-option').first().boundingBox())!;
+  expect(Math.abs(editingChip.x - otherChip.x), 'the open cell keeps its padding').toBeLessThanOrEqual(1);
+  const option = picker.getByTestId('base-select-option-Stage 5');
+  expect(await onTop(page, option), 'an option in the list is not clipped or covered').toBe(true);
+  // So a click picks it.
+  await option.click({ timeout: 3_000 });
+  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Team/Blake.md'), 'utf8')).toBe('---\nstage: Stage 5\n---\nBlake\n');
+});
+
+test('near the bottom of the window the picker opens above its cell, whole (pass 8, 1)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  const picker = page.getByTestId('base-select-picker');
+  await expect(page.getByTestId('base-select-search')).toBeFocused();
+  const cell = (await page.locator('[data-testid^="base-cell-editor-"]').boundingBox())!;
+  const box = (await picker.boundingBox())!;
+  expect(box.y + box.height, 'it ends above the cell').toBeLessThanOrEqual(cell.y + 1);
+  expect(box.y, 'and starts inside the window').toBeGreaterThanOrEqual(0);
+  expect(await onTop(page, picker.getByTestId('base-select-option-Stage 1'))).toBe(true);
+});
+
+test('a value too long for its cell ends in an ellipsis inside the cell, not cut mid-letter (pass 8, 4)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { ...TEAM, 'Team/Blake.md': '---\nstage: Someday, typed in another app, far too long for this cell\n---\nBlake\n' });
+  await openTeam(page);
+  const chip = page.locator('.base-option.is-unknown').first();
+  await expect(chip).toBeVisible();
+  const fit = await chip.evaluate((element) => {
+    // The cell's content box: running into its padding, the chip was clipped at the cell's border, mid-letter.
+    const td = element.closest('[role="cell"]')!;
+    const cell = td.getBoundingClientRect();
+    const right = cell.right - parseFloat(getComputedStyle(td).paddingRight) - parseFloat(getComputedStyle(td).borderRightWidth);
+    const box = element.getBoundingClientRect();
+    // `text-overflow` draws the "…" only on a block container; on a flex box (as on main) the text is cut mid-letter.
+    const display = getComputedStyle(element).display;
+    return {
+      inside: box.right <= right + 0.5,
+      overflow: getComputedStyle(element).textOverflow,
+      cut: element.scrollWidth > element.clientWidth,
+      ellipsisDrawn: display === 'block' || display === 'inline-block',
+    };
+  });
+  expect(fit.inside, 'the chip, its border too, stays inside its cell').toBe(true);
+  expect(fit).toMatchObject({ overflow: 'ellipsis', cut: true, ellipsisDrawn: true });
+});
+
+test('the paste preview is wide enough for its columns on a wide window (pass 8, 2)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await writeVault(request, { 'Team.base': TEAM['Team.base'] });
+  await fs.mkdir(path.join(E2E_VAULT, 'Team'), { recursive: true });
+  await page.goto(`/#/${encodeURIComponent('Team.base')}`);
+  await page.getByTestId('base-typing-input').click();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData('text/plain', 'Name\tage\tcity\nIvy\t38\tOslo\nOtto\t42\tRiga\n');
+    document.activeElement?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  const preview = page.getByTestId('base-paste-preview');
+  await expect(preview).toBeVisible();
+  expect((await preview.boundingBox())!.width, 'the preview uses its own width, not the small dialog width').toBeGreaterThan(600);
+  // Every column's type is in sight without scrolling sideways.
+  for (const col of [1, 2]) expect(await onTop(page, page.getByTestId(`base-paste-type-${col}`)), `column ${col}'s type`).toBe(true);
+});
+
+test('"Edit options…": the delete question comes into sight, with focus on Cancel (pass 8, 3)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-th-note.stage').click();
+  await page.getByTestId('base-edit-options').click();
+  await expect(page.getByTestId('base-options-editor')).toBeVisible();
+  await page.getByTestId('base-option-delete-Stage 9').click();
+  // The safe choice has focus (a stray Enter must not clear the value from every row), as in the app's other
+  // delete questions (@opus-editor, @lead).
+  const cancel = page.getByTestId('base-option-delete-cancel');
+  await expect(cancel).toBeFocused();
+  // Every choice is inside the popover's visible box, not below its scrolled fold.
+  for (const id of ['base-option-delete-clear', 'base-option-delete-keep', 'base-option-delete-cancel']) {
+    await expect.poll(() => onTop(page, page.getByTestId(id)), { timeout: 2_000, message: id }).toBe(true);
+  }
+});
+
+test('the picker is a combobox a screen reader can follow, and Escape gives focus back to the cell (pass 8, 1, @lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  const search = page.getByTestId('base-select-search');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveAttribute('role', 'combobox');
+  await expect(search).toHaveAttribute('aria-expanded', 'true');
+  const listId = (await search.getAttribute('aria-controls'))!;
+  await expect(page.locator(`[id="${listId}"]`)).toHaveAttribute('role', 'listbox');
+  await page.keyboard.press('ArrowDown');
+  const active = (await search.getAttribute('aria-activedescendant'))!;
+  await expect(page.locator(`[id="${active}"]`)).toHaveText('Stage 2');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
+  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
+});
+
+for (const opened of ['by Enter', 'by typing on the cell'] as const) {
+  test(`Escape with text in the picker's search (opened ${opened}) adds nothing, at any step (pass 8)`, async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request, TEAM);
+    await openTeam(page);
+    const blake = () => fs.readFile(path.join(E2E_VAULT, 'Team/Blake.md'), 'utf8');
+    const base = () => fs.readFile(path.join(E2E_VAULT, 'Team.base'), 'utf8');
+    // A write would land within a few hundred ms (a debounced save or a blur commit): read after a pause, at each step,
+    // so the first step that shows the text names the culprit (@opus-editor, @lead).
+    const settled = async (step: string) => {
+      await page.waitForTimeout(600);
+      expect(await blake(), `Blake's file after ${step}`).toBe(TEAM['Team/Blake.md']);
+      expect(await base(), `the base after ${step}`).not.toContain('Brand');
+    };
+    await page.getByTestId('base-typing-input').click();
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowRight');
+    if (opened === 'by Enter') {
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('base-select-search')).toBeFocused();
+    }
+    // Typing on the active cell opens the picker with the first letter as its search.
+    await page.keyboard.type('Brand new');
+    await expect(page.getByTestId('base-select-search')).toHaveValue('Brand new');
+    await settled('the typing');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
+    await expect(page.getByTestId('base-grid-cell')).toBeFocused();
+    await settled('Escape');
+    // What a user does next: move on and press Enter (the title cell's editor), then Escape.
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    await settled('the next keys');
+  });
+}
+
+test('when nothing matches, the picker names "Add “…”" as its active option, so a screen reader hears what Enter will do (pass 8, @opus-editor, @lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  const search = page.getByTestId('base-select-search');
+  await expect(search).toBeFocused();
+  await page.keyboard.type('Brand new');
+  const active = await search.getAttribute('aria-activedescendant');
+  expect(active, 'an active option while nothing matches').toBeTruthy();
+  const item = page.locator(`[id="${active}"]`);
+  await expect(item).toHaveAttribute('role', 'option');
+  await expect(item).toHaveText('Add “Brand new”');
+  // It's in the listbox the combobox controls.
+  const listId = (await search.getAttribute('aria-controls'))!;
+  await expect(page.locator(`[id="${listId}"] [id="${active}"]`)).toHaveCount(1);
+  await page.keyboard.press('Escape');
+});

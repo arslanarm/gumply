@@ -630,6 +630,12 @@
   padding: 0;
 }
 
+/* #pzqmduua: a Select cell being edited shows its chips in place (the picker is in a portal), so it keeps the cell's
+   padding and its chips stay in line with the other rows'. */
+.base-td.is-editing:has(> .base-chips) {
+  padding: 0 0.5rem;
+}
+
 .base-value {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -714,6 +720,8 @@
 .base-chips {
   display: flex;
   gap: 0.25rem;
+  /* #pzqmduua: may shrink to its cell, so a long chip ends in "…" inside the cell's padding. */
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -1443,7 +1451,8 @@ ol.base-list {
 }
 
 /* #7prbquxu phase 2, step 3: the paste preview (spec/database-tables §5, mock-up 3). */
-.base-paste-preview {
+/* #pzqmduua: `.modal` too, or the generic dialog width (styles.css, loaded later) wins and cuts its columns off. */
+.modal.base-paste-preview {
   width: min(44rem, 92vw);
 }
 
@@ -1508,9 +1517,11 @@ ol.base-list {
 }
 
 /* #7prbquxu phase 3: Select and Multi-select chips; colours by name, soft fills readable in both themes. */
+/* #pzqmduua: a block (not a flex box, whose text can't take an ellipsis) that may shrink in its row of chips, so a
+   value too long for its cell ends in "…" instead of being cut mid-letter. */
 .base-option {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  min-width: 0;
   max-width: 100%;
   padding: 0 0.45rem;
   overflow: hidden;
@@ -1538,23 +1549,14 @@ ol.base-list {
   background: transparent;
 }
 
-/* #7prbquxu phase 3: the Select picker, under its cell. */
-.base-td.is-editing:has(.base-select-picker) {
-  position: relative;
-  overflow: visible;
-  gap: 0.25rem;
-  padding: 0 0.5rem;
-}
-
+/* #7prbquxu phase 3: the Select picker, by its cell. #pzqmduua: on the page's top layer (a portal, placed from
+   the cell by SelectPicker), since a row's paint containment and the table's scroll box clipped it in place. */
 .base-select-picker {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 5;
+  position: fixed;
+  z-index: 60;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  width: max(100%, 14rem);
   max-height: 18rem;
   padding: 0.4rem;
   border: 1px solid var(--border);
