@@ -333,6 +333,34 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base + "      - age\n");
   });
 
+  it("a paste checks its columns and its rows before any write: a missing view or a row given twice is a 400 and nothing changes (#7prbquxu phase 2, @opus-hunter)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n';
+    const ann = "---\nrole: Cook\n---\nAnn\n";
+    const { dir, store } = await vault({ "People.base": base, "People/Ann.md": ann });
+    const seen = store.get("People/Ann").updated;
+    // The view was renamed elsewhere while the preview was open.
+    await expect(
+      store.pasteIntoOwnedRows("People.base", {
+        rows: [
+          { id: "People/Ann", expectedUpdated: seen, set: { role: "Chef" } },
+          { title: "Bo", set: { role: "Pilot" } },
+        ],
+        columns: { view: "Gone", keys: ["role"] },
+      }),
+    ).rejects.toThrow("no view named Gone");
+    await expect(
+      store.pasteIntoOwnedRows("People.base", {
+        rows: [
+          { id: "People/Ann", expectedUpdated: seen, set: { role: "Chef" } },
+          { id: "People/Ann", expectedUpdated: seen, set: { role: "Baker" } },
+        ],
+      }),
+    ).rejects.toThrow("People/Ann");
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe(ann);
+    expect((await readdir(join(dir, "People"))).sort()).toEqual(["Ann.md"]);
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base);
+  });
+
   it("a paste refuses a row another app changed at the same size and time, also after a rescan read it (#7prbquxu phase 2, #vqm6gqpu)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
