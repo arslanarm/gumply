@@ -80,9 +80,11 @@ describe("a batched rename's first step updates the link index without a full re
     return () => checked;
   }
 
-  it("@opus-hunter's cases: a link that resolved to another page and now resolves to the renamed one (.md fallback, spacing, NFD) follows exactly as in a full rebuild", async () => {
+  it("@opus-hunter's cases: a link that resolved to another page and now resolves to the renamed one (.md fallback, spacing, NFD, a slug-form file name) follows exactly as in a full rebuild", async () => {
     const { store } = await vault(5, {
-      "F/Source.md": "By file: [[Beta.md]]. Spaced: [[beta  page]]. Accented: [[Cafe\u0301]].\n",
+      "F/Source.md": "By file: [[Beta.md]]. Spaced: [[beta  page]]. Accented: [[Cafe\u0301]]. Slug: [[omega point]].\n",
+      "Other/Omega Point.md": "The other Omega Point.\n",
+      "F/Epsilon.md": "To be omega-point (a slug-form file name).\n",
       "Other/Beta.md": "The other Beta.\n",
       "Other/Beta Page.md": "The other Beta Page.\n",
       "Other/Café.md": "The other café.\n",
@@ -90,7 +92,7 @@ describe("a batched rename's first step updates the link index without a full re
       "F/Gamma.md": "To be Beta Page.\n",
       "F/Delta.md": "To be Café.\n",
     });
-    for (const [from, to] of [["F/Alpha", "Beta"], ["F/Gamma", "Beta Page"], ["F/Delta", "Café"]] as const) {
+    for (const [from, to] of [["F/Alpha", "Beta"], ["F/Gamma", "Beta Page"], ["F/Delta", "Café"], ["F/Epsilon", "omega-point"]] as const) {
       const checked = checkAtFirstBatch(store);
       await store.update(from, { title: to });
       expect(checked(), `${from} → ${to}`).toBe(true);
