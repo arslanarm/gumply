@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVE_LINK_WIDTH, linkWidthFor, restingLinkWidth } from "../src/graph/link-width";
+import { ACTIVE_LINK_WIDTH, ghostStrokeWidth, linkWidthFor, restingLinkWidth } from "../src/graph/link-width";
 
 /**
  * #s3sszwux: force-graph strokes all resting (and faded) links as one path, with `lineWidth =
@@ -29,6 +29,14 @@ describe("the batched link stroke stays under one device pixel (#s3sszwux)", () 
         expect(f(width * dpr)).toBeGreaterThan(0.95); // still a full-looking line
         for (const k of ZOOMS) expect(deviceWidth(width, k, dpr)).toBeLessThan(1);
       }
+    });
+  }
+
+  for (const dpr of RATIOS) {
+    it(`N6 3b: the dashed ghost circles at devicePixelRatio ${dpr} (#9x4duwmg)`, () => {
+      const width = ghostStrokeWidth(dpr);
+      expect(f(width * dpr)).toBeGreaterThan(0.95);
+      for (const k of ZOOMS) expect(deviceWidth(width, k, dpr)).toBeLessThan(1);
     });
   }
 
