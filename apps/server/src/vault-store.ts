@@ -6275,11 +6275,6 @@ export class VaultStore {
   }
 
   /**
-   * Put a plain folder (D33) back: the directory with everything in it, where
-   * it was if its parent folder still exists (else at the top level), with
-   * ` 2` when the name is taken by a page, board or folder.
-   */
-  /**
    * #7prbquxu phase 4 (@lead): the rows one table undo took out come back together, into their folder (made again
    * if it's gone), each at its own name or, when that's taken now, the usual " 2"; their History follows.
    */
@@ -6288,22 +6283,27 @@ export class VaultStore {
     await mkdir(join(this.root, folder), { recursive: true });
     const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
     const moved: Array<{ from: PageId; to: PageId }> = [];
-    for (const id of entry.deleted) {
-      const record = await this.readTrashedRecord(entry, id);
-      if (!record) continue;
-      const name = id.split("/").pop() ?? id;
-      const kind = record.kind;
-      const stem = name.slice(0, name.length - idExtension(kind).length);
-      const to = await this.restoreTarget(folder, stem, false, taken, kind);
-      taken.add(collisionKey(to));
-      const target = this.filePathFor(to);
-      this.markOwnWrite(target);
-      await rename(resolve(entry.dir, this.trashedFileOf(entry, id)), target);
-      moved.push({ from: id, to });
+    try {
+      for (const id of entry.deleted) {
+        const record = await this.readTrashedRecord(entry, id);
+        if (!record) continue;
+        const name = id.split("/").pop() ?? id;
+        const kind = record.kind;
+        const stem = name.slice(0, name.length - idExtension(kind).length);
+        const to = await this.restoreTarget(folder, stem, false, taken, kind);
+        taken.add(collisionKey(to));
+        const target = this.filePathFor(to);
+        this.markOwnWrite(target);
+        await rename(resolve(entry.dir, this.trashedFileOf(entry, id)), target);
+        moved.push({ from: id, to });
+      }
+    } finally {
+      // Also when a row fails part way (@opus-hunter's nit i): the rows already back are in the store at once,
+      // and the item lists only what's still in it (it goes when nothing is).
+      await this.takeRowsOutOfTrashEntry(entry, new Set(moved.map((move) => move.from)));
+      await this.rebuild();
+      for (const { from, to } of moved) if (from !== to) await this.followHistory(from, to);
     }
-    await rm(entry.dir, { recursive: true, force: true });
-    await this.rebuild();
-    for (const { from, to } of moved) if (from !== to) await this.followHistory(from, to);
     const restoredIds = new Set(moved.map((move) => move.to));
     return {
       restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)),
@@ -6346,6 +6346,11 @@ export class VaultStore {
     return { ...result, restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)) };
   }
 
+  /**
+   * Put a plain folder (D33) back: the directory with everything in it, where
+   * it was if its parent folder still exists (else at the top level), with
+   * ` 2` when the name is taken by a page, board or folder.
+   */
   private async restoreFolderNow(entry: TrashEntry, targetId?: PageId): Promise<RestoreResult> {
     const source = await this.trashedFolderPath(entry);
     if (!source) throw notFound("Trash entry not found");
