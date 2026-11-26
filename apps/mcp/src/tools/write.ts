@@ -331,13 +331,14 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
       }
       ctx.limiter.take();
       await snapshot(meta.id, meta.updated, "trash_page", client);
-      // The store re-checks the file right before the move (the user may have saved meanwhile).
-      if (await vault.changedOnDisk(meta.id)) {
-        await vault.store.rescan();
-        const now = vault.list().find((page) => page.id === meta.id);
-        throw new ToolError("CONFLICT", "It changed since it was read; read it again.", { currentUpdated: now?.updated ?? null });
+      // The store re-checks the version and the bytes on disk in the same queued job as the move (#ddqd664r:
+      // a same-size edit with its file time put back is a change too).
+      let result;
+      try {
+        result = await vault.store.remove(meta.id, { expectedUpdated, writer });
+      } catch (error) {
+        return conflictFrom(error, meta.id);
       }
-      const result = await vault.store.remove(meta.id);
       await audit(root, { tool: "trash_page", id: meta.id, before: meta.updated, after: null, client }, ctx.logMaxBytes);
       return ok({ trashId: result.trashId, deleted: result.deleted }, `Moved "${meta.title}" and ${result.deleted.length - 1} sub-page(s) to the Trash (restorable).`);
     },
