@@ -24,7 +24,7 @@ import { t } from "../i18n/index.js";
 import { TURN_INTO, turnInto } from "../editor/block-editing.js";
 import { canFormat, markActions, openLinkField, removeLink, toggleMark } from "../editor/formatting.js";
 import { getWikiLinkEnvironment } from "../editor/wikilink/link-store.js";
-import { currentModifierLabel } from "../lib/shortcuts.js";
+import { currentModifierLabel, withModifier } from "../lib/shortcuts.js";
 import { Icon, type IconName } from "./Icon.js";
 import { ColorPalette } from "./ColorPalette.js";
 
@@ -232,15 +232,15 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
   const hasSelection = !editor.state.selection.empty;
   if (menu.context.kind !== "image") {
     if (hasSelection) {
-      clipboard.push({ id: "cut", label: t("editorMenu.cut"), icon: "scissors", keys: `${currentModifierLabel()}+X`, run: inText(() => document.execCommand("cut")) });
-      clipboard.push({ id: "copy", label: t("editorMenu.copy"), icon: "copy", keys: `${currentModifierLabel()}+C`, run: inText(() => document.execCommand("copy")) });
+      clipboard.push({ id: "cut", label: t("editorMenu.cut"), icon: "scissors", keys: withModifier(currentModifierLabel(), "X"), run: inText(() => document.execCommand("cut")) });
+      clipboard.push({ id: "copy", label: t("editorMenu.copy"), icon: "copy", keys: withModifier(currentModifierLabel(), "C"), run: inText(() => document.execCommand("copy")) });
     }
     if (clipboardReadable()) {
       clipboard.push({
         id: "paste",
         label: t("editorMenu.paste"),
         icon: "clipboard",
-        keys: `${currentModifierLabel()}+V`,
+        keys: withModifier(currentModifierLabel(), "V"),
         run: async () => {
           done();
           editor.view.focus();
@@ -255,7 +255,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
             }
             editor.view.pasteText(await navigator.clipboard.readText());
           } catch {
-            notice(t("editorMenu.pasteBlocked", { keys: `${currentModifierLabel()}+V` }));
+            notice(t("editorMenu.pasteBlocked", { keys: withModifier(currentModifierLabel(), "V") }));
           }
         },
       });
@@ -354,7 +354,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
       })),
       { id: "color", label: t("format.color"), icon: "palette", run: () => toggleSubmenu("color") },
       ...(context.kind !== "link"
-        ? [{ id: "format-link", label: t("editorMenu.link"), icon: "link" as const, keys: `${currentModifierLabel()}+K`, run: inText(() => { openLinkField(); }) }]
+        ? [{ id: "format-link", label: t("editorMenu.link"), icon: "link" as const, keys: withModifier(currentModifierLabel(), "K"), run: inText(() => { openLinkField(); }) }]
         : []),
     ]);
   }
@@ -369,7 +369,7 @@ export function EditorContextMenu({ editor, onNotice }: EditorContextMenuProps) 
         id: "duplicate-block",
         label: t("editorMenu.duplicateBlock"),
         icon: "copy",
-        keys: `${currentModifierLabel()}+D`,
+        keys: withModifier(currentModifierLabel(), "D"),
         run: inText(() => {
           const block = blockAt(editor.state.doc, editor.state.selection.from);
           const tr = block ? duplicateBlock(editor.state, block) : null;
