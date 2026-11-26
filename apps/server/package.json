@@ -1,6 +1,6 @@
 {
   "name": "@gumply/server",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "private": true,
   "description": "Local Gumply server: vault file API, link index, graph and search.",
   "license": "MIT",

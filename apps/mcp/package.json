@@ -1,6 +1,6 @@
 {
   "name": "@gumply/mcp",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "private": true,
   "description": "Gumply MCP server: lets AI apps read (and, if allowed, add to) a vault over stdio",
   "license": "MIT",
