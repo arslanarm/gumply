@@ -202,3 +202,28 @@ test('undoing a grid rename while the row is open in another tab: that tab follo
   expect(await exists('People/Annie.md')).toBe(false);
   await other.close();
 });
+
+test('Tab inside a datetime cell\'s date picker moves inside the picker and reaches its time field; it doesn\'t leave the cell (@graph-dev\'s review)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, {
+    ...PEOPLE,
+    'People.base': PEOPLE['People.base'].replace('      - age\n', '      - age\n      - due\n'),
+    'People/Ann.md': '---\nrole: Cook\nage: 30\ndue: 2026-03-02T10:30\n---\nAnn\n',
+    '.gumply/types.json': '{\n  "types": {\n    "due": "datetime"\n  }\n}\n',
+  });
+  await openPeople(page, ['Ann', 'Bo']);
+  await page.getByTestId('base-row-People/Ann').locator('[data-grid-col]').nth(3).click();
+  const editor = page.getByTestId('base-cell-editor-People/Ann-note.due');
+  await expect(editor).toBeVisible();
+  const picker = page.getByTestId('date-picker');
+  if (!(await picker.isVisible())) await editor.getByTestId('date-picker-value').click();
+  await expect(picker).toBeVisible();
+  await picker.getByTestId('date-picker-day-2026-03-02').focus();
+  const time = picker.getByTestId('date-picker-time');
+  for (let i = 0; i < 8 && !(await time.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+  await expect(time).toBeFocused();
+  await expect(picker).toBeVisible();
+  // Nothing left the cell meanwhile: its editor is still open, and the value is as it was.
+  await expect(editor).toBeVisible();
+  expect(await read('People/Ann.md')).toContain('due: 2026-03-02T10:30\n');
+});
