@@ -1502,7 +1502,8 @@ export class VaultStore {
     for (const [id, record] of next) {
       const current = this.pages.get(id);
       if (current === record) continue;
-      if (!current || this.recordSignature(current) !== this.recordSignature(record)) {
+      this.noteReadHash(record);
+      if (!current || this.recordSignature(current) !== this.recordSignature(record) || this.readFromOtherBytes(current, record)) {
         changedIds.push(id);
         // #y5k39njn: new content always gets a newer version, so a save from before it is refused.
         // Never for a re-read of the very bytes we wrote last (@graph-dev's review).
@@ -1572,7 +1573,7 @@ export class VaultStore {
       if (previous && previous !== record && previous.sameBytes && previous.sameBytes.now === record.updated) record.sameBytes = previous.sameBytes;
       if (own && own.version === record.updated) record.ownWrite = own;
       // #y5k39njn: a re-read of the very bytes we wrote last is never an outside edit (no outside History version).
-      else if (previous && this.recordSignature(previous) !== this.recordSignature(record) && !this.isOwnBytes(record)) editedOutside.push(record);
+      else if (previous && (this.recordSignature(previous) !== this.recordSignature(record) || this.readFromOtherBytes(previous, record)) && !this.isOwnBytes(record)) editedOutside.push(record);
     }
 
     const previousIds = new Set(this.pages.keys());
@@ -1713,6 +1714,27 @@ export class VaultStore {
    * re-read record's signature says, so it never gets a moved-on version.
    */
   private readonly ownBytes = new Map<string, string>();
+
+  /**
+   * #y5k39njn's gap (found by #dqdwz9qw's replay): the hash of the bytes each record was read from,
+   * noted when it enters the index. The record signature doesn't cover plain property values, so a
+   * property-only outside edit at the same file time looked like no change; comparing these does.
+   * Records our writes made have none (unknown: never counted as a change).
+   */
+  private readonly readHashes = new WeakMap<PageRecord, string>();
+
+  private noteReadHash(record: PageRecord): void {
+    if (this.readHashes.has(record)) return;
+    const entry = (this.bytesAt.get(record.filePath) ?? []).find((seen) => seen.mtimeMs === record.fileMtimeMs);
+    if (entry) this.readHashes.set(record, entry.hash);
+  }
+
+  /** Both records were read from disk, and from different bytes. */
+  private readFromOtherBytes(before: PageRecord, after: PageRecord): boolean {
+    const a = this.readHashes.get(before);
+    const b = this.readHashes.get(after);
+    return a !== undefined && b !== undefined && a !== b;
+  }
 
   private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer, ours = false): void {
     const hash = bytesHash(bytes);
@@ -4795,7 +4817,10 @@ export class VaultStore {
     this.folders = folders;
     this.pages.clear();
     this.edgesBySource.clear();
-    for (const [id, record] of next) this.pages.set(id, record);
+    for (const [id, record] of next) {
+      this.noteReadHash(record);
+      this.pages.set(id, record);
+    }
   }
 
   /** True while the links of a vault just opened are being indexed (#g95wkd9y). */
