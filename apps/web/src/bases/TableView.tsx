@@ -25,6 +25,7 @@ import { plannedPaste, readPaste, type PastedRow } from "./paste.js";
 import { PastePreview, type PreviewResult } from "./PastePreview.js";
 import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
+import { currentModifierLabel } from "../lib/shortcuts.js";
 
 export const ROW_HEIGHT = 34;
 
@@ -149,6 +150,8 @@ export function TableView(props: TableViewProps) {
   const selects = useContext(BaseSelects);
   const [pendingActive, setPendingActive] = useState<{ rowId: string; col: number } | null>(null);
   const sinkRef = useRef<HTMLInputElement | null>(null);
+  /** #12 (#faqr8pj9): Shift+Tab before the first cell leaves the rows for the header's "+". */
+  const addColumnRef = useRef<HTMLButtonElement | null>(null);
   const typingInputRef = useRef<HTMLInputElement | null>(null);
   const activePos = useMemo<GridPosition | null>(() => {
     if (!active) return null;
@@ -222,6 +225,8 @@ export function TableView(props: TableViewProps) {
     if (then) go(moveCell(from, then, rowOrder.length, columns.length));
   };
 
+  /** #12: Tab reached the rows (the first row's Name, while no cell is active): that cell becomes active. */
+  const enterGrid = useCallback((rowId: string) => setActive({ rowId, col: 0 }), []);
   const requestEdit = useCallback((rowId: string, col: number) => {
     setActive({ rowId, col });
     setEditRequest({ rowId, col });
@@ -265,6 +270,19 @@ export function TableView(props: TableViewProps) {
       return;
     }
     if (composing) return;
+    // #12 (#faqr8pj9): the rows are one Tab stop, so a keyboard user opens a row from its cells: Ctrl/Cmd+Enter.
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+      event.preventDefault();
+      props.onOpen(activeRow.id);
+      return;
+    }
+    // Shift+Tab on the very first cell leaves the rows backwards (Tab past the last one already goes to the typing row).
+    if (event.key === "Tab" && event.shiftKey && activePos.row === 0 && activePos.col === 0 && !anchor) {
+      event.preventDefault();
+      setActive(null);
+      addColumnRef.current?.focus();
+      return;
+    }
     const move = gridMoveFor(event.key, event.shiftKey);
     if (move) {
       event.preventDefault();
@@ -304,7 +322,9 @@ export function TableView(props: TableViewProps) {
         return;
       }
       setActive(null);
-      sink.blur();
+      // #12: on to the typing row, so Tab and Shift+Tab carry on from the table (not from the page's top).
+      if (typingInputRef.current) typingInputRef.current.focus();
+      else sink.blur();
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -425,6 +445,7 @@ export function TableView(props: TableViewProps) {
             <div className="base-th base-th-fill" role="columnheader">
               <button
                 type="button"
+                ref={addColumnRef}
                 className="base-th-add"
                 data-testid="base-add-column-button"
                 aria-label={t("bases.addColumn")}
@@ -466,7 +487,8 @@ export function TableView(props: TableViewProps) {
                 onEditValue={props.onEditValue}
                 onRename={props.onRename}
                 onRenameDone={grid ? renameDone : props.onRenameDone}
-                {...(grid ? { onRequestEdit: requestEdit, onEditDone: editDone } : {})}
+                {...(grid ? { onRequestEdit: requestEdit, onEditDone: editDone, grid: true, onEnterGrid: enterGrid } : {})}
+                gridEntry={grid && !active && result.rows[rowOrder[0]?.row ?? -1]?.id === row.id}
               />
             );
           })}
@@ -495,6 +517,7 @@ export function TableView(props: TableViewProps) {
                   ? t("bases.openPage", { title: activeRow.title })
                   : t("bases.editCell", { property: activeColumn.displayName ?? activeColumn.id.replace(/^note\./, ""), title: activeRow.title })
               }
+              aria-description={t("bases.gridOpenHint", { mod: currentModifierLabel() })}
               style={{
                 top: rowOrder[activePos.row]!.itemIndex * rowHeight,
                 left: offsets[activePos.col],
@@ -934,6 +957,13 @@ interface TableRowProps {
   /** The database grid: a click opens the cell's editor through the grid. */
   onRequestEdit?: (rowId: string, col: number) => void;
   onEditDone?: (move?: GridMove) => void;
+  /**
+   * #12 (#faqr8pj9): a database grid's rows are one Tab stop: cells and row buttons leave the Tab order, and while no
+   * cell is active the first row's Name cell (`gridEntry`) is where Tab enters; focusing it makes it active.
+   */
+  grid?: boolean;
+  gridEntry?: boolean;
+  onEnterGrid?: (rowId: string) => void;
 }
 
 /** One row; memoized so scrolling only renders the rows that come into view. */
@@ -951,6 +981,7 @@ const TableRow = memo(function TableRow(props: TableRowProps) {
             column={column}
             col={col}
             readOnly={props.readOnly}
+            grid={props.grid === true}
             onEditValue={props.onEditValue}
             editRequested={props.editCol === col}
             {...(props.editCol === col && props.editSeed ? { editSeed: props.editSeed } : {})}
@@ -990,7 +1021,16 @@ function TitleCell(props: TableRowProps) {
   };
 
   return (
-    <div className="base-td base-td-title" role="cell" data-grid-col={0}>
+    <div
+      className="base-td base-td-title"
+      role="cell"
+      data-grid-col={0}
+      tabIndex={props.gridEntry ? 0 : undefined}
+      aria-label={props.gridEntry ? t("bases.openPage", { title: row.title }) : undefined}
+      onFocus={(event) => {
+        if (props.gridEntry && event.target === event.currentTarget) props.onEnterGrid?.(row.id);
+      }}
+    >
       {editing ? (
         <input
           ref={inputRef}
@@ -1010,6 +1050,7 @@ function TitleCell(props: TableRowProps) {
             type="button"
             className="base-title-link"
             data-testid={`base-open-${row.id}`}
+            tabIndex={props.grid ? -1 : undefined}
             aria-label={t("bases.openPage", { title: row.title })}
             onClick={() => props.onOpen(row.id)}
           >
@@ -1022,6 +1063,7 @@ function TitleCell(props: TableRowProps) {
             <button
               type="button"
               className="base-cell-edit"
+              tabIndex={props.grid ? -1 : undefined}
               aria-label={t("sidebar.rename")}
               data-tooltip={t("sidebar.rename")}
               onClick={() => {
@@ -1044,6 +1086,8 @@ function ValueCell(props: {
   /** The column's index (the database grid's `data-grid-col`). */
   col: number;
   readOnly?: boolean;
+  /** #12: in a database grid the cell isn't a Tab stop of its own (the grid's active cell is). */
+  grid?: boolean;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   /** #7prbquxu: the database grid asks this cell's editor to open (Enter, F2, a date typed). */
   editRequested?: boolean;
@@ -1109,6 +1153,7 @@ function ValueCell(props: {
           data-testid={`base-cell-${row.id}-${column.id}`}
           checked={value === true}
           disabled={!editable}
+          tabIndex={props.grid ? -1 : undefined}
           onChange={() => void props.onEditValue(row, column, value !== true)}
         />
       </div>
@@ -1215,7 +1260,7 @@ function ValueCell(props: {
       role="cell"
       data-grid-col={props.col}
       data-testid={`base-cell-${row.id}-${column.id}`}
-      tabIndex={editable ? 0 : undefined}
+      tabIndex={editable ? (props.grid ? -1 : 0) : undefined}
       aria-label={editable ? label : undefined}
       title={column.editable ? undefined : t("bases.readOnlyCell")}
       onClick={() => {

@@ -190,9 +190,14 @@
       "navigate": "Navigate",
       "editor": "Editor",
       "pages": "Pages",
+      "database": "Databases",
       "whiteboard": "Whiteboard"
     },
     "labels": {
+      "gridMove": "Move between cells",
+      "gridEdit": "Edit the cell",
+      "gridOpenRow": "Open the row's page",
+      "gridLeave": "Cancel the edit, then leave the table",
       "searchPages": "Search pages",
       "toggleSidebar": "Toggle sidebar",
       "insertABlock": "Insert a block",
@@ -1373,6 +1378,7 @@
     "undoRefused": "Can't undo: these rows changed since: {{titles}}.",
     "undoChanged": "Can't undo: this changed since.",
     "undoRenameTaken": "“{{title}}” is taken now, so the rename wasn't undone.",
+    "gridOpenHint": "{{mod}}+Enter opens the page.",
     "deleteWithRows_one": "Also move its {{count}} row to the Trash (it comes back with the database).",
     "deleteWithRows_other": "Also move its {{count}} rows to the Trash (they come back with the database).",
     "deleteWithRowsFolder": "Also move its rows folder to the Trash (it comes back with the database).",
