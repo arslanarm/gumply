@@ -242,28 +242,16 @@ test('a column rename keeps a type the new name already has in the vault (@opus-
   expect(await typeOf('priority')).toBe('number');
 });
 
-test('a column rename is all or nothing: a row changed on disk during it is reported by name, and the rows already renamed go back (@lead, @opus-hunter)', async ({ page, request, vault }) => {
+test('a column rename to a name some row already has changes nothing and names the row (@lead, @opus-hunter)', async ({ page, request, vault }) => {
   void vault;
-  await writeVault(request, PEOPLE);
+  // Bo already has "job" (the view doesn't show it). Refusing rows mid-rename are the server test's (bases.test.ts).
+  await writeVault(request, { ...PEOPLE, 'People/Bo.md': '---\nrole: Pilot\nage: 41\njob: Pilot\n---\nBo\n' });
   await openPeople(page, ['Ann', 'Bo']);
-  // Another app saves Ann just as the rename's write for Ann goes out.
-  const ann = path.join(E2E_VAULT, 'People/Ann.md');
-  const outside = '---\nrole: Chef\nage: 30\n---\nAnn, edited elsewhere\n';
-  await page.route('**/api/pages/People%2FAnn', async (route) => {
-    if (route.request().method() !== 'PUT') return route.fallback();
-    const temporary = `${ann}.tmp-outside`;
-    await fs.writeFile(temporary, outside, 'utf8');
-    await fs.rename(temporary, ann);
-    await expect.poll(async () => (await api.getPage(request, 'People/Ann')).content, { timeout: 15_000 }).toContain('edited elsewhere');
-    await route.fallback();
-  });
   await renameColumn(page, 'role', 'job');
-  await expect(page.getByRole('alert')).toContainText('Ann');
+  await expect(page.getByRole('alert')).toContainText('Bo');
   await expect(page.getByRole('alert')).toContainText('Nothing was renamed');
-  expect(await read('People/Ann.md')).toBe(outside);
-  await expect.poll(() => read('People/Bo.md')).toBe(PEOPLE['People/Bo.md']);
+  expect(await read('People/Ann.md')).toBe(PEOPLE['People/Ann.md']);
   expect(await read('People.base')).toBe(PEOPLE['People.base']);
-  await page.unroute('**/api/pages/People%2FAnn');
 });
 
 test('an outside edit made before a column rename is kept, and the key follows it (@lead)', async ({ page, request, vault }) => {
