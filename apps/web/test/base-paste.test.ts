@@ -85,8 +85,9 @@ describe("type guesses (never Select silently)", () => {
     expect(offersSelect(["Basil", "Cactus", "Mint", "Basil", "Aloe"])).toBe(false);
     // Numbers that do repeat a lot are still a number column, not a Select.
     expect(offersSelect(["1", "2", "1", "2", "1", "2"])).toBe(false);
-    // A real Select column: few values, each used more than once.
+    // A real Select column: few values, each used more than once; and a short one (the e2e's Todo, Done, Todo).
     expect(offersSelect(["Full sun", "Shade", "Full sun", "Shade", "Partial", "Partial"])).toBe(true);
+    expect(offersSelect(["Todo", "Done", "Todo"])).toBe(true);
   });
 
   it("a Select's options from a pasted column: distinct, non-empty, a Multi-select's items split; capped at 200 (@lead, note f)", () => {
