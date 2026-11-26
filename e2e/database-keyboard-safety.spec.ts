@@ -45,6 +45,11 @@ async function openPeople(page: Page, names: string[]) {
 }
 
 const cellOf = (page: Page, rowId: string, key: string) => page.getByTestId(`base-row-${rowId}`).locator(`[data-grid-col]`).nth(key === 'role' ? 1 : 2);
+/** Click a cell and wait until its editor has opened and holds the focus (keys sent before that go elsewhere). */
+async function openEditor(page: Page, rowId: string, key: string) {
+  await cellOf(page, rowId, key).click();
+  await expect(page.getByTestId(`base-cell-editor-${rowId}-note.${key}`).locator('input').first()).toBeFocused();
+}
 
 test('Tab in a cell editor opened by a click commits and moves right; Shift+Tab left; Tab past the last column goes to the next row (finding 1)', async ({ page, request, vault }) => {
   void vault;
@@ -53,7 +58,7 @@ test('Tab in a cell editor opened by a click commits and moves right; Shift+Tab 
   const active = page.getByTestId('base-grid-cell');
 
   // Click Ann's role (its editor opens), type, Tab: the value is saved and the age cell is next.
-  await cellOf(page, 'People/Ann', 'role').click();
+  await openEditor(page, 'People/Ann', 'role');
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('Chef');
   await page.keyboard.press('Tab');
@@ -64,7 +69,7 @@ test('Tab in a cell editor opened by a click commits and moves right; Shift+Tab 
   await expect.poll(() => read('People/Ann.md')).toBe('---\nrole: Chef\nage: 31\n---\nAnn\n');
 
   // Shift+Tab from Bo's age editor: saved, and the role cell is next.
-  await cellOf(page, 'People/Bo', 'age').click();
+  await openEditor(page, 'People/Bo', 'age');
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('42');
   await page.keyboard.press('Shift+Tab');
@@ -72,7 +77,7 @@ test('Tab in a cell editor opened by a click commits and moves right; Shift+Tab 
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Pilot\nage: 42\n---\nBo\n');
 
   // Tab from Ann's age editor (the last column) goes on to Bo's first cell.
-  await cellOf(page, 'People/Ann', 'age').click();
+  await openEditor(page, 'People/Ann', 'age');
   await page.keyboard.press('Tab');
   await expect(active).toHaveAttribute('data-active', /^People\/Bo\|file\.name$/);
   expect(await read('People/Ann.md')).toBe('---\nrole: Chef\nage: 31\n---\nAnn\n');
@@ -85,8 +90,9 @@ test('a rename typed on the Name cell is undone by Cmd/Ctrl+Z, links following b
   const undo = (shift = false) => page.keyboard.press(`ControlOrMeta+${shift ? 'Shift+' : ''}KeyZ`);
 
   // Ann's role cell active, one ArrowLeft onto Name, then typing: a rename.
-  await cellOf(page, 'People/Ann', 'role').click();
+  await openEditor(page, 'People/Ann', 'role');
   await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByTestId('base-grid-cell')).toHaveAttribute('data-active', /^People\/Ann\|file\.name$/);
   await page.keyboard.type('Annie');
@@ -112,8 +118,9 @@ test('undoing a grid rename is refused, named, when the old name is taken meanwh
   await writeVault(request, PEOPLE);
   await openPeople(page, ['Ann', 'Bo']);
 
-  await cellOf(page, 'People/Ann', 'role').click();
+  await openEditor(page, 'People/Ann', 'role');
   await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.type('Annie');
   await page.keyboard.press('Enter');
@@ -142,7 +149,7 @@ test('Enter in a text or number editor opened by a click commits and moves down;
   const active = page.getByTestId('base-grid-cell');
 
   // Ann's role editor: type, Enter: saved, and Bo's role is next.
-  await cellOf(page, 'People/Ann', 'role').click();
+  await openEditor(page, 'People/Ann', 'role');
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('Chef');
   await page.keyboard.press('Enter');
@@ -173,8 +180,9 @@ test('undoing a grid rename while the row is open in another tab: that tab follo
   await expect(other.getByTestId('editor-content')).toContainText('Ann likes soup.');
 
   await openPeople(page, ['Ann', 'Bo']);
-  await cellOf(page, 'People/Ann', 'role').click();
+  await openEditor(page, 'People/Ann', 'role');
   await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.type('Annie');
   await page.keyboard.press('Enter');
