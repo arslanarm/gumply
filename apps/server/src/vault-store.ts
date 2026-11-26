@@ -3496,7 +3496,16 @@ export class VaultStore {
     // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
     const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
-    const changedOnDisk = mtimeChanged || versionChanged;
+    // #z9hufufn: an ordinary save from a version that only renames' link rewrites have changed since
+    // (their N10 chain runs from it to the page's version now, and no outside write moved the file) is
+    // not a conflict: it is merged as Keep mine would be, and the answer says which links the server kept.
+    const renamesOnly =
+      !patch.force &&
+      versionChanged &&
+      !mtimeChanged &&
+      typeof patch.content === "string" &&
+      this.mergeRecentRenames(record.id, patch.expectedUpdated, patch.content).reached === record.updated;
+    const changedOnDisk = mtimeChanged || (versionChanged && !renamesOnly);
 
     let conflictBackup: string | undefined;
     if (patch.force) {
@@ -3518,10 +3527,10 @@ export class VaultStore {
     let nextContent = patch.content === undefined ? record.content : patch.content;
     if (typeof nextContent !== "string") throw badRequest("content must be a string");
     // N10 (#5pgmziyc, D22 note): Keep mine keeps the user's text, except a concurrent rename's link
-    // changes on lines they didn't touch. Only Keep mine: an ordinary save writes what was sent.
+    // changes on lines they didn't touch. #z9hufufn: so does an ordinary save that only renames moved past.
     let mergePairs: RenameMergePair[] = [];
     let mergedLinks = 0;
-    if (patch.content !== undefined && patch.force && changedOnDisk) {
+    if (patch.content !== undefined && ((patch.force && changedOnDisk) || renamesOnly)) {
       const merged = this.mergeRecentRenames(record.id, patch.expectedUpdated, nextContent);
       nextContent = merged.content;
       mergedLinks = merged.links;
@@ -3988,9 +3997,9 @@ export class VaultStore {
     id: PageId,
     expected: string | undefined,
     content: string,
-  ): { content: string; links: number; pairs: RenameMergePair[] } {
+  ): { content: string; links: number; pairs: RenameMergePair[]; reached: string | undefined } {
     const list = this.renameRewrites.get(id);
-    if (!list || expected === undefined) return { content, links: 0, pairs: [] };
+    if (!list || expected === undefined) return { content, links: 0, pairs: [], reached: expected };
     const now = Date.now();
     let version = expected;
     const pairs: RenameMergePair[] = [];
@@ -3999,7 +4008,9 @@ export class VaultStore {
       pairs.push({ before: entry.before, after: entry.after, title: entry.title });
       version = entry.versionAfter;
     }
-    return { ...applyRenameMerges(pairs, content), pairs };
+    // #z9hufufn: `reached` is the version the chain ends at; the page's current one means nothing but
+    // renames' link rewrites happened since `expected`.
+    return { ...applyRenameMerges(pairs, content), pairs, reached: version };
   }
 
   /**
