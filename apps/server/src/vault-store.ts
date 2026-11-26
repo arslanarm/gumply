@@ -850,7 +850,14 @@ async function moveFileNoReplace(from: string, to: string): Promise<void> {
     await copyFile(from, to, fsConstants.COPYFILE_EXCL);
     await utimes(to, info.atime, info.mtime).catch(() => undefined);
   }
-  await unlink(from);
+  try {
+    await unlink(from);
+  } catch (error) {
+    // The source can't go (a lock, a read-only Trash folder): the new name goes again, so the file is never in
+    // two places (@opus-editor).
+    await unlink(to).catch(() => undefined);
+    throw error;
+  }
 }
 
 const isEexist = (error: unknown) => (error as { code?: string } | null)?.code === "EEXIST";
