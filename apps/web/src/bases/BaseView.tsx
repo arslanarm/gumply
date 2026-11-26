@@ -712,11 +712,11 @@ export function BaseView(props: BaseViewProps) {
     <BaseSelects.Provider value={selects}>
     <BaseSelectActions.Provider value={selectActions}>
     <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1} onKeyDown={onUndoKey}>
-      {pasting !== null ? (
-        <div className="base-warning" role="status" data-testid="base-pasting">
-          {t("bases.pasting", { count: pasting })}
-        </div>
-      ) : null}
+      {/* Always mounted, empty until a paste runs: screen readers announce changes inside a live region that's
+          already there (@opus-hunter). Empty, it takes no space and has no banner look. */}
+      <div className={pasting !== null ? "base-warning" : undefined} role="status" data-testid="base-pasting">
+        {pasting !== null ? t("bases.pasting", { count: pasting }) : ""}
+      </div>
       {inlineConflict ? (
         <div className="banner base-banner base-conflict" role="alert" data-testid="base-conflict" ref={conflictRef}>
           <span>{t("bases.conflict")}</span>
