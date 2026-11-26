@@ -1,0 +1,131 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import type { APIRequestContext, Page } from '@playwright/test';
+import { api, expect, test } from './fixtures';
+import { E2E_VAULT } from './support/env';
+
+/**
+ * #7prbquxu, spec/database-tables §8 follow-ups (@lead): a Kanban grouped by a Select shows each column's head in
+ * its option's colour; the colour swatches in "Edit options…" have an edge readable in both themes (≥ 3:1 against
+ * the popover); and a Select cell's picker closes when its cell scrolls out of the table's visible box (it's fixed on
+ * the page, so it used to float over the sticky header). Invented content.
+ */
+
+const COLOURS = ['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red'];
+const SELECT =
+  'properties:\n  note.stage:\n    gumplyType: select\n    gumplyOptions:\n' +
+  COLOURS.map((c, i) => `      - value: Stage ${i + 1}\n        color: ${c}\n`).join('');
+const NAMES = Array.from({ length: 60 }, (_, i) => `Person ${String(i + 1).padStart(2, '0')}`);
+
+function team(view: string): Record<string, string> {
+  const files: Record<string, string> = {
+    'Team.base': `gumply:\n  rows: Team\nfilters:\n  and:\n    - file.folder == "Team"\n${SELECT}views:\n${view}`,
+  };
+  NAMES.forEach((name, i) => (files[`Team/${name}.md`] = `---\nstage: Stage ${(i % 3) + 1}\n---\n${name}\n`));
+  return files;
+}
+const TABLE = '  - type: table\n    name: Table\n    order:\n      - file.name\n      - stage\n';
+const BOARD = '  - type: kanban\n    name: Board\n    order:\n      - file.name\n    groupBy:\n      property: stage\n      direction: ASC\n';
+
+async function writeVault(request: APIRequestContext, files: Record<string, string>) {
+  for (const [relative, content] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(E2E_VAULT, relative)), { recursive: true });
+    await fs.writeFile(path.join(E2E_VAULT, relative), content, 'utf8');
+  }
+  await expect
+    .poll(async () => (await api.listPages(request)).filter((meta) => meta.id.startsWith('Team/')).length, { timeout: 15_000 })
+    .toBe(NAMES.length);
+}
+
+async function openTeam(page: Page) {
+  await page.goto(`/#/${encodeURIComponent('Team.base')}`);
+  await expect(page.getByTestId('base-view')).toBeVisible();
+}
+
+test('a Kanban grouped by a Select shows each column head in its option\'s colour', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, team(BOARD));
+  await openTeam(page);
+  const kanban = page.getByTestId('base-kanban');
+  await expect(kanban).toBeVisible();
+  for (const [index, colour] of [[1, 'gray'], [2, 'brown'], [3, 'orange']] as const) {
+    const head = page.getByTestId(`base-column-Stage ${index}`).locator('.base-kanban-title');
+    await expect(head.locator(`.base-option[data-color="${colour}"]`), `Stage ${index}`).toHaveText(`Stage ${index}`);
+  }
+  // The label stays the head's first span (other tests and screen readers read it there).
+  await expect(kanban.locator('.base-kanban-title > span:first-child').first()).toHaveText('Stage 1');
+});
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`"Edit options…": every colour swatch has an edge of at least 3:1 against the popover (${scheme})`, async ({ page, request, vault }) => {
+    void vault;
+    await page.emulateMedia({ colorScheme: scheme });
+    await writeVault(request, team(TABLE));
+    await openTeam(page);
+    await page.getByTestId('base-th-note.stage').click();
+    await page.getByTestId('base-edit-options').click();
+    const editor = page.getByTestId('base-options-editor');
+    await expect(editor).toBeVisible();
+    const ratios = await editor.evaluate((popover) => {
+      // Any CSS colour to sRGB through a canvas (it resolves color-mix, color(), alpha).
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d')!;
+      const rgb = (colour: string, under: number[] = [255, 255, 255]) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = `rgb(${under.join(',')})`;
+        context.fillRect(0, 0, 1, 1);
+        context.fillStyle = colour;
+        context.fillRect(0, 0, 1, 1);
+        return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
+      };
+      const luminance = ([r, g, b]: number[]) =>
+        [r!, g!, b!].map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i]!, 0);
+      const contrast = (a: number[], b: number[]) => {
+        const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+        return (x! + 0.05) / (y! + 0.05);
+      };
+      // The popover's own background, over the page's.
+      let element: Element | null = popover;
+      let background = 'rgb(255, 255, 255)';
+      while (element) {
+        const value = getComputedStyle(element).backgroundColor;
+        if (value && value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+          background = value;
+          break;
+        }
+        element = element.parentElement;
+      }
+      const behind = rgb(background);
+      return Array.from(popover.querySelectorAll<HTMLElement>('.base-option-swatch[aria-checked="false"]')).map((swatch) => ({
+        colour: swatch.dataset.color,
+        ratio: Math.round(contrast(rgb(getComputedStyle(swatch).borderTopColor, behind), behind) * 100) / 100,
+      }));
+    });
+    expect(ratios.length).toBeGreaterThan(0);
+    const low = ratios.filter((entry) => entry.ratio < 3);
+    expect(low, JSON.stringify(ratios)).toEqual([]);
+  });
+}
+
+test('a Select cell\'s picker closes when its cell scrolls out of the table\'s visible box', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await writeVault(request, team(TABLE));
+  await openTeam(page);
+  const scroller = page.getByTestId('base-table-scroll');
+  await expect(page.getByTestId('base-table').locator('.base-title-text').first()).toHaveText(NAMES[0]!);
+  // The second row's Select cell: a click opens its picker.
+  await page.locator('[data-row-id="Team/Person 02"] [data-grid-col="1"]').click();
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  // Scroll the table so that row goes under the sticky header and beyond.
+  const scrolled = await scroller.evaluate((element) => {
+    element.scrollTop = 600;
+    element.dispatchEvent(new Event('scroll'));
+    return element.scrollTop;
+  });
+  expect(scrolled, 'the table scrolls inside itself').toBeGreaterThan(200);
+  await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
+  // Nothing was written by closing it.
+  expect(await fs.readFile(path.join(E2E_VAULT, 'Team/Person 02.md'), 'utf8')).toBe('---\nstage: Stage 2\n---\nPerson 02\n');
+});
