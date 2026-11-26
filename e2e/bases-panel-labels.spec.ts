@@ -34,3 +34,30 @@ for (const [lang, label] of [['en', 'Group by'], ['ru', 'Группироват�
     expect(size.height, 'one line').toBeLessThan(size.line * 1.5);
   });
 }
+
+test.describe('on a narrow window', () => {
+  test.use({ viewport: { width: 420, height: 800 } });
+
+  test('a filter row (ru, the widest lead label) still fits its panel and the window', async ({ page, request, vault }) => {
+    void vault; // resets the vault before and after
+    await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+    await fs.mkdir(path.join(E2E_VAULT, 'Work'), { recursive: true });
+    await fs.writeFile(path.join(E2E_VAULT, 'Work', 'Tasks.base'), BASE, 'utf8');
+    await fs.writeFile(path.join(E2E_VAULT, 'Work', 'Alpha.md'), '---\nstatus: Todo\n---\nA\n', 'utf8');
+    await expect.poll(async () => (await api.listPages(request)).some((m) => m.id === 'Work/Alpha'), { timeout: 10_000 }).toBe(true);
+    await page.goto('/#/Work/Tasks.base');
+    await page.getByTestId('base-table').waitFor();
+    await page.getByTestId('base-filter-button').click();
+    await page.getByTestId('base-add-rule').click();
+    await page.getByTestId('base-add-rule').click();
+    const panel = (await page.getByTestId('base-filter-panel').boundingBox())!;
+    expect(panel.x).toBeGreaterThanOrEqual(0);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(420);
+    for (const row of await page.getByTestId('base-rule').all()) {
+      const box = (await row.boundingBox())!;
+      expect(box.x + box.width, 'the row ends inside its panel').toBeLessThanOrEqual(panel.x + panel.width + 1);
+      const lead = row.locator('.base-rule-lead');
+      expect(await lead.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    }
+  });
+});
