@@ -532,6 +532,23 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json(await store.pasteIntoOwnedRows(c.req.param("id"), { rows: body.rows as never, ...added }, options));
   });
 
+  // #7prbquxu phase 3: rename or clear a Select option in every row of an owned database and in its base.
+  api.post("/bases/:id/rows-option", async (c) => {
+    const body = await readJson(c);
+    const options: { expectedUpdated?: string; writer?: string } = {};
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) options.writer = writer.slice(0, 64);
+    if (typeof body.key !== "string") throw badRequest("key is needed");
+    const rename = body.rename as { from?: unknown; to?: unknown } | undefined;
+    if (rename && typeof rename.from === "string" && typeof rename.to === "string") {
+      return c.json(await store.changeOwnedRowsOption(c.req.param("id"), { key: body.key, rename: { from: rename.from, to: rename.to } }, options));
+    }
+    if (typeof body.clear === "string") return c.json(await store.changeOwnedRowsOption(c.req.param("id"), { key: body.key, clear: body.clear }, options));
+    throw badRequest("expected rename: {from, to} or clear: <value>");
+  });
+
   // #g95wkd9y: links are complete once the background index is done.
   api.get("/pages/:id/backlinks", async (c) => {
     await store.whenIndexed();

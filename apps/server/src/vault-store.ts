@@ -100,6 +100,9 @@ import {
   renameKeyInConfig,
   dropKeyFromConfig,
   propertyId,
+  selectSettings,
+  selectedValues,
+  withSelectSettings,
   withOwnedRows,
   type BaseConfig,
   type CanvasBoard,
@@ -366,6 +369,18 @@ export interface OwnedRowsChange {
   /** The base changed on disk (or couldn't be written) after the rows: a rename was put back; a delete kept the column. */
   baseRefused?: boolean;
   /** The base as it is now (its version for the caller's next save). */
+  base: BaseDocument;
+}
+
+/** #7prbquxu phase 3: what an option rename or clear did (`POST /api/bases/:id/rows-option`). */
+export interface OwnedRowsOption {
+  /** Rows changed; empty when it was refused and put back. */
+  changed: PageId[];
+  refused: Array<{ id: PageId; title: string }>;
+  stuck: Array<{ id: PageId; title: string }>;
+  /** The base changed meanwhile: the rows were put back. */
+  baseRefused?: boolean;
+  /** The base as it is now (its options and version). */
   base: BaseDocument;
 }
 
@@ -3912,6 +3927,117 @@ export class VaultStore {
       if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: writing ${base.id} failed:`, error);
       return false;
     }
+  }
+
+  /**
+   * #7prbquxu phase 3 (spec §6, @lead): rename a Select option, or clear it, in every row of an owned database
+   * and in the base's options, in one queued job. Rows are each page directly in the rows folder whose value
+   * holds the option, read fresh, so the change is made on the value as it is now (an outside edit is carried
+   * along, never overwritten): a Select's text, or the item in a Multi-select's list. All or nothing: a refusal
+   * or error on a row, or a base changed meanwhile, puts every written row's exact earlier bytes back and
+   * leaves the base; refused rows are named, rows that can't be put back are `stuck`.
+   */
+  changeOwnedRowsOption(
+    id: PageId,
+    change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string },
+    options: { expectedUpdated?: string; writer?: string } = {},
+  ): Promise<OwnedRowsOption> {
+    return this.enqueue(() => this.changeOwnedRowsOptionNow(this.resolveId(id), change, options));
+  }
+
+  private async changeOwnedRowsOptionNow(
+    id: PageId,
+    change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string },
+    options: { expectedUpdated?: string; writer?: string },
+  ): Promise<OwnedRowsOption> {
+    const base = this.requireBase(id);
+    const folder = this.ownedRowsOf(base, id);
+    if (folder === null) throw badRequest("This database view doesn't own a rows folder.");
+    const key = change.key;
+    if (!isValidPropertyKey(key)) throw badRequest("not a property name");
+    const from = "rename" in change ? change.rename.from : change.clear;
+    const to = "rename" in change ? change.rename.to.trim() : null;
+    if (typeof from !== "string" || from === "" || (to !== null && to === "")) throw badRequest("an option value is needed");
+    if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) {
+      throw conflict("This database view changed on disk.");
+    }
+    let config: BaseConfig;
+    try {
+      config = parseBase(base.baseSource ?? "");
+    } catch (error) {
+      if (error instanceof BaseParseError) throw badRequest(`This base file isn't valid YAML: ${error.message}`);
+      throw error;
+    }
+    const settings = selectSettings(config, key);
+    if (!settings) throw badRequest(`"${key}" isn't a Select in this database`);
+    if (to !== null && to !== from && settings.options.some((option) => option.value === to)) throw badRequest(`there's already an option "${to}"`);
+
+    const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
+    const prefix = `${folder}/`;
+    const done: Array<{ id: PageId; updated: string; bytes: Buffer }> = [];
+    const refused: Array<{ id: PageId; title: string }> = [];
+    for (const [rowId, record] of this.pages) {
+      if ((record.kind ?? "page") !== "page" || !rowId.startsWith(prefix) || rowId.slice(prefix.length).includes("/")) continue;
+      try {
+        const bytes = await readFile(record.filePath);
+        const raw = readRawProperties(parseNoteTemplate(bytes.toString("utf8")).yaml).find((property) => property.key === key);
+        if (!raw || !selectedValues(raw.value).includes(from)) continue;
+        // The value as it is now, with only this option changed.
+        let next: PropertyValue;
+        if (Array.isArray(raw.value)) {
+          const items = selectedValues(raw.value).flatMap((item) => (item === from ? (to === null ? [] : [to]) : [item]));
+          next = items.filter((item, index) => items.indexOf(item) === index);
+        } else next = to;
+        const page = await this.updateNow(record.id, { properties: { set: { [key]: next } }, expectedUpdated: record.updated });
+        done.push({ id: page.id, updated: page.updated, bytes });
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: ${record.id} failed:`, error);
+        refused.push({ id: record.id, title: record.title });
+      }
+    }
+
+    let baseRefused = false;
+    if (refused.length === 0) {
+      const nextOptions =
+        to === null
+          ? settings.options.filter((option) => option.value !== from)
+          : settings.options.map((option) => (option.value === from ? { ...option, value: to } : option));
+      const text = updateBaseSource(base.baseSource ?? "", withSelectSettings(config, key, { ...settings, options: nextOptions }));
+      if (text !== base.baseSource) {
+        if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) baseRefused = true;
+        else {
+          try {
+            const replaced = base.updated;
+            await this.writeBaseFile(base, text);
+            if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
+            else delete base.ownWrite;
+          } catch (error) {
+            if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: writing ${base.id} failed:`, error);
+            baseRefused = true;
+          }
+        }
+      }
+      if (!baseRefused) return { changed: done.map((row) => row.id), refused: [], stuck: [], base: this.getBase(id) };
+    }
+
+    // All or nothing: every written row gets its exact earlier bytes back.
+    const stuck: Array<{ id: PageId; title: string }> = [];
+    let putBack = 0;
+    for (const row of done) {
+      try {
+        if (await this.putPasteBytesBack(row.id, row.bytes, row.updated)) putBack += 1;
+        else {
+          const record = this.pages.get(row.id);
+          if (record) stuck.push({ id: record.id, title: record.title });
+        }
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: putting ${row.id} back failed:`, error);
+        const record = this.pages.get(row.id);
+        if (record) stuck.push({ id: record.id, title: record.title });
+      }
+    }
+    if (putBack) this.reindexAll();
+    return { changed: [], refused: named(refused), stuck, ...(baseRefused ? { baseRefused: true } : {}), base: this.getBase(id) };
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
