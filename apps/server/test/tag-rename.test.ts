@@ -156,20 +156,21 @@ describe("renaming a tag (#9bx3aznb)", () => {
     const { app, dir, store } = await createTestServer();
     await writeFile(join(dir, "A.md"), "#work\n");
     await store.rescan();
-    // Changed behind the store's back after the rescan inside the rename:
-    // simulated by moving the mtime only (the content check is the scan's job).
+    // Changed behind the store's back after the rescan inside the rename. #y5k39njn: other bytes,
+    // with a moved mtime (a touch alone, the same bytes, is no change now: the tag is renamed then).
     const original = store.renameTag.bind(store);
     let touched = false;
     (store as unknown as { refreshFromDisk: () => Promise<boolean> }).refreshFromDisk = async () => {
       if (!touched) {
         touched = true;
+        await writeFile(join(dir, "A.md"), "#work\nOutside.\n");
         await utimes(join(dir, "A.md"), new Date(), new Date(Date.now() + 5_000));
       }
       return false;
     };
     const result = await original("work", "job");
     expect(result).toEqual({ renamed: 0, rewrittenPages: [], skippedPages: ["A"] });
-    expect(await readFile(join(dir, "A.md"), "utf8")).toBe("#work\n");
+    expect(await readFile(join(dir, "A.md"), "utf8")).toBe("#work\nOutside.\n");
 
     for (const to of ["two words", "2024", "", "a//b"]) {
       const response = await jsonRequest(app, "POST", "/api/tags/rename", { from: "work", to });
