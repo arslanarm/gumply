@@ -1441,3 +1441,57 @@ ol.base-list {
   gap: 0.25rem;
   padding: 0.25rem;
 }
+
+/* #7prbquxu phase 2, step 3: the paste preview (spec/database-tables §5, mock-up 3). */
+.base-paste-preview {
+  width: min(44rem, 92vw);
+}
+
+.base-paste-source {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.base-paste-columns {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+}
+
+.base-paste-column {
+  display: flex;
+  flex: 0 0 9.5rem;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.base-paste-column.is-name {
+  flex-basis: 7rem;
+}
+
+.base-paste-first {
+  padding: 0.3rem 0;
+  font-weight: 600;
+}
+
+.base-paste-hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.base-paste-sample {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.base-paste-sample td {
+  max-width: 10rem;
+  padding: 0.25rem 0.4rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

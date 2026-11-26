@@ -21,6 +21,7 @@ import { baseSource, viewClauses } from "./rules.js";
 import { BaseLinks } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
 import type { PastedRow } from "./paste.js";
+import type { PreviewResult } from "./PastePreview.js";
 import { registerSaver } from "../lib/pending-saves.js";
 import type { SaveState } from "../editor/autosave.js";
 import "./bases.css";
@@ -312,11 +313,23 @@ export function BaseView(props: BaseViewProps) {
 
   /** #7prbquxu phase 2: a block pasted into the grid, in one server request; refused rows are named. */
   const pasteRows = useCallback(
-    async (rows: PastedRow[]) => {
+    async (rows: PastedRow[], columns?: { view: string; keys: string[] }, types?: Record<string, PropertyType>) => {
       try {
         await saverRef.current?.flush();
-        const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer });
-        if (result.refused.length) {
+        const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer, ...(columns ? { columns } : {}) });
+        if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
+        else if (!result.refused.length) {
+          // New columns from the preview take their chosen type only where the vault has none.
+          for (const [key, type] of Object.entries(types ?? {})) await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
+        }
+        if (columns) {
+          // The server added the columns to the base: take it, with its version for the next save.
+          const doc = await api.getBase(baseId);
+          saverRef.current?.setVersion(doc.meta.updated);
+          docRef.current = doc;
+          setDoc(doc);
+        }
+        if (result.refused.length && !result.baseRefused) {
           const refused = t("bases.pasteRefused", { titles: titleList(result.refused) });
           props.onError?.(result.stuck.length ? `${refused} ${t("bases.pasteStuck", { titles: titleList(result.stuck) })}` : refused);
         }
@@ -598,7 +611,8 @@ export function BaseView(props: BaseViewProps) {
           onRename={rename}
           onNewRow={() => void newRow()}
           {...(ownedRowsFolder(config)
-            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onPasteRows: pasteRows, onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
+            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
+                onPastePreview: (previewed: PreviewResult, viewName: string) => pasteRows(previewed.rows, { view: viewName, keys: previewed.keys }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
             : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}

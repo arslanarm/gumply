@@ -20,6 +20,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
 import { api } from "../api/client.js";
 import { plannedPaste, readPaste, type PastedRow } from "./paste.js";
+import { PastePreview, type PreviewResult } from "./PastePreview.js";
 import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
 
@@ -56,6 +57,8 @@ export interface TableViewProps {
   onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
   onSetColumnType?: (column: BaseColumn, type: PropertyType) => Promise<void>;
+  /** #7prbquxu phase 2, step 3: the preview's rows and columns, for this view (one server request). */
+  onPastePreview?: (result: PreviewResult, view: string) => Promise<void>;
   /** #7prbquxu phase 2: a block pasted at the active cell (one server request). */
   onPasteRows?: (rows: PastedRow[]) => Promise<void>;
   /** A row just created: its title opens for typing. */
@@ -281,6 +284,12 @@ export function TableView(props: TableViewProps) {
   const [confirmDelete, setConfirmDelete] = useState<BaseColumn | null>(null);
   /** #7prbquxu phase 2: what the last paste left out (a short note under the table). */
   const [pasteNote, setPasteNote] = useState<string | null>(null);
+  /** #7prbquxu phase 2, step 3: a block pasted on the typing row, waiting in the preview. */
+  const [previewBlock, setPreviewBlock] = useState<string[][] | null>(null);
+  const knownKeys = useMemo(
+    () => new Map(columns.filter((column) => column.id.startsWith("note.")).map((column) => [column.id.slice(5), column.type] as const)),
+    [columns],
+  );
   const closeHeaderMenu = () => {
     setHeaderMenu(null);
     setRenaming(null);
@@ -479,6 +488,7 @@ export function TableView(props: TableViewProps) {
             onAdded={(rowId, next) => {
               if (next) setPendingActive({ rowId, col: Math.min(1, columns.length - 1) });
             }}
+            {...(props.onPastePreview ? { onPasteBlock: setPreviewBlock } : {})}
           />
         ) : result.rows.length === 0 ? (
           <div className="base-empty" data-testid="base-empty">
@@ -568,6 +578,19 @@ export function TableView(props: TableViewProps) {
             />
           ) : null}
         </Popover>
+      ) : null}
+      {previewBlock ? (
+        <PastePreview
+          block={previewBlock}
+          database={(ownedRowsFolder(config) ?? "").split("/").pop() ?? ""}
+          known={knownKeys}
+          untitled={t("defaults.untitledPage")}
+          onCancel={() => setPreviewBlock(null)}
+          onPaste={(previewed) => {
+            setPreviewBlock(null);
+            void props.onPastePreview?.(previewed, view.name);
+          }}
+        />
       ) : null}
       {confirmDelete ? (
         <ConfirmDialog
@@ -682,6 +705,8 @@ function TypingRow(props: {
   onUp: () => void;
   /** The row was made; `next` when Tab asked to go on into its second column. */
   onAdded: (rowId: string, next: boolean) => void;
+  /** #7prbquxu phase 2: a block pasted here opens the preview (one value is typed as usual). */
+  onPasteBlock?: (block: string[][]) => void;
 }) {
   const t = useT();
   const [draft, setDraft] = useState("");
@@ -713,6 +738,13 @@ function TypingRow(props: {
           value={draft}
           readOnly={busy}
           onChange={(event) => setDraft(event.target.value)}
+          onPaste={(event) => {
+            if (!props.onPasteBlock) return;
+            const read = readPaste(event.clipboardData.getData("text/plain"), event.clipboardData.getData("text/html"));
+            if ("value" in read) return;
+            event.preventDefault();
+            props.onPasteBlock(read.rows);
+          }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "Enter") {
