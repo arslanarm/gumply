@@ -1351,3 +1351,70 @@ ol.base-list {
   color: var(--muted);
   font-size: 0.8125rem;
 }
+
+/* #7prbquxu: "+" at the end of an owned database's header, and its panel (spec/database-tables §4). */
+.base-th-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.base-th-add:hover,
+.base-th-add:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.base-popover.is-add-column {
+  width: 15rem;
+  gap: 0.25rem;
+  padding: 0.5rem;
+}
+
+.base-popover.is-add-column .base-input {
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
+
+.base-popover.is-add-column [role="radiogroup"] {
+  display: flex;
+  flex-direction: column;
+}
+
+.base-popover.is-add-column button.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.base-popover.is-add-column button:disabled:not(.is-current) {
+  color: var(--muted);
+  cursor: default;
+}
+
+.base-add-column-note {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.base-add-column-note.is-error {
+  color: var(--danger);
+}
+
+.base-popover.is-add-column button.base-add-column-submit {
+  justify-content: center;
+  margin-top: 0.35rem;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.base-popover.is-add-column button.base-add-column-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

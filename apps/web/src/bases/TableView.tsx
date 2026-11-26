@@ -15,6 +15,8 @@ import { Popover } from "./Popover.js";
 import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
 import { BaseText } from "./values.js";
+import { AddColumn } from "./AddColumn.js";
+import { api } from "../api/client.js";
 import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
 
@@ -265,6 +267,13 @@ export function TableView(props: TableViewProps) {
   };
 
   const [headerMenu, setHeaderMenu] = useState<{ column: BaseColumn; anchor: HTMLElement } | null>(null);
+  const [addColumnAnchor, setAddColumnAnchor] = useState<HTMLElement | null>(null);
+  const viewOrder = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
+  // #7prbquxu: "+" adds a column (spec/database-tables §4); the type goes to types.json only for a new key.
+  const addColumn = async (key: string, type: PropertyType, setType: boolean) => {
+    if (setType) await api.setPropertyType(key, type).catch(() => undefined);
+    props.onChangeView({ ...view, order: [...viewOrder, key] });
+  };
   const sorts = Array.isArray(view.sort) ? view.sort : [];
 
   const setSort = (column: BaseColumn, direction: "ASC" | "DESC") => {
@@ -324,7 +333,22 @@ export function TableView(props: TableViewProps) {
               </div>
             );
           })}
-          <div className="base-th base-th-fill" aria-hidden="true" />
+          {grid ? (
+            <div className="base-th base-th-fill" role="columnheader">
+              <button
+                type="button"
+                className="base-th-add"
+                data-testid="base-add-column-button"
+                aria-label={t("bases.addColumn")}
+                data-tooltip={t("bases.addColumn")}
+                onClick={(event) => setAddColumnAnchor(event.currentTarget)}
+              >
+                <Icon name="plus" size={14} />
+              </button>
+            </div>
+          ) : (
+            <div className="base-th base-th-fill" aria-hidden="true" />
+          )}
         </div>
 
         <div className="base-table-body" style={{ height: virtualizer.getTotalSize() }}>
@@ -454,6 +478,9 @@ export function TableView(props: TableViewProps) {
         </button>
       ) : null}
 
+      {addColumnAnchor ? (
+        <AddColumn anchor={addColumnAnchor} shown={viewOrder.map((id) => writtenId(propertyId(id)))} onClose={() => setAddColumnAnchor(null)} onAdd={addColumn} />
+      ) : null}
       {headerMenu ? (
         <Popover anchor={headerMenu.anchor} onClose={() => setHeaderMenu(null)} label={propertyLabel(headerMenu.column.id, config, t)} testId="base-column-menu" className="is-menu">
           <button type="button" role="menuitem" onClick={() => (setSort(headerMenu.column, "ASC"), setHeaderMenu(null))}>
