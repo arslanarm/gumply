@@ -4960,10 +4960,13 @@ export class VaultStore {
           break;
         } catch (error) {
           if (!(error as { nameTaken?: boolean }).nameTaken || attempt >= 20) throw error;
+          const taken = targetId;
           targetId = await this.renameTarget(id, record.parentId, nextTitle);
           if (targetId === id) break;
-          // The chain's first step goes under the name the rename now ends at.
+          // The chain's first step goes under the name the rename now ends at, and leaves the taken one (another
+          // app's file now) (@opus-editor).
           if (renameWrite) {
+            this.forgetRenameRewrite(taken, renameWrite.replaced, renameWrite.updated);
             this.rememberRenameRewrite(targetId, renameWrite.content, renameWrite.content, renameWrite.replaced, renameWrite.updated, nextTitle);
           }
         }
@@ -5354,6 +5357,15 @@ export class VaultStore {
     if (recorded.some((entry) => entry.versionAfter === record.updated)) return record.updated;
     const own = record.ownWrite;
     return own && own.version === record.updated ? own.replaced : record.updated;
+  }
+
+  /** #e3mwuspu: drop a rename's recorded step for `id` (the step from `versionBefore` to `versionAfter`). */
+  private forgetRenameRewrite(id: PageId, versionBefore: string, versionAfter: string): void {
+    const list = this.renameRewrites.get(id);
+    if (!list) return;
+    const kept = list.filter((entry) => !(entry.versionBefore === versionBefore && entry.versionAfter === versionAfter));
+    if (kept.length === 0) this.renameRewrites.delete(id);
+    else this.renameRewrites.set(id, kept);
   }
 
   /** N10: remember a rename's rewrite of page `id` (pruned by age). */
