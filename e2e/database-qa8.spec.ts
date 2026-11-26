@@ -110,10 +110,17 @@ test('a value too long for its cell ends in an ellipsis inside the cell, not cut
     const cell = td.getBoundingClientRect();
     const right = cell.right - parseFloat(getComputedStyle(td).paddingRight) - parseFloat(getComputedStyle(td).borderRightWidth);
     const box = element.getBoundingClientRect();
-    return { inside: box.right <= right + 0.5, overflow: getComputedStyle(element).textOverflow, cut: element.scrollWidth > element.clientWidth };
+    // `text-overflow` draws the "…" only on a block container; on a flex box (as on main) the text is cut mid-letter.
+    const display = getComputedStyle(element).display;
+    return {
+      inside: box.right <= right + 0.5,
+      overflow: getComputedStyle(element).textOverflow,
+      cut: element.scrollWidth > element.clientWidth,
+      ellipsisDrawn: display === 'block' || display === 'inline-block',
+    };
   });
   expect(fit.inside, 'the chip, its border too, stays inside its cell').toBe(true);
-  expect(fit).toMatchObject({ overflow: 'ellipsis', cut: true });
+  expect(fit).toMatchObject({ overflow: 'ellipsis', cut: true, ellipsisDrawn: true });
 });
 
 test('the paste preview is wide enough for its columns on a wide window (pass 8, 2)', async ({ page, request, vault }) => {
