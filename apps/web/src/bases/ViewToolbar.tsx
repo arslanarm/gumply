@@ -9,7 +9,7 @@ import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
 import { Popover } from "./Popover.js";
 import { numberSetting, withSetting } from "./values.js";
-import { propertyId } from "@gumply/core";
+import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { pickerProperties, propertyLabel, propertyType, writtenId } from "./labels.js";
 import {
   baseSource,
@@ -56,10 +56,13 @@ export function ViewToolbar(props: ViewToolbarProps) {
   const clauses = useMemo(() => viewClauses(view), [view]);
   const sorts = Array.isArray(view.sort) ? view.sort : [];
   const source = baseSource(config);
+  // #7prbquxu: a database that owns its rows folder has no source to pick.
+  const rows = ownedRowsFolder(config);
   const close = () => setOpen(null);
 
-  const sourceLabel =
-    source.kind === "folder"
+  const sourceLabel = rows
+    ? t("bases.sourceRows", { folder: rows.split("/").pop() ?? rows })
+    : source.kind === "folder"
       ? t("bases.sourceIn", { folder: source.folder })
       : source.kind === "tag"
         ? t("bases.sourceTagged", { tag: source.tag })
@@ -88,7 +91,12 @@ export function ViewToolbar(props: ViewToolbarProps) {
     <div className="base-toolbar" role="toolbar" aria-label={view.name}>
       <span className="base-tool-anchor">
         {button("source", "folder", sourceLabel)}
-        {open === "source" ? (
+        {open === "source" && rows ? (
+          <Popover anchor={anchors.current.source} onClose={close} label={t("bases.rowsTitle")} testId="base-rows-panel">
+            <div className="base-panel-title">{t("bases.rowsTitle")}</div>
+            <p className="base-panel-note">{t("bases.rowsNote", { folder: rows })}</p>
+          </Popover>
+        ) : open === "source" ? (
           <SourcePanel
             anchor={anchors.current.source}
             config={config}

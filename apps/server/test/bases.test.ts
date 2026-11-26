@@ -159,6 +159,195 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(((await page.json()) as PageMeta).id).toBe("Work 2");
   });
 
+  it("creates a database that owns its rows folder (#7prbquxu): People.base next to an empty People/", async () => {
+    const { app, dir } = await vault({ ...files, "Team/People.md": "A page already named People\n" });
+    const response = await jsonRequest(app, "POST", "/api/bases", { title: "People", parentId: "Projects", rows: true, source: { folder: "Elsewhere" } });
+    expect(response.status).toBe(201);
+    const created = (await response.json()) as { meta: PageMeta };
+    expect(created.meta).toMatchObject({ id: "Projects/People.base", kind: "base", title: "People" });
+    // The marker and the folder's own pages; `source` is ignored.
+    expect(await readFile(join(dir, "Projects/People.base"), "utf8")).toBe(
+      'gumply:\n  rows: Projects/People\nfilters:\n  and:\n    - file.folder == "Projects/People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n',
+    );
+    expect(await readdir(join(dir, "Projects/People"))).toEqual([]);
+    // The empty folder is in the tree right away, under the base's parent.
+    const listed = await getJson<PageMeta[]>(app, "/api/pages");
+    expect(listed.find((meta) => meta.id === "Projects/People")).toMatchObject({ kind: "folder", parentId: "Projects" });
+
+    // A name taken as a page (with its sub-page folder) or as a folder: both get the next free name.
+    const second = (await (await jsonRequest(app, "POST", "/api/bases", { title: "People", parentId: "Projects", rows: true })).json()) as { meta: PageMeta };
+    expect(second.meta.id).toBe("Projects/People 2.base");
+    await mkdir(join(dir, "Team/People"), { recursive: true });
+    const third = (await (await jsonRequest(app, "POST", "/api/bases", { title: "People", parentId: "Team", rows: true })).json()) as { meta: PageMeta };
+    expect(third.meta.id).toBe("Team/People 2.base");
+    expect(parseBase(await readFile(join(dir, "Team/People 2.base"), "utf8")).filters).toEqual({ and: ['file.folder == "Team/People 2"'] });
+
+    // A new row made in the folder is in the table.
+    await jsonRequest(app, "POST", "/api/pages", { title: "Ada", parentId: "Projects/People" });
+    const view = await getJson<BaseViewResult>(app, `/api/bases/${encodeId("Projects/People.base")}/view`);
+    expect(view.rows.map((row) => row.title)).toEqual(["Ada"]);
+  });
+
+  it("renaming a database that owns its rows folder takes the folder along (#7prbquxu)", async () => {
+    const { app, dir, store } = await vault({ "Elsewhere/People.md": "Not in the way\n", "Ref.md": "See [[Untitled database/Ada]].\n" });
+    await jsonRequest(app, "POST", "/api/bases", { title: "Untitled database", rows: true });
+    await jsonRequest(app, "POST", "/api/pages", { title: "Ada", parentId: "Untitled database" });
+    const before = store.getBase("Untitled database.base");
+
+    const renamed = await jsonRequest(app, "PUT", `/api/bases/${encodeId("Untitled database.base")}`, { title: "People", expectedUpdated: before.meta.updated });
+    expect(renamed.status).toBe(200);
+    expect(((await renamed.json()) as { meta: PageMeta }).meta.id).toBe("People.base");
+    // Only the marker and the filter lines changed.
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(
+      'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n',
+    );
+    expect(await readdir(join(dir, "People"))).toEqual(["Ada.md"]);
+    expect(await readdir(dir)).not.toContain("Untitled database");
+    const view = await getJson<BaseViewResult>(app, `/api/bases/${encodeId("People.base")}/view`);
+    expect(view.rows.map((row) => row.id)).toEqual(["People/Ada"]);
+    // A path link into the folder follows it.
+    expect(await readFile(join(dir, "Ref.md"), "utf8")).toBe("See [[People/Ada]].\n");
+
+    // A name whose folder is taken (a folder "Team/" exists): both get the next free name.
+    await mkdir(join(dir, "Team"), { recursive: true });
+    await store.rescan();
+    const again = store.getBase("People.base");
+    const second = await jsonRequest(app, "PUT", `/api/bases/${encodeId("People.base")}`, { title: "Team", expectedUpdated: again.meta.updated });
+    expect(((await second.json()) as { meta: PageMeta }).meta.id).toBe("Team 2.base");
+    expect(await readdir(join(dir, "Team 2"))).toEqual(["Ada.md"]);
+    expect(parseBase(await readFile(join(dir, "Team 2.base"), "utf8")).filters).toEqual({ and: ['file.folder == "Team 2"'] });
+  });
+
+  it("renames or deletes a property in every row of an owned database, all or nothing (#7prbquxu, @opus-hunter's review)", async () => {
+    const { app, dir } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    limit: 1\n    order:\n      - file.name\n      - role\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
+      "People/Cy.md": "---\nrole:\nage: 7\n---\nCy\n",
+      "People/Deep/Dee.md": "---\nrole: Not a row\n---\nIn a sub-folder\n",
+      "Elsewhere.md": "---\nrole: Not a row\n---\nOutside\n",
+    });
+    const url = `/api/bases/${encodeId("People.base")}/rows-property`;
+    const read = (path: string) => readFile(join(dir, path), "utf8");
+
+    // Every row with the key (also an empty value; also rows the view's limit hides); not deeper, not outside.
+    const renamed = (await (await jsonRequest(app, "POST", url, { rename: { from: "role", to: "job" } })).json()) as { changed: string[] };
+    expect(renamed.changed.sort()).toEqual(["People/Ann", "People/Bo", "People/Cy"]);
+    expect(await read("People/Bo.md")).toBe("---\njob: Pilot\n---\nBo\n");
+    expect(await read("People/Cy.md")).toBe("---\njob:\nage: 7\n---\nCy\n");
+    expect(await read("People/Deep/Dee.md")).toBe("---\nrole: Not a row\n---\nIn a sub-folder\n");
+    expect(await read("Elsewhere.md")).toBe("---\nrole: Not a row\n---\nOutside\n");
+    // The same request renamed the column in the base, only that line (@lead: one request changes both).
+    expect(await read("People.base")).toBe(
+      'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    limit: 1\n    order:\n      - file.name\n      - job\n',
+    );
+
+    // A name a row already has: nothing written.
+    const clash = (await (await jsonRequest(app, "POST", url, { rename: { from: "job", to: "age" } })).json()) as { changed: string[]; clash: Array<{ title: string }> };
+    expect(clash.changed).toEqual([]);
+    expect(clash.clash.map((row) => row.title)).toEqual(["Cy"]);
+    expect(await read("People/Ann.md")).toBe("---\njob: Cook\n---\nAnn\n");
+
+    // Delete: every row loses the key.
+    const removed = (await (await jsonRequest(app, "POST", url, { remove: "job" })).json()) as { changed: string[]; skipped: unknown[] };
+    expect(removed.skipped).toEqual([]);
+    expect(await read("People/Ann.md")).not.toContain("job");
+    expect(await read("People/Ann.md")).toContain("Ann\n");
+    expect(await read("People/Cy.md")).toBe("---\nage: 7\n---\nCy\n");
+    expect(await read("People.base")).not.toContain("job");
+
+    // Not an owned database: refused.
+    await writeFile(join(dir, "Plain.base"), "views:\n  - type: table\n    name: Table\n", "utf8");
+    const store = new VaultStore(dir);
+    await store.init();
+    await expect(store.changeOwnedRowsProperty("Plain.base", { remove: "age" })).rejects.toThrow("doesn't own");
+  });
+
+  it("any error on a row puts the renamed rows back, and the base stays as it was (#7prbquxu, @lead)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - role\n';
+    const { dir, store } = await vault({ "People.base": base, "People/Ann.md": "---\nrole: Cook\n---\nAnn\n", "People/Bo.md": "---\nrole: Pilot\n---\nBo\n" });
+    const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "People/Bo") throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
+      return updateNow(id, patch);
+    };
+    const result = await store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } });
+    expect(result.changed).toEqual([]);
+    expect(result.skipped.map((row) => row.title)).toEqual(["Bo"]);
+    expect(result.stuck).toEqual([]);
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base);
+  });
+
+  it("a base changed since the caller read it refuses before any row is written (#7prbquxu)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+    });
+    await expect(store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } }, { expectedUpdated: "2000-01-01T00:00:00.000Z" })).rejects.toThrow("changed on disk");
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
+  });
+
+  it("a row that can't be put back is named with the key it's left with (#7prbquxu, @lead)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
+    });
+    // Bo refuses the rename; Ann's way back is refused too (as if changed again, or locked, meanwhile).
+    const internals = store as unknown as { updateNow: (id: string, patch: { properties?: { rename?: Array<{ from: string }> } }) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "People/Bo" || patch.properties?.rename?.[0]?.from === "job") throw new (await import("../src/errors")).VaultError(409, "changed on disk");
+      return updateNow(id, patch);
+    };
+    const result = await store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } });
+    expect(result.skipped.map((row) => row.title)).toEqual(["Bo"]);
+    expect(result.stuck).toEqual([{ id: "People/Ann", title: "Ann" }]);
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\njob: Cook\n---\nAnn\n");
+  });
+
+  it("a property type set only if absent keeps a type types.json has, even for a key no page uses (#7prbquxu, @opus-hunter)", async () => {
+    const { app, dir } = await vault({ "Note.md": "---\nrole: Cook\n---\nNote\n" });
+    await jsonRequest(app, "PUT", "/api/properties/priority", { type: "number" });
+    await jsonRequest(app, "PUT", "/api/properties/priority", { type: "text", ifAbsent: true });
+    await jsonRequest(app, "PUT", "/api/properties/budget", { type: "number", ifAbsent: true });
+    const file = (await readdir(dir)).includes(".obsidian") ? ".obsidian/types.json" : ".gumply/types.json";
+    const types = (JSON.parse(await readFile(join(dir, file), "utf8")) as { types: Record<string, string> }).types;
+    expect(types.priority).toBe("number");
+    expect(types.budget).toBe("number");
+  });
+
+  it("a database-wide rename that a row refuses puts the renamed rows back (#7prbquxu)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
+    });
+    // Another app rewrites Bo with the same size and time after the store read it (#y5k39njn): Bo refuses.
+    const bo = join(dir, "People/Bo.md");
+    const { stat, utimes } = await import("node:fs/promises");
+    const before = await stat(bo);
+    await writeFile(bo, "---\nrole: Pilox\n---\nBo\n", "utf8");
+    await utimes(bo, before.atime, before.mtime);
+    const result = await store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } });
+    expect(result.changed).toEqual([]);
+    expect(result.skipped.map((row) => row.title)).toEqual(["Bo"]);
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
+    expect(await readFile(bo, "utf8")).toBe("---\nrole: Pilox\n---\nBo\n");
+  });
+
+  it("a base whose filter no longer reads its marked folder renames alone", async () => {
+    const edited = 'gumply:\n  rows: Crew\nfilters:\n  and:\n    - file.inFolder("Crew")\nviews: []\n';
+    const { app, dir, store } = await vault({ "Crew.base": edited, "Crew/Bo.md": "Bo\n" });
+    const base = store.getBase("Crew.base");
+    const renamed = await jsonRequest(app, "PUT", `/api/bases/${encodeId("Crew.base")}`, { title: "Staff", expectedUpdated: base.meta.updated });
+    expect(((await renamed.json()) as { meta: PageMeta }).meta.id).toBe("Staff.base");
+    expect(await readdir(join(dir, "Crew"))).toEqual(["Bo.md"]);
+    expect(await readFile(join(dir, "Staff.base"), "utf8")).toBe(edited);
+  });
+
   it("saves only what changed, conditionally", async () => {
     const { app, dir } = await vault(files);
     const id = encodeId("Projects/Tasks.base");

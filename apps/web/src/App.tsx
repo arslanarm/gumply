@@ -1350,7 +1350,28 @@ export function App() {
     [loadPages, navigate],
   );
 
-  /** D34: "New database view": a table of the folder it's created in. */
+  /**
+   * #7prbquxu (spec/database-tables §1): "New database": an empty table with its own
+   * rows folder (People.base next to People/), its title open for naming.
+   */
+  const handleCreateDatabase = useCallback(
+    async (parentId: PageId | null) => {
+      setActionError(null);
+      setAutoFocusTitle(true);
+      if (window.innerWidth <= 900) setSidebarOpen(false);
+      try {
+        const created = await api.createBase({ title: newBaseTitle(), parentId, rows: true });
+        await loadPages();
+        setEditTitleId(created.meta.id);
+        navigate(created.meta.id);
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    [loadPages, navigate],
+  );
+
+  /** D34: "New view of pages…" (was "New database view"): a table of the folder it's created in. */
   const handleCreateBase = useCallback(
     async (parentId: PageId | null, title?: string) => {
       setActionError(null);
@@ -2516,6 +2537,7 @@ export function App() {
     },
     "new.page": () => void handleCreate(null),
     "new.board": () => setGalleryParent({ parentId: null }),
+    "new.database": () => void handleCreateDatabase(null),
     "new.base": () => void handleCreateBase(null),
     "new.page-from-template": () => setTemplatePicker({ mode: "new", parentId: null }),
     "new.board-from-template": () => setGalleryParent({ parentId: null }),
@@ -2668,6 +2690,7 @@ export function App() {
           footer={<UpdateNotice state={updates} hidden={hiddenUpdate} onHide={setHiddenUpdate} />}
           onCreateBoard={closingSidebar((parentId: PageId | null) => setGalleryParent({ parentId }))}
           onCreateBase={(parentId) => void handleCreateBase(parentId)}
+          onCreateDatabase={(parentId) => void handleCreateDatabase(parentId)}
           pages={pages}
           selectedId={selectedId}
           status={listStatus}

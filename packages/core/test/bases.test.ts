@@ -6,7 +6,9 @@ import {
   UnsupportedError,
   evaluateExpression,
   newBaseSource,
+  ownedRowsFolder,
   parseBase,
+  withOwnedRows,
   runBaseView,
   typedProperties,
   updateBaseSource,
@@ -179,6 +181,41 @@ describe("updateBaseSource", () => {
     );
     expect(parseBase(newBaseSource({ tag: "#work" })).filters).toEqual({ and: ['file.hasTag("work")'] });
     expect(parseBase(newBaseSource()).filters).toBeUndefined();
+  });
+
+  it("creates a database that owns its rows folder (#7prbquxu): the marker and that folder's own pages", () => {
+    const source = newBaseSource({ rows: "Team/People", folder: "ignored", tag: "ignored" });
+    expect(source).toBe(
+      'gumply:\n  rows: Team/People\nfilters:\n  and:\n    - file.folder == "Team/People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n',
+    );
+    const config = parseBase(source);
+    expect(config.filters).toEqual({ and: ['file.folder == "Team/People"'] });
+    expect(ownedRowsFolder(config)).toBe("Team/People");
+    // A name YAML would misread is quoted, and still reads back.
+    expect(ownedRowsFolder(parseBase(newBaseSource({ rows: "Yes: no #1" })))).toBe("Yes: no #1");
+  });
+
+  it("owns a folder only while the marker and the filter agree", () => {
+    const owned = (text: string) => ownedRowsFolder(parseBase(text));
+    // Obsidian may reorder keys and drop spaces round ==.
+    expect(owned('filters:\n  and:\n    - file.folder=="People"\ngumply:\n  showRows: true\n  rows: People\nviews: []\n')).toBe("People");
+    // The filter was edited to another folder, or widened: a plain view, never hiding or moving a folder.
+    expect(owned('gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "Other"\nviews: []\n')).toBeNull();
+    expect(owned('gumply:\n  rows: People\nfilters:\n  and:\n    - file.inFolder("People")\nviews: []\n')).toBeNull();
+    expect(owned('gumply:\n  rows: People\nviews: []\n')).toBeNull();
+    // No marker (a Notion import): not owned.
+    expect(owned('filters:\n  and:\n    - file.folder == "People"\nviews: []\n')).toBeNull();
+    expect(owned('gumply: yes\nviews: []\n')).toBeNull();
+  });
+
+  it("moves an owned database's marker and filter to a renamed rows folder, touching only those lines", () => {
+    const source = 'gumply:\n  rows: Untitled database\n  showRows: true\nfilters:\n  and:\n    - file.folder == "Untitled database"\n    - status != "x"\nviews:\n  - type: table\n    name: Table\n';
+    const moved = updateBaseSource(source, withOwnedRows(parseBase(source), "Team/People"));
+    expect(moved).toBe(source.replace("rows: Untitled database", "rows: Team/People").replace('file.folder == "Untitled database"', 'file.folder == "Team/People"'));
+    expect(ownedRowsFolder(parseBase(moved))).toBe("Team/People");
+    // Not owned: unchanged.
+    const plain = parseBase('filters:\n  and:\n    - file.folder == "X"\nviews: []\n');
+    expect(withOwnedRows(plain, "Y")).toBe(plain);
   });
 });
 

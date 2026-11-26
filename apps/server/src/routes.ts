@@ -237,7 +237,7 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   api.put("/properties/:key", async (c) => {
     const body = await readJson(c);
-    return c.json<PropertyInfo[]>(await store.setPropertyType(c.req.param("key"), body.type as PropertyType));
+    return c.json<PropertyInfo[]>(await store.setPropertyType(c.req.param("key"), body.type as PropertyType, { ifAbsent: body.ifAbsent === true }));
   });
 
   api.delete("/pages/:id", async (c) => {
@@ -470,6 +470,7 @@ export function createApiRoutes(store: VaultStore): Hono {
         folder: typeof source.folder === "string" ? source.folder : null,
         ...(typeof source.tag === "string" ? { tag: source.tag } : {}),
       },
+      ...(body.rows === true ? { rows: true } : {}),
     });
     return c.json<BaseDocument>(base, 201);
   });
@@ -497,6 +498,22 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (writer !== undefined) patch.writer = writer.slice(0, 64);
     const { rewrittenPages, ...result } = await store.updateBase(c.req.param("id"), patch);
     return c.json(rewrittenPages.length > 0 ? { ...result, rewrittenPages } : result);
+  });
+
+  // #7prbquxu: rename or delete a property in every row of an owned database (all or nothing for a rename).
+  api.post("/bases/:id/rows-property", async (c) => {
+    const body = await readJson(c);
+    const options: { expectedUpdated?: string; writer?: string } = {};
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) options.writer = writer.slice(0, 64);
+    const rename = body.rename as { from?: unknown; to?: unknown } | undefined;
+    if (rename && typeof rename === "object" && typeof rename.from === "string" && typeof rename.to === "string") {
+      return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { rename: { from: rename.from, to: rename.to } }, options));
+    }
+    if (typeof body.remove === "string") return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { remove: body.remove }, options));
+    throw badRequest("expected rename: {from, to} or remove: <key>");
   });
 
   // #g95wkd9y: links are complete once the background index is done.

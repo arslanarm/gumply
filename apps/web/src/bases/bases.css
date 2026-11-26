@@ -1276,3 +1276,168 @@ ol.base-list {
   color: var(--muted);
   text-align: right;
 }
+
+/* #7prbquxu: the typing row of a database that owns its rows (spec/database-tables §4). */
+.base-typing-row {
+  position: relative;
+}
+
+.base-typing-row:hover {
+  background: transparent;
+}
+
+.base-typing-icon {
+  display: flex;
+  flex: none;
+  margin-right: 0.5rem;
+  color: var(--muted);
+}
+
+.base-typing-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.base-typing-input::placeholder {
+  color: var(--muted);
+}
+
+.base-typing-row:focus-within .base-td-title {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 2px;
+}
+
+/*
+ * #7prbquxu: the database grid's active cell (spec/database-tables §4). One input
+ * lies over the cell: see-through with an accent ring while you move, so the
+ * cell's value shows and a click reaches the cell; opaque once you type into it.
+ */
+.base-grid-cell {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 2px;
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font: inherit;
+  pointer-events: none;
+}
+
+.base-grid-cell.is-typing {
+  background: var(--surface-page);
+  color: var(--text);
+  caret-color: auto;
+  pointer-events: auto;
+}
+
+.base-grid-cell.is-number {
+  text-align: right;
+}
+
+.base-typing-hint {
+  margin: 0.5rem 0.5rem 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+/* #7prbquxu: "+" at the end of an owned database's header, and its panel (spec/database-tables §4). */
+.base-th-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.base-th-add:hover,
+.base-th-add:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.base-popover.is-add-column {
+  width: 15rem;
+  gap: 0.25rem;
+  padding: 0.5rem;
+}
+
+.base-popover.is-add-column .base-input {
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
+
+.base-popover.is-add-column [role="radiogroup"] {
+  display: flex;
+  flex-direction: column;
+}
+
+.base-popover.is-add-column button.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.base-popover.is-add-column button:disabled:not(.is-current) {
+  color: var(--muted);
+  cursor: default;
+}
+
+.base-add-column-note {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.base-add-column-note.is-error {
+  color: var(--danger);
+}
+
+.base-popover.is-add-column button.base-add-column-submit {
+  justify-content: center;
+  margin-top: 0.35rem;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.base-popover.is-add-column button.base-add-column-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* #7prbquxu: an owned database's column menu: rename, type, delete from all rows. */
+.base-menu-separator {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--border);
+}
+
+.base-popover.is-menu button.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.base-popover.is-menu button.is-danger {
+  color: var(--danger);
+}
+
+.base-rename-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.25rem;
+}

@@ -169,7 +169,8 @@ const OTHER_COMMANDS = {
   // New
   "new.page": { group: "new", icon: "plus", label: "commands.new.page", en: "new page create note" },
   "new.board": { group: "new", icon: "board", label: "commands.new.board", en: "new whiteboard board canvas" },
-  "new.base": { group: "new", icon: "database", label: "commands.new.base", en: "new database view base table" },
+  "new.database": { group: "new", icon: "database", label: "commands.new.database", en: "new database table spreadsheet rows" },
+  "new.base": { group: "new", icon: "database", label: "commands.new.base", en: "new view of pages database view base table query" },
   "new.page-from-template": { group: "new", icon: "pageTemplate", label: "search.pageTemplate", words: "search.pageTemplateWords", en: "new page from template templates", testId: "search-page-template" },
   "new.board-from-template": { group: "new", icon: "board", label: "search.fromTemplate", words: "search.templateWords", en: "new board from template whiteboard kanban mind map retrospective retro flowchart weekly plan", testId: "search-from-template" },
   "new.today": { group: "new", icon: "calendar", label: "search.today", words: "search.todayWords", en: "today daily daily note journal", shortcut: "openToday", testId: "search-today" },

@@ -93,8 +93,12 @@ import {
   type PropertyLinks,
   type WikiLink,
   newBaseSource,
+  ownedRowsFolder,
   parseBase,
   updateBaseSource,
+  renameKeyInConfig,
+  dropKeyFromConfig,
+  withOwnedRows,
   type BaseConfig,
   type CanvasBoard,
   type TagCount,
@@ -298,6 +302,12 @@ export interface CreateBaseInput {
   title: string;
   parentId?: string | null;
   source?: { folder?: PageId | null; tag?: string };
+  /**
+   * #7prbquxu (spec/database-tables §1): a database that owns its rows folder: the
+   * folder is made next to the `.base` with the same name, and the base reads that
+   * folder's own pages. `source` is ignored.
+   */
+  rows?: boolean;
 }
 
 export interface UpdateBaseInput {
@@ -341,6 +351,22 @@ const MAX_GRAPH_DEPTH = 5;
 const MAX_TAGS = 200;
 
 /** Page plus the bits of on-disk state the index needs. */
+/** #7prbquxu: what a database-wide property rename or delete did (`POST /api/bases/:id/rows-property`). */
+export interface OwnedRowsChange {
+  /** The rows written. Empty when a rename was refused or put back. */
+  changed: PageId[];
+  /** Rows that refused (changed on disk meanwhile, read-only): a rename then changed nothing. */
+  skipped: Array<{ id: PageId; title: string }>;
+  /** A rename's new name that these rows already have: nothing was written. */
+  clash: Array<{ id: PageId; title: string }>;
+  /** After a refused rename: rows that couldn't be put back, so they keep the new name. */
+  stuck: Array<{ id: PageId; title: string }>;
+  /** The base changed on disk (or couldn't be written) after the rows: a rename was put back; a delete kept the column. */
+  baseRefused?: boolean;
+  /** The base as it is now (its version for the caller's next save). */
+  base: BaseDocument;
+}
+
 interface PageRecord extends Omit<Page, "childCount"> {
   filePath: string;
   /**
@@ -2342,11 +2368,13 @@ export class VaultStore {
   }
 
   /** Change a key's type vault-wide (types.json only; files keep their values, as in Obsidian). */
-  setPropertyType(key: string, type: PropertyType): Promise<PropertyInfo[]> {
+  /** `ifAbsent` (#7prbquxu): only when the types file has no entry for the key (any case), used or not. */
+  setPropertyType(key: string, type: PropertyType, options: { ifAbsent?: boolean } = {}): Promise<PropertyInfo[]> {
     return this.enqueue(async () => {
       if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest("Not a property key");
       if (!isPropertyType(type)) throw badRequest("Unknown property type");
-      await this.propertyTypes.set(key, type);
+      if (options.ifAbsent) await this.propertyTypes.addMissing({ [key]: type });
+      else await this.propertyTypes.set(key, type);
       return (await this.propertyIndex()).infos();
     });
   }
@@ -3498,6 +3526,120 @@ export class VaultStore {
     return this.enqueue(() => this.createBaseNow(input));
   }
 
+  /**
+   * #7prbquxu (spec/database-tables §4, @opus-hunter's and @lead's reviews): rename or delete a property in
+   * every row of an owned database and in its `.base`, in one queued job. The rows are each page directly
+   * in its rows folder whose frontmatter has the key (even empty), each through the ordinary properties
+   * patch from its current version, so a write another app made meanwhile (even with the same size and
+   * time) is refused for that row. The `.base` (checked against `expectedUpdated` before any write) then
+   * renames or drops the column in only the lines that name it.
+   * A rename is all or nothing: a name some row already has stops it before any write; any refusal or
+   * error on a row, or a base changed meanwhile, puts the renamed rows back and leaves the base. A row
+   * that can't be put back is returned as `stuck`. A delete that a row refuses keeps the column.
+   */
+  changeOwnedRowsProperty(
+    id: PageId,
+    change: { rename: { from: string; to: string } } | { remove: string },
+    options: { expectedUpdated?: string; writer?: string } = {},
+  ): Promise<OwnedRowsChange> {
+    return this.enqueue(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change, options));
+  }
+
+  private async changeOwnedRowsPropertyNow(
+    id: PageId,
+    change: { rename: { from: string; to: string } } | { remove: string },
+    options: { expectedUpdated?: string; writer?: string },
+  ): Promise<OwnedRowsChange> {
+    const base = this.requireBase(id);
+    const folder = this.ownedRowsOf(base, id);
+    if (folder === null) throw badRequest("This database view doesn't own a rows folder.");
+    const key = "rename" in change ? change.rename.from : change.remove;
+    const to = "rename" in change ? change.rename.to : null;
+    if (!isValidPropertyKey(key) || (to !== null && !isValidPropertyKey(to))) throw badRequest("not a property name");
+    const baseUnchanged = async () =>
+      !(await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) &&
+      versionMatches(base, options.expectedUpdated, options.writer);
+    if (!(await baseUnchanged())) throw conflict("This database view changed on disk.");
+    let config: BaseConfig;
+    try {
+      config = parseBase(base.baseSource ?? "");
+    } catch (error) {
+      if (error instanceof BaseParseError) throw badRequest(`This base file isn't valid YAML: ${error.message}`);
+      throw error;
+    }
+
+    const prefix = `${folder}/`;
+    const rows: PageRecord[] = [];
+    const clash: PageRecord[] = [];
+    for (const [rowId, record] of this.pages) {
+      if ((record.kind ?? "page") !== "page" || !rowId.startsWith(prefix) || rowId.slice(prefix.length).includes("/")) continue;
+      let present: Set<string>;
+      try {
+        present = new Set(frontmatterKeys(parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml));
+      } catch {
+        continue;
+      }
+      if (!present.has(key)) continue;
+      rows.push(record);
+      if (to !== null && present.has(to)) clash.push(record);
+    }
+    const named = (records: PageRecord[]) => records.map((record) => ({ id: record.id, title: record.title }));
+    const answer = (result: Omit<OwnedRowsChange, "base">): OwnedRowsChange => ({ ...result, base: this.getBase(id) });
+    if (clash.length) return answer({ changed: [], skipped: [], clash: named(clash), stuck: [] });
+
+    const changed: Array<{ id: PageId; updated: string }> = [];
+    const skipped: PageRecord[] = [];
+    for (const record of rows) {
+      try {
+        const patch = to !== null ? { rename: [{ from: key, to }] } : { remove: [key] };
+        const page = await this.updateNow(record.id, { properties: patch, expectedUpdated: record.updated });
+        changed.push({ id: page.id, updated: page.updated });
+      } catch (error) {
+        // Any error (a refusal, a lock, I/O): this row didn't change. One the store didn't expect is logged.
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: ${record.id} failed:`, error);
+        skipped.push(record);
+      }
+    }
+
+    const next = to !== null ? renameKeyInConfig(config, key, to) : dropKeyFromConfig(config, key);
+    const text = updateBaseSource(base.baseSource ?? "", next);
+    const writeBase = async (): Promise<boolean> => {
+      if (text === base.baseSource) return true;
+      if (!(await baseUnchanged())) return false;
+      try {
+        const replaced = base.updated;
+        await this.writeBaseFile(base, text);
+        if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
+        else delete base.ownWrite;
+        return true;
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: writing ${base.id} failed:`, error);
+        return false;
+      }
+    };
+
+    if (to === null) {
+      // A delete: the column goes only when every row lost the key.
+      const baseWritten = skipped.length === 0 ? await writeBase() : false;
+      return answer({ changed: changed.map((row) => row.id), skipped: named(skipped), clash: [], stuck: [], ...(skipped.length === 0 && !baseWritten ? { baseRefused: true } : {}) });
+    }
+    const baseWritten = skipped.length === 0 && (await writeBase());
+    if (baseWritten) return answer({ changed: changed.map((row) => row.id), skipped: [], clash: [], stuck: [] });
+    // All or nothing: the rows already renamed go back. One that can't (changed again, locked, an error)
+    // keeps the new name and is named, so nothing is silently half-renamed (@lead).
+    const stuck: PageRecord[] = [];
+    for (const row of changed) {
+      try {
+        await this.updateNow(row.id, { properties: { rename: [{ from: to, to: key }] }, expectedUpdated: row.updated });
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: putting ${row.id} back failed:`, error);
+        const record = this.pages.get(row.id);
+        if (record) stuck.push(record);
+      }
+    }
+    return answer({ changed: [], skipped: named(skipped), clash: [], stuck: named(stuck), ...(skipped.length === 0 ? { baseRefused: true } : {}) });
+  }
+
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
     await this.renameSettled(this.resolveId(id));
     if (patch.title !== undefined && patch.config === undefined) {
@@ -3549,6 +3691,23 @@ export class VaultStore {
     const source = input.source && typeof input.source === "object" ? input.source : {};
     const folder = typeof source.folder === "string" && isValidPageId(source.folder) ? source.folder : null;
     const tag = typeof source.tag === "string" && source.tag.trim() ? source.tag.trim() : undefined;
+
+    if (input.rows === true) {
+      // A name free as a page, a board, a base and a folder: "People.base" next to "People/".
+      const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
+      const id = await this.freeTarget(childPageId(parentId, title), true, taken, "base");
+      const rows = id.slice(0, -idExtension("base").length);
+      this.redirects.delete(id);
+      const filePath = this.filePathFor(id);
+      await mkdir(join(this.root, rows), { recursive: true });
+      await writeFile(filePath, newBaseSource({ rows }), { encoding: "utf8", flag: "wx" });
+      const record = await this.readBaseRecord(filePath, id);
+      record.parentId = parentId;
+      this.pages.set(id, record);
+      await this.syncFolders();
+      this.reindexAll();
+      return this.getBase(id);
+    }
 
     const id = await this.freeId(childPageId(parentId, title), "base");
     this.redirects.delete(id);
@@ -3619,10 +3778,22 @@ export class VaultStore {
     let targetId = id;
     if (nextTitle !== previousTitle) {
       const beforeMetas = this.pageMetas();
-      targetId = await this.renameTarget(id, record.parentId, nextTitle, "base");
+      // #7prbquxu: a database that owns its rows folder (People.base next to People/)
+      // takes the folder along, so both keep one name; the marker and filter follow.
+      const rows = this.ownedRowsOf(record, id);
+      targetId = rows
+        ? await this.renameOwnedTarget(id, record.parentId, nextTitle, rows)
+        : await this.renameTarget(id, record.parentId, nextTitle, "base");
       if (targetId !== id) {
         rewrittenPages.push(...(await this.relocateNow(id, targetId)));
         record = this.pages.get(targetId) ?? record;
+        if (rows) {
+          const newRows = targetId.slice(0, -idExtension("base").length);
+          rewrittenPages.push(...(await this.relocateFolderNow(rows, newRows)));
+          const source = record.baseSource ?? "";
+          const text = updateBaseSource(source, withOwnedRows(parseBase(source), newRows));
+          if (text !== source) await this.writeBaseFile(record, text);
+        }
       }
       // A base's title is its file name (it has nowhere else to keep one).
       record.title = baseStem(targetId);
@@ -4572,6 +4743,35 @@ export class VaultStore {
       [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id).map(collisionKey),
     );
     return this.freeTarget(stem, this.hasChildren(id), taken, kind);
+  }
+
+  /**
+   * #7prbquxu: the rows folder this base owns: the marker and its filter agree, the folder
+   * is a plain folder, and it sits next to the base under the same name. Else null.
+   */
+  private ownedRowsOf(record: PageRecord, id: PageId): PageId | null {
+    let rows: string | null;
+    try {
+      rows = ownedRowsFolder(parseBase(record.baseSource ?? ""));
+    } catch {
+      return null;
+    }
+    if (rows === null || rows !== id.slice(0, -idExtension("base").length)) return null;
+    return this.folders.has(rows) ? rows : null;
+  }
+
+  /** A new name for an owned database: free as a base **and** as a folder (its rows move too). */
+  private async renameOwnedTarget(id: PageId, parentId: PageId | null, title: string, rows: PageId): Promise<PageId> {
+    const folder = parentOf(id) ?? parentId;
+    const stem = childPageId(folder, title);
+    const desired = `${stem}${idExtension("base")}`;
+    if (desired === id) return id;
+    // Case-only change: the same file and folder on case-insensitive file systems.
+    if (desired.toLowerCase() === id.toLowerCase()) return desired;
+    const taken = new Set(
+      [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id && key !== rows).map(collisionKey),
+    );
+    return this.freeTarget(stem, true, taken, "base");
   }
 
   private hasChildren(id: PageId): boolean {

@@ -83,17 +83,60 @@ export function parseBase(source: string): BaseConfig {
   return config;
 }
 
-/** A new base: one table view, optionally limited to a folder or a tag. */
-export function newBaseSource(options: { folder?: string | null; tag?: string; viewName?: string } = {}): string {
+/**
+ * A new base: one table view, optionally limited to a folder or a tag.
+ * With `rows` (#7prbquxu, spec/database-tables §1), a database that owns its rows
+ * folder: the `gumply: {rows}` marker and `file.folder == "<rows>"` (that folder's
+ * own pages, as the Notion import writes); `folder` and `tag` are then ignored.
+ */
+export function newBaseSource(options: { folder?: string | null; tag?: string; viewName?: string; rows?: string } = {}): string {
   const lines: string[] = [];
-  const filter = options.tag
-    ? `file.hasTag(${JSON.stringify(options.tag.replace(/^#/, ""))})`
-    : options.folder
-      ? `file.inFolder(${JSON.stringify(options.folder)})`
-      : null;
+  if (options.rows) lines.push("gumply:", `  rows: ${quoteIfNeeded(options.rows)}`);
+  const filter = options.rows
+    ? `file.folder == ${JSON.stringify(options.rows)}`
+    : options.tag
+      ? `file.hasTag(${JSON.stringify(options.tag.replace(/^#/, ""))})`
+      : options.folder
+        ? `file.inFolder(${JSON.stringify(options.folder)})`
+        : null;
   if (filter) lines.push("filters:", "  and:", `    - ${quoteIfNeeded(filter)}`);
   lines.push("views:", "  - type: table", `    name: ${quoteIfNeeded(options.viewName ?? "Table")}`, "    order:", "      - file.name");
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * The rows folder a database owns (#7prbquxu): `gumply.rows`, when its global filter
+ * still reads that folder's own pages (`file.folder == "<rows>"`). Otherwise null, and
+ * the base is a plain view of pages (an edited filter or a stray marker never hides
+ * or renames a folder). Key order inside `gumply:` doesn't matter (Obsidian reorders).
+ */
+export function ownedRowsFolder(config: BaseConfig): string | null {
+  const marker = config.gumply;
+  if (!isRecord(marker) || typeof marker.rows !== "string" || !marker.rows.trim()) return null;
+  const rows = marker.rows;
+  const filter = config.filters;
+  const list = filter === undefined ? [] : typeof filter === "string" ? [filter] : "and" in filter ? filter.and : [];
+  const wanted = `file.folder == ${JSON.stringify(rows)}`;
+  return list.some((item) => typeof item === "string" && item.replace(/\s*==\s*/, " == ").trim() === wanted) ? rows : null;
+}
+
+/**
+ * The config of an owned database whose rows folder moved to `rows` (#7prbquxu): the
+ * marker and the `file.folder ==` clause follow; everything else is kept, so
+ * `updateBaseSource` rewrites only those two lines. A base that doesn't own a folder
+ * comes back unchanged.
+ */
+export function withOwnedRows(config: BaseConfig, rows: string): BaseConfig {
+  const owned = ownedRowsFolder(config);
+  if (owned === null || owned === rows) return config;
+  const before = `file.folder == ${JSON.stringify(owned)}`;
+  const after = `file.folder == ${JSON.stringify(rows)}`;
+  const swap = (item: BaseFilter): BaseFilter =>
+    typeof item === "string" && item.replace(/\s*==\s*/, " == ").trim() === before ? after : item;
+  const filter = config.filters;
+  const filters: BaseFilter | undefined =
+    filter === undefined ? undefined : typeof filter === "string" ? swap(filter) : "and" in filter ? { and: filter.and.map(swap) } : filter;
+  return { ...config, gumply: { ...(config.gumply as Record<string, unknown>), rows }, ...(filters === undefined ? {} : { filters }) };
 }
 
 function quoteIfNeeded(text: string): string {

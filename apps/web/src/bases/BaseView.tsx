@@ -7,7 +7,8 @@
  * only what changed) or a page's properties (`PUT /pages/:id`, v1.12).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta } from "@gumply/core";
+import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta, PropertyType } from "@gumply/core";
+import { ownedRowsFolder } from "@gumply/core";
 import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
 import { t as translate, useT, type MessageKey } from "../i18n/index.js";
@@ -87,6 +88,8 @@ export function BaseView(props: BaseViewProps) {
   const [activeName, setActiveName] = useState<string | null>(() => embed?.viewName ?? views[0]?.name ?? null);
   const active = views.find((view) => view.name === activeName) ?? views[0] ?? null;
   const [result, setResult] = useState<BaseViewResult | null>(null);
+  const resultRef = useRef(result);
+  resultRef.current = result;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState<{ panel: Panel; n: number } | null>(null);
@@ -283,6 +286,82 @@ export function BaseView(props: BaseViewProps) {
     [load],
   );
 
+  /**
+   * #7prbquxu (spec/database-tables §4, @opus-hunter's review): an owned database's column renamed or deleted
+   * in every row of the database (the server's one job over the rows folder, not the view's rows). The base
+   * names the new key only when every row followed; otherwise it's left as it was and the rows are named.
+   */
+  const titleList = (rows: ReadonlyArray<{ title: string }>) =>
+    rows.length > 5 ? `${rows.slice(0, 5).map((row) => row.title).join(", ")}…` : rows.map((row) => row.title).join(", ");
+
+  /** Run a database-wide column change: the server writes the rows and the base; the view takes the base it answers. */
+  const changeRows = useCallback(
+    async (change: { rename: { from: string; to: string } } | { remove: string }) => {
+      // Our own pending view change goes first, so the server checks the base against what we last wrote.
+      await saverRef.current?.flush();
+      const result = await api.changeOwnedRowsProperty(baseId, change, { expectedUpdated: docRef.current.meta.updated, writer });
+      saverRef.current?.setVersion(result.base.meta.updated);
+      docRef.current = result.base;
+      setDoc(result.base);
+      return result;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseId, writer],
+  );
+
+  const renameColumn = useCallback(
+    async (column: BaseColumn, to: string) => {
+      const from = column.id.slice(5);
+      try {
+        const result = await changeRows({ rename: { from, to } });
+        if (result.clash.length) props.onError?.(t("bases.renameClash", { name: to, titles: titleList(result.clash) }));
+        else if (result.skipped.length || result.baseRefused) {
+          const failed = result.skipped.length
+            ? t("bases.renameRowsFailed", { name: from, titles: titleList(result.skipped) })
+            : t("bases.columnBaseChanged");
+          // Rows that couldn't be put back keep the new name: say so, never silently half-renamed.
+          props.onError?.(result.stuck.length ? `${failed} ${t("bases.renameStuck", { name: to, titles: titleList(result.stuck) })}` : failed);
+        } else if (column.type && column.type !== "file" && column.type !== "formula") {
+          // The new name takes the old one's type only when the types file has none for it (it may type other databases).
+          await api.setPropertyType(to, column.type as PropertyType, { ifAbsent: true }).catch(() => undefined);
+        }
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [changeRows, load],
+  );
+  const deleteColumn = useCallback(
+    async (column: BaseColumn) => {
+      const key = column.id.slice(5);
+      try {
+        const result = await changeRows({ remove: key });
+        // A row that kept its value keeps the column too.
+        if (result.skipped.length) props.onError?.(t("bases.deleteRowsFailed", { name: key, titles: titleList(result.skipped) }));
+        else if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [changeRows, load],
+  );
+  const setColumnType = useCallback(
+    async (column: BaseColumn, type: PropertyType) => {
+      try {
+        await api.setPropertyType(column.id.slice(5), type);
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [load],
+  );
+
   /** Kanban drop, calendar move: one note property of one page. */
   const setValue = useCallback(
     async (row: BaseRow, key: string, value: BaseValue) => {
@@ -304,28 +383,35 @@ export function BaseView(props: BaseViewProps) {
   );
 
   const rename = useCallback(
-    async (row: BaseRow, title: string) => {
+    async (row: BaseRow, title: string): Promise<string | undefined> => {
+      let id: string | undefined;
       try {
-        await api.updatePage(row.id, { title });
+        id = (await api.updatePage(row.id, { title })).id;
       } catch (error) {
         props.onError?.(errorText(error));
       }
       await load();
+      // #7prbquxu: the renamed row's id, so the database grid keeps it active.
+      return id;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [load],
   );
 
-  /** "+ New": a page in the source folder, with what the view's `is` filters need. */
-  const newRow = useCallback(async (implied?: Record<string, BaseValue>) => {
-    if (!active) return;
+  /**
+   * "+ New": a page in the source folder, with what the view's `is` filters need.
+   * #7prbquxu: with `title` (the typing row), the row is made with that name and
+   * nothing opens for renaming; it resolves once the table shows it.
+   */
+  const newRow = useCallback(async (implied?: Record<string, BaseValue>, title?: string): Promise<string | undefined> => {
+    if (!active) return undefined;
     const source = baseSource(docRef.current.config);
     const parentId =
       source.kind === "folder" && source.folder
         ? source.folder
         : (props.pages.find((page) => page.id === baseId)?.parentId ?? null);
     try {
-      const page = await api.createPage({ title: translate("defaults.untitledPage"), parentId });
+      const page = await api.createPage({ title: title ?? translate("defaults.untitledPage"), parentId });
       const values: Record<string, BaseValue> = {};
       for (const clause of viewClauses(active)) {
         if ("rule" in clause && clause.rule.op === "is" && clause.rule.property.startsWith("note.")) {
@@ -336,15 +422,19 @@ export function BaseView(props: BaseViewProps) {
       // The kanban column or calendar day it was added to.
       Object.assign(values, implied ?? {});
       if (Object.keys(values).length) await api.setPageProperties(page.id, values, page.updated);
-      if (active.type === "table") {
+      if (title !== undefined) {
+        await load();
+      } else if (active.type === "table") {
         setRenameRowId(page.id);
         await load();
       } else {
         // Other layouts have no title cell: open the page to name it.
         props.onOpen(page.id);
       }
+      return page.id;
     } catch (error) {
       props.onError?.(errorText(error));
+      return undefined;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, baseId, load, props.pages]);
@@ -487,6 +577,9 @@ export function BaseView(props: BaseViewProps) {
           onEditValue={editValue}
           onRename={rename}
           onNewRow={() => void newRow()}
+          {...(ownedRowsFolder(config)
+            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
+            : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}
           onRenameDone={() => setRenameRowId(null)}

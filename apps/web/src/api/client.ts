@@ -473,8 +473,11 @@ export const api = {
   listProperties: (): Promise<PropertyInfo[]> => request("/properties"),
 
   /** v1.12: change a key's type vault-wide (types.json; files keep their values). */
-  setPropertyType: (key: string, type: PropertyType): Promise<PropertyInfo[]> =>
-    mutate(() => request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type }) })),
+  /** `ifAbsent` (#7prbquxu): only when the types file has no entry for the key yet (a database column's type). */
+  setPropertyType: (key: string, type: PropertyType, options: { ifAbsent?: boolean } = {}): Promise<PropertyInfo[]> =>
+    mutate(() =>
+      request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type, ...(options.ifAbsent ? { ifAbsent: true } : {}) }) }),
+    ),
 
   deletePage: (id: PageId): Promise<DeletePageResult> =>
     mutate(async () => {
@@ -542,6 +545,26 @@ export const api = {
    * conditionally. Used by database views (cells, kanban, calendar). A null
    * value is written as a bare `key:`, as Obsidian does; the key stays.
    */
+  /**
+   * #7prbquxu: rename or delete a property in every row of an owned database, on the server in one
+   * job (a rename is all or nothing). `clash` / `skipped` name the rows that stopped it.
+   */
+  changeOwnedRowsProperty: (
+    baseId: PageId,
+    change: { rename: { from: string; to: string } } | { remove: string },
+    options: { expectedUpdated: string; writer: string },
+  ): Promise<{
+    changed: PageId[];
+    skipped: Array<{ id: PageId; title: string }>;
+    clash: Array<{ id: PageId; title: string }>;
+    stuck: Array<{ id: PageId; title: string }>;
+    /** The base changed on disk after the rows: a rename was put back, a delete kept the column. */
+    baseRefused?: boolean;
+    /** The base as it is now: the view takes its config and version. */
+    base: BaseDocument;
+  }> =>
+    mutate(() => request(`${basePath(baseId)}/rows-property`, { method: "POST", body: JSON.stringify({ ...change, ...options }) })),
+
   setPageProperties: (
     id: PageId,
     values: Record<string, string | number | boolean | string[] | null>,
@@ -586,6 +609,8 @@ export const api = {
     title: string;
     parentId?: PageId | null;
     source?: { folder?: PageId | null; tag?: string };
+    /** #7prbquxu: a database with its own rows folder (spec/database-tables §1). */
+    rows?: boolean;
   }): Promise<BaseDocument> => mutate(() => request("/bases", { method: "POST", body: JSON.stringify(input) })),
 
   /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */
