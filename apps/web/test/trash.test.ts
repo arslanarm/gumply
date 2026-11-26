@@ -94,6 +94,14 @@ describe("trash helpers", () => {
     );
   });
 
+  it("a database deleted with its rows says how many rows go with it (#7prbquxu phase 4a, note c)", () => {
+    const database = item({ id: "People.base", kind: "base", title: "People", children: [], rows: 12, otherFiles: 1 });
+    expect(trashedCount([database])).toBe(13);
+    expect(deleteForeverBody(database)).toBe(
+      "This deletes this database with its 12 rows and 1 other file from your vault for good. You can't undo this. This also deletes its version history.",
+    );
+  });
+
   it("explains a restore that went somewhere else", () => {
     expect(restoredMessage(item(), result())).toBe("Restored “Plan”.");
     expect(restoredMessage(item({ originalParentTitle: null }), result({ id: "Plan", movedToTopLevel: true }))).toBe(

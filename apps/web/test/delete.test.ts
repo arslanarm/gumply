@@ -1,6 +1,7 @@
 import type { PageMeta } from "@gumply/core";
 import { describe, expect, it } from "vitest";
 import {
+  databaseDeleteAsk,
   deleteDialogBody,
   directSubPages,
   focusAfterDelete,
@@ -113,5 +114,17 @@ describe("deleting a plain folder (D33)", () => {
     expect(folderDeleteBody({ pages: 0, boards: 2, otherFiles: 1 })).toBe(
       "Its 2 boards and 1 other file will be moved to the trash.",
     );
+  });
+});
+
+describe("deleting a database that owns its rows (#7prbquxu phase 4a, @opus-hunter's note b)", () => {
+  const folder = (id: string, otherFiles = 0): PageMeta => ({ ...meta(id, id), kind: "folder", otherFiles });
+  const base: PageMeta = { ...meta("People.base", "People"), kind: "base", rowsFolder: "People" };
+
+  it("asks when the rows folder holds rows or other files; only an empty one goes without asking", () => {
+    expect(databaseDeleteAsk([base, folder("People")], base)).toBeNull();
+    expect(databaseDeleteAsk([base, folder("People"), meta("People/Ann", "Ann", "People")], base)).toEqual({ rows: 1, otherFiles: 0 });
+    // Attachments only: never moved to the Trash without asking.
+    expect(databaseDeleteAsk([base, folder("People", 3)], base)).toEqual({ rows: 0, otherFiles: 3 });
   });
 });
