@@ -17,11 +17,24 @@ const failing = vi.hoisted(() => ({ renameTo: null as string | null }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  const rename: typeof actual.rename = async (from, to) => {
+  // A move to that file fails, whichever call makes it (#bfy92cu6: a move that mustn't replace uses link, or a
+  // no-replace copy where there are no hard links).
+  const fails = (to: unknown) => {
     if (failing.renameTo && String(to).endsWith(failing.renameTo)) throw Object.assign(new Error("ENOSPC: no space left (test)"), { code: "ENOSPC" });
+  };
+  const rename: typeof actual.rename = async (from, to) => {
+    fails(to);
     return actual.rename(from, to);
   };
-  return { ...actual, rename, default: { ...actual, rename } };
+  const link: typeof actual.link = async (from, to) => {
+    fails(to);
+    return actual.link(from, to);
+  };
+  const copyFile: typeof actual.copyFile = async (from, to, mode) => {
+    fails(to);
+    return actual.copyFile(from, to, mode);
+  };
+  return { ...actual, rename, link, copyFile, default: { ...actual, rename, link, copyFile } };
 });
 
 beforeEach(() => {
