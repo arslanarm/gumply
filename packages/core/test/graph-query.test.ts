@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_GRAPH_FORCES,
   DEFAULT_GRAPH_SETTINGS,
   fromObsidianGraph,
+  GRAPH_FORCE_RANGES,
   graphItemPath,
+  isDefaultGraphForces,
   matchesGraphQuery,
+  mergeGraphSettings,
+  normalizeGraphForces,
   normalizeGraphSettings,
   obsidianColor,
   parseGraphQuery,
@@ -87,6 +92,7 @@ describe("graph settings", () => {
     expect(settings).toEqual({
       groups: [{ query: "tag:#a", color: "#aabbcc" }],
       filters: { search: "x", showTags: false, showAttachments: false, hideUnresolved: false, showOrphans: false },
+      forces: { center: 1, repel: 1, linkStrength: 1, linkDistance: 1 },
     });
     const many = normalizeGraphSettings({ groups: Array.from({ length: 80 }, () => ({ query: "q".repeat(900), color: "#000000" })) });
     expect(many.groups).toHaveLength(50);
@@ -111,6 +117,11 @@ describe("graph settings", () => {
           { query: "broken", color: "#fff" },
         ],
         scale: 1.2,
+        // #nadk3urm: Obsidian's own forces (another engine, another scale) are not read.
+        centerStrength: 0.1,
+        repelStrength: 20,
+        linkStrength: 0.2,
+        linkDistance: 400,
       }),
     ).toEqual({
       groups: [
@@ -118,6 +129,32 @@ describe("graph settings", () => {
         { query: "path:Daily", color: "#52e0b1" },
       ],
       filters: { search: "path:Projects", showTags: true, showAttachments: false, hideUnresolved: true, showOrphans: false },
+      forces: { center: 1, repel: 1, linkStrength: 1, linkDistance: 1 },
     });
+  });
+
+  it("#nadk3urm: forces are multipliers, clamped to their ranges; a bad or missing one is the default (1)", () => {
+    expect(normalizeGraphForces(undefined)).toEqual(DEFAULT_GRAPH_FORCES);
+    expect(normalizeGraphForces({ center: -1, repel: 99, linkStrength: Number.NaN, linkDistance: 0.1, other: 5 })).toEqual({
+      center: GRAPH_FORCE_RANGES.center.min,
+      repel: GRAPH_FORCE_RANGES.repel.max,
+      linkStrength: 1,
+      linkDistance: GRAPH_FORCE_RANGES.linkDistance.min,
+    });
+    expect(isDefaultGraphForces(DEFAULT_GRAPH_FORCES)).toBe(true);
+    expect(isDefaultGraphForces({ ...DEFAULT_GRAPH_FORCES, center: 0 })).toBe(false);
+    // The defaults sit inside every range, so a slider can show them.
+    for (const [key, range] of Object.entries(GRAPH_FORCE_RANGES)) {
+      const value = DEFAULT_GRAPH_FORCES[key as keyof typeof DEFAULT_GRAPH_FORCES];
+      expect(value).toBeGreaterThanOrEqual(range.min);
+      expect(value).toBeLessThanOrEqual(range.max);
+    }
+  });
+
+  it("#nadk3urm: a save writes `forces` only once they're changed or already in the file, keeping unknown keys", () => {
+    const base = { groups: [], filters: DEFAULT_GRAPH_SETTINGS.filters };
+    expect(mergeGraphSettings({ zoom: 1 }, { ...base, forces: DEFAULT_GRAPH_FORCES })).not.toHaveProperty("forces");
+    expect(mergeGraphSettings({}, { ...base, forces: { ...DEFAULT_GRAPH_FORCES, center: 0 } }).forces).toEqual({ ...DEFAULT_GRAPH_FORCES, center: 0 });
+    expect(mergeGraphSettings({ forces: { center: 0, gravity: 2 } }, { ...base, forces: DEFAULT_GRAPH_FORCES }).forces).toEqual({ ...DEFAULT_GRAPH_FORCES, gravity: 2 });
   });
 });

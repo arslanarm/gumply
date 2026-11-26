@@ -330,6 +330,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               reducedMotion={reducedMotion}
               onOpenPage={openNode}
               colorOf={colorOf}
+              forces={settings?.forces}
               onCreatePage={(title) => {
                 const ghost = filtered.ghosts.find(
                   (candidate) => candidate.title.toLowerCase() === title.toLowerCase(),

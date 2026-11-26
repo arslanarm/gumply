@@ -8,6 +8,7 @@
  * charge): 40 synchronous warm-up ticks were ~18 s on a slow laptop before the
  * graph painted at all, and the 140 cool-down ticks then ran one per frame.
  */
+import { DEFAULT_GRAPH_FORCES, GRAPH_FORCE_KEYS, isDefaultGraphForces, type GraphForces } from "@gumply/core";
 import { forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-force-3d";
 
 /** Above this many nodes the layout runs in a worker (and force-graph's engine is off). */
@@ -62,26 +63,59 @@ export interface LayoutInput {
   chargeStrength: number;
   centerStrengthX: number;
   centerStrengthY: number;
+  /** A link's spring and resting length (#nadk3urm: with the Forces applied). */
+  linkStrength: number;
+  linkDistance: number;
   reducedMotion: boolean;
   /** Post positions as the layout runs (else only progress, then the settled layout). */
   stream: boolean;
 }
 
-/** Charge and centring as GraphCanvas sets them for `count` nodes. */
+/**
+ * #nadk3urm: a stable token for a set of forces, for effect dependencies and the
+ * layout cache's key: "" at the defaults, so layouts kept before the Forces
+ * existed keep their key, and going back to the defaults finds them again.
+ */
+export function forcesToken(forces: GraphForces | undefined): string {
+  if (!forces || isDefaultGraphForces(forces)) return "";
+  return GRAPH_FORCE_KEYS.map((key) => forces[key]).join(",");
+}
+
+export interface ForceStrengths {
+  chargeStrength: number;
+  centerStrengthX: number;
+  centerStrengthY: number;
+  linkStrength: number;
+  linkDistance: number;
+}
+
+/**
+ * Every force of a layout of `count` nodes: the one place both paths read them
+ * (the worker's createLayout and force-graph's engine in GraphCanvas).
+ * #nadk3urm: `forces` are the graph panel's multipliers; at 1 (the default)
+ * every value is exactly the one used before the Forces existed.
+ */
 export function forceStrengths(
   count: number,
-  options: { local: boolean; width: number; height: number },
-): { chargeStrength: number; centerStrengthX: number; centerStrengthY: number } {
-  const chargeStrength = -60 - Math.min(180, count * 0.6);
+  options: { local: boolean; width: number; height: number; forces?: GraphForces },
+): ForceStrengths {
+  const forces = options.forces ?? DEFAULT_GRAPH_FORCES;
+  const chargeStrength = (-60 - Math.min(180, count * 0.6)) * forces.repel;
   // Small vaults need a firmer centring pull; big vaults stay airy.
-  const center = count <= 12 ? 0.22 : count <= 60 ? 0.16 : 0.12;
+  const center = (count <= 12 ? 0.22 : count <= 60 ? 0.16 : 0.12) * forces.center;
   let stretchX = 1;
   // Local graph: shape the layout like the (tall, narrow) panel (#z5abndiz).
   if (options.local && count >= 5) {
     const aspect = Math.min(2.5, Math.max(0.5, options.height / Math.max(1, options.width)));
     stretchX = aspect ** 0.35;
   }
-  return { chargeStrength, centerStrengthX: center * stretchX, centerStrengthY: center / stretchX };
+  return {
+    chargeStrength,
+    centerStrengthX: center * stretchX,
+    centerStrengthY: center / stretchX,
+    linkStrength: LAYOUT_SETTINGS.linkStrength * forces.linkStrength,
+    linkDistance: LAYOUT_SETTINGS.linkDistance * forces.linkDistance,
+  };
 }
 
 interface SimNode {
@@ -131,7 +165,7 @@ export function createLayout(input: LayoutInput): Layout {
     .alphaMin(s.alphaMin)
     .alphaDecay(input.reducedMotion ? s.alphaDecayReduced : s.alphaDecay)
     .velocityDecay(s.velocityDecay)
-    .force("link", forceLink(links).id((node: SimNode) => node.index).distance(s.linkDistance).strength(s.linkStrength))
+    .force("link", forceLink(links).id((node: SimNode) => node.index).distance(input.linkDistance).strength(input.linkStrength))
     .force("charge", forceManyBody().strength(input.chargeStrength).distanceMax(s.chargeDistanceMax).theta(chargeTheta(count)))
     .force("x", forceX(0).strength(input.centerStrengthX))
     .force("y", forceY(0).strength(input.centerStrengthY));
@@ -171,7 +205,7 @@ export function createLayout(input: LayoutInput): Layout {
 export function layoutInputFor(
   nodes: ReadonlyArray<{ id: string; x?: number; y?: number }>,
   links: ReadonlyArray<{ source: string; target: string }>,
-  options: { centerId: string | null; width: number; height: number; reducedMotion: boolean },
+  options: { centerId: string | null; width: number; height: number; reducedMotion: boolean; forces?: GraphForces },
 ): LayoutInput {
   const index = new Map<string, number>();
   const x = new Float32Array(nodes.length);
@@ -195,7 +229,7 @@ export function layoutInputFor(
     y,
     links: pairs.subarray(0, used),
     pinned: options.centerId === null ? -1 : (index.get(options.centerId) ?? -1),
-    ...forceStrengths(nodes.length, { local: options.centerId !== null, width: options.width, height: options.height }),
+    ...forceStrengths(nodes.length, { local: options.centerId !== null, width: options.width, height: options.height, forces: options.forces }),
     reducedMotion: options.reducedMotion,
     stream: streamsPositions(nodes.length, options.reducedMotion),
   };

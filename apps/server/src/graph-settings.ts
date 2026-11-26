@@ -49,11 +49,14 @@ export async function readGraphSettings(root: string): Promise<GraphSettingsResp
 
 /** Validate a `PUT` body and save it to `.gumply/graph.json` (atomic). */
 export async function writeGraphSettings(root: string, body: unknown): Promise<GraphSettingsResponse> {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) throw badRequest("Expected { groups, filters }");
-  const { groups, filters } = body as { groups?: unknown; filters?: unknown };
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw badRequest("Expected { groups, filters, forces }");
+  const { groups, filters, forces } = body as { groups?: unknown; filters?: unknown; forces?: unknown };
   if (groups !== undefined && !Array.isArray(groups)) throw badRequest("groups must be a list");
   if (filters !== undefined && (typeof filters !== "object" || filters === null || Array.isArray(filters))) {
     throw badRequest("filters must be an object");
+  }
+  if (forces !== undefined && (typeof forces !== "object" || forces === null || Array.isArray(forces))) {
+    throw badRequest("forces must be an object");
   }
   const settings: GraphSettings = normalizeGraphSettings(body);
   const dir = join(root, ".gumply");

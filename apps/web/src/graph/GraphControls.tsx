@@ -1,10 +1,18 @@
 /**
  * E1: the graph's control panel, like Obsidian's: Filters (tags,
- * attachments, existing files only, orphans) and colour Groups (a query and
- * a colour each, in order: the first match wins).
+ * attachments, existing files only, orphans), colour Groups (a query and
+ * a colour each, in order: the first match wins) and Forces (#nadk3urm).
  */
-import type { GraphFilters, GraphGroup, GraphSettings } from "@gumply/core";
-import { useState } from "react";
+import {
+  DEFAULT_GRAPH_FORCES,
+  GRAPH_FORCE_RANGES,
+  isDefaultGraphForces,
+  type GraphFilters,
+  type GraphForces,
+  type GraphGroup,
+  type GraphSettings,
+} from "@gumply/core";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
 import { FALLBACK_GRAPH_PALETTE } from "./graph-model.js";
@@ -25,10 +33,97 @@ const FLAGS: Array<{ key: FilterFlag; label: MessageKey }> = [
   { key: "showOrphans", label: "graph.panel.showOrphans" },
 ];
 
+const FORCES: Array<{ key: keyof GraphForces; label: MessageKey }> = [
+  { key: "center", label: "graph.panel.forceCenter" },
+  { key: "repel", label: "graph.panel.forceRepel" },
+  { key: "linkStrength", label: "graph.panel.forceLinkStrength" },
+  { key: "linkDistance", label: "graph.panel.forceLinkDistance" },
+];
+
+/** How long after the last key press a keyboard change is applied (five taps re-arrange once). */
+export const FORCE_KEY_SETTLE_MS = 400;
+
+/**
+ * #nadk3urm: one force as a slider (a multiplier, shown as a percentage).
+ * While it's dragged only the slider moves; the value is applied, and the
+ * graph re-arranged, when it's let go (a 10k graph takes ~20 s to arrange):
+ * - a drag: on the pointer's release anywhere in the window (Firefox and
+ *   Safari don't always send it to the slider when it ends outside);
+ * - keys: FORCE_KEY_SETTLE_MS after the last key press;
+ * - at once when the slider loses focus or the panel closes.
+ */
+function ForceSlider({ name, label, value, onCommit }: { name: keyof GraphForces; label: MessageKey; value: number; onCommit: (value: number) => void }) {
+  const t = useT();
+  const labelId = useId();
+  const [draft, setDraft] = useState<number | null>(null);
+  const draftRef = useRef<number | null>(null);
+  const keyTimer = useRef<number | null>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  const commit = useCallback(() => {
+    if (keyTimer.current !== null) {
+      window.clearTimeout(keyTimer.current);
+      keyTimer.current = null;
+    }
+    window.removeEventListener("pointerup", commit);
+    window.removeEventListener("pointercancel", commit);
+    const next = draftRef.current;
+    if (next === null) return;
+    draftRef.current = null;
+    setDraft(null);
+    if (next !== valueRef.current) onCommitRef.current(next);
+  }, []);
+  // A pending change isn't lost when the panel closes.
+  useEffect(() => commit, [commit]);
+
+  const shown = draft ?? value;
+  const range = GRAPH_FORCE_RANGES[name];
+  const percent = Math.round(shown * 100);
+  return (
+    <label className="graph-panel-slider">
+      <span className="graph-panel-slider-label" id={labelId}>
+        {t(label)}
+      </span>
+      <input
+        type="range"
+        data-testid={`graph-force-${name}`}
+        aria-labelledby={labelId}
+        min={range.min}
+        max={range.max}
+        step={range.step}
+        value={shown}
+        aria-valuetext={t(shown === DEFAULT_GRAPH_FORCES[name] ? "graph.panel.forceValueDefault" : "graph.panel.forceValue", { percent })}
+        onChange={(event) => {
+          draftRef.current = Number(event.target.value);
+          setDraft(draftRef.current);
+        }}
+        onPointerDown={() => {
+          window.addEventListener("pointerup", commit);
+          window.addEventListener("pointercancel", commit);
+        }}
+        onKeyUp={() => {
+          if (keyTimer.current !== null) window.clearTimeout(keyTimer.current);
+          keyTimer.current = window.setTimeout(commit, FORCE_KEY_SETTLE_MS);
+        }}
+        onBlur={commit}
+      />
+      <span className="graph-panel-slider-value" aria-hidden="true">
+        {t("graph.panel.forceValue", { percent })}
+      </span>
+    </label>
+  );
+}
+
 export function GraphControls({ settings, onChange, onClose }: GraphControlsProps) {
   const t = useT();
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [groupsOpen, setGroupsOpen] = useState(true);
+  // Collapsed at first, as in Obsidian: most people never change the forces.
+  const [forcesOpen, setForcesOpen] = useState(false);
+  const setForce = (key: keyof GraphForces, value: number) => onChange({ ...settings, forces: { ...settings.forces, [key]: value } });
 
   const setFlag = (key: FilterFlag, value: boolean) => onChange({ ...settings, filters: { ...settings.filters, [key]: value } });
   const setGroups = (groups: GraphGroup[]) => onChange({ ...settings, groups });
@@ -136,6 +231,36 @@ export function GraphControls({ settings, onChange, onClose }: GraphControlsProp
               <Icon name="plus" size={14} /> {t("graph.panel.newGroup")}
             </button>
             <p className="graph-panel-hint">{t("graph.panel.groupsHint")}</p>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="graph-panel-section">
+        <button
+          type="button"
+          className="graph-panel-section-toggle"
+          data-testid="graph-forces-toggle"
+          aria-expanded={forcesOpen}
+          onClick={() => setForcesOpen((open) => !open)}
+        >
+          <span className={`graph-panel-chevron${forcesOpen ? " is-open" : ""}`} aria-hidden="true">›</span>
+          {t("graph.panel.forces")}
+        </button>
+        {forcesOpen ? (
+          <div className="graph-panel-body">
+            {FORCES.map((force) => (
+              <ForceSlider key={force.key} name={force.key} label={force.label} value={settings.forces[force.key]} onCommit={(value) => setForce(force.key, value)} />
+            ))}
+            <button
+              type="button"
+              className="button-secondary graph-forces-reset"
+              data-testid="graph-forces-reset"
+              disabled={isDefaultGraphForces(settings.forces)}
+              onClick={() => onChange({ ...settings, forces: DEFAULT_GRAPH_FORCES })}
+            >
+              {t("graph.panel.forcesReset")}
+            </button>
+            <p className="graph-panel-hint">{t("graph.panel.forcesHint")}</p>
           </div>
         ) : null}
       </section>

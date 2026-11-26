@@ -93,7 +93,16 @@
       "moveUp": "Move up",
       "moveDown": "Move down",
       "removeGroup": "Remove group",
-      "groupsHint": "The first matching group colours a page. Queries: tag:#work, path:Folder, file:name, words, -word to exclude, OR."
+      "groupsHint": "The first matching group colours a page. Queries: tag:#work, path:Folder, file:name, words, -word to exclude, OR.",
+      "forces": "Forces",
+      "forceCenter": "Center force",
+      "forceRepel": "Repel force",
+      "forceLinkStrength": "Link force",
+      "forceLinkDistance": "Link distance",
+      "forceValue": "{{percent}}%",
+      "forceValueDefault": "{{percent}}% (default)",
+      "forcesReset": "Reset forces",
+      "forcesHint": "100% is Gumply's own layout. A change re-arranges the graph when you let go of the slider."
     },
     "legendAttachment": "Attachment"
   },
