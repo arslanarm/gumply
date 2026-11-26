@@ -191,6 +191,8 @@ export interface UpdatePageInput {
   icon?: string | null;
   tags?: string[];
   /** Version the client loaded; server returns 409 if the file changed. */
+  /** #5q4vaacm: a title change to exactly this name, or a 409 when it's taken (no " 2"). */
+  exact?: boolean;
   expectedUpdated?: string;
   /** Force-save after a conflict ("Keep mine"). */
   force?: boolean;

@@ -581,17 +581,16 @@ export function BaseView(props: BaseViewProps) {
       props.onError?.(t("bases.undoChanged"));
       return null;
     }
-    // The name to go back to is free (another app, or the typing row, may have made a row with it meanwhile). The
-    // server answers an old id with the page renamed from it, so only a page **at** that id counts as taking it.
-    const taken = await api.getPage(step.fromId).then(
-      (page) => page.id === step.fromId,
-      (error: unknown) => (missing(error) ? false : Promise.reject(error)),
-    );
-    if (taken) {
+    // The name to go back to must be free: `exact` makes the server refuse (409) rather than take "Ann 2" when
+    // another page has it, in any case, checked in its own queue (no gap between a check and the rename).
+    let renamed;
+    try {
+      renamed = await api.updatePage(step.toId, { title: step.fromTitle, exact: true });
+    } catch (error) {
+      if (!(error instanceof ApiRequestError && error.status === 409)) throw error;
       props.onError?.(t("bases.undoRenameTaken", { title: step.fromTitle }));
       return null;
     }
-    const renamed = await api.updatePage(step.toId, { title: step.fromTitle });
     return { kind: "rename", fromId: step.toId, fromTitle: step.toTitle, toId: renamed.id, toTitle: renamed.title };
   };
 
