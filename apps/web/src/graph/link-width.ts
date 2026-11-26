@@ -29,3 +29,14 @@ export function linkWidthFor(
   if (hoveredId !== null && (sourceId === hoveredId || targetId === hoveredId)) return ACTIVE_LINK_WIDTH;
   return restingLinkWidth(devicePixelRatio);
 }
+
+/**
+ * N6 3b (#9x4duwmg): the dashed ghost circles ("not created yet") are one batched stroke of every
+ * ghost too (~6k on the 10k vault), under the same `k × devicePixelRatio` transform. Stroked at
+ * `1.4 / k` they were 1.4 device px at DPR 1 and 2.8 at DPR 2, off Skia's hairline path (a probe:
+ * 64 ms at DPR 2, 17 ms just under one device px). Same rule as the links: just under one device
+ * pixel at any ratio, so the dashes are as thin as a link.
+ */
+export function ghostStrokeWidth(devicePixelRatio: number): number {
+  return restingLinkWidth(devicePixelRatio);
+}

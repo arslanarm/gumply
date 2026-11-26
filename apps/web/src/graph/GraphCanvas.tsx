@@ -31,7 +31,7 @@ import {
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
-import { linkWidthFor } from "./link-width.js";
+import { ghostStrokeWidth, linkWidthFor } from "./link-width.js";
 import { startLayout } from "./layout-client.js";
 import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
 
@@ -865,7 +865,8 @@ export function GraphCanvas({
         }
         if (ghostCount > 0) {
           ctx.setLineDash([4 / k, 3 / k]);
-          ctx.lineWidth = 1.4 / k;
+          // N6 3b: under one device pixel (Skia's hairline path), like the links.
+          ctx.lineWidth = ghostStrokeWidth(window.devicePixelRatio) / k;
           ctx.strokeStyle = colors.muted;
           ctx.stroke(ghosts);
           ctx.setLineDash([]);
