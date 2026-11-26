@@ -103,9 +103,15 @@ test('"+" at the end of the header adds a property column; a key typed elsewhere
   await expect(page.getByTestId('base-add-column')).toHaveCount(0);
   await expect.poll(() => read('People.base')).toBe(PEOPLE['People.base'] + '      - shoe size\n');
   await expect(page.getByTestId('base-th-note.shoe size')).toBeVisible();
-  await expect
-    .poll(async () => ((await (await request.get(`${API_URL}/api/properties`)).json()) as Array<{ key: string; type: string }>).find((info) => info.key === 'shoe size')?.type)
-    .toBe('number');
+  // No page has the key yet, so it's only in the types file (Obsidian's when the vault has one).
+  const typeOf = async (key: string) => {
+    for (const file of ['.obsidian/types.json', '.gumply/types.json']) {
+      const text = await read(file).catch(() => null);
+      if (text) return (JSON.parse(text) as { types?: Record<string, string> }).types?.[key];
+    }
+    return undefined;
+  };
+  await expect.poll(() => typeOf('shoe size')).toBe('number');
 
   // A key that's a date elsewhere: the panel says so, and the type list can't change it.
   await page.getByTestId('base-add-column-button').click();
@@ -210,11 +216,17 @@ for (const edit of OUTSIDE_EDITS) {
     const ann = path.join(E2E_VAULT, 'People/Ann.md');
     const before = await fs.stat(ann);
     expect(edit.text.length === PEOPLE['People/Ann.md'].length).toBe(edit.keepTime);
-    await fs.writeFile(ann, edit.text, 'utf8');
-    if (edit.keepTime) await fs.utimes(ann, before.atime, before.mtime);
-    else {
+    if (edit.keepTime) {
+      // In place, the time put back: only the bytes (and ctime) tell.
+      await fs.writeFile(ann, edit.text, 'utf8');
+      await fs.utimes(ann, before.atime, before.mtime);
+    } else {
+      // As most apps save: a temp file with its time set, renamed over the page in one step.
+      const temporary = `${ann}.tmp-outside`;
+      await fs.writeFile(temporary, edit.text, 'utf8');
       const later = new Date(Date.now() + 5_000);
-      await fs.utimes(ann, later, later);
+      await fs.utimes(temporary, later, later);
+      await fs.rename(temporary, ann);
     }
     await expect
       .poll(async () => ((await api.getPage(request, 'People/Ann')) as { properties?: Array<{ key: string; value: unknown }> }).properties?.find((property) => property.key === 'role')?.value, { timeout: 15_000 })
@@ -231,7 +243,8 @@ for (const edit of OUTSIDE_EDITS) {
     await expect(page.getByRole('alert')).toContainText("1 row couldn't be changed");
     expect(await read('People/Ann.md')).toBe(edit.text);
 
+    // Let the held refreshes go (the page may already have dropped some).
     await page.unroute('**/api/bases/**/view**');
-    for (const release of held) await release();
+    for (const release of held) await release().catch(() => undefined);
   });
 }
