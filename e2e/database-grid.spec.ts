@@ -230,11 +230,17 @@ test('a column rename reaches every row of the database, also rows the view hide
     'People/Cy.md': '---\nrole:\nage: 7\n---\nCy\n',
   });
   await openPeople(page, ['Ann']);
+  // One request changes the rows and the base together (@lead): no separate base save follows it.
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() !== 'GET' && /\/api\/(bases|pages)\//.test(request.url())) writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  });
   await renameColumn(page, 'role', 'job');
   await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\nage: 41\n---\nBo\n');
   await expect.poll(() => read('People/Cy.md')).toBe('---\njob:\nage: 7\n---\nCy\n');
   await expect.poll(() => read('People/Ann.md')).toBe('---\njob: Cook\nage: 30\n---\nAnn\n');
   await expect.poll(() => read('People.base')).toContain('      - job\n');
+  expect(writes.filter((write) => !write.includes('/api/properties/'))).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-property`]);
 });
 
 /** A key's type as stored (the types file Gumply uses: Obsidian's when the vault has one). */
