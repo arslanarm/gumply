@@ -3669,6 +3669,8 @@ export class VaultStore {
       // N10 (spec/api v1.35): the text written isn't exactly what was sent (a rename's link changes
       // were kept on lines the editor didn't touch); the client applies the same lines in place.
       ...(renameLinksMerged ? { renameLinksMerged } : {}),
+      // #z9hufufn: the rename rewrote this page's own body, starting from the version its own write replaced.
+      ...(titleChanged && rewrittenPages.includes(targetId) ? { ownRewriteFrom: replaced } : {}),
     };
   }
 

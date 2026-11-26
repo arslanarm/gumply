@@ -127,6 +127,112 @@ test('typing during the rename that the line merge cannot carry (the link line d
   expect(await (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(kept!.file)}`)).text()).toContain('Typed during.');
 });
 
+/** Holds this page's page-list polls (the disk poll), so it can't reload on its own meanwhile. */
+async function holdListPolls(page: import('@playwright/test').Page) {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname === '/api/pages',
+    async (route) => {
+      if (route.request().method() === 'GET') await held;
+      await route.continue().catch(() => undefined);
+    },
+  );
+  return release;
+}
+
+test('the editor holds an older version than the rewrite started from (a save from another window): no in-place apply, the reload keeps that save (#z9hufufn guard)', async ({ page, context, vault }) => {
+  void vault; // resets the vault before and after
+  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
+  await page.goto('/#/Parent');
+  await expect(page.getByTestId('editor-content')).toContainText('See');
+  const release = await holdListPolls(page);
+  // Another window saves the page; this one doesn't learn of it (its polls are held).
+  const other = await context.newPage();
+  await other.goto('/#/Parent');
+  await other.getByTestId('editor-content').getByText('here.').click();
+  await other.keyboard.press('End');
+  await other.keyboard.type(' From the other window.');
+  const file = path.join(E2E_VAULT, 'Parent.md');
+  await expect.poll(() => fs.readFile(file, 'utf8'), { timeout: 15_000 }).toContain('From the other window.');
+  await other.close();
+  // This window renames: the server's rewrite started from the other window's version, not ours.
+  await page.getByTestId('page-title').click();
+  const input = page.getByTestId('page-title-input');
+  await input.fill('Moved');
+  await input.press('Enter');
+  await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
+  release();
+  // The reload shows the other window's text with the rewrite; typing on keeps both.
+  await expect(page.getByTestId('editor-content')).toContainText('From the other window.', { timeout: 15_000 });
+  await page.getByTestId('editor-content').getByText('From the other window.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Here too.');
+  const moved = path.join(E2E_VAULT, 'Moved.md');
+  await expect.poll(() => fs.readFile(moved, 'utf8'), { timeout: 15_000 }).toContain('Here too.');
+  const text = await fs.readFile(moved, 'utf8');
+  expect(text).toContain('[[Moved/Sub]] here. From the other window. Here too.');
+});
+
+test('an IME composition open when the rename answers: the apply waits for it, and the composed word lands once (#z9hufufn)', async ({ page, context, vault }) => {
+  void vault; // resets the vault before and after
+  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
+  await holdRename(page);
+  await page.goto('/#/Parent');
+  await expect(page.getByTestId('editor-content')).toContainText('See');
+  const cdp = await context.newCDPSession(page);
+  await page.getByTestId('page-title').click();
+  const input = page.getByTestId('page-title-input');
+  await input.fill('Moved');
+  await input.press('Enter');
+  await page.getByTestId('editor-content').getByText('here.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' ');
+  // A composition starts while the rename is held, and is still open when its answer arrives.
+  await cdp.send('Input.imeSetComposition', { text: 'при', selectionStart: 3, selectionEnd: 3 });
+  await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await cdp.send('Input.insertText', { text: 'привет' }); // commits the composition
+  const file = path.join(E2E_VAULT, 'Moved.md');
+  await expect.poll(() => fs.readFile(file, 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('привет');
+  const text = await fs.readFile(file, 'utf8');
+  expect(text).toContain('See [[Moved/Sub]] here. привет');
+  expect(text.split('привет').length - 1, 'the composed word once').toBe(1);
+  expect(text).not.toContain('[[Parent/Sub]]');
+});
+
+test('a plain save a rename\'s link change was merged into: the links follow in place, and no notice (#z9hufufn)', async ({ page, request, vault }) => {
+  void vault; // resets the vault before and after
+  await fs.writeFile(path.join(E2E_VAULT, 'Hub.md'), 'The hub.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Other.md'), 'Intro.\n\nSee [[Hub]] here.\n');
+  await page.goto('/#/Other');
+  await expect(page.getByTestId('editor-content')).toContainText('Intro.');
+  const release = await holdListPolls(page);
+  // Hub is renamed elsewhere (the API); this editor still holds Other's old version and text.
+  const renamed = await request.put(`${API_URL}/api/pages/Hub`, { data: { title: 'Hub 2' } });
+  expect(renamed.ok()).toBe(true);
+  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Other.md'), 'utf8'), { timeout: 15_000 }).toContain('[[Hub 2]]');
+  await page.getByTestId('editor-content').getByText('Intro.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Typed.');
+  const file = path.join(E2E_VAULT, 'Other.md');
+  await expect.poll(() => fs.readFile(file, 'utf8'), { timeout: 15_000 }).toContain('Typed.');
+  release();
+  const text = await fs.readFile(file, 'utf8');
+  expect(text).toContain('Intro. Typed.');
+  expect(text).toContain('See [[Hub 2]] here.');
+  await expect(page.getByTestId('undo-toast')).toHaveCount(0);
+  await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
+  // The editor took the new link in place: the next save keeps it.
+  await page.keyboard.type(' More.');
+  await expect.poll(() => fs.readFile(file, 'utf8'), { timeout: 15_000 }).toContain('More.');
+  expect(await fs.readFile(file, 'utf8')).toContain('See [[Hub 2]] here.');
+});
+
 test('a self-link in the renamed page is never put back to an older form by the editor (@lead)', async ({ page, vault }) => {
   void vault; // resets the vault before and after
   await fs.writeFile(path.join(E2E_VAULT, 'Selfy.md'), 'Me: [[Selfy]] and [[Selfy#Part|part]].\n\n## Part\n');

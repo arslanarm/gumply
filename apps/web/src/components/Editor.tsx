@@ -111,11 +111,12 @@ export interface EditorControls {
   /** True while local edits are newer than the last save. */
   isDirty: () => boolean;
   /**
-   * #z9hufufn: a rename rewrote this page's own body (`written`, now at version `updated`). Take that in
-   * place, keeping anything typed since the last save (the line merge N10 uses), with no reload. False
-   * when it can't be carried over whole: the caller reloads instead.
+   * #z9hufufn: a rename rewrote this page's own body (`written`, now at version `updated`), starting from
+   * version `from`. Take that in place, keeping anything typed since the last save (the line merge N10
+   * uses), with no reload. Waits for an IME composition to end first. False when the editor doesn't hold
+   * exactly `from`, or when the rewrite can't be carried over whole: the caller reloads instead.
    */
-  applyOwnRewrite: (written: string, updated: string) => boolean;
+  applyOwnRewrite: (written: string, updated: string, from: string | undefined) => Promise<boolean>;
   /** Force-save the current buffer after a conflict ("Keep mine"). */
   keepMine: () => Promise<void>;
   /**
@@ -365,7 +366,9 @@ export function Editor({
           // Report which page this was: by now another page may be open.
           onSavedRef.current?.(updated, savedId);
           const merged = updated.renameLinksMerged && updated.renameLinksMerged.links > 0 ? updated.renameLinksMerged : undefined;
-          if (updated.conflictBackup || merged) onConflictBackupRef.current?.(updated.conflictBackup ?? null, merged);
+          // The notice ("Your text was kept, with the new link…") is for Keep mine. A plain save a rename's
+          // link changes were merged into (#z9hufufn) was never in conflict: the links follow silently.
+          if (updated.conflictBackup || (merged && force)) onConflictBackupRef.current?.(updated.conflictBackup ?? null, force ? merged : undefined);
           // N10: the server kept a rename's link changes in what we sent. Show them in the editor
           // now (in place), and take the text written as the saved baseline, so the next save
           // never writes the old link back.
@@ -1041,8 +1044,28 @@ export function Editor({
         });
       },
       isDirty: () => autosave.isDirty(),
-      applyOwnRewrite: (written: string, updated: string) => {
-        if (editor.isDestroyed) return false;
+      applyOwnRewrite: async (written: string, updated: string, from: string | undefined) => {
+        // The rewrite started from this editor's baseline only if the server's starting version is the
+        // one it holds (a save from elsewhere in between, e.g. a second window, means it isn't).
+        if (editor.isDestroyed || from === undefined || from !== versionRef.current) return false;
+        // Never under an IME composition (ru phonetic, CJK): a transaction then can cancel or double it.
+        if (editor.view.composing) {
+          const ended = await new Promise<boolean>((resolve) => {
+            const dom = editor.view.dom;
+            const timer = window.setTimeout(() => {
+              dom.removeEventListener("compositionend", done);
+              resolve(false);
+            }, 10_000);
+            function done() {
+              window.clearTimeout(timer);
+              dom.removeEventListener("compositionend", done);
+              // ProseMirror applies the composed text right after compositionend.
+              window.setTimeout(() => resolve(true), 0);
+            }
+            dom.addEventListener("compositionend", done);
+          });
+          if (!ended || editor.isDestroyed || from !== versionRef.current) return false;
+        }
         const sent = autosave.baseline();
         const current = renameMergeIo.read(editor);
         // Typed since the last save: the rename's line changes must carry over whole, else reload.

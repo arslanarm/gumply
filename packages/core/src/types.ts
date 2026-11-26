@@ -75,6 +75,12 @@ export type PageUpdateResult = Page & {
    * titles, newest last. The client applies the same lines in place.
    */
   renameLinksMerged?: { links: number; titles: string[] };
+  /**
+   * #z9hufufn (provisional): a rename rewrote this page's own body (its links into its moved folder,
+   * self-links); the version that rewrite started from, i.e. the one this rename's own write replaced.
+   * An open editor takes the rewrite in place only when it holds exactly that version.
+   */
+  ownRewriteFrom?: string;
 };
 
 /** `GET /api/boards/:id` (v1.7, D25): the tree item plus its JSON Canvas. */

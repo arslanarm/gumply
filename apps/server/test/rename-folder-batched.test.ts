@@ -91,7 +91,10 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     store.afterRenameBatch = async () => {
       ownAtBatch.push(await readFile(join(dir, "Hub 2.md"), "utf8"));
     };
+    const before = store.get("Hub").updated;
     const answer = await store.update("Hub", { title: "Hub 2" });
+    // #z9hufufn: the answer says which version its rewrite of the page's own body started from.
+    expect(answer.ownRewriteFrom).toBe(before);
     // No batch changed it: every batch saw it already rewritten.
     expect(ownAtBatch.length).toBeGreaterThan(1);
     for (const text of ownAtBatch) expect(text).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].\n");

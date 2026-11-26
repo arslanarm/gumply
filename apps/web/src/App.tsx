@@ -1792,7 +1792,7 @@ export function App() {
             setRenaming((current) => (current && current.id === id ? { ...current, count } : current));
           })
           .catch(() => undefined);
-        let updated: Page & { rewrittenPages?: PageId[] };
+        let updated: Page & { rewrittenPages?: PageId[]; ownRewriteFrom?: string };
         let appliedOwnInPlace = false;
         try {
           if (isBoardId(id)) {
@@ -1814,7 +1814,8 @@ export function App() {
           const ownRewritten = (updated.rewrittenPages?.includes(updated.id) ?? false) && typeof updated.content === "string";
           const controls = editorControls.current;
           if (ownRewritten && controls && (controls.pageId === id || controls.pageId === updated.id)) {
-            appliedOwnInPlace = controls.applyOwnRewrite(updated.content, updated.updated);
+            // Held saves stay held until it has run (it may wait for an IME composition to end).
+            appliedOwnInPlace = await controls.applyOwnRewrite(updated.content, updated.updated, updated.ownRewriteFrom);
           }
           settle(appliedOwnInPlace ? { ...updated, appliedInPlace: true } : updated);
         } finally {

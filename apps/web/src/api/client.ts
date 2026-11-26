@@ -206,6 +206,8 @@ export type UpdatePageResult = Page & {
   conflictBackup?: string;
   /** v1.35 (N10): a rename's link changes kept on `links` lines the editor didn't touch; the renames' new titles. */
   renameLinksMerged?: { links: number; titles: string[] };
+  /** #z9hufufn: a rename rewrote this page's own body, starting from this version. */
+  ownRewriteFrom?: string;
 };
 
 /** DELETE result: v1.1 returns a trash id; v1.0 returns 204 (no trash). */
