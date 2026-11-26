@@ -70,8 +70,19 @@ describe("a page rename or move never replaces a file another app just made at t
     await store.update("Draft", { title: "Final" }).catch(() => undefined);
     expect(outside.before, "the move was reached").toBeNull();
     const all = await files(dir);
-    expect(Object.values(all)).toContain(OUTSIDE);
+    expect(all["Final.md"]).toBe(OUTSIDE);
     expect(Object.values(all)).toContain(MINE);
+  });
+
+  it("rename: the page takes the next free name (\"Final 2\") rather than being left half renamed", async () => {
+    const { dir, store } = await vault();
+    outside.before = { target: "Final.md", text: OUTSIDE };
+    const renamed = await store.update("Draft", { title: "Final" });
+    expect(renamed.id).toBe("Final 2");
+    const all = await files(dir);
+    expect(all["Final.md"]).toBe(OUTSIDE);
+    expect(all["Final 2.md"]).toContain("My notes.");
+    expect(all["Draft.md"]).toBeUndefined();
   });
 
   it("move (Draft → Archive/Draft)", async () => {
