@@ -11,7 +11,8 @@ import { E2E_VAULT } from './env';
  * mtime), so a put-back file is read again.
  *
  * - `.gumply/<name>` for the names below: the bytes, or absent.
- * - `.obsidian/`: absent, or its top-level files (bytes); a test may create the folder or add a file there.
+ * - `.obsidian/`: absent, or every file under it, at any depth (bytes; symlinks skipped): a test may create the
+ *   folder, or add or change a file anywhere in it (`snippets/`, `plugins/`; @polish-dev's review).
  *
  * **The baseline is taken once per run**, in the Playwright main process when the config loads (before the
  * web server starts and before any worker), and handed to the workers through a file named in
@@ -25,12 +26,22 @@ const BASELINE_ENV = 'GUMPLY_E2E_SETTINGS_BASELINE';
 
 export interface SettingsSnapshot {
   gumply: Map<string, string | null>;
+  /** Path under `.obsidian/` → its bytes as base64; null: no `.obsidian/`. */
   obsidian: Map<string, string> | null;
 }
 
 const gumplyPath = (name: string) => path.join(E2E_VAULT, '.gumply', name);
 const obsidianDir = () => path.join(E2E_VAULT, '.obsidian');
 const readOrNull = (file: string) => readFile(file, 'utf8').catch(() => null);
+/** `.obsidian/` may hold binary files (plugins): its bytes are kept as base64. */
+const bytesB64Sync = (file: string): string | null => {
+  try {
+    return readFileSync(file).toString('base64');
+  } catch {
+    return null;
+  }
+};
+const bytesB64 = (file: string) => readFile(file).then((data) => data.toString('base64'), () => null);
 const readOrNullSync = (file: string): string | null => {
   try {
     return readFileSync(file, 'utf8');
@@ -39,21 +50,32 @@ const readOrNullSync = (file: string): string | null => {
   }
 };
 
+function obsidianFilesSync(): Map<string, string> | null {
+  const files = new Map<string, string>();
+  const walk = (dir: string, prefix: string): boolean => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(path.join(dir, entry.name), rel);
+      else if (entry.isFile()) {
+        const text = bytesB64Sync(path.join(dir, entry.name));
+        if (text !== null) files.set(rel, text);
+      }
+    }
+    return true;
+  };
+  return walk(obsidianDir(), '') ? files : null;
+}
+
 function snapshotSettingsSync(): SettingsSnapshot {
   const gumply = new Map<string, string | null>();
   for (const name of GUMPLY_FILES) gumply.set(name, readOrNullSync(gumplyPath(name)));
-  let obsidian: Map<string, string> | null = null;
-  try {
-    const entries = readdirSync(obsidianDir(), { withFileTypes: true });
-    obsidian = new Map();
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      const text = readOrNullSync(path.join(obsidianDir(), entry.name));
-      if (text !== null) obsidian.set(entry.name, text);
-    }
-  } catch {
-    obsidian = null;
-  }
+  const obsidian = obsidianFilesSync();
   return { gumply, obsidian };
 }
 
@@ -87,20 +109,29 @@ export function removeRunSettingsBaseline(): void {
 }
 
 async function obsidianFiles(): Promise<Map<string, string> | null> {
-  let entries;
-  try {
-    entries = await readdir(obsidianDir(), { withFileTypes: true });
-  } catch {
-    return null;
-  }
   const files = new Map<string, string>();
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const text = await readOrNull(path.join(obsidianDir(), entry.name));
-    if (text !== null) files.set(entry.name, text);
-  }
-  return files;
+  const walk = async (dir: string, prefix: string): Promise<boolean> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(path.join(dir, entry.name), rel);
+      else if (entry.isFile()) {
+        const text = await bytesB64(path.join(dir, entry.name));
+        if (text !== null) files.set(rel, text);
+      }
+    }
+    return true;
+  };
+  return (await walk(obsidianDir(), '')) ? files : null;
 }
+
+const sameFiles = (a: Map<string, string>, b: Map<string, string>) =>
+  a.size === b.size && [...a].every(([name, text]) => b.get(name) === text);
 
 /** Put the settings files back as `snapshot` had them. A file already equal is left alone (no mtime churn). */
 export async function restoreSettings(snapshot: SettingsSnapshot): Promise<void> {
@@ -119,11 +150,13 @@ export async function restoreSettings(snapshot: SettingsSnapshot): Promise<void>
     if (now !== null) await rm(obsidianDir(), { recursive: true, force: true });
     return;
   }
+  if (now !== null && sameFiles(now, snapshot.obsidian)) return;
+  // Anything differs (a file added, changed or removed at any depth): the folder is put back whole.
+  await rm(obsidianDir(), { recursive: true, force: true });
   await mkdir(obsidianDir(), { recursive: true });
-  for (const name of now?.keys() ?? []) {
-    if (!snapshot.obsidian.has(name)) await rm(path.join(obsidianDir(), name), { force: true });
-  }
   for (const [name, text] of snapshot.obsidian) {
-    if (now?.get(name) !== text) await writeFile(path.join(obsidianDir(), name), text, 'utf8');
+    const file = path.join(obsidianDir(), ...name.split('/'));
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, Buffer.from(text, 'base64'));
   }
 }
