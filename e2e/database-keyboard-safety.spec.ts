@@ -131,3 +131,66 @@ test('undoing a grid rename is refused, named, when the old name is taken meanwh
   expect(await read('People/Ann.md')).toBe('---\nrole: Baker\n---\nA different Ann.\n');
   expect(await exists('People/Ann 2.md')).toBe(false);
 });
+
+test('Enter in a text or number editor opened by a click commits and moves down; a Select picker\'s Enter picks and stays (finding 1, spec §4)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, {
+    ...PEOPLE,
+    'People.base': PEOPLE['People.base'].replace('      - age\n', '      - age\n      - status\nproperties:\n  note.status:\n    gumplyType: select\n    gumplyOptions:\n      - value: Busy\n        color: red\n      - value: Free\n        color: green\n'),
+  });
+  await openPeople(page, ['Ann', 'Bo']);
+  const active = page.getByTestId('base-grid-cell');
+
+  // Ann's role editor: type, Enter: saved, and Bo's role is next.
+  await cellOf(page, 'People/Ann', 'role').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('Chef');
+  await page.keyboard.press('Enter');
+  await expect(active).toHaveAttribute('data-active', /^People\/Bo\|.*role$/);
+  await expect.poll(() => read('People/Ann.md')).toContain('role: Chef\n');
+  // Typing goes into Bo's role, never back over Ann's.
+  await page.keyboard.type('Diver');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Bo.md')).toContain('role: Diver\n');
+  expect(await read('People/Ann.md')).toContain('role: Chef\n');
+
+  // Ann's status picker: type, Enter picks the match; the cell stays active (Notion), nothing moves down.
+  await page.getByTestId('base-row-People/Ann').locator('[data-grid-col]').nth(3).click();
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  await page.keyboard.type('Fr');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Ann.md')).toContain('status: Free\n');
+  await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
+  await expect(active).toHaveAttribute('data-active', /^People\/Ann\|.*status$/);
+  expect(await read('People/Bo.md')).not.toContain('status');
+});
+
+test('undoing a grid rename while the row is open in another tab: that tab follows to the old name, and its next save goes there (finding 4, @lead)', async ({ page, context, request, vault }) => {
+  void vault;
+  await writeVault(request, { ...PEOPLE, 'People/Ann.md': '---\nrole: Cook\nage: 30\n---\nAnn likes soup.\n' });
+  const other = await context.newPage();
+  await other.goto('/#/People/Ann');
+  await expect(other.getByTestId('editor-content')).toContainText('Ann likes soup.');
+
+  await openPeople(page, ['Ann', 'Bo']);
+  await cellOf(page, 'People/Ann', 'role').click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.type('Annie');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => exists('People/Annie.md')).toBe(true);
+  await expect(other).toHaveURL(/#\/People\/Annie$/, { timeout: 15_000 });
+
+  await page.getByTestId('base-table').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('ControlOrMeta+KeyZ');
+  await expect.poll(() => exists('People/Ann.md')).toBe(true);
+  await expect(other).toHaveURL(/#\/People\/Ann$/, { timeout: 15_000 });
+
+  // The other tab types on: the text lands in Ann.md, and no Annie.md comes back.
+  await other.getByTestId('editor-content').getByText('Ann likes soup.').click();
+  await other.keyboard.press('End');
+  await other.keyboard.type(' And bread.');
+  await expect.poll(() => read('People/Ann.md'), { timeout: 15_000 }).toContain('Ann likes soup. And bread.');
+  expect(await exists('People/Annie.md')).toBe(false);
+  await other.close();
+});
