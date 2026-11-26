@@ -76,6 +76,39 @@ test('#2zugp8qc: Enter while the last letter\'s headings are still loading write
   await expectSaved(request, note!.id, '[[Target#Risks]]');
 });
 
+/** `[[Target#<typed>` in an empty note, the menu showing `expected`; then Target's answers are held (a loaded machine). */
+async function typeThenHold(page: import('@playwright/test').Page, vault: { seed: (pages: Array<{ title: string; content: string }>) => Promise<Array<{ id: string }>> }, typed: string, expected: string) {
+  await vault.seed([{ title: 'Target', content: '## Goals\n\nText.\n\n## Risks\n\nMore.\n' }]);
+  const [note] = await vault.seed([{ title: 'Note', content: '' }]);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Note');
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.type(`[[Target#${typed}`);
+  const menu = page.getByTestId('link-menu');
+  await expect(menu.getByRole('option', { name: expected })).toBeVisible({ timeout: 15_000 });
+  await expect(menu.getByRole('option')).toHaveCount(1);
+  await page.route(`**/api/pages/${encodeURIComponent('Target')}*`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  return note!;
+}
+
+test('#2zugp8qc (@opus-editor): Enter after a Backspace, the shorter query\'s headings still loading, writes the link and touches nothing past it', async ({ page, vault, request }) => {
+  const note = await typeThenHold(page, vault, 'Ri', 'Risks');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Enter');
+  await expectSaved(request, note.id, '[[Target#Risks]]');
+});
+
+test('#2zugp8qc (@opus-editor): Enter on a stale answer that no longer matches what was typed puts nothing in its place', async ({ page, vault, request }) => {
+  const note = await typeThenHold(page, vault, 'R', 'Risks');
+  // "Rx" names no heading; the menu still shows the "R" answer (Risks) when Enter comes.
+  await page.keyboard.type('x');
+  await page.keyboard.press('Enter');
+  await expectSaved(request, note.id, '[[Target#Rx');
+});
+
 test('[[# lists the open note\'s own headings and writes [[#Heading]]', async ({ page, vault, request }) => {
   const [note] = await vault.seed([{ title: 'Note', content: '## Alpha\n\nFirst.\n' }]);
   await page.goto(`/#/${encodeURIComponent(note!.id)}`);
