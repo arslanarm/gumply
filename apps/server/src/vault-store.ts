@@ -1116,6 +1116,19 @@ async function moveFileNoReplace(from: string, to: string): Promise<void> {
 const isEexist = (error: unknown) => (error as { code?: string } | null)?.code === "EEXIST";
 
 /**
+ * #e3mwuspu: a page's (or board's, base's) own file to its new path on a rename or move, never over a file another
+ * app made there since the check (`moveFileNoReplace`). A case-only rename (`note.md` → `Note.md`) is the same
+ * file on macOS and Windows, where a link would find "itself" there, so it keeps `rename`.
+ */
+async function movePageFile(from: string, to: string): Promise<void> {
+  if (from.toLowerCase() === to.toLowerCase()) {
+    await rename(from, to);
+    return;
+  }
+  await moveFileNoReplace(from, to);
+}
+
+/**
  * Markdown vault with an in-memory page + link index (D2/D4).
  *
  * All mutations go through a promise queue so concurrent requests cannot
@@ -5733,9 +5746,11 @@ export class VaultStore {
     }
 
     try {
-      await rename(record.filePath, newFile);
+      await movePageFile(record.filePath, newFile);
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
+      // #e3mwuspu: another app made a file at the new name since the check: nothing moves, named.
+      if (isEexist(error)) throw conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`);
       throw error;
     }
 
@@ -6537,9 +6552,11 @@ export class VaultStore {
     }
 
     try {
-      await rename(record.filePath, newFile);
+      await movePageFile(record.filePath, newFile);
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
+      // #e3mwuspu: another app made a file at the new name since the check: nothing moves, named.
+      if (isEexist(error)) throw conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`);
       throw error;
     }
 
