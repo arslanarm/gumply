@@ -3406,23 +3406,39 @@ export class VaultStore {
   ): Promise<void> {
     // D37/D43: a conflict copy is never rewritten; nothing is written until the user resolves it.
     const copies = this.copyIds();
-    for (const other of [...this.pages.values()]) {
-      if (skip.has(other.id) || copies.has(other.id)) continue;
+    for (const listed of [...this.pages.values()]) {
+      if (skip.has(listed.id) || copies.has(listed.id)) continue;
+      let other: PageRecord | undefined = listed;
+      // #y5k39njn (0.9.7 backport; main does this in N9's batches): a page about to be rewritten is
+      // first checked against the disk. Changed outside since it was read (a moved file time, or other
+      // bytes under the same one): take the file as it is now, then rewrite that, never the stale text.
+      for (let pass = 0; pass < 2 && other; pass += 1) {
+        if (other.board) {
+          const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other!.id).content });
+          if (result.count === 0) break;
+          if (pass === 0 && (await this.changedOnDiskSince(other, await stat(other.filePath).catch(() => null)))) {
+            await this.refreshFromDisk({ kind: "paths", paths: new Set([other.filePath]) });
+            other = this.pages.get(other.id);
+            continue;
+          }
+          await this.saveBoardRecord(other, result.board, { minimal: true });
+          rewritten.push(other.id);
+          break;
+        }
 
-      if (other.board) {
-        const result = rewriteCanvas(other.board, { ...boardNodes, text: (markdown) => rewriteText(markdown, other.id).content });
-        if (result.count === 0) continue;
-        await this.saveBoardRecord(other, result.board, { minimal: true });
+        const result = rewriteText(other.content, other.id);
+        const yaml = options.frontmatter ? await this.rewrittenFrontmatter(other, rewriteText) : null;
+        if (result.count === 0 && yaml === null) break;
+        if (pass === 0 && (await this.changedOnDiskSince(other, await stat(other.filePath).catch(() => null)))) {
+          await this.refreshFromDisk({ kind: "paths", paths: new Set([other.filePath]) });
+          other = this.pages.get(other.id);
+          continue;
+        }
+
+        await this.writeRewrittenBody(other, result.content, yaml ?? undefined);
         rewritten.push(other.id);
-        continue;
+        break;
       }
-
-      const result = rewriteText(other.content, other.id);
-      const yaml = options.frontmatter ? await this.rewrittenFrontmatter(other, rewriteText) : null;
-      if (result.count === 0 && yaml === null) continue;
-
-      await this.writeRewrittenBody(other, result.content, yaml ?? undefined);
-      rewritten.push(other.id);
     }
   }
 
@@ -3600,7 +3616,8 @@ export class VaultStore {
       } catch {
         info = null;
       }
-      if (info === null || Math.abs(info.mtimeMs - source.fileMtimeMs) > 1 || (input.expectedUpdated !== undefined && input.expectedUpdated !== source.updated)) {
+      // #y5k39njn: other bytes under the same file time are a change too (@graph-dev's review).
+      if ((await this.changedOnDiskSince(source, info)) || (input.expectedUpdated !== undefined && input.expectedUpdated !== source.updated)) {
         throw conflict("This page changed on disk.");
       }
       const found = findMentions(source.content, await this.mentionTermsOf(target.id));
@@ -4654,9 +4671,9 @@ export class VaultStore {
         skippedPages.push(record.id);
         continue;
       }
-      // D22: never write over a change this store hasn't seen.
-      const mtime = await stat(record.filePath).then((stats) => stats.mtimeMs, () => null);
-      if (mtime !== record.fileMtimeMs) {
+      // D22: never write over a change this store hasn't seen (#y5k39njn: other bytes under the same file time too).
+      const info = await stat(record.filePath).catch(() => null);
+      if (await this.changedOnDiskSince(record, info)) {
         skippedPages.push(record.id);
         continue;
       }
@@ -5013,9 +5030,10 @@ export class VaultStore {
     if (icon) record.icon = icon;
     this.setPropertyLinks(record, raw);
     // #kguq5bc5: the frontmatter for the properties index, so nothing reads this file again for it.
-    if (!this.rawPropertyCache.has(absolute) || this.rawPropertyCache.get(absolute)!.mtimeMs !== stats.mtimeMs) {
-      this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
-    }
+    // #y5k39njn: this read may hold other bytes under the same file time as the cached properties
+    // (a tool that keeps the mtime): what was cached for this file goes, and this read's YAML is kept.
+    this.rawPropertyCache.delete(absolute);
+    this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
     return record;
   }
 
