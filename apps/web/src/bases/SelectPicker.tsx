@@ -40,23 +40,25 @@ export function SelectPicker(props: {
   // Under the cell, or above it when it doesn't fit below and there's more room above; it follows a scroll.
   useLayoutEffect(() => {
     let natural: number | undefined;
+    // #7prbquxu (§8 follow-up): once a **scroll** takes its cell out of the table's visible box (under the sticky
+    // header, or past the bottom), the picker closes, like Escape (nothing is written), instead of floating over the
+    // header. Only a scroll: opening it, or a resize (a phone's on-screen keyboard shrinking the window), just places
+    // it (@polish-dev).
+    const scrolledAway = () => {
+      const cell = anchorRef.current?.parentElement;
+      const scroller = cell?.closest(".base-table-scroll");
+      if (!cell || !scroller) return false;
+      const box = cell.getBoundingClientRect();
+      const frame = scroller.getBoundingClientRect();
+      const head = scroller.querySelector(".base-table-head")?.getBoundingClientRect().bottom ?? frame.top;
+      const middle = (box.top + box.bottom) / 2;
+      return middle < Math.max(frame.top, head) || middle > frame.bottom;
+    };
     const placeIt = () => {
       const cell = anchorRef.current?.parentElement;
       const picker = pickerRef.current;
       if (!cell || !picker) return;
       const box = cell.getBoundingClientRect();
-      // #7prbquxu (§8 follow-up): once its cell has scrolled out of the table's visible box (under the sticky header,
-      // or past the bottom), the picker closes, like Escape (nothing is written), instead of floating over the header.
-      const scroller = cell.closest(".base-table-scroll");
-      if (scroller) {
-        const frame = scroller.getBoundingClientRect();
-        const head = scroller.querySelector(".base-table-head")?.getBoundingClientRect().bottom ?? frame.top;
-        const middle = (box.top + box.bottom) / 2;
-        if (middle < Math.max(frame.top, head) || middle > frame.bottom) {
-          closeRef.current();
-          return;
-        }
-      }
       // Its own height, from before any cap below (so a scroll doesn't flip it back and forth).
       natural ??= picker.offsetHeight;
       const height = natural;
@@ -68,11 +70,15 @@ export function SelectPicker(props: {
       const maxHeight = Math.max(96, (up ? box.top : below) - 8);
       setPlace(up ? { left, width, maxHeight, bottom: window.innerHeight - box.top } : { left, width, maxHeight, top: box.bottom });
     };
+    const onScroll = () => {
+      if (scrolledAway()) closeRef.current();
+      else placeIt();
+    };
     placeIt();
-    window.addEventListener("scroll", placeIt, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", placeIt);
     return () => {
-      window.removeEventListener("scroll", placeIt, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", placeIt);
     };
   }, []);

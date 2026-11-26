@@ -1630,9 +1630,9 @@ ol.base-list {
   cursor: pointer;
 }
 
+/* A ring drawn as a shadow, not an outline: it stays within the row's gap and apart from the focus outline. */
 .base-option-swatch[aria-checked="true"] {
-  outline: 2px solid var(--text);
-  outline-offset: 1px;
+  box-shadow: 0 0 0 2px var(--text);
 }
 
 .base-icon-button {
