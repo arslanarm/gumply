@@ -3045,9 +3045,21 @@ export class VaultStore {
   }
 
   /** `withRows` (#7prbquxu phase 4): a database that owns its rows folder takes it to the Trash too, as one item. */
-  async remove(id: PageId, options: { withRows?: boolean } = {}): Promise<DeletePageResult> {
+  async remove(id: PageId, options: { withRows?: boolean; expectedUpdated?: string; writer?: string } = {}): Promise<DeletePageResult> {
     await this.renameSettled(this.resolveId(id));
-    return this.enqueue(() => (options.withRows ? this.removeWithRowsNow(this.resolveId(id)) : this.removeNow(this.resolveId(id))));
+    return this.enqueue(async () => {
+      const resolved = this.resolveId(id);
+      // #ddqd664r: a delete from a version the caller read (MCP trash_page) is checked in the same queued job as
+      // the move: the version, and the bytes on disk even when the file time is the same (#y5k39njn).
+      if (options.expectedUpdated !== undefined) {
+        const record = this.require(resolved);
+        const info = await stat(record.filePath).catch(() => null);
+        if ((await this.changedOnDiskSince(record, info)) || !versionMatches(record, options.expectedUpdated, options.writer)) {
+          throw conflict("This page changed on disk.");
+        }
+      }
+      return options.withRows ? this.removeWithRowsNow(resolved) : this.removeNow(resolved);
+    });
   }
 
   /**
