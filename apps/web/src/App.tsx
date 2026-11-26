@@ -285,6 +285,17 @@ export function App() {
     if (saveState !== "error") saveRetry.current = freshRetrySchedule();
   }, [saveState]);
   const [actionError, setActionError] = useState<string | null>(null);
+  // #959nz9nr: an action's error belongs to the page open when it came (a refused undo in a table, a failed rename),
+  // so opening another page clears it; it read as being about that page. An error that comes with the navigation
+  // itself (an action that opens a page and then fails) belongs to the new page and stays.
+  const errorPage = useRef<PageId | null>(null);
+  useEffect(() => {
+    errorPage.current = selectedId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionError]);
+  useEffect(() => {
+    if (errorPage.current !== selectedId) setActionError(null);
+  }, [selectedId]);
   const [deletedOnDisk, setDeletedOnDisk] = useState<Page | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [movingId, setMovingId] = useState<PageId | null>(null);
@@ -2050,7 +2061,8 @@ export function App() {
         void loadTrash();
         const trashId = result.trashId;
         setToast({
-          message: wasBoard ? t("delete.boardDeleted") : wasBase ? t("bases.deleted") : t("delete.pageDeleted"),
+          // #959nz9nr: with its rows, the database went; without them, only its view (the rows stay as a folder).
+          message: wasBoard ? t("delete.boardDeleted") : wasBase ? t(withRows ? "bases.deletedDatabase" : "bases.deleted") : t("delete.pageDeleted"),
           icon: "trash",
           undo: trashId
             ? async () => {
