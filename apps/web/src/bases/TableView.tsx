@@ -1073,7 +1073,9 @@ function ValueCell(props: {
     );
   }
 
-  if (editing && select) {
+  // A Select opens its picker in the same render as the grid's request (no state round-trip), so keys typed right
+  // after the first one land in its search.
+  if (select && (editing || (props.editRequested && editable))) {
     return (
       <div
         className="base-td is-editing"

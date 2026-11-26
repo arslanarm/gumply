@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { selectedValues, type BaseValue, type SelectSettings } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
@@ -24,7 +24,8 @@ export function SelectPicker(props: {
   const [query, setQuery] = useState(props.initialQuery ?? "");
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => inputRef.current?.focus(), []);
+  // Before the next key reaches the page (typing on an active cell opens this mid-word): no letter is lost.
+  useLayoutEffect(() => inputRef.current?.focus(), []);
 
   const current = selectedValues(props.value);
   const trimmed = query.trim();
