@@ -571,7 +571,7 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect((await readdir(join(dir, "People"))).sort()).toEqual(["Ann.md", "Bo.md"]);
   });
 
-  it("a refused paste deletes the new rows it made outright: no Trash, no History (#7prbquxu phase 2, @lead)", async () => {
+  it("a refused paste's own new rows go to the Trash with their History: nothing deleted outright (#7prbquxu phase 2, #f4jkpja6, @lead)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
       "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
@@ -594,9 +594,11 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(result.stuck).toEqual([]);
     expect((await readdir(join(dir, "People"))).sort()).toEqual(["Ann.md"]);
     expect(store.list().some((meta) => meta.id === "People/Cy" || meta.id === "People/Di")).toBe(false);
-    expect((await readdir(join(dir, ".trash")).catch(() => [])).length).toBe(0);
+    // #f4jkpja6: both made rows are in the Trash, restorable, and Cy's History is kept.
+    const trashIds = (await store.listTrash()).flatMap((item) => [item.id, ...item.children.map((child) => child.id)]);
+    expect(trashIds).toEqual(expect.arrayContaining(["People/Cy", "People/Di"]));
     const { historyDir } = await import("../src/history");
-    expect(existsSync(historyDir(dir, "People/Cy"))).toBe(false);
+    expect(existsSync(historyDir(dir, "People/Cy"))).toBe(true);
   });
 
   it("renames and clears a Select option in every row and in the base's options, each row's value as it is now (#7prbquxu phase 3)", async () => {

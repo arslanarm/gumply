@@ -3304,7 +3304,8 @@ export class VaultStore {
         const trashDir = join(this.trashRoot, trashId);
         trashDirs.add(trashDir);
         this.markOwnWrite(record.filePath);
-        await rename(join(trashDir, relative(this.root, record.filePath)), record.filePath);
+        // #f4jkpja6: never over a file another app made at the row's name meanwhile (EEXIST: named as stuck).
+        await moveFileNoReplace(join(trashDir, relative(this.root, record.filePath)), record.filePath);
         this.pages.set(record.id, await this.readRecord(record.filePath, record.id).then((fresh) => ({ ...fresh, parentId: record.parentId })));
       } catch {
         stuck.push(record.title);
@@ -4364,8 +4365,8 @@ export class VaultStore {
         if (record) stuck.push({ id: record.id, title: record.title });
       }
     }
-    // A new row this job made, still exactly as it left it, is deleted outright (no Trash, no History: it
-    // never existed for anyone). One changed meanwhile goes to the Trash instead, and is named (@lead).
+    // A new row this job made goes to the Trash (#f4jkpja6: nothing deleted outright). One still exactly as this
+    // job left it is only counted; one changed meanwhile is also named (@lead).
     const trashed: Array<{ id: PageId; title: string }> = [];
     let dropped = 0;
     for (const row of created) {
@@ -4385,17 +4386,17 @@ export class VaultStore {
   }
 
   /**
-   * #7prbquxu phase 2 (@lead): a refused paste's new row, deleted outright with its History, but only while it's
-   * exactly as this job left it (`version`, no outside change, no sub-pages). False otherwise (it goes to the Trash).
+   * #7prbquxu phase 2 (@lead), #f4jkpja6: a refused paste's new row, to the Trash as our own write with its History
+   * kept, while it's exactly as this job left it (`version`, no outside change, no sub-pages). False when it changed
+   * meanwhile: the caller then sends it to the Trash too, and names it.
    */
   private async dropPastedRow(id: PageId, version: string): Promise<boolean> {
     const record = this.pages.get(id);
     if (!record || record.updated !== version || this.hasChildren(id)) return false;
     if (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null))) return false;
-    await rm(record.filePath);
-    this.pages.delete(id);
-    this.forgetSessionBytes(id);
-    await rm(historyDir(this.root, id), { recursive: true, force: true });
+    // #f4jkpja6 (@lead: nothing deleted outright): to the Trash like any delete, as our own write, its History kept.
+    this.markOwnWrite(record.filePath);
+    await this.removeNow(id);
     return true;
   }
 
