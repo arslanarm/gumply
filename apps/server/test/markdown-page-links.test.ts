@@ -86,7 +86,7 @@ describe("Markdown links to pages", () => {
     const { app, dir } = await createTestServer();
     await createPage(app, { title: "Projects" });
     await createPage(app, { title: "Archive" });
-    await createPage(app, { title: "Plan", parentId: "Projects" });
+    await createPage(app, { title: "Plan", parentId: "Projects", content: "Back to [me](Plan.md#Top)." });
     await createPage(app, { title: "Q1 notes", parentId: "Projects", content: "Read [the plan](Plan.md)." });
     await createPage(app, { title: "Journal", content: "See [p](Projects/Plan.md)." });
 
@@ -97,5 +97,8 @@ describe("Markdown links to pages", () => {
     expect(await readFile(join(dir, "Journal.md"), "utf8")).toContain("See [p](Archive/Plan.md).");
     const links = await getJson<Backlink[]>(app, `${pagePath("Archive/Plan")}/backlinks`);
     expect(links.map((link) => link.page.id).sort()).toEqual(["Journal", "Projects/Q1 notes"]);
+    // @polish-dev's check: the moved page's own self-link is left as written; next to its file it still means itself
+    // (and a self-link is no edge).
+    expect(await readFile(join(dir, "Archive", "Plan.md"), "utf8")).toContain("Back to [me](Plan.md#Top).");
   });
 });
