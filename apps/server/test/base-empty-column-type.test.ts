@@ -17,7 +17,7 @@ it("an empty typed column keeps the type types.json gives it (#bg7c9bzk)", async
   const server = await createTestServer();
   await mkdir(join(server.dir, "Books"), { recursive: true });
   await mkdir(join(server.dir, ".gumply"), { recursive: true });
-  await writeFile(join(server.dir, ".gumply", "types.json"), JSON.stringify({ year: "number" }), "utf8");
+  await writeFile(join(server.dir, ".gumply", "types.json"), JSON.stringify({ types: { year: "number" } }), "utf8");
   await writeFile(
     join(server.dir, "Books.base"),
     'gumply:\n  rows: Books\nfilters:\n  and:\n    - file.folder == "Books"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - year\n',
