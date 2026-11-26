@@ -4876,7 +4876,7 @@ export class VaultStore {
 
     // D20: only a title change renames the file; body/icon saves never move
     // it (old slug-named files are renamed the next time their title changes).
-    const targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle) : id;
+    let targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle) : id;
 
     const changes = ["updated"];
     if (nextTitle !== previousTitle) changes.push("title");
@@ -4909,9 +4909,7 @@ export class VaultStore {
     // line, so a Keep mine from the editor's version before the rename walks into this rename's link
     // rewrites of the page (folder links, self-links) whether or not the rename came with a writer.
     // `deferRewrites` = inside a user rename (renameInBatches); other relocations have no editor save in flight.
-    if (this.deferRewrites && replaced !== record.updated) {
-      this.rememberRenameRewrite(targetId, record.content, record.content, replaced, record.updated, nextTitle);
-    }
+    const renameWrite = this.deferRewrites && replaced !== record.updated ? { content: record.content, replaced, updated: record.updated } : null;
     record.explicitTitle = record.explicitTitle || written.titleKey;
     record.fmTags = fmTags;
     this.setPropertyLinks(record, written.text);
@@ -4920,9 +4918,23 @@ export class VaultStore {
 
     let relinked: PageId[] = [];
     if (targetId !== id) {
-      relinked = await this.relocateNow(id, targetId);
+      // #e3mwuspu: the page's file is already written; if another app made a file at the new name since the check,
+      // the rename takes the next free name (" 2") instead of leaving the page half renamed.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          relinked = await this.relocateNow(id, targetId);
+          break;
+        } catch (error) {
+          if (!(error as { nameTaken?: boolean }).nameTaken || attempt >= 20) throw error;
+          targetId = await this.renameTarget(id, record.parentId, nextTitle);
+          if (targetId === id) break;
+        }
+      }
       const moved = this.pages.get(targetId);
       if (moved) record = moved;
+    }
+    if (renameWrite) {
+      this.rememberRenameRewrite(targetId, renameWrite.content, renameWrite.content, renameWrite.replaced, renameWrite.updated, nextTitle);
     }
     this.refreshTags(record);
 
@@ -5750,7 +5762,7 @@ export class VaultStore {
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
       // #e3mwuspu: another app made a file at the new name since the check: nothing moves, named.
-      if (isEexist(error)) throw conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`);
+      if (isEexist(error)) throw Object.assign(conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`), { nameTaken: true });
       throw error;
     }
 
@@ -6556,7 +6568,7 @@ export class VaultStore {
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
       // #e3mwuspu: another app made a file at the new name since the check: nothing moves, named.
-      if (isEexist(error)) throw conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`);
+      if (isEexist(error)) throw Object.assign(conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`), { nameTaken: true });
       throw error;
     }
 
