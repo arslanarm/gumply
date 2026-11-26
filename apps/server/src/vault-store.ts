@@ -4386,8 +4386,9 @@ export class VaultStore {
   }
 
   /**
-   * #7prbquxu phase 2 (@lead): a refused paste's new row, deleted outright with its History, but only while it's
-   * exactly as this job left it (`version`, no outside change, no sub-pages). False otherwise (it goes to the Trash).
+   * #7prbquxu phase 2 (@lead), #f4jkpja6: a refused paste's new row, to the Trash as our own write with its History
+   * kept, while it's exactly as this job left it (`version`, no outside change, no sub-pages). False when it changed
+   * meanwhile: the caller then sends it to the Trash too, and names it.
    */
   private async dropPastedRow(id: PageId, version: string): Promise<boolean> {
     const record = this.pages.get(id);
