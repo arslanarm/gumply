@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseBase, type BaseViewResult, type PageMeta } from "@gumply/core";
@@ -353,7 +354,7 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
   it("a paste that a row refuses puts the set rows back and leaves no new rows (#7prbquxu phase 2, @lead)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
-      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Ann.md": "---\nrole: Cook # head cook\nskills:\n  - bread\n  - pies\nstarted: 2026-01-05\n---\nAnn\n",
       "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
     });
     const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
@@ -374,10 +375,39 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(result.refused.map((row) => row.title)).toEqual(["Bo"]);
     expect(result.stuck).toEqual([]);
     // Ann is back byte for byte (her old role, no age: she had none).
-    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
-    expect(result.trashed).toBe(0);
+    // A comment, a list and a date included (D37, @lead).
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook # head cook\nskills:\n  - bread\n  - pies\nstarted: 2026-01-05\n---\nAnn\n");
+    expect(result.trashed).toEqual([]);
     // Cy was never made (the updates come first).
     expect((await readdir(join(dir, "People"))).sort()).toEqual(["Ann.md", "Bo.md"]);
+  });
+
+  it("a refused paste deletes the new rows it made outright: no Trash, no History (#7prbquxu phase 2, @lead)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+    });
+    // The second new row's values can't be written: the paste is refused after Cy was made.
+    const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "People/Di") throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
+      return updateNow(id, patch);
+    };
+    const result = await store.pasteIntoOwnedRows("People.base", {
+      rows: [
+        { title: "Cy", set: { role: "Diver" } },
+        { title: "Di", set: { role: "Pilot" } },
+      ],
+    });
+    expect(result.refused.map((row) => row.title)).toEqual(["Di"]);
+    expect(result.trashed).toEqual([]);
+    expect(result.stuck).toEqual([]);
+    expect((await readdir(join(dir, "People"))).sort()).toEqual(["Ann.md"]);
+    expect(store.list().some((meta) => meta.id === "People/Cy" || meta.id === "People/Di")).toBe(false);
+    expect((await readdir(join(dir, ".trash")).catch(() => [])).length).toBe(0);
+    const { historyDir } = await import("../src/history");
+    expect(existsSync(historyDir(dir, "People/Cy"))).toBe(false);
   });
 
   it("a row that can't be put back is named with the key it's left with (#7prbquxu, @lead)", async () => {
