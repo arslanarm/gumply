@@ -196,9 +196,9 @@ test('an IME composition on an active cell starts the edit and keeps every chara
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: повар\nage: 41\n---\nBo\n');
 });
 
-/** Another app's save of Ann: with a later modification time, or (#y5k39njn) the same size and modification time. */
+/** Another app's save of Ann: an ordinary one, or (#y5k39njn) one that keeps the size and modification time. */
 const OUTSIDE_EDITS = [
-  { name: 'a later modification time', text: '---\nrole: Chef\nage: 30\n---\nAnn, edited elsewhere\n', keepTime: false },
+  { name: 'an ordinary save by another app', text: '---\nrole: Chef\nage: 30\n---\nAnn, edited elsewhere\n', keepTime: false },
   { name: 'the same size and modification time', text: '---\nrole: Chef\nage: 30\n---\nAnn\n', keepTime: true },
 ];
 
@@ -221,11 +221,9 @@ for (const edit of OUTSIDE_EDITS) {
       await fs.writeFile(ann, edit.text, 'utf8');
       await fs.utimes(ann, before.atime, before.mtime);
     } else {
-      // As most apps save: a temp file with its time set, renamed over the page in one step.
+      // As most apps save: a temp file renamed over the page in one step, at the current time.
       const temporary = `${ann}.tmp-outside`;
       await fs.writeFile(temporary, edit.text, 'utf8');
-      const later = new Date(Date.now() + 5_000);
-      await fs.utimes(temporary, later, later);
       await fs.rename(temporary, ann);
     }
     await expect
