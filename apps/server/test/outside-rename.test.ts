@@ -1,6 +1,6 @@
 import { copyFile, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { historyDir, readHistory } from "../src/history";
 import { cleanupVaults, createTestServer } from "./helpers";
 
@@ -96,6 +96,27 @@ describe("outside renames are followed (#3c444g85)", () => {
       expect((await readHistory(historyDir(dir, "Trip plan"))).entries).toEqual([]);
     });
   }
+
+  it("the late pairing window closes: the same title with other content 11 s after the delete is a new page, not a rename; 5 s after, it pairs (#zsk48sie, @lead)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      for (const [gapMs, pairs] of [[11_000, false], [5_000, true]] as const) {
+        const { store, dir } = await createTestServer();
+        await writeFile(join(dir, "Plan.md"), "---\ntitle: Plan\n---\nThe first plan.\n");
+        await store.rescan();
+        await rm(join(dir, "Plan.md"));
+        await store.rescan();
+        vi.setSystemTime(Date.now() + gapMs);
+        await writeFile(join(dir, "Plan B.md"), "---\ntitle: Plan\n---\nA different plan.\n");
+        await store.rescan();
+        if (pairs) expect(store.get("Plan").id).toBe("Plan B");
+        else expect(() => store.get("Plan"), `${gapMs} ms`).toThrow();
+        expect(store.get("Plan B").id).toBe("Plan B");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("a renamed note keeps its frontmatter-title pairing, and a board is matched by content", async () => {
     const { store, dir } = await createTestServer();
