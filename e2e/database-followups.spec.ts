@@ -145,9 +145,51 @@ test('a resize (a phone keyboard showing) doesn\'t close an open picker, even wh
   // A row in the lower half of the table.
   await page.locator('[data-row-id="Team/Person 15"] [data-grid-col="1"]').click();
   await expect(page.getByTestId('base-select-picker')).toBeVisible();
-  // The visible area shrinks, as when an on-screen keyboard appears.
+  // The visible area shrinks, as when an on-screen keyboard appears. The browser may then move the table's
+  // scroll by itself (scroll anchoring keeps what's on screen in place), which fires a scroll event: do that
+  // here, every time, as it happened in some runs only (trial-main25).
   await page.setViewportSize({ width: 1280, height: 420 });
-  await page.waitForTimeout(300);
+  await page.getByTestId('base-table-scroll').evaluate((element) => {
+    element.scrollTop += 120;
+  });
+  // Past the settle window: the picker is still open, **seen** (its cell brought back into the table's visible
+  // box, @opus-hunter, @lead), and the search keeps the focus.
+  await page.waitForTimeout(800);
   await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  expect(await pickerAndCellInView(page, 'Team/Person 15')).toEqual({ picker: true, cell: true });
   await expect(page.getByTestId('base-select-search')).toBeFocused();
 });
+
+test('a resize whose own scroll moves the cell up under the sticky header brings it back below it, and the picker stays open (@polish-dev, @lead)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await writeVault(request, team(TABLE));
+  await openTeam(page);
+  await expect(page.getByTestId('base-table').locator('.base-title-text').first()).toHaveText(NAMES[0]!);
+  await page.locator('[data-row-id="Team/Person 03"] [data-grid-col="1"]').click();
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 600 });
+  // The browser's own scroll after the resize takes the row up under the header.
+  await page.getByTestId('base-table-scroll').evaluate((element) => {
+    element.scrollTop += 90;
+  });
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  expect(await pickerAndCellInView(page, 'Team/Person 03')).toEqual({ picker: true, cell: true });
+});
+
+/**
+ * Whether the open picker lies inside the window, and the row's Select cell's middle inside the table's visible
+ * box (below the sticky head, above the scroller's bottom): seen, not just present.
+ */
+async function pickerAndCellInView(page: Page, rowId: string): Promise<{ picker: boolean; cell: boolean }> {
+  return page.evaluate((id) => {
+    const picker = document.querySelector('[data-testid="base-select-picker"]')!.getBoundingClientRect();
+    const inWindow = picker.top >= 0 && picker.bottom <= window.innerHeight && picker.height > 0;
+    const scroller = document.querySelector('[data-testid="base-table-scroll"]')!.getBoundingClientRect();
+    const head = document.querySelector('.base-table-head')!.getBoundingClientRect();
+    const cell = document.querySelector(`[data-row-id="${id}"] [data-grid-col="1"]`)!.getBoundingClientRect();
+    const middle = (cell.top + cell.bottom) / 2;
+    return { picker: inWindow, cell: middle >= Math.max(scroller.top, head.bottom) && middle <= scroller.bottom };
+  }, rowId);
+}

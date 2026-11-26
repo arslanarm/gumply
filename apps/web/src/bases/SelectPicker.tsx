@@ -10,6 +10,9 @@ import { useT } from "../i18n/index.js";
  * highlighted match, or adds what was typed as a new option when nothing matches. A Select closes on a pick; a Multi-select stays
  * open for the next. A value outside the options (typed in Obsidian) is offered as "Add as option".
  */
+/** How long after a resize a scroll is taken as the browser's own (scroll anchoring), not the user's. */
+const RESIZE_SETTLE_MS = 500;
+
 export function SelectPicker(props: {
   settings: SelectSettings;
   value: BaseValue;
@@ -70,16 +73,50 @@ export function SelectPicker(props: {
       const maxHeight = Math.max(96, (up ? box.top : below) - 8);
       setPlace(up ? { left, width, maxHeight, bottom: window.innerHeight - box.top } : { left, width, maxHeight, top: box.bottom });
     };
+    // A resize (a phone keyboard showing) can make the browser move the table's scroll by itself (scroll
+    // anchoring), which fires a scroll event: one that soon after a resize only places the picker
+    // (trial-main25). `visualViewport` is what a phone's keyboard resizes.
+    // If that leaves the cell out of the table's visible box, the cell is brought back into it (below the sticky
+    // head, which `scrollIntoView` alone ignores), so the open, focused picker is never typed into unseen
+    // (@opus-hunter, @lead). When the window ends, the picker closes only if the cell is out of view still: then
+    // the user scrolled it away.
+    let resizedAt = -Infinity;
+    let recheck: number | undefined;
+    const bringBack = () => {
+      const cell = anchorRef.current?.parentElement;
+      const head = cell?.closest(".base-table-scroll")?.querySelector<HTMLElement>(".base-table-head");
+      if (!cell) return;
+      cell.style.scrollMarginTop = `${head?.offsetHeight ?? 0}px`;
+      cell.scrollIntoView({ block: "nearest" });
+      cell.style.scrollMarginTop = "";
+    };
+    const onResize = () => {
+      resizedAt = performance.now();
+      if (scrolledAway()) bringBack();
+      placeIt();
+      window.clearTimeout(recheck);
+      recheck = window.setTimeout(() => {
+        if (scrolledAway()) closeRef.current();
+      }, RESIZE_SETTLE_MS + 50);
+    };
     const onScroll = () => {
-      if (scrolledAway()) closeRef.current();
-      else placeIt();
+      const settling = performance.now() - resizedAt <= RESIZE_SETTLE_MS;
+      if (!settling && scrolledAway()) {
+        closeRef.current();
+        return;
+      }
+      if (settling && scrolledAway()) bringBack();
+      placeIt();
     };
     placeIt();
     window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", placeIt);
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
     return () => {
+      window.clearTimeout(recheck);
       window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", placeIt);
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
     };
   }, []);
 
