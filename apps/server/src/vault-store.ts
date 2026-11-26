@@ -382,6 +382,8 @@ export interface OwnedRowsPaste {
   refused: Array<{ id: PageId; title: string }>;
   /** Rows that couldn't be put back (they keep the pasted values, or a new row stayed). */
   stuck: Array<{ id: PageId; title: string }>;
+  /** After a refusal: the new rows moved to the Trash (each restorable there). */
+  trashed?: number;
   /** The new columns couldn't be added (the base changed meanwhile): the rows were put back too. */
   baseRefused?: boolean;
 }
@@ -3728,7 +3730,9 @@ export class VaultStore {
           throw badRequest(`not a row of this database: ${row.id}`);
         }
         // The version the table showed: values are set over what the user saw, never over a newer outside edit.
-        existing.push({ record, set: row.set, expected: typeof row.expectedUpdated === "string" ? row.expectedUpdated : record.updated });
+        // Required (@opus-hunter): values are set over the version the caller showed, never blind.
+        if (typeof row.expectedUpdated !== "string") throw badRequest(`an existing row needs the version it was read at (expectedUpdated): ${row.id}`);
+        existing.push({ record, set: row.set, expected: row.expectedUpdated });
       } else {
         const title = typeof row.title === "string" ? row.title.trim() : "";
         if (!title) throw badRequest("a new row needs a title");
@@ -3739,20 +3743,13 @@ export class VaultStore {
     const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
     const refused: Array<{ id: PageId; title: string }> = [];
     // What each set row had before, to put back: the old value, or "absent" (the key is removed again).
-    const done: Array<{ id: PageId; updated: string; old: Record<string, PropertyValue>; absent: string[] }> = [];
+    // Each set row's bytes before the paste, to put back exactly (D37), and the version our write left.
+    const done: Array<{ id: PageId; updated: string; bytes: Buffer }> = [];
     for (const { record, set, expected } of existing) {
       try {
-        const raw = readRawProperties(parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml);
-        const had = new Map(raw.map((property) => [property.key, property]));
-        const old: Record<string, PropertyValue> = {};
-        const absent: string[] = [];
-        for (const key of Object.keys(set)) {
-          const before = had.get(key);
-          if (before === undefined) absent.push(key);
-          else old[key] = before.value;
-        }
+        const bytes = await readFile(record.filePath);
         const page = await this.updateNow(record.id, { properties: { set }, expectedUpdated: expected });
-        done.push({ id: page.id, updated: page.updated, old, absent });
+        done.push({ id: page.id, updated: page.updated, bytes });
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: ${record.id} failed:`, error);
         refused.push({ id: record.id, title: record.title });
@@ -3781,26 +3778,62 @@ export class VaultStore {
     }
     if (refused.length === 0) return { changed: done.map((row) => row.id), created: created.map((row) => row.id), refused: [], stuck: [] };
 
-    // All or nothing: the set rows get their old values back, the new rows go to the Trash.
+    // All or nothing: the set rows get their exact earlier bytes back (only while the file is still as our
+    // write left it), the new rows go to the Trash (counted, so the alert can say so).
     const stuck: Array<{ id: PageId; title: string }> = [];
+    let putBack = 0;
     for (const row of done) {
       try {
-        await this.updateNow(row.id, { properties: { set: row.old, remove: row.absent }, expectedUpdated: row.updated });
+        if (await this.putPasteBytesBack(row.id, row.bytes, row.updated)) putBack += 1;
+        else {
+          const record = this.pages.get(row.id);
+          if (record) stuck.push({ id: record.id, title: record.title });
+        }
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: putting ${row.id} back failed:`, error);
         const record = this.pages.get(row.id);
         if (record) stuck.push({ id: record.id, title: record.title });
       }
     }
+    if (putBack) this.reindexAll();
+    let trashed = 0;
     for (const row of created) {
       try {
         await this.removeNow(row.id);
+        trashed += 1;
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: removing the new row ${row.id} failed:`, error);
         stuck.push(row);
       }
     }
-    return { changed: [], created: [], refused: named(refused), stuck, ...(baseRefused ? { baseRefused: true } : {}) };
+    return { changed: [], created: [], refused: named(refused), stuck, trashed, ...(baseRefused ? { baseRefused: true } : {}) };
+  }
+
+  /**
+   * #7prbquxu phase 2 (@opus-hunter): a refused paste's put-back of one row: its exact bytes from before the
+   * paste, written as History's restore writes, and only while the file is still as the paste's write left it
+   * (`version`, and no outside change). False when it moved on (the row is then named as stuck).
+   */
+  private async putPasteBytesBack(id: PageId, bytes: Buffer, version: string): Promise<boolean> {
+    const record = this.pages.get(id);
+    if (!record || record.updated !== version) return false;
+    if (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null))) return false;
+    await assertWritable(record.filePath);
+    const temporary = tempPathBeside(record.filePath);
+    try {
+      await writeFile(temporary, bytes);
+      this.markOwnWrite(record.filePath);
+      await rename(temporary, record.filePath);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    const fresh = await this.readRecord(record.filePath, record.id);
+    fresh.parentId = record.parentId;
+    this.pages.set(record.id, fresh);
+    this.forgetSessionBytes(record.id);
+    await saveVersion(this.root, { id: record.id, ext: historyExt(record.kind), bytes, version: fresh.updated, source: "app" });
+    return true;
   }
 
   /**

@@ -1361,6 +1361,8 @@
     "pasteConfirm": "Paste",
     "pasteRefused": "Nothing was pasted: these rows changed elsewhere or are read-only: {{titles}}.",
     "pasteStuck": "These rows couldn't be put back and keep the pasted values: {{titles}}.",
+    "pasteTrashed_one": "The {{count}} new row it had made is in the Trash.",
+    "pasteTrashed_other": "The {{count}} new rows it had made are in the Trash.",
     "pasteLeftOut_one": "{{count}} pasted cell was left out (a name of an existing row, a read-only column, a value that isn't the column's type, or past the last column).",
     "pasteLeftOut_other": "{{count}} pasted cells were left out (names of existing rows, read-only columns, values that aren't the column's type, or past the last column).",
     "columnBaseChanged": "The database file changed meanwhile, so its columns were left as they were. Try again.",
