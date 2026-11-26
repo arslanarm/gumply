@@ -122,6 +122,8 @@ export function BaseView(props: BaseViewProps) {
     redoStack.current = [];
   };
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** #7prbquxu (@lead): rows a paste is writing, while it runs (a big one holds every other save meanwhile). */
+  const [pasting, setPasting] = useState<number | null>(null);
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState<{ panel: Panel; n: number } | null>(null);
   const writer = useMemo(() => `base-${Math.random().toString(36).slice(2, 10)}`, []);
@@ -349,6 +351,8 @@ export function BaseView(props: BaseViewProps) {
       columns?: { view: string; keys: string[]; selects?: Record<string, { kind: SelectKind; values: string[] }> },
       types?: Record<string, PropertyType>,
     ) => {
+      // Shown only if it takes a moment, so a small paste doesn't flash it.
+      const showPasting = window.setTimeout(() => setPasting(rows.length), 300);
       try {
         await saverRef.current?.flush();
         const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer, ...(columns ? { columns } : {}) });
@@ -381,8 +385,11 @@ export function BaseView(props: BaseViewProps) {
         }
       } catch (error) {
         props.onError?.(errorText(error));
+      } finally {
+        window.clearTimeout(showPasting);
       }
       await load();
+      setPasting(null);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [baseId, writer, load],
@@ -705,6 +712,11 @@ export function BaseView(props: BaseViewProps) {
     <BaseSelects.Provider value={selects}>
     <BaseSelectActions.Provider value={selectActions}>
     <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1} onKeyDown={onUndoKey}>
+      {pasting !== null ? (
+        <div className="base-warning" role="status" data-testid="base-pasting">
+          {t("bases.pasting", { count: pasting })}
+        </div>
+      ) : null}
       {inlineConflict ? (
         <div className="banner base-banner base-conflict" role="alert" data-testid="base-conflict" ref={conflictRef}>
           <span>{t("bases.conflict")}</span>
