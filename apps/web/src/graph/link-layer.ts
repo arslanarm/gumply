@@ -147,6 +147,56 @@ export function visibleGraphRect(
 }
 
 /**
+ * #znabmb8n: the part of segment (x0,y0)→(x1,y1) inside the rectangle, as
+ * fractions [t0, t1] along it (Liang–Barsky), or null if it misses it.
+ */
+export function clipSegment(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  rect: { minX: number; minY: number; maxX: number; maxY: number },
+): [number, number] | null {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const edges: Array<[number, number]> = [
+    [-dx, x0 - rect.minX],
+    [dx, rect.maxX - x0],
+    [-dy, y0 - rect.minY],
+    [dy, rect.maxY - y0],
+  ];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return null;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return null;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return null;
+      if (r < t1) t1 = r;
+    }
+  }
+  return [t0, t1];
+}
+
+/**
+ * Where a clipped dashed segment has to start so its dashes fall exactly where
+ * they would on the whole segment: back from the clip point to the last whole
+ * dash period measured from the segment's real start (a canvas restarts the dash
+ * pattern at each subpath). Returns the fraction along the segment.
+ */
+export function dashAlignedStart(t0: number, length: number, period: number): number {
+  if (t0 <= 0 || period <= 0 || length <= 0) return t0;
+  const along = t0 * length;
+  return (Math.floor(along / period) * period) / length;
+}
+
+/**
  * Every resting link as force-graph strokes it: plain links in one path, links
  * to a page not created yet in a second, dashed one; `lineWidth` is the CSS
  * width over the zoom, as force-graph sets it. Links whose ends haven't been
@@ -170,6 +220,7 @@ export function paintRestingLinks(
   const minY = view ? view.minY - lineWidth : -Infinity;
   const maxY = view ? view.maxY + lineWidth : Infinity;
   const { source, target, dashed, nodes, count } = index;
+  const period = options.dash.reduce((sum, part) => sum + part, 0);
   ctx.strokeStyle = options.color;
   ctx.lineWidth = lineWidth;
   for (const pass of [0, 1] as const) {
@@ -188,12 +239,29 @@ export function paintRestingLinks(
       const x1 = bx as number;
       const y1 = by as number;
       if ((x0 < minX && x1 < minX) || (x0 > maxX && x1 > maxX) || (y0 < minY && y1 < minY) || (y0 > maxY && y1 > maxY)) continue;
+      let sx = x0;
+      let sy = y0;
+      let ex = x1;
+      let ey = y1;
+      // A segment reaching outside the view is cut to it: Chrome dashes a whole path in one go and past ~1-2 M dash
+      // intervals strokes it solid (#znabmb8n), so zoomed in on a big vault ghost links turned solid; the off-screen
+      // length also cost time. A dashed one starts at a whole dash period, so its dashes stay where they were.
+      if (view && (x0 < minX || x0 > maxX || y0 < minY || y0 > maxY || x1 < minX || x1 > maxX || y1 < minY || y1 > maxY)) {
+        const cut = clipSegment(x0, y0, x1, y1, { minX, minY, maxX, maxY });
+        if (!cut) continue;
+        const t1 = cut[1];
+        const t0 = pass === 1 ? dashAlignedStart(cut[0], Math.hypot(x1 - x0, y1 - y0), period) : cut[0];
+        sx = x0 + (x1 - x0) * t0;
+        sy = y0 + (y1 - y0) * t0;
+        ex = x0 + (x1 - x0) * t1;
+        ey = y0 + (y1 - y0) * t1;
+      }
       if (!started) {
         ctx.beginPath();
         started = true;
       }
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
     }
     if (started) {
       ctx.setLineDash(pass === 1 ? options.dash : []);

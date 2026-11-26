@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLinkIndex, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, visibleGraphRect, type LinkColors, type LinkLayerInputs, type LinkPainter } from "../src/graph/link-layer";
+import { buildLinkIndex, clipSegment, dashAlignedStart, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, visibleGraphRect, type LinkColors, type LinkLayerInputs, type LinkPainter } from "../src/graph/link-layer";
 import { linkWidthFor, restingLinkWidth } from "../src/graph/link-width";
 
 /** #pifuz5zs: the cached link picture's key and its drawing (as force-graph strokes resting links). */
@@ -133,6 +133,57 @@ describe("the cached link picture (#pifuz5zs)", () => {
       const { painter, calls } = recorder();
       paintRestingLinks(painter, buildLinkIndex(nodes, [{ source: nodes[0], target: nodes[1] }], () => false), { color: "#000", widthCss: 1, scale: 1, dash: [] });
       expect(calls.filter((call) => call === "line")).toHaveLength(1);
+    });
+
+    it("a segment reaching outside is cut to the view (Liang–Barsky), and one that misses it is dropped", () => {
+      const rect = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+      expect(clipSegment(-100, 50, 200, 50, rect)).toEqual([1 / 3, 2 / 3]);
+      expect(clipSegment(10, 10, 20, 20, rect)).toEqual([0, 1]);
+      expect(clipSegment(50, -50, 50, 50, rect)).toEqual([0.5, 1]);
+      // Its bounding box overlaps the view, but the segment passes outside a corner.
+      expect(clipSegment(-50, 60, 60, 150, rect)).toBeNull();
+    });
+
+    it("a cut dashed segment starts at a whole dash period from its real start, so its dashes don't move", () => {
+      // 200 long, cut at 1/3 (66.67 along): the last whole 7-unit period before it is 63.
+      expect(dashAlignedStart(1 / 3, 200, 7) * 200).toBeCloseTo(63, 9);
+      expect(dashAlignedStart(0, 200, 7)).toBe(0);
+      expect(dashAlignedStart(0.5, 200, 0)).toBe(0.5);
+    });
+
+    it("a dashed segment cut anywhere keeps its dashes where the whole one has them (phase from the source end)", () => {
+      // The canvas starts the [4, 3] pattern at each subpath's start: on for 4, off for 3, from the source end.
+      const on = (along: number, from: number) => ((((along - from) % 7) + 7) % 7) < 4;
+      const length = 1000;
+      for (const cut of [0.001, 0.0137, 0.25, 0.3333, 0.5, 0.7071, 0.999]) {
+        const start = dashAlignedStart(cut, length, 7) * length;
+        // At or before the cut, within one period of it…
+        expect(start).toBeLessThanOrEqual(cut * length + 1e-9);
+        expect(start).toBeGreaterThan(cut * length - 7);
+        // …and every point from there on is on or off exactly as on the uncut segment (started at 0).
+        for (let along = cut * length; along < length; along += 0.37) {
+          const phase = along % 7;
+          if (Math.min(phase, Math.abs(phase - 4), 7 - phase) < 1e-6) continue; // on a dash edge: rounding decides
+          expect(on(along, start)).toBe(on(along, 0));
+        }
+      }
+    });
+
+    it("the painter draws a crossing link only across the view; a dashed one from its aligned start", () => {
+      const nodes = [{ id: "A", x: -100, y: 50 }, { id: "B", x: 200, y: 50 }, { id: "?G", x: -100, y: 50 }];
+      const links = [{ source: nodes[0], target: nodes[1] }, { source: nodes[2], target: nodes[1] }];
+      const points: Array<[string, number, number]> = [];
+      const { painter } = recorder();
+      painter.moveTo = (x, y) => points.push(["move", x, y]);
+      painter.lineTo = (x, y) => points.push(["line", x, y]);
+      paintRestingLinks(painter, buildLinkIndex(nodes, links, dashedByTarget), { color: "#000", widthCss: 1, scale: 1, dash: [4, 3], view });
+      // Plain: the view widened by one line width (-1…101): from x -1 to x 101.
+      expect(points[0]![0]).toBe("move");
+      expect(points[0]![1]).toBeCloseTo(-1, 9);
+      expect(points[1]![1]).toBeCloseTo(101, 9);
+      // Dashed (from x -100): the cut at -1 is 99 along; the last whole period is 98, so it starts at x -2.
+      expect(points[2]![1]).toBeCloseTo(-2, 6);
+      expect(points[3]![1]).toBeCloseTo(101, 6);
     });
 
     it("the visible rectangle comes from the canvas transform (device px)", () => {
