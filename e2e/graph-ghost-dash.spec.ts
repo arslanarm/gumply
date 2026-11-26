@@ -5,13 +5,17 @@ import { api, expect, test } from './fixtures';
 import { API_URL, E2E_VAULT } from './support/env';
 
 /**
- * #znabmb8n: links to a page not created yet are dashed. Chrome strokes a
- * dashed path in one go and, past ~1-2 M dash intervals, silently strokes it
- * solid; zoomed in on a big vault, the link picture's one dashed path (every
- * ghost link, off-screen lengths included) crossed that, and ghost links turned
- * solid. They're now cut to the view first. Here: a big vault whose 20 missing
- * pages are linked from notes all over the graph (long dashed links), zoomed
- * 8× from fit; the ink along one ghost link crossing the view must come and go.
+ * #znabmb8n, a GUARD (not a fail-first): links to a page not created yet stay
+ * dashed when a big graph is zoomed in. Chrome strokes a dashed path in one go
+ * and, past ~1-2 M dash intervals, silently strokes it solid: a synthetic page
+ * showed one path of 4,000 long dashed segments stroked solid at every zoom
+ * (1,000 still dashed; `scripts/perf/zz-znab-dashcap.mjs`, task thread), and on
+ * the 10k perf vault zoomed in ~4.6× main drew its ghost links solid. The link
+ * picture now cuts every link to the view before pathing it, so its dashed path
+ * holds only on-screen lengths. This vault (20 missing pages linked from notes
+ * all over the graph, so long dashed links) did NOT cross the cap on main
+ * (it passes there too); it guards that the cut keeps the dashes, and would
+ * catch a change that brings back one huge dashed path at this size or less.
  */
 const NOTES = 5_200; // over STREAM_MAX_NODES; each note links to two of 20 missing pages
 const MISSING = 20;
@@ -51,7 +55,7 @@ interface ProbeNode {
 const probeNodes = (page: Page) =>
   page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { nodes: () => ProbeNode[] }> }).__gumplyGraphs['graph-canvas']!.nodes());
 
-test('ghost links stay dashed when a big graph is zoomed in 8×', async ({ page, request }) => {
+test('guard: ghost links stay dashed when a big graph is zoomed in 8×', async ({ page, request }) => {
   test.setTimeout(420_000);
   await writeVault(request);
   await page.setViewportSize({ width: 1400, height: 900 });
