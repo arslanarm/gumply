@@ -1,4 +1,5 @@
-import { propertyId, type BaseConfig, type BaseView } from "@gumply/core";
+import { propertyId } from "./evaluate.js";
+import type { BaseConfig, BaseView } from "./format.js";
 
 /**
  * #7prbquxu (spec/database-tables §4): a property renamed or deleted in an owned database changes its rows

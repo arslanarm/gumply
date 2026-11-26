@@ -96,6 +96,8 @@ import {
   ownedRowsFolder,
   parseBase,
   updateBaseSource,
+  renameKeyInConfig,
+  dropKeyFromConfig,
   withOwnedRows,
   type BaseConfig,
   type CanvasBoard,
@@ -359,6 +361,10 @@ export interface OwnedRowsChange {
   clash: Array<{ id: PageId; title: string }>;
   /** After a refused rename: rows that couldn't be put back, so they keep the new name. */
   stuck: Array<{ id: PageId; title: string }>;
+  /** The base changed on disk (or couldn't be written) after the rows: a rename was put back; a delete kept the column. */
+  baseRefused?: boolean;
+  /** The base as it is now (its version for the caller's next save). */
+  base: BaseDocument;
 }
 
 interface PageRecord extends Omit<Page, "childCount"> {
@@ -3457,20 +3463,28 @@ export class VaultStore {
   }
 
   /**
-   * #7prbquxu (spec/database-tables §4, @opus-hunter's review): rename or delete a property in every row
-   * of an owned database: each page directly in its rows folder whose frontmatter has the key (even
-   * empty). One queued job, each row through the ordinary properties patch from its current version
-   * (so a write another app made meanwhile, even with the same size and time, is refused for that row).
-   * A rename is all or nothing: a name some row already has stops it before any write, and when a row
-   * refuses, the rows already renamed are put back. The `.base` is the caller's to save, on success only.
+   * #7prbquxu (spec/database-tables §4, @opus-hunter's and @lead's reviews): rename or delete a property in
+   * every row of an owned database and in its `.base`, in one queued job. The rows are each page directly
+   * in its rows folder whose frontmatter has the key (even empty), each through the ordinary properties
+   * patch from its current version, so a write another app made meanwhile (even with the same size and
+   * time) is refused for that row. The `.base` (checked against `expectedUpdated` before any write) then
+   * renames or drops the column in only the lines that name it.
+   * A rename is all or nothing: a name some row already has stops it before any write; any refusal or
+   * error on a row, or a base changed meanwhile, puts the renamed rows back and leaves the base. A row
+   * that can't be put back is returned as `stuck`. A delete that a row refuses keeps the column.
    */
-  changeOwnedRowsProperty(id: PageId, change: { rename: { from: string; to: string } } | { remove: string }): Promise<OwnedRowsChange> {
-    return this.enqueue(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change));
+  changeOwnedRowsProperty(
+    id: PageId,
+    change: { rename: { from: string; to: string } } | { remove: string },
+    options: { expectedUpdated?: string; writer?: string } = {},
+  ): Promise<OwnedRowsChange> {
+    return this.enqueue(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change, options));
   }
 
   private async changeOwnedRowsPropertyNow(
     id: PageId,
     change: { rename: { from: string; to: string } } | { remove: string },
+    options: { expectedUpdated?: string; writer?: string },
   ): Promise<OwnedRowsChange> {
     const base = this.requireBase(id);
     const folder = this.ownedRowsOf(base, id);
@@ -3478,6 +3492,18 @@ export class VaultStore {
     const key = "rename" in change ? change.rename.from : change.remove;
     const to = "rename" in change ? change.rename.to : null;
     if (!isValidPropertyKey(key) || (to !== null && !isValidPropertyKey(to))) throw badRequest("not a property name");
+    const baseUnchanged = async () =>
+      !(await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) &&
+      versionMatches(base, options.expectedUpdated, options.writer);
+    if (!(await baseUnchanged())) throw conflict("This database view changed on disk.");
+    let config: BaseConfig;
+    try {
+      config = parseBase(base.baseSource ?? "");
+    } catch (error) {
+      if (error instanceof BaseParseError) throw badRequest(`This base file isn't valid YAML: ${error.message}`);
+      throw error;
+    }
+
     const prefix = `${folder}/`;
     const rows: PageRecord[] = [];
     const clash: PageRecord[] = [];
@@ -3494,7 +3520,9 @@ export class VaultStore {
       if (to !== null && present.has(to)) clash.push(record);
     }
     const named = (records: PageRecord[]) => records.map((record) => ({ id: record.id, title: record.title }));
-    if (clash.length) return { changed: [], skipped: [], clash: named(clash), stuck: [] };
+    const answer = (result: Omit<OwnedRowsChange, "base">): OwnedRowsChange => ({ ...result, base: this.getBase(id) });
+    if (clash.length) return answer({ changed: [], skipped: [], clash: named(clash), stuck: [] });
+
     const changed: Array<{ id: PageId; updated: string }> = [];
     const skipped: PageRecord[] = [];
     for (const record of rows) {
@@ -3502,27 +3530,47 @@ export class VaultStore {
         const patch = to !== null ? { rename: [{ from: key, to }] } : { remove: [key] };
         const page = await this.updateNow(record.id, { properties: patch, expectedUpdated: record.updated });
         changed.push({ id: page.id, updated: page.updated });
-      } catch (error) {
-        if (!(error instanceof VaultError)) throw error;
+      } catch {
+        // Any error (a refusal, a lock, I/O): this row didn't change.
         skipped.push(record);
       }
     }
-    if (to !== null && skipped.length) {
-      // All or nothing: the rows already renamed go back. One that can't (changed again or locked
-      // meanwhile) keeps the new name, and is named so nothing is silently half-renamed (@lead).
-      const stuck: PageRecord[] = [];
-      for (const row of changed) {
-        try {
-          await this.updateNow(row.id, { properties: { rename: [{ from: to, to: key }] }, expectedUpdated: row.updated });
-        } catch (error) {
-          if (!(error instanceof VaultError)) throw error;
-          const record = this.pages.get(row.id);
-          if (record) stuck.push(record);
-        }
+
+    const next = to !== null ? renameKeyInConfig(config, key, to) : dropKeyFromConfig(config, key);
+    const text = updateBaseSource(base.baseSource ?? "", next);
+    const writeBase = async (): Promise<boolean> => {
+      if (text === base.baseSource) return true;
+      if (!(await baseUnchanged())) return false;
+      try {
+        const replaced = base.updated;
+        await this.writeBaseFile(base, text);
+        if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
+        else delete base.ownWrite;
+        return true;
+      } catch {
+        return false;
       }
-      return { changed: [], skipped: named(skipped), clash: [], stuck: named(stuck) };
+    };
+
+    if (to === null) {
+      // A delete: the column goes only when every row lost the key.
+      const baseWritten = skipped.length === 0 ? await writeBase() : false;
+      return answer({ changed: changed.map((row) => row.id), skipped: named(skipped), clash: [], stuck: [], ...(skipped.length === 0 && !baseWritten ? { baseRefused: true } : {}) });
     }
-    return { changed: changed.map((row) => row.id), skipped: named(skipped), clash: [], stuck: [] };
+    const baseWritten = skipped.length === 0 && (await writeBase());
+    if (baseWritten) return answer({ changed: changed.map((row) => row.id), skipped: [], clash: [], stuck: [] });
+    // All or nothing: the rows already renamed go back. One that can't (changed again, locked, an error)
+    // keeps the new name and is named, so nothing is silently half-renamed (@lead).
+    const stuck: PageRecord[] = [];
+    for (const row of changed) {
+      try {
+        await this.updateNow(row.id, { properties: { rename: [{ from: to, to: key }] }, expectedUpdated: row.updated });
+      } catch {
+        const record = this.pages.get(row.id);
+        if (record) stuck.push(record);
+      }
+    }
+    return answer({ changed: [], skipped: named(skipped), clash: [], stuck: named(stuck), ...(skipped.length === 0 ? { baseRefused: true } : {}) });
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {

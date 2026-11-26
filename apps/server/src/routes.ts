@@ -503,11 +503,16 @@ export function createApiRoutes(store: VaultStore): Hono {
   // #7prbquxu: rename or delete a property in every row of an owned database (all or nothing for a rename).
   api.post("/bases/:id/rows-property", async (c) => {
     const body = await readJson(c);
+    const options: { expectedUpdated?: string; writer?: string } = {};
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) options.writer = writer.slice(0, 64);
     const rename = body.rename as { from?: unknown; to?: unknown } | undefined;
     if (rename && typeof rename === "object" && typeof rename.from === "string" && typeof rename.to === "string") {
-      return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { rename: { from: rename.from, to: rename.to } }));
+      return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { rename: { from: rename.from, to: rename.to } }, options));
     }
-    if (typeof body.remove === "string") return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { remove: body.remove }));
+    if (typeof body.remove === "string") return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { remove: body.remove }, options));
     throw badRequest("expected rename: {from, to} or remove: <key>");
   });
 

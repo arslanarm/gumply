@@ -1345,6 +1345,7 @@
     "renameClash": "These rows already have “{{name}}”: {{titles}}. Nothing was renamed.",
     "renameRowsFailed": "Couldn't rename “{{name}}” in these rows: {{titles}} (changed elsewhere, or read-only). Nothing was renamed.",
     "renameStuck": "These rows couldn't be put back and now have “{{name}}”: {{titles}}.",
+    "columnBaseChanged": "The database file changed meanwhile, so its columns were left as they were. Try again.",
     "deleteRowsFailed": "Couldn't remove “{{name}}” from these rows: {{titles}}. The column stays.",
     "deleteColumnConfirm": "Delete",
     "rowsNote": "Each row is a note in the folder “{{folder}}”. Rows show up in search, links and the graph like any page.",

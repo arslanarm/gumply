@@ -552,13 +552,18 @@ export const api = {
   changeOwnedRowsProperty: (
     baseId: PageId,
     change: { rename: { from: string; to: string } } | { remove: string },
+    options: { expectedUpdated: string; writer: string },
   ): Promise<{
     changed: PageId[];
     skipped: Array<{ id: PageId; title: string }>;
     clash: Array<{ id: PageId; title: string }>;
     stuck: Array<{ id: PageId; title: string }>;
+    /** The base changed on disk after the rows: a rename was put back, a delete kept the column. */
+    baseRefused?: boolean;
+    /** The base as it is now: the view takes its config and version. */
+    base: BaseDocument;
   }> =>
-    mutate(() => request(`${basePath(baseId)}/rows-property`, { method: "POST", body: JSON.stringify(change) })),
+    mutate(() => request(`${basePath(baseId)}/rows-property`, { method: "POST", body: JSON.stringify({ ...change, ...options }) })),
 
   setPageProperties: (
     id: PageId,

@@ -18,7 +18,6 @@ import { ViewToolbar, type Panel } from "./ViewToolbar.js";
 import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
-import { dropKeyFromConfig, renameKeyInConfig } from "./columns.js";
 import { BaseLinks } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
 import { registerSaver } from "../lib/pending-saves.js";
@@ -295,22 +294,36 @@ export function BaseView(props: BaseViewProps) {
   const titleList = (rows: ReadonlyArray<{ title: string }>) =>
     rows.length > 5 ? `${rows.slice(0, 5).map((row) => row.title).join(", ")}…` : rows.map((row) => row.title).join(", ");
 
+  /** Run a database-wide column change: the server writes the rows and the base; the view takes the base it answers. */
+  const changeRows = useCallback(
+    async (change: { rename: { from: string; to: string } } | { remove: string }) => {
+      // Our own pending view change goes first, so the server checks the base against what we last wrote.
+      await saverRef.current?.flush();
+      const result = await api.changeOwnedRowsProperty(baseId, change, { expectedUpdated: docRef.current.meta.updated, writer });
+      saverRef.current?.setVersion(result.base.meta.updated);
+      docRef.current = result.base;
+      setDoc(result.base);
+      return result;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseId, writer],
+  );
+
   const renameColumn = useCallback(
     async (column: BaseColumn, to: string) => {
       const from = column.id.slice(5);
       try {
-        const result = await api.changeOwnedRowsProperty(baseId, { rename: { from, to } });
+        const result = await changeRows({ rename: { from, to } });
         if (result.clash.length) props.onError?.(t("bases.renameClash", { name: to, titles: titleList(result.clash) }));
-        else if (result.skipped.length) {
-          const failed = t("bases.renameRowsFailed", { name: from, titles: titleList(result.skipped) });
+        else if (result.skipped.length || result.baseRefused) {
+          const failed = result.skipped.length
+            ? t("bases.renameRowsFailed", { name: from, titles: titleList(result.skipped) })
+            : t("bases.columnBaseChanged");
           // Rows that couldn't be put back keep the new name: say so, never silently half-renamed.
           props.onError?.(result.stuck.length ? `${failed} ${t("bases.renameStuck", { name: to, titles: titleList(result.stuck) })}` : failed);
-        } else {
+        } else if (column.type && column.type !== "file" && column.type !== "formula") {
           // The new name takes the old one's type only when the types file has none for it (it may type other databases).
-          if (column.type && column.type !== "file" && column.type !== "formula") {
-            await api.setPropertyType(to, column.type as PropertyType, { ifAbsent: true }).catch(() => undefined);
-          }
-          await saveConfig(renameKeyInConfig(docRef.current.config, from, to));
+          await api.setPropertyType(to, column.type as PropertyType, { ifAbsent: true }).catch(() => undefined);
         }
       } catch (error) {
         props.onError?.(errorText(error));
@@ -318,23 +331,23 @@ export function BaseView(props: BaseViewProps) {
       await load();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseId, saveConfig, load],
+    [changeRows, load],
   );
   const deleteColumn = useCallback(
     async (column: BaseColumn) => {
       const key = column.id.slice(5);
       try {
-        const result = await api.changeOwnedRowsProperty(baseId, { remove: key });
+        const result = await changeRows({ remove: key });
         // A row that kept its value keeps the column too.
         if (result.skipped.length) props.onError?.(t("bases.deleteRowsFailed", { name: key, titles: titleList(result.skipped) }));
-        else await saveConfig(dropKeyFromConfig(docRef.current.config, key));
+        else if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
       } catch (error) {
         props.onError?.(errorText(error));
       }
       await load();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseId, saveConfig, load],
+    [changeRows, load],
   );
   const setColumnType = useCallback(
     async (column: BaseColumn, type: PropertyType) => {
