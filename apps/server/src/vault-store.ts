@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants, existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { access, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   MAX_PASTE_OPTIONS,
@@ -1082,6 +1082,81 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * #bfy92cu6 (from #zy9dqwwz): move one file to `to` only if nothing is there, never replacing a file another
+ * app made at that name since we checked (`rename` would). `link` fails with EEXIST atomically; then the source
+ * goes. Throws an error with code EEXIST when the name is taken.
+ *
+ * Where hard links aren't available (FAT/exFAT USB vaults, some network or FUSE mounts; which errno Windows
+ * reports there isn't documented, so any `link` error but EEXIST and ENOENT), the file is copied with
+ * COPYFILE_EXCL, itself no-replace, its times kept, and then the source goes (@lead).
+ *
+ * #e3mwuspu (@lead): when the name is "taken" by the **same file** (same inode and device: a case-only or
+ * NFC/NFD-only rename on a file system that folds them, macOS, Windows), it's a rename of that file, not a clash.
+ */
+export async function moveFileNoReplace(from: string, to: string): Promise<void> {
+  try {
+    await link(from, to);
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code === "EEXIST" && (await sameFile(from, to))) {
+      await moveOntoSameFile(from, to);
+      return;
+    }
+    if (code === "EEXIST" || code === "ENOENT") throw error;
+    const info = await stat(from);
+    try {
+      await copyFile(from, to, fsConstants.COPYFILE_EXCL);
+    } catch (copyError) {
+      if (isEexist(copyError) && (await sameFile(from, to))) {
+        await moveOntoSameFile(from, to);
+        return;
+      }
+      throw copyError;
+    }
+    await utimes(to, info.atime, info.mtime).catch(() => undefined);
+  }
+  try {
+    await unlink(from);
+  } catch (error) {
+    // The source can't go (a lock, a read-only Trash folder): the new name goes again, so the file is never in
+    // two places (@opus-editor).
+    await unlink(to).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Whether two paths name one file (same inode and device), e.g. `note.md` and `Note.md` on macOS. */
+async function sameFile(a: string, b: string): Promise<boolean> {
+  // 64-bit file ids (NTFS/ReFS) compared exactly; some FUSE and network mounts report 0 for every file (@opus-editor).
+  const [x, y] = await Promise.all([stat(a, { bigint: true }).catch(() => null), stat(b, { bigint: true }).catch(() => null)]);
+  return x !== null && y !== null && x.ino !== 0n && x.ino === y.ino && x.dev === y.dev;
+}
+
+/**
+ * `from` and `to` are one file (`sameFile`). Either the file system folds the two names into one entry (a case-only
+ * or NFC/NFD-only rename on APFS or NTFS): then it's a rename of that entry. Or they're two directory entries,
+ * hard links to one file (a crash between `link` and `unlink` leaves that): then `rename` would do nothing, so the
+ * extra name goes and the file is in one place (@opus-editor). Told apart by the directory listings: two entries
+ * means each name is listed as written.
+ */
+async function moveOntoSameFile(from: string, to: string): Promise<void> {
+  if (from === to) return;
+  const listed = async (path: string) => (await readdir(dirname(path)).catch(() => [] as string[])).includes(basename(path));
+  if ((await listed(from)) && (await listed(to))) {
+    await unlink(from);
+    return;
+  }
+  await rename(from, to);
+}
+
+const isEexist = (error: unknown) => (error as { code?: string } | null)?.code === "EEXIST";
+
+/** #e3mwuspu: a page's (or board's, base's) own file to its new path on a rename or move, never over another file. */
+async function movePageFile(from: string, to: string): Promise<void> {
+  await moveFileNoReplace(from, to);
 }
 
 /**
@@ -3096,7 +3171,9 @@ export class VaultStore {
       const stuck = await this.putUndoBack(written, trashed, brought);
       console.error(`[gumply] undo in ${id} failed part way; put back${stuck.length ? `, except ${stuck.join(", ")}` : ""}:`, error);
       if (stuck.length) throw conflict(`The undo failed part way, and these couldn't be put back: ${stuck.join(", ")}`);
-      throw conflict("The undo failed part way; everything was put back as it was.");
+      // A named refusal from the write phase (#bfy92cu6: a row's name taken meanwhile) keeps its reason.
+      const reason = error instanceof VaultError && error.status === 409 ? `${error.message} ` : "";
+      throw conflict(`${reason}The undo failed part way; everything was put back as it was.`);
     }
     // Done: the brought rows leave their Trash entries; an entry with nothing left goes.
     const byEntry = new Map<string, { entry: TrashEntry; ids: Set<PageId> }>();
@@ -3163,7 +3240,13 @@ export class VaultStore {
     const source = resolve(entry.dir, this.trashedFileOf(entry, id));
     const target = this.filePathFor(id);
     this.markOwnWrite(target);
-    await rename(source, target);
+    try {
+      // #bfy92cu6: never over a file another app made at this name since the check.
+      await moveFileNoReplace(source, target);
+    } catch (error) {
+      if (isEexist(error)) throw conflict(`“${id.split("/").pop() ?? id}” exists again (made in another app meanwhile).`);
+      throw error;
+    }
     const record = await this.readRecord(target, id);
     record.parentId = parentOf(id);
     this.pages.set(id, record);
@@ -4824,7 +4907,7 @@ export class VaultStore {
 
     // D20: only a title change renames the file; body/icon saves never move
     // it (old slug-named files are renamed the next time their title changes).
-    const targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle) : id;
+    let targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle) : id;
 
     const changes = ["updated"];
     if (nextTitle !== previousTitle) changes.push("title");
@@ -4857,8 +4940,9 @@ export class VaultStore {
     // line, so a Keep mine from the editor's version before the rename walks into this rename's link
     // rewrites of the page (folder links, self-links) whether or not the rename came with a writer.
     // `deferRewrites` = inside a user rename (renameInBatches); other relocations have no editor save in flight.
-    if (this.deferRewrites && replaced !== record.updated) {
-      this.rememberRenameRewrite(targetId, record.content, record.content, replaced, record.updated, nextTitle);
+    const renameWrite = this.deferRewrites && replaced !== record.updated ? { content: record.content, replaced, updated: record.updated } : null;
+    if (renameWrite) {
+      this.rememberRenameRewrite(targetId, renameWrite.content, renameWrite.content, renameWrite.replaced, renameWrite.updated, nextTitle);
     }
     record.explicitTitle = record.explicitTitle || written.titleKey;
     record.fmTags = fmTags;
@@ -4868,7 +4952,22 @@ export class VaultStore {
 
     let relinked: PageId[] = [];
     if (targetId !== id) {
-      relinked = await this.relocateNow(id, targetId);
+      // #e3mwuspu: the page's file is already written; if another app made a file at the new name since the check,
+      // the rename takes the next free name (" 2") instead of leaving the page half renamed.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          relinked = await this.relocateNow(id, targetId);
+          break;
+        } catch (error) {
+          if (!(error as { nameTaken?: boolean }).nameTaken || attempt >= 20) throw error;
+          targetId = await this.renameTarget(id, record.parentId, nextTitle);
+          if (targetId === id) break;
+          // The chain's first step goes under the name the rename now ends at.
+          if (renameWrite) {
+            this.rememberRenameRewrite(targetId, renameWrite.content, renameWrite.content, renameWrite.replaced, renameWrite.updated, nextTitle);
+          }
+        }
+      }
       const moved = this.pages.get(targetId);
       if (moved) record = moved;
     }
@@ -5622,6 +5721,50 @@ export class VaultStore {
     return this.folders.has(rows) ? rows : null;
   }
 
+  /** #zy9dqwwz: the database that owns folder `id` (`<id>.base` next to it, its marker naming it), if any. */
+  private ownerOfRowsFolder(id: PageId): PageId | null {
+    const baseId = `${id}${idExtension("base")}`;
+    const record = this.pages.get(baseId);
+    return record?.kind === "base" && this.ownedRowsOf(record, baseId) === id ? baseId : null;
+  }
+
+  /**
+   * #zy9dqwwz (@lead): move a database and its own rows folder together, in one queued job: both places are
+   * checked free first; the base moves, then the folder (the base goes back if the folder can't), then the
+   * marker and filter name the folder's new id. Links follow each, as for any move.
+   */
+  private async moveDatabaseNow(baseId: PageId, rows: PageId, parentId: PageId | null): Promise<Page> {
+    const segment = rows.split("/").pop() ?? rows;
+    const newRows = parentId ? `${parentId}/${segment}` : segment;
+    if (newRows === rows) return this.getAny(baseId);
+    if (parentId !== null && (parentId === rows || parentId.startsWith(`${rows}/`))) {
+      throw badRequest("cannot move a database into its own rows folder");
+    }
+    const folderTaken =
+      [...this.pages.keys(), ...this.folders.keys()].some((key) => key !== rows && collisionKey(key) === collisionKey(newRows)) ||
+      (await pathExists(this.folderPathFor(newRows))) ||
+      (await this.itemFileExists(newRows));
+    if (folderTaken) throw conflict(`A page or folder already exists at ${newRows}`);
+    const oldParent = parentOf(baseId);
+    await this.moveNow(baseId, parentId, { alone: true });
+    const newBase = `${newRows}${idExtension("base")}`;
+    try {
+      await this.relocateFolderNow(rows, newRows);
+    } catch (error) {
+      // The folder stayed: the database goes back next to it.
+      await this.moveNow(newBase, oldParent, { alone: true }).catch(() => undefined);
+      throw error;
+    }
+    const record = this.pages.get(newBase);
+    if (record) {
+      const source = record.baseSource ?? "";
+      const text = updateBaseSource(source, withOwnedRows(parseBase(source), newRows));
+      if (text !== source) await this.writeBaseFile(record, text);
+    }
+    this.reindexAll();
+    return this.getAny(newBase);
+  }
+
   /** A new name for an owned database: free as a base **and** as a folder (its rows move too). */
   private async renameOwnedTarget(id: PageId, parentId: PageId | null, title: string, rows: PageId): Promise<PageId> {
     const folder = parentOf(id) ?? parentId;
@@ -5694,9 +5837,11 @@ export class VaultStore {
     }
 
     try {
-      await rename(record.filePath, newFile);
+      await movePageFile(record.filePath, newFile);
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
+      // #e3mwuspu: another app made a file at the new name since the check: nothing moves, named.
+      if (isEexist(error)) throw Object.assign(conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`), { nameTaken: true });
       throw error;
     }
 
@@ -6252,16 +6397,29 @@ export class VaultStore {
     const name = entry.id.split("/").pop() ?? entry.id;
     const stem = name.slice(0, name.length - idExtension(kind).length);
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = targetId ?? (await this.restoreTarget(folder, stem, hasFolder, taken, kind));
-
-    const pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
-    const childTarget = join(this.root, newId);
-    if (!pageTarget.startsWith(`${this.root}${sep}`) || !childTarget.startsWith(`${this.root}${sep}`)) {
-      throw notFound("Trash entry not found");
+    let newId = targetId ?? (await this.restoreTarget(folder, stem, hasFolder, taken, kind));
+    let pageTarget = "";
+    let childTarget = "";
+    // #bfy92cu6: the file never replaces one another app made at its name since the check; then the next " 2".
+    for (let attempt = 0; ; attempt += 1) {
+      pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
+      childTarget = join(this.root, newId);
+      if (!pageTarget.startsWith(`${this.root}${sep}`) || !childTarget.startsWith(`${this.root}${sep}`)) {
+        throw notFound("Trash entry not found");
+      }
+      await mkdir(dirname(pageTarget), { recursive: true });
+      try {
+        await moveFileNoReplace(pageSource, pageTarget);
+        break;
+      } catch (error) {
+        if (!isEexist(error) || targetId !== undefined || attempt >= 20) {
+          if (isEexist(error)) throw conflict(`“${newId}” was made in another app meanwhile; nothing was restored.`);
+          throw error;
+        }
+        taken.add(collisionKey(newId));
+        newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
+      }
     }
-
-    await mkdir(dirname(pageTarget), { recursive: true });
-    await rename(pageSource, pageTarget);
     if (hasFolder) {
       await mkdir(dirname(childTarget), { recursive: true });
       try {
@@ -6332,12 +6490,21 @@ export class VaultStore {
         const name = id.split("/").pop() ?? id;
         const kind = record.kind;
         const stem = name.slice(0, name.length - idExtension(kind).length);
-        const to = await this.restoreTarget(folder, stem, false, taken, kind);
-        taken.add(collisionKey(to));
-        const target = this.filePathFor(to);
-        this.markOwnWrite(target);
-        await rename(resolve(entry.dir, this.trashedFileOf(entry, id)), target);
-        moved.push({ from: id, to });
+        const source = resolve(entry.dir, this.trashedFileOf(entry, id));
+        // #bfy92cu6: never over a file another app made at the name since the check; then the next " 2".
+        for (let attempt = 0; ; attempt += 1) {
+          const to = await this.restoreTarget(folder, stem, false, taken, kind);
+          taken.add(collisionKey(to));
+          const target = this.filePathFor(to);
+          this.markOwnWrite(target);
+          try {
+            await moveFileNoReplace(source, target);
+            moved.push({ from: id, to });
+            break;
+          } catch (error) {
+            if (!isEexist(error) || attempt >= 20) throw error;
+          }
+        }
       }
       finished = true;
     } finally {
@@ -6438,9 +6605,12 @@ export class VaultStore {
     };
   }
 
-  private async moveNow(id: PageId, parentId: PageId | null): Promise<Page> {
+  private async moveNow(id: PageId, parentId: PageId | null, options: { alone?: boolean } = {}): Promise<Page> {
     if (this.folders.has(id)) return this.moveFolderNow(id, parentId);
     const record = this.require(id);
+    // #zy9dqwwz: a database that owns its rows folder takes it along, as its rename does.
+    const rows = record.kind === "base" && !options.alone ? this.ownedRowsOf(record, id) : null;
+    if (rows) return this.moveDatabaseNow(id, rows, parentId);
 
     if (parentId !== null) {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
@@ -6476,9 +6646,11 @@ export class VaultStore {
     }
 
     try {
-      await rename(record.filePath, newFile);
+      await movePageFile(record.filePath, newFile);
     } catch (error) {
       if (hasChildren) await rename(newDir, oldDir).catch(() => undefined);
+      // #e3mwuspu: another app made a file at the new name since the check: nothing moves, named.
+      if (isEexist(error)) throw Object.assign(conflict(`“${newId.split("/").pop() ?? newId}” was just made in another app, so nothing was moved or renamed.`), { nameTaken: true });
       throw error;
     }
 
@@ -6688,6 +6860,14 @@ export class VaultStore {
     const title = typeof patch.title === "string" ? patch.title.trim() : "";
     if (title.length === 0) throw badRequest("title must not be empty");
     if (title.length > MAX_TITLE_LENGTH) throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
+    // #zy9dqwwz (@lead): a database's own rows folder is renamed through its database, which takes the folder
+    // along and rewrites its marker and filter, so the two keep one name and the table keeps its rows.
+    const owner = this.ownerOfRowsFolder(id);
+    if (owner) {
+      const renamed = await this.updateBaseNow(owner, { title });
+      const rows = renamed.meta.id.slice(0, -idExtension("base").length);
+      return { ...this.folderPage(this.folders.has(rows) ? rows : id), rewrittenPages: renamed.rewrittenPages };
+    }
     const parent = parentOf(id);
     const base = parent ? `${parent}/${pageSegment(title)}` : pageSegment(title);
     if (base === id) return { ...this.folderPage(id), rewrittenPages: [] };
@@ -6697,6 +6877,13 @@ export class VaultStore {
   }
 
   private async moveFolderNow(id: PageId, parentId: PageId | null): Promise<Page> {
+    // #zy9dqwwz: a database's own rows folder moves with its database (see moveDatabaseNow).
+    const owner = this.ownerOfRowsFolder(id);
+    if (owner) {
+      await this.moveDatabaseNow(owner, id, parentId);
+      const segment = id.split("/").pop() ?? id;
+      return this.folderPage(parentId ? `${parentId}/${segment}` : segment);
+    }
     if (parentId !== null) {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
         throw badRequest("parentId must be a valid page id or null");
