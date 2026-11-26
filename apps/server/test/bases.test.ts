@@ -313,6 +313,21 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect((await jsonRequest(app, "POST", url, { rows: [{ title: "", set: {} }] })).status).toBe(400);
   });
 
+  it("a paste's new columns join the view's order in the same request (#7prbquxu phase 2, step 3)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - role\n';
+    const { dir, store } = await vault({ "People.base": base });
+    const result = await store.pasteIntoOwnedRows("People.base", {
+      rows: [
+        { title: "Ann", set: { role: "Cook", age: 30 } },
+        { title: "Bo", set: { role: "Pilot", age: 41 } },
+      ],
+      columns: { view: "Table", keys: ["role", "age"] },
+    });
+    expect(result.created.sort()).toEqual(["People/Ann", "People/Bo"]);
+    // "role" was shown already; only "age" is added, in only that line.
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base + "      - age\n");
+  });
+
   it("a paste refuses a row another app changed at the same size and time, also after a rescan read it (#7prbquxu phase 2, #vqm6gqpu)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
