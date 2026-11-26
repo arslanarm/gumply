@@ -2,6 +2,15 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.6: renaming a page with sub-pages keeps its links (2026-11-26)
+
+A fix release, recommended for everyone on 0.9.
+
+**Fixed**
+- **Renaming or moving a page that has sub-pages keeps the links into it.** Other pages' links to its sub-pages (`[[Page/Sub]]`), and to pictures and files in its folder (`![[Page/a.png|300]]`, also in tables, and Markdown forms), now follow the rename or move, as do the page's own links into its folder. The open page shows the updated links at once.
+  - If you keep typing while such a rename runs and it updated links in the page itself, that text is saved in the page's History, and a notice with a **History** button says so. The cursor stays in the text.
+- **Known limit:** keys typed in the very instant the page reloads after such a rename may not reach it. Nothing saved is lost.
+
 ## 0.9.5: links follow moved folders (2026-11-25)
 
 A fix release, recommended for everyone on 0.9.
