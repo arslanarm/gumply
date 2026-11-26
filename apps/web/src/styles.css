@@ -3584,6 +3584,10 @@ input {
   border-radius: 12px;
   box-shadow: 0 12px 32px rgb(0 0 0 / 25%);
   font-size: 0.85rem;
+  /* #qq6xe2f2: left: 50% leaves only half the window for a shrink-to-fit box, so a narrow window
+     wrapped the text a word per line. Size to the text, capped by the window. */
+  width: max-content;
+  max-width: min(36rem, calc(100vw - 2rem));
 }
 
 .toast-icon {
@@ -3593,6 +3597,8 @@ input {
 }
 
 .toast .link-button {
+  flex: none;
+  white-space: nowrap;
   color: var(--panel);
   font-weight: 600;
   padding: 0.15rem 0.35rem;
@@ -4375,8 +4381,13 @@ input {
 /* #gcba75f4: what a link can't take (links keep their colour in Obsidian), and why. */
 .color-swatch.is-unavailable,
 .color-last.is-unavailable {
-  opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* #qq6xe2f2: dim the sample only; opacity on the button also faded its tooltip (::after). */
+.color-swatch.is-unavailable > *,
+.color-last.is-unavailable > * {
+  opacity: 0.35;
 }
 
 .color-swatch.is-unavailable:hover,
@@ -7707,6 +7718,16 @@ div.history-error > p {
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-orange) 9%, var(--bg));
   color: var(--text);
+}
+
+.conflict-banner {
+  flex-wrap: wrap;
+}
+
+/* #qq6xe2f2: the text keeps a readable width; on a narrow window the buttons wrap under it. */
+.conflict-banner > span:not(.conflict-banner-actions) {
+  flex: 1 1 14rem;
+  min-width: 0;
 }
 
 .conflict-banner > svg {

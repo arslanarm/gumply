@@ -96,7 +96,7 @@ test('a copy opened from search is read-only and marked; Keep this copy from the
   await hit.click();
 
   const banner = page.getByTestId('conflict-copy-banner');
-  await expect(banner).toContainText('Это конфликтующая копия страницы «Note», созданная Syncthing');
+  await expect(banner).toContainText('Это конфликтующая копия страницы «Note», созданная приложением Syncthing');
   await expect(page.getByTestId('conflict-copy-page').locator('[contenteditable="true"]')).toHaveCount(0);
   await banner.getByTestId('conflict-copy-keep').click();
   await expect(page.getByTestId('undo-toast')).toContainText('Копия оставлена.');

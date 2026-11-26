@@ -134,7 +134,8 @@ export function ColorPalette({ editor, onPick, autoFocus, testId = "color-palett
         // Still focusable, so the keyboard grid keeps its shape and the reason can be read.
         aria-disabled={off || undefined}
         aria-describedby={off ? noteId : undefined}
-        data-tooltip={off ? `${label}: ${t("format.linkOnlyYellow")}` : label}
+        // The reason is the note right below (and aria-describedby): a long tooltip ran off a narrow window.
+        data-tooltip={label}
         data-testid={`color-${choice.kind}-${choice.name ?? "default"}`}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => pick(choice)}
