@@ -1,4 +1,5 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { selectedValues, type BaseValue, type SelectSettings } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
@@ -24,8 +25,35 @@ export function SelectPicker(props: {
   const [query, setQuery] = useState(props.initialQuery ?? "");
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const [place, setPlace] = useState<CSSProperties>({ top: 0, left: 0 });
   // Before the next key reaches the page (typing on an active cell opens this mid-word): no letter is lost.
-  useLayoutEffect(() => inputRef.current?.focus(), []);
+  useLayoutEffect(() => inputRef.current?.focus({ preventScroll: true }), []);
+  // #pzqmduua: the picker lives on the page's top layer (a portal), placed by its cell. Inside the table a row's paint
+  // containment and the table's own scroll box clipped it, so it was focused and taking keys but couldn't be seen.
+  // Under the cell, or above it when it doesn't fit below and there's more room above; it follows a scroll.
+  useLayoutEffect(() => {
+    const placeIt = () => {
+      const cell = anchorRef.current?.parentElement;
+      const picker = pickerRef.current;
+      if (!cell || !picker) return;
+      const box = cell.getBoundingClientRect();
+      const height = picker.offsetHeight;
+      const below = window.innerHeight - box.bottom;
+      const up = below < height + 8 && box.top > below;
+      const width = Math.max(box.width, 224);
+      const left = Math.max(8, Math.min(box.left, window.innerWidth - width - 8));
+      setPlace(up ? { left, width, bottom: window.innerHeight - box.top } : { left, width, top: box.bottom });
+    };
+    placeIt();
+    window.addEventListener("scroll", placeIt, true);
+    window.addEventListener("resize", placeIt);
+    return () => {
+      window.removeEventListener("scroll", placeIt, true);
+      window.removeEventListener("resize", placeIt);
+    };
+  }, []);
 
   const current = selectedValues(props.value);
   const trimmed = query.trim();
@@ -49,8 +77,20 @@ export function SelectPicker(props: {
     await pick(value);
   };
 
-  return (
-    <div className="base-select-picker" data-testid="base-select-picker" role="dialog" aria-label={t("bases.selectSearch")}>
+  const picker = (
+    <div
+      ref={pickerRef}
+      className="base-select-picker"
+      style={place}
+      data-testid="base-select-picker"
+      role="dialog"
+      aria-label={t("bases.selectSearch")}
+      onBlur={(event) => {
+        // The cell closes its editor when focus leaves it; focus moving inside the picker (in a portal now, so
+        // outside the cell's DOM) mustn't count as leaving.
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) event.stopPropagation();
+      }}
+    >
       <input
         ref={inputRef}
         className="base-input"
@@ -130,5 +170,12 @@ export function SelectPicker(props: {
         ))}
       </div>
     </div>
+  );
+
+  return (
+    <>
+      <span ref={anchorRef} hidden />
+      {createPortal(picker, document.body)}
+    </>
   );
 }
