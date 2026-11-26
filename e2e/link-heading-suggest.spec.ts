@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { APIRequestContext } from '@playwright/test';
-import { expect, test } from './fixtures';
+import type { APIRequestContext, Page } from '@playwright/test';
+import { expect, test, type Vault } from './fixtures';
 import { API_URL, E2E_VAULT } from './support/env';
 import { expectPageTitle } from './support/ui';
 
@@ -51,6 +51,78 @@ test('[[Page# lists its headings; picking one writes [[Page#Heading]]', async ({
 
   await expectSaved(request, note!.id, '[[Target#Risks]]');
   expect((await vault.pages()).some((meta) => meta.title.includes('#'))).toBe(false);
+});
+
+test('#2zugp8qc: Enter while the last letter\'s headings are still loading writes the whole link, nothing left outside it', async ({ page, vault, request }) => {
+  await vault.seed([{ title: 'Target', content: '## Goals\n\nText.\n\n## Risks\n\nMore.\n' }]);
+  const [note] = await vault.seed([{ title: 'Note', content: '' }]);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Note');
+
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.type('[[Target#R');
+  const menu = page.getByTestId('link-menu');
+  // Only Risks is left after "R" (Goals has no R).
+  await expect(menu.getByRole('option', { name: 'Risks' })).toBeVisible({ timeout: 15_000 });
+  await expect(menu.getByRole('option')).toHaveCount(1);
+  // From now on Target's headings answer slowly (a loaded machine): the menu still shows the "R" answer when Enter comes.
+  await page.route(`**/api/pages/${encodeURIComponent('Target')}*`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.keyboard.type('i');
+  await page.keyboard.press('Enter');
+
+  await expectSaved(request, note!.id, '[[Target#Risks]]');
+});
+
+/** `[[Target#<typed>` in an empty note, the menu showing `expected`; then Target's answers are held (a loaded machine). */
+async function typeThenHold(page: Page, vault: Vault, typed: string, expected: string) {
+  await vault.seed([{ title: 'Target', content: '## Goals\n\nText.\n\n## Risks\n\nMore.\n' }]);
+  const [note] = await vault.seed([{ title: 'Note', content: '' }]);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Note');
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.type(`[[Target#${typed}`);
+  const menu = page.getByTestId('link-menu');
+  await expect(menu.getByRole('option', { name: expected })).toBeVisible({ timeout: 15_000 });
+  await expect(menu.getByRole('option')).toHaveCount(1);
+  await page.route(`**/api/pages/${encodeURIComponent('Target')}*`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  return note!;
+}
+
+test('#2zugp8qc (@opus-editor): Enter after a Backspace, the shorter query\'s headings still loading, writes the link and touches nothing past it', async ({ page, vault, request }) => {
+  await vault.seed([{ title: 'Target', content: '## Goals\n\nText.\n\n## Risks\n\nMore.\n' }]);
+  // Text after the caret (a next paragraph): an old, longer range would reach into it and join the two.
+  const [note] = await vault.seed([{ title: 'Note', content: 'First line.\n\nAfter.\n' }]);
+  await page.goto(`/#/${encodeURIComponent(note!.id)}`);
+  await expectPageTitle(page, 'Note');
+  await page.getByTestId('editor-content').getByText('First line.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' [[Target#Ri');
+  const menu = page.getByTestId('link-menu');
+  await expect(menu.getByRole('option', { name: 'Risks' })).toBeVisible({ timeout: 15_000 });
+  await expect(menu.getByRole('option')).toHaveCount(1);
+  await page.route(`**/api/pages/${encodeURIComponent('Target')}*`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await (await request.get(`${API_URL}/api/pages/${encodeURIComponent(note!.id)}`)).json()).content as string, { timeout: 10_000 })
+    .toMatch(/^First line\. \[\[Target#Risks\]\]\n\nAfter\.\n?$/);
+});
+
+test('#2zugp8qc (@opus-editor): Enter on a stale answer that no longer matches what was typed puts nothing in its place', async ({ page, vault, request }) => {
+  const note = await typeThenHold(page, vault, 'R', 'Risks');
+  // "Rx" names no heading; the menu still shows the "R" answer (Risks) when Enter comes.
+  await page.keyboard.type('x');
+  await page.keyboard.press('Enter');
+  await expectSaved(request, note.id, '[[Target#Rx');
 });
 
 test('[[# lists the open note\'s own headings and writes [[#Heading]]', async ({ page, vault, request }) => {

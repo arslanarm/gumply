@@ -127,6 +127,29 @@ function linkPartSuggestions(query: string): Promise<LinkSuggestion[]> | null {
   return resolveWikilink(name, env.pages, env.pageId) ? partSuggestions(query, { link: true }) : null;
 }
 
+/**
+ * #2zugp8qc: the open suggestion as it is now, when it's the one `given` was made for (same start): its current
+ * range, longer (a letter typed since) or shorter (one deleted since, @opus-editor), and its query. Else `given`.
+ */
+function liveSuggestion(state: EditorState, given: { from: number; to: number }): { range: { from: number; to: number }; query: string | null; stale: boolean } {
+  const live = wikiLinkPluginKey.getState(state) as { active?: boolean; range?: { from: number; to: number }; query?: string | null } | undefined;
+  if (!live?.active || !live.range || live.range.from !== given.from) return { range: given, query: null, stale: false };
+  return { range: { from: live.range.from, to: live.range.to }, query: live.query ?? null, stale: live.range.to !== given.to };
+}
+
+/**
+ * #2zugp8qc (@opus-editor): a heading or block picked from an answer for an earlier query still names what's typed
+ * now (the part after `#`, as `partSuggestions` filters). One that doesn't (`…#Rx` with "Risks" picked from the
+ * "R" answer) is never put in place of what was typed.
+ */
+function partStillMatches(item: LinkSuggestion, query: string | null): boolean {
+  if (query === null || item.part === undefined || item.part === "") return true;
+  const hash = query.indexOf("#");
+  if (hash === -1) return true;
+  const needle = query.slice(hash + 1).trim().toLowerCase().replace(/^\^/, "");
+  return !needle || item.label.toLowerCase().includes(needle);
+}
+
 /** The suggestion these props were made for is still the open one. */
 function isCurrent(props: SuggestionProps<LinkSuggestion>): boolean {
   const state = wikiLinkPluginKey.getState(props.editor.state) as
@@ -190,7 +213,16 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             }
             return linkPartSuggestions(query) ?? buildLinkSuggestions(env.pages, query, env.attachments);
           },
-          command: ({ editor, range, props }) => {
+          command: ({ editor, range: given, props }) => {
+            // #2zugp8qc: TipTap passes the range of the last suggestion answer it rendered. A letter typed after it,
+            // whose answer is still loading (a `[[Page#…` heading fetch on a loaded machine), is in the open
+            // suggestion but not in that range, and would be left outside the link ("i[[Target#Risks]]"). The
+            // suggestion as it is now: the same start, its current end.
+            const live = liveSuggestion(editor.state, given);
+            const range = live.range;
+            // A pick from a stale answer that no longer matches what's typed changes nothing; the fresh answer
+            // shows what does.
+            if (live.stale && !partStillMatches(props, live.query)) return;
             if (embedStart(editor.state, range.from) && props.kind === "file" && props.file) {
               const from = range.from - 1;
               // #btgun63k: a wikilink can't hold `[ ] | # ^`. Such a file gets a
