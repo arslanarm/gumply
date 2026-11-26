@@ -289,6 +289,61 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
   });
 
+  it("a paste sets existing rows and makes new ones in one request (#7prbquxu phase 2)", async () => {
+    const { app, dir } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "Elsewhere.md": "Not a row\n",
+    });
+    const url = `/api/bases/${encodeId("People.base")}/rows-paste`;
+    const response = await jsonRequest(app, "POST", url, {
+      rows: [
+        { id: "People/Ann", set: { role: "Chef", age: 30 } },
+        { title: "Bo", set: { role: "Pilot", age: 41 } },
+      ],
+    });
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as { changed: string[]; created: string[]; refused: unknown[] };
+    expect(result).toMatchObject({ changed: ["People/Ann"], created: ["People/Bo"], refused: [] });
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toContain("role: Chef\n");
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toContain("age: 30\n");
+    expect(await readFile(join(dir, "People/Bo.md"), "utf8")).toContain("role: Pilot\n");
+    // Only rows of this database.
+    expect((await jsonRequest(app, "POST", url, { rows: [{ id: "Elsewhere", set: { role: "x" } }] })).status).toBe(400);
+    expect((await jsonRequest(app, "POST", url, { rows: [{ title: "", set: {} }] })).status).toBe(400);
+  });
+
+  it("a paste that a row refuses puts the set rows back and leaves no new rows (#7prbquxu phase 2, @lead)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
+    });
+    const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "People/Bo") throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
+      return updateNow(id, patch);
+    };
+    const result = await store.pasteIntoOwnedRows("People.base", {
+      rows: [
+        { id: "People/Ann", set: { role: "Chef", age: 30 } },
+        { id: "People/Bo", set: { role: "Baker" } },
+        { title: "Cy", set: { role: "Diver" } },
+      ],
+    });
+    expect(result.changed).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.refused.map((row) => row.title)).toEqual(["Bo"]);
+    expect(result.stuck).toEqual([]);
+    // Ann has her old role again, and no age (she had none).
+    const ann = await readFile(join(dir, "People/Ann.md"), "utf8");
+    expect(ann).toContain("role: Cook\n");
+    expect(ann).not.toContain("age");
+    // Cy was never made (the updates come first).
+    expect((await readdir(join(dir, "People"))).sort()).toEqual(["Ann.md", "Bo.md"]);
+  });
+
   it("a row that can't be put back is named with the key it's left with (#7prbquxu, @lead)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
