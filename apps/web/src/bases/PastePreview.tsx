@@ -148,6 +148,9 @@ export function PastePreview(props: {
                   data-testid={`base-paste-name-${col}`}
                   aria-label={t("bases.columnName")}
                   value={nameOf(col)}
+                  // #8s94nyhn: the field the problem is about is marked and points at it.
+                  aria-invalid={isValidPropertyKey(nameOf(col).trim()) ? undefined : true}
+                  aria-describedby={problem && !isValidPropertyKey(nameOf(col).trim()) ? `${id}-problem` : undefined}
                   onChange={(event) => setNames((current) => ({ ...current, [col]: event.target.value }))}
                 />
                 <select
@@ -187,7 +190,7 @@ export function PastePreview(props: {
           </tbody>
         </table>
         {problem ? (
-          <p className="base-add-column-note is-error" role="alert" data-testid="base-paste-problem">
+          <p className="base-add-column-note is-error" role="alert" id={`${id}-problem`} data-testid="base-paste-problem">
             {problem}
           </p>
         ) : confirming ? (

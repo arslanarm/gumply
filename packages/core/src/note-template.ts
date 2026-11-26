@@ -9,11 +9,9 @@
  */
 
 import type { Frontmatter } from "./frontmatter.js";
-import { frontmatterKey, isAliasesKey, isTagsKey } from "./frontmatter-keys.js";
+import { frontmatterKey, isAliasesKey, isTagsKey, matchKeyLine, yamlKey } from "./frontmatter-keys.js";
 
-// Top-level keys: letters of any script, digits, `_`, `-` and inner spaces
-// (Obsidian property names like "due date" or "статус"), up to the first `:`.
-const KEY_LINE = /^([\p{L}\p{N}_][\p{L}\p{N}_ -]*?):(.*)$/u;
+// Top-level keys: see matchKeyLine (frontmatter-keys.ts; #8s94nyhn adds quoted and punctuated keys).
 const INDENTED = /^[ \t]/;
 
 const KEY_ORDER = ["title", "icon", "tags", "created", "updated"] as const;
@@ -122,13 +120,15 @@ interface Block {
   end: number;
   key: string;
   rest: string;
+  /** The key as written (#8s94nyhn: a quoted key stays quoted on a rewrite). */
+  written: string;
 }
 
 /** Locate top-level key blocks. Indented continuation lines belong to the key. */
 function findBlocks(lines: string[]): Block[] {
   const blocks: Block[] = [];
   for (let i = 0; i < lines.length; i += 1) {
-    const match = KEY_LINE.exec(lines[i] ?? "");
+    const match = matchKeyLine(lines[i] ?? "");
     if (!match) continue;
     let end = i;
     for (let j = i + 1; j < lines.length; j += 1) {
@@ -136,7 +136,7 @@ function findBlocks(lines: string[]): Block[] {
       if (INDENTED.test(line)) end = j;
       else break;
     }
-    blocks.push({ start: i, end, key: match[1] ?? "", rest: match[2] ?? "" });
+    blocks.push({ start: i, end, key: match.key, rest: match.rest, written: match.written });
     i = end;
   }
   return blocks;
@@ -149,35 +149,38 @@ function renderKey(
   key: string,
   value: unknown,
   previousRest: string | null,
+  written: string | null = null,
 ): string[] {
+  // #8s94nyhn: a key YAML must quote is quoted; one already in the file keeps its own spelling.
+  const head = written ?? yamlKey(key);
   const comment = previousRest === null ? "" : splitTrailingComment(previousRest).comment;
   // An empty property (any key, tags too) is a bare `key:`.
-  if (value === YAML_EMPTY) return [`${key}:${comment}`];
+  if (value === YAML_EMPTY) return [`${head}:${comment}`];
 
   // `tags` under the note's own spelling (`Tags:` stays `Tags:`, #ippqkgus).
   if (isTagsKey(key)) {
     const tags = Array.isArray(value) ? value.map((item) => String(item)) : [];
     const flow = previousRest !== null && splitTrailingComment(previousRest).value.trimStart().startsWith("[");
     if (flow) {
-      return [`${key}: [${tags.map(formatScalar).join(", ")}]${comment}`];
+      return [`${head}: [${tags.map(formatScalar).join(", ")}]${comment}`];
     }
-    if (tags.length === 0) return [`${key}: []${comment}`];
-    return [`${key}:${comment}`, ...tags.map((tag) => `  - ${formatScalar(tag)}`)];
+    if (tags.length === 0) return [`${head}: []${comment}`];
+    return [`${head}:${comment}`, ...tags.map((tag) => `  - ${formatScalar(tag)}`)];
   }
 
   if (Array.isArray(value)) {
     const items = value.map((item) => String(item));
     // A list that was written in flow style stays in flow style.
     const flow = previousRest !== null && splitTrailingComment(previousRest).value.trimStart().startsWith("[");
-    if (flow) return [`${key}: [${items.map(formatScalar).join(", ")}]${comment}`];
-    if (items.length === 0) return [`${key}: []${comment}`];
-    return [`${key}:${comment}`, ...items.map((item) => `  - ${formatScalar(item)}`)];
+    if (flow) return [`${head}: [${items.map(formatScalar).join(", ")}]${comment}`];
+    if (items.length === 0) return [`${head}: []${comment}`];
+    return [`${head}:${comment}`, ...items.map((item) => `  - ${formatScalar(item)}`)];
   }
 
   // Typed properties (v0.7 A): numbers and booleans stay unquoted YAML scalars.
-  if (typeof value === "number" || typeof value === "boolean") return [`${key}: ${String(value)}${comment}`];
+  if (typeof value === "number" || typeof value === "boolean") return [`${head}: ${String(value)}${comment}`];
 
-  return [`${key}: ${formatScalar(String(value))}${comment}`];
+  return [`${head}: ${formatScalar(String(value))}${comment}`];
 }
 
 /**
@@ -198,7 +201,7 @@ export function editFrontmatterYaml(
   for (const { from, to } of renames) {
     const block = findBlocks(lines).find((candidate) => candidate.key === from);
     if (!block) continue;
-    lines[block.start] = `${to}:${block.rest}`;
+    lines[block.start] = `${yamlKey(to)}:${block.rest}`;
   }
 
   const blocks = findBlocks(lines);
@@ -226,7 +229,7 @@ export function editFrontmatterYaml(
       continue;
     }
 
-    const replacement = renderKey(key, value, block ? block.rest : null);
+    const replacement = renderKey(key, value, block ? block.rest : null, block ? block.written : null);
     if (block) edits.push({ start: block.start, end: block.end, replacement });
     else appended.push(...replacement);
   }

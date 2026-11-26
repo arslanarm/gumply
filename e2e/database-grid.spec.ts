@@ -410,6 +410,34 @@ test('#8s94nyhn: headerless rows pasted on the typing row fill the existing colu
   expect(base).not.toMatch(/Column 2|Column 3/);
 });
 
+test('#8s94nyhn: headers with punctuation are property names; one that a .base would misread is refused at its field', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  await page.getByTestId('base-typing-input').click();
+  await paste(page, 'Name\tWater every (days)\tPrice ($)\nFern\t7\t12\nIvy\t14\t8\n');
+
+  await expect(page.getByTestId('base-paste-headers')).toBeChecked();
+  await expect(page.getByTestId('base-paste-name-1')).toHaveValue('Water every (days)');
+  await expect(page.getByTestId('base-paste-problem')).toHaveCount(0);
+  // A name a .base would read as another column is refused, at its field.
+  await page.getByTestId('base-paste-name-2').fill('file.size');
+  await expect(page.getByTestId('base-paste-problem')).toBeVisible();
+  await expect(page.getByTestId('base-paste-name-2')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByTestId('base-paste-confirm')).toBeDisabled();
+  await page.getByTestId('base-paste-name-2').fill('Price ($)');
+  await expect(page.getByTestId('base-paste-confirm')).toBeEnabled();
+  await page.getByTestId('base-paste-confirm').click();
+
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Fern', 'Ivy']);
+  await expect.poll(() => read('People/Fern.md')).toMatch(/^---\n(?=[^]*Water every \(days\): 7\n)(?=[^]*Price \(\$\): 12\n)/);
+  await expect.poll(() => read('People.base')).toMatch(/- Water every \(days\)\n[^]*- Price \(\$\)\n/);
+  // The table reads them back from the files.
+  await page.reload();
+  await expect(page.getByTestId('base-th-note.Water every (days)')).toBeVisible();
+  await expect(page.getByTestId('base-table')).toContainText('14');
+});
+
 test('"Import CSV…" in the ⋯ panel reads a file with commas into the same preview (phase 2)', async ({ page, request, vault }) => {
   void vault;
   await writeVault(request, PEOPLE);

@@ -28,9 +28,16 @@ describe("property types (v0.7 A, D34)", () => {
     expect(coercePropertyValue("text", "")).toBeNull();
   });
 
-  it("accepts Obsidian-style keys in any script, refuses YAML-breaking ones", () => {
-    for (const key of ["status", "due date", "статус", "prio_1", "a-b"]) expect(isValidPropertyKey(key), key).toBe(true);
-    for (const key of ["", " pad", "a:b", "#x", "-lead", "x".repeat(101)]) expect(isValidPropertyKey(key), key).toBe(false);
+  it("accepts Obsidian-style keys in any script, punctuation included (#8s94nyhn: the writer quotes where YAML needs it)", () => {
+    for (const key of ["status", "due date", "статус", "prio_1", "a-b", "Water every (days)", "Price ($)", "E-mail/phone", "Due?", "a:b", "#x", "-lead", 'say "hi"', "v1.2"]) {
+      expect(isValidPropertyKey(key), key).toBe(true);
+    }
+  });
+
+  it("refuses what can't be one line in the file or reads as another column in a .base", () => {
+    for (const key of ["", " pad", "pad ", "two\nlines", "tab\there", "x".repeat(101), "file.name", "note.x", "formula.y"]) {
+      expect(isValidPropertyKey(key), JSON.stringify(key)).toBe(false);
+    }
   });
 });
 

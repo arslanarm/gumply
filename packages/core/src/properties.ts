@@ -81,8 +81,11 @@ export function isPropertyType(value: unknown): value is PropertyType {
 }
 
 /**
- * A key the frontmatter writer can hold on one line without quoting:
- * letters (any script), digits, `_`, `-` and inner spaces; no `:` or `#`.
+ * A property name Gumply can write and read back (#8s94nyhn): any text a spreadsheet header holds,
+ * punctuation included (`Water every (days)`, `Price ($)`, `E-mail/phone`, `Due?`), as Obsidian and YAML
+ * accept it; the frontmatter writer quotes a key where YAML needs it (`yamlKey`). Refused: an empty or
+ * over-long name, spaces at either end, a control character or line break (one line in the file), and a
+ * name starting `file.`, `note.` or `formula.`, which a `.base` would read as another column.
  */
 export function isValidPropertyKey(key: unknown): key is string {
   return (
@@ -90,7 +93,8 @@ export function isValidPropertyKey(key: unknown): key is string {
     key.length > 0 &&
     key.length <= 100 &&
     key === key.trim() &&
-    /^[\p{L}\p{N}_][\p{L}\p{N}_ -]*$/u.test(key)
+    !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(key) &&
+    !/^(file|note|formula)\./.test(key)
   );
 }
 
