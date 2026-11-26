@@ -129,3 +129,19 @@ test('a Select cell\'s picker closes when its cell scrolls out of the table\'s v
   // Nothing was written by closing it.
   expect(await fs.readFile(path.join(E2E_VAULT, 'Team/Person 02.md'), 'utf8')).toBe('---\nstage: Stage 2\n---\nPerson 02\n');
 });
+
+test('a resize (a phone keyboard showing) doesn\'t close an open picker, even when its cell ends up below the fold (@polish-dev)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await writeVault(request, team(TABLE));
+  await openTeam(page);
+  await expect(page.getByTestId('base-table').locator('.base-title-text').first()).toHaveText(NAMES[0]!);
+  // A row in the lower half of the table.
+  await page.locator('[data-row-id="Team/Person 15"] [data-grid-col="1"]').click();
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  // The visible area shrinks, as when an on-screen keyboard appears.
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  await expect(page.getByTestId('base-select-search')).toBeFocused();
+});
