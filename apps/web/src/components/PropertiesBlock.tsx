@@ -505,13 +505,18 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
       value={draft}
       autoFocus={autoFocus || editing}
       onChange={(event) => setDraft(event.target.value)}
+      // A cancel never outlives its own blur (@graph-dev): a fresh focus is a fresh edit.
+      onFocus={() => {
+        cancelled.current = false;
+      }}
       onBlur={() => {
         commit();
         setEditing(false);
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter") (event.target as HTMLInputElement).blur();
-        else if (event.key === "Escape") {
+        // Escape during an IME composition only ends the composition, not the edit.
+        else if (event.key === "Escape" && !event.nativeEvent.isComposing) {
           cancelled.current = true;
           setDraft(stored);
           (event.target as HTMLInputElement).blur();

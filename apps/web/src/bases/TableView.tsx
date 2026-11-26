@@ -1212,8 +1212,10 @@ function ValueCell(props: {
           setEditing(false);
         }}
         onKeyDown={(event) => {
-          if (event.key === "Escape") setEditing(false);
-          else if (event.key === "Enter" && enterMovesDown && props.onEditDone && !event.nativeEvent.isComposing) {
+          // Escape during an IME composition only ends the composition (the editor stays open).
+          if (event.key === "Escape") {
+            if (!event.nativeEvent.isComposing) setEditing(false);
+          } else if (event.key === "Enter" && enterMovesDown && props.onEditDone && !event.nativeEvent.isComposing) {
             // #5q4vaacm (spec §4): Enter commits (the editor's own Enter, a blur) and moves down, as typing over a
             // cell does. Lists keep Enter for their next item, and dates for their picker.
             moveAfter.current = "down";
