@@ -70,6 +70,20 @@ describe("a row brought back never replaces a file another app just made at its 
     expect(await outsideTextKept(dir)).toBe(true);
   });
 
+  it("Restore of an ordinary page from the Trash (@lead: the same pattern)", async () => {
+    const server = await createTestServer();
+    await writeFile(join(server.dir, "Note.md"), "Mine, trashed.\n", "utf8");
+    await server.store.rescan();
+    const { trashId } = await server.store.remove("Note");
+    outside.before = { target: "Note.md", text: OUTSIDE };
+    await server.store.restore(trashId!).catch(() => undefined);
+    expect(outside.before, "the move was reached").toBeNull();
+    const { readdir } = await import("node:fs/promises");
+    const texts = await Promise.all((await readdir(server.dir)).filter((name) => name.endsWith(".md")).map((name) => readFile(join(server.dir, name), "utf8")));
+    expect(texts).toContain(OUTSIDE);
+    expect(texts).toContain("Mine, trashed.\n");
+  });
+
   it("Restore of an undo's group of rows from the Trash", async () => {
     const { dir, store } = await undonePaste();
     const [item] = await store.listTrash();
