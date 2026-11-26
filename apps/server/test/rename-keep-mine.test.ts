@@ -123,6 +123,29 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     expect(await readFile(join(dir, `${target}.md`), "utf8")).toContain("See [[Hub renamed]] for more.");
   });
 
+  it("an ordinary save after an outside change the store has already re-read: still a conflict (#z9hufufn, @opus-hunter's control)", async () => {
+    const { dir, store } = await vault();
+    const target = firstLinker(store);
+    const start = store.get(target);
+    await store.update("Hub", { title: "Hub renamed" });
+    const file = join(dir, `${target}.md`);
+    await writeFile(file, (await readFile(file, "utf8")).replace("Notes.", "Notes, from outside."));
+    await store.rescan(); // the record now holds the outside version, so the file time matches it
+    const refused = await store.update(target, { content: `${start.content}\nx`, expectedUpdated: start.updated }).catch((error: unknown) => error);
+    expect(refused).toMatchObject({ status: 409 });
+    expect(await readFile(file, "utf8")).toContain("Notes, from outside.");
+  });
+
+  it("an ordinary save that deleted the rename's link line: a conflict (conservative: the merge isn't whole) (#z9hufufn)", async () => {
+    const { store } = await vault();
+    const target = firstLinker(store);
+    const start = store.get(target);
+    await store.update("Hub", { title: "Hub renamed" });
+    const sent = start.content.replace("See [[Hub]] for more.\n", "");
+    const refused = await store.update(target, { content: sent, expectedUpdated: start.updated }).catch((error: unknown) => error);
+    expect(refused).toMatchObject({ status: 409 });
+  });
+
   it("an ordinary save from the old version after a real outside change too: still a conflict (#z9hufufn, the control)", async () => {
     const { dir, store } = await vault();
     const target = firstLinker(store);
