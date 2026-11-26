@@ -733,7 +733,7 @@
     "saved": "Saved",
     "errorLong": "Couldn't save —",
     "errorShort": "Not saved",
-    "readOnlyTitle": "This file is read-only on disk. Your edits are kept in this tab, and it saves by itself once the file is writable again.",
+    "readOnlyTitle": "This file is read-only on disk. Your edits are kept here, and it saves by itself once the file is writable again.",
     "readOnlyLong": "Read-only file —",
     "readOnlyShort": "Read-only",
     "conflictLong": "This page changed on disk.",

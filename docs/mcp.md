@@ -54,6 +54,7 @@ The desktop app in MCP mode opens no window and doesn't stop you from opening Gu
 | `WRITES_DISABLED: Writing is turned off for this vault` | The vault is set to *Read only* (or writing was lowered). Choose *Read and add* or *Read and edit*, then restart the AI app's connection. |
 | The AI app only offers reading tools | Same as above: the tools an AI app sees follow the setting when it connected. |
 | `CONFLICT: … changed since it was read` | You (or another app) changed the page after the AI read it. Nothing was overwritten; the AI app should read it again. |
+| `READ_ONLY: This file is read-only on disk…` | The page's file was made read-only (by you, or by another app such as a sync tool). Gumply never replaces it, so nothing was written. Make the file writable again, then ask the AI app to retry. |
 | `RATE_LIMITED` | More than 30 changes a minute (or 1,000 a day). Wait a moment. |
 | Linux: `Missing X server or $DISPLAY` / `Failed to connect to Wayland display` | Copy the snippet again from Settings: it includes `--ozone-platform=headless`, so no display is needed. |
 | Windows, a client you wrote yourself: the first line from `Gumply.exe --mcp` is empty | Electron writes one empty line (`\r\n`) when it starts, before Gumply's first message, and Gumply can't prevent it. The official TypeScript MCP SDK skips it (Gumply's Windows CI connects through it); a client of your own should skip empty lines too. |

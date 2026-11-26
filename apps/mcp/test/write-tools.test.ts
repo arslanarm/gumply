@@ -4,7 +4,7 @@
  * history entry holding the replaced bytes, one audit line without page text.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { pageKey, readIndex } from "../src/history.js";
@@ -101,6 +101,28 @@ describe.each(ERAS)("write tools (%s client)", (era) => {
     expect(codeOf(await mcp.call("append_to_page", { id: "Map.canvas", markdown: "x" }))).toBe("UNSUPPORTED");
     expect(codeOf(await mcp.call("append_to_page", { id: "Welcome", markdown: "x".repeat(100 * 1024 + 1) }))).toBe("TOO_LARGE");
   });
+
+  // #bajn9rna: root ignores file modes, so this runs only as a normal user.
+  it.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
+    "a read-only page file: update_page and append_to_page answer READ_ONLY, and the file keeps its bytes and its mode",
+    async () => {
+      const read = await version("Welcome");
+      const path = join(vault.dir, "Welcome.md");
+      const original = file("Welcome.md");
+      chmodSync(path, 0o444);
+      try {
+        const update = await mcp.call("update_page", { id: "Welcome", expectedUpdated: read, content: "Replaced." });
+        expect(codeOf(update)).toBe("READ_ONLY");
+        expect((update.structuredContent!.error as { message: string }).message).toMatch(/read-only/);
+        const append = await mcp.call("append_to_page", { id: "Welcome", markdown: "Added." });
+        expect(codeOf(append)).toBe("READ_ONLY");
+        expect(file("Welcome.md")).toBe(original);
+        expect(statSync(path).mode & 0o777).toBe(0o444);
+      } finally {
+        chmodSync(path, 0o644);
+      }
+    },
+  );
 
   it("update_page: needs the version read; a stale one writes nothing", async () => {
     const read = await version("Welcome");

@@ -11,6 +11,8 @@ export type ErrorCode =
   | "AMBIGUOUS"
   | "INVALID_INPUT"
   | "CONFLICT"
+  /** #bajn9rna: the page's file is read-only on disk; nothing was written. */
+  | "READ_ONLY"
   | "WRITES_DISABLED"
   | "OUTSIDE_VAULT"
   | "UNSUPPORTED"
@@ -43,7 +45,15 @@ function toToolError(error: unknown): ToolError {
   if (error instanceof ToolError) return error;
   if (error instanceof VaultError) {
     const code: ErrorCode =
-      error.status === 404 ? "NOT_FOUND" : error.status === 409 ? "CONFLICT" : error.status === 413 ? "TOO_LARGE" : "INVALID_INPUT";
+      error.status === 404
+        ? "NOT_FOUND"
+        : error.status === 409
+          ? "CONFLICT"
+          : error.status === 413
+            ? "TOO_LARGE"
+            : error.status === 423
+              ? "READ_ONLY"
+              : "INVALID_INPUT";
     return new ToolError(code, error.message);
   }
   // Never echo internals (paths, stacks) to the client; they go to stderr.
