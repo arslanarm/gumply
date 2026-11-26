@@ -1,6 +1,6 @@
 import type { PageMeta } from "@gumply/core";
 import { describe, expect, it } from "vitest";
-import { buildPageTree, canMovePage, isSelfOrDescendant, pageTrail } from "../src/lib/tree.js";
+import { buildPageTree, canMovePage, isSelfOrDescendant, pageTrail, sidebarSelection } from "../src/lib/tree.js";
 
 function meta(id: string, title: string, parentId: string | null = null): PageMeta {
   return {
@@ -185,5 +185,14 @@ describe("a database's own rows folder (#7prbquxu phase 4, spec/database-tables 
       return rest;
     });
     expect(buildPageTree(loose).some((node) => node.page.id === "People")).toBe(true);
+  });
+
+  it("a row opened from a hidden folder is shown selected as its database (spec §3, note e)", () => {
+    expect(sidebarSelection(pages(false), "People/Ann")).toBe("People.base");
+    expect(sidebarSelection(pages(false), "People/Notes/Deep")).toBe("People.base");
+    // With the rows shown, the row itself; any other page as it is.
+    expect(sidebarSelection(pages(true), "People/Ann")).toBe("People/Ann");
+    expect(sidebarSelection(pages(false), "Projects")).toBe("Projects");
+    expect(sidebarSelection(pages(false), null)).toBeNull();
   });
 });
