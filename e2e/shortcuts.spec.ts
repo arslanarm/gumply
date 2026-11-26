@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { API_URL } from './support/env';
 import { expectPageTitle } from './support/ui';
 
-const MOD_LABEL = process.platform === 'darwin' ? '⌘K' : 'CtrlK';
+const MOD_LABEL = process.platform === 'darwin' ? '⌘K' : 'Ctrl+K';
 
 /**
  * Shortcuts overlay (`?`) and F2 rename — the `#qdxxmxyv` / `#jk9wn6ks` surface.
