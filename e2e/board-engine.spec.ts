@@ -808,7 +808,12 @@ test.describe('board view: autosave and conflicts', () => {
     expect(puts.at(-1)).toMatchObject({ expectedUpdated: `v${version - 1}` });
   });
 
-  test('the board engine is code-split from page startup', async ({ page }) => {
+  // trial-main21: run after whiteboards.spec, `/` opened a board it had left in the shared vault, and
+  // opening a board loads the engine as it should. The startup check must not depend on what's in the vault.
+  vaultTest('the board engine is code-split from page startup', async ({ page, request, vault }) => {
+    void vault;
+    // A board in the vault, as another spec may leave one.
+    expect((await request.post('/api/boards', { data: { title: 'Aardvark board' } })).status()).toBe(201);
     const scripts: string[] = [];
     page.on('request', (request) => {
       if (request.resourceType() === 'script') scripts.push(request.url());
