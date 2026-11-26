@@ -75,7 +75,10 @@ export function withSelectSettings(config: BaseConfig, key: string, settings: Se
   const current = { ...(config.properties?.[id] ?? {}) } as Record<string, unknown>;
   if (settings) {
     current.gumplyType = settings.kind;
-    current.gumplyOptions = settings.options.map((option) => ({ value: option.value, color: option.color }));
+    // No options yet ("+" Select): no key, rather than an empty flow list `[]` that a later option would extend
+    // in flow style (`[{value: Todo, color: brown}]`). Read back, a missing list is no options.
+    if (settings.options.length) current.gumplyOptions = settings.options.map((option) => ({ value: option.value, color: option.color }));
+    else delete current.gumplyOptions;
   } else {
     delete current.gumplyType;
     delete current.gumplyOptions;
