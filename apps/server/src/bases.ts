@@ -26,12 +26,16 @@ export class BaseQueries {
   async run(baseId: string, options: { view?: string; thisId?: string; now?: number } = {}): Promise<BaseViewResult> {
     const document = this.store.getBase(baseId);
     if (document.error) throw notFound(`This base can't be read: ${document.error}`);
-    const [withProperties, typeMap, infos] = await Promise.all([
+    const [withProperties, typeMap, infos, stored] = await Promise.all([
       this.store.listWithProperties(),
       this.store.propertyTypeMap(),
       this.store.listProperties(),
+      this.store.storedPropertyTypes(),
     ]);
     const types = new Map<string, string>(typeMap);
+    // #bg7c9bzk (#faqr8pj9's #10): a key typed in types.json that no page uses yet (a column just added as Number)
+    // keeps that type, rather than reading as text.
+    for (const [key, type] of Object.entries(stored)) if (!types.has(key)) types.set(key, type);
     const propertiesOf = new Map(withProperties.map((meta) => [meta.id, meta.properties ?? []]));
     // #g95wkd9y: a base's link columns need the link index complete.
     await this.store.whenIndexed();
