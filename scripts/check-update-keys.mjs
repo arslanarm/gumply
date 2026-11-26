@@ -29,7 +29,8 @@ const ROLES = ["primary", "backup"];
 export function readKeys(text) {
   const match = /export const UPDATE_PUBLIC_KEYS\b[^=]*=\s*\[([\s\S]*?)\];/.exec(text);
   if (!match) throw new Error("UPDATE_PUBLIC_KEYS not found in update-keys.ts");
-  const body = match[1].replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  // Comments are dropped only outside strings (#kziv42ti): a base64 key can contain "//".
+  const body = match[1].replace(/"(?:[^"\\\n]|\\.)*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (token) => (token.startsWith('"') ? token : ""));
   const keys = [...body.matchAll(/\{\s*id:\s*"([^"]*)",\s*spki:\s*"([^"]*)",?\s*\}/g)].map((entry) => ({ id: entry[1], spki: entry[2] }));
   // Anything else between the brackets (a key written another way) is an error, not ignored.
   const rest = body.replace(/\{\s*id:\s*"([^"]*)",\s*spki:\s*"([^"]*)",?\s*\}/g, "").replace(/[\s,]/g, "");
