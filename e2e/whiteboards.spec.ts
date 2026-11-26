@@ -530,7 +530,9 @@ test.describe('board uploads that fail (#f6v8z4ti)', () => {
     );
   }
 
-  test('an oversize drop shows a calm message, uploads nothing and throws nothing', async ({ page, request }) => {
+  test('an oversize drop shows a calm message, uploads nothing and throws nothing', async ({ page, request, vault }) => {
+    // A clean vault before and after (the vault fixture): the boards these make never outlive the test (trial-main21).
+    void vault;
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     let uploads = 0;
@@ -550,7 +552,9 @@ test.describe('board uploads that fail (#f6v8z4ti)', () => {
     expect((await getBoard(request, created.meta.id)).board.nodes).toHaveLength(0);
   });
 
-  test('offline: the upload notice says the server can\'t be reached', async ({ page, request }) => {
+  test('offline: the upload notice says the server can\'t be reached', async ({ page, request, vault }) => {
+    // A clean vault before and after (the vault fixture): the boards these make never outlive the test (trial-main21).
+    void vault;
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('**/api/attachments', (route) =>
@@ -563,7 +567,9 @@ test.describe('board uploads that fail (#f6v8z4ti)', () => {
     expect(errors).toEqual([]);
   });
 
-  test('a server failure on upload is a notice too, not an uncaught error', async ({ page, request }) => {
+  test('a server failure on upload is a notice too, not an uncaught error', async ({ page, request, vault }) => {
+    // A clean vault before and after (the vault fixture): the boards these make never outlive the test (trial-main21).
+    void vault;
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('**/api/attachments', (route) =>
