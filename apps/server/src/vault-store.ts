@@ -3719,6 +3719,7 @@ export class VaultStore {
     const prefix = `${folder}/`;
     const existing: Array<{ record: PageRecord; set: Record<string, PropertyValue>; expected: string }> = [];
     const fresh: Array<{ title: string; set: Record<string, PropertyValue> }> = [];
+    const given = new Set<PageId>();
     for (const row of input.rows) {
       if (!row || typeof row.set !== "object" || row.set === null || Array.isArray(row.set)) throw badRequest("each row needs a set object");
       for (const key of Object.keys(row.set)) {
@@ -3729,9 +3730,11 @@ export class VaultStore {
         if (!record || (record.kind ?? "page") !== "page" || !record.id.startsWith(prefix) || record.id.slice(prefix.length).includes("/")) {
           throw badRequest(`not a row of this database: ${row.id}`);
         }
-        // The version the table showed: values are set over what the user saw, never over a newer outside edit.
-        // Required (@opus-hunter): values are set over the version the caller showed, never blind.
+        // Required (@opus-hunter): values are set over the version the table showed, never blind and never
+        // over a newer outside edit.
         if (typeof row.expectedUpdated !== "string") throw badRequest(`an existing row needs the version it was read at (expectedUpdated): ${row.id}`);
+        if (given.has(record.id)) throw badRequest(`a row is given twice: ${record.id}`);
+        given.add(record.id);
         existing.push({ record, set: row.set, expected: row.expectedUpdated });
       } else {
         const title = typeof row.title === "string" ? row.title.trim() : "";
@@ -3740,9 +3743,22 @@ export class VaultStore {
       }
     }
 
+    // The new columns are checked before any write too (@opus-hunter): each key, and that the view still exists
+    // (it may have been renamed elsewhere while the preview was open).
+    if (input.columns) {
+      for (const key of input.columns.keys) if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+      let config: BaseConfig;
+      try {
+        config = parseBase(base.baseSource ?? "");
+      } catch (error) {
+        if (error instanceof BaseParseError) throw badRequest(`This base file isn't valid YAML: ${error.message}`);
+        throw error;
+      }
+      if (!config.views.some((item) => item.name === input.columns!.view)) throw badRequest(`no view named ${input.columns.view}`);
+    }
+
     const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
     const refused: Array<{ id: PageId; title: string }> = [];
-    // What each set row had before, to put back: the old value, or "absent" (the key is removed again).
     // Each set row's bytes before the paste, to put back exactly (D37), and the version our write left.
     const done: Array<{ id: PageId; updated: string; bytes: Buffer }> = [];
     for (const { record, set, expected } of existing) {
@@ -3753,6 +3769,8 @@ export class VaultStore {
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: ${record.id} failed:`, error);
         refused.push({ id: record.id, title: record.title });
+        // The paste is refused anyway: write no more rows (fewer to put back).
+        break;
       }
     }
     // Each new row with the version this job's last write left it at.
