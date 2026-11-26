@@ -51,7 +51,13 @@ function errorText(error: unknown): string {
 type UndoStep =
   | { kind: "files"; input: UndoInput }
   | { kind: "config"; from: BaseConfig; to: BaseConfig }
-  | { kind: "cell"; rowId: string; key: string; before: BaseValue; after: BaseValue; version: string };
+  | { kind: "cell"; rowId: string; key: string; before: BaseValue; after: BaseValue; version: string }
+  /**
+   * #5q4vaacm: a row renamed from the grid. Applying it renames the row now at `toId` (titled `toTitle`) back to
+   * `fromTitle`, through the same rename call (links follow, as for any rename), and only into `fromId` itself:
+   * never "Ann 2" when another row took the name meanwhile.
+   */
+  | { kind: "rename"; fromId: string; fromTitle: string; toId: string; toTitle: string };
 
 export interface BaseViewProps {
   baseId: PageId;
@@ -544,6 +550,28 @@ export function BaseView(props: BaseViewProps) {
     [saveConfig],
   );
 
+  /** #5q4vaacm: a grid rename undone or redone; its inverse, or null when refused (and said so). */
+  const applyRename = async (step: Extract<UndoStep, { kind: "rename" }>): Promise<UndoStep | null> => {
+    const missing = (error: unknown) => error instanceof ApiRequestError && error.status === 404;
+    // The row is still where the step left it, under the name it gave it.
+    const current = await api.getPage(step.toId).catch((error: unknown) => (missing(error) ? null : Promise.reject(error)));
+    if (!current || current.title !== step.toTitle) {
+      props.onError?.(t("bases.undoChanged"));
+      return null;
+    }
+    // The name to go back to is free (another app, or the typing row, may have made a row with it meanwhile).
+    const taken = await api.getPage(step.fromId).then(
+      () => true,
+      (error: unknown) => (missing(error) ? false : Promise.reject(error)),
+    );
+    if (taken) {
+      props.onError?.(t("bases.undoRenameTaken", { title: step.fromTitle }));
+      return null;
+    }
+    const renamed = await api.updatePage(step.toId, { title: step.fromTitle });
+    return { kind: "rename", fromId: step.toId, fromTitle: step.toTitle, toId: renamed.id, toTitle: renamed.title };
+  };
+
   /** Apply one undo or redo step; its inverse, or null when it was refused (and said so). */
   const applyStep = async (step: UndoStep): Promise<UndoStep | null> => {
     await saverRef.current?.flush();
@@ -556,6 +584,7 @@ export function BaseView(props: BaseViewProps) {
       await saveConfig(step.to);
       return { kind: "config", from: step.to, to: step.from };
     }
+    if (step.kind === "rename") return applyRename(step);
     if (step.kind === "cell") {
       try {
         const saved = await api.setPageProperties(step.rowId, { [step.key]: step.before as string | number | boolean | string[] | null }, step.version);
@@ -647,7 +676,12 @@ export function BaseView(props: BaseViewProps) {
     async (row: BaseRow, title: string): Promise<string | undefined> => {
       let id: string | undefined;
       try {
-        id = (await api.updatePage(row.id, { title })).id;
+        const renamed = await api.updatePage(row.id, { title });
+        id = renamed.id;
+        // #5q4vaacm: a rename from the table is one undo step (Cmd/Ctrl+Z renames it back).
+        if (renamed.id !== row.id || renamed.title !== row.title) {
+          recordStep({ kind: "rename", fromId: row.id, fromTitle: row.title, toId: renamed.id, toTitle: renamed.title });
+        }
       } catch (error) {
         props.onError?.(errorText(error));
       }

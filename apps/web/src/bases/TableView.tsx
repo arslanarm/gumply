@@ -226,7 +226,19 @@ export function TableView(props: TableViewProps) {
     setActive({ rowId, col });
     setEditRequest({ rowId, col });
   }, []);
-  const editDone = useCallback(() => setEditRequest(null), []);
+  // #5q4vaacm: an editor closed by Tab or Shift+Tab hands the move on, so the next cell is active (as typing over a
+  // cell does); before, focus came back to the same cell and the next value typed overwrote the one just entered.
+  const [afterEdit, setAfterEdit] = useState<GridMove | null>(null);
+  const editDone = useCallback((move?: GridMove) => {
+    setEditRequest(null);
+    if (move) setAfterEdit(move);
+  }, []);
+  useEffect(() => {
+    if (!afterEdit || editRequest || !activePos) return;
+    setAfterEdit(null);
+    go(moveCell(activePos, afterEdit, rowOrder.length, columns.length));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [afterEdit, editRequest]);
   const renameDone = useCallback(() => {
     setEditRequest(null);
     props.onRenameDone?.();
@@ -921,7 +933,7 @@ interface TableRowProps {
   onRenameDone?: () => void;
   /** The database grid: a click opens the cell's editor through the grid. */
   onRequestEdit?: (rowId: string, col: number) => void;
-  onEditDone?: () => void;
+  onEditDone?: (move?: GridMove) => void;
 }
 
 /** One row; memoized so scrolling only renders the rows that come into view. */
@@ -1037,7 +1049,7 @@ function ValueCell(props: {
   editRequested?: boolean;
   editSeed?: string;
   onRequestEdit?: (rowId: string, col: number) => void;
-  onEditDone?: () => void;
+  onEditDone?: (move?: GridMove) => void;
 }) {
   const t = useT();
   const select = useContext(BaseSelects).get(props.column.id);
@@ -1052,10 +1064,14 @@ function ValueCell(props: {
   // A click elsewhere has already moved focus, so it's left alone.
   const cellRef = useRef<HTMLDivElement | null>(null);
   const wasEditing = useRef(false);
+  /** #5q4vaacm: where Tab or Shift+Tab asked the grid to go once this editor has closed. */
+  const moveAfter = useRef<GridMove | undefined>(undefined);
   useEffect(() => {
     if (wasEditing.current && !editing) {
-      // The database grid takes the focus back to its active cell itself.
-      if (props.onEditDone) props.onEditDone();
+      // The database grid takes the focus back to its active cell itself (or moves on, after a Tab).
+      const move = moveAfter.current;
+      moveAfter.current = undefined;
+      if (props.onEditDone) props.onEditDone(move);
       else {
         const active = document.activeElement;
         if (!active || active === document.body) cellRef.current?.focus();
@@ -1068,6 +1084,18 @@ function ValueCell(props: {
     if (props.editRequested && editable) setEditing(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.editRequested]);
+
+  // #5q4vaacm: in the database grid, Tab and Shift+Tab commit the editor (its own blur commit, as clicking away does)
+  // and move on, like Notion and a spreadsheet. A Select picker (a portal) bubbles its keys here too: it closes
+  // without picking.
+  const tabOut = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab" || !props.onEditDone || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    moveAfter.current = event.shiftKey ? "prev" : "next";
+    (document.activeElement as HTMLElement | null)?.blur();
+    setEditing(false);
+  };
 
   if (column.type === "checkbox") {
     return (
@@ -1097,6 +1125,7 @@ function ValueCell(props: {
           if (event.currentTarget.contains(event.relatedTarget as Element | null)) return;
           setEditing(false);
         }}
+        onKeyDown={tabOut}
       >
         <SelectChips value={value} settings={select} />
         <SelectPicker
@@ -1133,6 +1162,7 @@ function ValueCell(props: {
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setEditing(false);
+          else tabOut(event);
         }}
       >
         <PropertyValueEditor
