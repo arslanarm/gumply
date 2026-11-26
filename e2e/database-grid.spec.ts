@@ -122,6 +122,15 @@ test('"+" at the end of the header adds a property column; a key typed elsewhere
   await name.press('Enter');
   await expect.poll(() => read('People.base')).toContain('      - shoe size\n      - started\n');
 
+  // A key typed only in the types file (no page uses it): "+" as Text leaves its stored type.
+  await request.put(`${API_URL}/api/properties/budget`, { data: { type: 'number' } });
+  await page.getByTestId('base-add-column-button').click();
+  await name.fill('budget');
+  await page.getByTestId('base-add-column-type-text').click();
+  await page.getByTestId('base-add-column-submit').click();
+  await expect.poll(() => read('People.base')).toContain('      - budget\n');
+  expect(await storedType('budget')).toBe('number');
+
   // A column the view already shows can't be added twice.
   await page.getByTestId('base-add-column-button').click();
   await name.fill('role');
@@ -228,18 +237,26 @@ test('a column rename reaches every row of the database, also rows the view hide
   await expect.poll(() => read('People.base')).toContain('      - job\n');
 });
 
-test('a column rename keeps a type the new name already has in the vault (@opus-hunter)', async ({ page, request, vault }) => {
+/** A key's type as stored (the types file Gumply uses: Obsidian's when the vault has one). */
+async function storedType(key: string) {
+  for (const file of ['.obsidian/types.json', '.gumply/types.json']) {
+    const text = await read(file).catch(() => null);
+    if (text) return (JSON.parse(text) as { types?: Record<string, string> }).types?.[key];
+  }
+  return undefined;
+}
+
+test('a column rename keeps a type the new name already has, even one no page uses yet (@opus-hunter)', async ({ page, request, vault }) => {
   void vault;
-  await writeVault(request, { ...PEOPLE, 'Elsewhere.md': '---\npriority: 3\n---\nAnother database\n' });
+  await writeVault(request, PEOPLE);
+  // Typed in the types file only (Obsidian keeps entries after a key's last use).
   await request.put(`${API_URL}/api/properties/priority`, { data: { type: 'number' } });
-  const typeOf = async (key: string) =>
-    ((await (await request.get(`${API_URL}/api/properties`)).json()) as Array<{ key: string; type: string }>).find((info) => info.key === key)?.type;
-  await expect.poll(() => typeOf('priority')).toBe('number');
+  await expect.poll(() => storedType('priority')).toBe('number');
   await openPeople(page, ['Ann', 'Bo']);
   await renameColumn(page, 'role', 'priority');
   await expect.poll(() => read('People/Ann.md')).toContain('priority: Cook\n');
   await expect.poll(() => read('People.base')).toContain('      - priority\n');
-  expect(await typeOf('priority')).toBe('number');
+  expect(await storedType('priority')).toBe('number');
 });
 
 test('a column rename to a name some row already has changes nothing and names the row (@lead, @opus-hunter)', async ({ page, request, vault }) => {

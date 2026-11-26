@@ -258,6 +258,36 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     await expect(store.changeOwnedRowsProperty("Plain.base", { remove: "age" })).rejects.toThrow("doesn't own");
   });
 
+  it("a row that can't be put back is named with the key it's left with (#7prbquxu, @lead)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
+    });
+    // Bo refuses the rename; Ann's way back is refused too (as if changed again, or locked, meanwhile).
+    const internals = store as unknown as { updateNow: (id: string, patch: { properties?: { rename?: Array<{ from: string }> } }) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "People/Bo" || patch.properties?.rename?.[0]?.from === "job") throw new (await import("../src/errors")).VaultError(409, "changed on disk");
+      return updateNow(id, patch);
+    };
+    const result = await store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } });
+    expect(result.skipped.map((row) => row.title)).toEqual(["Bo"]);
+    expect(result.stuck).toEqual([{ id: "People/Ann", title: "Ann" }]);
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\njob: Cook\n---\nAnn\n");
+  });
+
+  it("a property type set only if absent keeps a type types.json has, even for a key no page uses (#7prbquxu, @opus-hunter)", async () => {
+    const { app, dir } = await vault({ "Note.md": "---\nrole: Cook\n---\nNote\n" });
+    await jsonRequest(app, "PUT", "/api/properties/priority", { type: "number" });
+    await jsonRequest(app, "PUT", "/api/properties/priority", { type: "text", ifAbsent: true });
+    await jsonRequest(app, "PUT", "/api/properties/budget", { type: "number", ifAbsent: true });
+    const file = (await readdir(dir)).includes(".obsidian") ? ".obsidian/types.json" : ".gumply/types.json";
+    const types = (JSON.parse(await readFile(join(dir, file), "utf8")) as { types: Record<string, string> }).types;
+    expect(types.priority).toBe("number");
+    expect(types.budget).toBe("number");
+  });
+
   it("a database-wide rename that a row refuses puts the renamed rows back (#7prbquxu)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
