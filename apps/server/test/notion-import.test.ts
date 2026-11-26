@@ -405,6 +405,28 @@ describe("a damaged export (#4zzay6mn)", () => {
     expect(job.state, job.error).toBe("done");
   });
 
+  it("legitimate odd zips still import: a 0-byte entry (stored and deflated), a directory entry, an empty folder (@lead's control)", async () => {
+    const zip = zipSync({
+      "Root/": {},
+      "Root/Empty dir/": {},
+      "Root/Page aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md": new TextEncoder().encode("# Page\n\nHello"),
+      "Root/empty.md": [new Uint8Array(0), { level: 0 }],
+      "Root/empty.txt": new Uint8Array(0),
+    });
+    const { entries, skipped } = readNotionZip(zip);
+    expect(skipped).toEqual([]);
+    expect(entries.map((entry) => [entry.path, entry.data.length]).sort()).toEqual([
+      ["Root/Page aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md", 14],
+      ["Root/empty.md", 0],
+      ["Root/empty.txt", 0],
+    ]);
+    const { store } = await createTestServer();
+    const imports = new NotionImports(store);
+    const job = await imports.settled(imports.start(zip, null).id);
+    expect(job.state, job.error).toBe("done");
+    expect(job.errorCode).toBeUndefined();
+  });
+
   it("one flipped byte in a stored entry fails the whole import, naming the file; nothing is written", async () => {
     const zip = await syntheticZip([STORED]);
     const { start, end } = locate(zip, STORED);
