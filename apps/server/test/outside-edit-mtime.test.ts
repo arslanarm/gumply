@@ -227,7 +227,7 @@ describe("after a rename or a move, the record still knows its bytes (@graph-dev
       await store.rescan();
       if (how === "a rename") await store.update("Staff", { title: "Team" });
       else await store.move("Staff", "Crew");
-      await store.settleRenames?.(10_000);
+      await settled(store);
       const id = how === "a rename" ? "Team" : "Crew/Staff";
       const file = join(dir, `${id}.md`);
       const version = store.get(id).updated;
