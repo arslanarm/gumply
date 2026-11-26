@@ -6702,7 +6702,30 @@ input {
 
 .property-chip-remove:hover {
   opacity: 1;
+}
+
+/* #jtck4izu: the hover tint and focus ring keep the 16×16 shape inside the 24×24 hit area, so
+   they don't poke out of the 22 px chip. */
+.property-chip-remove {
+  position: relative;
+  isolation: isolate;
+}
+
+.property-chip-remove::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 4px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.property-chip-remove:hover::before {
   background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.property-chip-remove:focus-visible {
+  outline-offset: -4px;
 }
 
 .property-chip-input {
