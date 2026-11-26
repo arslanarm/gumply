@@ -1,6 +1,17 @@
 /** Obsidian Bases (`.base` database views, spec/api-bases, #sg36ng2d). */
 export { dropKeyFromConfig, renameKeyInConfig } from "./columns.js";
 export {
+  SELECT_COLORS,
+  nextOptionColor,
+  selectSettings,
+  selectedValues,
+  withSelectSettings,
+  type SelectColor,
+  type SelectKind,
+  type SelectOption,
+  type SelectSettings,
+} from "./select.js";
+export {
   BaseParseError,
   GUMPLY_VIEW_TYPES,
   newBaseSource,
