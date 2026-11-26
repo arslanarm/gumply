@@ -1,0 +1,70 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { LinkEdge } from "@gumply/core";
+import { VaultStore } from "../src/vault-store";
+
+/**
+ * #6pyunynv (measured in #ndp6qqxz): a batched title rename rebuilt the whole link index twice, once in
+ * its first step (before any linking page was written, ~1.3 s on the 10k vault) and again at its end. In
+ * the batched path the first one only needs the edges that pointed at the old id moved to the new one (the
+ * rename's alias), the renamed page's own edges, and the links that didn't resolve before and now name the
+ * page. These tests pin: one full rebuild per batched rename; the first step's index is exactly what a full
+ * rebuild gives; backlinks mid-rename are complete, including a `[[New name]]` that was unresolved before.
+ */
+const dirs: string[] = [];
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+async function vault(linkers: number, extra: Record<string, string> = {}) {
+  const dir = await mkdtemp(join(tmpdir(), "gumply-rename-phase-a-"));
+  dirs.push(dir);
+  await writeFile(join(dir, "Hub.md"), "The hub. Back to [[Hub]].\n");
+  await mkdir(join(dir, "L"));
+  await Promise.all(Array.from({ length: linkers }, (_, i) => writeFile(join(dir, "L", `Linker ${i}.md`), `See [[Hub]] (${i}).\n`)));
+  for (const [name, body] of Object.entries(extra)) {
+    await mkdir(join(dir, name, ".."), { recursive: true });
+    await writeFile(join(dir, name), body);
+  }
+  const store = new VaultStore(dir);
+  await store.init();
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  return { dir, store };
+}
+
+type Internals = { reindexAll: () => void; edgesBySource: Map<string, LinkEdge[]> };
+const internals = (store: VaultStore) => store as unknown as Internals;
+/** The index as comparable data: sources sorted, each source's edges as written. */
+const indexOf = (store: VaultStore) =>
+  [...internals(store).edgesBySource].map(([source, edges]) => [source, edges.map((edge) => ({ ...edge }))] as const).sort(([a], [b]) => a.localeCompare(b));
+
+describe("a batched rename's first step updates the link index without a full rebuild (#6pyunynv)", { timeout: 60_000 }, () => {
+  it("one full rebuild per batched rename (at its end), not two", async () => {
+    const { store } = await vault(300);
+    const full = vi.spyOn(internals(store), "reindexAll");
+    await store.update("Hub", { title: "Hub renamed" });
+    expect(full).toHaveBeenCalledTimes(1);
+    expect(new Set(store.backlinks("Hub renamed").map((link) => link.page.id)).size).toBe(300);
+  });
+
+  it("mid-rename, the index is exactly what a full rebuild gives, and backlinks are complete, an unresolved [[New name]] included", async () => {
+    const { store } = await vault(300, { "Waiting.md": "Soon: [[Hub renamed]].\n", "Elsewhere.md": "Unrelated [[Nowhere]].\n" });
+    let checked = false;
+    store.afterRenameBatch = async () => {
+      if (checked) return;
+      checked = true;
+      const incremental = indexOf(store);
+      internals(store).reindexAll();
+      expect(incremental).toEqual(indexOf(store));
+      const linkers = new Set(store.backlinks("Hub renamed").map((link) => link.page.id));
+      expect(linkers.size).toBe(301);
+      expect(linkers.has("Waiting")).toBe(true);
+    };
+    await store.update("Hub", { title: "Hub renamed" });
+    expect(checked).toBe(true);
+  });
+
+});
