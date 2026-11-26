@@ -577,6 +577,7 @@ test('Cmd/Ctrl+Z undoes table operations and Shift redoes them; an undo over a r
   await undo();
   await expect(page.getByRole('alert')).toContainText('Ann');
   expect(await read('People/Bo.md')).not.toContain('age');
+});
 
 test('the paste preview offers Select for a column of repeated values, and makes it one in the same request (pass 8 follow-up)', async ({ page, request, vault }) => {
   void vault;
