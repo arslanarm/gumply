@@ -36,6 +36,8 @@ const BASE = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "P
 
 async function vault(files: Record<string, string>) {
   const server = await createTestServer();
+  // The rows folder exists even with no rows yet (a base owns only a folder that's there).
+  await mkdir(join(server.dir, "People"), { recursive: true });
   for (const [path, body] of Object.entries(files)) {
     await mkdir(join(server.dir, path, ".."), { recursive: true });
     await writeFile(join(server.dir, path), body, "utf8");

@@ -22,7 +22,7 @@ describe("Open in new window (N8)", () => {
   });
 
   it("sits in the ⋯ menu's first group, after Move to, with its own label", () => {
-    expect(ROW_MENU[0]).toEqual(["page.rename", "page.duplicate", "page.copy-link", "page.move", "page.open-window"]);
+    expect(ROW_MENU[0]).toEqual(["page.rename", "page.duplicate", "page.copy-link", "page.move", "page.open-window", "page.show-rows"]);
     expect(menuLabel("page.open-window", page("Notes"))).toBe("Open in new window");
   });
 

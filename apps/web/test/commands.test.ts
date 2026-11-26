@@ -36,7 +36,12 @@ describe("the registry", () => {
   it("every command has a label in en and ru", async () => {
     for (const language of ["en", "ru"] as const) {
       await setLanguage(language);
-      const all = availableCommands(context(meta("P"), { editor: true, board: true, desktop: true }), { modifier: "Ctrl" });
+      // #7prbquxu phase 4: "Show rows in the sidebar" applies only to a database that owns its rows folder.
+      const owned = { ...meta("People.base", "base"), rowsFolder: "People" } as PageMeta;
+      const all = [
+        ...availableCommands(context(meta("P"), { editor: true, board: true, desktop: true }), { modifier: "Ctrl" }),
+        ...availableCommands(context(owned), { modifier: "Ctrl" }),
+      ];
       for (const id of STATIC_COMMAND_IDS.filter((item) => item !== "view.search")) {
         const command = all.find((item) => item.id === id);
         expect(command, `${id} applies somewhere`).toBeDefined();
