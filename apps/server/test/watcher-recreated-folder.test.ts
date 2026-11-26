@@ -23,6 +23,32 @@ async function waitFor(check: () => boolean, ms = 5000): Promise<boolean> {
 }
 
 describe("a folder moved away and made again at the same path is watched again", () => {
+  it("a folder put back from the Trash: an outside edit inside it is seen", async () => {
+    const { store, dir } = await createTestServer();
+    store.startWatching();
+    try {
+      await mkdir(join(dir, "Crew"));
+      await writeFile(join(dir, "Crew", "Ann.md"), "Before the Trash.\n");
+      expect(await waitFor(() => store.list().some((meta) => meta.id === "Crew/Ann"))).toBe(true);
+      await sleep(400);
+      const { trashId } = await store.remove("Crew");
+      await store.restore(trashId);
+      expect(await waitFor(() => store.list().some((meta) => meta.id === "Crew/Ann"))).toBe(true);
+      await sleep(400);
+      await writeFile(join(dir, "Crew", "Ann.md"), "Back from the Trash, edited elsewhere.\n");
+      const seen = await waitFor(() => {
+        try {
+          return store.get("Crew/Ann").content.includes("edited elsewhere");
+        } catch {
+          return false;
+        }
+      }, 5000);
+      expect(seen).toBe(true);
+    } finally {
+      store.stopWatching();
+    }
+  }, 20_000);
+
   for (const how of ["moved away by another app", "moved to the Trash by Gumply"] as const) {
     it(`${how}: an outside edit inside the new folder is seen`, async () => {
       const { store, dir } = await createTestServer();
@@ -39,10 +65,8 @@ describe("a folder moved away and made again at the same path is watched again",
         } else {
           await store.remove("Crew");
         }
-        expect(await waitFor(() => !store.list().some((meta) => meta.id === "Crew/Ann"))).toBe(true);
-        await sleep(400);
-
-        // Made again at the same path (the next test's writeVault, a sync tool's restore, a git checkout).
+        // Made again at the same path straight away, inside the watcher's quiet gap, so no rescan runs in
+        // between (the e2e's vault reset then writeVault, a sync tool's restore, a git checkout).
         await mkdir(join(dir, "Crew"));
         await writeFile(join(dir, "Crew", "Ann.md"), "Second folder, Cook.\n");
         expect(await waitFor(() => store.list().some((meta) => meta.id === "Crew/Ann"))).toBe(true);
