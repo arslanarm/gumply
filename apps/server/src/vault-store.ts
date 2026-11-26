@@ -4941,6 +4941,9 @@ export class VaultStore {
     // rewrites of the page (folder links, self-links) whether or not the rename came with a writer.
     // `deferRewrites` = inside a user rename (renameInBatches); other relocations have no editor save in flight.
     const renameWrite = this.deferRewrites && replaced !== record.updated ? { content: record.content, replaced, updated: record.updated } : null;
+    if (renameWrite) {
+      this.rememberRenameRewrite(targetId, renameWrite.content, renameWrite.content, renameWrite.replaced, renameWrite.updated, nextTitle);
+    }
     record.explicitTitle = record.explicitTitle || written.titleKey;
     record.fmTags = fmTags;
     this.setPropertyLinks(record, written.text);
@@ -4959,13 +4962,14 @@ export class VaultStore {
           if (!(error as { nameTaken?: boolean }).nameTaken || attempt >= 20) throw error;
           targetId = await this.renameTarget(id, record.parentId, nextTitle);
           if (targetId === id) break;
+          // The chain's first step goes under the name the rename now ends at.
+          if (renameWrite) {
+            this.rememberRenameRewrite(targetId, renameWrite.content, renameWrite.content, renameWrite.replaced, renameWrite.updated, nextTitle);
+          }
         }
       }
       const moved = this.pages.get(targetId);
       if (moved) record = moved;
-    }
-    if (renameWrite) {
-      this.rememberRenameRewrite(targetId, renameWrite.content, renameWrite.content, renameWrite.replaced, renameWrite.updated, nextTitle);
     }
     this.refreshTags(record);
 
