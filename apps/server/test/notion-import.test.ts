@@ -337,3 +337,121 @@ describe("Import report.md in the app's language (#n86gnptg)", () => {
   });
 });
 
+
+describe("a damaged export (#4zzay6mn)", () => {
+  /** The synthetic export zipped as Notion delivers it; the entries in `stored` are stored (no compression). */
+  async function syntheticZip(stored: readonly string[] = []): Promise<Uint8Array> {
+    const base = join(CORE_FIXTURES, "synthetic");
+    const files: Zippable = {};
+    for (const path of await walk(base)) {
+      const name = relative(base, path).split("\\").join("/");
+      const data = new Uint8Array(await readFile(path));
+      files[name] = stored.includes(name) ? [data, { level: 0 }] : data;
+    }
+    return zipSync(files);
+  }
+
+  const STORED = "Workspace/Handbook/Projects/Zephyr 00000000000000000000000000000016.md";
+  const DEFLATED = "Workspace/Handbook 00000000000000000000000000000001.md";
+
+  /** Where an entry's bytes and its central-directory record sit (read here independently of the server's reader). */
+  function locate(zip: Uint8Array, name: string): { method: number; start: number; end: number; record: number } {
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    let end = zip.length - 22;
+    while (view.getUint32(end, true) !== 0x06054b50) end -= 1;
+    let at = view.getUint32(end + 16, true);
+    for (let n = 0; n < view.getUint16(end + 10, true); n += 1) {
+      const nameLength = view.getUint16(at + 28, true);
+      const recordName = new TextDecoder().decode(zip.subarray(at + 46, at + 46 + nameLength));
+      if (recordName === name) {
+        const local = view.getUint32(at + 42, true);
+        const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+        return { method: view.getUint16(at + 10, true), start, end: start + view.getUint32(at + 20, true), record: at };
+      }
+      at += 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+    }
+    throw new Error(`no entry ${name}`);
+  }
+
+  const damagedMessage = (file?: string) =>
+    file ? `The export looks damaged (file ${file}). Download it again from Notion.` : "The export looks damaged. Download it again from Notion.";
+
+  /** Import `zip` into a vault with a note of its own: the job fails as damaged and the vault is byte-identical (D37). */
+  async function expectDamaged(zip: Uint8Array, file: string | undefined, language: "en" | "ru" = "en"): Promise<void> {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Existing.md"), "Untouched note.\n");
+    await store.rescan();
+    const before = await snapshot(dir);
+    const imports = new NotionImports(store);
+    const job = await imports.settled(imports.start(zip, null, language).id);
+    expect(job.state).toBe("failed");
+    expect(job.error).toBe(damagedMessage(file));
+    expect(job.errorCode).toBe("damaged");
+    expect(job.errorFile).toBe(file);
+    expect(job.report).toBeUndefined();
+    expect(await snapshot(dir)).toEqual(before);
+    expect(await readdir(join(dir, ".gumply/import")).catch(() => [])).toEqual([]);
+    expect(store.list().map((meta) => meta.id)).toEqual(["Existing"]);
+  }
+
+  it("the intact synthetic export, stored or deflated, still imports (the control)", async () => {
+    const zip = await syntheticZip([STORED]);
+    expect(locate(zip, STORED).method).toBe(0);
+    expect(locate(zip, DEFLATED).method).toBe(8);
+    expect(readNotionZip(zip).entries).toHaveLength(17);
+    const { store } = await createTestServer();
+    const imports = new NotionImports(store);
+    const job = await imports.settled(imports.start(zip, null).id);
+    expect(job.state, job.error).toBe("done");
+  });
+
+  it("one flipped byte in a stored entry fails the whole import, naming the file; nothing is written", async () => {
+    const zip = await syntheticZip([STORED]);
+    const { start, end } = locate(zip, STORED);
+    zip[start + Math.floor((end - start) / 2)] ^= 0x20;
+    expect(() => readNotionZip(zip)).toThrow(damagedMessage(STORED));
+    await expectDamaged(zip, STORED);
+  });
+
+  it("one flipped byte in a deflated entry fails, naming the file, whether it still inflates or not", async () => {
+    const intact = await syntheticZip();
+    const { start, end } = locate(intact, DEFLATED);
+    for (let k = 1; k < 16; k += 1) {
+      const zip = intact.slice();
+      zip[start + Math.floor(((end - start) * k) / 16)] ^= 0x01;
+      expect(() => readNotionZip(zip), `byte ${k}/16`).toThrow(damagedMessage(DEFLATED));
+    }
+    const zip = intact.slice();
+    zip[start + Math.floor((end - start) / 2)] ^= 0x01;
+    await expectDamaged(zip, DEFLATED);
+  });
+
+  it("an entry whose size doesn't match the zip's directory fails, naming the file", async () => {
+    const zip = await syntheticZip([STORED]);
+    const { record } = locate(zip, STORED);
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    view.setUint32(record + 24, view.getUint32(record + 24, true) + 1, true);
+    expect(() => readNotionZip(zip)).toThrow(damagedMessage(STORED));
+  });
+
+  it("a truncated export fails as damaged (no file to name); nothing is written", async () => {
+    const intact = await syntheticZip();
+    for (const keep of [0.3, 0.6, 0.9]) expect(() => readNotionZip(intact.subarray(0, Math.floor(intact.length * keep))), `${keep}`).toThrow(damagedMessage());
+    expect(() => readNotionZip(intact.subarray(0, intact.length - 10))).toThrow(damagedMessage());
+    await expectDamaged(intact.slice(0, Math.floor(intact.length * 0.6)), undefined);
+  });
+
+  it("64 bytes overwritten a third of the way in (@polish-dev's #x8uddj3z export) fails; started in Russian, the API reason stays English", async () => {
+    const zip = await syntheticZip();
+    const at = Math.floor(zip.length / 3);
+    zip.fill(0x41, at, at + 64);
+    let file: string | undefined;
+    try {
+      readNotionZip(zip);
+    } catch (error) {
+      file = (error as { file?: string }).file;
+    }
+    expect(file).toBeDefined();
+    await expectDamaged(zip, file, "ru");
+  });
+});
