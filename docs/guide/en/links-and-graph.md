@@ -20,6 +20,7 @@ When several pages share a name, a link means the one in the linking page's own 
 
 - **Rename a page:** links to it in other pages and on boards are updated to the new title, Markdown links (`[text](Old title.md)`) included, each in the form it was written in. Only the links change; nothing else in those files does.
 - **Rename a heading:** links to that heading (`[[Page#Old]]`) are updated too.
+- **A linking page that can't be written** (it's read-only on disk) keeps its old links. A notice names it, so you can make it writable and fix those links.
 - **Move a page** to another folder: its links keep working, links to its images and files are adjusted, and Markdown links to it get its new path.
 - **Renamed in another app** (Obsidian, a file manager, or a sync tool that delivers the old name's removal and the new file a few seconds apart): the sidebar shows the new name within a moment, and the links that app rewrote work as they are. If the page is open, it stays open under the new name, with anything you were typing, and its [history](version-history.md) moves with it.
 
