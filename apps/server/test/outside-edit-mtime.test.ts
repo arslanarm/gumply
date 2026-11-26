@@ -192,6 +192,17 @@ describe("the other writers check the bytes too (#y5k39njn, @graph-dev's grep)",
     expect(text).toContain("[[Hub 2]]");
   });
 
+  it("a heading rename's link rewrite (not batched: rewriteEach) re-reads a page whose bytes changed at the same file time", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Plan.md"), "# Plan\n\n## Goals\n\nShip it.\n");
+    await writeFile(join(dir, "Daily.md"), "Today: [[Plan#Goals]].\n");
+    await store.rescan();
+    await sameTimeEdit(dir, "Daily", (text) => text.replace("Today:", "Today (outside line):"));
+    const plan = store.get("Plan");
+    await store.update("Plan", { content: plan.content.replace("## Goals", "## Objectives"), expectedUpdated: plan.updated });
+    expect(await readFile(join(dir, "Daily.md"), "utf8")).toBe("Today (outside line): [[Plan#Objectives]].\n");
+  });
+
   it("a tag rename never writes over an outside edit at the same file time", async () => {
     const { store, dir } = await createTestServer();
     const page = await store.create({ title: "Wallet", content: "Spent #money today." });

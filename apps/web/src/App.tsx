@@ -267,6 +267,11 @@ export function App() {
   const [pageReload, setPageReload] = useState(0);
   const [editorRevision, setEditorRevision] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  /** #bajn9rna: why the last save failed, when it's one the status names (a read-only file: 423). */
+  const [saveErrorReason, setSaveErrorReason] = useState<"readOnly" | null>(null);
+  const handleSaveError = useCallback((error: unknown) => {
+    setSaveErrorReason(error instanceof ApiRequestError && error.status === 423 ? "readOnly" : null);
+  }, []);
   // #2xx3uae4: read by the poll; the retry schedule starts over once saves work again.
   const saveStateRef = useRef<SaveState>("idle");
   saveStateRef.current = saveState;
@@ -2614,6 +2619,7 @@ export function App() {
         <span className="topbar-spacer" />
         <SaveStatus
           state={saveState}
+          reason={saveState === "error" ? saveErrorReason : null}
           onRetry={handleRetrySave}
           onReload={() => void handleConflictReload()}
           onKeepMine={() => void handleConflictKeepMine()}
@@ -2902,6 +2908,7 @@ export function App() {
                       initial={boardDoc}
                       pages={boardPageOptions}
                       onSaveState={setSaveState}
+                      onSaveError={handleSaveError}
                       onSaved={handleBoardSaved}
                       onConflictBackup={handleConflictBackup}
                       onOpenFile={openVaultPath}
@@ -2964,6 +2971,7 @@ export function App() {
                     page={page}
                     pages={documentPages}
                     onSaveState={setSaveState}
+                    onSaveError={handleSaveError}
                     onSaved={handlePageSaved}
                     waitForRename={waitForRename}
                     onRenameRewroteOwn={reloadAfterOwnRewrite}

@@ -32,6 +32,8 @@ export interface AutosaveOptions {
   indicatorDelay?: number;
   /** Treat this error as "page changed on disk" and stop automatic retries. */
   isConflict?: (error: unknown) => boolean;
+  /** #bajn9rna: the error a failed write ended with (shown as the reason, e.g. a read-only file). */
+  onError?: (error: unknown) => void;
   /**
    * Start a write that survives the page unloading (`fetch` with
    * `keepalive`), synchronously. `afterInFlight`: a normal write is still
@@ -48,6 +50,7 @@ export class Autosave {
   private readonly indicatorDelay: number;
   private readonly isConflict: ((error: unknown) => boolean) | undefined;
   private readonly exitSave: AutosaveOptions["exitSave"];
+  private readonly onError: AutosaveOptions["onError"];
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private indicatorTimer: ReturnType<typeof setTimeout> | null = null;
@@ -68,6 +71,7 @@ export class Autosave {
     this.indicatorDelay = options.indicatorDelay ?? 500;
     this.isConflict = options.isConflict;
     this.exitSave = options.exitSave;
+    this.onError = options.onError;
   }
 
   get state(): SaveState {
@@ -171,6 +175,7 @@ export class Autosave {
       (error: unknown) => {
         if (this.exiting === value) this.exiting = null;
         if (this.pending === null && value !== this.lastSaved) this.pending = value;
+        this.onError?.(error);
         this.setStatus(this.isConflict?.(error) ? "conflict" : "error");
       },
     );
@@ -206,6 +211,7 @@ export class Autosave {
         this.writing = false;
         this.inFlight = null;
         this.clearIndicatorTimer();
+        this.onError?.(error);
         if (this.isConflict?.(error)) {
           this.setStatus("conflict");
           return;
