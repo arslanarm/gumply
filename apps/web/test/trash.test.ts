@@ -8,6 +8,7 @@ import {
   restoredId,
   restoredMessage,
   trashDepth,
+  trashTitle,
   trashedCount,
   trashLocation,
 } from "../src/lib/trash";
@@ -99,6 +100,24 @@ describe("trash helpers", () => {
     expect(trashedCount([database])).toBe(13);
     expect(deleteForeverBody(database)).toBe(
       "This deletes this database with its 12 rows and 1 other file from your vault for good. You can't undo this. This also deletes its version history.",
+    );
+  });
+
+  it("the rows a table undo took out are one item, \"2 rows from People\" (#7prbquxu phase 4, @lead)", () => {
+    const rows = item({
+      id: "People",
+      kind: "folder",
+      title: "People",
+      undoRows: 2,
+      children: [
+        { id: "People/Bo", kind: "page", title: "Bo", parentId: "People" },
+        { id: "People/Cy", kind: "page", title: "Cy", parentId: "People" },
+      ],
+    });
+    expect(trashTitle(rows)).toBe("2 rows from People");
+    expect(trashedCount([rows])).toBe(2);
+    expect(deleteForeverBody(rows)).toBe(
+      "This deletes 2 rows from “People” from your vault for good. You can't undo this. This also deletes its version history.",
     );
   });
 
