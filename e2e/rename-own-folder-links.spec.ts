@@ -34,12 +34,8 @@ test('renaming a parent from its title keeps the rewrite of its own [[P/Sub]] wh
   expect(text).not.toContain('[[Parent/Sub]]');
 });
 
-test('typing during the rename: no stale link; the typed text goes to History, and a notice says so (#ekp8ns58 (A))', async ({ page, request, vault }) => {
-  void vault; // resets the vault before and after
-  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
-  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
-  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
-  // The title PUT is held for 2 s, so there is time to type while it runs.
+/** Holds the rename's title PUT for 2 s, so there is time to type while it runs. */
+async function holdRename(page: import('@playwright/test').Page) {
   await page.route(
     (url) => url.pathname === '/api/pages/Parent',
     async (route) => {
@@ -48,8 +44,31 @@ test('typing during the rename: no stale link; the typed text goes to History, a
       await route.continue();
     },
   );
+}
+
+/** Counts the editor's mounts from now on (a remount adds a new editor-content element). */
+async function countMounts(page: import('@playwright/test').Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __mounts: number };
+    w.__mounts = 0;
+    new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node instanceof Element && (node.matches('[data-testid="editor-content"]') || node.querySelector('[data-testid="editor-content"]'))) w.__mounts += 1;
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  return () => page.evaluate(() => (window as unknown as { __mounts: number }).__mounts);
+}
+
+test('typing during the rename is taken in place (#z9hufufn): the typed text and [[Moved/Sub]] in the file, no remount, no notice; undo never brings the old link back', async ({ page, vault }) => {
+  void vault; // resets the vault before and after
+  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
+  await holdRename(page);
   await page.goto('/#/Parent');
   await expect(page.getByTestId('editor-content')).toContainText('See');
+  const mounts = await countMounts(page);
   await page.getByTestId('page-title').click();
   const input = page.getByTestId('page-title-input');
   await input.fill('Moved');
@@ -58,39 +77,54 @@ test('typing during the rename: no stale link; the typed text goes to History, a
   await page.keyboard.press('End');
   await page.keyboard.type(' Typed during.');
   await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
-  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('[[Moved/Sub]]');
-  await page.waitForTimeout(3_000); // any late save has had its chance
-  // (A): the held save is not sent (it had the old link); the reload keeps the typing in History and says so.
-  const notice = page.getByTestId('undo-toast');
-  await expect(notice).toContainText('Your typing during the rename was saved in History.');
-  await notice.hover(); // pauses its 8 s timer (the mouse, not the focus)
-  const text = await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8');
-  expect(text, 'the rewrite stays').toContain('[[Moved/Sub]]');
+  // Right after the answer: keys typed now land too (no remount window).
+  await page.keyboard.type(' Just after.');
+  const file = path.join(E2E_VAULT, 'Moved.md');
+  await expect.poll(() => fs.readFile(file, 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('Just after.');
+  const text = await fs.readFile(file, 'utf8');
+  expect(text).toContain('See [[Moved/Sub]] here. Typed during. Just after.');
   expect(text).not.toContain('[[Parent/Sub]]');
-  expect(text, 'the stale body was not saved').not.toContain('Typed during.');
+  expect(await mounts(), 'the editor was never remounted').toBe(0);
+  await expect(page.getByTestId('undo-toast').filter({ hasText: 'Your typing during the rename' })).toHaveCount(0);
+  // Undo the typing: the rename's change was taken out of the undo history, so the old link never returns.
+  for (let i = 0; i < 6; i++) await page.keyboard.press('ControlOrMeta+z');
+  await page.waitForTimeout(2_000); // the undo's autosave
+  const undone = await fs.readFile(file, 'utf8');
+  expect(undone).not.toContain('[[Parent/Sub]]');
+  expect(undone).toContain('[[Moved/Sub]]');
+});
+
+test('typing during the rename that the line merge cannot carry (the link line deleted): today\'s reload, the typing in History, and the notice (#z9hufufn fallback)', async ({ page, request, vault }) => {
+  void vault; // resets the vault before and after
+  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'Intro.\n\nSee [[Parent/Sub]] here.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
+  await holdRename(page);
+  await page.goto('/#/Parent');
+  await expect(page.getByTestId('editor-content')).toContainText('Intro.');
+  await page.getByTestId('page-title').click();
+  const input = page.getByTestId('page-title-input');
+  await input.fill('Moved');
+  await input.press('Enter');
+  // During the rename: the link's paragraph is deleted, and something typed after Intro.
+  await page.getByTestId('editor-content').getByText('here.').click({ clickCount: 3 });
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.getByTestId('editor-content').getByText('Intro.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Typed during.');
+  await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
+  const notice = page.getByTestId('undo-toast');
+  await expect(notice).toContainText('Your typing during the rename was saved in History.', { timeout: 15_000 });
+  await notice.hover();
+  const text = await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8');
+  expect(text).toContain('[[Moved/Sub]]');
+  expect(text).not.toContain('[[Parent/Sub]]');
+  expect(text).not.toContain('Typed during.');
   const items = ((await (await request.get(`${API_URL}/api/history/Moved`)).json()) as { items: Array<{ file: string; reason?: string }> }).items;
   const kept = items.find((item) => item.reason === 'before-reload');
   expect(kept, 'the typed text is in History').toBeDefined();
   expect(await (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(kept!.file)}`)).text()).toContain('Typed during.');
-  // Focus is back in the body, at the caret (#ekp8ns58: keyed by the new id). Keys typed in the instant
-  // of the remount itself may not reach the page: a known limit for 0.9.6 (no assertion on that instant).
-  await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="editor-content"]')))).toBe(true);
-  await page.keyboard.type(' Typed on.');
-  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8'), { timeout: 15_000 }).toContain('here. Typed on.');
-  expect(await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8')).toContain('[[Moved/Sub]]');
-  // The notice's History button opens it.
-  await notice.getByRole('button', { name: 'History' }).click();
-  await expect(page.getByTestId('history-dialog')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('history-dialog')).toBeHidden();
-  // Typing on in the reloaded page lands, with the rewrite kept.
-  await page.getByTestId('editor-content').getByText('here.').click();
-  await page.keyboard.press('End');
-  await page.keyboard.type(' Typed later.');
-  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8'), { timeout: 15_000 }).toContain('Typed later.');
-  const later = await fs.readFile(path.join(E2E_VAULT, 'Moved.md'), 'utf8');
-  expect(later).toContain('[[Moved/Sub]]');
-  expect(later).not.toContain('[[Parent/Sub]]');
 });
 
 test('a self-link in the renamed page is never put back to an older form by the editor (@lead)', async ({ page, vault }) => {

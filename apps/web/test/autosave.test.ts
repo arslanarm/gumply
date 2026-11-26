@@ -7,6 +7,26 @@ afterEach(() => {
 });
 
 describe("Autosave", () => {
+  it("#z9hufufn: rebase moves the baseline only; a held write returning the server's text leaves the merged edit to save next", async () => {
+    vi.useFakeTimers();
+    let release: (value: string) => void = () => undefined;
+    const save = vi.fn((value: string) => (value === "held" ? new Promise<string>((resolve) => (release = resolve)) : Promise.resolve(value)));
+    const autosave = new Autosave({ save, delay: 600 });
+    autosave.reset("old");
+    expect(autosave.baseline()).toBe("old");
+    autosave.schedule("held");
+    await vi.advanceTimersByTimeAsync(600); // the held write is in flight
+    // The rename's rewrite is taken in place: the server's text is the baseline, the merged typing pending.
+    autosave.rebase("server");
+    expect(autosave.baseline()).toBe("server");
+    autosave.schedule("server + typing");
+    release("server"); // the held write isn't sent: it reports the server's text as written
+    await vi.advanceTimersByTimeAsync(600);
+    expect(save).toHaveBeenLastCalledWith("server + typing");
+    expect(autosave.baseline()).toBe("server + typing");
+    expect(autosave.isDirty()).toBe(false);
+  });
+
   it("debounces rapid edits and writes only the latest snapshot", async () => {
     vi.useFakeTimers();
     const save = vi.fn(async (_value: string) => {});
