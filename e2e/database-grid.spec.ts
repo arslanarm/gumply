@@ -310,6 +310,8 @@ async function paste(page: import('@playwright/test').Page, text: string, html =
 test('a block pasted at the active cell overwrites down and right, and rows past the end become new rows (phase 2)', async ({ page, request, vault }) => {
   void vault;
   await writeVault(request, PEOPLE);
+  // The vault's types file outlives a test (another case makes "age" Text): say what this one needs.
+  await request.put(`${API_URL}/api/properties/age`, { data: { type: 'number' } });
   await openPeople(page, ['Ann', 'Bo']);
   const typing = page.getByTestId('base-typing-input');
   await typing.click();
@@ -384,6 +386,7 @@ test('a block pasted on the typing row of an empty database opens the preview; P
 test('"Import CSV…" in the ⋯ panel reads a file with commas into the same preview (phase 2)', async ({ page, request, vault }) => {
   void vault;
   await writeVault(request, PEOPLE);
+  await request.put(`${API_URL}/api/properties/age`, { data: { type: 'number' } });
   await openPeople(page, ['Ann', 'Bo']);
   await page.getByTestId('base-settings-button').click();
   const chooser = page.waitForEvent('filechooser');

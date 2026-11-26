@@ -319,7 +319,8 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
 
   it("a paste's new columns join the view's order in the same request (#7prbquxu phase 2, step 3)", async () => {
     const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - role\n';
-    const { dir, store } = await vault({ "People.base": base });
+    // The rows folder exists (one row in it): the base owns it.
+    const { dir, store } = await vault({ "People.base": base, "People/Zed.md": "Zed\n" });
     const result = await store.pasteIntoOwnedRows("People.base", {
       rows: [
         { title: "Ann", set: { role: "Cook", age: 30 } },
