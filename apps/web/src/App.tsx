@@ -118,6 +118,8 @@ interface PendingDelete {
   subPages: number;
   /** D33: a folder's own confirm line ("Its 3 pages and 2 other files …"). */
   body?: string;
+  /** #7prbquxu phase 4: a database with its own rows folder, and how many rows it holds. */
+  rows?: number;
 }
 
 interface ToastState {
@@ -2024,13 +2026,13 @@ export function App() {
   }, [applySavedPage]);
 
   const performDelete = useCallback(
-    async (id: PageId) => {
+    async (id: PageId, withRows = false) => {
       setActionError(null);
 
       const wasBoard = isBoardId(id);
       const wasBase = isBaseId(id);
       try {
-        const result = await api.deletePage(id);
+        const result = await api.deletePage(id, withRows ? { withRows: true } : {});
         const nextId = focusAfterDelete(pages, id);
         const list = await loadPages();
 
@@ -2123,6 +2125,14 @@ export function App() {
       if (!target) return;
       // D33: a folder asks first when it holds anything (pages, boards or
       // other files, at any depth); an empty one goes straight to the trash.
+      // #7prbquxu phase 4: a database with its own rows asks whether they go too (an empty one takes its folder along).
+      if (target.kind === "base" && target.rowsFolder) {
+        const folder = target.rowsFolder;
+        const rows = pages.filter((item) => item.id.startsWith(`${folder}/`) && item.kind !== "folder").length;
+        if (rows === 0) void performDelete(id, true);
+        else setPendingDelete({ page: target, subPages: 0, rows });
+        return;
+      }
       if (target.kind === "folder") {
         const contents = folderContents(pages, id);
         if (contents.pages + contents.boards + contents.otherFiles > 0) {
@@ -2144,12 +2154,15 @@ export function App() {
     if (pending) moveFocus(pending.page.id);
   }, [pendingDelete, moveFocus]);
 
-  const confirmDelete = useCallback(() => {
-    const pending = pendingDelete;
-    if (!pending) return;
-    setPendingDelete(null);
-    void performDelete(pending.page.id);
-  }, [pendingDelete, performDelete]);
+  const confirmDelete = useCallback(
+    (withRows: boolean) => {
+      const pending = pendingDelete;
+      if (!pending) return;
+      setPendingDelete(null);
+      void performDelete(pending.page.id, pending.rows !== undefined && withRows);
+    },
+    [pendingDelete, performDelete],
+  );
 
   /** Focus a page row if it is still rendered (after a move). */
   const focusPageRow = useCallback((id: PageId) => {
@@ -3126,6 +3139,7 @@ export function App() {
           title={pendingDelete.page.title}
           subPages={pendingDelete.subPages}
           body={pendingDelete.body}
+          {...(pendingDelete.rows !== undefined ? { rows: pendingDelete.rows } : {})}
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
         />

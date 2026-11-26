@@ -241,7 +241,8 @@ export function createApiRoutes(store: VaultStore): Hono {
   });
 
   api.delete("/pages/:id", async (c) => {
-    const result = await store.remove(c.req.param("id"));
+    // #7prbquxu phase 4: ?withRows=1 takes a database's own rows folder to the Trash with it, as one item.
+    const result = await store.remove(c.req.param("id"), { withRows: c.req.query("withRows") === "1" });
     return c.json<DeletePageResult>(result);
   });
 

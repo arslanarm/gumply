@@ -678,6 +678,10 @@ interface TrashEntry {
   deletedAt: string;
   /** A plain folder (D33): `file` is its directory. */
   folder: boolean;
+  /** #7prbquxu phase 4: a database deleted with its rows: the rows folder's own entry, restored with it. */
+  with?: string;
+  /** #7prbquxu phase 4: this folder entry belongs to a database's entry (not listed on its own). */
+  partOf?: string;
 }
 
 /** `.trash/<trashId>/meta.json` (D11). */
@@ -690,6 +694,9 @@ interface TrashManifest {
   file?: string;
   /** "folder" for a plain folder (D33); `file` is then the directory. */
   kind?: string;
+  /** #7prbquxu phase 4: see TrashEntry. */
+  with?: string;
+  partOf?: string;
 }
 
 const BOARD_EXTENSION = ".canvas";
@@ -2906,9 +2913,45 @@ export class VaultStore {
     return this.enqueue(() => this.renameTagNow(from, to, skip));
   }
 
-  async remove(id: PageId): Promise<DeletePageResult> {
+  /** `withRows` (#7prbquxu phase 4): a database that owns its rows folder takes it to the Trash too, as one item. */
+  async remove(id: PageId, options: { withRows?: boolean } = {}): Promise<DeletePageResult> {
     await this.renameSettled(this.resolveId(id));
-    return this.enqueue(() => this.removeNow(this.resolveId(id)));
+    return this.enqueue(() => (options.withRows ? this.removeWithRowsNow(this.resolveId(id)) : this.removeNow(this.resolveId(id))));
+  }
+
+  /**
+   * #7prbquxu phase 4 (spec/database-tables §1): delete a database and its rows folder together. The folder goes
+   * to the Trash first, then the base; their two entries are linked, so the Trash lists one item and restoring
+   * it brings both back. A base that owns no folder is an ordinary delete.
+   */
+  private async removeWithRowsNow(id: PageId): Promise<DeletePageResult> {
+    const record = this.require(id);
+    const rows = record.kind === "base" ? this.ownedRowsOf(record, id) : null;
+    if (!rows || !this.folders.has(rows)) return this.removeNow(id);
+    const folder = await this.removeFolderNow(rows);
+    let base: DeletePageResult;
+    try {
+      base = await this.removeNow(id);
+    } catch (error) {
+      // The base stayed: its rows come back too.
+      await this.restoreFolderNow(await this.openTrashEntry(folder.trashId)).catch(() => undefined);
+      throw error;
+    }
+    await this.linkTrashEntries(base.trashId, folder.trashId);
+    return { trashId: base.trashId, deleted: [...base.deleted, ...folder.deleted] };
+  }
+
+  /** Mark a database's entry and its rows folder's entry as one (their manifests name each other). */
+  private async linkTrashEntries(baseTrashId: string, rowsTrashId: string): Promise<void> {
+    for (const [trashId, field, other] of [
+      [baseTrashId, "with", rowsTrashId],
+      [rowsTrashId, "partOf", baseTrashId],
+    ] as const) {
+      const file = join(this.trashRoot, trashId, "meta.json");
+      const manifest = JSON.parse(await readFile(file, "utf8")) as TrashManifest;
+      manifest[field] = other;
+      await writeFile(file, JSON.stringify(manifest, null, 2), "utf8");
+    }
   }
 
   restore(trashId: string): Promise<RestoreResult> {
@@ -2931,6 +2974,12 @@ export class VaultStore {
       const entry = await this.openTrashEntry(trashId);
       await rm(entry.dir, { recursive: true, force: true });
       await this.dropTrashedHistory(entry);
+      // A database deleted with its rows: they go with it.
+      const rows = entry.with ? await this.readTrashEntry(entry.with) : null;
+      if (rows) {
+        await rm(rows.dir, { recursive: true, force: true });
+        await this.dropTrashedHistory(rows);
+      }
     });
   }
 
@@ -5514,7 +5563,10 @@ export class VaultStore {
         typeof manifest.file === "string" && manifest.file.length > 0 ? manifest.file : folder ? top : `${top}.md`;
       if (!this.insideTrashEntry(dir, file)) return null;
       const deletedAt = typeof manifest.deletedAt === "string" ? manifest.deletedAt : (await stat(dir)).mtime.toISOString();
-      return { trashId, dir, id: top, file, deleted, deletedAt, folder };
+      const linked = (value: unknown) => (typeof value === "string" && /^[A-Za-z0-9-]+$/.test(value) ? value : undefined);
+      const withId = linked(manifest.with);
+      const partOf = linked(manifest.partOf);
+      return { trashId, dir, id: top, file, deleted, deletedAt, folder, ...(withId ? { with: withId } : {}), ...(partOf ? { partOf } : {}) };
     } catch {
       return null;
     }
@@ -5662,7 +5714,11 @@ export class VaultStore {
 
   private async listTrashNow(): Promise<TrashItem[]> {
     const items: TrashItem[] = [];
-    for (const entry of await this.trashEntries()) {
+    const entries = await this.trashEntries();
+    const ids = new Set(entries.map((entry) => entry.trashId));
+    for (const entry of entries) {
+      // A database's rows folder is in the Trash with it: one item (restored together).
+      if (entry.partOf && ids.has(entry.partOf)) continue;
       const item = await this.trashItemFor(entry);
       if (item) items.push(item);
     }
@@ -5760,9 +5816,13 @@ export class VaultStore {
    * Sub-pages come back inside it. Attachment links and board cards follow a
    * changed location (D23, D25).
    */
-  private async restoreNow(trashId: string): Promise<RestoreResult> {
+  private async restoreNow(trashId: string, targetId?: PageId): Promise<RestoreResult> {
     const entry = await this.openTrashEntry(trashId);
-    if (entry.folder) return this.restoreFolderNow(entry);
+    if (entry.folder) return this.restoreFolderNow(entry, targetId);
+    if (entry.with && targetId === undefined) {
+      const rows = await this.readTrashEntry(entry.with);
+      if (rows) return this.restoreWithRowsNow(entry, rows);
+    }
     const pageSource = resolve(entry.dir, entry.file);
     // Only a real file comes back (never a symlink planted in `.trash/`).
     if (!(await this.readTrashedRecord(entry, entry.id))) throw notFound("Trash entry not found");
@@ -5779,7 +5839,7 @@ export class VaultStore {
     const name = entry.id.split("/").pop() ?? entry.id;
     const stem = name.slice(0, name.length - idExtension(kind).length);
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
+    const newId = targetId ?? (await this.restoreTarget(folder, stem, hasFolder, taken, kind));
 
     const pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
     const childTarget = join(this.root, newId);
@@ -5842,7 +5902,33 @@ export class VaultStore {
    * it was if its parent folder still exists (else at the top level), with
    * ` 2` when the name is taken by a page, board or folder.
    */
-  private async restoreFolderNow(entry: TrashEntry): Promise<RestoreResult> {
+  /**
+   * #7prbquxu phase 4: a database deleted with its rows comes back with them, at a name free as both a base and a
+   * folder (as New database picks one); when that isn't the old name, its marker and filter follow the folder.
+   */
+  private async restoreWithRowsNow(entry: TrashEntry, rows: TrashEntry): Promise<RestoreResult> {
+    const parent = parentOf(entry.id);
+    const parentAlive = parent === null || (await this.folderExists(parent));
+    const stem = childPageId(parentAlive ? parent : null, (entry.id.split("/").pop() ?? entry.id).slice(0, -idExtension("base").length));
+    const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
+    const baseId = await this.freeTarget(stem, true, taken, "base");
+    const rowsId = baseId.slice(0, -idExtension("base").length);
+    const folderResult = await this.restoreFolderNow(rows, rowsId);
+    const result = await this.restoreNow(entry.trashId, baseId);
+    const record = this.pages.get(result.id);
+    if (record && rowsId !== rows.id) {
+      try {
+        const text = updateBaseSource(record.baseSource ?? "", withOwnedRows(parseBase(record.baseSource ?? ""), rowsId));
+        if (text !== record.baseSource) await this.writeBaseFile(record, text);
+      } catch (error) {
+        console.warn(`[gumply] restoring ${result.id}: its rows folder is ${rowsId}, but the base couldn't follow:`, error);
+      }
+    }
+    const restoredIds = new Set([...result.restored, ...folderResult.restored].map((meta) => meta.id));
+    return { ...result, restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)) };
+  }
+
+  private async restoreFolderNow(entry: TrashEntry, targetId?: PageId): Promise<RestoreResult> {
     const source = await this.trashedFolderPath(entry);
     if (!source) throw notFound("Trash entry not found");
     const originalParent = parentOf(entry.id);
@@ -5850,7 +5936,7 @@ export class VaultStore {
     const folder = parentAlive ? originalParent : null;
     const name = entry.id.split("/").pop() ?? entry.id;
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = await this.restoreTarget(folder, name, true, taken, "page");
+    const newId = targetId ?? (await this.restoreTarget(folder, name, true, taken, "page"));
     const target = join(this.root, newId);
     if (!target.startsWith(`${this.root}${sep}`)) throw notFound("Trash entry not found");
 

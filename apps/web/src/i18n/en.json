@@ -1345,6 +1345,8 @@
     "renameClash": "These rows already have “{{name}}”: {{titles}}. Nothing was renamed.",
     "renameRowsFailed": "Couldn't rename “{{name}}” in these rows: {{titles}} (changed elsewhere, or read-only). Nothing was renamed.",
     "renameStuck": "These rows couldn't be put back and now have “{{name}}”: {{titles}}.",
+    "deleteWithRows_one": "Also move its {{count}} row to the Trash (it comes back with the database).",
+    "deleteWithRows_other": "Also move its {{count}} rows to the Trash (they come back with the database).",
     "showRowsInSidebar": "Show rows in the sidebar",
     "hideRowsInSidebar": "Hide rows in the sidebar",
     "editOptions": "Edit options…",

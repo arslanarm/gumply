@@ -479,10 +479,11 @@ export const api = {
       request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type, ...(options.ifAbsent ? { ifAbsent: true } : {}) }) }),
     ),
 
-  deletePage: (id: PageId): Promise<DeletePageResult> =>
+  /** `withRows` (#7prbquxu phase 4): a database takes its own rows folder to the Trash with it, as one item. */
+  deletePage: (id: PageId, options: { withRows?: boolean } = {}): Promise<DeletePageResult> =>
     mutate(async () => {
       const result = await request<{ trashId?: string; deleted?: PageId[] } | undefined>(
-        pagePath(id),
+        `${pagePath(id)}${options.withRows ? "?withRows=1" : ""}`,
         { method: "DELETE" },
       );
       if (!result) return { trashId: null, deleted: [id] };
