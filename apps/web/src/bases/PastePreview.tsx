@@ -1,11 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { isValidPropertyKey, type PropertyType } from "@gumply/core";
+import { isValidPropertyKey, type PropertyType, type SelectKind } from "@gumply/core";
 import { useT } from "../i18n/index.js";
 import { useModal } from "../lib/modal.js";
 import { guessHeaderRow, guessType, offersSelect, pastedValue, type PastedRow } from "./paste.js";
 
-/** The types a pasted column can take here (Select and Multi-select come with phase 3). */
-const PREVIEW_TYPES: readonly PropertyType[] = ["text", "number", "checkbox", "date", "multitext"];
+/** The types a pasted column can take here; Select and Multi-select keep their options in the base. */
+type PreviewType = PropertyType | SelectKind;
+const PREVIEW_TYPES: readonly PreviewType[] = ["text", "number", "checkbox", "date", "multitext", "select", "multiselect"];
+const isSelectKind = (type: PreviewType): type is SelectKind => type === "select" || type === "multiselect";
 /** Above this many rows, the paste asks once more (spec §5). */
 export const PASTE_CONFIRM_ROWS = 1_000;
 
@@ -13,8 +15,10 @@ export interface PreviewResult {
   rows: PastedRow[];
   /** The columns' keys in order (the view gains the ones it doesn't show yet). */
   keys: string[];
-  /** Each new key's type (set only where the vault has none). */
+  /** Each new key's type (set only where the vault has none): a Select is text, a Multi-select a list. */
   types: Record<string, PropertyType>;
+  /** Columns made Select or Multi-select: their pasted values become the base's options, in the same request. */
+  selects: Record<string, { kind: SelectKind; values: string[] }>;
 }
 
 /**
@@ -42,11 +46,12 @@ export function PastePreview(props: {
   const headerRow = props.block[0] ?? [];
   const defaultName = (col: number) => (headers ? (headerRow[col] ?? "").trim() : "") || t("bases.pasteColumn", { n: col + 1 });
   const [names, setNames] = useState<Record<number, string>>({});
-  const [types, setTypes] = useState<Record<number, PropertyType>>({});
+  const [types, setTypes] = useState<Record<number, PreviewType>>({});
   const nameOf = (col: number) => names[col] ?? defaultName(col);
-  const typeOf = (col: number): PropertyType => {
+  const typeOf = (col: number): PreviewType => {
     const known = props.known.get(nameOf(col).trim());
-    if (known && (PREVIEW_TYPES as readonly string[]).includes(known)) return known as PropertyType;
+    if (known && (PREVIEW_TYPES as readonly string[]).includes(known)) return known as PreviewType;
+    // Guessed, never Select by itself (spec §5): that's offered by the hint.
     return types[col] ?? (guessType(body.map((row) => row[col] ?? "")) as PropertyType);
   };
   const [confirming, setConfirming] = useState(false);
@@ -83,19 +88,31 @@ export function PastePreview(props: {
       return;
     }
     const keys = columns.map((col) => nameOf(col).trim());
+    // A Select's value is its text; a Multi-select's a list (comma-separated in a cell).
+    const valueType = (type: PreviewType) => (type === "select" ? "text" : type === "multiselect" ? "multitext" : type);
     const rows: PastedRow[] = body.map((cells) => {
       const set: PastedRow["set"] = {};
       columns.forEach((col, index) => {
-        const value = pastedValue(cells[col] ?? "", typeOf(col));
+        const value = pastedValue(cells[col] ?? "", valueType(typeOf(col)));
         if (value !== null && value.value !== null) set[keys[index]!] = value.value;
       });
       return { title: (cells[0] ?? "").trim() || props.untitled, set };
     });
     const typesByKey: Record<string, PropertyType> = {};
+    const selects: PreviewResult["selects"] = {};
     columns.forEach((col, index) => {
-      if (!props.known.has(keys[index]!)) typesByKey[keys[index]!] = typeOf(col);
+      const key = keys[index]!;
+      const type = typeOf(col);
+      if (!props.known.has(key)) typesByKey[key] = valueType(type) as PropertyType;
+      if (isSelectKind(type)) {
+        const values = rows.flatMap((row) => {
+          const value = row.set[key];
+          return Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+        });
+        selects[key] = { kind: type, values: values.filter((value, at) => values.indexOf(value) === at) };
+      }
     });
-    props.onPaste({ rows, keys, types: typesByKey });
+    props.onPaste({ rows, keys, types: typesByKey, selects });
   };
 
   const shown = body.slice(0, 5);
@@ -131,15 +148,15 @@ export function PastePreview(props: {
                   aria-label={t("properties.type")}
                   value={typeOf(col)}
                   disabled={known}
-                  onChange={(event) => setTypes((current) => ({ ...current, [col]: event.target.value as PropertyType }))}
+                  onChange={(event) => setTypes((current) => ({ ...current, [col]: event.target.value as PreviewType }))}
                 >
                   {PREVIEW_TYPES.map((type) => (
                     <option key={type} value={type}>
-                      {t(`properties.types.${type}`)}
+                      {type === "select" ? t("bases.selectType") : type === "multiselect" ? t("bases.multiselectType") : t(`properties.types.${type}`)}
                     </option>
                   ))}
                 </select>
-                {known ? <span className="base-paste-hint">{t("bases.pasteKnownColumn")}</span> : offersSelect(values) ? <span className="base-paste-hint">{t("bases.pasteSelectLater")}</span> : null}
+                {known ? <span className="base-paste-hint">{t("bases.pasteKnownColumn")}</span> : offersSelect(values) && !isSelectKind(typeOf(col)) ? <span className="base-paste-hint" data-testid={`base-paste-select-hint-${col}`}>{t("bases.pasteSelectHint")}</span> : null}
               </div>
             );
           })}

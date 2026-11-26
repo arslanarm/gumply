@@ -1403,7 +1403,7 @@
     "pasteNameColumn": "Name",
     "pasteColumn": "Column {{n}}",
     "pasteKnownColumn": "Already a property here: its type stays.",
-    "pasteSelectLater": "Few repeated values: this could be a Select (coming soon).",
+    "pasteSelectHint": "Few repeated values: this could be a Select.",
     "pasteBadName": "“{{name}}” can't be a property name (letters, digits, spaces, “-” and “_”).",
     "pasteDuplicateName": "Two properties are called “{{name}}”.",
     "pasteMany": "That's {{count}} new rows, each a note in the rows folder. Paste them all?",
