@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attachmentHref,
   looksLikeAttachmentHref,
+  markdownPageLinks,
   relinkAttachments,
   resolveAttachmentHref,
 } from "../src/attachment-paths.js";
@@ -116,5 +117,46 @@ describe("names with # or ? round-trip (#btgun63k)", () => {
     expect(attachmentHref("Notes/Day", "Files/a#b.png")).toBe("../Files/a%23b.png");
     // #eg65ktng: `|` is encoded, so the link is safe inside a table cell.
     expect(attachmentHref("Notes/Day", "Files/pipe|x.png")).toBe("../Files/pipe%7Cx.png");
+  });
+});
+
+describe("markdownPageLinks (#idmfvvkg: Markdown links to pages, Obsidian parity)", () => {
+  const pages = new Set(["Home", "Projects", "Projects/Plan", "Projects/Q1 notes", "Archive/Old plan", "Plan"]);
+  const isPage = (id: string) => pages.has(id);
+
+  it("resolves note-relative first, then from the vault root (D23)", () => {
+    // From Projects/Plan's folder ("Projects"): `Q1 notes.md` is next to it.
+    expect(markdownPageLinks("Projects/Plan", "[q](Q1%20notes.md)", isPage)).toEqual(["Projects/Q1 notes"]);
+    // `Plan.md` next to Projects/Q1 notes is Projects/Plan, not the root Plan.
+    expect(markdownPageLinks("Projects/Q1 notes", "[p](Plan.md)", isPage)).toEqual(["Projects/Plan"]);
+    // Not next to the note: from the vault root.
+    expect(markdownPageLinks("Projects/Plan", "[h](Home.md)", isPage)).toEqual(["Home"]);
+    expect(markdownPageLinks("Home", "[o](Archive/Old%20plan.md)", isPage)).toEqual(["Archive/Old plan"]);
+  });
+
+  it("reads every href form: ./, ../, <…>, %-escapes, a #heading or ?query, an image-style link, a title", () => {
+    const body = [
+      "[a](./Q1%20notes.md)",
+      "[b](../Archive/Old%20plan.md#Goals)",
+      "[c](<Q1 notes.md>)",
+      "![d](../Home.md)",
+      '[e](../Plan.md?x=1 "A title")',
+    ].join("\n");
+    expect(markdownPageLinks("Projects/Plan", body, isPage)).toEqual(["Projects/Q1 notes", "Archive/Old plan", "Projects/Q1 notes", "Home", "Plan"]);
+  });
+
+  it("skips URLs, attachments, missing pages, other files, code, and paths out of the vault", () => {
+    const body = [
+      "[w](https://example.com/Home.md)",
+      "[m](mailto:someone@example.com)",
+      "![i](attachments/pic.png)",
+      "[gone](Missing.md)",
+      "[pdf](Projects.pdf)",
+      "`[c](Home.md)`",
+      "```\n[f](Home.md)\n```",
+      "[out](../../Home.md)",
+      "[[Home]]",
+    ].join("\n");
+    expect(markdownPageLinks("Projects/Plan", body, isPage)).toEqual([]);
   });
 });
