@@ -145,8 +145,13 @@ test('a resize (a phone keyboard showing) doesn\'t close an open picker, even wh
   // A row in the lower half of the table.
   await page.locator('[data-row-id="Team/Person 15"] [data-grid-col="1"]').click();
   await expect(page.getByTestId('base-select-picker')).toBeVisible();
-  // The visible area shrinks, as when an on-screen keyboard appears.
+  // The visible area shrinks, as when an on-screen keyboard appears. The browser may then move the table's
+  // scroll by itself (scroll anchoring keeps what's on screen in place), which fires a scroll event: do that
+  // here, every time, as it happened in some runs only (trial-main25).
   await page.setViewportSize({ width: 1280, height: 420 });
+  await page.getByTestId('base-table-scroll').evaluate((element) => {
+    element.scrollTop += 120;
+  });
   await page.waitForTimeout(300);
   await expect(page.getByTestId('base-select-picker')).toBeVisible();
   await expect(page.getByTestId('base-select-search')).toBeFocused();
