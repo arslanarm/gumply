@@ -111,6 +111,9 @@ interface DirectoryRecord {
   crc: number;
   /** Unix mode (0 unless the zip was made on Unix). */
   mode: number;
+  /** The name's bytes as stored, and where the entry's local header starts (0xffffffff: in the ZIP64 extra). */
+  rawName: Uint8Array;
+  local: number;
 }
 
 /**
@@ -151,6 +154,8 @@ function centralDirectory(zip: Uint8Array): DirectoryRecord[] {
       name: strFromU8(zip.subarray(at + 46, at + 46 + nameLength), !(view.getUint16(at + 8, true) & 0x800)),
       crc: view.getUint32(at + 16, true),
       mode: host === 3 ? view.getUint32(at + 38, true) >>> 16 : 0,
+      rawName: zip.subarray(at + 46, at + 46 + nameLength),
+      local: view.getUint32(at + 42, true),
     });
     at += 46 + nameLength + extraLength + commentLength;
   }
@@ -168,6 +173,17 @@ export function zipSymlinks(zip: Uint8Array): Set<string> {
 /** fflate's errors while inflating or reading one entry (its `code`): the entry it was on is the damaged one. */
 const ENTRY_ERRORS = new Set([0, 1, 2, 3, 14]);
 
+/** Whether the entry's local header is there and names the same file as the central directory (fflate reads only the latter). */
+function localHeaderMatches(zip: Uint8Array, record: DirectoryRecord): boolean {
+  if (record.local === 0xffffffff) return true; // ZIP64 offset: past the 1 GB upload limit's reach in practice
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  const at = record.local;
+  if (at + 30 + record.rawName.length > zip.length || view.getUint32(at, true) !== 0x04034b50) return false;
+  if (view.getUint16(at + 26, true) !== record.rawName.length) return false;
+  const local = zip.subarray(at + 30, at + 30 + record.rawName.length);
+  return local.every((byte, i) => byte === record.rawName[i]);
+}
+
 /** Read the export: the entries to import, and what was refused. */
 export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): { entries: NotionEntry[]; skipped: Skipped[] } {
   const skipped: Skipped[] = [];
@@ -177,8 +193,8 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
   let total = 0;
   let tooMany = false;
   let tooBig = false;
-  /** Each entry read: its size and CRC-32 from the central directory. */
-  const declared = new Map<string, { size: number; crc: number | undefined }>();
+  /** Each entry read: its size, and its central-directory record (CRC-32, local header). */
+  const declared = new Map<string, { size: number; record: DirectoryRecord | undefined }>();
   let index = -1;
   /** The entry fflate is reading now (the filter accepted it; it's inflated right after). */
   let reading: string | undefined;
@@ -215,7 +231,7 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
       return false;
     }
     total += file.originalSize;
-    declared.set(name, { size: file.originalSize, crc: directory[index]?.name === name ? directory[index]!.crc : undefined });
+    declared.set(name, { size: file.originalSize, record: directory[index]?.name === name ? directory[index] : undefined });
     reading = name;
     return true;
   };
@@ -233,9 +249,10 @@ export function readNotionZip(zip: Uint8Array, limits = NOTION_IMPORT_LIMITS): {
   if (tooBig) throw new Error(`The export is larger than ${formatImportLimit(limits.totalBytes)} once unpacked.`);
   const entries: NotionEntry[] = [];
   for (const [path, data] of Object.entries(out)) {
-    // A size or CRC-32 that doesn't match the central directory: the bytes aren't the ones zipped.
+    // A size, CRC-32 or local header that doesn't match the central directory: the bytes aren't the ones zipped.
     const expected = declared.get(path);
-    if (!expected || data.length !== expected.size || expected.crc === undefined || crc32(data) !== expected.crc) throw new NotionZipDamaged(path);
+    const record = expected?.record;
+    if (!record || data.length !== expected.size || crc32(data) !== record.crc || !localHeaderMatches(zip, record)) throw new NotionZipDamaged(path);
     entries.push({ path: path.replace(/\\/g, "/").normalize("NFC"), data });
   }
   return { entries, skipped };

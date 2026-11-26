@@ -416,7 +416,7 @@ describe("a damaged export (#4zzay6mn)", () => {
     const { entries, skipped } = readNotionZip(zip);
     expect(skipped).toEqual([]);
     expect(entries.map((entry) => [entry.path, entry.data.length]).sort()).toEqual([
-      ["Root/Page aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md", 14],
+      ["Root/Page aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md", 13],
       ["Root/empty.md", 0],
       ["Root/empty.txt", 0],
     ]);
@@ -453,6 +453,15 @@ describe("a damaged export (#4zzay6mn)", () => {
     const { record } = locate(zip, STORED);
     const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
     view.setUint32(record + 24, view.getUint32(record + 24, true) + 1, true);
+    expect(() => readNotionZip(zip)).toThrow(damagedMessage(STORED));
+  });
+
+  it("an entry whose local header names another file fails, though its bytes are intact (fflate reads only the central directory)", async () => {
+    const zip = await syntheticZip([STORED]);
+    const { start } = locate(zip, STORED);
+    // The local name ends right before the data (no extra field from fflate): change its last letter (`.md` → `.me`).
+    expect(String.fromCharCode(zip[start - 1]!)).toBe("d");
+    zip[start - 1] = "e".charCodeAt(0);
     expect(() => readNotionZip(zip)).toThrow(damagedMessage(STORED));
   });
 
