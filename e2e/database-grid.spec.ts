@@ -620,13 +620,15 @@ test('a paste that takes a while says "Pasting N rows…" until it is done (@lea
     await held;
     await route.continue();
   });
+  await expect(page.getByTestId('base-pasting')).toHaveText('');
   await page.getByTestId('base-typing-input').click();
   await paste(page, 'Name\tage\nIvy\t31\nOtto\t8\nAl\t52\n');
   await page.getByTestId('base-paste-confirm').click();
+  // A live region that's there before the paste (screen readers announce changes inside one), empty until then.
   const status = page.getByTestId('base-pasting');
-  await expect(status).toHaveText(/Pasting 3 rows/);
   await expect(status).toHaveAttribute('role', 'status');
+  await expect(status).toHaveText(/Pasting 3 rows/);
   release();
   await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
-  await expect(status).toHaveCount(0);
+  await expect(status).toHaveText('');
 });
