@@ -83,7 +83,9 @@ describe("a batched rename's first step updates the link index without a full re
   it("@opus-hunter's cases: a link that resolved to another page and now resolves to the renamed one (.md fallback, spacing, NFD, a slug-form file name) follows exactly as in a full rebuild", async () => {
     const { store } = await vault(5, {
       "F/Source.md": "By file: [[Beta.md]]. Spaced: [[beta  page]]. Accented: [[Cafe\u0301]]. Slug: [[omega point]].\n",
-      "Other/Omega Point.md": "The other Omega Point.\n",
+      // @opus-hunter: a slug-form file name too, so both pages match [[omega point]] at the same (slug) step
+      // and only the folder preference decides; a title match ("Omega Point") would win before any slug check.
+      "Other/omega-point.md": "The other omega-point.\n",
       "F/Epsilon.md": "To be omega-point (a slug-form file name).\n",
       "Other/Beta.md": "The other Beta.\n",
       "Other/Beta Page.md": "The other Beta Page.\n",
