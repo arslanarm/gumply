@@ -162,6 +162,40 @@ describe("an outside edit whose file time doesn't move the version (#y5k39njn)",
 /** Main: a rename's link rewrite of other pages runs in batches (N9); wait for them. */
 const settled = (store: { settleRenames?: (ms: number) => Promise<boolean> }) => store.settleRenames?.(10_000);
 
+describe("a property-only outside edit at the same file time (#dqdwz9qw's replay, #y5k39njn's gap)", () => {
+  // The record's signature doesn't cover plain property values, so such an edit used to keep the version.
+  for (const variant of ["a plain note (no updated: key)", "a Gumply page (with updated:)"] as const) {
+    it(`${variant}: the version moves on, a stale properties save is a 409, the outside value stays, and it's an outside History version`, async () => {
+      const { store, dir } = await createTestServer();
+      let id: string;
+      if (variant.startsWith("a plain")) {
+        await writeFile(join(dir, "Ann.md"), "---\nrole: Cook\nage: 30\n---\nAnn\n");
+        await store.rescan();
+        id = "Ann";
+      } else {
+        const page = await store.create({ title: "Ann", content: "Ann" });
+        await store.update(page.id, { properties: { set: { role: "Cook", age: 30 } } });
+        id = page.id;
+      }
+      const file = join(dir, `${id}.md`);
+      const version = store.get(id).updated;
+      const before = await readFile(file, "utf8");
+      const { atime, mtime } = await stat(file);
+      const outside = before.replace("role: Cook", "role: Chef");
+      expect(outside.length).toBe(before.length);
+      await writeFile(file, outside);
+      await utimes(file, atime, mtime);
+      await store.rescan();
+      expect(store.get(id).updated > version, "the version moves on").toBe(true);
+      const stale = await store.update(id, { properties: { set: { role: "Baker" } }, expectedUpdated: version }).then(() => "accepted", (error: Error) => error.message);
+      expect(stale).toMatch(/changed on disk/);
+      expect(await readFile(file, "utf8")).toContain("role: Chef");
+      const { entries } = await readHistory(historyDir(dir, id));
+      expect(entries.some((entry) => entry.source === "external"), "an outside History version").toBe(true);
+    });
+  }
+});
+
 describe("the other writers check the bytes too (#y5k39njn, @graph-dev's grep)", () => {
   /** An outside edit of `name`'s file that keeps its file time; no refresh has read it yet. */
   async function sameTimeEdit(dir: string, name: string, edit: (text: string) => string): Promise<string> {
