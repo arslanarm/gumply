@@ -44,12 +44,16 @@ async function deleteTeam(page: Page, withRows: boolean) {
   await expect(page.getByTestId('page-item-Team')).toHaveCount(0);
   await page.getByTestId('page-item-Team.base').hover();
   await page.getByTestId('page-menu-button-Team.base').click();
+  // #959nz9nr: a database that owns its rows is deleted as a database, not "a database view" (en said so).
+  await expect(page.getByTestId('delete-page-Team.base')).toHaveText('Delete database');
   await page.getByTestId('delete-page-Team.base').click();
   const box = page.getByTestId('delete-with-rows');
   await expect(box).toBeChecked();
   if (!withRows) await box.uncheck();
   await page.getByTestId('delete-confirm').click();
   await expect(page.getByTestId('page-item-Team.base')).toHaveCount(0);
+  // With its rows, the database went; without them, only its view (the rows stay as a folder).
+  await expect(page.getByTestId('undo-toast')).toContainText(withRows ? 'Database deleted' : 'Database view deleted');
 }
 
 test('a database deleted with its rows is one Trash item "with its 3 rows", and Restore brings both back as they were', async ({ page, request, vault }) => {

@@ -105,7 +105,7 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
       'Show rows in the sidebar',
       'New page from template…',
       'History…',
-      'Delete database view',
+      'Delete database',
     ]);
     await page.getByTestId('toggle-rows-People.base').click();
     await expect(page.getByTestId('page-item-People')).toBeVisible();
