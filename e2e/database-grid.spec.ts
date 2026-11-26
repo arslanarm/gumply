@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { APIRequestContext } from '@playwright/test';
 import { api, expect, test } from './fixtures';
-import { E2E_VAULT } from './support/env';
+import { API_URL, E2E_VAULT } from './support/env';
 
 /**
  * #7prbquxu phase 1, step 5 (spec/database-tables §4): a database that owns its rows is a grid. The keyboard
@@ -84,4 +84,41 @@ test('an owned database is a grid: arrows, typing in place, Tab from the typing 
   // Escape leaves the grid.
   await page.keyboard.press('Escape');
   await expect(cell).toHaveCount(0);
+});
+
+test('"+" at the end of the header adds a property column; a key typed elsewhere keeps its type', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { ...PEOPLE, 'Elsewhere.md': '---\nstarted: 2026-01-05\n---\nNot a row\n' });
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
+
+  // A new key: name, type Number, Add. The view gains the column; the file gains one order line.
+  await page.getByTestId('base-add-column-button').click();
+  const name = page.getByTestId('base-add-column-name');
+  await expect(name).toBeFocused();
+  await name.fill('shoe size');
+  await page.getByTestId('base-add-column-type-number').click();
+  await page.getByTestId('base-add-column-submit').click();
+  await expect(page.getByTestId('base-add-column')).toHaveCount(0);
+  await expect.poll(() => read('People.base')).toBe(PEOPLE['People.base'] + '      - shoe size\n');
+  await expect(page.getByTestId('base-th-note.shoe size')).toBeVisible();
+  await expect
+    .poll(async () => ((await (await request.get(`${API_URL}/api/properties`)).json()) as Array<{ key: string; type: string }>).find((info) => info.key === 'shoe size')?.type)
+    .toBe('number');
+
+  // A key that's a date elsewhere: the panel says so, and the type list can't change it.
+  await page.getByTestId('base-add-column-button').click();
+  await name.fill('started');
+  await expect(page.getByTestId('base-add-column-known')).toContainText('started');
+  await expect(page.getByTestId('base-add-column-type-date')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('base-add-column-type-text')).toBeDisabled();
+  await name.press('Enter');
+  await expect.poll(() => read('People.base')).toContain('      - shoe size\n      - started\n');
+
+  // A column the view already shows can't be added twice.
+  await page.getByTestId('base-add-column-button').click();
+  await name.fill('role');
+  await expect(page.getByTestId('base-add-column-error')).toContainText('role');
+  await expect(page.getByTestId('base-add-column-submit')).toBeDisabled();
 });
