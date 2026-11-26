@@ -159,6 +159,9 @@ describe("an outside edit whose file time doesn't move the version (#y5k39njn)",
   });
 });
 
+/** Main: a rename's link rewrite of other pages runs in batches (N9); wait for them. */
+const settled = (store: { settleRenames?: (ms: number) => Promise<boolean> }) => store.settleRenames?.(10_000);
+
 describe("the other writers check the bytes too (#y5k39njn, @graph-dev's grep)", () => {
   /** An outside edit of `name`'s file that keeps its file time; no refresh has read it yet. */
   async function sameTimeEdit(dir: string, name: string, edit: (text: string) => string): Promise<string> {
@@ -188,6 +191,25 @@ describe("the other writers check the bytes too (#y5k39njn, @graph-dev's grep)",
     // 0.9.x: the rename rewrites the linking pages inside the update itself (no N9 batches to settle).
     await store.update(hub.id, { title: "Hub 2" });
     const text = await readFile(join(dir, `${linker.id}.md`), "utf8");
+    expect(text).toContain("Outside line.");
+    expect(text).toContain("[[Hub 2]]");
+  });
+
+  it("a rename's link rewrite of a board re-reads it when its bytes changed at the same file time: the edit stays, the link is rewritten (@graph-dev)", async () => {
+    const { store, dir } = await createTestServer();
+    const hub = await store.create({ title: "Hub", content: "Centre." });
+    const board = await store.createBoard({ title: "Map" });
+    await store.updateBoard(board.meta.id, {
+      board: { nodes: [{ id: "a", type: "text", text: "See [[Hub]].", x: 0, y: 0, width: 200, height: 60 }], edges: [] },
+      expectedUpdated: board.meta.updated,
+    });
+    const file = join(dir, board.meta.id);
+    const { mtime } = await stat(file);
+    await writeFile(file, (await readFile(file, "utf8")).replace("See [[Hub]].", "See [[Hub]]. Outside line."));
+    await utimes(file, mtime, mtime);
+    await store.update(hub.id, { title: "Hub 2" });
+    await settled(store);
+    const text = await readFile(file, "utf8");
     expect(text).toContain("Outside line.");
     expect(text).toContain("[[Hub 2]]");
   });
