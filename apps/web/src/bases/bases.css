@@ -1495,3 +1495,14 @@ ol.base-list {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* #7prbquxu phase 2: a Shift+arrow block (for Copy): a soft fill with the accent edge. */
+.base-grid-selection {
+  position: absolute;
+  z-index: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  opacity: 0.6;
+  pointer-events: none;
+}

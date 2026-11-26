@@ -149,6 +149,16 @@ export function TableView(props: TableViewProps) {
     return at < 0 ? null : { row: at, col: Math.min(active.col, columns.length - 1) };
   }, [active, rowOrder, result.rows, columns.length]);
   const activeRow = activePos ? result.rows[rowOrder[activePos.row]!.row] : undefined;
+  /** #7prbquxu phase 2: where a Shift+arrow block started; with the active cell it spans the selection. */
+  const [anchor, setAnchor] = useState<{ rowId: string; col: number } | null>(null);
+  const selection = useMemo(() => {
+    if (!anchor || !activePos) return null;
+    const at = rowOrder.findIndex((entry) => result.rows[entry.row]?.id === anchor.rowId);
+    if (at < 0) return null;
+    const col = Math.min(anchor.col, columns.length - 1);
+    if (at === activePos.row && col === activePos.col) return null;
+    return { top: Math.min(at, activePos.row), bottom: Math.max(at, activePos.row), left: Math.min(col, activePos.col), right: Math.max(col, activePos.col) };
+  }, [anchor, activePos, rowOrder, result.rows, columns.length]);
   const activeColumn = activePos ? columns[activePos.col] : undefined;
 
   // A row made from the typing row (Tab) becomes active once the table shows it.
@@ -239,7 +249,13 @@ export function TableView(props: TableViewProps) {
     const move = gridMoveFor(event.key, event.shiftKey);
     if (move) {
       event.preventDefault();
-      go(moveCell(activePos, move, rowOrder.length, columns.length));
+      // #7prbquxu phase 2: Shift+arrows grow a block from where they started (for Copy); other moves drop it.
+      const extending = event.shiftKey && event.key.startsWith("Arrow");
+      if (extending && !anchor) setAnchor({ rowId: activeRow.id, col: activePos.col });
+      if (!extending) setAnchor(null);
+      const to = moveCell(activePos, move, rowOrder.length, columns.length);
+      if (extending && to === "past-end") return;
+      go(to);
       return;
     }
     const title = isTitleColumn(activeColumn.id);
@@ -264,6 +280,10 @@ export function TableView(props: TableViewProps) {
       return;
     }
     if (event.key === "Escape") {
+      if (anchor) {
+        setAnchor(null);
+        return;
+      }
       setActive(null);
       sink.blur();
       return;
@@ -345,6 +365,7 @@ export function TableView(props: TableViewProps) {
                 const rowId = target.closest<HTMLElement>("[data-row-id]")?.dataset.rowId;
                 if (!cell || rowId === undefined || target.closest("button, a, input")) return;
                 setActive({ rowId, col: Number(cell.dataset.gridCol) });
+                setAnchor(null);
               }
             : undefined
         }
@@ -415,6 +436,20 @@ export function TableView(props: TableViewProps) {
               />
             );
           })}
+          {grid && selection ? (
+            <div
+              className="base-grid-selection"
+              data-testid="base-grid-selection"
+              data-range={`${selection.top}:${selection.left}-${selection.bottom}:${selection.right}`}
+              aria-hidden="true"
+              style={{
+                top: rowOrder[selection.top]!.itemIndex * rowHeight,
+                height: (rowOrder[selection.bottom]!.itemIndex - rowOrder[selection.top]!.itemIndex + 1) * rowHeight,
+                left: offsets[selection.left],
+                width: widths.slice(selection.left, selection.right + 1).reduce((a, b) => a + b, 0),
+              }}
+            />
+          ) : null}
           {grid && activePos && activeRow && activeColumn && !editRequest ? (
             <input
               ref={sinkRef}
@@ -435,6 +470,7 @@ export function TableView(props: TableViewProps) {
               onKeyDown={onSinkKeyDown}
               onInput={(event) => {
                 if (!typing && event.currentTarget.value) setTyping(true);
+                setAnchor(null);
               }}
               onCompositionStart={() => {
                 const title = isTitleColumn(activeColumn.id);
@@ -473,8 +509,25 @@ export function TableView(props: TableViewProps) {
               onCopy={(event) => {
                 if (typing) return;
                 event.preventDefault();
-                const text = isTitleColumn(activeColumn.id) ? activeRow.title : copiedText(activeRow.values[activeColumn.id] ?? null, activeColumn.type);
-                event.clipboardData.setData("text/plain", text);
+                const cellText = (row: BaseRow, column: BaseColumn) =>
+                  isTitleColumn(column.id) ? row.title : copiedText(row.values[column.id] ?? null, column.type);
+                if (!selection) {
+                  event.clipboardData.setData("text/plain", cellText(activeRow, activeColumn));
+                  return;
+                }
+                // A block: TSV (quoted where a cell holds a tab, a newline or a quote) and an HTML table.
+                const grid: string[][] = [];
+                for (let r = selection.top; r <= selection.bottom; r += 1) {
+                  const row = result.rows[rowOrder[r]!.row]!;
+                  grid.push(columns.slice(selection.left, selection.right + 1).map((column) => cellText(row, column)));
+                }
+                const quoted = (text: string) => (/[\t\n"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text);
+                const html = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+                event.clipboardData.setData("text/plain", grid.map((cells) => cells.map(quoted).join("\t")).join("\n"));
+                event.clipboardData.setData(
+                  "text/html",
+                  `<table>${grid.map((cells) => `<tr>${cells.map((text) => `<td>${html(text)}</td>`).join("")}</tr>`).join("")}</table>`,
+                );
               }}
               onBlur={() => {
                 if (typing) void commitTyping();
