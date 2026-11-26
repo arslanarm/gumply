@@ -25,8 +25,10 @@ async function waitFor(check: () => Promise<boolean> | boolean, ms = 5000): Prom
 const BEFORE = "---\nrole: Cook\n---\nShift notes.\n";
 const AFTER = "---\nrole: Chef\n---\nShift notes.\n";
 
+// @lead: also a minute ahead (a lagging clock is often off by more than seconds).
+for (const aheadMs of [5_000, 60_000] as const)
 for (const how of ["in place", "as an atomic rename"] as const) {
-  describe(`an outside save with a file time 5 s ahead, ${how} (#dqdwz9qw)`, () => {
+  describe(`an outside save with a file time ${aheadMs / 1000} s ahead, ${how} (#dqdwz9qw)`, () => {
     async function setup() {
       const server = await createTestServer();
       const file = join(server.dir, "Staff.md");
@@ -36,7 +38,7 @@ for (const how of ["in place", "as an atomic rename"] as const) {
       return { ...server, file, version };
     }
     async function outsideSave(file: string) {
-      const ahead = new Date(Date.now() + 5_000);
+      const ahead = new Date(Date.now() + aheadMs);
       if (how === "in place") {
         await writeFile(file, AFTER);
         await utimes(file, ahead, ahead);
