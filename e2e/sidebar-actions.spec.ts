@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { APIRequestContext } from '@playwright/test';
 import { api, expect, test } from './fixtures';
-import { E2E_VAULT } from './support/env';
+import { API_URL, E2E_VAULT } from './support/env';
 
 /**
  * v0.6 P3 batch from the everyday-use hunt (#ux5cukze): right-click menu on
@@ -81,6 +81,42 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect(row).toBeFocused();
+  });
+
+  test("a database's own rows folder is hidden under it; its ⋯ menu shows them, and the menu's exact list (#7prbquxu phase 4)", async ({ page, request, vault }) => {
+    void vault;
+    const created = await request.post(`${API_URL}/api/bases`, { data: { title: 'People', rows: true, viewName: 'Table' } });
+    expect(created.status()).toBe(201);
+    await request.post(`${API_URL}/api/pages`, { data: { title: 'Ann', parentId: 'People' } });
+    await page.goto('/');
+    await expect(page.getByTestId('page-item-People.base')).toBeVisible();
+    // The rows folder and its rows aren't in the tree; the database item stands for them.
+    await expect(page.getByTestId('page-item-People')).toHaveCount(0);
+    await expect(page.getByTestId('page-item-People/Ann')).toHaveCount(0);
+
+    await page.getByTestId('page-item-People.base').hover();
+    await page.getByTestId('page-menu-button-People.base').click();
+    const menu = page.getByTestId('page-menu-People.base');
+    await expect(menu.getByRole('menuitem')).toHaveText([
+      'Rename',
+      'Duplicate',
+      'Copy link',
+      'Move to…',
+      'Show rows in the sidebar',
+      'New page from template…',
+      'History…',
+      'Delete database view',
+    ]);
+    await page.getByTestId('toggle-rows-People.base').click();
+    await expect(page.getByTestId('page-item-People')).toBeVisible();
+    await expect.poll(async () => (await request.get(`${API_URL}/api/bases/People.base`)).json().then((doc: { config: { gumply?: { showRows?: boolean } } }) => doc.config.gumply?.showRows)).toBe(true);
+
+    // And back: hidden again.
+    await page.getByTestId('page-item-People.base').hover();
+    await page.getByTestId('page-menu-button-People.base').click();
+    await expect(page.getByTestId('toggle-rows-People.base')).toHaveText('Hide rows in the sidebar');
+    await page.getByTestId('toggle-rows-People.base').click();
+    await expect(page.getByTestId('page-item-People')).toHaveCount(0);
   });
 
   test('Duplicate a page: "<Title> copy" next to it, same body, no sub-pages, opened with the title selected', async ({ page, request, vault }) => {
