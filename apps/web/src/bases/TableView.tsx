@@ -659,7 +659,7 @@ export function TableView(props: TableViewProps) {
         <AddColumn anchor={addColumnAnchor} shown={viewOrder.map((id) => writtenId(propertyId(id)))} onClose={() => setAddColumnAnchor(null)} onAdd={addColumn} />
       ) : null}
       {headerMenu ? (
-        <Popover anchor={headerMenu.anchor} onClose={closeHeaderMenu} label={propertyLabel(headerMenu.column.id, config, t)} testId="base-column-menu" className="is-menu" menu>
+        <Popover anchor={headerMenu.anchor} onClose={closeHeaderMenu} label={propertyLabel(headerMenu.column.id, config, t)} testId="base-column-menu" className="is-menu" menu={renaming === null}>
           <button type="button" role="menuitem" onClick={() => (setSort(headerMenu.column, "ASC"), setHeaderMenu(null))}>
             {t("bases.sortAsc")}
           </button>
@@ -804,7 +804,8 @@ function ColumnEdits(props: {
           ) : null}
         </div>
       )}
-      <div className="base-panel-title">{t("properties.type")}</div>
+      {/* #nr3rkgj2: a label inside the menu, not an item of it. */}
+      <div className="base-panel-title" role="presentation">{t("properties.type")}</div>
       {COLUMN_TYPES.map((type) => {
         const current = !props.kind && type === props.column.type;
         return (

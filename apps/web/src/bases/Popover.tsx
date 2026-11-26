@@ -94,6 +94,8 @@ export function Popover(props: {
   }, [props.menu, anchor]);
 
   const onMenuKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // Tab closes the menu back on its button (the column's header), deliberately, rather than on to the next
+    // control: the header is the menu button, and the next Tab goes on from there.
     if (event.key === "Tab") {
       event.preventDefault();
       onClose();

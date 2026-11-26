@@ -129,6 +129,23 @@ test('#nr3rkgj2 (5): a column\'s menu from the keyboard: Enter opens it on its f
   await expect(titles(page)).toHaveText(['Bo', 'Ann']);
   await expect.poll(() => read('People.base')).toMatch(/sort:\n\s+- property: (note\.)?role\n\s+direction: DESC/);
   await expect(header).toBeFocused();
+
+  // Rename from the keyboard: while its field shows, the panel is a dialog (a text field isn't a menu item), and the
+  // field takes typing.
+  await page.keyboard.press('Enter');
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByTestId('base-rename-column')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(menu).toHaveAttribute('role', 'dialog');
+  const field = page.getByTestId('base-rename-column-input');
+  await expect(field).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('job');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Ann.md')).toMatch(/^job: Cook$/m);
 });
 
 const titles = (page: Page) => page.getByTestId('base-table').locator('.base-title-text');

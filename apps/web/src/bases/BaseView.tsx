@@ -659,7 +659,8 @@ export function BaseView(props: BaseViewProps) {
     const target = event.target as HTMLElement;
     const sinkIdle = target.dataset.testid === "base-grid-cell" && !target.classList.contains("is-typing");
     // #nr3rkgj2: the typing row's field, empty, has nothing of its own to undo (a paste leaves the keyboard there):
-    // Cmd/Ctrl+Z is the table's. With text typed in it, the field keeps its own undo.
+    // Cmd/Ctrl+Z is the table's. With text typed in it, the field keeps its own undo. A trade-off, on purpose: a field
+    // typed in and then emptied by hand undoes the table, not the typing (@lead, #nr3rkgj2).
     const typingEmpty = target.dataset.testid === "base-typing-input" && (target as HTMLInputElement).value === "";
     const editing = target.isContentEditable || ((target.tagName === "INPUT" || target.tagName === "TEXTAREA") && !sinkIdle && !typingEmpty);
     if (editing || !ownedRowsFolder(docRef.current.config)) return;
