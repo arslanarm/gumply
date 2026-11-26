@@ -82,11 +82,14 @@ test('a table cell edit sent right after another app changed that property, befo
   const { atime, mtime } = await fs.stat(ann);
   await fs.writeFile(ann, '---\nrole: Chef\n---\nAnn\n', 'utf8');
   await fs.utimes(ann, atime, mtime);
+  // What the server holds just before the save goes out (@opus-editor): "Cook" means this run hit the window
+  // before the watcher caught up; "Chef" means it didn't (then it's the first case again), shown in the message.
+  const serverHad = ((await api.getPage(request, 'Crew/Ann')) as { properties?: Array<{ key: string; value: unknown }> }).properties?.find((p) => p.key === 'role')?.value;
   const saved = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().includes('/api/pages/'));
   await input.press('Enter');
   const answer = await saved;
   await page.waitForTimeout(1500);
-  expect(await read('Crew/Ann.md'), `the outside value stays (the save answered ${answer.status()})`).toBe('---\nrole: Chef\n---\nAnn\n');
-  expect(answer.status()).toBe(409);
+  expect(await read('Crew/Ann.md'), `the outside value stays (the save answered ${answer.status()}; server had: ${String(serverHad)})`).toBe('---\nrole: Chef\n---\nAnn\n');
+  expect(answer.status(), `server had: ${String(serverHad)}`).toBe(409);
 });
 
