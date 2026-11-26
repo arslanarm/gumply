@@ -1593,3 +1593,78 @@ ol.base-list {
   justify-content: flex-start;
   color: var(--muted);
 }
+
+/* #7prbquxu phase 3: "Edit options…". */
+.base-popover.is-options {
+  width: min(30rem, 92vw);
+  gap: 0.35rem;
+  padding: 0.5rem;
+}
+
+.base-options-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.base-options-row .base-input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.base-option-colors {
+  display: flex;
+  gap: 2px;
+}
+
+.base-option-swatch {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.base-option-swatch[aria-checked="true"] {
+  border-color: var(--text);
+}
+
+.base-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.base-icon-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.base-icon-button.is-down svg {
+  transform: rotate(180deg);
+}
+
+.base-icon-button.is-danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.base-options-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.base-options-confirm p {
+  flex: 1 0 100%;
+  margin: 0;
+}

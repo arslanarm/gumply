@@ -545,6 +545,19 @@ export const api = {
    * conditionally. Used by database views (cells, kanban, calendar). A null
    * value is written as a bare `key:`, as Obsidian does; the key stays.
    */
+  /** #7prbquxu phase 3: rename or clear a Select option in every row and in the base (one request, all or nothing). */
+  changeOwnedRowsOption: (
+    baseId: PageId,
+    change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string },
+    options: { expectedUpdated: string; writer: string },
+  ): Promise<{
+    changed: PageId[];
+    refused: Array<{ id: PageId; title: string }>;
+    stuck: Array<{ id: PageId; title: string }>;
+    baseRefused?: boolean;
+    base: BaseDocument;
+  }> => mutate(() => request(`${basePath(baseId)}/rows-option`, { method: "POST", body: JSON.stringify({ ...change, ...options }) })),
+
   /** #7prbquxu phase 2: a block pasted into an owned database: existing rows set, new rows made, all or nothing. */
   pasteRows: (
     baseId: PageId,

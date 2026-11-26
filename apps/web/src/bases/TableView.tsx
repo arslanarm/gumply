@@ -16,6 +16,7 @@ import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
 import { BaseSelectActions, BaseSelects, BaseText, SelectChips } from "./values.js";
 import { SelectPicker } from "./SelectPicker.js";
+import { OptionsEditor } from "./OptionsEditor.js";
 import { AddColumn, COLUMN_TYPES } from "./AddColumn.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
@@ -310,6 +311,9 @@ export function TableView(props: TableViewProps) {
   const [addColumnAnchor, setAddColumnAnchor] = useState<HTMLElement | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BaseColumn | null>(null);
+  /** #7prbquxu phase 3: "Edit options…" open for this column. */
+  const [editingOptions, setEditingOptions] = useState<{ column: BaseColumn; anchor: HTMLElement } | null>(null);
+  const optionActions = useContext(BaseSelectActions);
   /** #7prbquxu phase 2: what the last paste left out (a short note under the table). */
   const [pasteNote, setPasteNote] = useState<string | null>(null);
   /** #7prbquxu phase 2, step 3: a block pasted on the typing row, waiting in the preview. */
@@ -643,6 +647,10 @@ export function TableView(props: TableViewProps) {
                 setConfirmDelete(headerMenu.column);
                 closeHeaderMenu();
               }}
+              onEditOptions={() => {
+                setEditingOptions({ column: headerMenu.column, anchor: headerMenu.anchor });
+                closeHeaderMenu();
+              }}
             />
           ) : null}
         </Popover>
@@ -658,6 +666,17 @@ export function TableView(props: TableViewProps) {
             setPreviewBlock(null);
             void props.onPastePreview?.(previewed, view.name);
           }}
+        />
+      ) : null}
+      {editingOptions && selects.get(editingOptions.column.id) && optionActions ? (
+        <OptionsEditor
+          anchor={editingOptions.anchor}
+          label={propertyLabel(editingOptions.column.id, config, t)}
+          settings={selects.get(editingOptions.column.id)!}
+          onClose={() => setEditingOptions(null)}
+          onSetOptions={(options) => optionActions.setOptions(editingOptions.column.id, options)}
+          onRename={(from, to) => optionActions.renameOption(editingOptions.column.id, from, to)}
+          onClear={(value) => optionActions.clearOption(editingOptions.column.id, value)}
         />
       ) : null}
       {confirmDelete ? (
@@ -693,6 +712,7 @@ function ColumnEdits(props: {
   onDelete: () => void;
   /** #7prbquxu phase 3: the column is a Select or Multi-select in this database. */
   kind?: SelectKind;
+  onEditOptions?: () => void;
 }) {
   const t = useT();
   const key = props.column.id.slice(5);
@@ -770,6 +790,12 @@ function ColumnEdits(props: {
           {t(kind === "select" ? "bases.selectType" : "bases.multiselectType")}
         </button>
       ))}
+      {props.kind && props.onEditOptions ? (
+        <button type="button" role="menuitem" data-testid="base-edit-options" onClick={props.onEditOptions}>
+          <Icon name="palette" size={14} />
+          {t("bases.editOptions")}
+        </button>
+      ) : null}
       <div className="base-menu-separator" role="separator" />
       <button type="button" role="menuitem" className="is-danger" data-testid="base-delete-column" onClick={props.onDelete}>
         <Icon name="trash" size={14} />

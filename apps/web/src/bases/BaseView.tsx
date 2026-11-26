@@ -431,6 +431,25 @@ export function BaseView(props: BaseViewProps) {
     [load, saveConfig],
   );
 
+  /** #7prbquxu phase 3: an option renamed or cleared in every row and the base; the view takes the base back. */
+  const changeOption = async (change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string }) => {
+    try {
+      await saverRef.current?.flush();
+      const result = await api.changeOwnedRowsOption(baseId, change, { expectedUpdated: docRef.current.meta.updated, writer });
+      saverRef.current?.setVersion(result.base.meta.updated);
+      docRef.current = result.base;
+      setDoc(result.base);
+      if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
+      else if (result.refused.length) {
+        const refused = t("bases.optionRefused", { titles: titleList(result.refused) });
+        props.onError?.(result.stuck.length ? `${refused} ${t("bases.pasteStuck", { titles: titleList(result.stuck) })}` : refused);
+      }
+    } catch (error) {
+      props.onError?.(errorText(error));
+    }
+    await load();
+  };
+
   /** #7prbquxu phase 3: a new option for a Select column, with the next colour (saved in the base). */
   const selectActions = useMemo(
     () => ({
@@ -441,7 +460,16 @@ export function BaseView(props: BaseViewProps) {
         if (!settings || settings.options.some((option) => option.value === value)) return;
         await saveConfig(withSelectSettings(config, key, { ...settings, options: [...settings.options, { value, color: nextOptionColor(settings.options) }] }));
       },
+      setOptions: async (columnId: string, options: SelectOption[]) => {
+        const key = columnId.replace(/^note\./, "");
+        const config = docRef.current.config;
+        const settings = selectSettings(config, key);
+        if (settings) await saveConfig(withSelectSettings(config, key, { ...settings, options }));
+      },
+      renameOption: (columnId: string, from: string, to: string) => changeOption({ key: columnId.replace(/^note\./, ""), rename: { from, to } }),
+      clearOption: (columnId: string, value: string) => changeOption({ key: columnId.replace(/^note\./, ""), clear: value }),
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [saveConfig],
   );
 

@@ -5,7 +5,7 @@
  * removed from the file, as Obsidian does.
  */
 import { createContext, useContext, type CSSProperties } from "react";
-import { selectedValues, resolveWikilink, type SelectSettings, type BaseColumn, type BaseRow, type BaseValue, type BaseView, type PageId, type PageMeta } from "@gumply/core";
+import { selectedValues, resolveWikilink, type SelectOption, type SelectSettings, type BaseColumn, type BaseRow, type BaseValue, type BaseView, type PageId, type PageMeta } from "@gumply/core";
 import { fileUrl } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
 import { hasWikilink, LinkedText } from "../components/PropertyLinks.js";
@@ -20,7 +20,14 @@ export const BaseLinks = createContext<{ pages: readonly PageMeta[]; onOpen: (id
 /** #7prbquxu phase 3: this base's Select and Multi-select columns by column id (`note.status`). */
 export const BaseSelects = createContext<ReadonlyMap<string, SelectSettings>>(new Map());
 /** #7prbquxu phase 3: changes to a Select's options (they live in the base). */
-export const BaseSelectActions = createContext<{ addOption: (columnId: string, value: string) => Promise<void> } | null>(null);
+export const BaseSelectActions = createContext<{
+  addOption: (columnId: string, value: string) => Promise<void>;
+  /** "Edit options…": the options' colours and order (and removing one without touching the rows), in the base only. */
+  setOptions: (columnId: string, options: SelectOption[]) => Promise<void>;
+  /** A rename, or a clear from the rows, in every row and the base (one server request, all or nothing). */
+  renameOption: (columnId: string, from: string, to: string) => Promise<void>;
+  clearOption: (columnId: string, value: string) => Promise<void>;
+} | null>(null);
 
 /**
  * A Select or Multi-select value as coloured chips (spec §6). A value that isn't one of the options
