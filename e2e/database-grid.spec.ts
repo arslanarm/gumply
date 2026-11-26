@@ -399,3 +399,29 @@ test('"Import CSV…" in the ⋯ panel reads a file with commas into the same pr
   await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Ivy', 'Smith, Jo']);
   await expect.poll(() => read('People/Smith, Jo.md')).toMatch(/role: Cook\n[^]*age: 52\n|age: 52\n[^]*role: Cook\n/);
 });
+
+test('Shift+arrows select a block, and Copy gives it as TSV and an HTML table (phase 2)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { ...PEOPLE, 'People/Bo.md': '---\nrole: "Pilot\tand cook"\nage: 41\n---\nBo\n' });
+  await openPeople(page, ['Ann', 'Bo']);
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await typing.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByTestId('base-grid-cell')).toHaveAttribute('data-active', /^People\/Ann\|file\.name$/);
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(page.getByTestId('base-grid-selection')).toHaveAttribute('data-range', '0:0-1:1');
+
+  const copied = await page.evaluate(() => {
+    const data = new DataTransfer();
+    document.activeElement?.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }));
+    return { text: data.getData('text/plain'), html: data.getData('text/html') };
+  });
+  expect(copied.text).toBe('Ann\tCook\nBo\t"Pilot\tand cook"');
+  expect(copied.html).toBe('<table><tr><td>Ann</td><td>Cook</td></tr><tr><td>Bo</td><td>Pilot\tand cook</td></tr></table>');
+
+  // A plain arrow drops the block.
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByTestId('base-grid-selection')).toHaveCount(0);
+});
