@@ -59,6 +59,8 @@ export interface TableViewProps {
   onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
   onSetColumnType?: (column: BaseColumn, type: PropertyType | SelectKind) => Promise<void>;
+  /** #7prbquxu phase 4b: "+" changes the view through this (one undoable step), when given. */
+  onAddColumnView?: (view: BaseView) => void;
   /** #7prbquxu phase 2: "Import CSV…" rows for the paste preview (`n` bumps to open it again). */
   importBlock?: { rows: string[][]; n: number } | null;
   /** #7prbquxu phase 2, step 3: the preview's rows and columns, for this view (one server request). */
@@ -336,7 +338,7 @@ export function TableView(props: TableViewProps) {
   const addColumn = async (key: string, type: PropertyType, setType: boolean) => {
     // Only when the types file has none for the key (a key typed there but used nowhere keeps its type).
     if (setType) await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
-    props.onChangeView({ ...view, order: [...viewOrder, key] });
+    (props.onAddColumnView ?? props.onChangeView)({ ...view, order: [...viewOrder, key] });
   };
   const sorts = Array.isArray(view.sort) ? view.sort : [];
 

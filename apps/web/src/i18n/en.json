@@ -1345,6 +1345,8 @@
     "renameClash": "These rows already have “{{name}}”: {{titles}}. Nothing was renamed.",
     "renameRowsFailed": "Couldn't rename “{{name}}” in these rows: {{titles}} (changed elsewhere, or read-only). Nothing was renamed.",
     "renameStuck": "These rows couldn't be put back and now have “{{name}}”: {{titles}}.",
+    "undoRefused": "Can't undo: these rows changed since: {{titles}}.",
+    "undoChanged": "Can't undo: this changed since.",
     "deleteWithRows_one": "Also move its {{count}} row to the Trash (it comes back with the database).",
     "deleteWithRows_other": "Also move its {{count}} rows to the Trash (they come back with the database).",
     "showRowsInSidebar": "Show rows in the sidebar",
@@ -1795,7 +1797,8 @@
       "conflict": "Kept from a conflict",
       "restoredFrom": "Restored the version saved {{time}}",
       "undidKeepCopy": "Undid Keep copy",
-      "beforeReload": "Before reload"
+      "beforeReload": "Before reload",
+      "database": "Database change"
     },
     "renamedFrom": "Renamed from “{{title}}”",
     "movedFrom": "Moved from {{folder}}",

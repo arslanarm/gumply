@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta, PropertyType } from "@gumply/core";
 import { nextOptionColor, ownedRowsFolder, propertyId, selectedValues, selectSettings, withSelectSettings, type SelectKind, type SelectOption, type SelectSettings } from "@gumply/core";
-import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
+import { api, ApiRequestError, type BaseDocument, type UndoInput } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
 import { t as translate, useT, type MessageKey } from "../i18n/index.js";
 import { Popover } from "./Popover.js";
@@ -46,6 +46,12 @@ function layoutIcon(type: string): IconName {
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/** #7prbquxu phase 4b: one step of the table's undo or redo. */
+type UndoStep =
+  | { kind: "files"; input: UndoInput }
+  | { kind: "config"; from: BaseConfig; to: BaseConfig }
+  | { kind: "cell"; rowId: string; key: string; before: BaseValue; after: BaseValue; version: string };
 
 export interface BaseViewProps {
   baseId: PageId;
@@ -105,6 +111,16 @@ export function BaseView(props: BaseViewProps) {
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [importBlock, setImportBlock] = useState<{ rows: string[][]; n: number } | null>(null);
   resultRef.current = result;
+  /**
+   * #7prbquxu phase 4b (spec/database-tables §7): the table's undo and redo for this session (closing the
+   * table or reloading drops them). Each step, applied, returns its inverse for the other stack.
+   */
+  const undoStack = useRef<UndoStep[]>([]);
+  const redoStack = useRef<UndoStep[]>([]);
+  const recordStep = (step: UndoStep) => {
+    undoStack.current.push(step);
+    redoStack.current = [];
+  };
   const [loadError, setLoadError] = useState<string | null>(null);
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState<{ panel: Panel; n: number } | null>(null);
@@ -289,7 +305,8 @@ export function BaseView(props: BaseViewProps) {
       );
       let saved = true;
       try {
-        await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, row.updated);
+        const saved = await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, row.updated);
+        recordStep({ kind: "cell", rowId: saved.id, key: column.id.slice(5), before: row.values[column.id] ?? null, after: value, version: saved.updated });
       } catch (error) {
         saved = false;
         props.onError?.(errorText(error));
@@ -318,6 +335,7 @@ export function BaseView(props: BaseViewProps) {
       saverRef.current?.setVersion(result.base.meta.updated);
       docRef.current = result.base;
       setDoc(result.base);
+      if (result.files.length) recordStep({ kind: "files", input: { files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })) } });
       return result;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -330,6 +348,15 @@ export function BaseView(props: BaseViewProps) {
       try {
         await saverRef.current?.flush();
         const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer, ...(columns ? { columns } : {}) });
+        if (result.files.length || result.made.length) {
+          recordStep({
+            kind: "files",
+            input: {
+              files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
+              drop: result.made.map((row) => ({ id: row.id, from: row.after })),
+            },
+          });
+        }
         if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
         else if (!result.refused.length) {
           // New columns from the preview take their chosen type only where the vault has none.
@@ -417,9 +444,13 @@ export function BaseView(props: BaseViewProps) {
             }
           }
           await saveConfig(withSelectSettings(config, key, { kind: type, options }));
+          recordStep({ kind: "config", from: docRef.current.config, to: config });
           await api.setPropertyType(key, type === "select" ? "text" : "multitext", { ifAbsent: true }).catch(() => undefined);
         } else {
-          if (selectSettings(config, key)) await saveConfig(withSelectSettings(config, key, null));
+          if (selectSettings(config, key)) {
+            await saveConfig(withSelectSettings(config, key, null));
+            recordStep({ kind: "config", from: docRef.current.config, to: config });
+          }
           await api.setPropertyType(key, type);
         }
       } catch (error) {
@@ -439,6 +470,7 @@ export function BaseView(props: BaseViewProps) {
       saverRef.current?.setVersion(result.base.meta.updated);
       docRef.current = result.base;
       setDoc(result.base);
+      if (result.files.length) recordStep({ kind: "files", input: { files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })) } });
       if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
       else if (result.refused.length) {
         const refused = t("bases.optionRefused", { titles: titleList(result.refused) });
@@ -464,7 +496,10 @@ export function BaseView(props: BaseViewProps) {
         const key = columnId.replace(/^note\./, "");
         const config = docRef.current.config;
         const settings = selectSettings(config, key);
-        if (settings) await saveConfig(withSelectSettings(config, key, { ...settings, options }));
+        if (settings) {
+          await saveConfig(withSelectSettings(config, key, { ...settings, options }));
+          recordStep({ kind: "config", from: docRef.current.config, to: config });
+        }
       },
       renameOption: (columnId: string, from: string, to: string) => changeOption({ key: columnId.replace(/^note\./, ""), rename: { from, to } }),
       clearOption: (columnId: string, value: string) => changeOption({ key: columnId.replace(/^note\./, ""), clear: value }),
@@ -472,6 +507,70 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [saveConfig],
   );
+
+  /** Apply one undo or redo step; its inverse, or null when it was refused (and said so). */
+  const applyStep = async (step: UndoStep): Promise<UndoStep | null> => {
+    await saverRef.current?.flush();
+    if (step.kind === "config") {
+      // Only while the base is as the step left it.
+      if (JSON.stringify(docRef.current.config) !== JSON.stringify(step.from)) {
+        props.onError?.(t("bases.undoChanged"));
+        return null;
+      }
+      await saveConfig(step.to);
+      return { kind: "config", from: step.to, to: step.from };
+    }
+    if (step.kind === "cell") {
+      try {
+        const saved = await api.setPageProperties(step.rowId, { [step.key]: step.before as string | number | boolean | string[] | null }, step.version);
+        return { kind: "cell", rowId: saved.id, key: step.key, before: step.after, after: step.before, version: saved.updated };
+      } catch {
+        props.onError?.(t("bases.undoChanged"));
+        return null;
+      }
+    }
+    const result = await api.undoDatabaseChange(baseId, step.input);
+    if (result.refused.length) {
+      props.onError?.(t("bases.undoRefused", { titles: titleList(result.refused) }));
+      return null;
+    }
+    if (result.base) {
+      saverRef.current?.setVersion(result.base.meta.updated);
+      docRef.current = result.base;
+      setDoc(result.base);
+    }
+    return {
+      kind: "files",
+      input: {
+        files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
+        drop: result.created.map((row) => ({ id: row.id, from: row.after })),
+        create: result.dropped.map((row) => ({ id: row.id, to: row.before })),
+      },
+    };
+  };
+  const undoOrRedo = async (redo: boolean) => {
+    const from = redo ? redoStack : undoStack;
+    const to = redo ? undoStack : redoStack;
+    const step = from.current.pop();
+    if (!step) return;
+    try {
+      const inverse = await applyStep(step);
+      if (inverse) to.current.push(inverse);
+    } catch (error) {
+      props.onError?.(errorText(error));
+    }
+    await load();
+  };
+  /** Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z in the table; a text field being edited keeps its own undo. */
+  const onUndoKey = (event: React.KeyboardEvent) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "z") return;
+    const target = event.target as HTMLElement;
+    const sinkIdle = target.dataset.testid === "base-grid-cell" && !target.classList.contains("is-typing");
+    const editing = target.isContentEditable || ((target.tagName === "INPUT" || target.tagName === "TEXTAREA") && !sinkIdle);
+    if (editing || !ownedRowsFolder(docRef.current.config)) return;
+    event.preventDefault();
+    void undoOrRedo(event.shiftKey);
+  };
 
   /** Kanban drop, calendar move: one note property of one page. */
   const setValue = useCallback(
@@ -586,7 +685,7 @@ export function BaseView(props: BaseViewProps) {
     <BaseLinks.Provider value={baseLinks}>
     <BaseSelects.Provider value={selects}>
     <BaseSelectActions.Provider value={selectActions}>
-    <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1}>
+    <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1} onKeyDown={onUndoKey}>
       {inlineConflict ? (
         <div className="banner base-banner base-conflict" role="alert" data-testid="base-conflict" ref={conflictRef}>
           <span>{t("bases.conflict")}</span>
@@ -714,7 +813,12 @@ export function BaseView(props: BaseViewProps) {
           onRename={rename}
           onNewRow={() => void newRow()}
           {...(ownedRowsFolder(config)
-            ? { onAddRow: (title: string) => newRow(undefined, title), importBlock, onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
+            ? { onAddRow: (title: string) => newRow(undefined, title), importBlock, onAddColumnView: (view: BaseViewConfig) => {
+                  const before = docRef.current.config;
+                  changeView(view);
+                  recordStep({ kind: "config", from: docRef.current.config, to: before });
+                },
+                onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
                 onPastePreview: (previewed: PreviewResult, viewName: string) => pasteRows(previewed.rows, { view: viewName, keys: previewed.keys }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
             : {})}
           onChangeView={changeView}

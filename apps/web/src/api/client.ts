@@ -546,6 +546,10 @@ export const api = {
    * conditionally. Used by database views (cells, kanban, calendar). A null
    * value is written as a bare `key:`, as Obsidian does; the key stays.
    */
+  /** #7prbquxu phase 4b: one step of the table's undo or redo (all or nothing). */
+  undoDatabaseChange: (baseId: PageId, input: UndoInput): Promise<UndoResult> =>
+    mutate(() => request(`${basePath(baseId)}/undo`, { method: "POST", body: JSON.stringify(input) })),
+
   /** #7prbquxu phase 3: rename or clear a Select option in every row and in the base (one request, all or nothing). */
   changeOwnedRowsOption: (
     baseId: PageId,
@@ -557,6 +561,8 @@ export const api = {
     stuck: Array<{ id: PageId; title: string }>;
     baseRefused?: boolean;
     base: BaseDocument;
+    /** #7prbquxu phase 4b: each file written, its versions before and after (the table's undo). */
+    files: UndoFile[];
   }> => mutate(() => request(`${basePath(baseId)}/rows-option`, { method: "POST", body: JSON.stringify({ ...change, ...options }) })),
 
   /** #7prbquxu phase 2: a block pasted into an owned database: existing rows set, new rows made, all or nothing. */
@@ -573,6 +579,9 @@ export const api = {
     /** After a refusal: new rows that changed meanwhile, so they went to the Trash (unchanged ones are gone). */
     trashed: Array<{ id: PageId; title: string }>;
     baseRefused?: boolean;
+    files: UndoFile[];
+    /** The new rows made, at the version this paste left them. */
+    made: Array<{ id: PageId; after: string }>;
   }> => mutate(() => request(`${basePath(baseId)}/rows-paste`, { method: "POST", body: JSON.stringify({ rows, ...options }) })),
 
   /**
@@ -592,6 +601,8 @@ export const api = {
     baseRefused?: boolean;
     /** The base as it is now: the view takes its config and version. */
     base: BaseDocument;
+    /** #7prbquxu phase 4b: each file written, its versions before and after (the table's undo). */
+    files: UndoFile[];
   }> =>
     mutate(() => request(`${basePath(baseId)}/rows-property`, { method: "POST", body: JSON.stringify({ ...change, ...options }) })),
 
@@ -731,7 +742,30 @@ export const api = {
 const historyPath = (id: PageId): string => `/history/${encodeURIComponent(id)}`;
 
 export type HistorySource = "app" | "external" | "mcp" | "import" | "restore";
-export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict" | "before-reload";
+export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict" | "before-reload" | "database";
+
+/** #7prbquxu phase 4b: a file a database op wrote, with its version before and after. */
+export interface UndoFile {
+  id: PageId;
+  before: string;
+  after: string;
+}
+
+/** #7prbquxu phase 4b: one undo (or redo) step of the table. */
+export interface UndoInput {
+  files?: Array<{ id: PageId; from: string; to: string }>;
+  drop?: Array<{ id: PageId; from: string }>;
+  create?: Array<{ id: PageId; to: string }>;
+}
+
+/** What a step did: its inverse (redo) from `files`, `dropped` and `created`; empty with `refused`. */
+export interface UndoResult {
+  refused: Array<{ id: PageId; title: string }>;
+  files: UndoFile[];
+  dropped: Array<{ id: PageId; before: string }>;
+  created: Array<{ id: PageId; after: string }>;
+  base?: BaseDocument;
+}
 
 /** One version in `GET /history/:id` (spec/api-version-history). */
 export interface HistoryItem {
