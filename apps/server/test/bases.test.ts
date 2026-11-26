@@ -448,6 +448,27 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base + "      - age\n");
   });
 
+  it("a paste's preview can make a new column a Select: its options from the pasted values, in the same base write (#7prbquxu)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n';
+    const { dir, store } = await vault({ "People.base": base, "People/Zed.md": "Zed\n" });
+    await store.pasteIntoOwnedRows("People.base", {
+      rows: [
+        { title: "Ann", set: { stage: "Todo", skills: ["Go", "Rust"] } },
+        { title: "Bo", set: { stage: "Done", skills: ["Go"] } },
+      ],
+      columns: { view: "Table", keys: ["stage", "skills"], selects: { stage: { kind: "select", values: ["Todo", "Done"] }, skills: { kind: "multiselect", values: ["Go", "Rust"] } } },
+    });
+    const text = await readFile(join(dir, "People.base"), "utf8");
+    const config = parseBase(text);
+    expect(config.properties?.["note.stage"]).toEqual({ gumplyType: "select", gumplyOptions: [{ value: "Todo", color: "brown" }, { value: "Done", color: "orange" }] });
+    expect(config.properties?.["note.skills"]).toEqual({ gumplyType: "multiselect", gumplyOptions: [{ value: "Go", color: "brown" }, { value: "Rust", color: "orange" }] });
+    expect(config.views[0]!.order).toEqual(["file.name", "stage", "skills"]);
+    // A Select kind that isn't one: refused before any write.
+    await expect(
+      store.pasteIntoOwnedRows("People.base", { rows: [{ title: "Cy", set: {} }], columns: { view: "Table", keys: ["x"], selects: { x: { kind: "radio" as "select", values: [] } } } }),
+    ).rejects.toThrow("not a Select kind");
+  });
+
   it("a paste checks its columns and its rows before any write: a missing view or a row given twice is a 400 and nothing changes (#7prbquxu phase 2, @opus-hunter)", async () => {
     const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n';
     const ann = "---\nrole: Cook\n---\nAnn\n";
