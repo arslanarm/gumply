@@ -1337,7 +1337,7 @@
     "addColumn": "Add a property",
     "columnName": "Property name",
     "addColumnSubmit": "Add",
-    "columnExists": "“{{name}}” is already a column.",
+    "columnExists": "This database already has a “{{name}}” property.",
     "typeElsewhere": "“{{name}}” is a {{type}} property elsewhere in this vault, so it keeps that type.",
     "deleteColumn": "Delete from all rows",
     "deleteColumnHeading": "Delete “{{name}}” from all rows?",
