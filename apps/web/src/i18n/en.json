@@ -1267,7 +1267,7 @@
     "tagsString": "Obsidian doesn't read this text as tags. “Make it a list” writes them as a list.",
     "makeList": "Make it a list",
     "tagsDigits": "Obsidian doesn't count tags made only of digits.",
-    "invalidName": "Property names can’t be empty, start or end with a space, hold a line break, or start with “file.”, “note.” or “formula.”.",
+    "invalidName": "Property names can't be empty, start or end with a space, hold a line break, or start with “file.”, “note.” or “formula.”.",
     "taken": "There's already a property called “{{name}}”.",
     "types": {
       "text": "Text",
@@ -1419,7 +1419,7 @@
     "pasting_one": "Pasting {{count}} row… Other changes wait until it's done.",
     "pasting_other": "Pasting {{count}} rows… Other changes wait until it's done.",
     "pasteSelectHint": "Only a few values, each repeated: this could be a Select.",
-    "pasteBadName": "“{{name}}” can’t be a property name: no line break or space at either end, and no “file.”, “note.” or “formula.” at the start.",
+    "pasteBadName": "“{{name}}” can't be a property name: it can't hold a line break or start with “file.”, “note.” or “formula.”.",
     "pasteDuplicateName": "Two properties are called “{{name}}”.",
     "pasteMany": "That's {{count}} new rows, each a note in the rows folder. Paste them all?",
     "pasteAll": "Paste all {{count}}",
