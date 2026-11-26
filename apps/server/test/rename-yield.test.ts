@@ -159,8 +159,9 @@ describe("while the batches run, the old name still means the renamed page (#xgn
 
   it("a rename whose first step fails after capturing its rewrite leaves no alias and no hold behind", async () => {
     const { store } = await vault(50);
-    const internals = store as unknown as { reindexAll: () => void };
-    vi.spyOn(internals, "reindexAll").mockImplementationOnce(() => {
+    // #6pyunynv: the first step's index update after the capture is reindexAfterRename (it was reindexAll).
+    const internals = store as unknown as { reindexAfterRename: () => void };
+    vi.spyOn(internals, "reindexAfterRename").mockImplementationOnce(() => {
       throw new Error("index failed (test)");
     });
     await expect(store.update("Hub", { title: "Hub renamed" })).rejects.toThrow(/index failed/);

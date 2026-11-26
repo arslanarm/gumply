@@ -135,6 +135,9 @@ const MARKDOWN_LINK = /(?<!\\)(!?)\[((?:[^\]\\]|\\.)*)\]\(\s*(<[^>\n]*>|[^)\s]+)
  * the vault are skipped.
  */
 export function markdownPageLinks(noteId: string, markdown: string, isPage: (id: string) => boolean): string[] {
+  // The link index runs this over every page, and most hold no Markdown link: without `](` there's none,
+  // so skip the code mask (#idmfvvkg's perf A/B: +~400 ms on "links indexed" at 10k without this).
+  if (!markdown.includes("](")) return [];
   const out: string[] = [];
   const pageAt = (vaultPath: string) => /\.md$/i.test(vaultPath) && isPage(vaultPath.slice(0, -3));
   for (const match of maskCode(markdown).matchAll(MARKDOWN_LINK)) {
