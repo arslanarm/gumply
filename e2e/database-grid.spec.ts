@@ -196,53 +196,89 @@ test('an IME composition on an active cell starts the edit and keeps every chara
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: повар\nage: 41\n---\nBo\n');
 });
 
-/** Another app's save of Ann: an ordinary one, or (#y5k39njn) one that keeps the size and modification time. */
-const OUTSIDE_EDITS = [
-  { name: 'an ordinary save by another app', text: '---\nrole: Chef\nage: 30\n---\nAnn, edited elsewhere\n', keepTime: false },
-  { name: 'the same size and modification time', text: '---\nrole: Chef\nage: 30\n---\nAnn\n', keepTime: true },
-];
-
-for (const edit of OUTSIDE_EDITS) {
-  test(`a column rename skips a row changed on disk since the table read it, and says so (@lead): ${edit.name}`, async ({ page, request, vault }) => {
-    void vault;
-    await writeVault(request, PEOPLE);
-    await page.goto('/');
-    await page.getByTestId('page-item-People.base').click();
-    await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
-
-    // The table's refreshes are held, so it keeps the versions it read; then another app edits Ann.
-    const held: Array<() => Promise<void>> = [];
-    await page.route('**/api/bases/**/view**', (route) => void held.push(() => route.continue()));
-    const ann = path.join(E2E_VAULT, 'People/Ann.md');
-    const before = await fs.stat(ann);
-    expect(edit.text.length === PEOPLE['People/Ann.md'].length).toBe(edit.keepTime);
-    if (edit.keepTime) {
-      // In place, the time put back: only the bytes (and ctime) tell.
-      await fs.writeFile(ann, edit.text, 'utf8');
-      await fs.utimes(ann, before.atime, before.mtime);
-    } else {
-      // As most apps save: a temp file renamed over the page in one step, at the current time.
-      const temporary = `${ann}.tmp-outside`;
-      await fs.writeFile(temporary, edit.text, 'utf8');
-      await fs.rename(temporary, ann);
-    }
-    await expect
-      .poll(async () => ((await api.getPage(request, 'People/Ann')) as { properties?: Array<{ key: string; value: unknown }> }).properties?.find((property) => property.key === 'role')?.value, { timeout: 15_000 })
-      .toBe('Chef');
-
-    await page.getByTestId('base-th-note.role').click();
-    await page.getByTestId('base-rename-column').click();
-    const input = page.getByTestId('base-rename-column-input');
-    await input.fill('job');
-    await input.press('Enter');
-
-    // Bo follows; Ann keeps the other app's text, and the skipped row is reported.
-    await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\nage: 41\n---\nBo\n');
-    await expect(page.getByRole('alert')).toContainText("1 row couldn't be changed");
-    expect(await read('People/Ann.md')).toBe(edit.text);
-
-    // Let the held refreshes go (the page may already have dropped some).
-    await page.unroute('**/api/bases/**/view**');
-    for (const release of held) await release().catch(() => undefined);
-  });
+/** Open People.base and wait for the table. */
+async function openPeople(page: import('@playwright/test').Page, titles: string[]) {
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(titles);
 }
+
+async function renameColumn(page: import('@playwright/test').Page, from: string, to: string) {
+  await page.getByTestId(`base-th-note.${from}`).click();
+  await page.getByTestId('base-rename-column').click();
+  const input = page.getByTestId('base-rename-column-input');
+  await input.fill(to);
+  await input.press('Enter');
+}
+
+test('a column rename reaches every row of the database, also rows the view hides and rows with an empty value (@opus-hunter)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, {
+    // The view shows one row (limit: 1); Cy has the key with no value.
+    'People.base': PEOPLE['People.base'] + '    limit: 1\n',
+    'People/Ann.md': PEOPLE['People/Ann.md'],
+    'People/Bo.md': PEOPLE['People/Bo.md'],
+    'People/Cy.md': '---\nrole:\nage: 7\n---\nCy\n',
+  });
+  await openPeople(page, ['Ann']);
+  await renameColumn(page, 'role', 'job');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\nage: 41\n---\nBo\n');
+  await expect.poll(() => read('People/Cy.md')).toBe('---\njob:\nage: 7\n---\nCy\n');
+  await expect.poll(() => read('People/Ann.md')).toBe('---\njob: Cook\nage: 30\n---\nAnn\n');
+  await expect.poll(() => read('People.base')).toContain('      - job\n');
+});
+
+test('a column rename keeps a type the new name already has in the vault (@opus-hunter)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { ...PEOPLE, 'Elsewhere.md': '---\npriority: 3\n---\nAnother database\n' });
+  await request.put(`${API_URL}/api/properties/priority`, { data: { type: 'number' } });
+  const typeOf = async (key: string) =>
+    ((await (await request.get(`${API_URL}/api/properties`)).json()) as Array<{ key: string; type: string }>).find((info) => info.key === key)?.type;
+  await expect.poll(() => typeOf('priority')).toBe('number');
+  await openPeople(page, ['Ann', 'Bo']);
+  await renameColumn(page, 'role', 'priority');
+  await expect.poll(() => read('People/Ann.md')).toContain('priority: Cook\n');
+  await expect.poll(() => read('People.base')).toContain('      - priority\n');
+  expect(await typeOf('priority')).toBe('number');
+});
+
+test('a column rename is all or nothing: a row changed on disk during it is reported by name, and the rows already renamed go back (@lead, @opus-hunter)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  // Another app saves Ann just as the rename's write for Ann goes out.
+  const ann = path.join(E2E_VAULT, 'People/Ann.md');
+  const outside = '---\nrole: Chef\nage: 30\n---\nAnn, edited elsewhere\n';
+  await page.route('**/api/pages/People%2FAnn', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    const temporary = `${ann}.tmp-outside`;
+    await fs.writeFile(temporary, outside, 'utf8');
+    await fs.rename(temporary, ann);
+    await expect.poll(async () => (await api.getPage(request, 'People/Ann')).content, { timeout: 15_000 }).toContain('edited elsewhere');
+    await route.fallback();
+  });
+  await renameColumn(page, 'role', 'job');
+  await expect(page.getByRole('alert')).toContainText('Ann');
+  await expect(page.getByRole('alert')).toContainText('Nothing was renamed');
+  expect(await read('People/Ann.md')).toBe(outside);
+  await expect.poll(() => read('People/Bo.md')).toBe(PEOPLE['People/Bo.md']);
+  expect(await read('People.base')).toBe(PEOPLE['People.base']);
+  await page.unroute('**/api/pages/People%2FAnn');
+});
+
+test('an outside edit made before a column rename is kept, and the key follows it (@lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  const ann = path.join(E2E_VAULT, 'People/Ann.md');
+  const before = await fs.stat(ann);
+  // Same size and modification time (#y5k39njn): only the bytes tell.
+  await fs.writeFile(ann, '---\nrole: Chef\nage: 30\n---\nAnn\n', 'utf8');
+  await fs.utimes(ann, before.atime, before.mtime);
+  await expect
+    .poll(async () => ((await api.getPage(request, 'People/Ann')) as { properties?: Array<{ key: string; value: unknown }> }).properties?.find((p) => p.key === 'role')?.value, { timeout: 15_000 })
+    .toBe('Chef');
+  await renameColumn(page, 'role', 'job');
+  await expect.poll(() => read('People/Ann.md')).toBe('---\njob: Chef\nage: 30\n---\nAnn\n');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\nage: 41\n---\nBo\n');
+});
