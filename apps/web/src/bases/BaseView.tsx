@@ -305,13 +305,16 @@ export function BaseView(props: BaseViewProps) {
   );
 
   const rename = useCallback(
-    async (row: BaseRow, title: string) => {
+    async (row: BaseRow, title: string): Promise<string | undefined> => {
+      let id: string | undefined;
       try {
-        await api.updatePage(row.id, { title });
+        id = (await api.updatePage(row.id, { title })).id;
       } catch (error) {
         props.onError?.(errorText(error));
       }
       await load();
+      // #7prbquxu: the renamed row's id, so the database grid keeps it active.
+      return id;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [load],
@@ -322,8 +325,8 @@ export function BaseView(props: BaseViewProps) {
    * #7prbquxu: with `title` (the typing row), the row is made with that name and
    * nothing opens for renaming; it resolves once the table shows it.
    */
-  const newRow = useCallback(async (implied?: Record<string, BaseValue>, title?: string) => {
-    if (!active) return;
+  const newRow = useCallback(async (implied?: Record<string, BaseValue>, title?: string): Promise<string | undefined> => {
+    if (!active) return undefined;
     const source = baseSource(docRef.current.config);
     const parentId =
       source.kind === "folder" && source.folder
@@ -350,8 +353,10 @@ export function BaseView(props: BaseViewProps) {
         // Other layouts have no title cell: open the page to name it.
         props.onOpen(page.id);
       }
+      return page.id;
     } catch (error) {
       props.onError?.(errorText(error));
+      return undefined;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, baseId, load, props.pages]);

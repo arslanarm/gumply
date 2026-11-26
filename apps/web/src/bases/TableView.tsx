@@ -4,7 +4,7 @@
  * scroll as smoothly as 20. Note properties are edited in place and written
  * to the page's frontmatter; file properties and formulas are read-only.
  */
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
@@ -15,6 +15,7 @@ import { Popover } from "./Popover.js";
 import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
 import { BaseText } from "./values.js";
+import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
 
 export const ROW_HEIGHT = 34;
@@ -37,13 +38,14 @@ export interface TableViewProps {
   maxHeight?: number;
   onOpen: (id: string) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
-  onRename: (row: BaseRow, title: string) => Promise<void>;
+  /** Resolves with the row's new id when the rename moved it. */
+  onRename: (row: BaseRow, title: string) => Promise<string | void>;
   onNewRow?: () => void;
   /**
    * #7prbquxu: a database that owns its rows: the typing row at the bottom makes a row
    * with the typed name (it resolves once the table shows it). Replaces "+ New".
    */
-  onAddRow?: (title: string) => Promise<void>;
+  onAddRow?: (title: string) => Promise<string | void>;
   onChangeView: (view: BaseView) => void;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
@@ -109,6 +111,159 @@ export function TableView(props: TableViewProps) {
   // A new row height re-measures every row.
   useEffect(() => virtualizer.measure(), [rowHeight, virtualizer]);
 
+  // #7prbquxu (spec/database-tables §4): a database that owns its rows is a grid.
+  // One input sits on the active cell and keeps the focus while the arrows, Tab,
+  // Enter and Delete act; the first typed character (or an IME composition) turns
+  // it into the cell's editor in place, so no character is lost.
+  const grid = Boolean(props.onAddRow) && !props.readOnly;
+  const rowOrder = useMemo(
+    () => items.flatMap((item, itemIndex) => (item.kind === "row" ? [{ row: item.index, itemIndex }] : [])),
+    [items],
+  );
+  const offsets = widths.map((_, index) => widths.slice(0, index).reduce((a, b) => a + b, 0));
+  const [active, setActive] = useState<{ rowId: string; col: number } | null>(null);
+  const [typing, setTyping] = useState(false);
+  const [editRequest, setEditRequest] = useState<{ rowId: string; col: number } | null>(null);
+  const [pendingActive, setPendingActive] = useState<{ rowId: string; col: number } | null>(null);
+  const sinkRef = useRef<HTMLInputElement | null>(null);
+  const typingInputRef = useRef<HTMLInputElement | null>(null);
+  const activePos = useMemo<GridPosition | null>(() => {
+    if (!active) return null;
+    const at = rowOrder.findIndex((entry) => result.rows[entry.row]?.id === active.rowId);
+    return at < 0 ? null : { row: at, col: Math.min(active.col, columns.length - 1) };
+  }, [active, rowOrder, result.rows, columns.length]);
+  const activeRow = activePos ? result.rows[rowOrder[activePos.row]!.row] : undefined;
+  const activeColumn = activePos ? columns[activePos.col] : undefined;
+
+  // A row made from the typing row (Tab) becomes active once the table shows it.
+  useEffect(() => {
+    if (!pendingActive || !result.rows.some((row) => row.id === pendingActive.rowId)) return;
+    setActive(pendingActive);
+    setPendingActive(null);
+  }, [pendingActive, result.rows]);
+
+  // The active cell is scrolled into view and holds the focus (not while its editor is open).
+  useEffect(() => {
+    if (!grid || !activePos || editRequest) return;
+    virtualizer.scrollToIndex(rowOrder[activePos.row]!.itemIndex, { align: "auto" });
+    const scroller = scrollRef.current;
+    if (scroller) {
+      const left = offsets[activePos.col] ?? 0;
+      const right = left + (widths[activePos.col] ?? 0);
+      if (left < scroller.scrollLeft) scroller.scrollLeft = left;
+      else if (right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = right - scroller.clientWidth;
+    }
+    sinkRef.current?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid, activePos?.row, activePos?.col, editRequest]);
+
+  const go = (to: GridPosition | "past-end") => {
+    if (to === "past-end") {
+      setActive(null);
+      typingInputRef.current?.focus();
+      return;
+    }
+    const row = result.rows[rowOrder[to.row]!.row];
+    if (row) setActive({ rowId: row.id, col: to.col });
+  };
+
+  const renameAndFollow = async (row: BaseRow, title: string, col: number) => {
+    const id = await props.onRename(row, title);
+    if (typeof id === "string" && id !== row.id) setActive((current) => (current?.rowId === row.id ? { rowId: id, col } : current));
+  };
+
+  const commitTyping = async (then?: GridMove) => {
+    const sink = sinkRef.current;
+    if (!sink || !activePos || !activeRow || !activeColumn) return;
+    const text = sink.value;
+    sink.value = "";
+    setTyping(false);
+    const from = activePos;
+    if (isTitleColumn(activeColumn.id)) {
+      const title = text.trim();
+      if (title && title !== activeRow.title) await renameAndFollow(activeRow, title, from.col);
+    } else {
+      const typed = typedValue(text, activeColumn.type);
+      if (typed) await props.onEditValue(activeRow, activeColumn, typed.value);
+    }
+    if (then) go(moveCell(from, then, rowOrder.length, columns.length));
+  };
+
+  const requestEdit = useCallback((rowId: string, col: number) => {
+    setActive({ rowId, col });
+    setEditRequest({ rowId, col });
+  }, []);
+  const editDone = useCallback(() => setEditRequest(null), []);
+  const renameDone = useCallback(() => {
+    setEditRequest(null);
+    props.onRenameDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.onRenameDone]);
+
+  const onSinkKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!activePos || !activeRow || !activeColumn) return;
+    const composing = event.nativeEvent.isComposing || event.keyCode === 229;
+    const sink = event.currentTarget;
+    if (typing) {
+      if (composing) return;
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void commitTyping("down");
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        void commitTyping(event.shiftKey ? "prev" : "next");
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        sink.value = "";
+        setTyping(false);
+      }
+      return;
+    }
+    if (composing) return;
+    const move = gridMoveFor(event.key, event.shiftKey);
+    if (move) {
+      event.preventDefault();
+      go(moveCell(activePos, move, rowOrder.length, columns.length));
+      return;
+    }
+    const title = isTitleColumn(activeColumn.id);
+    const editable = title || activeColumn.editable;
+    if (event.key === "Enter" || event.key === "F2") {
+      event.preventDefault();
+      if (!title && activeColumn.type === "checkbox") {
+        if (editable) void props.onEditValue(activeRow, activeColumn, activeRow.values[activeColumn.id] !== true);
+      } else if (editable) {
+        setEditRequest({ rowId: activeRow.id, col: activePos.col });
+      }
+      return;
+    }
+    if (event.key === " " && !title && activeColumn.type === "checkbox") {
+      event.preventDefault();
+      if (editable) void props.onEditValue(activeRow, activeColumn, activeRow.values[activeColumn.id] !== true);
+      return;
+    }
+    if ((event.key === "Delete" || event.key === "Backspace") && !title) {
+      event.preventDefault();
+      if (editable) void props.onEditValue(activeRow, activeColumn, activeColumn.type === "checkbox" ? false : null);
+      return;
+    }
+    if (event.key === "Escape") {
+      setActive(null);
+      sink.blur();
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key.length === 1) {
+      const starts = title ? "type" : typingStarts(activeColumn.type, activeColumn.editable);
+      if (starts === "none") event.preventDefault();
+      else if (starts === "editor") {
+        event.preventDefault();
+        setEditRequest({ rowId: activeRow.id, col: activePos.col });
+      }
+      // "type": the character goes into the input, and `onInput` starts the edit.
+    }
+  };
+
   const [headerMenu, setHeaderMenu] = useState<{ column: BaseColumn; anchor: HTMLElement } | null>(null);
   const sorts = Array.isArray(view.sort) ? view.sort : [];
 
@@ -133,7 +288,24 @@ export function TableView(props: TableViewProps) {
   return (
     <div className="base-table" data-testid="base-table" style={style}>
       {/* The table role is on the part that holds only rows; "New" and the column menus sit beside it (WCAG 1.3.1, #jchhjepb). */}
-      <div className="base-table-scroll" ref={scrollRef} data-testid="base-table-scroll" role="table" aria-rowcount={result.rows.length + 1}>
+      <div
+        className="base-table-scroll"
+        ref={scrollRef}
+        data-testid="base-table-scroll"
+        role="table"
+        aria-rowcount={result.rows.length + 1}
+        onMouseDown={
+          grid
+            ? (event) => {
+                const target = event.target as Element;
+                const cell = target.closest<HTMLElement>("[data-grid-col]");
+                const rowId = target.closest<HTMLElement>("[data-row-id]")?.dataset.rowId;
+                if (!cell || rowId === undefined || target.closest("button, a, input")) return;
+                setActive({ rowId, col: Number(cell.dataset.gridCol) });
+              }
+            : undefined
+        }
+      >
         <div className="base-table-head" role="row">
           {columns.map((column) => {
             const sort = sorts.find((item) => propertyId(String(item.property)) === column.id);
@@ -176,17 +348,70 @@ export function TableView(props: TableViewProps) {
                 columns={columns}
                 readOnly={props.readOnly}
                 renaming={props.renameRowId === row.id}
+                editCol={editRequest?.rowId === row.id ? editRequest.col : null}
                 onOpen={props.onOpen}
                 onEditValue={props.onEditValue}
                 onRename={props.onRename}
-                onRenameDone={props.onRenameDone}
+                onRenameDone={grid ? renameDone : props.onRenameDone}
+                {...(grid ? { onRequestEdit: requestEdit, onEditDone: editDone } : {})}
               />
             );
           })}
+          {grid && activePos && activeRow && activeColumn && !editRequest ? (
+            <input
+              ref={sinkRef}
+              className={`base-grid-cell${typing ? " is-typing" : ""}${activeColumn.type === "number" ? " is-number" : ""}`}
+              data-testid="base-grid-cell"
+              data-active={`${activeRow.id}|${activeColumn.id}`}
+              aria-label={
+                isTitleColumn(activeColumn.id)
+                  ? t("bases.openPage", { title: activeRow.title })
+                  : t("bases.editCell", { property: activeColumn.displayName ?? activeColumn.id.replace(/^note\./, ""), title: activeRow.title })
+              }
+              style={{
+                top: rowOrder[activePos.row]!.itemIndex * rowHeight,
+                left: offsets[activePos.col],
+                width: widths[activePos.col],
+                height: rowHeight,
+              }}
+              onKeyDown={onSinkKeyDown}
+              onInput={(event) => {
+                if (!typing && event.currentTarget.value) setTyping(true);
+              }}
+              onCompositionStart={() => {
+                const title = isTitleColumn(activeColumn.id);
+                if ((title ? "type" : typingStarts(activeColumn.type, activeColumn.editable)) === "type") setTyping(true);
+              }}
+              onCompositionEnd={(event) => {
+                // Composed where typing doesn't apply (a checkbox, a read-only cell): dropped.
+                if (!typing) event.currentTarget.value = "";
+              }}
+              onCopy={(event) => {
+                if (typing) return;
+                event.preventDefault();
+                const text = isTitleColumn(activeColumn.id) ? activeRow.title : copiedText(activeRow.values[activeColumn.id] ?? null, activeColumn.type);
+                event.clipboardData.setData("text/plain", text);
+              }}
+              onBlur={() => {
+                if (typing) void commitTyping();
+              }}
+            />
+          ) : null}
         </div>
 
         {props.onAddRow && !props.readOnly ? (
-          <TypingRow columns={columns.length} onAddRow={props.onAddRow} />
+          <TypingRow
+            columns={columns.length}
+            inputRef={typingInputRef}
+            onAddRow={props.onAddRow}
+            onUp={() => {
+              const last = rowOrder.length - 1;
+              if (last >= 0) go({ row: last, col: 0 });
+            }}
+            onAdded={(rowId, next) => {
+              if (next) setPendingActive({ rowId, col: Math.min(1, columns.length - 1) });
+            }}
+          />
         ) : result.rows.length === 0 ? (
           <div className="base-empty" data-testid="base-empty">
             {t("bases.empty")}
@@ -253,17 +478,26 @@ export function TableView(props: TableViewProps) {
  * Typing a name and Enter makes the row and keeps the field ready for the next one.
  * An empty name makes nothing; Enter while an IME is composing belongs to the IME.
  */
-function TypingRow(props: { columns: number; onAddRow: (title: string) => Promise<void> }) {
+function TypingRow(props: {
+  columns: number;
+  inputRef: React.MutableRefObject<HTMLInputElement | null>;
+  onAddRow: (title: string) => Promise<string | void>;
+  /** ArrowUp: back to the last row. */
+  onUp: () => void;
+  /** The row was made; `next` when Tab asked to go on into its second column. */
+  onAdded: (rowId: string, next: boolean) => void;
+}) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const add = async () => {
+  const add = async (next: boolean) => {
     const title = draft.trim();
     if (!title || busy) return;
     setBusy(true);
     try {
-      await props.onAddRow(title);
+      const id = await props.onAddRow(title);
       setDraft("");
+      if (typeof id === "string") props.onAdded(id, next);
     } finally {
       setBusy(false);
     }
@@ -275,6 +509,7 @@ function TypingRow(props: { columns: number; onAddRow: (title: string) => Promis
           <Icon name="plus" size={14} />
         </span>
         <input
+          ref={props.inputRef}
           className="base-typing-input"
           data-testid="base-typing-input"
           aria-label={t("bases.typeName")}
@@ -286,7 +521,13 @@ function TypingRow(props: { columns: number; onAddRow: (title: string) => Promis
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "Enter") {
               event.preventDefault();
-              void add();
+              void add(false);
+            } else if (event.key === "Tab" && !event.shiftKey && draft.trim()) {
+              event.preventDefault();
+              void add(true);
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              props.onUp();
             } else if (event.key === "Escape" && draft) {
               event.preventDefault();
               setDraft("");
@@ -318,22 +559,37 @@ interface TableRowProps {
   top: number;
   readOnly?: boolean;
   renaming: boolean;
+  /** #7prbquxu: the column whose editor the database grid asked to open in this row. */
+  editCol?: number | null;
   onOpen: (id: string) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
-  onRename: (row: BaseRow, title: string) => Promise<void>;
+  onRename: (row: BaseRow, title: string) => Promise<string | void>;
   onRenameDone?: () => void;
+  /** The database grid: a click opens the cell's editor through the grid. */
+  onRequestEdit?: (rowId: string, col: number) => void;
+  onEditDone?: () => void;
 }
 
 /** One row; memoized so scrolling only renders the rows that come into view. */
 const TableRow = memo(function TableRow(props: TableRowProps) {
   const { row } = props;
   return (
-    <div className="base-tr" role="row" style={{ transform: `translateY(${props.top}px)` }} data-testid={`base-row-${row.id}`}>
-      {props.columns.map((column) =>
+    <div className="base-tr" role="row" style={{ transform: `translateY(${props.top}px)` }} data-testid={`base-row-${row.id}`} data-row-id={row.id}>
+      {props.columns.map((column, col) =>
         isTitleColumn(column.id) ? (
           <TitleCell key={column.id} {...props} />
         ) : (
-          <ValueCell key={column.id} row={row} column={column} readOnly={props.readOnly} onEditValue={props.onEditValue} />
+          <ValueCell
+            key={column.id}
+            row={row}
+            column={column}
+            col={col}
+            readOnly={props.readOnly}
+            onEditValue={props.onEditValue}
+            editRequested={props.editCol === col}
+            {...(props.onRequestEdit ? { onRequestEdit: props.onRequestEdit } : {})}
+            {...(props.onEditDone ? { onEditDone: props.onEditDone } : {})}
+          />
         ),
       )}
       <div className="base-td base-td-fill" role="cell" />
@@ -348,11 +604,12 @@ function TitleCell(props: TableRowProps) {
   const [draft, setDraft] = useState(row.title);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const asked = props.renaming || props.editCol === 0;
   useEffect(() => {
-    if (!props.renaming) return;
+    if (!asked) return;
     setDraft(row.title);
     setEditing(true);
-  }, [props.renaming, row.title]);
+  }, [asked, row.title]);
 
   useEffect(() => {
     if (editing) inputRef.current?.select();
@@ -366,7 +623,7 @@ function TitleCell(props: TableRowProps) {
   };
 
   return (
-    <div className="base-td base-td-title" role="cell">
+    <div className="base-td base-td-title" role="cell" data-grid-col={0}>
       {editing ? (
         <input
           ref={inputRef}
@@ -417,8 +674,14 @@ function TitleCell(props: TableRowProps) {
 function ValueCell(props: {
   row: BaseRow;
   column: BaseColumn;
+  /** The column's index (the database grid's `data-grid-col`). */
+  col: number;
   readOnly?: boolean;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
+  /** #7prbquxu: the database grid asks this cell's editor to open (Enter, F2, a date typed). */
+  editRequested?: boolean;
+  onRequestEdit?: (rowId: string, col: number) => void;
+  onEditDone?: () => void;
 }) {
   const t = useT();
   const { row, column } = props;
@@ -433,15 +696,24 @@ function ValueCell(props: {
   const wasEditing = useRef(false);
   useEffect(() => {
     if (wasEditing.current && !editing) {
-      const active = document.activeElement;
-      if (!active || active === document.body) cellRef.current?.focus();
+      // The database grid takes the focus back to its active cell itself.
+      if (props.onEditDone) props.onEditDone();
+      else {
+        const active = document.activeElement;
+        if (!active || active === document.body) cellRef.current?.focus();
+      }
     }
     wasEditing.current = editing;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
+  useEffect(() => {
+    if (props.editRequested && editable) setEditing(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.editRequested]);
 
   if (column.type === "checkbox") {
     return (
-      <div className="base-td base-td-check" role="cell">
+      <div className="base-td base-td-check" role="cell" data-grid-col={props.col}>
         <input
           type="checkbox"
           aria-label={label}
@@ -466,6 +738,7 @@ function ValueCell(props: {
       <div
         className="base-td is-editing"
         role="cell"
+        data-grid-col={props.col}
         data-testid={`base-cell-editor-${row.id}-${column.id}`}
         onBlur={(event) => {
           const next = event.relatedTarget as Element | null;
@@ -513,12 +786,15 @@ function ValueCell(props: {
       ref={cellRef}
       className={`base-td${editable ? " is-editable" : ""}${column.type === "number" ? " is-number" : ""}`}
       role="cell"
+      data-grid-col={props.col}
       data-testid={`base-cell-${row.id}-${column.id}`}
       tabIndex={editable ? 0 : undefined}
       aria-label={editable ? label : undefined}
       title={column.editable ? undefined : t("bases.readOnlyCell")}
       onClick={() => {
-        if (editable) setEditing(true);
+        if (!editable) return;
+        if (props.onRequestEdit) props.onRequestEdit(row.id, props.col);
+        else setEditing(true);
       }}
       onKeyDown={(event) => {
         if (!editable || (event.key !== "Enter" && event.key !== "F2")) return;
