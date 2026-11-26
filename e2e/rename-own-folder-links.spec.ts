@@ -176,6 +176,42 @@ test('the editor holds an older version than the rewrite started from (a save fr
   expect(text).toContain('[[Moved/Sub]] here. From the other window. Here too.');
 });
 
+test('a save on its way to the server when the rename starts: the rename waits for it, nothing is lost and no conflict (#z9hufufn, @lead)', async ({ page, vault }) => {
+  void vault; // resets the vault before and after
+  await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent.md'), 'See [[Parent/Sub]] here.\n');
+  await fs.writeFile(path.join(E2E_VAULT, 'Parent', 'Sub.md'), 'Sub.\n');
+  // Content saves take 1.5 s on the wire, so one is still in flight when the rename is sent.
+  await page.route(
+    (url) => url.pathname === '/api/pages/Parent',
+    async (route) => {
+      const sent = route.request();
+      if (sent.method() === 'PUT' && (sent.postDataJSON() as { content?: string } | null)?.content !== undefined) await new Promise((resolve) => setTimeout(resolve, 1_500));
+      await route.continue();
+    },
+  );
+  await page.goto('/#/Parent');
+  await expect(page.getByTestId('editor-content')).toContainText('See');
+  await page.getByTestId('editor-content').getByText('here.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Before.');
+  await page.keyboard.press('ControlOrMeta+s'); // the save goes out now
+  await page.getByTestId('page-title').click();
+  const input = page.getByTestId('page-title-input');
+  await input.fill('Moved');
+  await input.press('Enter');
+  await page.getByTestId('editor-content').getByText('Before.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' After.');
+  await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
+  const file = path.join(E2E_VAULT, 'Moved.md');
+  await expect.poll(() => fs.readFile(file, 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('After.');
+  const text = await fs.readFile(file, 'utf8');
+  expect(text).toContain('See [[Moved/Sub]] here. Before. After.');
+  expect(text).not.toContain('[[Parent/Sub]]');
+  await expect(page.getByTestId('save-status')).not.toHaveAttribute('data-state', 'conflict');
+});
+
 test('an IME composition open when the rename answers: the apply waits for it, and the composed word lands once (#z9hufufn)', async ({ page, context, vault }) => {
   void vault; // resets the vault before and after
   await fs.mkdir(path.join(E2E_VAULT, 'Parent'), { recursive: true });

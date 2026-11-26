@@ -323,6 +323,8 @@ export function Editor({
   }, [page.updated]);
   // Identifies this editor's saves to the server (see spec/api `writer`).
   const writerRef = useRef(newWriterId());
+  // #z9hufufn: writes sent and not yet answered (a held save isn't one).
+  const sendingRef = useRef(0);
 
   const autosave = useMemo(() => {
     const instance = new Autosave({
@@ -355,12 +357,19 @@ export function Editor({
             }
           }
           const savedId = pageIdRef.current;
-          const updated = await api.updatePage(savedId, {
-            content,
-            expectedUpdated: versionRef.current,
-            writer: writerRef.current,
-            ...(force ? { force: true } : {}),
-          });
+          // #z9hufufn: a write on its way to the server (not one held for a rename).
+          sendingRef.current += 1;
+          let updated: Awaited<ReturnType<typeof api.updatePage>>;
+          try {
+            updated = await api.updatePage(savedId, {
+              content,
+              expectedUpdated: versionRef.current,
+              writer: writerRef.current,
+              ...(force ? { force: true } : {}),
+            });
+          } finally {
+            sendingRef.current -= 1;
+          }
           forceRef.current = false;
           versionRef.current = updated.updated;
           // Report which page this was: by now another page may be open.
@@ -1048,6 +1057,9 @@ export function Editor({
         // The rewrite started from this editor's baseline only if the server's starting version is the
         // one it holds (a save from elsewhere in between, e.g. a second window, means it isn't).
         if (editor.isDestroyed || from === undefined || from !== versionRef.current) return false;
+        // A write of this editor still on its way: its answer would move the version and the baseline
+        // after the merge was planned on them (@opus-hunter). The reload handles it instead.
+        if (sendingRef.current > 0) return false;
         // Never under an IME composition (ru phonetic, CJK): a transaction then can cancel or double it.
         if (editor.view.composing) {
           const ended = await new Promise<boolean>((resolve) => {
@@ -1064,7 +1076,7 @@ export function Editor({
             }
             dom.addEventListener("compositionend", done);
           });
-          if (!ended || editor.isDestroyed || from !== versionRef.current) return false;
+          if (!ended || editor.isDestroyed || from !== versionRef.current || sendingRef.current > 0) return false;
         }
         const sent = autosave.baseline();
         const current = renameMergeIo.read(editor);
