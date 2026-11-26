@@ -85,6 +85,8 @@ test('a table cell edit sent right after another app changed that property, befo
   // What the server holds just before the save goes out (@opus-editor): "Cook" means this run hit the window
   // before the watcher caught up; "Chef" means it didn't (then it's the first case again), shown in the message.
   const serverHad = ((await api.getPage(request, 'Crew/Ann')) as { properties?: Array<{ key: string; value: unknown }> }).properties?.find((p) => p.key === 'role')?.value;
+  // In the report on every run, passing ones too, so the hit rate shows (@opus-editor).
+  test.info().annotations.push({ type: 'server had', description: String(serverHad) });
   const saved = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().includes('/api/pages/'));
   await input.press('Enter');
   const answer = await saved;
