@@ -106,6 +106,23 @@ export function clusterLinkFactor(a: number, b: number): number {
   return a >= 0 && b >= 0 && a !== b ? CLUSTER_FORCE.crossLink : 1;
 }
 
+/** A link end as d3 hands it: the node once resolved, its index before. */
+const indexOf = (end: { index?: number } | number): number => (typeof end === "number" ? end : (end.index ?? -1));
+
+/**
+ * #xb4b54gr with #nadk3urm: the worker's link strength. `base` is forceStrengths' (the "Link force"
+ * multiplier already in it); a link between two shaded clusters gets clusterLinkFactor on top, so
+ * the two compose: at Link force 200 % a cross-cluster link is 2 × 0.45 × 0.2.
+ */
+export function clusteredLinkStrength(
+  base: number,
+  cluster: Int32Array | undefined,
+  count: number,
+): number | ((link: { source: { index?: number } | number; target: { index?: number } | number }) => number) {
+  if (!cluster || cluster.length !== count) return base;
+  return (link) => base * clusterLinkFactor(cluster[indexOf(link.source)] ?? -1, cluster[indexOf(link.target)] ?? -1);
+}
+
 interface ClusterForceNode {
   x?: number;
   y?: number;
@@ -284,9 +301,6 @@ export interface Layout {
   positions(x?: Float32Array, y?: Float32Array): { x: Float32Array; y: Float32Array };
 }
 
-/** A link end as d3 hands it: the node once resolved, its index before. */
-const indexOf = (end: SimNode | number): number => (typeof end === "number" ? end : (end.index ?? -1));
-
 export function createLayout(input: LayoutInput): Layout {
   const count = input.x.length;
   const nodes: SimNode[] = new Array(count);
@@ -319,13 +333,7 @@ export function createLayout(input: LayoutInput): Layout {
       forceLink(links)
         .id((node: SimNode) => node.index)
         .distance(input.linkDistance)
-        .strength(
-          // #xb4b54gr with #nadk3urm: the per-link cluster factor times the "Link force" multiplier (in input.linkStrength).
-          input.cluster && input.cluster.length === count
-            ? (link: { source: SimNode | number; target: SimNode | number }) =>
-                input.linkStrength * clusterLinkFactor(input.cluster![indexOf(link.source)] ?? -1, input.cluster![indexOf(link.target)] ?? -1)
-            : input.linkStrength,
-        ),
+        .strength(clusteredLinkStrength(input.linkStrength, input.cluster, count)),
     )
     .force("charge", forceManyBody().strength(input.chargeStrength).distanceMax(s.chargeDistanceMax).theta(chargeTheta(count)))
     .force("x", forceX(0).strength(input.centerStrengthX))

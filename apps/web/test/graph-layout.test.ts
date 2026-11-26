@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   LAYOUT_SETTINGS,
+  clusterLinkFactor,
+  clusteredLinkStrength,
   LAYOUT_WORKER_THRESHOLD,
   STREAM_MAX_NODES,
   createLayout,
@@ -197,5 +199,39 @@ describe("the guards with clusters (#xb4b54gr)", () => {
       return max;
     };
     expect(moved(resumed.x, resumed.y, settled.x, settled.y)).toBeLessThan(moved(scratch.x, scratch.y, settled.x, settled.y) / 10);
+  });
+});
+
+/** #xb4b54gr with #nadk3urm: the cluster factor composes with the panel's "Link force". */
+describe("clusters and the Forces (#xb4b54gr, #nadk3urm)", () => {
+  const cluster = Int32Array.from([0, 0, 1, -1]);
+  const end = (index: number) => ({ index });
+
+  it("a link's strength is the Link force multiplier times the cluster factor", () => {
+    for (const linkStrength of [1, 2, 0.5]) {
+      const nodes = [0, 1, 2, 3].map((i) => ({ id: `p${i}`, x: i, y: 0 }));
+      const input = layoutInputFor(nodes, [], {
+        centerId: null,
+        width: 800,
+        height: 600,
+        reducedMotion: false,
+        forces: { center: 1, repel: 1, linkStrength, linkDistance: 1 },
+        cluster,
+      });
+      expect(input.linkStrength).toBeCloseTo(LAYOUT_SETTINGS.linkStrength * linkStrength);
+      const strength = clusteredLinkStrength(input.linkStrength, input.cluster, 4);
+      expect(typeof strength).toBe("function");
+      const of = strength as (link: { source: { index?: number }; target: { index?: number } }) => number;
+      // Inside one cluster, and to a loose page: the multiplied strength as it is.
+      expect(of({ source: end(0), target: end(1) })).toBeCloseTo(input.linkStrength);
+      expect(of({ source: end(2), target: end(3) })).toBeCloseTo(input.linkStrength);
+      // Between two clusters: the factor on top.
+      expect(of({ source: end(1), target: end(2) })).toBeCloseTo(input.linkStrength * clusterLinkFactor(0, 1));
+    }
+  });
+
+  it("with no clusters the strength is the multiplied one, unchanged", () => {
+    expect(clusteredLinkStrength(0.9, undefined, 4)).toBe(0.9);
+    expect(clusteredLinkStrength(0.9, Int32Array.from([0, 1]), 4)).toBe(0.9);
   });
 });
