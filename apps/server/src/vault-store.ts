@@ -382,8 +382,8 @@ export interface OwnedRowsPaste {
   refused: Array<{ id: PageId; title: string }>;
   /** Rows that couldn't be put back (they keep the pasted values, or a new row stayed). */
   stuck: Array<{ id: PageId; title: string }>;
-  /** After a refusal: the new rows moved to the Trash (each restorable there). */
-  trashed?: number;
+  /** After a refusal: new rows that changed meanwhile, so they went to the Trash (unchanged ones are deleted outright). */
+  trashed: Array<{ id: PageId; title: string }>;
   /** The new columns couldn't be added (the base changed meanwhile): the rows were put back too. */
   baseRefused?: boolean;
 }
@@ -3755,14 +3755,16 @@ export class VaultStore {
         refused.push({ id: record.id, title: record.title });
       }
     }
-    const created: Array<{ id: PageId; title: string }> = [];
+    // Each new row with the version this job's last write left it at.
+    const created: Array<{ id: PageId; title: string; updated: string }> = [];
     if (refused.length === 0) {
       for (const row of fresh) {
         let made: Page | null = null;
         try {
           made = await this.createNow({ title: row.title, parentId: folder });
-          created.push({ id: made.id, title: made.title });
-          if (Object.keys(row.set).length) await this.updateNow(made.id, { properties: { set: row.set }, expectedUpdated: made.updated });
+          const entry = { id: made.id, title: made.title, updated: made.updated };
+          created.push(entry);
+          if (Object.keys(row.set).length) entry.updated = (await this.updateNow(made.id, { properties: { set: row.set }, expectedUpdated: made.updated })).updated;
         } catch (error) {
           if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: a new row "${row.title}" failed:`, error);
           refused.push({ id: made?.id ?? row.title, title: row.title });
@@ -3776,7 +3778,7 @@ export class VaultStore {
       baseRefused = !(await this.addColumnsToView(base, input.columns, options));
       if (baseRefused) refused.push({ id, title: base.title });
     }
-    if (refused.length === 0) return { changed: done.map((row) => row.id), created: created.map((row) => row.id), refused: [], stuck: [] };
+    if (refused.length === 0) return { changed: done.map((row) => row.id), created: created.map((row) => row.id), refused: [], stuck: [], trashed: [] };
 
     // All or nothing: the set rows get their exact earlier bytes back (only while the file is still as our
     // write left it), the new rows go to the Trash (counted, so the alert can say so).
@@ -3795,18 +3797,39 @@ export class VaultStore {
         if (record) stuck.push({ id: record.id, title: record.title });
       }
     }
-    if (putBack) this.reindexAll();
-    let trashed = 0;
+    // A new row this job made, still exactly as it left it, is deleted outright (no Trash, no History: it
+    // never existed for anyone). One changed meanwhile goes to the Trash instead, and is named (@lead).
+    const trashed: Array<{ id: PageId; title: string }> = [];
+    let dropped = 0;
     for (const row of created) {
       try {
-        await this.removeNow(row.id);
-        trashed += 1;
+        if (await this.dropPastedRow(row.id, row.updated)) dropped += 1;
+        else {
+          await this.removeNow(row.id);
+          trashed.push({ id: row.id, title: row.title });
+        }
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: removing the new row ${row.id} failed:`, error);
-        stuck.push(row);
+        stuck.push({ id: row.id, title: row.title });
       }
     }
+    if (putBack || dropped) this.reindexAll();
     return { changed: [], created: [], refused: named(refused), stuck, trashed, ...(baseRefused ? { baseRefused: true } : {}) };
+  }
+
+  /**
+   * #7prbquxu phase 2 (@lead): a refused paste's new row, deleted outright with its History, but only while it's
+   * exactly as this job left it (`version`, no outside change, no sub-pages). False otherwise (it goes to the Trash).
+   */
+  private async dropPastedRow(id: PageId, version: string): Promise<boolean> {
+    const record = this.pages.get(id);
+    if (!record || record.updated !== version || this.hasChildren(id)) return false;
+    if (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null))) return false;
+    await rm(record.filePath);
+    this.pages.delete(id);
+    this.forgetSessionBytes(id);
+    await rm(historyDir(this.root, id), { recursive: true, force: true });
+    return true;
   }
 
   /**

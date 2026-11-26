@@ -556,8 +556,8 @@ export const api = {
     created: PageId[];
     refused: Array<{ id: PageId; title: string }>;
     stuck: Array<{ id: PageId; title: string }>;
-    /** After a refusal: how many new rows were moved to the Trash. */
-    trashed?: number;
+    /** After a refusal: new rows that changed meanwhile, so they went to the Trash (unchanged ones are gone). */
+    trashed: Array<{ id: PageId; title: string }>;
     baseRefused?: boolean;
   }> => mutate(() => request(`${basePath(baseId)}/rows-paste`, { method: "POST", body: JSON.stringify({ rows, ...options }) })),
 

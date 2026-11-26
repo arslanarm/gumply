@@ -334,7 +334,7 @@ export function BaseView(props: BaseViewProps) {
         }
         if (result.refused.length && !result.baseRefused) {
           const parts = [t("bases.pasteRefused", { titles: titleList(result.refused) })];
-          if (result.trashed) parts.push(t("bases.pasteTrashed", { count: result.trashed }));
+          if (result.trashed.length) parts.push(t("bases.pasteTrashed", { titles: titleList(result.trashed) }));
           if (result.stuck.length) parts.push(t("bases.pasteStuck", { titles: titleList(result.stuck) }));
           props.onError?.(parts.join(" "));
         }
