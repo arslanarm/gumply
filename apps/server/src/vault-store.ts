@@ -3548,7 +3548,8 @@ export class VaultStore {
         if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
         else delete base.ownWrite;
         return true;
-      } catch {
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: writing ${base.id} failed:`, error);
         return false;
       }
     };
