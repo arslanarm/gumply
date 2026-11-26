@@ -180,13 +180,13 @@ describe("the other writers check the bytes too (#y5k39njn, @graph-dev's grep)",
     expect(await readFile(join(dir, `${notes.id}.md`), "utf8")).toBe(outside);
   });
 
-  it("a rename's link rewrite of another page re-reads it when its bytes changed at the same file time: the edit stays, the link is rewritten", async () => {
+  it("a rename's link rewrite of another page (0.9.x: rewriteEach) re-reads it when its bytes changed at the same file time: the edit stays, the link is rewritten", async () => {
     const { store, dir } = await createTestServer();
     const hub = await store.create({ title: "Hub", content: "Centre." });
     const linker = await store.create({ title: "Linker", content: "See [[Hub]]." });
     await sameTimeEdit(dir, linker.id, (text) => text.replace("See [[Hub]].", "See [[Hub]]. Outside line."));
+    // 0.9.x: the rename rewrites the linking pages inside the update itself (no N9 batches to settle).
     await store.update(hub.id, { title: "Hub 2" });
-    await store.settleRenames(10_000);
     const text = await readFile(join(dir, `${linker.id}.md`), "utf8");
     expect(text).toContain("Outside line.");
     expect(text).toContain("[[Hub 2]]");
