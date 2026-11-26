@@ -55,6 +55,21 @@ describe("punctuated property keys round-trip", () => {
     expect(editFrontmatterYaml("a: 1\n", { "prio_1": 2 })).toBe("a: 1\nprio_1: 2\n");
   });
 
+  it("today's keys round-trip byte for byte: a no-op edit, a one-key edit, and read → write → read", () => {
+    const inner = "status: todo # set by hand\nrank: 3\ndue date: 2026-11-30\npeople:\n  - Ann\n  - Bo\ntags: [work, q4]\nстатус: x\nmeta:\n  nested: true\n";
+    expect(editFrontmatterYaml(inner, {})).toBe(inner);
+    expect(editFrontmatterYaml(inner, { rank: 4 })).toBe(inner.replace("rank: 3", "rank: 4"));
+    expect(editFrontmatterYaml(inner, { status: "done" })).toBe(inner.replace("status: todo # set by hand", "status: done # set by hand"));
+    const read = parseFrontmatter(`---\n${inner}---\nBody`).frontmatter;
+    const written = serializeFrontmatter(read);
+    expect(parseFrontmatter(`${written}\nBody`).frontmatter).toEqual(read);
+    expect(serializeFrontmatter(parseFrontmatter(`${written}\nBody`).frontmatter)).toBe(written);
+    // The same with punctuated keys in the file, as Obsidian writes them: nothing around them moves.
+    const mixed = `Water every (days): 7\n${inner}'Price ($)': 3\n`;
+    expect(editFrontmatterYaml(mixed, {})).toBe(mixed);
+    expect(editFrontmatterYaml(mixed, { rank: 4 })).toBe(mixed.replace("rank: 3", "rank: 4"));
+  });
+
   it("a list item, a comment or a flow line is never read as a key", () => {
     const note = parseFrontmatter("---\ntags:\n  - one\n# Price ($): 3\n- (x): 2\n[a]: 1\n---\n");
     expect(note.frontmatter).toEqual({ tags: ["one"] });
