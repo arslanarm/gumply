@@ -92,7 +92,8 @@ export async function connect(
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [bin(), "mcp", "--vault", vault, ...(options.args ?? [])],
-    env: { PATH: process.env.PATH ?? "", ...(options.env ?? {}) },
+    // #vduteee7: a fixed installation id, so a test's rename never creates the real state folder (~/.local/state/gumply).
+    env: { PATH: process.env.PATH ?? "", GUMPLY_INSTANCE_ID: "mcp-test-instance", ...(options.env ?? {}) },
     stderr: "pipe",
   });
   let err = "";

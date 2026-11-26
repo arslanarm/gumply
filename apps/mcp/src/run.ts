@@ -7,6 +7,7 @@
 import { statSync } from "node:fs";
 import type { Readable, Writable } from "node:stream";
 import { serveStdio, StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { serverInstanceId, type InstanceId } from "../../server/src/instance-id.js";
 import { RateLimiter } from "./limits.js";
 import { createServer } from "./server.js";
 import { effectiveAccess, readSettings } from "./settings.js";
@@ -18,6 +19,8 @@ export interface RunMcpOptions {
   readOnly: boolean;
   /** Ends the process (tests and the desktop app pass their own). */
   exit?: (code: number) => never;
+  /** #vduteee7: the installation's id; default the standalone server's (`serverInstanceId()`). */
+  instanceId?: InstanceId;
   /** #6bxm6ygf: `serverInfo.version` (the desktop app's own); default `SERVER_VERSION`. */
   version?: string;
   /**
@@ -57,7 +60,8 @@ export function runMcp(options: RunMcpOptions): void {
   if (!settings.enabled) fail("MCP is turned off for this vault (Gumply → Settings → AI apps (MCP))");
   const access = effectiveAccess(settings, options.readOnly);
 
-  const vault = new Vault(options.vault);
+  // #vduteee7: the installation's id (the desktop app passes its own; the npm bin the standalone server's).
+  const vault = new Vault(options.vault, options.instanceId ?? serverInstanceId());
   // Index in the background: the handshake and tools/list don't wait for it.
   vault.open().catch((error: unknown) => fail(`[gumply mcp] can't read the vault: ${error instanceof Error ? error.message : String(error)}`));
   const limiter = new RateLimiter(

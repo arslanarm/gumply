@@ -1033,7 +1033,8 @@ function runMcpMode(args: McpModeArgs): void {
     served.once("data", (chunk: Buffer | string) => trace(`stdin first ${chunk.length} bytes: ${JSON.stringify(String(chunk).slice(0, 120))}`));
     served.once("end", () => trace("stdin end"));
   }
-  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion(), ...(stdio ? { stdio } : {}) });
+  // #vduteee7: this installation's id (the app's own), so a rename this process leaves half done is the app's to finish.
+  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion(), instanceId: instanceIdIn(app.getPath("userData")), ...(stdio ? { stdio } : {}) });
 }
 
 if (mcpMode) {
