@@ -143,3 +143,25 @@ test('"Edit options…": the delete question comes into sight, with focus on its
   await expect.poll(() => onTop(page, clear), { timeout: 2_000 }).toBe(true);
   expect(await onTop(page, page.getByTestId('base-option-delete-keep'))).toBe(true);
 });
+
+test('the picker is a combobox a screen reader can follow, and Escape gives focus back to the cell (pass 8, 1, @lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  const search = page.getByTestId('base-select-search');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveAttribute('role', 'combobox');
+  await expect(search).toHaveAttribute('aria-expanded', 'true');
+  const listId = (await search.getAttribute('aria-controls'))!;
+  await expect(page.locator(`[id="${listId}"]`)).toHaveAttribute('role', 'listbox');
+  await page.keyboard.press('ArrowDown');
+  const active = (await search.getAttribute('aria-activedescendant'))!;
+  await expect(page.locator(`[id="${active}"]`)).toHaveText('Stage 2');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
+  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
+});
