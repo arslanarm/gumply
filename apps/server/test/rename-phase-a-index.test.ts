@@ -37,9 +37,17 @@ async function vault(linkers: number, extra: Record<string, string> = {}) {
 
 type Internals = { reindexAll: () => void; edgesBySource: Map<string, LinkEdge[]> };
 const internals = (store: VaultStore) => store as unknown as Internals;
-/** The index as comparable data: sources sorted, each source's edges as written. */
+/**
+ * The index as backlinks and the graph read it: sources sorted, each edge's target, and the link text only
+ * where it matters (an unresolved edge, a graph ghost). A page a batch has already rewritten keeps its edges
+ * from its old text until the rename's last step (`[[Hub]]` → target "Hub renamed" through the alias), while a
+ * rebuild at that moment reads its new text (`[[Hub renamed]]`): the same target, another `targetTitle`. That
+ * holds on main too, so it isn't what this test is about.
+ */
 const indexOf = (store: VaultStore) =>
-  [...internals(store).edgesBySource].map(([source, edges]) => [source, edges.map((edge) => ({ ...edge }))] as const).sort(([a], [b]) => a.localeCompare(b));
+  [...internals(store).edgesBySource]
+    .map(([source, edges]) => [source, edges.map((edge) => ({ ...edge, targetTitle: edge.target === null ? edge.targetTitle : "" }))] as const)
+    .sort(([a], [b]) => a.localeCompare(b));
 
 describe("a batched rename's first step updates the link index without a full rebuild (#6pyunynv)", { timeout: 60_000 }, () => {
   it("one full rebuild per batched rename (at its end), not two", async () => {
