@@ -3530,8 +3530,9 @@ export class VaultStore {
         const patch = to !== null ? { rename: [{ from: key, to }] } : { remove: [key] };
         const page = await this.updateNow(record.id, { properties: patch, expectedUpdated: record.updated });
         changed.push({ id: page.id, updated: page.updated });
-      } catch {
-        // Any error (a refusal, a lock, I/O): this row didn't change.
+      } catch (error) {
+        // Any error (a refusal, a lock, I/O): this row didn't change. One the store didn't expect is logged.
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: ${record.id} failed:`, error);
         skipped.push(record);
       }
     }
@@ -3565,7 +3566,8 @@ export class VaultStore {
     for (const row of changed) {
       try {
         await this.updateNow(row.id, { properties: { rename: [{ from: to, to: key }] }, expectedUpdated: row.updated });
-      } catch {
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: putting ${row.id} back failed:`, error);
         const record = this.pages.get(row.id);
         if (record) stuck.push(record);
       }
