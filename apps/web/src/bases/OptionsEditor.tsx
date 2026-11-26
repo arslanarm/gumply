@@ -26,12 +26,13 @@ export function OptionsEditor(props: {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // #pzqmduua: the question opens under the list, which can be below the popover's scrolled fold (ten options);
-  // bring it into sight and put focus on its first choice, so the bin visibly does something (and keys reach it).
+  // bring it into sight and put focus on Cancel, so the bin visibly does something and keys reach the question,
+  // while a stray Enter can't clear the value from every row (the app's safe default, as in DeleteDialog).
   const confirmRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (deleting === null) return;
     confirmRef.current?.scrollIntoView({ block: "nearest" });
-    confirmRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    confirmRef.current?.querySelector<HTMLButtonElement>('[data-testid="base-option-delete-cancel"]')?.focus({ preventScroll: true });
   }, [deleting]);
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -150,7 +151,7 @@ export function OptionsEditor(props: {
           >
             {t("bases.optionDeleteKeep")}
           </button>
-          <button type="button" className="button-secondary" onClick={() => setDeleting(null)}>
+          <button type="button" className="button-secondary" data-testid="base-option-delete-cancel" onClick={() => setDeleting(null)}>
             {t("common.cancel")}
           </button>
         </div>
