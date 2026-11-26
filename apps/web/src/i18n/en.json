@@ -1403,6 +1403,8 @@
     "pasteNameColumn": "Name",
     "pasteColumn": "Column {{n}}",
     "pasteKnownColumn": "Already a property here: its type stays.",
+    "pasteTooManyOptions": "“{{name}}” would get more than {{count}} options; a paste makes at most {{count}}.",
+    "pasteNoSelect": "Select isn’t offered: more than {{count}} different values.",
     "pasteSelectHint": "Only a few values, each repeated: this could be a Select.",
     "pasteBadName": "“{{name}}” can't be a property name (letters, digits, spaces, “-” and “_”).",
     "pasteDuplicateName": "Two properties are called “{{name}}”.",

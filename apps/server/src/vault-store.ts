@@ -3,6 +3,7 @@ import { constants as fsConstants, existsSync, readdirSync, statSync, watch, typ
 import { access, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
+  MAX_PASTE_OPTIONS,
   coercePropertyValue,
   frontmatterKeys,
   HEADER_KEYS,
@@ -4179,6 +4180,9 @@ export class VaultStore {
         if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
         if (select?.kind !== "select" && select?.kind !== "multiselect") throw badRequest(`not a Select kind for ${key}`);
         if (!Array.isArray(select.values) || select.values.some((value) => typeof value !== "string")) throw badRequest(`Select values for ${key} must be text`);
+        if (new Set(select.values.filter((value) => value !== "")).size > MAX_PASTE_OPTIONS) {
+          throw badRequest(`a paste makes at most ${MAX_PASTE_OPTIONS} options for ${key}`);
+        }
       }
       let config: BaseConfig;
       try {
@@ -4362,6 +4366,8 @@ export class VaultStore {
     }
     if (next === config) return true;
     const text = updateBaseSource(base.baseSource ?? "", next);
+    // Nothing new (every pasted value an option already): no write, no new version (@opus-hunter's note g).
+    if (text === base.baseSource) return true;
     if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) return false;
     try {
       const replaced = base.updated;
