@@ -5686,6 +5686,50 @@ export class VaultStore {
     return this.folders.has(rows) ? rows : null;
   }
 
+  /** #zy9dqwwz: the database that owns folder `id` (`<id>.base` next to it, its marker naming it), if any. */
+  private ownerOfRowsFolder(id: PageId): PageId | null {
+    const baseId = `${id}${idExtension("base")}`;
+    const record = this.pages.get(baseId);
+    return record?.kind === "base" && this.ownedRowsOf(record, baseId) === id ? baseId : null;
+  }
+
+  /**
+   * #zy9dqwwz (@lead): move a database and its own rows folder together, in one queued job: both places are
+   * checked free first; the base moves, then the folder (the base goes back if the folder can't), then the
+   * marker and filter name the folder's new id. Links follow each, as for any move.
+   */
+  private async moveDatabaseNow(baseId: PageId, rows: PageId, parentId: PageId | null): Promise<Page> {
+    const segment = rows.split("/").pop() ?? rows;
+    const newRows = parentId ? `${parentId}/${segment}` : segment;
+    if (newRows === rows) return this.getAny(baseId);
+    if (parentId !== null && (parentId === rows || parentId.startsWith(`${rows}/`))) {
+      throw badRequest("cannot move a database into its own rows folder");
+    }
+    const folderTaken =
+      [...this.pages.keys(), ...this.folders.keys()].some((key) => key !== rows && collisionKey(key) === collisionKey(newRows)) ||
+      (await pathExists(this.folderPathFor(newRows))) ||
+      (await this.itemFileExists(newRows));
+    if (folderTaken) throw conflict(`A page or folder already exists at ${newRows}`);
+    const oldParent = parentOf(baseId);
+    await this.moveNow(baseId, parentId, { alone: true });
+    const newBase = `${newRows}${idExtension("base")}`;
+    try {
+      await this.relocateFolderNow(rows, newRows);
+    } catch (error) {
+      // The folder stayed: the database goes back next to it.
+      await this.moveNow(newBase, oldParent, { alone: true }).catch(() => undefined);
+      throw error;
+    }
+    const record = this.pages.get(newBase);
+    if (record) {
+      const source = record.baseSource ?? "";
+      const text = updateBaseSource(source, withOwnedRows(parseBase(source), newRows));
+      if (text !== source) await this.writeBaseFile(record, text);
+    }
+    this.reindexAll();
+    return this.getAny(newBase);
+  }
+
   /** A new name for an owned database: free as a base **and** as a folder (its rows move too). */
   private async renameOwnedTarget(id: PageId, parentId: PageId | null, title: string, rows: PageId): Promise<PageId> {
     const folder = parentOf(id) ?? parentId;
@@ -6526,9 +6570,12 @@ export class VaultStore {
     };
   }
 
-  private async moveNow(id: PageId, parentId: PageId | null): Promise<Page> {
+  private async moveNow(id: PageId, parentId: PageId | null, options: { alone?: boolean } = {}): Promise<Page> {
     if (this.folders.has(id)) return this.moveFolderNow(id, parentId);
     const record = this.require(id);
+    // #zy9dqwwz: a database that owns its rows folder takes it along, as its rename does.
+    const rows = record.kind === "base" && !options.alone ? this.ownedRowsOf(record, id) : null;
+    if (rows) return this.moveDatabaseNow(id, rows, parentId);
 
     if (parentId !== null) {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
@@ -6778,6 +6825,14 @@ export class VaultStore {
     const title = typeof patch.title === "string" ? patch.title.trim() : "";
     if (title.length === 0) throw badRequest("title must not be empty");
     if (title.length > MAX_TITLE_LENGTH) throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
+    // #zy9dqwwz (@lead): a database's own rows folder is renamed through its database, which takes the folder
+    // along and rewrites its marker and filter, so the two keep one name and the table keeps its rows.
+    const owner = this.ownerOfRowsFolder(id);
+    if (owner) {
+      const renamed = await this.updateBaseNow(owner, { title });
+      const rows = renamed.meta.id.slice(0, -idExtension("base").length);
+      return { ...this.folderPage(this.folders.has(rows) ? rows : id), rewrittenPages: renamed.rewrittenPages };
+    }
     const parent = parentOf(id);
     const base = parent ? `${parent}/${pageSegment(title)}` : pageSegment(title);
     if (base === id) return { ...this.folderPage(id), rewrittenPages: [] };
@@ -6787,6 +6842,13 @@ export class VaultStore {
   }
 
   private async moveFolderNow(id: PageId, parentId: PageId | null): Promise<Page> {
+    // #zy9dqwwz: a database's own rows folder moves with its database (see moveDatabaseNow).
+    const owner = this.ownerOfRowsFolder(id);
+    if (owner) {
+      await this.moveDatabaseNow(owner, id, parentId);
+      const segment = id.split("/").pop() ?? id;
+      return this.folderPage(parentId ? `${parentId}/${segment}` : segment);
+    }
     if (parentId !== null) {
       if (typeof parentId !== "string" || !isValidPageId(parentId)) {
         throw badRequest("parentId must be a valid page id or null");
