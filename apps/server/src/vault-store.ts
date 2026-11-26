@@ -1177,6 +1177,9 @@ export class VaultStore {
    * #rz3iukrp: bumped by every full `reindexAll()`. A full reindex is complete
    * against the page list of its moment, so a sliced index still running
    * stops when it sees a newer one (its snapshot of the page list may be stale).
+   * #6pyunynv: also by a batched rename's partial update (`reindexAfterRename`),
+   * which is complete too: it only runs when no sliced index is running (else
+   * that rename does a full rebuild), on an index that was complete before it.
    */
   private indexGeneration = 0;
   /** Files a scan reads at once (#g95wkd9y); tests set 1 for a sequential baseline. */
@@ -6123,33 +6126,43 @@ export class VaultStore {
    * are recomputed, exactly as the rebuild would (`edgesFor` with `linkMetas`, which carries the alias):
    * - the renamed page itself (its own links and self-links);
    * - a source with an edge to the old id (now the renamed page, through the alias);
-   * - a source with an edge naming the new title or id (it may resolve differently now);
-   * - a source with an unresolved edge that resolves to the renamed page now (`[[New name]]` written before).
-   * A rename that moved sub-pages (a folder moved with it) or runs unbatched keeps the full rebuild.
+   * - a source with any link the renamed page can match now, by the resolver's own rules (its new title
+   *   or id, its old title through the alias; case, NFC and spacing, slug forms, the `.md` fallback):
+   *   such a link may resolve to it now, from another page or from nothing (`[[New name]]` written before).
+   * A rename that moved sub-pages (a folder moved with it), runs unbatched, or comes while the cold-open
+   * index is still running (`indexingNow`), keeps the full rebuild.
    */
   private reindexAfterRename(oldId: PageId, record: PageRecord): void {
     // Its folder: sub-pages, or a database's owned rows (`People.base` with `People/`, #7prbquxu).
     const folder = `${record.id.replace(/\.(base|canvas)$/, "")}/`;
     const movedChildren = oldId !== record.id && [...this.pages.keys()].some((key) => key.startsWith(folder));
-    if (!this.deferRewrites || movedChildren) {
+    // @opus-hunter's review: while the cold-open index still runs (`indexInSlices`), the pages it hasn't
+    // reached have no edges yet, and bumping the generation stops it; only a full rebuild leaves no holes.
+    if (!this.deferRewrites || movedChildren || this.indexingNow) {
       this.reindexAll();
       return;
     }
+    // Like a full rebuild, this stops a running background index (`indexInSlices`); it never runs during one.
     this.indexGeneration += 1;
     const metas = this.linkMetas();
-    const names = new Set([record.title, record.id, record.id.slice(record.id.lastIndexOf("/") + 1)].map((name) => name.toLowerCase()));
+    // @opus-hunter's review: which links the renamed page can match now, by the resolver's own rules
+    // (case, NFC and spacing, slug forms, the `.md` fallback), not a name list. A link can only change
+    // if it now matches the page (its id, or its old title through the alias); one that matched it before
+    // has `target === oldId`. Asked once per link text and source folder (the resolver prefers nearby pages).
+    const own = metas.filter((meta) => meta.id === record.id || meta.id === oldId);
+    const canMatch = new Map<string, boolean>();
+    const matches = (title: string, source: PageId) => {
+      const key = `${noteFolder(source)}\u0000${title}`;
+      let found = canMatch.get(key);
+      if (found === undefined) {
+        found = resolveWikilink(title, own, source) !== null;
+        canMatch.set(key, found);
+      }
+      return found;
+    };
     const affected = new Set<PageId>([record.id]);
     for (const [source, edges] of this.edgesBySource) {
-      if (
-        edges.some(
-          (edge) =>
-            edge.target === oldId ||
-            names.has(edge.targetTitle.toLowerCase()) ||
-            (edge.target === null && [record.id, oldId].includes(resolveWikilink(edge.targetTitle, metas, source)?.id ?? "")),
-        )
-      ) {
-        affected.add(source);
-      }
+      if (edges.some((edge) => edge.target === oldId || matches(edge.targetTitle, source))) affected.add(source);
     }
     if (oldId !== record.id) this.edgesBySource.delete(oldId);
     for (const id of affected) {
