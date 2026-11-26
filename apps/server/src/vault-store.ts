@@ -1759,7 +1759,8 @@ export class VaultStore {
       // #2wjvk3br: an unchanged record keeps what the adopt step above learned.
       if (previous && previous !== record && previous.sameBytes && previous.sameBytes.now === record.updated) record.sameBytes = previous.sameBytes;
       if (own && own.version === record.updated) record.ownWrite = own;
-      else if (previous && this.recordSignature(previous) !== this.recordSignature(record)) editedOutside.push(record);
+      // #y5k39njn: a re-read of the very bytes we wrote last is never an outside edit (no outside History version).
+      else if (previous && this.recordSignature(previous) !== this.recordSignature(record) && !this.isOwnBytes(record)) editedOutside.push(record);
     }
 
     const previousIds = new Set(this.pages.keys());
