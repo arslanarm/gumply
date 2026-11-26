@@ -97,10 +97,10 @@ describe("outside renames are followed (#3c444g85)", () => {
     });
   }
 
-  it("the late pairing window closes: the same title with other content 11 s after the delete is a new page, not a rename; 5 s after, it pairs (#zsk48sie, @lead)", async () => {
+  it("the late pairing window closes: the same title with other content 11 s after the delete is a new page, not a rename; 9 s after, it pairs (#zsk48sie, @lead)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      for (const [gapMs, pairs] of [[11_000, false], [5_000, true]] as const) {
+      for (const [gapMs, pairs] of [[11_000, false], [9_000, true]] as const) {
         const { store, dir } = await createTestServer();
         await writeFile(join(dir, "Plan.md"), "---\ntitle: Plan\n---\nThe first plan.\n");
         await store.rescan();

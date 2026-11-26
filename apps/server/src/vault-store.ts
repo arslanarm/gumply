@@ -583,7 +583,12 @@ const OWN_WRITE_MS = 5000;
 /**
  * #zsk48sie: how long a page that vanished from disk (or appeared) unpaired is
  * remembered, so a sync tool's delete + create landing in two refreshes still
- * pairs as an outside rename (Syncthing applies deletions last).
+ * pairs as an outside rename (Syncthing applies deletions last). Notes from
+ * the review: if the new page got versions of its own before the old one's
+ * delete landed, those are kept aside as `<id>~<stamp>` when the old history
+ * moves in (nothing lost); and a big outside delete keeps its records for this
+ * long, compared with every page that appears meanwhile: measure before
+ * raising it (O(gone × fresh) per refresh).
  */
 const LATE_PAIR_MS = 10_000;
 
