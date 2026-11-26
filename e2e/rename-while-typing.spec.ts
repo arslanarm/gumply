@@ -153,7 +153,7 @@ test('renaming a page the open page links to, right after typing in it: the typi
   await expect(page.getByTestId('editor-content')).not.toContainText('may have been deleted');
 });
 
-test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10): never dropped; a "changed on disk" conflict, and Keep mine keeps the typing and the new link', async ({ page, request }) => {
+test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10, #z9hufufn): never dropped, no "changed on disk": the save is merged, with the typing and the new link', async ({ page, request }) => {
   test.setTimeout(180_000);
   await fs.mkdir(path.join(E2E_VAULT, 'Linkers'), { recursive: true });
   await fs.writeFile(path.join(E2E_VAULT, 'Hub.md'), 'The hub.\n');
@@ -190,11 +190,10 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10): neve
   }
   await page.keyboard.type(' last', { delay: 15 });
 
-  // Pinned (@lead, 2026-11-23): the batch moved Writer's version, so the next save is a conflict…
-  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'conflict', { timeout: 30_000 });
-  // …and Keep mine keeps the typing, and (N10, #5pgmziyc) the rename's new link on the line it didn't touch.
-  await page.getByTestId('conflict-keep-mine').click();
+  // #z9hufufn: the batch moved Writer's version, but only the rename's link change came in between, so
+  // the save is merged (the typing, and the new link on the line it didn't touch): no conflict at all.
   await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 30_000 });
+  await expect(page.getByTestId('conflict-keep-mine')).toHaveCount(0);
   const text = await fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8');
   expect(text).toContain(' last');
   expect(text).toContain('[[Hub renamed]]');
@@ -202,12 +201,12 @@ test('typing in a linking page during a 1,200-link rename (#iihi4dg7, N10): neve
   // Every other linker has the new link.
   expect(await fs.readFile(path.join(E2E_VAULT, 'Linkers', 'Linker 7.md'), 'utf8')).toContain('[[Hub renamed]]');
 
-  // N10 client: the editor itself took the new link in place (no reload), and says so.
+  // N10 client: the editor itself took the new link in place (no reload), silently (#z9hufufn: no conflict to report).
   const editor = page.getByTestId('editor-content');
   // The link's label is its own target ([[Hub]] would read "Hub", even while it resolves to the renamed page).
   await expect(editor.locator('.wiki-link-label')).toHaveText(['Hub renamed']);
   await expect(editor).toContainText(' last');
-  await expect(page.getByTestId('undo-toast')).toContainText('Your text was kept, with the new link to “Hub renamed”.');
+  await expect(page.getByTestId('undo-toast').filter({ hasText: 'Your text was kept' })).toHaveCount(0);
   // One more keystroke: its save keeps the new link (before N10's client part it wrote [[Hub]] back).
   await page.keyboard.type('!');
   await expect.poll(async () => fs.readFile(path.join(E2E_VAULT, 'Writer.md'), 'utf8'), { timeout: 10_000 }).toContain(' last!');
