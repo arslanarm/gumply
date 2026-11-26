@@ -127,6 +127,12 @@ function linkPartSuggestions(query: string): Promise<LinkSuggestion[]> | null {
   return resolveWikilink(name, env.pages, env.pageId) ? partSuggestions(query, { link: true }) : null;
 }
 
+/** #2zugp8qc: the open suggestion's range now, when it's the one `given` was made for (same start); else `given`. */
+function liveRange(state: EditorState, given: { from: number; to: number }): { from: number; to: number } {
+  const live = wikiLinkPluginKey.getState(state) as { active?: boolean; range?: { from: number; to: number } } | undefined;
+  return live?.active && live.range && live.range.from === given.from && live.range.to >= given.to ? { from: given.from, to: live.range.to } : given;
+}
+
 /** The suggestion these props were made for is still the open one. */
 function isCurrent(props: SuggestionProps<LinkSuggestion>): boolean {
   const state = wikiLinkPluginKey.getState(props.editor.state) as
@@ -190,7 +196,12 @@ export function createWikiLinkExtension(handlers: { current: LinkMenuHandlers })
             }
             return linkPartSuggestions(query) ?? buildLinkSuggestions(env.pages, query, env.attachments);
           },
-          command: ({ editor, range, props }) => {
+          command: ({ editor, range: given, props }) => {
+            // #2zugp8qc: TipTap passes the range of the last suggestion answer it rendered. A letter typed after it,
+            // whose answer is still loading (a `[[Page#…` heading fetch on a loaded machine), is in the open
+            // suggestion but not in that range, and would be left outside the link ("i[[Target#Risks]]"). The
+            // suggestion as it is now: the same start, its current end.
+            const range = liveRange(editor.state, given);
             if (embedStart(editor.state, range.from) && props.kind === "file" && props.file) {
               const from = range.from - 1;
               // #btgun63k: a wikilink can't hold `[ ] | # ^`. Such a file gets a
