@@ -26,7 +26,7 @@ async function vault(files: Record<string, string>) {
   const app = createApp({ vaultPath: server.dir, store });
   const order = async (base: string) =>
     ((await (await app.request(`/api/bases/${encodeURIComponent(base)}/view`)).json()) as { rows: Array<{ id: string }> }).rows.map((row) => row.id.split("/").pop());
-  return { dir: server.dir, store, order };
+  return { dir: server.dir, store, app, order };
 }
 
 describe("an owned database with no sort lists rows oldest first (#bg7c9bzk)", () => {
@@ -45,6 +45,28 @@ describe("an owned database with no sort lists rows oldest first (#bg7c9bzk)", (
       "Plants/Aloe.md": "Aloe, from Obsidian.\n",
     });
     expect(await order("Plants.base")).toEqual(["Aloe", "Yarrow", "Mint", "Basil"]);
+  });
+
+  it("a grouped view with no sort orders each group's rows the same way, and a new row lands at the bottom of its group (@lead, after review)", async () => {
+    const grouped = OWNED.replace("    order:\n", "    groupBy:\n      property: light\n      direction: ASC\n    order:\n");
+    const { store, app } = await vault({
+      "Plants.base": grouped,
+      "Plants/Zinnia.md": "---\nlight: sun\ncreated: 2026-01-01T00:00:00.000Z\n---\nZinnia\n",
+      "Plants/Mint.md": "---\nlight: shade\ncreated: 2026-02-01T00:00:00.000Z\n---\nMint\n",
+      "Plants/Yarrow.md": "---\nlight: sun\n---\nYarrow, from Obsidian.\n",
+      "Plants/Fern.md": "---\nlight: shade\n---\nFern, from Obsidian.\n",
+      "Plants/Aloe.md": "---\nlight: sun\n---\nAloe, from Obsidian.\n",
+    });
+    const byGroup = async () => {
+      const { rows, groups } = (await (await app.request(`/api/bases/${encodeURIComponent("Plants.base")}/view`)).json()) as {
+        rows: Array<{ id: string }>;
+        groups: Array<{ label: string; rows: number[] }>;
+      };
+      return Object.fromEntries(groups.map((group) => [group.label, group.rows.map((at) => rows[at]!.id.split("/").pop())]));
+    };
+    expect(await byGroup()).toEqual({ shade: ["Fern", "Mint"], sun: ["Aloe", "Yarrow", "Zinnia"] });
+    await store.pasteIntoOwnedRows("Plants.base", { rows: [{ title: "Basil", set: { light: "shade" } }] });
+    expect(await byGroup()).toEqual({ shade: ["Fern", "Mint", "Basil"], sun: ["Aloe", "Yarrow", "Zinnia"] });
   });
 
   it("a view with its own sort, and a base Gumply doesn't own, keep their order", async () => {
