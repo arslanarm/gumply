@@ -1422,9 +1422,12 @@ ol.base-list {
   color: var(--on-accent);
 }
 
+/* #bg7c9bzk (#19): the same rule as .button-primary:disabled, not a faded accent (its text was under AA). */
 .base-popover.is-add-column button.base-add-column-submit:disabled {
-  opacity: 0.5;
-  cursor: default;
+  background: var(--hover);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 /* #7prbquxu: an owned database's column menu: rename, type, delete from all rows. */
