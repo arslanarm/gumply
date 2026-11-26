@@ -679,6 +679,9 @@
 }
 
 .graph-panel-slider-value {
+  /* Beside the name, though it comes after the slider in the markup. */
+  grid-row: 1;
+  grid-column: 2;
   color: var(--muted);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
