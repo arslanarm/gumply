@@ -3784,6 +3784,12 @@ input {
   text-decoration-style: dotted;
 }
 
+/* #zvwk8irb: a coloured wiki link shows its colour (the span is around it); it keeps its underline,
+   pointer and hover, so it still reads and works as a link. */
+.ProseMirror .md-text-color .wiki-link-label {
+  color: inherit;
+}
+
 .wiki-link-heading {
   color: var(--muted);
   font-size: 0.82em;
@@ -4387,31 +4393,6 @@ input {
   flex-direction: column;
   gap: 6px;
   padding: 4px 2px 2px;
-}
-
-/* #gcba75f4: what a link can't take (links keep their colour in Obsidian), and why. */
-.color-swatch.is-unavailable,
-.color-last.is-unavailable {
-  cursor: not-allowed;
-}
-
-/* #qq6xe2f2: dim the sample only; opacity on the button also faded its tooltip (::after). */
-.color-swatch.is-unavailable > *,
-.color-last.is-unavailable > * {
-  opacity: 0.35;
-}
-
-.color-swatch.is-unavailable:hover,
-.color-last.is-unavailable:hover {
-  background: transparent;
-}
-
-.color-palette-note {
-  max-width: 17rem;
-  margin: 2px 4px 0;
-  color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.35;
 }
 
 .color-palette-title {

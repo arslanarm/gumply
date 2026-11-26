@@ -1179,8 +1179,6 @@
     "background": "Background",
     "colorDefault": "Default",
     "lastUsed": "Last used",
-    "linkOnlyYellow": "Links can only be highlighted in yellow, so they keep working in Obsidian.",
-    "linksKeepColour": "Links in the selection keep their colour: only yellow can highlight a link.",
     "textColorNamed": "{{name}} text",
     "backgroundNamed": "{{name}} background",
     "colors": {
