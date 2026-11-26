@@ -1984,6 +1984,21 @@ export class VaultStore {
     const seen = this.bytesAt.get(oldPath);
     this.bytesAt.delete(oldPath);
     if (seen) this.bytesAt.set(newPath, seen);
+    // #vqm6gqpu (@graph-dev's re-read): our last write of the file, and its hash, follow it too.
+    const written = this.writtenHashes.get(oldPath);
+    this.writtenHashes.delete(oldPath);
+    if (written) this.writtenHashes.set(newPath, written);
+    const own = this.ownBytes.get(oldPath);
+    this.ownBytes.delete(oldPath);
+    if (own !== undefined) this.ownBytes.set(newPath, own);
+  }
+
+  /** #vqm6gqpu: a record moved or renamed is a new object; the bytes it stands for go with it. */
+  private movedRecord(value: PageRecord, id: PageId, filePath: string): PageRecord {
+    const next: PageRecord = { ...value, id, filePath };
+    const read = this.readHashes.get(value);
+    if (read) this.readHashes.set(next, read);
+    return next;
   }
 
   /** Did `current`'s file and `fresh`'s (the same path, re-read) hold exactly the same bytes? */
@@ -4631,7 +4646,7 @@ export class VaultStore {
       moved.push({
         oldId: key,
         oldPath: value.filePath,
-        record: { ...value, id: movedId, filePath: this.movedFilePath(value, movedId) },
+        record: this.movedRecord(value, movedId, this.movedFilePath(value, movedId)),
       });
     }
     for (const { oldId, oldPath, record: value } of moved) {
@@ -5294,7 +5309,7 @@ export class VaultStore {
       const filePath = this.movedFilePath(value, movedId);
       // #rfgpvrdb: the same-bytes hashes move with the file (a move keeps its bytes and mtime).
       this.moveNotedBytes(value.filePath, filePath);
-      moved.push({ ...value, id: movedId, filePath });
+      moved.push(this.movedRecord(value, movedId, filePath));
     }
     for (const value of moved) this.pages.set(value.id, value);
 
@@ -5542,7 +5557,7 @@ export class VaultStore {
       if (!key.startsWith(`${id}/`)) continue;
       this.pages.delete(key);
       const movedId = `${newId}${key.slice(id.length)}`;
-      moved.push({ oldId: key, oldPath: value.filePath, record: { ...value, id: movedId, filePath: this.movedFilePath(value, movedId) } });
+      moved.push({ oldId: key, oldPath: value.filePath, record: this.movedRecord(value, movedId, this.movedFilePath(value, movedId)) });
     }
     for (const { oldId, oldPath, record: value } of moved) {
       this.pages.set(value.id, value);

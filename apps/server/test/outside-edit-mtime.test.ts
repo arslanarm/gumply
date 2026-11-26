@@ -1,4 +1,4 @@
-import { chmod, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { historyDir, readHistory } from "../src/history";
@@ -215,6 +215,33 @@ describe("an outside revert to the bytes before our last write, at the same file
     expect(stale).toMatch(/changed on disk/);
     expect(await readFile(file, "utf8")).toBe(cookBytes);
   });
+});
+
+describe("after a rename or a move, the record still knows its bytes (@graph-dev's re-read)", () => {
+  for (const how of ["a rename", "a move into a folder"] as const) {
+    it(`${how}, then a property-only outside edit at the same mtime: the version moves on, a stale properties save is a 409`, async () => {
+      const { store, dir } = await createTestServer();
+      await writeFile(join(dir, "Staff.md"), "---\nrole: Cook\nage: 30\n---\nStaff\n");
+      await mkdir(join(dir, "Crew"), { recursive: true });
+      await writeFile(join(dir, "Crew", "Index.md"), "Crew\n");
+      await store.rescan();
+      if (how === "a rename") await store.update("Staff", { title: "Team" });
+      else await store.move("Staff", "Crew");
+      await store.settleRenames?.(10_000);
+      const id = how === "a rename" ? "Team" : "Crew/Staff";
+      const file = join(dir, `${id}.md`);
+      const version = store.get(id).updated;
+      const before = await readFile(file, "utf8");
+      const { atime, mtime } = await stat(file);
+      await writeFile(file, before.replace("role: Cook", "role: Chef"));
+      await utimes(file, atime, mtime);
+      await store.rescan();
+      expect(store.get(id).updated > version, "the version moves on").toBe(true);
+      const stale = await store.update(id, { properties: { set: { role: "Baker" } }, expectedUpdated: version }).then(() => "accepted", (error: Error) => error.message);
+      expect(stale).toMatch(/changed on disk/);
+      expect(await readFile(file, "utf8")).toContain("role: Chef");
+    });
+  }
 });
 
 describe("a board and a base: an outside edit the record may not show, at the same file time (#vqm6gqpu)", () => {
