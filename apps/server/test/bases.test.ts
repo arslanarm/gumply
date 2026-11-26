@@ -313,6 +313,25 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect((await jsonRequest(app, "POST", url, { rows: [{ title: "", set: {} }] })).status).toBe(400);
   });
 
+  it("a paste refuses a row another app changed at the same size and time, also after a rescan read it (#7prbquxu phase 2, #vqm6gqpu)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+    });
+    const { stat, utimes } = await import("node:fs/promises");
+    const ann = join(dir, "People/Ann.md");
+    // The table read Ann at this version; then another app changes only a property, same size, time put back.
+    const seen = store.get("People/Ann").updated;
+    const before = await stat(ann);
+    await writeFile(ann, "---\nrole: Chef\n---\nAnn\n", "utf8");
+    await utimes(ann, before.atime, before.mtime);
+    await store.rescan();
+    // The paste sends what the table saw: the row must refuse, and the other app's value stays.
+    const result = await store.pasteIntoOwnedRows("People.base", { rows: [{ id: "People/Ann", set: { role: "Baker" }, expectedUpdated: seen }] });
+    expect(result.refused.map((row) => row.title)).toEqual(["Ann"]);
+    expect(await readFile(ann, "utf8")).toBe("---\nrole: Chef\n---\nAnn\n");
+  });
+
   it("a paste that a row refuses puts the set rows back and leaves no new rows (#7prbquxu phase 2, @lead)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
