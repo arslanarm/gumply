@@ -69,6 +69,10 @@ test('a Select cell\'s picker can be seen and clicked, on the last row too (pass
   const picker = page.getByTestId('base-select-picker');
   await expect(page.getByTestId('base-select-search')).toBeFocused();
   expect(await onTop(page, page.getByTestId('base-select-search')), 'the search field is not clipped or covered').toBe(true);
+  // The open cell's chip stays where the other rows' chips are (not flush against the cell's edge).
+  const editingChip = (await page.locator('[data-testid^="base-cell-editor-"] .base-option').boundingBox())!;
+  const otherChip = (await page.locator('[role="cell"]:not([data-testid^="base-cell-editor-"]) .base-option').first().boundingBox())!;
+  expect(Math.abs(editingChip.x - otherChip.x), 'the open cell keeps its padding').toBeLessThanOrEqual(1);
   const option = picker.getByTestId('base-select-option-Stage 5');
   expect(await onTop(page, option), 'an option in the list is not clipped or covered').toBe(true);
   // So a click picks it.
@@ -101,9 +105,12 @@ test('a value too long for its cell ends in an ellipsis inside the cell, not cut
   const chip = page.locator('.base-option.is-unknown').first();
   await expect(chip).toBeVisible();
   const fit = await chip.evaluate((element) => {
-    const cell = element.closest('[role="cell"]')!.getBoundingClientRect();
+    // The cell's content box: running into its padding, the chip was clipped at the cell's border, mid-letter.
+    const td = element.closest('[role="cell"]')!;
+    const cell = td.getBoundingClientRect();
+    const right = cell.right - parseFloat(getComputedStyle(td).paddingRight) - parseFloat(getComputedStyle(td).borderRightWidth);
     const box = element.getBoundingClientRect();
-    return { inside: box.right <= cell.right + 0.5, overflow: getComputedStyle(element).textOverflow, cut: element.scrollWidth > element.clientWidth };
+    return { inside: box.right <= right + 0.5, overflow: getComputedStyle(element).textOverflow, cut: element.scrollWidth > element.clientWidth };
   });
   expect(fit.inside, 'the chip, its border too, stays inside its cell').toBe(true);
   expect(fit).toMatchObject({ overflow: 'ellipsis', cut: true });
