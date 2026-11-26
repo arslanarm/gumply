@@ -821,7 +821,7 @@ test.describe('board view: autosave and conflicts', () => {
     });
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('heading', { level: 1, name: 'Welcome' })).toBeVisible();
+    await expect(page.getByRole('treeitem', { name: /^Welcome/, selected: true })).toBeVisible();
     expect(scripts.some((url) => /@xyflow|perfect-freehand|BoardEditor/.test(url))).toBe(false);
   });
 });
