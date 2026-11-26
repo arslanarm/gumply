@@ -159,6 +159,61 @@ describe("an outside edit whose file time doesn't move the version (#y5k39njn)",
   });
 });
 
+describe("the other writers check the bytes too (#y5k39njn, @graph-dev's grep)", () => {
+  /** An outside edit of `name`'s file that keeps its file time; no refresh has read it yet. */
+  async function sameTimeEdit(dir: string, name: string, edit: (text: string) => string): Promise<string> {
+    const file = join(dir, `${name}.md`);
+    const { mtime } = await stat(file);
+    const next = edit(await readFile(file, "utf8"));
+    await writeFile(file, next);
+    await utimes(file, mtime, mtime);
+    return next;
+  }
+
+  it("Link (mentions): an outside edit of the source at the same file time is a conflict, and the outside text stays", async () => {
+    const { store, dir } = await createTestServer();
+    const budget = await store.create({ title: "Budget", content: "Numbers." });
+    const notes = await store.create({ title: "Notes", content: "We went over the Budget today." });
+    const outside = await sameTimeEdit(dir, notes.id, (text) => text.replace("today.", "today. Outside line."));
+    const result = await store.linkMentions(budget.id, { source: notes.id, all: true, expectedUpdated: notes.updated }).then(() => "accepted", (error: Error) => error.message);
+    expect(result).toMatch(/changed on disk/);
+    expect(await readFile(join(dir, `${notes.id}.md`), "utf8")).toBe(outside);
+  });
+
+  it("a rename's link rewrite of another page re-reads it when its bytes changed at the same file time: the edit stays, the link is rewritten", async () => {
+    const { store, dir } = await createTestServer();
+    const hub = await store.create({ title: "Hub", content: "Centre." });
+    const linker = await store.create({ title: "Linker", content: "See [[Hub]]." });
+    await sameTimeEdit(dir, linker.id, (text) => text.replace("See [[Hub]].", "See [[Hub]]. Outside line."));
+    await store.update(hub.id, { title: "Hub 2" });
+    await store.settleRenames(10_000);
+    const text = await readFile(join(dir, `${linker.id}.md`), "utf8");
+    expect(text).toContain("Outside line.");
+    expect(text).toContain("[[Hub 2]]");
+  });
+
+  it("a tag rename never writes over an outside edit at the same file time", async () => {
+    const { store, dir } = await createTestServer();
+    const page = await store.create({ title: "Wallet", content: "Spent #money today." });
+    const outside = await sameTimeEdit(dir, page.id, (text) => text.replace("today.", "today. Outside line."));
+    await store.renameTag("money", "cash");
+    const text = await readFile(join(dir, `${page.id}.md`), "utf8");
+    expect(text).toContain("Outside line.");
+    // Either left as it is (skipped), or rewritten from the file as it is now: never from the stale body.
+    expect(text === outside || text.includes("#cash")).toBe(true);
+  });
+
+  it("the properties index follows an outside edit at the same file time (no stale cache)", async () => {
+    const { store, dir } = await createTestServer();
+    const page = await store.create({ title: "Task", content: "Work." });
+    await store.update(page.id, { properties: { set: { status: "open" } } });
+    expect((await store.pageProperties(page.id))?.find((p) => p.key === "status")?.value).toBe("open");
+    await sameTimeEdit(dir, page.id, (text) => text.replace("status: open", "status: done"));
+    await store.rescan();
+    expect((await store.pageProperties(page.id))?.find((p) => p.key === "status")?.value).toBe("done");
+  });
+});
+
 describe("clocks and permissions that already work (#yy35bfac, kept as guards)", () => {
   it("a read-only folder: the save fails, no temp file is left, and it saves once the folder is writable", async () => {
     const { store, dir, id, version } = await saved();

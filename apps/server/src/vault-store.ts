@@ -4179,7 +4179,8 @@ export class VaultStore {
         if (!apply) continue;
         const info = await stat(other.filePath).catch(() => null);
         if (!info) continue;
-        if (Math.abs(info.mtimeMs - other.fileMtimeMs) > 1) {
+        // #y5k39njn: also other bytes under the same file time (@graph-dev's review).
+        if (await this.changedOnDiskSince(other, info)) {
           // Changed outside since it was read: take the file as it is now, then rewrite that.
           await this.refreshFromDisk({ kind: "paths", paths: new Set([other.filePath]) });
           other = this.pages.get(this.resolveId(id));
@@ -4371,7 +4372,8 @@ export class VaultStore {
       } catch {
         info = null;
       }
-      if (info === null || Math.abs(info.mtimeMs - source.fileMtimeMs) > 1 || (input.expectedUpdated !== undefined && input.expectedUpdated !== source.updated)) {
+      // #y5k39njn: other bytes under the same file time are a change too (@graph-dev's review).
+      if ((await this.changedOnDiskSince(source, info)) || (input.expectedUpdated !== undefined && input.expectedUpdated !== source.updated)) {
         throw conflict("This page changed on disk.");
       }
       const found = findMentions(source.content, await this.mentionTermsOf(target.id));
@@ -5490,9 +5492,9 @@ export class VaultStore {
         skippedPages.push(record.id);
         continue;
       }
-      // D22: never write over a change this store hasn't seen.
-      const mtime = await stat(record.filePath).then((stats) => stats.mtimeMs, () => null);
-      if (mtime !== record.fileMtimeMs) {
+      // D22: never write over a change this store hasn't seen (#y5k39njn: other bytes under the same file time too).
+      const info = await stat(record.filePath).catch(() => null);
+      if (await this.changedOnDiskSince(record, info)) {
         skippedPages.push(record.id);
         continue;
       }
@@ -5930,9 +5932,10 @@ export class VaultStore {
     if (icon) record.icon = icon;
     this.setPropertyLinks(record, raw);
     // #kguq5bc5: the frontmatter for the properties index, so nothing reads this file again for it.
-    if (!this.rawPropertyCache.has(absolute) || this.rawPropertyCache.get(absolute)!.mtimeMs !== stats.mtimeMs) {
-      this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
-    }
+    // #y5k39njn: this read may hold other bytes under the same file time as the cached properties
+    // (a tool that keeps the mtime): what was cached for this file goes, and this read's YAML is kept.
+    this.rawPropertyCache.delete(absolute);
+    this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
     return record;
   }
 
