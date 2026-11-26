@@ -6,7 +6,7 @@ import { useT } from "../i18n/index.js";
 /**
  * #7prbquxu phase 3 (spec/database-tables §6, mock-up 2): a Select or Multi-select cell's editor.
  * "Search or add an option…", the options in their order with the current one(s) ticked; Enter picks the
- * highlighted one, or adds what was typed as a new option. A Select closes on a pick; a Multi-select stays
+ * highlighted match, or adds what was typed as a new option when nothing matches. A Select closes on a pick; a Multi-select stays
  * open for the next. A value outside the options (typed in Obsidian) is offered as "Add as option".
  */
 export function SelectPicker(props: {
@@ -71,8 +71,10 @@ export function SelectPicker(props: {
             setHighlight((at) => Math.max(at - 1, 0));
           } else if (event.key === "Enter") {
             event.preventDefault();
-            if (trimmed && !exact) void add(trimmed);
-            else if (shown[highlight]) void pick(shown[highlight]!.value);
+            // The highlighted match first (typing "C" and Enter picks "Cook"); a new option only when nothing
+            // matches. Adding next to a match is the "Add “…”" item.
+            if (shown[highlight]) void pick(shown[highlight]!.value);
+            else if (trimmed && !exact) void add(trimmed);
           } else if (event.key === "Escape") {
             event.preventDefault();
             props.onClose();
