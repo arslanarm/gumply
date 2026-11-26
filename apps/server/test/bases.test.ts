@@ -469,6 +469,30 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     ).rejects.toThrow("not a Select kind");
   });
 
+  it("a paste makes at most 200 options per Select: more is a 400 before any write (#7prbquxu, @opus-hunter's note f, @lead)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n';
+    const { dir, store } = await vault({ "People.base": base });
+    const values = Array.from({ length: 201 }, (_, i) => `v${i}`);
+    await expect(
+      store.pasteIntoOwnedRows("People.base", { rows: [{ title: "Ann", set: { code: "v0" } }], columns: { view: "Table", keys: ["code"], selects: { code: { kind: "select", values } } } }),
+    ).rejects.toThrow("200");
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base);
+    expect(existsSync(join(dir, "People/Ann.md"))).toBe(false);
+    // 200 is fine.
+    await store.pasteIntoOwnedRows("People.base", { rows: [{ title: "Ann", set: { code: "v0" } }], columns: { view: "Table", keys: ["code"], selects: { code: { kind: "select", values: values.slice(0, 200) } } } });
+    expect(parseBase(await readFile(join(dir, "People.base"), "utf8")).properties?.["note.code"]).toMatchObject({ gumplyType: "select" });
+  });
+
+  it("a paste whose Select values are all options already leaves the base file alone (#7prbquxu, @opus-hunter's note g)", async () => {
+    const base =
+      'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nproperties:\n  note.stage:\n    gumplyType: select\n    gumplyOptions:\n      - value: Todo\n        color: gray\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - stage\n';
+    const { dir, store } = await vault({ "People.base": base });
+    const before = store.get("People.base").updated;
+    await store.pasteIntoOwnedRows("People.base", { rows: [{ title: "Ann", set: { stage: "Todo" } }], columns: { view: "Table", keys: ["stage"], selects: { stage: { kind: "select", values: ["Todo"] } } } });
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base);
+    expect(store.get("People.base").updated).toBe(before);
+  });
+
   it("a paste checks its columns and its rows before any write: a missing view or a row given twice is a 400 and nothing changes (#7prbquxu phase 2, @opus-hunter)", async () => {
     const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n';
     const ann = "---\nrole: Cook\n---\nAnn\n";
