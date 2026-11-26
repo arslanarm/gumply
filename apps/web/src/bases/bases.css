@@ -1619,16 +1619,20 @@ ol.base-list {
   gap: 2px;
 }
 
+/* #7prbquxu (§8 follow-up): each swatch has an edge in its own hue pulled toward the text colour, so it reads in
+   both themes (≥ 3:1 against the popover; the 18% fill alone was very dim in dark mode). The chosen one gets a ring. */
 .base-option-swatch {
   width: 1rem;
   height: 1rem;
   padding: 0;
-  border: 1px solid transparent;
+  border: 1px solid color-mix(in srgb, var(--option-hue) 60%, var(--text));
+  background: color-mix(in srgb, var(--option-hue) 45%, transparent);
   cursor: pointer;
 }
 
+/* A ring drawn as a shadow, not an outline: it stays within the row's gap and apart from the focus outline. */
 .base-option-swatch[aria-checked="true"] {
-  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--text);
 }
 
 .base-icon-button {

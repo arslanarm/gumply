@@ -7,12 +7,12 @@
  * Many items: cards and list items use `content-visibility: auto`, so only
  * what's on screen is laid out and painted.
  */
-import { useState, type DragEvent } from "react";
+import { useContext, useState, type DragEvent } from "react";
 import { noteKey, propertyId, type BaseConfig, type BaseGroup, type BaseRow, type BaseValue, type BaseView, type BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT } from "../i18n/index.js";
 import { propertyLabel } from "./labels.js";
-import { detailColumns, ImageBox, numberSetting, ValueText } from "./values.js";
+import { BaseSelects, detailColumns, ImageBox, numberSetting, ValueText } from "./values.js";
 
 export interface LayoutProps {
   config: BaseConfig;
@@ -227,6 +227,9 @@ export function KanbanView(props: LayoutProps & { onPickGroup: () => void }) {
   const key = groupKey(view);
   const movable = key !== null && !props.readOnly && !!props.onSetValue;
   const [over, setOver] = useState<string | null>(null);
+  // #7prbquxu (§8 follow-up): grouped by a Select, each column's head is a chip in its option's colour.
+  const selects = useContext(BaseSelects);
+  const select = key ? selects.get(`note.${key}`) : undefined;
 
   if (!view.groupBy?.property || !result.groups) {
     return (
@@ -273,7 +276,16 @@ export function KanbanView(props: LayoutProps & { onPickGroup: () => void }) {
           onDrop={drop(group)}
         >
           <h4 className="base-kanban-title">
-            <span>{group.label || t("bases.noValue")}</span>
+            {(() => {
+              const option = select && group.label ? select.options.find((candidate) => candidate.value === group.label) : undefined;
+              return option ? (
+                <span className="base-option" data-color={option.color}>
+                  {group.label}
+                </span>
+              ) : (
+                <span>{group.label || t("bases.noValue")}</span>
+              );
+            })()}
             <span className="base-group-count">{group.rows.length}</span>
           </h4>
           <div className="base-kanban-cards">
