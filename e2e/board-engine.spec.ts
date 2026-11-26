@@ -811,15 +811,17 @@ test.describe('board view: autosave and conflicts', () => {
   // trial-main21: run after whiteboards.spec, `/` opened a board it had left in the shared vault, and
   // opening a board loads the engine as it should. The startup check must not depend on what's in the vault.
   vaultTest('the board engine is code-split from page startup', async ({ page, request, vault }) => {
-    void vault;
-    // A board in the vault, as another spec may leave one.
+    // A board in the vault, as another spec may leave one; and a known page to start on: startup opens a
+    // top-level "Welcome" before anything else (lib/first-run.ts), so `/` never lands on the board.
     expect((await request.post('/api/boards', { data: { title: 'Aardvark board' } })).status()).toBe(201);
+    await vault.seed([{ title: 'Welcome' }]);
     const scripts: string[] = [];
     page.on('request', (request) => {
       if (request.resourceType() === 'script') scripts.push(request.url());
     });
     await page.goto('/');
     await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { level: 1, name: 'Welcome' })).toBeVisible();
     expect(scripts.some((url) => /@xyflow|perfect-freehand|BoardEditor/.test(url))).toBe(false);
   });
 });
