@@ -117,6 +117,17 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
     await expect(page.getByTestId('toggle-rows-People.base')).toHaveText('Hide rows in the sidebar');
     await page.getByTestId('toggle-rows-People.base').click();
     await expect(page.getByTestId('page-item-People')).toHaveCount(0);
+
+    // Delete: it asks whether its rows go too (yes by default), and both go to the Trash as one item.
+    await page.getByTestId('page-item-People.base').hover();
+    await page.getByTestId('page-menu-button-People.base').click();
+    await page.getByTestId('delete-page-People.base').click();
+    await expect(page.getByTestId('delete-confirm-dialog')).toContainText('Also move its 1 row to the Trash');
+    await expect(page.getByTestId('delete-with-rows')).toBeChecked();
+    await page.getByTestId('delete-confirm').click();
+    await expect(page.getByTestId('page-item-People.base')).toHaveCount(0);
+    await expect.poll(async () => (await request.get(`${API_URL}/api/pages`)).json().then((list: Array<{ id: string }>) => list.some((meta) => meta.id.startsWith('People')))).toBe(false);
+    await expect.poll(async () => ((await (await request.get(`${API_URL}/api/trash`)).json()) as unknown[]).length).toBe(1);
   });
 
   test('Duplicate a page: "<Title> copy" next to it, same body, no sub-pages, opened with the title selected', async ({ page, request, vault }) => {

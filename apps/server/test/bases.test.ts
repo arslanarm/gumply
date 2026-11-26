@@ -216,6 +216,35 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(listed.find((meta) => meta.id === "People.base")).toMatchObject({ rowsFolder: "People", showRows: true });
   });
 
+  it("deletes a database with its rows as one Trash item, and restores both together, at a name free for both (#7prbquxu phase 4)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n';
+    const { app, dir, store } = await vault({ "People.base": base, "People/Ann.md": "---\nrole: Cook\n---\nAnn\n", "People/Bo.md": "Bo\n" });
+    const deleted = await jsonRequest(app, "DELETE", `/api/pages/${encodeId("People.base")}?withRows=1`);
+    expect(deleted.status).toBe(200);
+    const { deleted: ids, trashId } = (await deleted.json()) as { deleted: string[]; trashId: string };
+    expect(ids.sort()).toEqual(["People", "People.base", "People/Ann", "People/Bo"]);
+    expect(existsSync(join(dir, "People.base"))).toBe(false);
+    expect(existsSync(join(dir, "People"))).toBe(false);
+    // One Trash item: the database (its rows go with it).
+    const items = await getJson<Array<{ trashId: string; title: string }>>(app, "/api/trash");
+    expect(items.map((item) => item.trashId)).toEqual([trashId]);
+
+    // A new "People" folder took the name meanwhile: both come back as "People 2", the base owning "People 2".
+    await mkdir(join(dir, "People"), { recursive: true });
+    await store.rescan();
+    const restored = await jsonRequest(app, "POST", `/api/trash/${trashId}/restore`, {});
+    expect(restored.status).toBe(200);
+    expect(await readFile(join(dir, "People 2/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
+    expect(await readFile(join(dir, "People 2.base"), "utf8")).toBe(base.replaceAll("People", "People 2"));
+    const listed = await getJson<PageMeta[]>(app, "/api/pages");
+    expect(listed.find((meta) => meta.id === "People 2.base")).toMatchObject({ rowsFolder: "People 2" });
+    expect(await getJson<unknown[]>(app, "/api/trash")).toEqual([]);
+
+    // Without withRows, only the base goes; the folder stays as a plain folder.
+    await jsonRequest(app, "DELETE", `/api/pages/${encodeId("People 2.base")}`);
+    expect(existsSync(join(dir, "People 2/Ann.md"))).toBe(true);
+  });
+
   it("renaming a database that owns its rows folder takes the folder along (#7prbquxu)", async () => {
     const { app, dir, store } = await vault({ "Elsewhere/People.md": "Not in the way\n", "Ref.md": "See [[Untitled database/Ada]].\n" });
     await jsonRequest(app, "POST", "/api/bases", { title: "Untitled database", rows: true });
