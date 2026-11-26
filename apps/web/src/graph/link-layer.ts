@@ -16,6 +16,41 @@
  * graph units, so the picture matches the live drawing.
  */
 
+import { isGhostId } from "./graph-model.js";
+
+/**
+ * How a link looks, as pure functions of exactly what the cached picture's key
+ * holds (#pifuz5zs): the hovered node, the theme's link colours, the device pixel
+ * ratio (the width, in link-width.ts) and the data (whether the target is a page
+ * not created yet). A link style that read anything more (a selection, a group's
+ * colour) would need a new parameter here, and so a new part of the key: the
+ * unit test pins these signatures and values.
+ */
+export interface LinkColors {
+  idle: string;
+  faded: string;
+  active: string;
+}
+
+/** The dash of a link to a page not created yet, in graph units (as force-graph sets it). */
+export const GHOST_LINK_DASH = [4, 3];
+
+/** A link's colour: the theme's idle colour at rest; while a node is hovered, active on its links, faded elsewhere. */
+export function linkColorFor(sourceId: string, targetId: string, hoveredId: string | null, colors: LinkColors): string {
+  if (hoveredId === null) return colors.idle;
+  return sourceId === hoveredId || targetId === hoveredId ? colors.active : colors.faded;
+}
+
+/** A link's dash: dashed to a page not created yet, else solid (null). */
+export function linkDashFor(targetId: string): number[] | null {
+  return isGhostId(targetId) ? GHOST_LINK_DASH : null;
+}
+
+/** The key's style part: every colour a resting link is drawn in, and the device pixel ratio (its width). */
+export function linkLayerStyle(colors: LinkColors, dpr: number): string {
+  return `${colors.idle}|${colors.faded}|${dpr}`;
+}
+
 /** What a link layer depends on: any change means it has to be drawn again. */
 export interface LinkLayerInputs {
   /** The canvas transform (CSS px × DPR): a, d (scale) and e, f (translation). */

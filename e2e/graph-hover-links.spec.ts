@@ -44,6 +44,9 @@ interface ProbeNode {
   r: number;
 }
 
+const probeHovered = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { hovered: () => string | null }> }).__gumplyGraphs['graph-canvas']!.hovered());
+
 const probeNodes = (page: Page) =>
   page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { nodes: () => ProbeNode[] }> }).__gumplyGraphs['graph-canvas']!.nodes());
 
@@ -91,9 +94,12 @@ test('a hover change on a big graph draws only the hovered node\'s links, not ev
   await reset();
   await hover(second);
   const onSecond = await lines();
+  // The node meant is the one hovered (not merely "something").
+  expect(await probeHovered(page)).toBe(second.id);
   await reset();
   await hover(null);
   const offAgain = await lines();
+  expect(await probeHovered(page)).toBeNull();
   test.info().annotations.push({ type: 'lineTo', description: `hover another node: ${onSecond}; hover nothing: ${offAgain} (of ${totalLinks} links)` });
 
   // A node here has ~4 links (2 out, ~2 in); a few frames may each draw them. Far below every link.

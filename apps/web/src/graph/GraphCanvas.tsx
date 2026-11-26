@@ -32,7 +32,7 @@ import {
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, forcesToken, forceStrengths, LAYOUT_SETTINGS, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
 import { ghostStrokeWidth, linkWidthFor, restingLinkWidth } from "./link-width.js";
-import { linkLayerKey, paintRestingLinks, type LayerLink } from "./link-layer.js";
+import { GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, type LayerLink } from "./link-layer.js";
 import { startLayout } from "./layout-client.js";
 import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
 
@@ -122,7 +122,6 @@ const LABEL_GAP_PX = 4;
 const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
 /** Dash for links into a "not created yet" page (graph units, as before). */
-const GHOST_LINK_DASH = [4, 3];
 /** #pifuz5zs: above this many device pixels only the resting link picture is kept (memory). */
 const LINK_LAYER_MAX_PIXELS = 8_000_000;
 
@@ -1311,8 +1310,14 @@ export function GraphCanvas({
   const graphDataRef = useRef(graphData);
   graphDataRef.current = graphData;
   /** A new number for every new data set (cheap to put in the link picture's key). */
-  const graphDataVersionRef = useRef({ data: graphData, version: 0 });
-  if (graphDataVersionRef.current.data !== graphData) graphDataVersionRef.current = { data: graphData, version: graphDataVersionRef.current.version + 1 };
+  const dataVersionCounter = useRef(0);
+  const graphDataVersion = useMemo(() => {
+    void graphData;
+    dataVersionCounter.current += 1;
+    return dataVersionCounter.current;
+  }, [graphData]);
+  const graphDataVersionRef = useRef(graphDataVersion);
+  graphDataVersionRef.current = graphDataVersion;
 
   /**
    * #pifuz5zs: the resting links as a picture. Built from the frame that would
@@ -1364,8 +1369,8 @@ export function GraphCanvas({
         width,
         height,
         positions: positionsRef.current,
-        data: String(graphDataVersionRef.current.version),
-        style: `${linkPaint.idle}|${linkPaint.faded}|${dpr}`,
+        data: String(graphDataVersionRef.current),
+        style: linkLayerStyle(linkPaint, dpr),
       });
       if (layers.key !== key) {
         if (layers.idleJob) (window.cancelIdleCallback ?? window.clearTimeout)(layers.idleJob);
@@ -1389,7 +1394,7 @@ export function GraphCanvas({
           widthCss: restingLinkWidth(dpr),
           scale,
           dash: GHOST_LINK_DASH,
-          isDashed: (link) => isGhostId(endpointId(link.target as Parameters<typeof endpointId>[0])),
+          isDashed: (link) => linkDashFor(endpointId(link.target as Parameters<typeof endpointId>[0])) !== null,
         });
         return layer;
       };
@@ -1420,10 +1425,7 @@ export function GraphCanvas({
 
   const linkColor = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) => {
-      if (hoveredId === null) return linkPaint.idle;
-      const source = endpointId(link.source);
-      const target = endpointId(link.target);
-      return source === hoveredId || target === hoveredId ? linkPaint.active : linkPaint.faded;
+      return linkColorFor(endpointId(link.source), endpointId(link.target), hoveredId, linkPaint);
     },
     [linkPaint, hoveredId],
   );
@@ -1436,7 +1438,7 @@ export function GraphCanvas({
 
   const linkLineDash = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) =>
-      isGhostId(endpointId(link.target)) ? GHOST_LINK_DASH : null,
+      linkDashFor(endpointId(link.target)),
     [],
   );
 
