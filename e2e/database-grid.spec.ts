@@ -577,4 +577,29 @@ test('Cmd/Ctrl+Z undoes table operations and Shift redoes them; an undo over a r
   await undo();
   await expect(page.getByRole('alert')).toContainText('Ann');
   expect(await read('People/Bo.md')).not.toContain('age');
+
+test('the paste preview offers Select for a column of repeated values, and makes it one in the same request (pass 8 follow-up)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { 'People.base': PEOPLE['People.base'] });
+  await fs.mkdir(path.join(E2E_VAULT, 'People'), { recursive: true });
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await paste(page, 'Name\tstage\nIvy\tTodo\nOtto\tDone\nAl\tTodo\n');
+  // Guessed as text, with the hint (never a Select by itself).
+  await expect(page.getByTestId('base-paste-type-1')).toHaveValue('text');
+  await expect(page.getByTestId('base-paste-select-hint-1')).toBeVisible();
+  await page.getByTestId('base-paste-type-1').selectOption('select');
+  await expect(page.getByTestId('base-paste-select-hint-1')).toHaveCount(0);
+  const writes: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() !== 'GET' && /\/api\/(bases|pages)\b/.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
+  });
+  await page.getByTestId('base-paste-confirm').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
+  await expect.poll(() => read('People.base')).toContain('  note.stage:\n    gumplyType: select\n    gumplyOptions:\n      - value: Todo\n        color: brown\n      - value: Done\n        color: orange\n');
+  await expect.poll(() => read('People/Ivy.md')).toMatch(/stage: Todo\n/);
+  expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
+  await expect(page.getByTestId('base-table').getByTestId('base-option-chip').first()).toBeVisible();
 });
