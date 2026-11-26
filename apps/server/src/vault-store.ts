@@ -1674,7 +1674,8 @@ export class VaultStore {
       if (!current || this.recordSignature(current) !== this.recordSignature(record)) {
         changedIds.push(id);
         // #y5k39njn: new content always gets a newer version, so a save from before it is refused.
-        if (current && record.updated <= current.updated) record.updated = laterVersion(current.updated);
+        // Never for a re-read of the very bytes we wrote last (@graph-dev's review).
+        if (current && record.updated <= current.updated && !this.isOwnBytes(record)) record.updated = laterVersion(current.updated);
       }
       else if (current.fileMtimeMs !== record.fileMtimeMs || current.updated !== record.updated) {
         // #2wjvk3br: the very same bytes with a moved stat (a same-bytes rewrite or a touch):
@@ -1846,6 +1847,14 @@ export class VaultStore {
    * read. Re-read just this file: when only the stat moved (the same content),
    * adopt it and let the save go on. Returns true when the file is unchanged.
    */
+  /** #y5k39njn: `record` was read from exactly the bytes we wrote last to its file. */
+  private isOwnBytes(record: PageRecord): boolean {
+    const ours = this.ownBytes.get(record.filePath);
+    if (ours === undefined) return false;
+    const read = (this.bytesAt.get(record.filePath) ?? []).find((entry) => entry.mtimeMs === record.fileMtimeMs);
+    return read !== undefined && read.hash === ours;
+  }
+
   /**
    * Has the file changed since `record` was read or written? `info` is its stat
    * now (null: gone). #2wjvk3br: a moved mtime with the same bytes (a touch the
@@ -1885,8 +1894,16 @@ export class VaultStore {
    */
   private readonly bytesAt = new Map<string, Array<{ mtimeMs: number; hash: string }>>();
 
-  private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer): void {
+  /**
+   * #y5k39njn (@graph-dev's review): the hash of the last bytes we wrote to each
+   * file. A re-read of exactly those is never an outside edit, whatever the
+   * re-read record's signature says, so it never gets a moved-on version.
+   */
+  private readonly ownBytes = new Map<string, string>();
+
+  private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer, ours = false): void {
     const hash = bytesHash(bytes);
+    if (ours) this.ownBytes.set(filePath, hash);
     const kept = (this.bytesAt.get(filePath) ?? []).filter((entry) => entry.mtimeMs !== mtimeMs);
     kept.push({ mtimeMs, hash });
     this.bytesAt.set(filePath, kept.slice(-3));
@@ -3333,7 +3350,7 @@ export class VaultStore {
       throw error;
     }
     stats = await statAfterRename(record.filePath, stats, next);
-    this.noteBytes(record.filePath, stats.mtimeMs, next);
+    this.noteBytes(record.filePath, stats.mtimeMs, next, true);
     const meta = canvasMeta(board);
     record.board = board;
     record.content = canvasText(board);
@@ -3520,7 +3537,7 @@ export class VaultStore {
       throw error;
     }
     stats = await statAfterRename(record.filePath, stats, text);
-    this.noteBytes(record.filePath, stats.mtimeMs, text);
+    this.noteBytes(record.filePath, stats.mtimeMs, text, true);
     record.baseSource = text;
     record.fileMtimeMs = stats.mtimeMs;
     record.updated = mtimeVersion(stats.mtimeMs);
@@ -6821,7 +6838,7 @@ export class VaultStore {
       await rename(temporary, filePath);
       await this.rememberWrite(filePath, text);
       const { mtimeMs } = await statAfterRename(filePath, written, text);
-      this.noteBytes(filePath, mtimeMs, text);
+      this.noteBytes(filePath, mtimeMs, text, true);
       return {
         mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
