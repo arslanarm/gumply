@@ -3107,7 +3107,8 @@ export class VaultStore {
       const file = join(this.trashRoot, trashId, "meta.json");
       const manifest = JSON.parse(await readFile(file, "utf8")) as TrashManifest;
       manifest[field] = other;
-      await writeFile(file, JSON.stringify(manifest, null, 2), "utf8");
+      // Replaced whole (temp + rename): a torn manifest would hide the entry from the Trash (@opus-hunter's note a).
+      await writeAtomic(file, JSON.stringify(manifest, null, 2));
     }
   }
 
@@ -3158,11 +3159,13 @@ export class VaultStore {
   emptyTrash(): Promise<number> {
     return this.enqueue(async () => {
       const entries = await this.trashEntries();
+      const ids = new Set(entries.map((entry) => entry.trashId));
       for (const entry of entries) {
         await rm(entry.dir, { recursive: true, force: true });
         await this.dropTrashedHistory(entry);
       }
-      return entries.length;
+      // The count the Trash listed: a database's rows entry is part of its item (#7prbquxu phase 4a, note c).
+      return entries.filter((entry) => !(entry.partOf && ids.has(entry.partOf))).length;
     });
   }
 
@@ -5683,7 +5686,7 @@ export class VaultStore {
 
     try {
       await mkdir(dirname(pageInTrash), { recursive: true });
-      await writeFile(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2), "utf8");
+      await writeAtomic(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2));
       if (pageExists) await rename(record.filePath, pageInTrash);
       if (childExists) {
         await mkdir(dirname(childInTrash), { recursive: true });
@@ -5893,7 +5896,18 @@ export class VaultStore {
       originalParentTitle,
       children,
       ...(folderPath ? { otherFiles: await this.countOtherFiles(folderPath) } : {}),
+      ...(await this.trashedRowsOf(entry)),
     };
+  }
+
+  /** #7prbquxu phase 4a (note c): a database deleted with its rows says how many rows (and other files) go with it. */
+  private async trashedRowsOf(entry: TrashEntry): Promise<{ rows?: number; otherFiles?: number }> {
+    const rows = entry.with ? await this.readTrashEntry(entry.with) : null;
+    if (!rows) return {};
+    const item = await this.trashItemFor(rows);
+    if (!item) return {};
+    const count = item.children.filter((child) => child.kind !== "folder").length;
+    return { rows: count, ...(item.otherFiles ? { otherFiles: item.otherFiles } : {}) };
   }
 
   private async listTrashNow(): Promise<TrashItem[]> {
@@ -6098,7 +6112,14 @@ export class VaultStore {
     const baseId = await this.freeTarget(stem, true, taken, "base");
     const rowsId = baseId.slice(0, -idExtension("base").length);
     const folderResult = await this.restoreFolderNow(rows, rowsId);
-    const result = await this.restoreNow(entry.trashId, baseId);
+    let result: RestoreResult;
+    try {
+      result = await this.restoreNow(entry.trashId, baseId);
+    } catch (error) {
+      // @opus-hunter's note d: the rows are back, the database stays in the Trash; say so where it can be found.
+      console.error(`[gumply] restoring ${entry.id}: its rows came back to ${rowsId}, but the database stayed in the Trash (${entry.trashId}):`, error);
+      throw error;
+    }
     const record = this.pages.get(result.id);
     if (record && rowsId !== rows.id) {
       try {
@@ -6641,7 +6662,7 @@ export class VaultStore {
     };
     try {
       await mkdir(dirname(inTrash), { recursive: true });
-      await writeFile(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2), "utf8");
+      await writeAtomic(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2));
       await rename(dir, inTrash);
     } catch (error) {
       await rename(inTrash, dir).catch(() => undefined);

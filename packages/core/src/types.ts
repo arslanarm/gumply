@@ -137,8 +137,13 @@ export interface TrashItem extends TrashedPage {
   originalParentTitle: string | null;
   /** Sub-pages deleted with it, parents before children. */
   children: TrashedPage[];
-  /** Folders only: files in it that aren't pages or boards (PDFs, images…). */
+  /**
+   * Folders: files in it that aren't pages or boards (PDFs, images…). A database deleted with its rows: those
+   * in its rows folder.
+   */
   otherFiles?: number;
+  /** #7prbquxu phase 4a: a database deleted with its rows folder (one Trash item): the rows that went with it. */
+  rows?: number;
 }
 
 /** `GET /api/trash/:trashId[?id=]`: a trashed page or board, read-only. */

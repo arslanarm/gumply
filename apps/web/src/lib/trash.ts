@@ -16,9 +16,9 @@ export function filterTrash(items: readonly TrashItem[], query: string): TrashIt
   );
 }
 
-/** Pages and boards in the trash, sub-pages included. */
+/** Pages and boards in the trash, sub-pages and a database's rows included. */
 export function trashedCount(items: readonly TrashItem[]): number {
-  return items.reduce((total, item) => total + 1 + item.children.length, 0);
+  return items.reduce((total, item) => total + 1 + item.children.length + (item.rows ?? 0), 0);
 }
 
 /** "Projects", or "Projects (no longer there)"; "" at the top level. */
@@ -34,6 +34,12 @@ export function deleteForeverBody(item: TrashItem): string {
 }
 
 function deleteForeverWhat(item: TrashItem): string {
+  // #7prbquxu phase 4a (note c): a database deleted with its rows folder takes them along.
+  if (item.kind === "base" && item.rows !== undefined) {
+    const parts = [t("counts.rows", { count: item.rows })];
+    if (item.otherFiles) parts.push(t("counts.otherFiles", { count: item.otherFiles }));
+    return t("trash.forever.database", { contents: listJoin(parts) });
+  }
   if (item.kind === "folder") {
     const parts = [t("counts.pagesOrBoards", { count: item.children.length })];
     if (item.otherFiles) parts.push(t("counts.otherFiles", { count: item.otherFiles }));

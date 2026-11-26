@@ -110,6 +110,9 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
                             {item.originalParentTitle === null ? t("trash.noLongerThere") : ""} ·{" "}
                           </>
                         ) : null}
+                        {item.rows !== undefined ? (
+                          <span data-testid="trash-item-rows">{t("trash.withRows", { rows: t("counts.rows", { count: item.rows }) })} · </span>
+                        ) : null}
                         {t("trash.deleted", { time: relativeTime(item.deletedAt) })}
                       </span>
                     </span>

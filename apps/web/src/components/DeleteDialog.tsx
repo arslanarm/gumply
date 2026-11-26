@@ -10,13 +10,15 @@ export interface DeleteDialogProps {
   body?: string;
   /** #7prbquxu phase 4: a database with its own rows folder: how many rows it holds (asks whether they go too). */
   rows?: number;
+  /** …and how many other files (images, PDFs…) its rows folder holds. */
+  rowsOtherFiles?: number;
   onCancel: () => void;
   /** `withRows`: the database's rows go to the Trash with it (default yes). */
   onConfirm: (withRows: boolean) => void;
 }
 
 /** In-app delete confirmation (D15). Cancel is focused by default. */
-export function DeleteDialog({ title, subPages, body, rows, onCancel, onConfirm }: DeleteDialogProps) {
+export function DeleteDialog({ title, subPages, body, rows, rowsOtherFiles = 0, onCancel, onConfirm }: DeleteDialogProps) {
   const t = useT();
   const [withRows, setWithRows] = useState(true);
   return (
@@ -28,7 +30,8 @@ export function DeleteDialog({ title, subPages, body, rows, onCancel, onConfirm 
         ) : (
           <label className="delete-with-rows">
             <input type="checkbox" data-testid="delete-with-rows" checked={withRows} onChange={(event) => setWithRows(event.target.checked)} />{" "}
-            {t("bases.deleteWithRows", { count: rows })}
+            {rows > 0 ? t("bases.deleteWithRows", { count: rows }) : t("bases.deleteWithRowsFolder")}
+            {rowsOtherFiles > 0 ? ` ${t("bases.deleteWithRowsOtherFiles", { count: rowsOtherFiles })}` : ""}
           </label>
         )
       }

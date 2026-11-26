@@ -51,7 +51,7 @@ import type { BoardTemplateId } from "./board/templates.js";
 import { idFromVaultPath, isBoard, isBoardId, newBoardTitle, vaultPathOf } from "./lib/boards.js";
 import { isBase, isBaseId, newBaseTitle } from "./lib/bases.js";
 import { BaseView, type BaseViewControls } from "./bases/BaseView.js";
-import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
+import { databaseDeleteAsk, focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, isNotFound, serverDownMessage } from "./lib/errors.js";
 import { freshRetrySchedule, takeRetry } from "./lib/save-retry.js";
@@ -120,6 +120,8 @@ interface PendingDelete {
   body?: string;
   /** #7prbquxu phase 4: a database with its own rows folder, and how many rows it holds. */
   rows?: number;
+  /** …and other files (images, PDFs…) in that folder (note b: they never go to the Trash without asking). */
+  otherFiles?: number;
 }
 
 interface ToastState {
@@ -2127,10 +2129,9 @@ export function App() {
       // other files, at any depth); an empty one goes straight to the trash.
       // #7prbquxu phase 4: a database with its own rows asks whether they go too (an empty one takes its folder along).
       if (target.kind === "base" && target.rowsFolder) {
-        const folder = target.rowsFolder;
-        const rows = pages.filter((item) => item.id.startsWith(`${folder}/`) && item.kind !== "folder").length;
-        if (rows === 0) void performDelete(id, true);
-        else setPendingDelete({ page: target, subPages: 0, rows });
+        const ask = databaseDeleteAsk(pages, target);
+        if (ask === null) void performDelete(id, true);
+        else setPendingDelete({ page: target, subPages: 0, rows: ask.rows, otherFiles: ask.otherFiles });
         return;
       }
       if (target.kind === "folder") {
@@ -3139,7 +3140,7 @@ export function App() {
           title={pendingDelete.page.title}
           subPages={pendingDelete.subPages}
           body={pendingDelete.body}
-          {...(pendingDelete.rows !== undefined ? { rows: pendingDelete.rows } : {})}
+          {...(pendingDelete.rows !== undefined ? { rows: pendingDelete.rows, rowsOtherFiles: pendingDelete.otherFiles ?? 0 } : {})}
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
         />

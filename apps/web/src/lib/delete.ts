@@ -59,6 +59,19 @@ export function folderDeleteBody({ pages, boards, otherFiles }: FolderContents):
   return t("delete.folderBody", { list: listJoin(parts) });
 }
 
+/**
+ * #7prbquxu phase 4a: deleting a database that owns its rows folder asks whether the rows go too, and says what
+ * the folder holds: its rows, and other files (images, PDFs…; @opus-hunter's note b: nothing goes to the Trash
+ * without asking). Null: the folder is empty, so it goes along silently.
+ */
+export function databaseDeleteAsk(pages: readonly PageMeta[], base: PageMeta): { rows: number; otherFiles: number } | null {
+  const folder = base.rowsFolder;
+  if (!folder) return null;
+  const rows = pages.filter((page) => page.id.startsWith(`${folder}/`) && page.kind !== "folder").length;
+  const otherFiles = pages.find((page) => page.id === folder)?.otherFiles ?? 0;
+  return rows + otherFiles === 0 ? null : { rows, otherFiles };
+}
+
 /** D15 copy. */
 export function deleteDialogBody(subPages: number): string {
   return t("delete.subPages", { count: subPages });
