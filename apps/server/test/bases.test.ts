@@ -479,8 +479,26 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
 
     // Clear a Select's option: the rows lose the value, the base the option.
     await jsonRequest(app, "POST", url, { key: "level", clear: "Senior" });
-    expect(await read("Team/Ann.md")).not.toContain("Senior");
+    // The key stays, with an empty value (as Obsidian clears a property; @lead): the row keeps the property.
+    expect(await read("Team/Ann.md")).toMatch(/\nlevel:\n/);
     expect(await read("Team.base")).not.toContain("value: Senior");
+  });
+
+  it("an option rename stops at the first refused row: no later row is written (#7prbquxu phase 3, @opus-hunter's note 1)", async () => {
+    const base = 'gumply:\n  rows: Team\nfilters:\n  and:\n    - file.folder == "Team"\nproperties:\n  note.level:\n    gumplyType: select\n    gumplyOptions:\n      - value: Senior\n        color: green\nviews:\n  - type: table\n    name: Table\n';
+    const { store } = await vault({ "Team.base": base, "Team/Ann.md": "---\nlevel: Senior\n---\nAnn\n", "Team/Bo.md": "---\nlevel: Senior\n---\nBo\n", "Team/Cy.md": "---\nlevel: Senior\n---\nCy\n" });
+    const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    const tried: string[] = [];
+    internals.updateNow = async (id, patch) => {
+      tried.push(id);
+      if (tried.length === 1) throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
+      return updateNow(id, patch);
+    };
+    const result = await store.changeOwnedRowsOption("Team.base", { key: "level", rename: { from: "Senior", to: "Lead" } });
+    expect(result.refused).toHaveLength(1);
+    // One write tried (the refused one), none after it, so nothing to put back.
+    expect(tried).toHaveLength(1);
   });
 
   it("an option rename that a row refuses puts every written row back byte for byte, and leaves the base (#7prbquxu phase 3, @lead)", async () => {
