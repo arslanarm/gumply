@@ -3978,6 +3978,8 @@ export class VaultStore {
     }
     const settings = selectSettings(config, key);
     if (!settings) throw badRequest(`"${key}" isn't a Select in this database`);
+    // A rename to the same name (after trimming) is nothing to do (@opus-hunter).
+    if (to === from) return { changed: [], refused: [], stuck: [], base: this.getBase(id) };
     if (to !== null && to !== from && settings.options.some((option) => option.value === to)) throw badRequest(`there's already an option "${to}"`);
 
     const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
@@ -4001,6 +4003,8 @@ export class VaultStore {
       } catch (error) {
         if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: ${record.id} failed:`, error);
         refused.push({ id: record.id, title: record.title });
+        // Refused anyway: write no more rows (fewer to put back).
+        break;
       }
     }
 
