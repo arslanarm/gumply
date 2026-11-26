@@ -135,6 +135,18 @@ describe("an outside edit whose file time doesn't move the version (#y5k39njn)",
     await store.rescan();
     const fresh = store.list().find((meta) => meta.id === base.meta.id)!;
     expect(await store.updateBase(base.meta.id, { config: base.config, expectedUpdated: fresh.updated }).then(() => "ok", (error: Error) => error.message)).toBe("ok");
+
+    // The mentions "link" write rewrites a *source* page server-side (@lead): it saves from the version we hold.
+    const budget = await store.create({ title: "Budget", content: "Numbers." });
+    const notes = await store.create({ title: "Notes", content: "We went over the Budget today." });
+    await store.linkMentions(budget.id, { source: notes.id, all: true, expectedUpdated: notes.updated });
+    const held = store.get(notes.id).updated;
+    expect(store.get(notes.id).content).toContain("[[Budget]]");
+    await store.rescan();
+    expect(await store.update(notes.id, { content: "We went over the [[Budget]] today. Agreed.", expectedUpdated: held }).then(() => "ok", (error: Error) => error.message)).toBe("ok");
+    expect(await externals(dir, notes.id)).toBe(0);
+    expect(await externals(dir, board.meta.id)).toBe(0);
+    expect(await externals(dir, base.meta.id)).toBe(0);
   });
 
   it("the outside text is kept in History as an outside version", async () => {
