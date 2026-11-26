@@ -562,7 +562,7 @@ export function BaseView(props: BaseViewProps) {
     await load();
   };
   /** Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z in the table; a text field being edited keeps its own undo. */
-  const onUndoKey = (event: React.KeyboardEvent) => {
+  const onUndoKey = (event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "key" | "target" | "preventDefault">) => {
     if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "z") return;
     const target = event.target as HTMLElement;
     const sinkIdle = target.dataset.testid === "base-grid-cell" && !target.classList.contains("is-typing");
@@ -571,6 +571,21 @@ export function BaseView(props: BaseViewProps) {
     event.preventDefault();
     void undoOrRedo(event.shiftKey);
   };
+  // Focus can fall to the page itself (a confirm dialog closed, the menu item that opened it gone): Cmd+Z there
+  // still means this table, when it's the open view (not an embed).
+  const undoKeyRef = useRef(onUndoKey);
+  undoKeyRef.current = onUndoKey;
+  useEffect(() => {
+    if (embed) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      undoKeyRef.current(event);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [embed]);
 
   /** Kanban drop, calendar move: one note property of one page. */
   const setValue = useCallback(
