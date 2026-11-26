@@ -67,4 +67,56 @@ describe("a batched rename's first step updates the link index without a full re
     expect(checked).toBe(true);
   });
 
+  /** At the rename's first batch, the index must equal a full rebuild (checked once per rename). */
+  function checkAtFirstBatch(store: VaultStore) {
+    let checked = false;
+    store.afterRenameBatch = async () => {
+      if (checked) return;
+      checked = true;
+      const incremental = indexOf(store);
+      internals(store).reindexAll();
+      expect(incremental).toEqual(indexOf(store));
+    };
+    return () => checked;
+  }
+
+  it("@opus-hunter's cases: a link that resolved to another page and now resolves to the renamed one (.md fallback, spacing, NFD) follows exactly as in a full rebuild", async () => {
+    const { store } = await vault(5, {
+      "F/Source.md": "By file: [[Beta.md]]. Spaced: [[beta  page]]. Accented: [[Cafe\u0301]].\n",
+      "Other/Beta.md": "The other Beta.\n",
+      "Other/Beta Page.md": "The other Beta Page.\n",
+      "Other/Café.md": "The other café.\n",
+      "F/Alpha.md": "To be Beta.\n",
+      "F/Gamma.md": "To be Beta Page.\n",
+      "F/Delta.md": "To be Café.\n",
+    });
+    for (const [from, to] of [["F/Alpha", "Beta"], ["F/Gamma", "Beta Page"], ["F/Delta", "Café"]] as const) {
+      const checked = checkAtFirstBatch(store);
+      await store.update(from, { title: to });
+      expect(checked(), `${from} → ${to}`).toBe(true);
+    }
+  });
+
+  it("a rename that starts while the cold-open index is still running: the index at its first batch has no holes (a full rebuild, @opus-hunter's point 2)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gumply-rename-phase-a-"));
+    dirs.push(dir);
+    await writeFile(join(dir, "Hub.md"), "The hub.\n");
+    await mkdir(join(dir, "L"));
+    await Promise.all(Array.from({ length: 200 }, (_, i) => writeFile(join(dir, "L", `Linker ${i}.md`), `See [[Hub]] (${i}).\n`)));
+    const store = new VaultStore(dir);
+    const raw = store as unknown as { indexSliceMs: number; beforeIndex: () => Promise<void> };
+    raw.indexSliceMs = 0; // one page per slice: the rename starts with most pages not indexed yet
+    let renaming: Promise<unknown> = Promise.resolve();
+    raw.beforeIndex = async () => {
+      setImmediate(() => {
+        renaming = store.update("Hub", { title: "Hub renamed" });
+      });
+    };
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const checked = checkAtFirstBatch(store);
+    await store.init({ background: true });
+    await vi.waitFor(() => expect(checked()).toBe(true), { timeout: 20_000, interval: 10 });
+    await renaming;
+  });
 });
+
