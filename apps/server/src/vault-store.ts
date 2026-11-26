@@ -1092,15 +1092,30 @@ async function pathExists(path: string): Promise<boolean> {
  * Where hard links aren't available (FAT/exFAT USB vaults, some network or FUSE mounts; which errno Windows
  * reports there isn't documented, so any `link` error but EEXIST and ENOENT), the file is copied with
  * COPYFILE_EXCL, itself no-replace, its times kept, and then the source goes (@lead).
+ *
+ * #e3mwuspu (@lead): when the name is "taken" by the **same file** (same inode and device: a case-only or
+ * NFC/NFD-only rename on a file system that folds them, macOS, Windows), it's a rename of that file, not a clash.
  */
-async function moveFileNoReplace(from: string, to: string): Promise<void> {
+export async function moveFileNoReplace(from: string, to: string): Promise<void> {
   try {
     await link(from, to);
   } catch (error) {
     const code = (error as { code?: string }).code ?? "";
+    if (code === "EEXIST" && (await sameFile(from, to))) {
+      await rename(from, to);
+      return;
+    }
     if (code === "EEXIST" || code === "ENOENT") throw error;
     const info = await stat(from);
-    await copyFile(from, to, fsConstants.COPYFILE_EXCL);
+    try {
+      await copyFile(from, to, fsConstants.COPYFILE_EXCL);
+    } catch (copyError) {
+      if (isEexist(copyError) && (await sameFile(from, to))) {
+        await rename(from, to);
+        return;
+      }
+      throw copyError;
+    }
     await utimes(to, info.atime, info.mtime).catch(() => undefined);
   }
   try {
@@ -1113,22 +1128,16 @@ async function moveFileNoReplace(from: string, to: string): Promise<void> {
   }
 }
 
+/** Whether two paths name one file (same inode and device), e.g. `note.md` and `Note.md` on macOS. */
+async function sameFile(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([stat(a).catch(() => null), stat(b).catch(() => null)]);
+  return x !== null && y !== null && x.ino === y.ino && x.dev === y.dev;
+}
+
 const isEexist = (error: unknown) => (error as { code?: string } | null)?.code === "EEXIST";
 
-/**
- * #e3mwuspu: a page's (or board's, base's) own file to its new path on a rename or move, never over a file another
- * app made there since the check (`moveFileNoReplace`). A case-only rename (`note.md` → `Note.md`) on a
- * case-insensitive file system (macOS, Windows) finds the same file at the new name, where a link would fail with
- * EEXIST, so only then it keeps `rename`. On a case-sensitive one (Linux) `Note.md` is another file (@lead).
- */
+/** #e3mwuspu: a page's (or board's, base's) own file to its new path on a rename or move, never over another file. */
 async function movePageFile(from: string, to: string): Promise<void> {
-  if (from.toLowerCase() === to.toLowerCase()) {
-    const [source, target] = await Promise.all([stat(from), stat(to).catch(() => null)]);
-    if (target && target.ino === source.ino && target.dev === source.dev) {
-      await rename(from, to);
-      return;
-    }
-  }
   await moveFileNoReplace(from, to);
 }
 
