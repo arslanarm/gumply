@@ -5,6 +5,7 @@
  *
  * Lazy-loaded through `./index.ts` so page startup doesn't pay for it.
  */
+import { ClampedToolbar } from "./toolbar-clamp.js";
 import { gumplyNodeData, isGumplyBoard, WIKILINK_INNER, WIKILINK_PART, WIKILINK_TARGET, type CanvasBoard, type CanvasNode, type GumplyShape, type InkPoint } from "@gumply/core";
 import {
   Background,
@@ -1913,6 +1914,7 @@ function BoardCanvas(props: BoardEditorProps) {
                 (#r6biyzx6). */}
             {showNodeToolbar ? (
             <NodeToolbar nodeId={selectedNodeIds} isVisible position={Position.Top} offset={14}>
+              <ClampedToolbar>
               <div className="board-context" data-testid="board-context-toolbar" onPointerDown={(event) => event.stopPropagation()}>
                 <Palette current={commonColor} onPick={recolour} />
                 {shapesSelected ? (
@@ -1944,6 +1946,7 @@ function BoardCanvas(props: BoardEditorProps) {
                   </button>
                 </div>
               </div>
+              </ClampedToolbar>
             </NodeToolbar>
             ) : null}
 
