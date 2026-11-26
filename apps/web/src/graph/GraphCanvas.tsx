@@ -31,7 +31,8 @@ import {
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, forcesToken, forceStrengths, LAYOUT_SETTINGS, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
-import { ghostStrokeWidth, linkWidthFor } from "./link-width.js";
+import { ghostStrokeWidth, linkWidthFor, restingLinkWidth } from "./link-width.js";
+import { buildLinkIndex, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, visibleGraphRect, type LayerLink, type LinkIndex } from "./link-layer.js";
 import { startLayout } from "./layout-client.js";
 import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
 
@@ -120,9 +121,8 @@ const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", 
 const LABEL_GAP_PX = 4;
 const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
-/** Dash for links into a "not created yet" page (graph units, as before). */
-const GHOST_LINK_DASH = [4, 3];
-
+/** #pifuz5zs: above this many device pixels only the resting link picture is kept (memory). */
+const LINK_LAYER_MAX_PIXELS = 8_000_000;
 
 function readThemeColors(): ThemeColors {
   if (typeof window === "undefined") return FALLBACK_COLORS;
@@ -354,6 +354,8 @@ export function GraphCanvas({
   const [ready, setReady] = useState(false);
   /** A worker layout is running (its end, not the settle timer, makes the view ready). */
   const workerRunning = useRef(false);
+  /** #pifuz5zs: bumped whenever node positions change (the worker's updates, a drag): the link picture is redrawn. */
+  const positionsRef = useRef(0);
   /** Bumped on every applied fit; lets tests (and debugging) observe refits. */
   const [fitGeneration, setFitGeneration] = useState(0);
   /** Why the last fit happened (data, resize, settle, engine, button); for tests and debugging. */
@@ -402,12 +404,28 @@ export function GraphCanvas({
     armGestureEnd();
   }, [armGestureEnd]);
   useEffect(() => () => window.clearTimeout(gestureTimerRef.current), []);
-  const linkVisible = useCallback(
-    () => !gestureRef.current,
-    [linkEpoch], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  /**
+   * #pifuz5zs: a worker-laid graph whose layout has finished draws its resting
+   * links from a cached picture (see `onFramePre`); force-graph then draws only
+   * the hovered node's own links, on top. While the worker still moves nodes,
+   * force-graph draws every link, as before.
+   */
+  const workerGraphRef = useRef(false);
+  workerGraphRef.current = engine.worker;
+  const linkLayerOn = (): boolean => workerGraphRef.current && !workerRunning.current;
+  const linkVisible = useCallback(
+    (link: LinkObject<CanvasNode, GraphLink>) => {
+      if (gestureRef.current) return false;
+      if (!linkLayerOn()) return true;
+      const hovered = hoveredRef.current;
+      if (hovered === null) return false;
+      // Above the memory cap there's no faded picture: while hovering, every link is drawn live, as before.
+      if (linkLayersRef.current.idleOnly) return true;
+      return endpointId(link.source) === hovered || endpointId(link.target) === hovered;
+    },
+    [linkEpoch, hoveredId], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   /** Set once the user zooms, pans or drags: auto-fit then stops moving the camera. */
   const userViewRef = useRef(false);
   /** Highest alpha the forces see (see `capAlpha`); lowered while dragging. */
@@ -1110,6 +1128,7 @@ export function GraphCanvas({
         const g = graph.screen2GraphCoords(point.x, point.y);
         drag.node.fx = drag.node.x = g.x + drag.offsetX;
         drag.node.fy = drag.node.y = g.y + drag.offsetY;
+        positionsRef.current += 1;
         // Keep the simulation awake (alpha is capped, so this stays calm).
         graph.d3ReheatSimulation();
         return;
@@ -1137,6 +1156,7 @@ export function GraphCanvas({
           node.fx = undefined;
           node.fy = undefined;
         }
+        positionsRef.current += 1;
         // Let neighbours settle; alpha stays capped until the engine stops.
         graphRef.current?.d3ReheatSimulation();
       } else if (!cancelled) {
@@ -1227,6 +1247,7 @@ export function GraphCanvas({
         node.vx = 0;
         node.vy = 0;
       }
+      positionsRef.current += 1;
       setLayoutFrame((frame) => frame + 1);
     };
     const settled = () => {
@@ -1284,13 +1305,139 @@ export function GraphCanvas({
     }),
     [nodes, links],
   );
+  const graphDataRef = useRef(graphData);
+  graphDataRef.current = graphData;
+  /** A new number for every new data set (cheap to put in the link picture's key). */
+  const dataVersionCounter = useRef(0);
+  const graphDataVersion = useMemo(() => {
+    void graphData;
+    dataVersionCounter.current += 1;
+    return dataVersionCounter.current;
+  }, [graphData]);
+  const graphDataVersionRef = useRef(graphDataVersion);
+  graphDataVersionRef.current = graphDataVersion;
+  /** #znabmb8n: the links as typed index pairs, rebuilt when the data version changes. */
+  const linkIndexRef = useRef<{ version: number; index: LinkIndex | null }>({ version: -1, index: null });
+
+  /**
+   * #pifuz5zs: the resting links as a picture. Built from the frame that would
+   * have drawn them anyway (so warming it costs nothing extra), then only copied
+   * while the camera, the positions, the data and the colours stay the same.
+   * The faded picture (shown while a node is hovered) is built in the next idle
+   * moment, so even the first hover just copies it.
+   */
+  const linkLayersRef = useRef<{ key: string; idle: HTMLCanvasElement | null; faded: HTMLCanvasElement | null; spare: HTMLCanvasElement[]; idleJob: number; idleOnly: boolean }>({
+    key: "",
+    idle: null,
+    faded: null,
+    spare: [],
+    idleJob: 0,
+    idleOnly: false,
+  });
+  // The pictures are let go when the view closes or its tab is hidden (a pair is ~46 MB at DPR 2).
+  useEffect(() => {
+    const layers = linkLayersRef.current;
+    const release = (): void => {
+      if (layers.idleJob) (window.cancelIdleCallback ?? window.clearTimeout)(layers.idleJob);
+      layers.idleJob = 0;
+      layers.key = "";
+      layers.idle = null;
+      layers.faded = null;
+      layers.spare = [];
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") release();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      release();
+    };
+  }, []);
+  const onFramePre = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number): void => {
+      if (!workerGraphRef.current || workerRunning.current || gestureRef.current) return;
+      const transform = ctx.getTransform();
+      const dpr = window.devicePixelRatio || 1;
+      const { width, height } = ctx.canvas;
+      const layers = linkLayersRef.current;
+      // Memory cap: above ~8 M device pixels (a large window at DPR 2) only the resting picture is kept;
+      // while a node is hovered, the links are drawn live (see linkVisible), as before this cache.
+      layers.idleOnly = width * height > LINK_LAYER_MAX_PIXELS;
+      const key = linkLayerKey({
+        transform,
+        width,
+        height,
+        positions: positionsRef.current,
+        data: String(graphDataVersionRef.current),
+        style: linkLayerStyle(linkPaint, dpr),
+      });
+      if (layers.key !== key) {
+        if (layers.idleJob) (window.cancelIdleCallback ?? window.clearTimeout)(layers.idleJob);
+        layers.idleJob = 0;
+        // Reused, never more than two bitmaps alive (the idle and the faded picture).
+        for (const old of [layers.idle, layers.faded]) if (old && layers.spare.length < 2) layers.spare.push(old);
+        layers.key = key;
+        layers.idle = null;
+        layers.faded = null;
+      }
+      const build = (color: string): HTMLCanvasElement => {
+        const layer = layers.spare.pop() ?? document.createElement("canvas");
+        if (layer.width !== width) layer.width = width;
+        if (layer.height !== height) layer.height = height;
+        const lctx = layer.getContext("2d")!;
+        lctx.setTransform(1, 0, 0, 1, 0, 0);
+        lctx.clearRect(0, 0, width, height);
+        lctx.setTransform(transform);
+        // #znabmb8n: the links as typed index pairs, once per data version.
+        const version = graphDataVersionRef.current;
+        if (linkIndexRef.current.version !== version) {
+          const data = graphDataRef.current;
+          linkIndexRef.current = {
+            version,
+            index: buildLinkIndex(data.nodes as never, data.links as unknown as LayerLink[], (link) =>
+              linkDashFor(endpointId(link.target as Parameters<typeof endpointId>[0])) !== null,
+            ),
+          };
+        }
+        paintRestingLinks(lctx, linkIndexRef.current.index!, {
+          color,
+          widthCss: restingLinkWidth(dpr),
+          scale,
+          dash: GHOST_LINK_DASH,
+          // Only what can show: zoomed in, most links lie wholly outside the view.
+          view: visibleGraphRect(transform, width, height),
+        });
+        return layer;
+      };
+      const faded = hoveredRef.current !== null;
+      if (faded && layers.idleOnly) return;
+      let layer = faded ? layers.faded : layers.idle;
+      if (!layer) {
+        layer = build(faded ? linkPaint.faded : linkPaint.idle);
+        if (faded) layers.faded = layer;
+        else layers.idle = layer;
+      }
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(layer, 0, 0);
+      ctx.restore();
+      // The faded picture, ahead of the first hover.
+      if (!layers.faded && !layers.idleJob && !layers.idleOnly) {
+        const wanted = key;
+        const run = () => {
+          layers.idleJob = 0;
+          if (layers.key === wanted && !layers.faded) layers.faded = build(linkPaint.faded);
+        };
+        layers.idleJob = window.requestIdleCallback ? window.requestIdleCallback(run, { timeout: 2000 }) : window.setTimeout(run, 50);
+      }
+    },
+    [linkPaint],
+  );
 
   const linkColor = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) => {
-      if (hoveredId === null) return linkPaint.idle;
-      const source = endpointId(link.source);
-      const target = endpointId(link.target);
-      return source === hoveredId || target === hoveredId ? linkPaint.active : linkPaint.faded;
+      return linkColorFor(endpointId(link.source), endpointId(link.target), hoveredId, linkPaint);
     },
     [linkPaint, hoveredId],
   );
@@ -1303,7 +1450,7 @@ export function GraphCanvas({
 
   const linkLineDash = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) =>
-      isGhostId(endpointId(link.target)) ? GHOST_LINK_DASH : null,
+      linkDashFor(endpointId(link.target)),
     [],
   );
 
@@ -1375,7 +1522,8 @@ export function GraphCanvas({
             backgroundColor="transparent"
             nodeVisibility={hideBuiltInNodes}
             onRenderFramePost={onFramePost}
-            linkVisibility={nodes.length > STREAM_MAX_NODES ? linkVisible : true}
+            linkVisibility={engine.worker ? linkVisible : true}
+            onRenderFramePre={onFramePre}
             onZoom={markGesture}
             linkColor={linkColor}
             linkWidth={linkWidth}

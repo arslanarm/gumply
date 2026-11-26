@@ -9,7 +9,8 @@ import { API_URL, BASE_URL, E2E_VAULT } from './support/env';
  * seconds per frame at 4× (the links' raster), so the links are hidden while
  * the camera moves (wheel, pan, the zoom buttons) and drawn again shortly after
  * it stops. Counted, not timed: the canvas's `lineTo` calls (links are the only
- * lines; dots, outlines and ghosts are arcs).
+ * lines; dots, outlines and ghosts are arcs), plus, since #pifuz5zs, a copy of the
+ * cached link picture counted as every link.
  */
 const NOTES = 5_200; // over STREAM_MAX_NODES (5,000)
 /** GraphCanvas's GESTURE_IDLE_MS: the camera counts as resting after this long. */
@@ -54,7 +55,7 @@ async function openCounted(page: Page) {
   await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 300_000 });
   await expect(canvas).not.toHaveAttribute('data-graph-arranging', 'true');
   await page.waitForTimeout(1_500); // the fit tween, and its links drawn again
-  await page.evaluate(() => {
+  await page.evaluate((LINKS) => {
     const w = window as unknown as { __lines: number; __inputs: number[] };
     w.__lines = 0;
     // When each camera input reached the page (its event time), to check the test's own premise.
@@ -68,7 +69,16 @@ async function openCounted(page: Page) {
       w.__lines += 1;
       return lineTo.call(this, x, y);
     };
-  });
+    // #pifuz5zs: at rest a big graph's links may come back as one copy of their cached picture (a canvas
+    // the size of the graph's own, drawn whole) instead of being stroked again. Count that copy as every
+    // link (two per note), so "no link mid-gesture" and "the links come back" mean the same as before.
+    const drawImage = proto.drawImage as (this: CanvasRenderingContext2D, ...args: unknown[]) => void;
+    proto.drawImage = function (this: CanvasRenderingContext2D, ...args: unknown[]) {
+      const image = args[0];
+      if (image instanceof HTMLCanvasElement && image.width === this.canvas.width && image.height === this.canvas.height) w.__lines += LINKS;
+      return drawImage.apply(this, args);
+    } as typeof proto.drawImage;
+  }, NOTES * 2);
   const lines = () => page.evaluate(() => (window as unknown as { __lines: number }).__lines);
   const reset = () => page.evaluate(() => {
     const w = window as unknown as { __lines: number; __inputs: number[] };
