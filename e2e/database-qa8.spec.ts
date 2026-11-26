@@ -175,3 +175,25 @@ test('the picker is a combobox a screen reader can follow, and Escape gives focu
   await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
   await expect(page.getByTestId('base-grid-cell')).toBeFocused();
 });
+
+test('Escape with text in the picker\'s search closes it and adds nothing; keys after it don\'t reach the search (pass 8)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('base-select-search')).toBeFocused();
+  await page.keyboard.type('Brand new');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
+  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
+  // What a user does next: move on and press Enter (opens the next cell's editor, adds nothing).
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  const base = await fs.readFile(path.join(E2E_VAULT, 'Team.base'), 'utf8');
+  expect(base).not.toContain('Brand new');
+  expect(await fs.readFile(path.join(E2E_VAULT, 'Team/Blake.md'), 'utf8')).toBe(TEAM['Team/Blake.md']);
+});
