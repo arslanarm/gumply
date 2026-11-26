@@ -16,19 +16,26 @@ const outside = vi.hoisted(() => ({ before: null as null | { target: string; tex
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  const rename: typeof actual.rename = async (from, to) => {
+  // Another app saves a file (or a folder holding one) at that name a moment before the move, whichever call
+  // makes the move (`rename`, or `link` for a move that mustn't replace).
+  const outsideFirst = async (to: unknown) => {
     const plan = outside.before;
-    if (plan && String(to).endsWith(plan.target)) {
-      outside.before = null;
-      // Another app saves a file (or a folder holding one) at that name a moment before the move.
-      if (plan.dir) {
-        await actual.mkdir(String(to), { recursive: true });
-        await actual.writeFile(`${String(to)}/Outside.md`, plan.text, "utf8");
-      } else await actual.writeFile(String(to), plan.text, "utf8");
-    }
+    if (!plan || !String(to).endsWith(plan.target)) return;
+    outside.before = null;
+    if (plan.dir) {
+      await actual.mkdir(String(to), { recursive: true });
+      await actual.writeFile(`${String(to)}/Outside.md`, plan.text, "utf8");
+    } else await actual.writeFile(String(to), plan.text, "utf8");
+  };
+  const rename: typeof actual.rename = async (from, to) => {
+    await outsideFirst(to);
     return actual.rename(from, to);
   };
-  return { ...actual, rename, default: { ...actual, rename } };
+  const link: typeof actual.link = async (from, to) => {
+    await outsideFirst(to);
+    return actual.link(from, to);
+  };
+  return { ...actual, rename, link, default: { ...actual, rename, link } };
 });
 
 beforeEach(() => {
