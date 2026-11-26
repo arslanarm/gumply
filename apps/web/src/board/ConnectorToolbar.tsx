@@ -5,11 +5,14 @@
  */
 import type { CanvasEdge } from "@gumply/core";
 import { useViewport } from "@xyflow/react";
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useBoardActions } from "./context.js";
 import { BoardIcon } from "./icons.js";
 import { Palette } from "./Swatch.js";
 import { t, useT } from "../i18n/index.js";
+
+/** The room kept between the toolbar and the board's edge or the tool rail. */
+const EDGE_GAP = 8;
 
 export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
   edge: CanvasEdge;
@@ -21,6 +24,7 @@ export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
   const actions = useBoardActions();
   const viewport = useViewport();
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
   const end = edge.toEnd ?? "arrow";
 
   useLayoutEffect(() => {
@@ -33,7 +37,17 @@ export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
       }
       const box = path.getBoundingClientRect();
       const frame = root.getBoundingClientRect();
-      const next = { left: Math.round(box.left + box.width / 2 - frame.left), top: Math.round(box.top - frame.top - 12) };
+      const top = Math.round(box.top - frame.top - 12);
+      // #4quachkv: centred on the line, but kept inside the board and clear of the tool rail (on a
+      // narrow window a connector near the left put the toolbar under the rail, off the edge).
+      const width = toolbarRef.current?.offsetWidth ?? 0;
+      const height = toolbarRef.current?.offsetHeight ?? 0;
+      let min = EDGE_GAP + width / 2;
+      const rail = root.querySelector<HTMLElement>(".board-toolbar")?.getBoundingClientRect();
+      if (rail && top - height < rail.bottom - frame.top && top > rail.top - frame.top) min = Math.max(min, rail.right - frame.left + EDGE_GAP + width / 2);
+      const max = frame.width - EDGE_GAP - width / 2;
+      const middle = box.left + box.width / 2 - frame.left;
+      const next = { left: Math.round(Math.max(min, Math.min(max, middle))), top };
       setPosition((current) => (current && current.left === next.left && current.top === next.top ? current : next));
     };
     measure();
@@ -46,6 +60,7 @@ export function ConnectorToolbar({ edge, rootRef, layoutKey }: {
   const id = edge.id;
   return (
     <div
+      ref={toolbarRef}
       className="board-context board-connector-toolbar"
       style={{ left: position.left, top: position.top }}
       data-testid="board-edge-toolbar"
