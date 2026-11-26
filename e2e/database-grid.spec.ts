@@ -62,7 +62,8 @@ test('an owned database is a grid: arrows, typing in place, Tab from the typing 
   await typing.click();
   await typing.fill('Cy');
   await typing.press('Tab');
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Cy']);
+  // #bg7c9bzk (#9, @lead's ruling a): rows Gumply makes store created: and list oldest first, in the order made; the fixture's Ann and Bo have none, so they follow, by name.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Cy', 'Ann', 'Bo']);
   await expect(cell).toHaveAttribute('data-active', /^People\/Cy\|.*role$/);
   await expect(cell).toBeFocused();
   await page.keyboard.type('Diver');
@@ -70,9 +71,9 @@ test('an owned database is a grid: arrows, typing in place, Tab from the typing 
   await expect.poll(() => read('People/Cy.md')).toMatch(/^---\n[^]*\nrole: Diver\n---\n/);
 
   // Up to Ann's age, Delete: the value is gone, the rest of the file as it was.
+  // #bg7c9bzk (#9): rows are Cy, Ann, Bo now, so Ann is two up from the typing row (it was three).
   await typing.click();
   await typing.press('ArrowUp');
-  await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
@@ -328,13 +329,14 @@ test('a block pasted at the active cell overwrites down and right, and rows past
   // From Bo's role: Bo gets role and age; the next line becomes a new row (no name pasted: Untitled).
   await paste(page, 'Chef\t50\r\nDiver\t7\r\n');
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Chef\nage: 50\n---\nBo\n');
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Untitled']);
+  // #bg7c9bzk (#9, @lead's ruling a): rows Gumply makes store created: and list oldest first, in the order made; the fixture's Ann and Bo have none, so they follow, by name.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Untitled', 'Ann', 'Bo']);
   await expect.poll(() => read('People/Untitled.md')).toMatch(/role: Diver\n[^]*age: 7\n|age: 7\n[^]*role: Diver\n/);
 
   // A value that isn't a number is left out, and the note says so.
+  // #bg7c9bzk (#9): rows are Untitled, Ann, Bo now, so Bo is the row just above the typing row (it was two up).
   await page.getByTestId('base-typing-input').click();
   await page.getByTestId('base-typing-input').press('ArrowUp');
-  await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowRight');
   await expect(cell).toHaveAttribute('data-active', /^People\/Bo\|.*role$/);
   await paste(page, 'Pilot\tlots');
@@ -404,7 +406,8 @@ test('"Import CSV…" in the ⋯ panel reads a file with commas into the same pr
   const preview = page.getByTestId('base-paste-preview');
   await expect(preview).toContainText('Paste 2 rows into “People”');
   await page.getByTestId('base-paste-confirm').click();
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Ivy', 'Smith, Jo']);
+  // #bg7c9bzk (#9, @lead's ruling a): rows Gumply makes store created: and list oldest first, in the order made; the fixture's Ann and Bo have none, so they follow, by name.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Smith, Jo', 'Ivy', 'Ann', 'Bo']);
   await expect.poll(() => read('People/Smith, Jo.md')).toMatch(/role: Cook\n[^]*age: 52\n|age: 52\n[^]*role: Cook\n/);
 });
 
@@ -600,7 +603,8 @@ test('the paste preview offers Select for a column of repeated values, and makes
     if (r.method() !== 'GET' && /\/api\/(bases|pages)\b/.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
   });
   await page.getByTestId('base-paste-confirm').click();
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
+  // #bg7c9bzk (#9, @lead's ruling a): rows Gumply makes store created: and list oldest first, in the order made; the fixture's Ann and Bo have none, so they follow, by name.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ivy', 'Otto', 'Al']);
   await expect.poll(() => read('People.base')).toContain('  note.stage:\n    gumplyType: select\n    gumplyOptions:\n      - value: Todo\n        color: brown\n      - value: Done\n        color: orange\n');
   await expect.poll(() => read('People/Ivy.md')).toMatch(/stage: Todo\n/);
   expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
@@ -629,7 +633,8 @@ test('a paste that takes a while says "Pasting N rows…" until it is done (@lea
   await expect(status).toHaveAttribute('role', 'status');
   await expect(status).toHaveText(/Pasting 3 rows/);
   release();
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
+  // #bg7c9bzk (#9, @lead's ruling a): rows Gumply makes store created: and list oldest first, in the order made; the fixture's Ann and Bo have none, so they follow, by name.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ivy', 'Otto', 'Al']);
   await expect(status).toHaveText('');
 });
 
