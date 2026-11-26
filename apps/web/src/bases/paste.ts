@@ -159,6 +159,20 @@ export function guessHeaderRow(rows: readonly string[][]): boolean {
 }
 
 /**
+ * #8s94nyhn: each pasted column's default property name, by column (the first is the row's name, so
+ * always null). With a header row, its cell. Without one, the database's existing property columns in
+ * view order, left to right, as Notion maps a headerless paste; a column past the last one is null
+ * (a new column, named "Column N" by the preview).
+ */
+export function pasteColumnNames(width: number, headerRow: readonly string[] | null, existing: readonly string[]): Array<string | null> {
+  return Array.from({ length: width }, (_, col) => {
+    if (col === 0) return null;
+    if (headerRow) return (headerRow[col] ?? "").trim() || null;
+    return existing[col - 1] ?? null;
+  });
+}
+
+/**
  * A pasted cell as a value of its column's type, or null when it isn't one (left out, and counted).
  * Checkboxes read TRUE/FALSE, yes/no, ✓ and empty; numbers allow thousands commas; dates take ISO and
  * day-first `05.01.2026` / `05/01/2026`; other types as typed (lists split on commas).

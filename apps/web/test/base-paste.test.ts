@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PASTE_OPTIONS, guessHeaderRow, guessType, offersSelect, parseCsv, pastedOptions, parseHtmlTable, pastedValue, plannedPaste, parseTsv, readPaste } from "../src/bases/paste";
+import { MAX_PASTE_OPTIONS, guessHeaderRow, guessType, offersSelect, parseCsv, pastedOptions, parseHtmlTable, pasteColumnNames, pastedValue, plannedPaste, parseTsv, readPaste } from "../src/bases/paste";
 
 /** #7prbquxu phase 2 (spec/database-tables §5): reading a paste from a spreadsheet. Invented data. */
 
@@ -150,5 +150,23 @@ describe("parseCsv (Import CSV…)", () => {
       ["Smith, John", 'said "hi"\nthen left', "41"],
       ["Ivy", "", "31"],
     ]);
+  });
+});
+
+describe("pasteColumnNames (#8s94nyhn)", () => {
+  const existing = ["Water every days", "Light", "Bought", "Indoor"];
+
+  it("without a header row, fills the database's existing columns left to right", () => {
+    expect(pasteColumnNames(5, null, existing)).toEqual([null, "Water every days", "Light", "Bought", "Indoor"]);
+    expect(pasteColumnNames(3, null, existing)).toEqual([null, "Water every days", "Light"]);
+  });
+
+  it("only the overflow past the last existing column is new (null: \"Column N\")", () => {
+    expect(pasteColumnNames(7, null, existing)).toEqual([null, "Water every days", "Light", "Bought", "Indoor", null, null]);
+    expect(pasteColumnNames(3, null, [])).toEqual([null, null, null]);
+  });
+
+  it("with a header row, its cells name the columns; an empty header cell is new", () => {
+    expect(pasteColumnNames(4, ["Name", "Light", " ", "Pot "], existing)).toEqual([null, "Light", null, "Pot"]);
   });
 });

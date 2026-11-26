@@ -388,6 +388,28 @@ test('a block pasted on the typing row of an empty database opens the preview; P
   expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
 });
 
+test('#8s94nyhn: headerless rows pasted on the typing row fill the existing columns in order; only the overflow is a new column', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await paste(page, 'Cy\tCook\t25\tblue\nDee\tPilot\t33\tgreen\n');
+
+  const preview = page.getByTestId('base-paste-preview');
+  await expect(preview).toContainText('Paste 2 rows into “People”');
+  await expect(page.getByTestId('base-paste-headers')).not.toBeChecked();
+  await expect(page.getByTestId('base-paste-name-1')).toHaveValue('role');
+  await expect(page.getByTestId('base-paste-name-2')).toHaveValue('age');
+  await expect(page.getByTestId('base-paste-name-3')).toHaveValue('Column 4');
+  await page.getByTestId('base-paste-confirm').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Cy', 'Dee']);
+  await expect.poll(() => read('People/Cy.md')).toMatch(/^---\n(?=[^]*role: Cook\n)(?=[^]*age: 25\n)(?=[^]*Column 4: blue\n)/);
+  await expect.poll(() => read('People/Dee.md')).toMatch(/^---\n(?=[^]*role: Pilot\n)(?=[^]*age: 33\n)/);
+  const base = await read('People.base');
+  expect(base).not.toMatch(/Column 2|Column 3/);
+});
+
 test('"Import CSV…" in the ⋯ panel reads a file with commas into the same preview (phase 2)', async ({ page, request, vault }) => {
   void vault;
   await writeVault(request, PEOPLE);

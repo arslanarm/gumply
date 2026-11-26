@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { isValidPropertyKey, type PropertyType, type SelectKind } from "@gumply/core";
 import { useT } from "../i18n/index.js";
 import { useModal } from "../lib/modal.js";
-import { MAX_PASTE_OPTIONS, guessHeaderRow, guessType, offersSelect, pastedOptions, pastedValue, type PastedRow } from "./paste.js";
+import { MAX_PASTE_OPTIONS, guessHeaderRow, guessType, offersSelect, pasteColumnNames, pastedOptions, pastedValue, type PastedRow } from "./paste.js";
 
 /** The types a pasted column can take here; Select and Multi-select keep their options in the base. */
 type PreviewType = PropertyType | SelectKind;
@@ -44,7 +44,9 @@ export function PastePreview(props: {
   const [headers, setHeaders] = useState(() => guessHeaderRow(props.block));
   const body = headers ? props.block.slice(1) : props.block;
   const headerRow = props.block[0] ?? [];
-  const defaultName = (col: number) => (headers ? (headerRow[col] ?? "").trim() : "") || t("bases.pasteColumn", { n: col + 1 });
+  // #8s94nyhn: without a header row, the columns fill the database's existing ones in order.
+  const defaults = pasteColumnNames(width, headers ? headerRow : null, [...props.known.keys()]);
+  const defaultName = (col: number) => defaults[col] ?? t("bases.pasteColumn", { n: col + 1 });
   const [names, setNames] = useState<Record<number, string>>({});
   const [types, setTypes] = useState<Record<number, PreviewType>>({});
   const nameOf = (col: number) => names[col] ?? defaultName(col);
