@@ -16,6 +16,7 @@ import {
   type Property,
   type PropertyInfo,
   type PropertyType,
+  type PropertyValue,
   childPageId,
   collectLinkEdges,
   extractTags,
@@ -365,6 +366,21 @@ export interface OwnedRowsChange {
   baseRefused?: boolean;
   /** The base as it is now (its version for the caller's next save). */
   base: BaseDocument;
+}
+
+/** #7prbquxu phase 2: the most rows one paste may write (the client asks once more above 1,000). */
+const MAX_PASTE_ROWS = 5_000;
+
+/** #7prbquxu phase 2: what a paste into an owned database did (`POST /api/bases/:id/rows-paste`). */
+export interface OwnedRowsPaste {
+  /** Existing rows whose values were set; empty when the paste was refused and put back. */
+  changed: PageId[];
+  /** New rows made in the rows folder. */
+  created: PageId[];
+  /** Rows that refused (changed on disk meanwhile, read-only, an error): then nothing was kept. */
+  refused: Array<{ id: PageId; title: string }>;
+  /** Rows that couldn't be put back (they keep the pasted values, or a new row stayed). */
+  stuck: Array<{ id: PageId; title: string }>;
 }
 
 interface PageRecord extends Omit<Page, "childCount"> {
@@ -3664,6 +3680,117 @@ export class VaultStore {
       }
     }
     return answer({ changed: [], skipped: named(skipped), clash: [], stuck: named(stuck), ...(skipped.length === 0 ? { baseRefused: true } : {}) });
+  }
+
+  /**
+   * #7prbquxu phase 2 (spec/database-tables §5, @lead): a block pasted into an owned database, in one
+   * queued job. Existing rows get their values set (each from its current version, so a row another app
+   * changed meanwhile refuses); then new rows are made in the rows folder with theirs. All or nothing: on
+   * any refusal or error, the rows already set get their old values back (keys they didn't have are
+   * removed again) and the new rows go to the Trash; the refused rows are named, and any that can't be
+   * put back are `stuck`.
+   */
+  pasteIntoOwnedRows(
+    id: PageId,
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue> }> },
+    options: { expectedUpdated?: string; writer?: string } = {},
+  ): Promise<OwnedRowsPaste> {
+    return this.enqueue(() => this.pasteIntoOwnedRowsNow(this.resolveId(id), input, options));
+  }
+
+  private async pasteIntoOwnedRowsNow(
+    id: PageId,
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue> }> },
+    options: { expectedUpdated?: string; writer?: string },
+  ): Promise<OwnedRowsPaste> {
+    const base = this.requireBase(id);
+    const folder = this.ownedRowsOf(base, id);
+    if (folder === null) throw badRequest("This database view doesn't own a rows folder.");
+    if (!input || !Array.isArray(input.rows) || input.rows.length === 0) throw badRequest("rows must be a non-empty list");
+    if (input.rows.length > MAX_PASTE_ROWS) throw badRequest(`at most ${MAX_PASTE_ROWS} rows in one paste`);
+    if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) {
+      throw conflict("This database view changed on disk.");
+    }
+    const prefix = `${folder}/`;
+    const existing: Array<{ record: PageRecord; set: Record<string, PropertyValue> }> = [];
+    const fresh: Array<{ title: string; set: Record<string, PropertyValue> }> = [];
+    for (const row of input.rows) {
+      if (!row || typeof row.set !== "object" || row.set === null || Array.isArray(row.set)) throw badRequest("each row needs a set object");
+      for (const key of Object.keys(row.set)) {
+        if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+      }
+      if (row.id !== undefined) {
+        const record = this.pages.get(this.resolveId(row.id));
+        if (!record || (record.kind ?? "page") !== "page" || !record.id.startsWith(prefix) || record.id.slice(prefix.length).includes("/")) {
+          throw badRequest(`not a row of this database: ${row.id}`);
+        }
+        existing.push({ record, set: row.set });
+      } else {
+        const title = typeof row.title === "string" ? row.title.trim() : "";
+        if (!title) throw badRequest("a new row needs a title");
+        fresh.push({ title, set: row.set });
+      }
+    }
+
+    const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
+    const refused: Array<{ id: PageId; title: string }> = [];
+    // What each set row had before, to put back: the old value, or "absent" (the key is removed again).
+    const done: Array<{ id: PageId; updated: string; old: Record<string, PropertyValue>; absent: string[] }> = [];
+    for (const { record, set } of existing) {
+      try {
+        const raw = readRawProperties(parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml);
+        const had = new Map(raw.map((property) => [property.key, property]));
+        const old: Record<string, PropertyValue> = {};
+        const absent: string[] = [];
+        for (const key of Object.keys(set)) {
+          const before = had.get(key);
+          if (before === undefined) absent.push(key);
+          else old[key] = before.value;
+        }
+        const page = await this.updateNow(record.id, { properties: { set }, expectedUpdated: record.updated });
+        done.push({ id: page.id, updated: page.updated, old, absent });
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: ${record.id} failed:`, error);
+        refused.push({ id: record.id, title: record.title });
+      }
+    }
+    const created: Array<{ id: PageId; title: string }> = [];
+    if (refused.length === 0) {
+      for (const row of fresh) {
+        let made: Page | null = null;
+        try {
+          made = await this.createNow({ title: row.title, parentId: folder });
+          created.push({ id: made.id, title: made.title });
+          if (Object.keys(row.set).length) await this.updateNow(made.id, { properties: { set: row.set }, expectedUpdated: made.updated });
+        } catch (error) {
+          if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: a new row "${row.title}" failed:`, error);
+          refused.push({ id: made?.id ?? row.title, title: row.title });
+          break;
+        }
+      }
+    }
+    if (refused.length === 0) return { changed: done.map((row) => row.id), created: created.map((row) => row.id), refused: [], stuck: [] };
+
+    // All or nothing: the set rows get their old values back, the new rows go to the Trash.
+    const stuck: Array<{ id: PageId; title: string }> = [];
+    for (const row of done) {
+      try {
+        await this.updateNow(row.id, { properties: { set: row.old, remove: row.absent }, expectedUpdated: row.updated });
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: putting ${row.id} back failed:`, error);
+        const record = this.pages.get(row.id);
+        if (record) stuck.push({ id: record.id, title: record.title });
+      }
+    }
+    for (const row of created) {
+      try {
+        await this.removeNow(row.id);
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: removing the new row ${row.id} failed:`, error);
+        stuck.push(row);
+      }
+    }
+    return { changed: [], created: [], refused: named(refused), stuck };
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {

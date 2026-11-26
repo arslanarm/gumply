@@ -516,6 +516,17 @@ export function createApiRoutes(store: VaultStore): Hono {
     throw badRequest("expected rename: {from, to} or remove: <key>");
   });
 
+  // #7prbquxu phase 2: a block pasted into an owned database (existing rows set, new rows made; all or nothing).
+  api.post("/bases/:id/rows-paste", async (c) => {
+    const body = await readJson(c);
+    const options: { expectedUpdated?: string; writer?: string } = {};
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) options.writer = writer.slice(0, 64);
+    return c.json(await store.pasteIntoOwnedRows(c.req.param("id"), { rows: body.rows as never }, options));
+  });
+
   // #g95wkd9y: links are complete once the background index is done.
   api.get("/pages/:id/backlinks", async (c) => {
     await store.whenIndexed();
