@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { selectedValues, type BaseValue, type SelectSettings } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
@@ -25,6 +25,9 @@ export function SelectPicker(props: {
   const [query, setQuery] = useState(props.initialQuery ?? "");
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // A combobox (the search) that controls the listbox: a screen reader hears the options and the highlighted one
+  // wherever the picker sits in the page (it is in a portal).
+  const listId = useId();
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const [place, setPlace] = useState<CSSProperties>({ top: 0, left: 0 });
@@ -97,6 +100,11 @@ export function SelectPicker(props: {
         data-testid="base-select-search"
         placeholder={t("bases.selectSearch")}
         aria-label={t("bases.selectSearch")}
+        role="combobox"
+        aria-expanded={true}
+        aria-autocomplete="list"
+        aria-controls={listId}
+        aria-activedescendant={shown[highlight] ? `${listId}-${highlight}` : undefined}
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -122,12 +130,13 @@ export function SelectPicker(props: {
           }
         }}
       />
-      <div className="base-select-options" role="listbox" aria-multiselectable={multi || undefined}>
+      <div className="base-select-options" id={listId} role="listbox" aria-multiselectable={multi || undefined}>
         {shown.map((option, index) => {
           const selected = current.includes(option.value);
           return (
             <button
               key={option.value}
+              id={`${listId}-${index}`}
               type="button"
               role="option"
               aria-selected={selected}
