@@ -1,8 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+
+/** #nr3rkgj2: a menu's items, in order (a disabled one is skipped). */
+const MENU_ITEMS = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled)';
 
 /**
  * A panel under its anchor (the toolbar's Filter, Sort and Properties).
  * Escape and a click outside close it; focus returns to the anchor.
+ *
+ * #nr3rkgj2: `menu` makes it a menu (a column's ⋯): it opens with the keyboard on its first item, the arrows,
+ * Home and End move through the items, Enter runs one, Tab closes it, and the keyboard goes back to the anchor
+ * when it closes (Escape, Tab, or an item that closes it).
  */
 export function Popover(props: {
   anchor: HTMLElement | null;
@@ -10,6 +17,7 @@ export function Popover(props: {
   label: string;
   testId: string;
   className?: string;
+  menu?: boolean;
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -67,12 +75,54 @@ export function Popover(props: {
     panelRef.current?.querySelector<HTMLElement>("input, select, button")?.focus();
   }, []);
 
+  // #nr3rkgj2: the effect above runs while the panel is still `visibility: hidden` (before it's placed), so its
+  // focus() does nothing and the keyboard stayed on the anchor. A menu takes the keyboard once it's placed.
+  const menuFocused = useRef(false);
+  useEffect(() => {
+    if (!props.menu || menuFocused.current || style.visibility === "hidden") return;
+    menuFocused.current = true;
+    panelRef.current?.querySelector<HTMLElement>(`input, ${MENU_ITEMS}`)?.focus();
+  }, [props.menu, style]);
+
+  // #nr3rkgj2: a menu that closes with the keyboard inside it (an item ran) gives it back to the anchor.
+  useEffect(() => {
+    if (!props.menu) return;
+    return () => {
+      const active = document.activeElement;
+      if ((!active || active === document.body) && anchor?.isConnected) anchor.focus();
+    };
+  }, [props.menu, anchor]);
+
+  const onMenuKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      onClose();
+      anchor?.focus();
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    // A text field in the menu (the column's new name) keeps its own Home and End.
+    if ((event.target as HTMLElement).tagName === "INPUT" && (event.key === "Home" || event.key === "End")) return;
+    const items = [...(panelRef.current?.querySelectorAll<HTMLElement>(MENU_ITEMS) ?? [])];
+    if (items.length === 0) return;
+    event.preventDefault();
+    if (event.key === "Home" || event.key === "End") {
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+      return;
+    }
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const next = index === -1 ? (step === 1 ? 0 : items.length - 1) : (index + step + items.length) % items.length;
+    items[next]?.focus();
+  };
+
   return (
     <div
       ref={panelRef}
       className={`base-popover${props.className ? ` ${props.className}` : ""}`}
-      role="dialog"
+      role={props.menu ? "menu" : "dialog"}
       aria-label={props.label}
+      {...(props.menu ? { onKeyDown: onMenuKey } : {})}
       data-testid={props.testId}
       style={style}
     >

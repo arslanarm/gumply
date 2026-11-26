@@ -659,7 +659,7 @@ export function TableView(props: TableViewProps) {
         <AddColumn anchor={addColumnAnchor} shown={viewOrder.map((id) => writtenId(propertyId(id)))} onClose={() => setAddColumnAnchor(null)} onAdd={addColumn} />
       ) : null}
       {headerMenu ? (
-        <Popover anchor={headerMenu.anchor} onClose={closeHeaderMenu} label={propertyLabel(headerMenu.column.id, config, t)} testId="base-column-menu" className="is-menu">
+        <Popover anchor={headerMenu.anchor} onClose={closeHeaderMenu} label={propertyLabel(headerMenu.column.id, config, t)} testId="base-column-menu" className="is-menu" menu>
           <button type="button" role="menuitem" onClick={() => (setSort(headerMenu.column, "ASC"), setHeaderMenu(null))}>
             {t("bases.sortAsc")}
           </button>
