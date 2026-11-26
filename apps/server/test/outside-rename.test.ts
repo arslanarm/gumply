@@ -66,6 +66,37 @@ describe("outside renames are followed (#3c444g85)", () => {
     expect(() => store.get("Gone")).toThrow();
   });
 
+  // #zggrmydn F1: a sync tool replays the other device's rename as a delete and a create, and the
+  // two can land in different refreshes (Syncthing does deletions last; a 120 ms quiet gap splits them).
+  for (const order of ["create, then delete", "delete, then create"] as const) {
+    it(`a rename a sync tool replays as ${order}, in two separate refreshes, still pairs: redirect and history (#zggrmydn)`, async () => {
+      const { store, dir } = await createTestServer();
+      await writeFile(join(dir, "Trip plan.md"), "Day one: the coast.\n");
+      await store.rescan();
+      await store.update("Trip plan", { content: "Day one: the coast. Saved first." });
+      const bytes = await readFile(join(dir, "Trip plan.md"));
+      const before = (await readHistory(historyDir(dir, "Trip plan"))).entries.length;
+      expect(before).toBeGreaterThan(0);
+      await pause();
+
+      if (order === "create, then delete") {
+        await writeFile(join(dir, "Trip plan 2026.md"), bytes);
+        await store.rescan();
+        await rm(join(dir, "Trip plan.md"));
+        await store.rescan();
+      } else {
+        await rm(join(dir, "Trip plan.md"));
+        await store.rescan();
+        await writeFile(join(dir, "Trip plan 2026.md"), bytes);
+        await store.rescan();
+      }
+
+      expect(store.get("Trip plan").id).toBe("Trip plan 2026");
+      expect((await readHistory(historyDir(dir, "Trip plan 2026"))).entries.length).toBeGreaterThanOrEqual(before);
+      expect((await readHistory(historyDir(dir, "Trip plan"))).entries).toEqual([]);
+    });
+  }
+
   it("a renamed note keeps its frontmatter-title pairing, and a board is matched by content", async () => {
     const { store, dir } = await createTestServer();
     await writeFile(join(dir, "Plan.md"), "---\ntitle: Plan\n---\nBody\n");
