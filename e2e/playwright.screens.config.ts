@@ -17,6 +17,8 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
  *
  *   npm run test:e2e:screens
  */
+// #w284vn2u: the settings put-back (support/vault-settings.ts) acts on E2E_VAULT, so with GUMPLY_SCREENS_VAULT set
+// to another folder it doesn't apply to this run (harmless: the capture isn't a gate).
 const SCREENS_VAULT = process.env.GUMPLY_SCREENS_VAULT ?? E2E_VAULT;
 
 const server = base.webServer as {
