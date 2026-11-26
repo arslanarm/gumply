@@ -345,6 +345,8 @@ export interface BaseIndexEntry {
   fileMtimeMs: number;
   /** Vault-relative paths of the pages and boards it links to. */
   links: string[];
+  /** #bg7c9bzk: its `created:` is stored in the file (not the file's birth time). */
+  createdInFile: boolean;
 }
 
 export interface GraphOptions {
@@ -489,6 +491,8 @@ interface PageRecord extends Omit<Page, "childCount"> {
    * name (typical Obsidian note), and the file is never renamed to "fix" it.
    */
   explicitTitle: boolean;
+  /** #bg7c9bzk: the frontmatter holds `created:` (stored in the vault, unlike the file's birth time). */
+  createdInFile?: boolean;
   /** D25: a Markdown page or a JSON Canvas whiteboard. */
   kind: PageKind;
   /**
@@ -1293,6 +1297,8 @@ export class VaultStore {
   /** Test hooks (#xgnvipyd): rename batches run so far, and a callback after each one. */
   renameBatchesRun = 0;
   afterRenameBatch: (() => Promise<void>) | null = null;
+  /** #bg7c9bzk: the last `created:` time a new page got (ms), so they increase. */
+  private lastCreatedMs = 0;
   /**
    * #xgnvipyd: while a rename's batches run, the linking pages still say
    * `[[Old]]`. Link resolution treats the old title and id as the renamed page
@@ -3813,7 +3819,11 @@ export class VaultStore {
     const baseId = childPageId(parentId, title);
     const id = await this.freeId(baseId);
     this.redirects.delete(id);
-    const now = new Date().toISOString();
+    // #bg7c9bzk: strictly increasing within this process, so rows made in one go (a paste) keep their order by
+    // `created:` even inside one millisecond.
+    const createdMs = Math.max(Date.now(), this.lastCreatedMs + 1);
+    this.lastCreatedMs = createdMs;
+    const now = new Date(createdMs).toISOString();
     const filePath = this.filePathFor(id);
 
     if (input.template !== undefined) {
@@ -3865,6 +3875,7 @@ export class VaultStore {
       fileMtimeMs,
       fmTags: [],
       explicitTitle: true,
+      createdInFile: true,
       kind: "page",
     };
     if (icon) record.icon = icon;
@@ -4663,6 +4674,7 @@ export class VaultStore {
         filePath: record.filePath,
         fileMtimeMs: record.fileMtimeMs,
         links,
+        createdInFile: record.createdInFile === true,
       });
     }
     return entries;
@@ -7584,6 +7596,7 @@ export class VaultStore {
       explicitTitle,
       kind: "page",
     };
+    if (toIso(frontmatter.created) !== undefined) record.createdInFile = true;
     if (icon) record.icon = icon;
     this.setPropertyLinks(record, raw);
     // #kguq5bc5: the frontmatter for the properties index, so nothing reads this file again for it.

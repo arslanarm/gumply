@@ -8,6 +8,7 @@
  * types.json merged with the inferred types, as a page's properties show them.
  */
 import {
+  ownedRowsFolder,
   runBaseView,
   typedProperties,
   type BaseSourceRow,
@@ -109,6 +110,22 @@ export class BaseQueries {
         const link = typeof value === "string" ? new RegExp(String.raw`^!?\[\[(${WIKILINK_TARGET}+)${WIKILINK_INNER}*\]\]$`).exec(value.trim())?.[1]?.trim() : undefined;
         if (link) row.files = { [link]: this.store.fileIndex.resolve(link, pathOf.get(row.id) ?? null) };
       }
+    }
+    // #bg7c9bzk (#faqr8pj9's #9, @lead's ruling a): a database Gumply owns whose view has no sort lists its rows
+    // oldest first by the `created:` each row stores (never the file's birth time, which sync and git reset);
+    // rows without one (made in Obsidian) follow, by name. A base Gumply doesn't own keeps its order.
+    const sorts = Array.isArray(view?.sort) ? view.sort : [];
+    if (ownedRowsFolder(document.config) !== null && sorts.length === 0 && !view?.groupBy) {
+      const made = new Map(index.map((entry) => [entry.meta.id, entry.createdInFile ? Date.parse(entry.meta.created) : Number.NaN]));
+      const named = (row: { title: string }) => row.title.toLowerCase();
+      result.rows = [...result.rows].sort((a, b) => {
+        const x = made.get(a.id) ?? Number.NaN;
+        const y = made.get(b.id) ?? Number.NaN;
+        if (Number.isFinite(x) && Number.isFinite(y)) return x - y || named(a).localeCompare(named(b));
+        if (Number.isFinite(x)) return -1;
+        if (Number.isFinite(y)) return 1;
+        return named(a).localeCompare(named(b));
+      });
     }
     result.properties = infos
       .map((info) => ({ id: `note.${info.key}`, type: info.type, count: info.count }))
