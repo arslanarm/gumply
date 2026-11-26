@@ -197,6 +197,9 @@ function patchNode(doc: Document, node: Node | null | undefined, previous: unkno
  * #bg7c9bzk (#faqr8pj9's #21): Obsidian 1.14.4's top-level order for a .base. It rewrites a file just by opening it
  * when `properties:` comes after `views:`, so a key Gumply **adds** goes where Obsidian would put it. A file's
  * existing keys are never moved.
+ * Measured in a sealed 1.14.4 (#iwbnjeqh, #faqr8pj9): `filters`, `formulas`, `properties` before `views`, and a
+ * leading `gumply:` left where it is. `summaries` (Obsidian's view summaries) is placed before `views` by
+ * assumption, from its documented file format; it wasn't in a measured file.
  */
 const TOP_LEVEL_ORDER = ["gumply", "filters", "formulas", "properties", "summaries", "views"];
 
