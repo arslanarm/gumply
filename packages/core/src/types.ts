@@ -144,6 +144,11 @@ export interface TrashItem extends TrashedPage {
   otherFiles?: number;
   /** #7prbquxu phase 4a: a database deleted with its rows folder (one Trash item): the rows that went with it. */
   rows?: number;
+  /**
+   * #7prbquxu phase 4: the rows one table undo took out, as one item ("N rows from People"): `id` and `title` are
+   * their folder (still in the vault), `children` the rows. Restore brings them all back into it.
+   */
+  undoRows?: number;
 }
 
 /** `GET /api/trash/:trashId[?id=]`: a trashed page or board, read-only. */

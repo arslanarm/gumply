@@ -72,7 +72,7 @@ import {
   trashRouteFromHash,
   type TrashRoute,
 } from "./lib/routing.js";
-import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashedCount } from "./lib/trash.js";
+import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashTitle, trashedCount } from "./lib/trash.js";
 import { currentModifierLabel, isTypingTarget } from "./lib/shortcuts.js";
 import {
   availableCommands,
@@ -2108,7 +2108,7 @@ export function App() {
     try {
       if (pending.kind === "forever") {
         await api.deleteTrashed(pending.item.trashId);
-        setToast({ message: t("trash.deletedForever", { title: pending.item.title }), icon: "trash" });
+        setToast({ message: t("trash.deletedForever", { title: trashTitle(pending.item) }), icon: "trash" });
         // A trashed page that is gone now: back to the list.
         if (trashRoute?.trashId === pending.item.trashId) navigateTrash();
       } else {

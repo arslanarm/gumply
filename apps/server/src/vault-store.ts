@@ -721,6 +721,11 @@ interface TrashEntry {
   with?: string;
   /** #7prbquxu phase 4: this folder entry belongs to a database's entry (not listed on its own). */
   partOf?: string;
+  /**
+   * #7prbquxu phase 4 (@lead): the rows one table undo took out, as one item: `id` and `file` are their folder
+   * (which stays in the vault), `deleted` the rows directly in it, each at its own path inside the entry.
+   */
+  rows?: boolean;
 }
 
 /** `.trash/<trashId>/meta.json` (D11). */
@@ -731,7 +736,7 @@ interface TrashManifest {
   deletedAt: string;
   /** Vault-relative file of `id` (v1.7: `.md` or `.canvas`); old manifests: `${id}.md`. */
   file?: string;
-  /** "folder" for a plain folder (D33); `file` is then the directory. */
+  /** "folder" for a plain folder (D33); `file` is then the directory. "rows": see TrashEntry. */
   kind?: string;
   /** #7prbquxu phase 4: see TrashEntry. */
   with?: string;
@@ -3030,17 +3035,17 @@ export class VaultStore {
       }
       dropping.push(record);
     }
-    const bringing: TrashEntry[] = [];
+    const bringing: Array<{ entry: TrashEntry; id: PageId }> = [];
     for (const row of create) {
       const entry = /^[A-Za-z0-9-]+$/.test(row.trashId) ? await this.readTrashEntry(row.trashId) : null;
+      // A group of rows an undo took out (or, from before groups, one row's own entry).
+      const holds =
+        entry !== null &&
+        (entry.rows ? entry.id === folder && entry.deleted.includes(row.id) : !entry.folder && !entry.with && entry.id === row.id && entry.deleted.length === 1);
       const good =
         owned &&
-        entry !== null &&
-        !entry.folder &&
-        !entry.with &&
-        entry.id === row.id &&
-        entry.deleted.length === 1 &&
-        (await this.readTrashedRecord(entry, entry.id)) !== null &&
+        holds &&
+        (await this.readTrashedRecord(entry!, row.id)) !== null &&
         !this.pages.has(row.id) &&
         !(await pathExists(this.filePathFor(row.id))) &&
         !(await pathExists(join(this.root, row.id)));
@@ -3048,7 +3053,7 @@ export class VaultStore {
         refuse(row.id);
         continue;
       }
-      bringing.push(entry!);
+      bringing.push({ entry: entry!, id: row.id });
     }
     if (refused.length) return { refused, files: [], dropped: [], created: [] };
 
@@ -3057,6 +3062,7 @@ export class VaultStore {
     const written: Array<{ id: PageId; before: string; bytes: Buffer; isBase: boolean }> = [];
     const trashed: Array<{ record: PageRecord; trashId: string }> = [];
     const brought: Array<{ entry: TrashEntry; record: PageRecord }> = [];
+    let droppedTo: string | null = null;
     try {
       for (const { record, from, bytes } of planned) {
         const current = await readFile(record.filePath);
@@ -3069,16 +3075,25 @@ export class VaultStore {
         if (!(await this.putPasteBytesBack(record.id, bytes, from))) throw conflict(`${record.title} changed while it was being undone`);
         written.push({ id: record.id, before: from, bytes: current, isBase: false });
       }
-      for (const record of dropping) trashed.push({ record, trashId: await this.trashRowForUndo(record) });
-      for (const entry of bringing) brought.push({ entry, record: await this.bringRowBackForRedo(entry) });
+      if (dropping.length) {
+        droppedTo = await this.trashRowsForUndo(folder, dropping);
+        for (const record of dropping) trashed.push({ record, trashId: droppedTo });
+      }
+      for (const { entry, id: rowId } of bringing) brought.push({ entry, record: await this.bringRowBackForRedo(entry, rowId) });
     } catch (error) {
       const stuck = await this.putUndoBack(written, trashed, brought);
       console.error(`[gumply] undo in ${id} failed part way; put back${stuck.length ? `, except ${stuck.join(", ")}` : ""}:`, error);
       if (stuck.length) throw conflict(`The undo failed part way, and these couldn't be put back: ${stuck.join(", ")}`);
       throw conflict("The undo failed part way; everything was put back as it was.");
     }
-    // Done: the brought rows' Trash entries go (their bytes are back in place).
-    for (const { entry } of brought) await rm(entry.dir, { recursive: true, force: true }).catch(() => undefined);
+    // Done: the brought rows leave their Trash entries; an entry with nothing left goes.
+    const byEntry = new Map<string, { entry: TrashEntry; ids: Set<PageId> }>();
+    for (const { entry, record } of brought) {
+      const group = byEntry.get(entry.trashId) ?? { entry, ids: new Set<PageId>() };
+      group.ids.add(record.id);
+      byEntry.set(entry.trashId, group);
+    }
+    for (const { entry, ids } of byEntry.values()) await this.takeRowsOutOfTrashEntry(entry, ids);
     if (written.length || trashed.length || brought.length) {
       await this.syncFolders();
       this.reindexAll();
@@ -3093,40 +3108,71 @@ export class VaultStore {
   }
 
   /**
-   * #7prbquxu phase 4b (@lead's point 3): a row the table's undo drops goes to the Trash as its own item (never
-   * deleted outright; its History stays), as our own write, without a rebuild per row. A redo brings it back.
+   * #7prbquxu phase 4b (@lead's point 3): the rows one table undo drops go to the Trash as **one** item, "N rows
+   * from People" (never deleted outright; their History stays), as our own write, without a rebuild per row.
+   * A redo, or Restore, brings them back. A move failing part way puts the moved rows back and throws.
    */
-  private async trashRowForUndo(record: PageRecord): Promise<string> {
+  private async trashRowsForUndo(folder: PageId, records: readonly PageRecord[]): Promise<string> {
     const trashId = await this.freeTrashId();
     const trashDir = join(this.trashRoot, trashId);
-    const file = relative(this.root, record.filePath).split(sep).join("/");
-    const inTrash = join(trashDir, file);
-    await this.snapshotRecord(record, this.historySource, "trash");
-    const manifest: TrashManifest = { id: record.id, trashId, deleted: [record.id], deletedAt: new Date().toISOString(), file };
+    for (const record of records) await this.snapshotRecord(record, this.historySource, "trash");
+    const manifest: TrashManifest = {
+      id: folder,
+      trashId,
+      deleted: records.map((record) => record.id),
+      deletedAt: new Date().toISOString(),
+      file: folder,
+      kind: "rows",
+    };
+    const moved: Array<{ from: string; to: string }> = [];
     try {
-      await mkdir(dirname(inTrash), { recursive: true });
+      await mkdir(join(trashDir, folder), { recursive: true });
       await writeAtomic(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2));
-      this.markOwnWrite(record.filePath);
-      await rename(record.filePath, inTrash);
+      for (const record of records) {
+        const to = join(trashDir, relative(this.root, record.filePath));
+        this.markOwnWrite(record.filePath);
+        await rename(record.filePath, to);
+        moved.push({ from: record.filePath, to });
+      }
     } catch (error) {
+      for (const { from, to } of moved.reverse()) await rename(to, from).catch(() => undefined);
       await rm(trashDir, { recursive: true, force: true }).catch(() => undefined);
       throw error;
     }
-    this.pages.delete(record.id);
-    this.forgetSessionBytes(record.id);
+    for (const record of records) {
+      this.pages.delete(record.id);
+      this.forgetSessionBytes(record.id);
+    }
     return trashId;
   }
 
-  /** A redo: the row back from its Trash entry, at its id (checked free); the entry goes once the whole step is done. */
-  private async bringRowBackForRedo(entry: TrashEntry): Promise<PageRecord> {
-    const source = resolve(entry.dir, entry.file);
-    const target = this.filePathFor(entry.id);
+  /** A redo: one row back from its Trash entry, at its id (checked free); the entry is updated once the whole step is done. */
+  private async bringRowBackForRedo(entry: TrashEntry, id: PageId): Promise<PageRecord> {
+    const source = resolve(entry.dir, this.trashedFileOf(entry, id));
+    const target = this.filePathFor(id);
     this.markOwnWrite(target);
     await rename(source, target);
-    const record = await this.readRecord(target, entry.id);
-    record.parentId = parentOf(entry.id);
-    this.pages.set(entry.id, record);
+    const record = await this.readRecord(target, id);
+    record.parentId = parentOf(id);
+    this.pages.set(id, record);
     return record;
+  }
+
+  /** Rows a redo brought back leave their Trash entry: it goes when nothing is left, else it lists the rest. */
+  private async takeRowsOutOfTrashEntry(entry: TrashEntry, ids: ReadonlySet<PageId>): Promise<void> {
+    const rest = entry.deleted.filter((id) => !ids.has(id));
+    if (!entry.rows || rest.length === 0) {
+      await rm(entry.dir, { recursive: true, force: true }).catch(() => undefined);
+      return;
+    }
+    const file = join(entry.dir, "meta.json");
+    try {
+      const manifest = JSON.parse(await readFile(file, "utf8")) as TrashManifest;
+      manifest.deleted = rest;
+      await writeAtomic(file, JSON.stringify(manifest, null, 2));
+    } catch (error) {
+      console.warn(`[gumply] redo: the Trash entry ${entry.trashId} still lists rows that are back:`, error);
+    }
   }
 
   /** An undo that failed part way: the brought rows back to the Trash, the trashed ones back in place, the written files' bytes back. Returns what couldn't be. */
@@ -3139,23 +3185,26 @@ export class VaultStore {
     for (const { entry, record } of [...brought].reverse()) {
       try {
         this.markOwnWrite(record.filePath);
-        await rename(record.filePath, resolve(entry.dir, entry.file));
+        await rename(record.filePath, resolve(entry.dir, this.trashedFileOf(entry, record.id)));
         this.pages.delete(record.id);
       } catch {
         stuck.push(record.title);
       }
     }
+    const trashDirs = new Set<string>();
     for (const { record, trashId } of [...trashed].reverse()) {
       try {
         const trashDir = join(this.trashRoot, trashId);
+        trashDirs.add(trashDir);
         this.markOwnWrite(record.filePath);
         await rename(join(trashDir, relative(this.root, record.filePath)), record.filePath);
-        await rm(trashDir, { recursive: true, force: true });
         this.pages.set(record.id, await this.readRecord(record.filePath, record.id).then((fresh) => ({ ...fresh, parentId: record.parentId })));
       } catch {
         stuck.push(record.title);
       }
     }
+    // The group's entry goes only when every row is back in place.
+    if (stuck.length === 0) for (const dir of trashDirs) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     for (const file of [...written].reverse()) {
       const record = this.pages.get(file.id);
       try {
@@ -5848,13 +5897,18 @@ export class VaultStore {
       const manifest = JSON.parse(await readFile(join(dir, "meta.json"), "utf8")) as Partial<TrashManifest>;
       if (!manifest || typeof manifest.id !== "string" || !isValidPageId(manifest.id)) return null;
       const top = manifest.id;
+      const rows = manifest.kind === "rows";
       const deleted = Array.isArray(manifest.deleted)
         ? manifest.deleted.filter(
             (id): id is PageId =>
-              typeof id === "string" && isValidPageId(id) && (id === top || id.startsWith(`${top}/`)),
+              typeof id === "string" &&
+              isValidPageId(id) &&
+              // A group of rows: only pages directly in their folder (the folder itself isn't in the Trash).
+              (rows ? parentOf(id) === top : id === top || id.startsWith(`${top}/`)),
           )
         : [];
-      if (!deleted.includes(top)) deleted.unshift(top);
+      if (rows && deleted.length === 0) return null;
+      if (!rows && !deleted.includes(top)) deleted.unshift(top);
       const folder = manifest.kind === "folder";
       // v1.7 manifests name the file (`.md` or `.canvas`); older ones mean `.md`.
       const file =
@@ -5864,7 +5918,18 @@ export class VaultStore {
       const linked = (value: unknown) => (typeof value === "string" && /^[A-Za-z0-9-]+$/.test(value) ? value : undefined);
       const withId = linked(manifest.with);
       const partOf = linked(manifest.partOf);
-      return { trashId, dir, id: top, file, deleted, deletedAt, folder, ...(withId ? { with: withId } : {}), ...(partOf ? { partOf } : {}) };
+      return {
+        trashId,
+        dir,
+        id: top,
+        file,
+        deleted,
+        deletedAt,
+        folder,
+        ...(withId ? { with: withId } : {}),
+        ...(partOf ? { partOf } : {}),
+        ...(rows ? { rows: true } : {}),
+      };
     } catch {
       return null;
     }
@@ -5964,9 +6029,8 @@ export class VaultStore {
     const folderPath = entry.folder ? await this.trashedFolderPath(entry) : null;
     if (entry.folder && !folderPath) return null;
     const name = entry.id.split("/").pop() ?? entry.id;
-    const top: { kind: TrashItem["kind"]; title: string; icon?: string } | null = folderPath
-      ? { kind: "folder", title: name }
-      : await this.readTrashedRecord(entry, entry.id);
+    const top: { kind: TrashItem["kind"]; title: string; icon?: string } | null =
+      folderPath || entry.rows ? { kind: "folder", title: name } : await this.readTrashedRecord(entry, entry.id);
     if (!top) return null;
     const children: TrashedPage[] = [];
     const ids = entry.deleted.filter((id) => id !== entry.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -6008,6 +6072,7 @@ export class VaultStore {
       children,
       ...(folderPath ? { otherFiles: await this.countOtherFiles(folderPath) } : {}),
       ...(await this.trashedRowsOf(entry)),
+      ...(entry.rows ? { undoRows: children.length } : {}),
     };
   }
 
@@ -6039,6 +6104,8 @@ export class VaultStore {
     const item = await this.trashItemFor(entry);
     if (!item) throw notFound("Trash entry not found");
     const target = id ?? entry.id;
+    // A group of rows (#7prbquxu): like a folder, the item itself has no document.
+    if (entry.rows && target === entry.id) return { item, page: null };
     if (typeof target !== "string" || !entry.deleted.includes(target)) throw notFound("Page not found in this trash entry");
     // A folder has no document of its own: the client shows its children.
     if (entry.folder && target === entry.id) return { item, page: null };
@@ -6128,6 +6195,7 @@ export class VaultStore {
   private async restoreNow(trashId: string, targetId?: PageId): Promise<RestoreResult> {
     const entry = await this.openTrashEntry(trashId);
     if (entry.folder) return this.restoreFolderNow(entry, targetId);
+    if (entry.rows) return this.restoreRowsNow(entry);
     if (entry.with && targetId === undefined) {
       const rows = await this.readTrashEntry(entry.with);
       if (rows) return this.restoreWithRowsNow(entry, rows);
@@ -6211,6 +6279,40 @@ export class VaultStore {
    * it was if its parent folder still exists (else at the top level), with
    * ` 2` when the name is taken by a page, board or folder.
    */
+  /**
+   * #7prbquxu phase 4 (@lead): the rows one table undo took out come back together, into their folder (made again
+   * if it's gone), each at its own name or, when that's taken now, the usual " 2"; their History follows.
+   */
+  private async restoreRowsNow(entry: TrashEntry): Promise<RestoreResult> {
+    const folder = entry.id;
+    await mkdir(join(this.root, folder), { recursive: true });
+    const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
+    const moved: Array<{ from: PageId; to: PageId }> = [];
+    for (const id of entry.deleted) {
+      const record = await this.readTrashedRecord(entry, id);
+      if (!record) continue;
+      const name = id.split("/").pop() ?? id;
+      const kind = record.kind;
+      const stem = name.slice(0, name.length - idExtension(kind).length);
+      const to = await this.restoreTarget(folder, stem, false, taken, kind);
+      taken.add(collisionKey(to));
+      const target = this.filePathFor(to);
+      this.markOwnWrite(target);
+      await rename(resolve(entry.dir, this.trashedFileOf(entry, id)), target);
+      moved.push({ from: id, to });
+    }
+    await rm(entry.dir, { recursive: true, force: true });
+    await this.rebuild();
+    for (const { from, to } of moved) if (from !== to) await this.followHistory(from, to);
+    const restoredIds = new Set(moved.map((move) => move.to));
+    return {
+      restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)),
+      id: folder,
+      movedToTopLevel: false,
+      renamed: moved.some(({ from, to }) => from !== to),
+    };
+  }
+
   /**
    * #7prbquxu phase 4: a database deleted with its rows comes back with them, at a name free as both a base and a
    * folder (as New database picks one); when that isn't the old name, its marker and filter follow the folder.
