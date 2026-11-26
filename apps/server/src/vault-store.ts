@@ -1695,7 +1695,6 @@ export class VaultStore {
     for (const [id, record] of next) {
       const current = this.pages.get(id);
       if (current === record) continue;
-      this.noteReadHash(record);
       if (!current || this.recordSignature(current) !== this.recordSignature(record) || this.readFromOtherBytes(current, record)) {
         changedIds.push(id);
         // #y5k39njn: new content always gets a newer version, so a save from before it is refused.
@@ -1933,27 +1932,47 @@ export class VaultStore {
    * property-only outside edit at the same file time looked like no change; comparing these does.
    * Records our writes made have none (unknown: never counted as a change).
    */
-  private readonly readHashes = new WeakMap<PageRecord, string>();
+  private readonly readHashes = new WeakMap<PageRecord, { hash: string; seq: number }>();
+  /**
+   * @graph-dev's review, gap 2: the bytes our last write of each file put there. Our writes change the
+   * record in place, so the bytes it stands for are then these, not the ones it was read from: a sync
+   * tool putting the older bytes back is a change too. Whichever of the record's read and our write of
+   * its file came last (`seq`) is what the record stands for.
+   */
+  private readonly writtenHashes = new Map<string, { hash: string; seq: number }>();
+  private hashSeq = 0;
 
-  private noteReadHash(record: PageRecord): void {
-    if (this.readHashes.has(record)) return;
-    const entry = (this.bytesAt.get(record.filePath) ?? []).find((seen) => seen.mtimeMs === record.fileMtimeMs);
-    if (entry) this.readHashes.set(record, entry.hash);
+  /** Gap 1: every record read from disk carries the hash of its bytes, on any path that brings it in. */
+  private noteReadHash<T extends PageRecord>(record: T, hash: string): T {
+    this.readHashes.set(record, { hash, seq: ++this.hashSeq });
+    return record;
   }
 
-  /** Both records were read from disk, and from different bytes. */
+  /** The bytes `record` stands for now: its read, or our later write of its file. */
+  private standsFor(record: PageRecord): string | undefined {
+    const read = this.readHashes.get(record);
+    const written = this.writtenHashes.get(record.filePath);
+    if (written && (!read || written.seq > read.seq)) return written.hash;
+    return read?.hash;
+  }
+
+  /** `after` was read from other bytes than `before` stands for (both known). */
   private readFromOtherBytes(before: PageRecord, after: PageRecord): boolean {
-    const a = this.readHashes.get(before);
-    const b = this.readHashes.get(after);
+    const a = this.standsFor(before);
+    const b = this.readHashes.get(after)?.hash;
     return a !== undefined && b !== undefined && a !== b;
   }
 
-  private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer, ours = false): void {
+  private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer, ours = false): string {
     const hash = bytesHash(bytes);
-    if (ours) this.ownBytes.set(filePath, hash);
+    if (ours) {
+      this.ownBytes.set(filePath, hash);
+      this.writtenHashes.set(filePath, { hash, seq: ++this.hashSeq });
+    }
     const kept = (this.bytesAt.get(filePath) ?? []).filter((entry) => entry.mtimeMs !== mtimeMs);
     kept.push({ mtimeMs, hash });
     this.bytesAt.set(filePath, kept.slice(-3));
+    return hash;
   }
 
   /**
@@ -3632,8 +3651,8 @@ export class VaultStore {
   /** A `.base` file (D34): title = file name, dates from the file, kept as text. */
   private async readBaseRecord(absolute: string, id: PageId): Promise<PageRecord> {
     const { raw, stats } = await readConsistent(absolute);
-    this.noteBytes(absolute, stats.mtimeMs, raw);
-    return {
+    const readHash = this.noteBytes(absolute, stats.mtimeMs, raw);
+    return this.noteReadHash({
       id,
       title: baseStem(id),
       tags: [],
@@ -3647,7 +3666,7 @@ export class VaultStore {
       explicitTitle: true,
       kind: "base",
       baseSource: raw,
-    };
+    }, readHash);
   }
 
   private requireBase(id: PageId): PageRecord {
@@ -5740,10 +5759,7 @@ export class VaultStore {
     this.folders = folders;
     this.pages.clear();
     this.edgesBySource.clear();
-    for (const [id, record] of next) {
-      this.noteReadHash(record);
-      this.pages.set(id, record);
-    }
+    for (const [id, record] of next) this.pages.set(id, record);
   }
 
   /** True while the links of a vault just opened are being indexed (#g95wkd9y). */
@@ -6036,7 +6052,7 @@ export class VaultStore {
     if (isBoardId(absolute)) return this.readBoardRecord(absolute, id);
     if (isBaseId(absolute)) return this.readBaseRecord(absolute, id);
     const { raw, stats } = await readConsistent(absolute);
-    this.noteBytes(absolute, stats.mtimeMs, raw);
+    const readHash = this.noteBytes(absolute, stats.mtimeMs, raw);
     const { frontmatter, content } = parseFrontmatter(raw);
 
     const created = toIso(frontmatter.created) ?? stats.birthtime.toISOString();
@@ -6074,7 +6090,7 @@ export class VaultStore {
     // (a tool that keeps the mtime): what was cached for this file goes, and this read's YAML is kept.
     this.rawPropertyCache.delete(absolute);
     this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
-    return record;
+    return this.noteReadHash(record, readHash);
   }
 
   /**
@@ -6085,7 +6101,7 @@ export class VaultStore {
    */
   private async readBoardRecord(absolute: string, id: PageId): Promise<PageRecord> {
     const { raw, stats } = await readConsistent(absolute);
-    this.noteBytes(absolute, stats.mtimeMs, raw);
+    const readHash = this.noteBytes(absolute, stats.mtimeMs, raw);
     let board: CanvasBoard;
     let repaired = false;
     try {
@@ -6117,7 +6133,7 @@ export class VaultStore {
       boardRepaired: repaired,
     };
     if (meta.icon) record.icon = meta.icon;
-    return record;
+    return this.noteReadHash(record, readHash);
   }
 
   // --- version history (spec/version-history, D41) -----------------------

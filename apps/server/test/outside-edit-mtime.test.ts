@@ -196,6 +196,27 @@ describe("a property-only outside edit at the same file time (#dqdwz9qw's replay
   }
 });
 
+describe("an outside revert to the bytes before our last write, at the same file time (@graph-dev's gap 2)", () => {
+  it("we set role Cook→Chef; a sync tool puts the Cook bytes back at the same mtime: the version moves on, and a save from the Chef version is a 409", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Ann.md"), "---\nrole: Cook\nage: 30\n---\nAnn\n");
+    await store.rescan();
+    const file = join(dir, "Ann.md");
+    const cookBytes = await readFile(file, "utf8");
+    const ours = await store.update("Ann", { properties: { set: { role: "Chef" } }, expectedUpdated: store.get("Ann").updated });
+    const chefVersion = ours.updated;
+    const { atime, mtime } = await stat(file);
+    // The older copy comes back (a sync tool's restore), at the time our write left.
+    await writeFile(file, cookBytes);
+    await utimes(file, atime, mtime);
+    await store.rescan();
+    expect(store.get("Ann").updated > chefVersion, "the version moves on").toBe(true);
+    const stale = await store.update("Ann", { properties: { set: { age: 31 } }, expectedUpdated: chefVersion }).then(() => "accepted", (error: Error) => error.message);
+    expect(stale).toMatch(/changed on disk/);
+    expect(await readFile(file, "utf8")).toBe(cookBytes);
+  });
+});
+
 describe("a board and a base: an outside edit the record may not show, at the same file time (#vqm6gqpu)", () => {
   it("a board whose unknown key changed (same size, mtime put back): the version moves on, and a stale board save is a 409", async () => {
     const { store, dir } = await createTestServer();
