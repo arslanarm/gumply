@@ -48,6 +48,9 @@ function errorText(error: unknown): string {
 }
 
 /** #7prbquxu phase 4b: one step of the table's undo or redo. */
+/** #5q4vaacm: how many of a row's versions replaced by this view's own writes are remembered (@graph-dev's nit). */
+const OWN_VERSIONS_KEPT = 8;
+
 type UndoStep =
   | { kind: "files"; input: UndoInput }
   | { kind: "config"; from: BaseConfig; to: BaseConfig }
@@ -331,6 +334,8 @@ export function BaseView(props: BaseViewProps) {
         const saved = await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, from);
         const entry = ownWrites.current.get(saved.id) ?? { replaced: new Set<string>(), latest: saved.updated };
         entry.replaced.add(from);
+        // Only the last few are ever looked up (a table can't be more than a few saves behind its own writes).
+        while (entry.replaced.size > OWN_VERSIONS_KEPT) entry.replaced.delete(entry.replaced.values().next().value!);
         entry.latest = saved.updated;
         ownWrites.current.set(saved.id, entry);
         recordStep({ kind: "cell", rowId: saved.id, key: column.id.slice(5), before: row.values[column.id] ?? null, after: value, version: saved.updated });

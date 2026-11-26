@@ -1090,6 +1090,9 @@ function ValueCell(props: {
   // without picking.
   const tabOut = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab" || !props.onEditDone || event.nativeEvent.isComposing) return;
+    // A date picker (a portal) keeps its own Tab: its month buttons, a datetime's time field, Today and Clear must stay
+    // reachable by keyboard (@graph-dev). Tab from the field itself still commits and moves.
+    if ((event.target as Element | null)?.closest?.(".date-picker")) return;
     event.preventDefault();
     event.stopPropagation();
     moveAfter.current = event.shiftKey ? "prev" : "next";
