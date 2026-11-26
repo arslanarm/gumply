@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertedLines, databaseLine, skippedReason, folderName, importErrorKind, looksLikeZip, progressPercent } from "../src/lib/notion-import.js";
+import { convertedLines, databaseLine, failedJobMessage, skippedReason, folderName, importErrorKind, looksLikeZip, progressPercent } from "../src/lib/notion-import.js";
 import { notionReportStrings } from "@gumply/core";
 import en from "../src/i18n/en.json";
 import ru from "../src/i18n/ru.json";
@@ -12,6 +12,18 @@ describe("Import from Notion dialog helpers (B4)", () => {
     expect(importErrorKind({ status: 404 })).toBe("missingTarget");
     expect(importErrorKind(new TypeError("Failed to fetch"))).toBe("offline");
     expect(importErrorKind({ status: 500 })).toBe("other");
+  });
+
+  it("a damaged export (#4zzay6mn): its own message naming the file, in en and ru; other failures keep the server's reason as the detail", () => {
+    const file = "Workspace/Handbook 00000000000000000000000000000001.md";
+    expect(failedJobMessage({ error: "x", errorCode: "damaged", errorFile: file })).toEqual({ key: "notionImport.errors.damagedFile", vars: { file }, details: null });
+    expect(failedJobMessage({ error: "x", errorCode: "damaged" })).toEqual({ key: "notionImport.errors.damaged", vars: {}, details: null });
+    expect(failedJobMessage({ error: "disk full" })).toEqual({ key: "notionImport.errors.failed", vars: {}, details: "disk full" });
+    expect(failedJobMessage({})).toEqual({ key: "notionImport.errors.failed", vars: {}, details: null });
+    expect(en.notionImport.errors.damagedFile).toBe("The export looks damaged (file {{file}}). Download it again from Notion.");
+    expect(en.notionImport.errors.damaged).toBe("The export looks damaged. Download it again from Notion.");
+    expect(ru.notionImport.errors.damagedFile).toBe("Похоже, экспорт повреждён (файл {{file}}). Скачайте его из Notion заново.");
+    expect(ru.notionImport.errors.damaged).toBe("Похоже, экспорт повреждён. Скачайте его из Notion заново.");
   });
 
   it("only zips are picked", () => {

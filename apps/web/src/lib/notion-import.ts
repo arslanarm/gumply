@@ -30,6 +30,24 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorKind, MessageKey> = {
   other: "notionImport.errors.other",
 };
 
+/**
+ * What a failed job says: a damaged export (#4zzay6mn) gets its own words,
+ * naming the file, and no English detail; any other failure the general
+ * message with the server's reason as the detail line.
+ */
+export function failedJobMessage(job: Pick<NotionImportJob, "error" | "errorCode" | "errorFile">): {
+  key: MessageKey;
+  vars: Record<string, string>;
+  details: string | null;
+} {
+  if (job.errorCode === "damaged") {
+    return job.errorFile !== undefined
+      ? { key: "notionImport.errors.damagedFile", vars: { file: job.errorFile }, details: null }
+      : { key: "notionImport.errors.damaged", vars: {}, details: null };
+  }
+  return { key: IMPORT_ERROR_MESSAGES.failed, vars: {}, details: job.error ?? null };
+}
+
 /** Whether a picked file can be a Notion export (the server checks the rest). */
 export function looksLikeZip(file: { name: string; type?: string }): boolean {
   return /\.zip$/i.test(file.name) || file.type === "application/zip" || file.type === "application/x-zip-compressed";
