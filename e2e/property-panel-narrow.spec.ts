@@ -28,8 +28,11 @@ test('long property chips stay inside a narrow window, with their remove button 
     expect(box.x + box.width, `${id} ends inside the window`).toBeLessThanOrEqual(420);
     const remove = (await chip.getByRole('button').boundingBox())!;
     expect(remove.x + remove.width, `${id}: its remove button is on screen`).toBeLessThanOrEqual(420);
+    expect(Math.min(remove.width, remove.height), `${id}: a 24×24 hit target (WCAG 2.5.8)`).toBeGreaterThanOrEqual(24);
     // The label is cut with an ellipsis, not clipped mid-letter.
     expect(await chip.locator('.property-chip-label').evaluate((el) => getComputedStyle(el).textOverflow)).toBe('ellipsis');
+    // A cut value can still be read in full: on hover.
+    expect(await chip.locator('.property-chip-label').getAttribute('title')).toBe(id.replace('property-chip-', ''));
   }
   // Nothing in the panel makes the page scroll sideways.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(420);
