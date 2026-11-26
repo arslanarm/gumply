@@ -114,6 +114,7 @@ export {
   encodeHref,
   isAttachmentPath,
   looksLikeAttachmentHref,
+  markdownPageLinks,
   normaliseVaultPath,
   noteFolder,
   relinkAttachments,

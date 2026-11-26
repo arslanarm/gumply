@@ -124,6 +124,28 @@ export function looksLikeAttachmentHref(href: string): boolean {
 const MARKDOWN_LINK = /(!?)\[((?:[^\]\\]|\\.)*)\]\(\s*(<[^>\n]*>|[^)\s]+)((?:\s+"[^"\n]*")?\s*)\)/g;
 
 /**
+ * #idmfvvkg (Obsidian parity): the pages a note's Markdown links point at,
+ * `[x](Note.md)` and `![x](Note.md)`, in document order, outside code. The
+ * href is read as D23 reads an attachment link: `<…>`, %-escapes, `./`,
+ * `../` and a `#heading` / `?…` suffix; note-relative first, then from the
+ * vault root. Only a path ending in `.md` that is an existing page counts
+ * (`isPage` gets the id, the path without `.md`): an unresolved one is no
+ * ghost, since a path isn't a title. External links and paths that leave
+ * the vault are skipped.
+ */
+export function markdownPageLinks(noteId: string, markdown: string, isPage: (id: string) => boolean): string[] {
+  const out: string[] = [];
+  const pageAt = (vaultPath: string) => /\.md$/i.test(vaultPath) && isPage(vaultPath.slice(0, -3));
+  for (const match of maskCode(markdown).matchAll(MARKDOWN_LINK)) {
+    const href = match[3]!.replace(/^<|>$/g, "");
+    if (!/\.md$/i.test(decodeHref(href.split(/[?#]/)[0] ?? ""))) continue;
+    const vaultPath = resolveAttachmentHref(noteId, href, pageAt);
+    if (vaultPath !== null && pageAt(vaultPath)) out.push(vaultPath.slice(0, -3));
+  }
+  return out;
+}
+
+/**
  * Rewrite a note's own attachment links after it moved from `fromNoteId` to
  * `toNoteId` (D23 "On move"). Only Markdown links/images that point into
  * `attachments/` change; Obsidian `![[x.png]]` (name-based), external links,

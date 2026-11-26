@@ -24,6 +24,7 @@ import {
   isValidPageId,
   makeSnippet,
   markdownLinks,
+  markdownPageLinks,
   linkSnippet,
   plainText,
   type MarkdownLink,
@@ -5780,7 +5781,18 @@ export class VaultStore {
   private edgesFor(record: PageRecord, metas: readonly PageMeta[]): LinkEdge[] {
     const fromProperties = record.propertyLinks?.pages.map((entry) => entry.link) ?? [];
     const edges = this.aliasedEdges(collectLinkEdges(record.id, record.content, metas, fromProperties));
-    if (!record.board) return edges;
+    if (!record.board) {
+      // #idmfvvkg: `[x](Note.md)` links a page too (Obsidian), once per target, next to its `[[links]]`.
+      let seen: Set<PageId> | null = null;
+      for (const id of markdownPageLinks(record.id, record.content, (candidate) => this.pages.get(candidate)?.kind === "page")) {
+        if (id === record.id) continue;
+        seen ??= new Set(edges.map((edge) => edge.target).filter((target): target is PageId => target !== null));
+        if (seen.has(id)) continue;
+        seen.add(id);
+        edges.push({ source: record.id, target: id, targetTitle: this.pages.get(id)!.title });
+      }
+      return edges;
+    }
     const seen = new Set(edges.map((edge) => edge.target ?? `?${edge.targetTitle.toLowerCase()}`));
     for (const link of canvasLinks(record.board)) {
       if (link.kind !== "file") continue;
