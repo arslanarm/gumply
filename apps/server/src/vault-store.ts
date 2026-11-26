@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants, existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { access, link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { access, copyFile, link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   MAX_PASTE_OPTIONS,
@@ -1084,24 +1084,24 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-/** Error codes of a file system that can't make a hard link here (FAT/exFAT, some network or FUSE mounts). */
-const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV", "EMLINK"]);
-
 /**
  * #bfy92cu6 (from #zy9dqwwz): move one file to `to` only if nothing is there, never replacing a file another
  * app made at that name since we checked (`rename` would). `link` fails with EEXIST atomically; then the source
- * goes. Throws an error with code EEXIST when the name is taken. Where hard links aren't available, a check right
- * before `rename` narrows the window (it can't close it without RENAME_NOREPLACE, which Node doesn't expose).
+ * goes. Throws an error with code EEXIST when the name is taken.
+ *
+ * Where hard links aren't available (FAT/exFAT USB vaults, some network or FUSE mounts; which errno Windows
+ * reports there isn't documented, so any `link` error but EEXIST and ENOENT), the file is copied with
+ * COPYFILE_EXCL, itself no-replace, its times kept, and then the source goes (@lead).
  */
 async function moveFileNoReplace(from: string, to: string): Promise<void> {
   try {
     await link(from, to);
   } catch (error) {
     const code = (error as { code?: string }).code ?? "";
-    if (!NO_HARD_LINKS.has(code)) throw error;
-    if (await lstat(to).then(() => true, () => false)) throw Object.assign(new Error(`EEXIST: file already exists, ${to}`), { code: "EEXIST" });
-    await rename(from, to);
-    return;
+    if (code === "EEXIST" || code === "ENOENT") throw error;
+    const info = await stat(from);
+    await copyFile(from, to, fsConstants.COPYFILE_EXCL);
+    await utimes(to, info.atime, info.mtime).catch(() => undefined);
   }
   await unlink(from);
 }
