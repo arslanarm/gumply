@@ -37,17 +37,22 @@ export function SelectPicker(props: {
   // containment and the table's own scroll box clipped it, so it was focused and taking keys but couldn't be seen.
   // Under the cell, or above it when it doesn't fit below and there's more room above; it follows a scroll.
   useLayoutEffect(() => {
+    let natural: number | undefined;
     const placeIt = () => {
       const cell = anchorRef.current?.parentElement;
       const picker = pickerRef.current;
       if (!cell || !picker) return;
       const box = cell.getBoundingClientRect();
-      const height = picker.offsetHeight;
+      // Its own height, from before any cap below (so a scroll doesn't flip it back and forth).
+      natural ??= picker.offsetHeight;
+      const height = natural;
       const below = window.innerHeight - box.bottom;
       const up = below < height + 8 && box.top > below;
       const width = Math.max(box.width, 224);
       const left = Math.max(8, Math.min(box.left, window.innerWidth - width - 8));
-      setPlace(up ? { left, width, bottom: window.innerHeight - box.top } : { left, width, top: box.bottom });
+      // Never taller than the room on its side (its list scrolls inside): on a short window it stays whole.
+      const maxHeight = Math.max(96, (up ? box.top : below) - 8);
+      setPlace(up ? { left, width, maxHeight, bottom: window.innerHeight - box.top } : { left, width, maxHeight, top: box.bottom });
     };
     placeIt();
     window.addEventListener("scroll", placeIt, true);
