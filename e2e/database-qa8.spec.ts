@@ -197,3 +197,25 @@ test('Escape with text in the picker\'s search closes it and adds nothing; keys 
   expect(base).not.toContain('Brand new');
   expect(await fs.readFile(path.join(E2E_VAULT, 'Team/Blake.md'), 'utf8')).toBe(TEAM['Team/Blake.md']);
 });
+
+test('when nothing matches, the picker names "Add “…”" as its active option, so a screen reader hears what Enter will do (pass 8, @opus-editor, @lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, TEAM);
+  await openTeam(page);
+  await page.getByTestId('base-typing-input').click();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  const search = page.getByTestId('base-select-search');
+  await expect(search).toBeFocused();
+  await page.keyboard.type('Brand new');
+  const active = await search.getAttribute('aria-activedescendant');
+  expect(active, 'an active option while nothing matches').toBeTruthy();
+  const item = page.locator(`[id="${active}"]`);
+  await expect(item).toHaveAttribute('role', 'option');
+  await expect(item).toHaveText('Add “Brand new”');
+  // It's in the listbox the combobox controls.
+  const listId = (await search.getAttribute('aria-controls'))!;
+  await expect(page.locator(`[id="${listId}"] [id="${active}"]`)).toHaveCount(1);
+  await page.keyboard.press('Escape');
+});
