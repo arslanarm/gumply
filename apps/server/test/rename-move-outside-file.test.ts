@@ -83,6 +83,11 @@ describe("a page rename or move never replaces a file another app just made at t
     expect(all["Final.md"]).toBe(OUTSIDE);
     expect(all["Final 2.md"]).toContain("My notes.");
     expect(all["Draft.md"]).toBeUndefined();
+    // The rename chain's first step (#ber4hvce) sits under the name the rename ended at, not the taken one
+    // (another app's file now) (@opus-editor's nit, @lead).
+    const chains = (store as unknown as { renameRewrites: Map<string, unknown[]> }).renameRewrites;
+    expect(chains.has("Final 2")).toBe(true);
+    expect(chains.has("Final")).toBe(false);
   });
 
   it("move (Draft → Archive/Draft)", async () => {
