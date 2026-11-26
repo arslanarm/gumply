@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test, expect } from './fixtures';
 import { API_URL, E2E_VAULT } from './support/env';
@@ -80,6 +80,7 @@ test('typing during the rename of a page with only self-links: the typed text go
   expect(text).toContain('[[Moved]]');
   expect(text).not.toContain('[[Parent]]');
   expect(text, 'the stale body was not saved').not.toContain('Typed during.');
+  expect(existsSync(path.join(E2E_VAULT, 'Parent.md')), 'no old file left').toBe(false);
   const items = ((await (await request.get(`${API_URL}/api/history/Moved`)).json()) as { items: Array<{ file: string; reason?: string }> }).items;
   const kept = items.find((item) => item.reason === 'before-reload');
   expect(kept, 'the typed text is in History').toBeDefined();
