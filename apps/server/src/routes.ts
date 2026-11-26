@@ -237,7 +237,7 @@ export function createApiRoutes(store: VaultStore): Hono {
 
   api.put("/properties/:key", async (c) => {
     const body = await readJson(c);
-    return c.json<PropertyInfo[]>(await store.setPropertyType(c.req.param("key"), body.type as PropertyType));
+    return c.json<PropertyInfo[]>(await store.setPropertyType(c.req.param("key"), body.type as PropertyType, { ifAbsent: body.ifAbsent === true }));
   });
 
   api.delete("/pages/:id", async (c) => {

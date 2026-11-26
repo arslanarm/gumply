@@ -473,8 +473,11 @@ export const api = {
   listProperties: (): Promise<PropertyInfo[]> => request("/properties"),
 
   /** v1.12: change a key's type vault-wide (types.json; files keep their values). */
-  setPropertyType: (key: string, type: PropertyType): Promise<PropertyInfo[]> =>
-    mutate(() => request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type }) })),
+  /** `ifAbsent` (#7prbquxu): only when the types file has no entry for the key yet (a database column's type). */
+  setPropertyType: (key: string, type: PropertyType, options: { ifAbsent?: boolean } = {}): Promise<PropertyInfo[]> =>
+    mutate(() =>
+      request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type, ...(options.ifAbsent ? { ifAbsent: true } : {}) }) }),
+    ),
 
   deletePage: (id: PageId): Promise<DeletePageResult> =>
     mutate(async () => {
@@ -549,7 +552,12 @@ export const api = {
   changeOwnedRowsProperty: (
     baseId: PageId,
     change: { rename: { from: string; to: string } } | { remove: string },
-  ): Promise<{ changed: PageId[]; skipped: Array<{ id: PageId; title: string }>; clash: Array<{ id: PageId; title: string }> }> =>
+  ): Promise<{
+    changed: PageId[];
+    skipped: Array<{ id: PageId; title: string }>;
+    clash: Array<{ id: PageId; title: string }>;
+    stuck: Array<{ id: PageId; title: string }>;
+  }> =>
     mutate(() => request(`${basePath(baseId)}/rows-property`, { method: "POST", body: JSON.stringify(change) })),
 
   setPageProperties: (

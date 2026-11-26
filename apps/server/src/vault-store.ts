@@ -357,6 +357,8 @@ export interface OwnedRowsChange {
   skipped: Array<{ id: PageId; title: string }>;
   /** A rename's new name that these rows already have: nothing was written. */
   clash: Array<{ id: PageId; title: string }>;
+  /** After a refused rename: rows that couldn't be put back, so they keep the new name. */
+  stuck: Array<{ id: PageId; title: string }>;
 }
 
 interface PageRecord extends Omit<Page, "childCount"> {
@@ -2299,11 +2301,13 @@ export class VaultStore {
   }
 
   /** Change a key's type vault-wide (types.json only; files keep their values, as in Obsidian). */
-  setPropertyType(key: string, type: PropertyType): Promise<PropertyInfo[]> {
+  /** `ifAbsent` (#7prbquxu): only when the types file has no entry for the key (any case), used or not. */
+  setPropertyType(key: string, type: PropertyType, options: { ifAbsent?: boolean } = {}): Promise<PropertyInfo[]> {
     return this.enqueue(async () => {
       if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest("Not a property key");
       if (!isPropertyType(type)) throw badRequest("Unknown property type");
-      await this.propertyTypes.set(key, type);
+      if (options.ifAbsent) await this.propertyTypes.addMissing({ [key]: type });
+      else await this.propertyTypes.set(key, type);
       return (await this.propertyIndex()).infos();
     });
   }
@@ -3490,7 +3494,7 @@ export class VaultStore {
       if (to !== null && present.has(to)) clash.push(record);
     }
     const named = (records: PageRecord[]) => records.map((record) => ({ id: record.id, title: record.title }));
-    if (clash.length) return { changed: [], skipped: [], clash: named(clash) };
+    if (clash.length) return { changed: [], skipped: [], clash: named(clash), stuck: [] };
     const changed: Array<{ id: PageId; updated: string }> = [];
     const skipped: PageRecord[] = [];
     for (const record of rows) {
@@ -3504,13 +3508,21 @@ export class VaultStore {
       }
     }
     if (to !== null && skipped.length) {
-      // All or nothing: the rows already renamed go back.
+      // All or nothing: the rows already renamed go back. One that can't (changed again or locked
+      // meanwhile) keeps the new name, and is named so nothing is silently half-renamed (@lead).
+      const stuck: PageRecord[] = [];
       for (const row of changed) {
-        await this.updateNow(row.id, { properties: { rename: [{ from: to, to: key }] }, expectedUpdated: row.updated }).catch(() => undefined);
+        try {
+          await this.updateNow(row.id, { properties: { rename: [{ from: to, to: key }] }, expectedUpdated: row.updated });
+        } catch (error) {
+          if (!(error instanceof VaultError)) throw error;
+          const record = this.pages.get(row.id);
+          if (record) stuck.push(record);
+        }
       }
-      return { changed: [], skipped: named(skipped), clash: [] };
+      return { changed: [], skipped: named(skipped), clash: [], stuck: named(stuck) };
     }
-    return { changed: changed.map((row) => row.id), skipped: named(skipped), clash: [] };
+    return { changed: changed.map((row) => row.id), skipped: named(skipped), clash: [], stuck: [] };
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {

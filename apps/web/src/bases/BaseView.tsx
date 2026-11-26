@@ -299,15 +299,16 @@ export function BaseView(props: BaseViewProps) {
     async (column: BaseColumn, to: string) => {
       const from = column.id.slice(5);
       try {
-        // Whether the new name has a type in the vault already (asked before any row has it).
-        const typed = (await api.listProperties()).some((info) => info.key === to);
         const result = await api.changeOwnedRowsProperty(baseId, { rename: { from, to } });
         if (result.clash.length) props.onError?.(t("bases.renameClash", { name: to, titles: titleList(result.clash) }));
-        else if (result.skipped.length) props.onError?.(t("bases.renameRowsFailed", { name: from, titles: titleList(result.skipped) }));
-        else {
-          // The new name takes the old one's type only when it has none (it may type other databases).
-          if (!typed && column.type && column.type !== "file" && column.type !== "formula") {
-            await api.setPropertyType(to, column.type as PropertyType).catch(() => undefined);
+        else if (result.skipped.length) {
+          const failed = t("bases.renameRowsFailed", { name: from, titles: titleList(result.skipped) });
+          // Rows that couldn't be put back keep the new name: say so, never silently half-renamed.
+          props.onError?.(result.stuck.length ? `${failed} ${t("bases.renameStuck", { name: to, titles: titleList(result.stuck) })}` : failed);
+        } else {
+          // The new name takes the old one's type only when the types file has none for it (it may type other databases).
+          if (column.type && column.type !== "file" && column.type !== "formula") {
+            await api.setPropertyType(to, column.type as PropertyType, { ifAbsent: true }).catch(() => undefined);
           }
           await saveConfig(renameKeyInConfig(docRef.current.config, from, to));
         }

@@ -283,7 +283,8 @@ export function TableView(props: TableViewProps) {
   const viewOrder = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
   // #7prbquxu: "+" adds a column (spec/database-tables §4); the type goes to types.json only for a new key.
   const addColumn = async (key: string, type: PropertyType, setType: boolean) => {
-    if (setType) await api.setPropertyType(key, type).catch(() => undefined);
+    // Only when the types file has none for the key (a key typed there but used nowhere keeps its type).
+    if (setType) await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
     props.onChangeView({ ...view, order: [...viewOrder, key] });
   };
   const sorts = Array.isArray(view.sort) ? view.sort : [];
