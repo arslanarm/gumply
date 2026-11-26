@@ -7,7 +7,7 @@
  * only what changed) or a page's properties (`PUT /pages/:id`, v1.12).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta } from "@gumply/core";
+import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta, PropertiesPatch, PropertyType } from "@gumply/core";
 import { ownedRowsFolder } from "@gumply/core";
 import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
@@ -18,6 +18,7 @@ import { ViewToolbar, type Panel } from "./ViewToolbar.js";
 import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
+import { dropKeyFromConfig, renameKeyInConfig } from "./columns.js";
 import { BaseLinks } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
 import { registerSaver } from "../lib/pending-saves.js";
@@ -88,6 +89,8 @@ export function BaseView(props: BaseViewProps) {
   const [activeName, setActiveName] = useState<string | null>(() => embed?.viewName ?? views[0]?.name ?? null);
   const active = views.find((view) => view.name === activeName) ?? views[0] ?? null;
   const [result, setResult] = useState<BaseViewResult | null>(null);
+  const resultRef = useRef(result);
+  resultRef.current = result;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState<{ panel: Panel; n: number } | null>(null);
@@ -279,6 +282,61 @@ export function BaseView(props: BaseViewProps) {
       }
       await load();
       return saved;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [load],
+  );
+
+  /**
+   * #7prbquxu (spec/database-tables §4): an owned database's column renamed or deleted in its rows (only the
+   * rows that have it), then everywhere the base names it. A row that fails is named; the rest go on.
+   */
+  const patchRows = useCallback(
+    async (column: BaseColumn, patch: (key: string) => PropertiesPatch) => {
+      const key = column.id.slice(5);
+      const rows = (resultRef.current?.rows ?? []).filter((row) => row.values[column.id] !== undefined && row.values[column.id] !== null);
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await api.patchPageProperties(row.id, patch(key), row.updated);
+        } catch {
+          failed += 1;
+        }
+      }
+      if (failed) props.onError?.(t("bases.columnRowsFailed", { count: failed }));
+      return key;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const renameColumn = useCallback(
+    async (column: BaseColumn, to: string) => {
+      const key = await patchRows(column, (from) => ({ rename: [{ from, to }] }));
+      // The new key takes the old one's type when it has none yet.
+      if (column.type && column.type !== "file" && column.type !== "formula") await api.setPropertyType(to, column.type as PropertyType).catch(() => undefined);
+      await saveConfig(renameKeyInConfig(docRef.current.config, key, to));
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [patchRows, saveConfig, load],
+  );
+  const deleteColumn = useCallback(
+    async (column: BaseColumn) => {
+      const key = await patchRows(column, (from) => ({ remove: [from] }));
+      await saveConfig(dropKeyFromConfig(docRef.current.config, key));
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [patchRows, saveConfig, load],
+  );
+  const setColumnType = useCallback(
+    async (column: BaseColumn, type: PropertyType) => {
+      try {
+        await api.setPropertyType(column.id.slice(5), type);
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [load],
@@ -499,7 +557,9 @@ export function BaseView(props: BaseViewProps) {
           onEditValue={editValue}
           onRename={rename}
           onNewRow={() => void newRow()}
-          {...(ownedRowsFolder(config) ? { onAddRow: (title: string) => newRow(undefined, title) } : {})}
+          {...(ownedRowsFolder(config)
+            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
+            : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}
           onRenameDone={() => setRenameRowId(null)}

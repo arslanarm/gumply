@@ -1418,3 +1418,26 @@ ol.base-list {
   opacity: 0.5;
   cursor: default;
 }
+
+/* #7prbquxu: an owned database's column menu: rename, type, delete from all rows. */
+.base-menu-separator {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--border);
+}
+
+.base-popover.is-menu button.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.base-popover.is-menu button.is-danger {
+  color: var(--danger);
+}
+
+.base-rename-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.25rem;
+}

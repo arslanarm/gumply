@@ -9,13 +9,15 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
-import { PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
+import { isValidPropertyKey, PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
 import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
 import { BaseText } from "./values.js";
-import { AddColumn } from "./AddColumn.js";
+import { AddColumn, COLUMN_TYPES } from "./AddColumn.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
 import { api } from "../api/client.js";
 import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
@@ -49,6 +51,10 @@ export interface TableViewProps {
    */
   onAddRow?: (title: string) => Promise<string | void>;
   onChangeView: (view: BaseView) => void;
+  /** #7prbquxu: an owned database's column menu: rename the key in its rows, delete it from them, change its type. */
+  onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
+  onDeleteColumn?: (column: BaseColumn) => Promise<void>;
+  onSetColumnType?: (column: BaseColumn, type: PropertyType) => Promise<void>;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
   onRenameDone?: () => void;
@@ -268,6 +274,12 @@ export function TableView(props: TableViewProps) {
 
   const [headerMenu, setHeaderMenu] = useState<{ column: BaseColumn; anchor: HTMLElement } | null>(null);
   const [addColumnAnchor, setAddColumnAnchor] = useState<HTMLElement | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<BaseColumn | null>(null);
+  const closeHeaderMenu = () => {
+    setHeaderMenu(null);
+    setRenaming(null);
+  };
   const viewOrder = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
   // #7prbquxu: "+" adds a column (spec/database-tables §4); the type goes to types.json only for a new key.
   const addColumn = async (key: string, type: PropertyType, setType: boolean) => {
@@ -482,7 +494,7 @@ export function TableView(props: TableViewProps) {
         <AddColumn anchor={addColumnAnchor} shown={viewOrder.map((id) => writtenId(propertyId(id)))} onClose={() => setAddColumnAnchor(null)} onAdd={addColumn} />
       ) : null}
       {headerMenu ? (
-        <Popover anchor={headerMenu.anchor} onClose={() => setHeaderMenu(null)} label={propertyLabel(headerMenu.column.id, config, t)} testId="base-column-menu" className="is-menu">
+        <Popover anchor={headerMenu.anchor} onClose={closeHeaderMenu} label={propertyLabel(headerMenu.column.id, config, t)} testId="base-column-menu" className="is-menu">
           <button type="button" role="menuitem" onClick={() => (setSort(headerMenu.column, "ASC"), setHeaderMenu(null))}>
             {t("bases.sortAsc")}
           </button>
@@ -494,9 +506,130 @@ export function TableView(props: TableViewProps) {
               {t("bases.hideProperty")}
             </button>
           )}
+          {grid && headerMenu.column.editable && headerMenu.column.id.startsWith("note.") ? (
+            <ColumnEdits
+              column={headerMenu.column}
+              shown={viewOrder.map((id) => writtenId(propertyId(id)))}
+              renaming={renaming}
+              onStartRename={() => setRenaming(headerMenu.column.id.slice(5))}
+              onRenameChange={setRenaming}
+              onRename={async (to) => {
+                const column = headerMenu.column;
+                closeHeaderMenu();
+                await props.onRenameColumn?.(column, to);
+              }}
+              onSetType={async (type) => {
+                const column = headerMenu.column;
+                closeHeaderMenu();
+                await props.onSetColumnType?.(column, type);
+              }}
+              onDelete={() => {
+                setConfirmDelete(headerMenu.column);
+                closeHeaderMenu();
+              }}
+            />
+          ) : null}
         </Popover>
       ) : null}
+      {confirmDelete ? (
+        <ConfirmDialog
+          heading={t("bases.deleteColumnHeading", { name: confirmDelete.id.slice(5) })}
+          body={t("bases.deleteColumnBody", {
+            count: result.rows.filter((row) => row.values[confirmDelete.id] !== undefined && row.values[confirmDelete.id] !== null).length,
+          })}
+          confirmLabel={t("bases.deleteColumnConfirm")}
+          testId="base-delete-column-dialog"
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => {
+            const column = confirmDelete;
+            setConfirmDelete(null);
+            void props.onDeleteColumn?.(column);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * #7prbquxu (spec/database-tables §4): an owned database's column menu, after sort and Hide: Rename (the key
+ * in this database's rows), the type (types.json), and Delete from all rows (asks first).
+ */
+function ColumnEdits(props: {
+  column: BaseColumn;
+  shown: readonly string[];
+  renaming: string | null;
+  onStartRename: () => void;
+  onRenameChange: (name: string) => void;
+  onRename: (to: string) => Promise<void>;
+  onSetType: (type: PropertyType) => Promise<void>;
+  onDelete: () => void;
+}) {
+  const t = useT();
+  const key = props.column.id.slice(5);
+  const draft = props.renaming?.trim() ?? "";
+  const error =
+    props.renaming === null || draft === key || !draft
+      ? null
+      : !isValidPropertyKey(draft)
+        ? t("properties.invalidName")
+        : props.shown.includes(draft)
+          ? t("bases.columnExists", { name: draft })
+          : null;
+  return (
+    <>
+      <div className="base-menu-separator" role="separator" />
+      {props.renaming === null ? (
+        <button type="button" role="menuitem" data-testid="base-rename-column" onClick={props.onStartRename}>
+          <Icon name="pencil" size={14} />
+          {t("properties.rename")}
+        </button>
+      ) : (
+        <div className="base-rename-column">
+          <input
+            className="base-input"
+            data-testid="base-rename-column-input"
+            aria-label={t("bases.columnName")}
+            aria-invalid={error ? true : undefined}
+            autoFocus
+            value={props.renaming}
+            onChange={(event) => props.onRenameChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              if (event.key === "Enter") {
+                event.preventDefault();
+                if (draft && draft !== key && !error) void props.onRename(draft);
+              }
+            }}
+          />
+          {error ? (
+            <div className="base-add-column-note is-error" role="alert" data-testid="base-rename-column-error">
+              {error}
+            </div>
+          ) : null}
+        </div>
+      )}
+      <div className="base-panel-title">{t("properties.type")}</div>
+      {COLUMN_TYPES.map((type) => (
+        <button
+          key={type}
+          type="button"
+          role="menuitemradio"
+          aria-checked={type === props.column.type}
+          className={type === props.column.type ? "is-current" : ""}
+          data-testid={`base-column-type-${type}`}
+          onClick={() => void (type === props.column.type ? undefined : props.onSetType(type))}
+        >
+          <PropertyTypeIcon type={type} size={14} />
+          {t(`properties.types.${type}`)}
+        </button>
+      ))}
+      <div className="base-menu-separator" role="separator" />
+      <button type="button" role="menuitem" className="is-danger" data-testid="base-delete-column" onClick={props.onDelete}>
+        <Icon name="trash" size={14} />
+        {t("bases.deleteColumn")}
+      </button>
+    </>
   );
 }
 
