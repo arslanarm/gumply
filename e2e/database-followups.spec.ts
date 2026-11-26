@@ -118,13 +118,19 @@ test('a Select cell\'s picker closes when its cell scrolls out of the table\'s v
   // The second row's Select cell: a click opens its picker.
   await page.locator('[data-row-id="Team/Person 02"] [data-grid-col="1"]').click();
   await expect(page.getByTestId('base-select-picker')).toBeVisible();
-  // Scroll the table so that row goes under the sticky header and beyond.
-  const scrolled = await scroller.evaluate((element) => {
-    element.scrollTop = 600;
-    element.dispatchEvent(new Event('scroll'));
-    return element.scrollTop;
+  // Scroll the table just enough that the row sits under the sticky header while it's still mounted (a farther
+  // scroll unmounts the row, and the picker with it, even without this fix).
+  const row = page.getByTestId('base-row-Team/Person 02');
+  const offset = await page.evaluate(() => {
+    const head = document.querySelector('.base-table-head')!.getBoundingClientRect();
+    const cell = document.querySelector('[data-row-id="Team/Person 02"]')!.getBoundingClientRect();
+    return Math.ceil((cell.top + cell.bottom) / 2 - head.bottom) + 4;
   });
-  expect(scrolled, 'the table scrolls inside itself').toBeGreaterThan(200);
+  await scroller.evaluate((element, by) => {
+    element.scrollTop = by;
+    element.dispatchEvent(new Event('scroll'));
+  }, offset);
+  await expect(row, 'the row is still there, under the header').toHaveCount(1);
   await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
   // Nothing was written by closing it.
   expect(await fs.readFile(path.join(E2E_VAULT, 'Team/Person 02.md'), 'utf8')).toBe('---\nstage: Stage 2\n---\nPerson 02\n');
