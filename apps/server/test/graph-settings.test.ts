@@ -43,8 +43,32 @@ describe("GET/PUT /api/graph/settings", () => {
     expect(await getJson<GraphSettingsResponse>(app, "/api/graph/settings")).toEqual({
       groups: [],
       filters: { search: "", showTags: false, showAttachments: false, hideUnresolved: false, showOrphans: true },
+      forces: { center: 1, repel: 1, linkStrength: 1, linkDistance: 1 },
       source: "default",
     });
+  });
+
+  it("#nadk3urm: forces are saved once changed, clamped, kept with unknown keys; untouched forces add nothing to the file", async () => {
+    const { app, dir } = await vault({ ".gumply/graph.json": JSON.stringify({ groups: [], filters: {}, zoom: 2 }) });
+    // A save that doesn't change the forces leaves no `forces` key behind.
+    await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [{ query: "tag:#a", color: "#112233" }] });
+    expect(JSON.parse(await readFile(join(dir, ".gumply/graph.json"), "utf8"))).not.toHaveProperty("forces");
+
+    const put = await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [], forces: { center: 0, repel: 9, linkStrength: "x", linkDistance: 0.5 } });
+    expect(put.status).toBe(200);
+    // Out of range → clamped (repel ≤ 3); not a number → the default.
+    expect(await put.json()).toMatchObject({ forces: { center: 0, repel: 3, linkStrength: 1, linkDistance: 0.5 } });
+    const saved = JSON.parse(await readFile(join(dir, ".gumply/graph.json"), "utf8")) as Record<string, unknown>;
+    expect(saved.forces).toEqual({ center: 0, repel: 3, linkStrength: 1, linkDistance: 0.5 });
+    expect(saved.zoom).toBe(2);
+
+    // A key Gumply doesn't know stays; going back to the defaults keeps the (now default) forces in the file.
+    await writeFile(join(dir, ".gumply/graph.json"), JSON.stringify({ ...saved, forces: { ...(saved.forces as object), gravity: 7 } }));
+    await jsonRequest(app, "PUT", "/api/graph/settings", { groups: [], forces: { center: 1, repel: 1, linkStrength: 1, linkDistance: 1 } });
+    expect(JSON.parse(await readFile(join(dir, ".gumply/graph.json"), "utf8")).forces).toEqual({ center: 1, repel: 1, linkStrength: 1, linkDistance: 1, gravity: 7 });
+    expect((await getJson<GraphSettingsResponse>(app, "/api/graph/settings")).forces).toEqual({ center: 1, repel: 1, linkStrength: 1, linkDistance: 1 });
+
+    expect((await jsonRequest(app, "PUT", "/api/graph/settings", { forces: [1] })).status).toBe(400);
   });
 
   it("starts from .obsidian/graph.json, then saves only to .gumply/graph.json; .obsidian stays byte-identical", async () => {

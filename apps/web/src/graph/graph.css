@@ -669,6 +669,39 @@
   margin-top: 0.15rem;
 }
 
+/* #nadk3urm: Forces. The name and its value on one line, the slider full width under them. */
+.graph-panel-body > label.graph-panel-slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+  cursor: default;
+}
+
+.graph-panel-slider-value {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.graph-panel-slider input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0 0 0.2rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.graph-forces-reset {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+}
+
+.graph-forces-reset:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .graph-legend-query {
   overflow: hidden;
   text-overflow: ellipsis;

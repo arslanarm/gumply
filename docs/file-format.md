@@ -94,7 +94,7 @@ All of these are hidden, and none of them are your notes. When Gumply replaces o
 | `.gumply/mcp.json` | AI app access for this vault: `{"enabled": true, "access": "read"}` (`read`, `append` or `edit`). Missing means read-only. | Yes. AI apps go back to read-only. |
 | `.gumply/mcp-log.jsonl` (+ `.1`, `.2`) | One line per change an AI app made: when, which tool, which page, the before and after versions, and which app. No note text. Rotated at 5 MB. | Yes. |
 | `.gumply/types.json` | Property types, when the vault has no `.obsidian/` folder. | Yes. Types are guessed from values again. |
-| `.gumply/graph.json` | Graph colour groups and filters. Saving keeps any settings Gumply doesn't know; a damaged file is moved aside as `graph.json.invalid-<time>`. | Yes. |
+| `.gumply/graph.json` | Graph colour groups, filters and forces (the Forces sliders, saved once you change them: each a multiplier on Gumply's own force, 1 = unchanged; Obsidian's force values aren't read). Saving keeps any settings Gumply doesn't know; a damaged file is moved aside as `graph.json.invalid-<time>`. | Yes. |
 | `.gumply/sync-dismissed.json` | Pages you marked **Not a copy**. | Yes. They may be flagged again. |
 | `.gumply/demo-seeded.json` | Remembers that the demo pages were added once. | Yes. |
 | `.gumply/import/` | A Notion import while it's running. Removed when it ends. | Yes, when no import is running. |

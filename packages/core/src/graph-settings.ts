@@ -25,10 +25,30 @@ export interface GraphFilters {
   showOrphans: boolean;
 }
 
+/**
+ * #nadk3urm: the graph's forces, each a multiplier on Gumply's own force (1 =
+ * unchanged), like Obsidian's "Forces" sliders. Multipliers rather than values,
+ * because the default forces depend on the graph's size (a firmer centre pull
+ * for small vaults, a stronger charge for big ones): 1 is the default layout at
+ * every size. Obsidian's own force values (another engine, another scale) are
+ * not read.
+ */
+export interface GraphForces {
+  /** The pull of every page towards the middle (0 = none: unlinked groups drift apart). */
+  center: number;
+  /** How hard pages push each other away. */
+  repel: number;
+  /** How hard a link pulls its two pages together. */
+  linkStrength: number;
+  /** A link's resting length. */
+  linkDistance: number;
+}
+
 export interface GraphSettings {
   /** In order: the first group whose query matches colours a node. */
   groups: GraphGroup[];
   filters: GraphFilters;
+  forces: GraphForces;
 }
 
 export type GraphSettingsSource = "gumply" | "obsidian" | "default";
@@ -49,7 +69,24 @@ export const DEFAULT_GRAPH_FILTERS: GraphFilters = {
   showOrphans: true,
 };
 
-export const DEFAULT_GRAPH_SETTINGS: GraphSettings = { groups: [], filters: DEFAULT_GRAPH_FILTERS };
+export const DEFAULT_GRAPH_FORCES: GraphForces = { center: 1, repel: 1, linkStrength: 1, linkDistance: 1 };
+
+/** Each force's range and step (the panel's sliders use the same). */
+export const GRAPH_FORCE_RANGES: Record<keyof GraphForces, { min: number; max: number; step: number }> = {
+  center: { min: 0, max: 2, step: 0.05 },
+  repel: { min: 0, max: 3, step: 0.05 },
+  linkStrength: { min: 0, max: 2, step: 0.05 },
+  linkDistance: { min: 0.25, max: 4, step: 0.05 },
+};
+
+export const GRAPH_FORCE_KEYS = Object.keys(DEFAULT_GRAPH_FORCES) as Array<keyof GraphForces>;
+
+/** Whether every force is at its default (1). */
+export function isDefaultGraphForces(forces: GraphForces): boolean {
+  return GRAPH_FORCE_KEYS.every((key) => forces[key] === DEFAULT_GRAPH_FORCES[key]);
+}
+
+export const DEFAULT_GRAPH_SETTINGS: GraphSettings = { groups: [], filters: DEFAULT_GRAPH_FILTERS, forces: DEFAULT_GRAPH_FORCES };
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -81,7 +118,21 @@ export function normalizeGraphSettings(raw: unknown): GraphSettings {
       hideUnresolved: flag("hideUnresolved"),
       showOrphans: flag("showOrphans"),
     },
+    forces: normalizeGraphForces(data.forces),
   };
+}
+
+/** Forces from untrusted JSON: each one a finite number clamped to its range, else the default (1). */
+export function normalizeGraphForces(raw: unknown): GraphForces {
+  const data = isObject(raw) ? raw : {};
+  const forces = { ...DEFAULT_GRAPH_FORCES };
+  for (const key of GRAPH_FORCE_KEYS) {
+    const value = data[key];
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    const { min, max } = GRAPH_FORCE_RANGES[key];
+    forces[key] = Math.min(max, Math.max(min, value));
+  }
+  return forces;
 }
 
 /**
@@ -103,6 +154,11 @@ export function mergeGraphSettings(onDisk: unknown, next: GraphSettings): Record
     return { ...match, query: group.query, color: group.color };
   });
   merged.filters = { ...(isObject(disk.filters) ? disk.filters : {}), ...next.filters };
+  // #nadk3urm: written once they're changed (or already in the file), so a vault
+  // whose forces were never touched keeps its file as it was.
+  if (isObject(disk.forces) || !isDefaultGraphForces(next.forces)) {
+    merged.forces = { ...(isObject(disk.forces) ? disk.forces : {}), ...next.forces };
+  }
   return merged;
 }
 

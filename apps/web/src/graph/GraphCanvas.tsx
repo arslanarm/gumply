@@ -1,4 +1,4 @@
-import type { GraphNode } from "@gumply/core";
+import type { GraphForces, GraphNode } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -30,7 +30,7 @@ import {
   type FitItem,
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
-import { engineTicks, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
+import { engineTicks, forcesToken, forceStrengths, LAYOUT_SETTINGS, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
 import { ghostStrokeWidth, linkWidthFor } from "./link-width.js";
 import { startLayout } from "./layout-client.js";
 import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
@@ -70,6 +70,11 @@ export interface GraphCanvasProps {
    * stable (memoised): a new function re-styles every node.
    */
   colorOf?: (node: GraphNode, palette: readonly string[]) => string | null;
+  /**
+   * #nadk3urm: the graph panel's Forces (multipliers, 1 = Gumply's own forces).
+   * Absent: the defaults. A change re-arranges the graph.
+   */
+  forces?: GraphForces;
 }
 
 interface ThemeColors {
@@ -322,6 +327,7 @@ export function GraphCanvas({
   onOpenPage,
   onCreatePage,
   colorOf,
+  forces,
 }: GraphCanvasProps) {
   useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -329,6 +335,8 @@ export function GraphCanvas({
   const graphRef = useRef<ForceGraphMethods<CanvasNode, GraphLink> | undefined>(undefined);
   const fitTimer = useRef<number | null>(null);
   const size = useElementSize(containerRef);
+  /** #nadk3urm: the effects re-run when a force changes, not when a new object has the same values. */
+  const forcesKey = forcesToken(forces);
   const sizeRef = useRef(size);
   sizeRef.current = size;
   const colors = useThemeColors();
@@ -682,53 +690,45 @@ export function GraphCanvas({
     const graph = graphRef.current;
     if (!graph || !hasSize) return;
 
+    // Every strength comes from forceStrengths, the worker's too (#nadk3urm: with
+    // the panel's Forces). Small vaults get a firmer centring pull so an isolated
+    // page doesn't drift away from a 3-node cluster; big vaults stay airy. The
+    // local graph's pull is shaped like the (tall, narrow) panel (#z5abndiz),
+    // with enough nodes to fill an area (a 2–3 node star would just collapse
+    // into a line along the panel's long side).
+    const { width, height } = sizeRef.current;
+    const strengths = forceStrengths(nodes.length, { local: centerId !== null, width, height, forces });
+
     const link = graph.d3Force("link") as AlphaForce | undefined;
-    (link?.distance as ((value: number) => unknown) | undefined)?.(52);
-    (link?.strength as ((value: number) => unknown) | undefined)?.(0.45);
+    (link?.distance as ((value: number) => unknown) | undefined)?.(strengths.linkDistance);
+    (link?.strength as ((value: number) => unknown) | undefined)?.(strengths.linkStrength);
     if (link) graph.d3Force("link", capAlpha(link, alphaCapRef) as never);
 
     const charge = graph.d3Force("charge") as AlphaForce | undefined;
-    (charge?.strength as ((value: number) => unknown) | undefined)?.(
-      -60 - Math.min(180, nodes.length * 0.6),
-    );
-    (charge?.distanceMax as ((value: number) => unknown) | undefined)?.(1400);
+    (charge?.strength as ((value: number) => unknown) | undefined)?.(strengths.chargeStrength);
+    (charge?.distanceMax as ((value: number) => unknown) | undefined)?.(LAYOUT_SETTINGS.chargeDistanceMax);
     if (charge) graph.d3Force("charge", capAlpha(charge, alphaCapRef) as never);
 
-    // Small vaults need a firmer centring pull so an isolated page doesn't
-    // drift away from a 3-node cluster; big vaults stay airy.
-    const centerStrength = nodes.length <= 12 ? 0.22 : nodes.length <= 60 ? 0.16 : 0.12;
-    // Local graph: pin the current page in the middle, and shape the layout
-    // like the (tall, narrow) panel instead of a circle that leaves half of it
-    // empty (#z5abndiz).
-    let stretchX = 1;
-    let stretchY = 1;
+    // Local graph: pin the current page in the middle.
     if (centerId !== null) {
       const focus = nodes.find((node) => node.id === centerId) as PositionedNode | undefined;
       if (focus) {
         focus.fx = 0;
         focus.fy = 0;
       }
-      // Only with enough nodes to fill an area: a 2–3 node star would just
-      // collapse into a line along the panel's long side.
-      if (nodes.length >= 5) {
-        const { width, height } = sizeRef.current;
-        const aspect = clamp(height / Math.max(1, width), 0.5, 2.5);
-        stretchX = aspect ** 0.35;
-        stretchY = 1 / stretchX;
-      }
     }
     graph.d3Force(
       "x",
-      capAlpha(axisForce("x", centerStrength * stretchX) as never, alphaCapRef) as never,
+      capAlpha(axisForce("x", strengths.centerStrengthX) as never, alphaCapRef) as never,
     );
     graph.d3Force(
       "y",
-      capAlpha(axisForce("y", centerStrength * stretchY) as never, alphaCapRef) as never,
+      capAlpha(axisForce("y", strengths.centerStrengthY) as never, alphaCapRef) as never,
     );
     // The worker lays out big graphs: reheating force-graph's engine would run
     // its ticks on the main thread (#g95wkd9y).
     if (!engine.worker) graph.d3ReheatSimulation();
-  }, [dataKey, hasSize, nodes, centerId, engine.worker]);
+  }, [dataKey, hasSize, nodes, centerId, engine.worker, forcesKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -1202,7 +1202,7 @@ export function GraphCanvas({
     setEngineStopped(false);
     const drawn = nodes as PositionedNode[];
     const { width, height } = sizeRef.current;
-    const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion });
+    const input = layoutInputFor(drawn, links, { centerId, width, height, reducedMotion, forces });
     // Above STREAM_MAX_NODES (or with reduced motion) the graph is drawn once,
     // settled; meanwhile its start layout shows dimmed with a status. With a
     // layout cache, only once the cache has no layout for it (no "Arranging"
@@ -1228,7 +1228,7 @@ export function GraphCanvas({
     // detaches) the input's arrays.
     const store = cachesLayout(drawn.length) ? graphLayoutStore() : null;
     const keyStart = performance.now();
-    const key = store ? layoutCacheKey(drawn.map((node) => node.id), input.links, `${centerId ?? ""}|${reducedMotion ? 1 : 0}`) : "";
+    const key = store ? layoutCacheKey(drawn.map((node) => node.id), input.links, `${centerId ?? ""}|${reducedMotion ? 1 : 0}${forcesKey ? `|f${forcesKey}` : ""}`) : "";
     // Its main-thread cost, readable by the perf probes (`graph-layout-key`).
     if (store) performance.measure?.("graph-layout-key", { start: keyStart });
     let cancelled = false;
@@ -1260,7 +1260,7 @@ export function GraphCanvas({
       cancel();
       setArranging(null);
     };
-  }, [dataKey, engine.worker, hasSize, centerId, reducedMotion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dataKey, engine.worker, hasSize, centerId, reducedMotion, forcesKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // force-graph/d3 rewrite `link.source/target` from ids into node objects.
   // Hand it copies: the model's links must keep their string ids, or the next
