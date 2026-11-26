@@ -12,19 +12,20 @@ Type `[[` and start typing a title. Choose a page from the list, or **Create** a
 - **Link to a heading:** type `[[Roadmap#` to choose one of its headings. `[[#` lists the headings of the page you're on.
 - **Embed:** `![[` embeds a file or image (anywhere in the vault), a board (`![[Plan.canvas]]`) or a database view.
 - **Open a link:** click it.
+- **Markdown links work too:** `[the plan](Roadmap.md)`, Obsidian's other way to write a link, opens the page and counts as a link to it everywhere below.
 
 When several pages share a name, a link means the one in the linking page's own folder first, then the one with the shortest path, as in Obsidian. When you pick such a page from the menu, Gumply writes its path (`[[Projects/Plan|Plan]]`) so the link always means that page.
 
 ## Rename and move without breaking links
 
-- **Rename a page:** links to it in other pages and on boards are updated to the new title. Only the links change; nothing else in those files does.
+- **Rename a page:** links to it in other pages and on boards are updated to the new title, Markdown links (`[text](Old title.md)`) included, each in the form it was written in. Only the links change; nothing else in those files does.
 - **Rename a heading:** links to that heading (`[[Page#Old]]`) are updated too.
-- **Move a page** to another folder: its links keep working, and links to its images and files are adjusted.
-- **Renamed in another app** (Obsidian, a file manager): the sidebar shows the new name within a moment, and the links that app rewrote work as they are. If the page is open, it stays open under the new name, with anything you were typing, and its [history](version-history.md) moves with it.
+- **Move a page** to another folder: its links keep working, links to its images and files are adjusted, and Markdown links to it get its new path.
+- **Renamed in another app** (Obsidian, a file manager, or a sync tool that delivers the old name's removal and the new file a few seconds apart): the sidebar shows the new name within a moment, and the links that app rewrote work as they are. If the page is open, it stays open under the new name, with anything you were typing, and its [history](version-history.md) moves with it.
 
 ## See what links here
 
-At the bottom of every page, **Linked from** lists the pages and boards that link to it, with the line around each link.
+At the bottom of every page, **Linked from** lists the pages and boards that link to it, with `[[links]]` and Markdown links alike, with the line around each link.
 
 ![Linked from, at the bottom of a page](../img/backlinks.en.png)
 
@@ -48,7 +49,8 @@ On any page, the **Local graph** button in the header shows just that page and i
 ### Big vaults
 
 - **Right after opening** a vault with thousands of notes, the sidebar and your pages are there at once, while Gumply still reads the links between them. For that moment the graph and **Linked from** say **Indexing links…**, then fill in. Nothing is missing once they do.
-- **A graph of more than 5,000 notes** first shows its starting layout dimmed, with **Arranging the graph… 40%** counting up, and appears once it has settled. That can take a while on a slow computer; the rest of the app stays usable meanwhile.
+- **A graph of more than 5,000 notes** first shows its starting layout dimmed, with **Arranging the graph… 40%** counting up, and appears once it has settled. That can take a while on a slow computer; the rest of the app stays usable meanwhile. **The next time you open the same graph**, it appears laid out at once: Gumply remembers the layout on this computer (not in your vault) until pages or links change.
+- **While you zoom or move** a big graph, its lines hide for a moment and come back when you stop, so moving stays smooth.
 
 ## The outline
 
@@ -58,4 +60,5 @@ On any page, the **Local graph** button in the header shows just that page and i
 
 - Links in **properties** count too: a property whose value is `"[[Roadmap]]"` is a link, in the graph and in Linked from.
 - A link to a page that doesn't exist yet is still a link. It shows dashed in the graph until you create the page.
-- `\[[not a link]]` (with a backslash) stays plain text, as in Obsidian.
+- `\[[not a link]]` and `\[not a link](Roadmap.md)` (with a backslash) stay plain text, as in Obsidian.
+- A Markdown link to a page that doesn't exist (`[x](Missing.md)`) isn't shown in the graph: it's a path, not a title.

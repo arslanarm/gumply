@@ -34,6 +34,12 @@ Another app (or another window of Gumply) changed the page while you had unsaved
 
 Both sides are also in the page's [version history](version-history.md).
 
+Gumply notices such a change even when the other app keeps the file's size and modification time, or when the file system stores times only to the nearest 2 seconds.
+
+## "Read-only file"
+
+The page's file can't be written: it's read-only on disk (its permissions, a locked sync folder, a read-only drive). The status at the top says **Read-only file**, your edits stay on the page, and nothing is lost. Make the file writable again (in your file manager or sync tool), and Gumply saves it by itself; **Retry** saves at once.
+
 ## A page I deleted
 
 Look in **Trash** at the bottom of the sidebar. A page deleted in another app may have its last versions under **Trash → Earlier versions of deleted pages**.
