@@ -160,6 +160,22 @@ test('a resize (a phone keyboard showing) doesn\'t close an open picker, even wh
   await expect(page.getByTestId('base-select-search')).toBeFocused();
 });
 
+test('a resize that leaves the cell below the fold brings it back above the sticky footer row, the picker open (@polish-dev)', async ({ page, request, vault }) => {
+  void vault;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await writeVault(request, team(TABLE));
+  await openTeam(page);
+  await expect(page.getByTestId('base-table').locator('.base-title-text').first()).toHaveText(NAMES[0]!);
+  await page.locator('[data-row-id="Team/Person 15"] [data-grid-col="1"]').click();
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  // The window shrinks (a phone keyboard) and nothing else scrolls: the row is now below the fold, and is brought
+  // back from below. It must stop above the sticky "N rows" foot, not under it.
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId('base-select-picker')).toBeVisible();
+  expect(await pickerAndCellInView(page, 'Team/Person 15')).toEqual({ picker: true, cell: true });
+});
+
 test('a resize whose own scroll moves the cell up under the sticky header brings it back below it, and the picker stays open (@polish-dev, @lead)', async ({ page, request, vault }) => {
   void vault;
   await page.setViewportSize({ width: 1280, height: 800 });
