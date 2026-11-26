@@ -218,6 +218,65 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(parseBase(await readFile(join(dir, "Team 2.base"), "utf8")).filters).toEqual({ and: ['file.folder == "Team 2"'] });
   });
 
+  it("renames or deletes a property in every row of an owned database, all or nothing (#7prbquxu, @opus-hunter's review)", async () => {
+    const { app, dir } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    limit: 1\n    order:\n      - file.name\n      - role\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
+      "People/Cy.md": "---\nrole:\nage: 7\n---\nCy\n",
+      "People/Deep/Dee.md": "---\nrole: Not a row\n---\nIn a sub-folder\n",
+      "Elsewhere.md": "---\nrole: Not a row\n---\nOutside\n",
+    });
+    const url = `/api/bases/${encodeId("People.base")}/rows-property`;
+    const read = (path: string) => readFile(join(dir, path), "utf8");
+
+    // Every row with the key (also an empty value; also rows the view's limit hides); not deeper, not outside.
+    const renamed = (await (await jsonRequest(app, "POST", url, { rename: { from: "role", to: "job" } })).json()) as { changed: string[] };
+    expect(renamed.changed.sort()).toEqual(["People/Ann", "People/Bo", "People/Cy"]);
+    expect(await read("People/Bo.md")).toBe("---\njob: Pilot\n---\nBo\n");
+    expect(await read("People/Cy.md")).toBe("---\njob:\nage: 7\n---\nCy\n");
+    expect(await read("People/Deep/Dee.md")).toBe("---\nrole: Not a row\n---\nIn a sub-folder\n");
+    expect(await read("Elsewhere.md")).toBe("---\nrole: Not a row\n---\nOutside\n");
+
+    // A name a row already has: nothing written.
+    const clash = (await (await jsonRequest(app, "POST", url, { rename: { from: "job", to: "age" } })).json()) as { changed: string[]; clash: Array<{ title: string }> };
+    expect(clash.changed).toEqual([]);
+    expect(clash.clash.map((row) => row.title)).toEqual(["Cy"]);
+    expect(await read("People/Ann.md")).toBe("---\njob: Cook\n---\nAnn\n");
+
+    // Delete: every row loses the key.
+    const removed = (await (await jsonRequest(app, "POST", url, { remove: "job" })).json()) as { changed: string[]; skipped: unknown[] };
+    expect(removed.skipped).toEqual([]);
+    expect(await read("People/Ann.md")).not.toContain("job");
+    expect(await read("People/Ann.md")).toContain("Ann\n");
+    expect(await read("People/Cy.md")).toBe("---\nage: 7\n---\nCy\n");
+
+    // Not an owned database: refused.
+    await writeFile(join(dir, "Plain.base"), "views:\n  - type: table\n    name: Table\n", "utf8");
+    const store = new VaultStore(dir);
+    await store.init();
+    await expect(store.changeOwnedRowsProperty("Plain.base", { remove: "age" })).rejects.toThrow("doesn't own");
+  });
+
+  it("a database-wide rename that a row refuses puts the renamed rows back (#7prbquxu)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+      "People/Bo.md": "---\nrole: Pilot\n---\nBo\n",
+    });
+    // Another app rewrites Bo with the same size and time after the store read it (#y5k39njn): Bo refuses.
+    const bo = join(dir, "People/Bo.md");
+    const { stat, utimes } = await import("node:fs/promises");
+    const before = await stat(bo);
+    await writeFile(bo, "---\nrole: Pilox\n---\nBo\n", "utf8");
+    await utimes(bo, before.atime, before.mtime);
+    const result = await store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } });
+    expect(result.changed).toEqual([]);
+    expect(result.skipped.map((row) => row.title)).toEqual(["Bo"]);
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
+    expect(await readFile(bo, "utf8")).toBe("---\nrole: Pilox\n---\nBo\n");
+  });
+
   it("a base whose filter no longer reads its marked folder renames alone", async () => {
     const edited = 'gumply:\n  rows: Crew\nfilters:\n  and:\n    - file.inFolder("Crew")\nviews: []\n';
     const { app, dir, store } = await vault({ "Crew.base": edited, "Crew/Bo.md": "Bo\n" });
