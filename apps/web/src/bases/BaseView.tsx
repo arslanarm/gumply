@@ -544,7 +544,7 @@ export function BaseView(props: BaseViewProps) {
       input: {
         files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
         drop: result.created.map((row) => ({ id: row.id, from: row.after })),
-        create: result.dropped.map((row) => ({ id: row.id, to: row.before })),
+        create: result.dropped.map((row) => ({ id: row.id, trashId: row.trashId })),
       },
     };
   };

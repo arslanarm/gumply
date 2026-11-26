@@ -297,7 +297,7 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(existsSync(join(dir, "People/Bo.md"))).toBe(false);
     const redo = await store.undoDatabaseChange("People.base", {
       files: undo.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
-      create: undo.dropped.map((row) => ({ id: row.id, to: row.before })),
+      create: undo.dropped.map((row) => ({ id: row.id, trashId: row.trashId })),
     });
     expect(redo.refused).toEqual([]);
     expect(await readFile(join(dir, "People/Bo.md"), "utf8")).toContain("role: Pilot");

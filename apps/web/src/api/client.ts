@@ -754,15 +754,17 @@ export interface UndoFile {
 /** #7prbquxu phase 4b: one undo (or redo) step of the table. */
 export interface UndoInput {
   files?: Array<{ id: PageId; from: string; to: string }>;
+  /** Rows a paste made: to the Trash (each its own item). */
   drop?: Array<{ id: PageId; from: string }>;
-  create?: Array<{ id: PageId; to: string }>;
+  /** Rows an undo dropped: back from their Trash entry (a redo). */
+  create?: Array<{ id: PageId; trashId: string }>;
 }
 
 /** What a step did: its inverse (redo) from `files`, `dropped` and `created`; empty with `refused`. */
 export interface UndoResult {
   refused: Array<{ id: PageId; title: string }>;
   files: UndoFile[];
-  dropped: Array<{ id: PageId; before: string }>;
+  dropped: Array<{ id: PageId; before: string; trashId: string }>;
   created: Array<{ id: PageId; after: string }>;
   base?: BaseDocument;
 }

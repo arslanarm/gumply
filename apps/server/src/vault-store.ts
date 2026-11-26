@@ -387,17 +387,17 @@ function viewNameOf(input: { viewName?: unknown }): { viewName?: string } {
 export interface UndoInput {
   /** Files back to an earlier version `to`, each only while at `from`. */
   files?: Array<{ id: PageId; from: string; to: string }>;
-  /** Rows a paste made, deleted while still at `from`. */
+  /** Rows a paste made, moved to the Trash while still at `from` (each its own Trash item). */
   drop?: Array<{ id: PageId; from: string }>;
-  /** Rows made again from their History version `to` (a redo of a paste). */
-  create?: Array<{ id: PageId; to: string }>;
+  /** Rows an undo dropped, brought back from their Trash entry at their id (a redo of a paste). */
+  create?: Array<{ id: PageId; trashId: string }>;
 }
 
 /** What an undo step did; `files`, `dropped` and `created` give its inverse (redo). Empty with `refused`. */
 export interface UndoResult {
   refused: Array<{ id: PageId; title: string }>;
   files: UndoFile[];
-  dropped: Array<{ id: PageId; before: string }>;
+  dropped: Array<{ id: PageId; before: string; trashId: string }>;
   created: Array<{ id: PageId; after: string }>;
   base?: BaseDocument;
 }
@@ -2960,10 +2960,12 @@ export class VaultStore {
 
   /**
    * #7prbquxu phase 4b (spec/database-tables §7, @lead): the table's undo (and redo), one queued job, all or nothing.
-   * `files` go back to an earlier History version (`to`), each only while it's still at `from`; `drop` deletes rows
-   * a paste made, only while unchanged; `create` makes rows again from their History version (a redo of a paste).
-   * Everything is checked before any write: a row changed since, a missing History version, or a name taken
-   * refuses the whole step and names the rows. Each file's current bytes are kept as a History version first, so
+   * Only this base and the rows directly in the folder it owns. `files` go back to an earlier History version of
+   * the same file (`to`), each only while it's still at `from` (version and bytes); `drop` moves rows a paste made
+   * to the Trash, only while unchanged; `create` brings such rows back from their Trash entry (a redo).
+   * Everything is checked before any write: a row changed since or read-only, a missing History version or Trash
+   * entry, a name taken, or the rows folder gone refuses the whole step and names the rows. A write failing part
+   * way puts back everything already written. Each file's current bytes are kept as a History version first, so
    * the answer's inverse (redo) can always be applied.
    */
   undoDatabaseChange(id: PageId, input: UndoInput): Promise<UndoResult> {
@@ -2979,87 +2981,196 @@ export class VaultStore {
 
   private async undoDatabaseChangeNow(id: PageId, input: UndoInput): Promise<UndoResult> {
     const base = this.requireBase(id);
-    const folder = this.ownedRowsOf(base, id);
+    // The rows folder this database owns by name; scope is checked against it even when it's gone.
+    const folder = id.slice(0, -idExtension("base").length);
+    const owned = this.ownedRowsOf(base, id) !== null && (await this.folderExists(folder));
     const files = Array.isArray(input?.files) ? input.files : [];
     const drop = Array.isArray(input?.drop) ? input.drop : [];
     const create = Array.isArray(input?.create) ? input.create : [];
-    const inRows = (rowId: PageId) => folder !== null && rowId.startsWith(`${folder}/`) && !rowId.slice(folder.length + 1).includes("/");
+    const inRows = (rowId: PageId) => rowId.startsWith(`${folder}/`) && !rowId.slice(folder.length + 1).includes("/");
     const refused: Array<{ id: PageId; title: string }> = [];
     const titleOf = (rowId: PageId) => this.pages.get(rowId)?.title ?? (rowId.split("/").pop() ?? rowId);
-
-    // Check everything first.
-    const planned: Array<{ record: PageRecord; from: string; bytes: Buffer }> = [];
+    const refuse = (rowId: PageId) => refused.push({ id: rowId, title: titleOf(rowId) });
+    // @lead's point 1: only this base and its own rows, each `to` a version of that same file.
     for (const file of files) {
       if (typeof file?.id !== "string" || typeof file.from !== "string" || typeof file.to !== "string") throw badRequest("each file needs id, from and to");
       if (file.id !== id && !inRows(file.id)) throw badRequest(`not this database or one of its rows: ${file.id}`);
+    }
+    for (const row of drop) {
+      if (typeof row?.id !== "string" || typeof row.from !== "string") throw badRequest("each dropped row needs id and from");
+      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
+    }
+    for (const row of create) {
+      if (typeof row?.id !== "string" || typeof row.trashId !== "string") throw badRequest("each row to bring back needs id and trashId");
+      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
+    }
+    const writable = async (record: PageRecord) => assertWritable(record.filePath).then(() => true, () => false);
+    const unchanged = async (record: PageRecord, from: string) =>
+      record.updated === from && !(await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null)));
+
+    // Check everything first: a row changed since, read-only, a missing History version or Trash entry, a name
+    // taken, or the rows folder gone refuses the whole step (the rows named).
+    const planned: Array<{ record: PageRecord; from: string; bytes: Buffer }> = [];
+    for (const file of files) {
       const record = this.pages.get(file.id);
-      const bytes = record && record.updated === file.from ? await this.historyBytes(file.id, file.to) : null;
-      if (!record || !bytes || record.updated !== file.from || (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null)))) {
-        refused.push({ id: file.id, title: titleOf(file.id) });
+      const isRow = file.id !== id;
+      const bytes = record && (await unchanged(record, file.from)) ? await this.historyBytes(file.id, file.to) : null;
+      if (!record || !bytes || (isRow && !owned) || !(await writable(record))) {
+        refuse(file.id);
         continue;
       }
       planned.push({ record, from: file.from, bytes });
     }
-    const dropping: Array<{ record: PageRecord; from: string }> = [];
+    const dropping: PageRecord[] = [];
     for (const row of drop) {
-      if (typeof row?.id !== "string" || typeof row.from !== "string") throw badRequest("each dropped row needs id and from");
-      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
       const record = this.pages.get(row.id);
-      if (!record || record.updated !== row.from || this.hasChildren(row.id) || (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null)))) {
-        refused.push({ id: row.id, title: titleOf(row.id) });
+      if (!owned || !record || this.hasChildren(row.id) || !(await unchanged(record, row.from)) || !(await writable(record))) {
+        refuse(row.id);
         continue;
       }
-      dropping.push({ record, from: row.from });
+      dropping.push(record);
     }
-    const creating: Array<{ id: PageId; bytes: Buffer }> = [];
+    const bringing: TrashEntry[] = [];
     for (const row of create) {
-      if (typeof row?.id !== "string" || typeof row.to !== "string") throw badRequest("each row to make needs id and to");
-      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
-      const bytes = await this.historyBytes(row.id, row.to);
-      if (!bytes || this.pages.has(row.id) || (await pathExists(this.filePathFor(row.id)))) {
-        refused.push({ id: row.id, title: titleOf(row.id) });
+      const entry = /^[A-Za-z0-9-]+$/.test(row.trashId) ? await this.readTrashEntry(row.trashId) : null;
+      const good =
+        owned &&
+        entry !== null &&
+        !entry.folder &&
+        !entry.with &&
+        entry.id === row.id &&
+        entry.deleted.length === 1 &&
+        (await this.readTrashedRecord(entry, entry.id)) !== null &&
+        !this.pages.has(row.id) &&
+        !(await pathExists(this.filePathFor(row.id))) &&
+        !(await pathExists(join(this.root, row.id)));
+      if (!good) {
+        refuse(row.id);
         continue;
       }
-      creating.push({ id: row.id, bytes });
+      bringing.push(entry!);
     }
     if (refused.length) return { refused, files: [], dropped: [], created: [] };
 
-    // Then write; each file's current bytes go into History first (redo reads them).
-    const written: UndoFile[] = [];
-    for (const { record, from, bytes } of planned) {
-      if (record.kind === "base") {
-        await this.writeBaseFile(record, bytes.toString("utf8"));
-        written.push({ id: record.id, before: from, after: record.updated });
-        continue;
+    // Then write. Each file's current bytes go into History first (redo reads them) and are kept here, so a write
+    // failing part way puts everything already written back (@lead's point 2): never a half-undo.
+    const written: Array<{ id: PageId; before: string; bytes: Buffer; isBase: boolean }> = [];
+    const trashed: Array<{ record: PageRecord; trashId: string }> = [];
+    const brought: Array<{ entry: TrashEntry; record: PageRecord }> = [];
+    try {
+      for (const { record, from, bytes } of planned) {
+        const current = await readFile(record.filePath);
+        if (record.kind === "base") {
+          await this.writeBaseFile(record, bytes.toString("utf8"));
+          written.push({ id: record.id, before: from, bytes: current, isBase: true });
+          continue;
+        }
+        await this.versionBeforeWrite(record.filePath, current);
+        if (!(await this.putPasteBytesBack(record.id, bytes, from))) throw conflict(`${record.title} changed while it was being undone`);
+        written.push({ id: record.id, before: from, bytes: current, isBase: false });
       }
-      await this.versionBeforeWrite(record.filePath, await readFile(record.filePath));
-      if (!(await this.putPasteBytesBack(record.id, bytes, from))) throw conflict(`${record.id} changed while it was being undone`);
-      written.push({ id: record.id, before: from, after: this.pages.get(record.id)!.updated });
+      for (const record of dropping) trashed.push({ record, trashId: await this.trashRowForUndo(record) });
+      for (const entry of bringing) brought.push({ entry, record: await this.bringRowBackForRedo(entry) });
+    } catch (error) {
+      const stuck = await this.putUndoBack(written, trashed, brought);
+      console.error(`[gumply] undo in ${id} failed part way; put back${stuck.length ? `, except ${stuck.join(", ")}` : ""}:`, error);
+      if (stuck.length) throw conflict(`The undo failed part way, and these couldn't be put back: ${stuck.join(", ")}`);
+      throw conflict("The undo failed part way; everything was put back as it was.");
     }
-    const dropped: Array<{ id: PageId; before: string }> = [];
-    for (const { record, from } of dropping) {
-      await this.versionBeforeWrite(record.filePath, await readFile(record.filePath));
-      await rm(record.filePath);
-      this.pages.delete(record.id);
-      this.forgetSessionBytes(record.id);
-      dropped.push({ id: record.id, before: from });
-    }
-    const created: Array<{ id: PageId; after: string }> = [];
-    for (const { id: rowId, bytes } of creating) {
-      const filePath = this.filePathFor(rowId);
-      await mkdir(dirname(filePath), { recursive: true });
-      this.markOwnWrite(filePath);
-      await writeFile(filePath, bytes, { flag: "wx" });
-      const record = await this.readRecord(filePath, rowId);
-      record.parentId = parentOf(rowId);
-      this.pages.set(rowId, record);
-      created.push({ id: rowId, after: record.updated });
-    }
-    if (written.length || dropped.length || created.length) {
+    // Done: the brought rows' Trash entries go (their bytes are back in place).
+    for (const { entry } of brought) await rm(entry.dir, { recursive: true, force: true }).catch(() => undefined);
+    if (written.length || trashed.length || brought.length) {
       await this.syncFolders();
       this.reindexAll();
     }
-    return { refused: [], files: written, dropped, created, base: this.getBase(id) };
+    return {
+      refused: [],
+      files: written.map((file) => ({ id: file.id, before: file.before, after: this.pages.get(file.id)!.updated })),
+      dropped: trashed.map(({ record, trashId }) => ({ id: record.id, before: record.updated, trashId })),
+      created: brought.map(({ record }) => ({ id: record.id, after: record.updated })),
+      base: this.getBase(id),
+    };
+  }
+
+  /**
+   * #7prbquxu phase 4b (@lead's point 3): a row the table's undo drops goes to the Trash as its own item (never
+   * deleted outright; its History stays), as our own write, without a rebuild per row. A redo brings it back.
+   */
+  private async trashRowForUndo(record: PageRecord): Promise<string> {
+    const trashId = await this.freeTrashId();
+    const trashDir = join(this.trashRoot, trashId);
+    const file = relative(this.root, record.filePath).split(sep).join("/");
+    const inTrash = join(trashDir, file);
+    await this.snapshotRecord(record, this.historySource, "trash");
+    const manifest: TrashManifest = { id: record.id, trashId, deleted: [record.id], deletedAt: new Date().toISOString(), file };
+    try {
+      await mkdir(dirname(inTrash), { recursive: true });
+      await writeAtomic(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2));
+      this.markOwnWrite(record.filePath);
+      await rename(record.filePath, inTrash);
+    } catch (error) {
+      await rm(trashDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+    this.pages.delete(record.id);
+    this.forgetSessionBytes(record.id);
+    return trashId;
+  }
+
+  /** A redo: the row back from its Trash entry, at its id (checked free); the entry goes once the whole step is done. */
+  private async bringRowBackForRedo(entry: TrashEntry): Promise<PageRecord> {
+    const source = resolve(entry.dir, entry.file);
+    const target = this.filePathFor(entry.id);
+    this.markOwnWrite(target);
+    await rename(source, target);
+    const record = await this.readRecord(target, entry.id);
+    record.parentId = parentOf(entry.id);
+    this.pages.set(entry.id, record);
+    return record;
+  }
+
+  /** An undo that failed part way: the brought rows back to the Trash, the trashed ones back in place, the written files' bytes back. Returns what couldn't be. */
+  private async putUndoBack(
+    written: ReadonlyArray<{ id: PageId; bytes: Buffer; isBase: boolean }>,
+    trashed: ReadonlyArray<{ record: PageRecord; trashId: string }>,
+    brought: ReadonlyArray<{ entry: TrashEntry; record: PageRecord }>,
+  ): Promise<string[]> {
+    const stuck: string[] = [];
+    for (const { entry, record } of [...brought].reverse()) {
+      try {
+        this.markOwnWrite(record.filePath);
+        await rename(record.filePath, resolve(entry.dir, entry.file));
+        this.pages.delete(record.id);
+      } catch {
+        stuck.push(record.title);
+      }
+    }
+    for (const { record, trashId } of [...trashed].reverse()) {
+      try {
+        const trashDir = join(this.trashRoot, trashId);
+        this.markOwnWrite(record.filePath);
+        await rename(join(trashDir, relative(this.root, record.filePath)), record.filePath);
+        await rm(trashDir, { recursive: true, force: true });
+        this.pages.set(record.id, await this.readRecord(record.filePath, record.id).then((fresh) => ({ ...fresh, parentId: record.parentId })));
+      } catch {
+        stuck.push(record.title);
+      }
+    }
+    for (const file of [...written].reverse()) {
+      const record = this.pages.get(file.id);
+      try {
+        if (!record) throw new Error("gone");
+        if (file.isBase) await this.writeBaseFile(record, file.bytes.toString("utf8"));
+        else if (!(await this.putPasteBytesBack(file.id, file.bytes, record.updated))) throw new Error("changed");
+      } catch {
+        stuck.push(record?.title ?? file.id);
+      }
+    }
+    if (written.length || trashed.length || brought.length) {
+      await this.syncFolders().catch(() => undefined);
+      this.reindexAll();
+    }
+    return stuck;
   }
 
   /**

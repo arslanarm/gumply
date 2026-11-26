@@ -551,7 +551,7 @@ export function createApiRoutes(store: VaultStore): Hono {
     throw badRequest("expected rename: {from, to} or clear: <value>");
   });
 
-  // #7prbquxu phase 4b: one step of the table's undo or redo (files back to a History version, rows dropped or made).
+  // #7prbquxu phase 4b: one step of the table's undo or redo (files back to a History version, rows to the Trash or back from it).
   api.post("/bases/:id/undo", async (c) => {
     const body = await readJson(c);
     return c.json(await store.undoDatabaseChange(c.req.param("id"), body as never));
