@@ -121,7 +121,8 @@ export function looksLikeAttachmentHref(href: string): boolean {
   return /^(?:\.\/|(?:\.\.\/)+)?attachments\//.test(href.replace(/^<|>$/g, ""));
 }
 
-const MARKDOWN_LINK = /(!?)\[((?:[^\]\\]|\\.)*)\]\(\s*(<[^>\n]*>|[^)\s]+)((?:\s+"[^"\n]*")?\s*)\)/g;
+// #idmfvvkg (@polish-dev): `\[x](…)` is literal text in Markdown, not a link.
+const MARKDOWN_LINK = /(?<!\\)(!?)\[((?:[^\]\\]|\\.)*)\]\(\s*(<[^>\n]*>|[^)\s]+)((?:\s+"[^"\n]*")?\s*)\)/g;
 
 /**
  * #idmfvvkg (Obsidian parity): the pages a note's Markdown links point at,
@@ -143,6 +144,80 @@ export function markdownPageLinks(noteId: string, markdown: string, isPage: (id:
     if (vaultPath !== null && pageAt(vaultPath)) out.push(vaultPath.slice(0, -3));
   }
   return out;
+}
+
+/**
+ * #idmfvvkg: after page file `from` was renamed or moved to `to` (vault paths with `.md`), rewrite this
+ * note's Markdown links to it (`[x](Note.md)`, `![x](Note.md)`), each in its own form, and nothing else
+ * (D37). A link counts when it resolves as `markdownPageLinks` reads it: note-relative first, then from
+ * the vault root (a note-relative path that is a page, `isPage`, wins). A rename in place swaps only the
+ * file name's raw segment, so `./`, `../`, a vault-root prefix and `<…>` stay as written; a move rebuilds
+ * the path in the same form (relative, vault-root or /absolute). The `#`/`?` suffix and a title are kept.
+ */
+export function relinkPageFile(
+  markdown: string,
+  noteId: string,
+  from: string,
+  to: string,
+  isPage: (id: string) => boolean,
+): { content: string; count: number } {
+  const same = (path: string | null) => path !== null && path.toLowerCase() === from.toLowerCase();
+  const pageAt = (path: string | null) => path !== null && /\.md$/i.test(path) && isPage(path.slice(0, -3));
+  const folder = noteFolder(noteId);
+  const fromName = from.slice(from.lastIndexOf("/") + 1).toLowerCase();
+  // A rename's batches run this over every page: a text that never spells the file name (as written or
+  // %-encoded) has no link to it, so it's skipped before the code mask.
+  const lower = markdown.toLowerCase();
+  if (!lower.includes(fromName) && !lower.includes(encodeHref(fromName).toLowerCase())) return { content: markdown, count: 0 };
+  const inPlace = noteFolder(from) === noteFolder(to);
+  const masked = maskCode(markdown);
+  let out = "";
+  let last = 0;
+  let count = 0;
+  MARKDOWN_LINK.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_LINK.exec(masked)) !== null) {
+    const href = match[3] ?? "";
+    const wrapped = href.startsWith("<") && href.endsWith(">");
+    const raw = wrapped ? href.slice(1, -1) : href;
+    if (raw.length === 0 || isExternal(raw)) continue;
+    const cut = raw.search(/[?#]/);
+    const pathPart = cut === -1 ? raw : raw.slice(0, cut);
+    const suffix = cut === -1 ? "" : raw.slice(cut);
+    const path = wrapped ? pathPart : decodeHref(pathPart);
+    let form: "absolute" | "relative" | "root";
+    if (path.startsWith("/")) {
+      if (!same(normaliseVaultPath(path))) continue;
+      form = "absolute";
+    } else {
+      const relative = normaliseVaultPath(folder ? `${folder}/${path}` : path);
+      const root = normaliseVaultPath(path);
+      if (same(relative)) form = "relative";
+      else if (same(root) && !pageAt(relative)) form = "root";
+      else continue;
+    }
+    const segments = pathPart.split("/");
+    const name = segments[segments.length - 1] ?? "";
+    let nextPath: string;
+    if (inPlace && (wrapped ? name : decodeHref(name)).toLowerCase() === fromName) {
+      // A rename in place: only the file name's raw segment changes.
+      const toName = to.slice(to.lastIndexOf("/") + 1);
+      nextPath = [...segments.slice(0, -1), wrapped ? toName : encodeHref(toName)].join("/");
+    } else {
+      let rebuilt = form === "absolute" ? `/${to}` : form === "root" ? to : relativePath(noteId, to);
+      if (form === "relative" && pathPart.startsWith("./") && !rebuilt.startsWith("../")) rebuilt = `./${rebuilt}`;
+      nextPath = wrapped ? rebuilt : encodeHref(rebuilt);
+    }
+    const next = wrapped ? `<${nextPath}${suffix}>` : `${nextPath}${suffix}`;
+    if (next === href) continue;
+    const original = markdown.slice(match.index, match.index + match[0].length);
+    const hrefIndex = original.indexOf(href, original.indexOf("](") + 2);
+    if (hrefIndex === -1) continue;
+    out += markdown.slice(last, match.index) + original.slice(0, hrefIndex) + next + original.slice(hrefIndex + href.length);
+    last = match.index + match[0].length;
+    count += 1;
+  }
+  return last === 0 ? { content: markdown, count: 0 } : { content: out + markdown.slice(last), count };
 }
 
 /**

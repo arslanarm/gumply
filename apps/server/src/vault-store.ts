@@ -25,6 +25,7 @@ import {
   makeSnippet,
   markdownLinks,
   markdownPageLinks,
+  relinkPageFile,
   linkSnippet,
   plainText,
   type MarkdownLink,
@@ -3781,9 +3782,20 @@ export class VaultStore {
         const found = resolveWikilink(link.targetTitle, metas, source)?.id;
         return found !== undefined && targets.has(found);
       };
-      return renamedMeta
+      const wiki = renamedMeta
         ? rewriteLinksToPage(markdown, isTarget, renamedMeta, afterMetas, previousTitle)
         : rewriteWikilinkTargets(markdown, isTarget, record.title);
+      if (record.kind !== "page") return wiki;
+      // #idmfvvkg: Markdown links to the page's file (`[x](Old.md)`) follow its new path, in the same
+      // pass (and so the same batches, journal and resume) as its `[[links]]`.
+      let { content, count } = wiki;
+      for (const target of targets) {
+        if (target === record.id) continue;
+        const moved = relinkPageFile(content, source, `${target}.md`, `${record.id}.md`, (id) => this.pages.get(id)?.kind === "page");
+        content = moved.content;
+        count += moved.count;
+      }
+      return { content, count };
     };
   }
 
@@ -5179,6 +5191,12 @@ export class VaultStore {
     await this.rewriteBoardCards(moves);
     // #ekp8ns58: its folder moved too, so other pages' links into it follow (as in relocateNow).
     if (hasChildren) await this.rewriteFolderLinks(id, newId);
+    // #idmfvvkg: Markdown links to the moved page's own file (`[x](P.md)`) follow it, each in its own form.
+    // (Its sub-pages' files are inside the folder: the folder pass above covers them.)
+    if (record.kind === "page") {
+      const isPage = (pageId: PageId) => this.pages.get(pageId)?.kind === "page";
+      await this.rewriteEverywhere(new Set([newId]), (markdown, source) => relinkPageFile(markdown, source, `${id}.md`, `${newId}.md`, isPage));
+    }
 
     this.reindexAll();
     return this.getAny(newId);
