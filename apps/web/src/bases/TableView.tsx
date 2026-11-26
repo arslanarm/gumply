@@ -534,9 +534,7 @@ export function TableView(props: TableViewProps) {
       {confirmDelete ? (
         <ConfirmDialog
           heading={t("bases.deleteColumnHeading", { name: confirmDelete.id.slice(5) })}
-          body={t("bases.deleteColumnBody", {
-            count: result.rows.filter((row) => row.values[confirmDelete.id] !== undefined && row.values[confirmDelete.id] !== null).length,
-          })}
+          body={t("bases.deleteColumnBody")}
           confirmLabel={t("bases.deleteColumnConfirm")}
           testId="base-delete-column-dialog"
           onCancel={() => setConfirmDelete(null)}
