@@ -31,6 +31,8 @@ export function SelectPicker(props: {
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const [place, setPlace] = useState<CSSProperties>({ top: 0, left: 0 });
+  const closeRef = useRef(props.onClose);
+  closeRef.current = props.onClose;
   // Before the next key reaches the page (typing on an active cell opens this mid-word): no letter is lost.
   useLayoutEffect(() => inputRef.current?.focus({ preventScroll: true }), []);
   // #pzqmduua: the picker lives on the page's top layer (a portal), placed by its cell. Inside the table a row's paint
@@ -43,6 +45,18 @@ export function SelectPicker(props: {
       const picker = pickerRef.current;
       if (!cell || !picker) return;
       const box = cell.getBoundingClientRect();
+      // #7prbquxu (§8 follow-up): once its cell has scrolled out of the table's visible box (under the sticky header,
+      // or past the bottom), the picker closes, like Escape (nothing is written), instead of floating over the header.
+      const scroller = cell.closest(".base-table-scroll");
+      if (scroller) {
+        const frame = scroller.getBoundingClientRect();
+        const head = scroller.querySelector(".base-table-head")?.getBoundingClientRect().bottom ?? frame.top;
+        const middle = (box.top + box.bottom) / 2;
+        if (middle < Math.max(frame.top, head) || middle > frame.bottom) {
+          closeRef.current();
+          return;
+        }
+      }
       // Its own height, from before any cap below (so a scroll doesn't flip it back and forth).
       natural ??= picker.offsetHeight;
       const height = natural;
