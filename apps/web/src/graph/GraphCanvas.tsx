@@ -121,10 +121,8 @@ const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", 
 const LABEL_GAP_PX = 4;
 const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
-/** Dash for links into a "not created yet" page (graph units, as before). */
 /** #pifuz5zs: above this many device pixels only the resting link picture is kept (memory). */
 const LINK_LAYER_MAX_PIXELS = 8_000_000;
-
 
 function readThemeColors(): ThemeColors {
   if (typeof window === "undefined") return FALLBACK_COLORS;
