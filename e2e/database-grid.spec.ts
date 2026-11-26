@@ -380,3 +380,22 @@ test('a block pasted on the typing row of an empty database opens the preview; P
   await expect.poll(() => read('People.base')).toContain('      - age\n      - shoe size\n');
   expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
 });
+
+test('"Import CSV…" in the ⋯ panel reads a file with commas into the same preview (phase 2)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  await page.getByTestId('base-settings-button').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId('base-import-csv').click();
+  await (await chooser).setFiles({
+    name: 'people.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('﻿Name,role,age\r\n"Smith, Jo",Cook,52\r\nIvy,Pilot,31\r\n', 'utf8'),
+  });
+  const preview = page.getByTestId('base-paste-preview');
+  await expect(preview).toContainText('Paste 2 rows into “People”');
+  await page.getByTestId('base-paste-confirm').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Ivy', 'Smith, Jo']);
+  await expect.poll(() => read('People/Smith, Jo.md')).toMatch(/role: Cook\n[^]*age: 52\n|age: 52\n[^]*role: Cook\n/);
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessHeaderRow, guessType, offersSelect, parseHtmlTable, pastedValue, plannedPaste, parseTsv, readPaste } from "../src/bases/paste";
+import { guessHeaderRow, guessType, offersSelect, parseCsv, parseHtmlTable, pastedValue, plannedPaste, parseTsv, readPaste } from "../src/bases/paste";
 
 /** #7prbquxu phase 2 (spec/database-tables §5): reading a paste from a spreadsheet. Invented data. */
 
@@ -134,5 +134,15 @@ describe("plannedPaste", () => {
     ]);
     expect(plan.left).toBe(1);
     expect(plan.pastLast).toBe(1);
+  });
+});
+
+describe("parseCsv (Import CSV…)", () => {
+  it("splits on commas with RFC 4180 quoting; a byte-order mark and CRLF are fine", () => {
+    expect(parseCsv('﻿Name,Note,Age\r\n"Smith, John","said ""hi""\nthen left",41\r\nIvy,,31\r\n')).toEqual([
+      ["Name", "Note", "Age"],
+      ["Smith, John", 'said "hi"\nthen left', "41"],
+      ["Ivy", "", "31"],
+    ]);
   });
 });
