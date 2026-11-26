@@ -85,13 +85,36 @@ describe("the table's undo, all or nothing (#7prbquxu phase 4b)", () => {
     expect(undo.refused).toEqual([]);
     expect(existsSync(join(dir, "People/Bo.md"))).toBe(false);
     const trash = await store.listTrash();
-    expect(trash.map((item: TrashItem) => item.id)).toEqual(["People/Bo"]);
+    expect(trash.map((item: TrashItem) => item.id)).toEqual(["People"]);
     expect(undo.dropped).toEqual([expect.objectContaining({ id: "People/Bo", trashId: trash[0]!.trashId })]);
 
     const redo = await store.undoDatabaseChange("People.base", { create: undo.dropped.map((row) => ({ id: row.id, trashId: row.trashId })) });
     expect(redo.refused).toEqual([]);
     expect(await read("People/Bo.md")).toBe(bo);
     expect(await store.listTrash()).toEqual([]);
+  });
+
+  it("an undo's dropped rows are one Trash item, \"N rows from People\", restored as one (@lead, before phase 4 ships)", async () => {
+    const { dir, store, read } = await vault({ "People.base": BASE, "People/Ann.md": "Ann\n" });
+    const pasted = await store.pasteIntoOwnedRows("People.base", { rows: [{ title: "Bo", set: { role: "Pilot" } }, { title: "Cy", set: { role: "Cook" } }] });
+    const bo = await read("People/Bo.md");
+    const cy = await read("People/Cy.md");
+    const undo = await store.undoDatabaseChange("People.base", { drop: pasted.made.map((row) => ({ id: row.id, from: row.after })) });
+    expect(undo.refused).toEqual([]);
+    const trash = await store.listTrash();
+    expect(trash).toHaveLength(1);
+    expect(trash[0]).toMatchObject({ id: "People", undoRows: 2 });
+    expect(trash[0]!.children.map((child) => child.id).sort()).toEqual(["People/Bo", "People/Cy"]);
+    expect(new Set(undo.dropped.map((row) => row.trashId)).size).toBe(1);
+    // Ann, and the folder itself, stay where they are.
+    expect(await read("People/Ann.md")).toBe("Ann\n");
+
+    // Restore from the Trash brings both back into the folder, byte for byte; the item goes.
+    await store.restore(trash[0]!.trashId);
+    expect(await read("People/Bo.md")).toBe(bo);
+    expect(await read("People/Cy.md")).toBe(cy);
+    expect(await store.listTrash()).toEqual([]);
+    expect(existsSync(join(dir, "People/Ann.md"))).toBe(true);
   });
 
   it("a redo refuses when the rows folder is gone, and makes no new folder (@opus-hunter)", async () => {
