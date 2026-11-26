@@ -207,6 +207,9 @@ function patchMap(doc: Document, map: YAMLMap, previous: Record<string, unknown>
 }
 
 function patchSeq(doc: Document, seq: YAMLSeq, previous: unknown[], next: unknown[]): void {
+  // #7prbquxu (@lead): an empty flow list (`gumplyOptions: []`) that gets its first items is written as a block
+  // list, like the base's other lists, not grown in flow style (`[{value: Todo, color: brown}]`).
+  if (seq.flow && previous.length === 0 && next.length > 0) seq.flow = false;
   // Keep the items that didn't change (and their comments) around an insert or a removal.
   let prefix = 0;
   while (prefix < previous.length && prefix < next.length && deepEqual(previous[prefix], next[prefix])) prefix += 1;
