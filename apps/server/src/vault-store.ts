@@ -904,7 +904,7 @@ export class VaultStore {
    * its path: a folder moved away (the Trash, a sync tool, git) and made again at the same path keeps
    * the old watcher, which then watches the moved one. A path whose directory changed is watched anew.
    */
-  private readonly watchedInodes = new Map<string, number>();
+  private readonly watchedInodes = new Map<string, string>();
   private watching = false;
   private watchTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -1104,9 +1104,13 @@ export class VaultStore {
     if (!this.watching) return 0;
     let added = 0;
     const wanted = new Set(this.vaultDirectories());
-    const inodeOf = (dir: string): number | null => {
+    // The directory's identity: its inode, and its birth time where the file system has one, since a
+    // directory deleted and made again can get the same inode number back (@graph-dev's review; git does it).
+    // Not ctime or mtime: they move whenever a file inside changes.
+    const inodeOf = (dir: string): string | null => {
       try {
-        return statSync(dir).ino;
+        const info = statSync(dir);
+        return Number.isFinite(info.birthtimeMs) && info.birthtimeMs > 0 ? `${info.ino}:${info.birthtimeMs}` : `${info.ino}`;
       } catch {
         return null;
       }
