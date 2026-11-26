@@ -176,27 +176,42 @@ test('the picker is a combobox a screen reader can follow, and Escape gives focu
   await expect(page.getByTestId('base-grid-cell')).toBeFocused();
 });
 
-test('Escape with text in the picker\'s search closes it and adds nothing; keys after it don\'t reach the search (pass 8)', async ({ page, request, vault }) => {
-  void vault;
-  await writeVault(request, TEAM);
-  await openTeam(page);
-  await page.getByTestId('base-typing-input').click();
-  await page.keyboard.press('ArrowUp');
-  await page.keyboard.press('ArrowRight');
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('base-select-search')).toBeFocused();
-  await page.keyboard.type('Brand new');
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
-  await expect(page.getByTestId('base-grid-cell')).toBeFocused();
-  // What a user does next: move on and press Enter (opens the next cell's editor, adds nothing).
-  await page.keyboard.press('ArrowLeft');
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Escape');
-  const base = await fs.readFile(path.join(E2E_VAULT, 'Team.base'), 'utf8');
-  expect(base).not.toContain('Brand new');
-  expect(await fs.readFile(path.join(E2E_VAULT, 'Team/Blake.md'), 'utf8')).toBe(TEAM['Team/Blake.md']);
-});
+for (const opened of ['by Enter', 'by typing on the cell'] as const) {
+  test(`Escape with text in the picker's search (opened ${opened}) adds nothing, at any step (pass 8)`, async ({ page, request, vault }) => {
+    void vault;
+    await writeVault(request, TEAM);
+    await openTeam(page);
+    const blake = () => fs.readFile(path.join(E2E_VAULT, 'Team/Blake.md'), 'utf8');
+    const base = () => fs.readFile(path.join(E2E_VAULT, 'Team.base'), 'utf8');
+    // A write would land within a few hundred ms (a debounced save or a blur commit): read after a pause, at each step,
+    // so the first step that shows the text names the culprit (@opus-editor, @lead).
+    const settled = async (step: string) => {
+      await page.waitForTimeout(600);
+      expect(await blake(), `Blake's file after ${step}`).toBe(TEAM['Team/Blake.md']);
+      expect(await base(), `the base after ${step}`).not.toContain('Brand');
+    };
+    await page.getByTestId('base-typing-input').click();
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowRight');
+    if (opened === 'by Enter') {
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('base-select-search')).toBeFocused();
+    }
+    // Typing on the active cell opens the picker with the first letter as its search.
+    await page.keyboard.type('Brand new');
+    await expect(page.getByTestId('base-select-search')).toHaveValue('Brand new');
+    await settled('the typing');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('base-select-picker')).toHaveCount(0);
+    await expect(page.getByTestId('base-grid-cell')).toBeFocused();
+    await settled('Escape');
+    // What a user does next: move on and press Enter (the title cell's editor), then Escape.
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    await settled('the next keys');
+  });
+}
 
 test('when nothing matches, the picker names "Add “…”" as its active option, so a screen reader hears what Enter will do (pass 8, @opus-editor, @lead)', async ({ page, request, vault }) => {
   void vault;
