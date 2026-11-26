@@ -38,6 +38,18 @@ describe("mergeRenameLinks", () => {
     expect(mergeRenameLinks(base, theirs, ours)).toEqual({ content: ours, applied: 0 });
   });
 
+  it("an edited line with the old link also inside inline code: only the real link follows, the code stays (@opus-editor)", () => {
+    const b = "See [[Hub]] (write it `[[Hub]]`).\n";
+    const t = "See [[Hub 2]] (write it `[[Hub]]`).\n";
+    expect(mergeRenameLinks(b, t, "See [[Hub]] (write it `[[Hub]]`), typed.\n").content).toBe("See [[Hub 2]] (write it `[[Hub]]`), typed.\n");
+  });
+
+  it("a table row with the escaped pipe: the edited cell keeps \\| (@opus-editor)", () => {
+    const b = "| [[Hub\\|the hub]] | x |\n";
+    const t = "| [[Hub 2\\|the hub]] | x |\n";
+    expect(mergeRenameLinks(b, t, "| [[Hub\\|the hub]] | x, typed |\n").content).toBe("| [[Hub 2\\|the hub]] | x, typed |\n");
+  });
+
   it("an edited line with a Markdown link and an embed: each follows (#z9hufufn)", () => {
     const b = "Its own: [[Hub/Sub]] and ![pic](Hub/a.png).\n";
     const t = "Its own: [[Hub 2/Sub]] and ![pic](Hub%202/a.png).\n";

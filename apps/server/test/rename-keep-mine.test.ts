@@ -112,6 +112,17 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     expect(text).toMatch(/\nx\n?$/);
   });
 
+  it("an ordinary save the rename's change can't be carried into (the link typed twice on its line): still a conflict, never a partial merge (#z9hufufn, @lead)", async () => {
+    const { dir, store } = await vault();
+    const target = firstLinker(store);
+    const start = store.get(target);
+    await store.update("Hub", { title: "Hub renamed" });
+    const sent = start.content.replace("See [[Hub]] for more.", "See [[Hub]] for more, and [[Hub]] again.");
+    const refused = await store.update(target, { content: sent, expectedUpdated: start.updated }).catch((error: unknown) => error);
+    expect(refused).toMatchObject({ status: 409 });
+    expect(await readFile(join(dir, `${target}.md`), "utf8")).toContain("See [[Hub renamed]] for more.");
+  });
+
   it("an ordinary save from the old version after a real outside change too: still a conflict (#z9hufufn, the control)", async () => {
     const { dir, store } = await vault();
     const target = firstLinker(store);
