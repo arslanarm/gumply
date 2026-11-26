@@ -1,3 +1,5 @@
+import { maskCode } from "./links.js";
+
 /**
  * N10 (#5pgmziyc): Keep mine in a page a rename rewrote while it was being
  * edited. The rename changed link spans in some lines (base → theirs); the
@@ -50,12 +52,17 @@ export function mergeRenameLinks(base: string, theirs: string, ours: string): { 
   }
   // #z9hufufn: a line the user edited still gets the rename's link changes, link by link, when that is
   // unambiguous: the line's old links are found, as many times as before, in exactly one line of theirs
-  // that isn't an untouched line. A link the user changed or typed again is left as they wrote it.
+  // that isn't an untouched line and keeps the original's start or end. Only link spans are replaced, at
+  // their positions, never text inside code (as the rename's own rewrite skips code); a link the user
+  // changed or typed again is left as they wrote it.
   const untouched = new Set(baseLines);
+  const maskedBase = maskCode(base).split("\n");
+  const maskedOurs = maskCode(ours).split("\n");
   const claimed = new Set<number>();
   for (const i of edited) {
-    const swaps = linkSwaps(baseLines[i]!, theirLines[i]!);
-    if (swaps === null || swaps.length === 0) continue;
+    const swaps = linkSwaps(maskedBase[i]!, baseLines[i]!, theirLines[i]!);
+    if (swaps === null || swaps.size === 0) continue;
+    const baseCounts = linkCounts(maskedBase[i]!);
     const candidates = ourLines
       .map((line, index) => ({ line, index }))
       .filter(
@@ -65,12 +72,19 @@ export function mergeRenameLinks(base: string, theirs: string, ours: string): { 
           // An edit keeps the line's start or its end (typing at the end, in the middle, or at the start);
           // a line typed fresh with an old link in it is not this line.
           sharesEdge(line, baseLines[i]!) &&
-          swaps.every(([from]) => count(line, from) === count(baseLines[i]!, from)),
+          [...swaps.keys()].every((from) => (linkCounts(maskedOurs[index]!).get(from) ?? 0) === (baseCounts.get(from) ?? 0)),
       );
     if (candidates.length !== 1) continue;
     const { line, index } = candidates[0]!;
-    let next = line;
-    for (const [from, to] of swaps) next = next.split(from).join(to);
+    let next = "";
+    let last = 0;
+    for (const match of maskedOurs[index]!.matchAll(LINK)) {
+      const to = swaps.get(match[0]);
+      if (to === undefined) continue;
+      next += line.slice(last, match.index) + to;
+      last = match.index! + match[0].length;
+    }
+    next += line.slice(last);
     if (next === line) continue;
     ourLines[index] = next;
     claimed.add(index);
@@ -83,22 +97,42 @@ export function mergeRenameLinks(base: string, theirs: string, ours: string): { 
 const LINK = /!?\[\[[^\]\n]*\]\]|!?\[[^\]\n]*\]\([^)\n]*\)/g;
 
 /**
- * The link changes between two versions of a line (old link text → new), in order; null when the lines
- * differ in anything but links (not a rename's change), or have a different number of links.
+ * The link changes between two versions of a line (old link text → new), by position outside code; null
+ * when the lines differ in anything but those links (not a rename's change), or one old link became two
+ * different ones. `maskedBefore` is `before` with its code masked (the same length).
  */
-function linkSwaps(before: string, after: string): Array<[string, string]> | null {
-  const a = before.match(LINK) ?? [];
-  const b = after.match(LINK) ?? [];
-  if (a.length !== b.length) return null;
-  if (before.replace(LINK, "\u0000") !== after.replace(LINK, "\u0000")) return null;
-  const swaps: Array<[string, string]> = [];
-  for (let k = 0; k < a.length; k++) {
-    if (a[k] === b[k]) continue;
-    const known = swaps.find(([from]) => from === a[k]);
-    if (known && known[1] !== b[k]) return null; // the same old link became two different ones
-    if (!known) swaps.push([a[k]!, b[k]!]);
+function linkSwaps(maskedBefore: string, before: string, after: string): Map<string, string> | null {
+  const swaps = new Map<string, string>();
+  let rebuilt = "";
+  let last = 0;
+  let offset = 0;
+  for (const match of maskedBefore.matchAll(LINK)) {
+    const at = match.index!;
+    rebuilt += before.slice(last, at);
+    // The rename's version of this span: the same start in `after`, shifted by the changes so far.
+    const tail = after.slice(at + offset);
+    const replaced = tail.match(new RegExp(`^(?:${LINK.source})`));
+    if (!replaced) return null;
+    const from = match[0];
+    const to = replaced[0];
+    if (from !== to) {
+      const known = swaps.get(from);
+      if (known !== undefined && known !== to) return null;
+      swaps.set(from, to);
+    }
+    rebuilt += to;
+    offset += to.length - from.length;
+    last = at + from.length;
   }
-  return swaps;
+  rebuilt += before.slice(last);
+  return rebuilt === after ? swaps : null;
+}
+
+/** How many times each link appears in a (code-masked) line. */
+function linkCounts(masked: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const match of masked.matchAll(LINK)) counts.set(match[0], (counts.get(match[0]) ?? 0) + 1);
+  return counts;
 }
 
 /** The two lines start or end with the same 4+ characters (or one of them is shorter than that and matches). */
@@ -112,6 +146,4 @@ function sharesEdge(a: string, b: string): boolean {
   return start >= need || end >= need;
 }
 
-function count(text: string, part: string): number {
-  return text.split(part).length - 1;
-}
+

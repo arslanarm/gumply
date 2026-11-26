@@ -527,16 +527,24 @@ interface RenameMergePair {
   title: string;
 }
 
-/** N10: the renames' link changes applied to `content` in order (lines the user didn't touch only). */
-function applyRenameMerges(pairs: readonly RenameMergePair[], content: string): { content: string; links: number } {
+/**
+ * N10: the renames' link changes applied to `content` in order. `complete`: every line each rename
+ * changed was carried over (#z9hufufn: an ordinary save is merged only then, never partly).
+ */
+function applyRenameMerges(pairs: readonly RenameMergePair[], content: string): { content: string; links: number; complete: boolean } {
   let merged = content;
   let links = 0;
+  let complete = true;
   for (const pair of pairs) {
     const result = mergeRenameLinks(pair.before, pair.after, merged);
     merged = result.content;
     links += result.applied;
+    const beforeLines = pair.before.split("\n");
+    const afterLines = pair.after.split("\n");
+    const changed = beforeLines.filter((line, i) => line !== afterLines[i]).length;
+    if (result.applied !== changed) complete = false;
   }
-  return { content: merged, links };
+  return { content: merged, links, complete };
 }
 const RENAME_BATCH_MS = 50;
 
@@ -3499,12 +3507,12 @@ export class VaultStore {
     // #z9hufufn: an ordinary save from a version that only renames' link rewrites have changed since
     // (their N10 chain runs from it to the page's version now, and no outside write moved the file) is
     // not a conflict: it is merged as Keep mine would be, and the answer says which links the server kept.
-    const renamesOnly =
-      !patch.force &&
-      versionChanged &&
-      !mtimeChanged &&
-      typeof patch.content === "string" &&
-      this.mergeRecentRenames(record.id, patch.expectedUpdated, patch.content).reached === record.updated;
+    // Only when the merge is whole: every line each rename changed was carried into what was sent.
+    const ordinaryMerge =
+      !patch.force && versionChanged && !mtimeChanged && typeof patch.content === "string"
+        ? this.mergeRecentRenames(record.id, patch.expectedUpdated, patch.content)
+        : null;
+    const renamesOnly = ordinaryMerge !== null && ordinaryMerge.reached === record.updated && ordinaryMerge.pairs.length > 0 && ordinaryMerge.complete;
     const changedOnDisk = mtimeChanged || (versionChanged && !renamesOnly);
 
     let conflictBackup: string | undefined;
@@ -3997,9 +4005,9 @@ export class VaultStore {
     id: PageId,
     expected: string | undefined,
     content: string,
-  ): { content: string; links: number; pairs: RenameMergePair[]; reached: string | undefined } {
+  ): { content: string; links: number; complete: boolean; pairs: RenameMergePair[]; reached: string | undefined } {
     const list = this.renameRewrites.get(id);
-    if (!list || expected === undefined) return { content, links: 0, pairs: [], reached: expected };
+    if (!list || expected === undefined) return { content, links: 0, complete: true, pairs: [], reached: expected };
     const now = Date.now();
     let version = expected;
     const pairs: RenameMergePair[] = [];
