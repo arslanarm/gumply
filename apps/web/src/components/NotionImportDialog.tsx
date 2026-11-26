@@ -41,7 +41,8 @@ type Phase =
   | { kind: "pick" }
   | { kind: "running"; job: NotionImportJob }
   | { kind: "done"; job: NotionImportJob; report: NotionImportReport }
-  | { kind: "error"; message: string; details: string | null };
+  /** `pickAgain`: the file itself is the problem (a damaged export, #4zzay6mn), so Try again clears it. */
+  | { kind: "error"; message: string; details: string | null; pickAgain?: boolean };
 
 const sizeText = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -104,7 +105,7 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
           // The server's reason (English, e.g. "larger than 2 GB once unpacked") is the detail line;
           // a damaged export has its own words, naming the file (#4zzay6mn).
           const failed = failedJobMessage(job);
-          setPhase({ kind: "error", message: t(failed.key, failed.vars), details: failed.details });
+          setPhase({ kind: "error", message: t(failed.key, failed.vars), details: failed.details, pickAgain: job.errorCode === "damaged" });
           return;
         }
         setPhase({ kind: "running", job });
@@ -338,7 +339,16 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
           <button type="button" className="button-secondary" onClick={onClose}>
             {t("notionImport.close")}
           </button>
-          <button type="button" className="button-primary" data-testid="notion-import-retry" onClick={() => setPhase({ kind: "pick" })}>
+          <button
+            type="button"
+            className="button-primary"
+            data-testid="notion-import-retry"
+            onClick={() => {
+              // A damaged zip would fail the same way: the picker comes back empty, for a fresh download.
+              if (phase.pickAgain) setFile(null);
+              setPhase({ kind: "pick" });
+            }}
+          >
             {t("notionImport.tryAgain")}
           </button>
         </div>

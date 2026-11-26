@@ -193,6 +193,11 @@ test.describe('Import from Notion (B4)', () => {
       await expect(page.getByTestId('notion-import-failed')).not.toContainText(language === 'en' ? 'Details:' : 'Подробности:');
       await expect(fs.access(path.join(E2E_VAULT, 'Notion import'))).rejects.toThrow();
       await expect(fs.access(path.join(E2E_VAULT, 'attachments', 'Notion import'))).rejects.toThrow();
+      // Try again goes back to an empty picker: sending the same damaged zip again can't help.
+      await page.getByTestId('notion-import-retry').click();
+      await expect(page.getByTestId('notion-import-drop')).toBeVisible();
+      await expect(page.getByTestId('notion-import-drop')).not.toContainText('Export-1234.zip');
+      await expect(page.getByTestId('notion-import-start')).toBeDisabled();
     });
   }
 });
