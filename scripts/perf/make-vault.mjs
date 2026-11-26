@@ -26,7 +26,8 @@
  *   "Perf Typical" (a short note with links and a tag), "Perf Rich" (tables,
  *   math, Mermaid, a code block) and "Perf Long" (~2,000 lines). Each ends
  *   with a marker line (TYPICAL-END, RICH-END, LONG-END) that measure-web
- *   waits for.
+ *   waits for. With #idmfvvkg, also "Perf Markdown links": 200 `[x](Note.md)` links,
+ *   written last the same way.
  */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -275,6 +276,12 @@ for (let i = 0; i < 2000; i++) {
   else longLines.push(`Line ${i}: the quick brown fox jumps over the lazy dog, again and again, with **bold** and *italic* words.`, "");
 }
 write("Perf Long.md", ["---", "status: draft", "---", "# Perf Long", "", ...longLines, "LONG-END", ""].join("\n"));
+// #idmfvvkg: Markdown links to pages ([x](Note.md)), which the index counts as links since then. Written last
+// and without the random source, so the rest of the vault is byte-identical: 200 links, from the vault root.
+write(
+  "Perf Markdown links.md",
+  ["# Perf Markdown links", "", ...notes.slice(1, 201).map((note) => `- [${note.title}](${encodeURI(`${note.folder}/${note.title}.md`)})`), "", "MDLINKS-END", ""].join("\n"),
+);
 
 console.log(
   JSON.stringify({ dir, seed: SEED, notes: NOTES, links, dangling, tags: TAGS.length, images: IMAGES.length, bases: 5, boards: 5, bigBoard: BOARD }),
