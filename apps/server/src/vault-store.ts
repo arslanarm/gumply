@@ -580,6 +580,12 @@ interface RenameRewrite {
 
 /** #im3em6tq: how long a path Gumply itself wrote or moved doesn't count toward a sync burst. */
 const OWN_WRITE_MS = 5000;
+/**
+ * #zsk48sie: how long a page that vanished from disk (or appeared) unpaired is
+ * remembered, so a sync tool's delete + create landing in two refreshes still
+ * pairs as an outside rename (Syncthing applies deletions last).
+ */
+const LATE_PAIR_MS = 10_000;
 
 /** A validated `.trash/<trashId>/` entry. */
 interface TrashEntry {
@@ -971,6 +977,10 @@ export class VaultStore {
   private writeQueue: Promise<unknown> = Promise.resolve();
   /** Old id -> new id after a rename, for stale URLs/tabs in this session. */
   private readonly redirects = new Map<PageId, PageId>();
+  /** #zsk48sie: pages that vanished from disk unpaired (with the file identity they had), by id. */
+  private readonly vanished = new Map<PageId, { record: PageRecord; inode: string | undefined; at: number }>();
+  /** #zsk48sie: pages that appeared on disk unpaired, by id, and when. */
+  private readonly appeared = new Map<PageId, number>();
   /**
    * One non-recursive watcher per vault directory (#3ugdxhzu). Node 20/22's
    * recursive watch on Linux follows file inodes and loses a file once it is
@@ -1667,12 +1677,24 @@ export class VaultStore {
     const externalMoves: Array<{ from: PageId; to: PageId }> = [];
     // D20: a page renamed outside Gumply, matched as below, keeps its history.
     const historyMoves: Array<{ from: PageId; to: PageId }> = [];
-    const inodesAfter = removed ? this.inodesById() : new Map<PageId, string>();
+    const now = Date.now();
+    for (const [id, entry] of this.vanished) if (now - entry.at > LATE_PAIR_MS || next.has(id)) this.vanished.delete(id);
+    for (const [id, at] of this.appeared) if (now - at > LATE_PAIR_MS || !next.has(id)) this.appeared.delete(id);
     const fresh = [...next.values()].filter((record) => !this.pages.has(record.id));
+    const inodesAfter = removed || (fresh.length > 0 && this.vanished.size > 0) ? this.inodesById() : new Map<PageId, string>();
+    // #zsk48sie: a page that appeared unpaired in an earlier refresh can still be where a page
+    // vanishing now went (a sync tool's create, then its delete, in two refreshes).
+    const lateFresh = [...this.appeared.keys()].map((id) => next.get(id)).filter((record): record is PageRecord => record !== undefined);
     const claimed = new Set<PageId>();
-    for (const [oldId, oldRecord] of this.pages) {
-      if (next.has(oldId)) continue;
-      const candidates = fresh.filter((record) => !claimed.has(record.id) && record.kind === oldRecord.kind);
+    // #zsk48sie: and a page that vanished in an earlier refresh can be the one appearing now
+    // (the delete first, then the create).
+    const gone: Array<[PageId, PageRecord, string | undefined]> = [];
+    for (const [oldId, oldRecord] of this.pages) if (!next.has(oldId)) gone.push([oldId, oldRecord, inodesBefore.get(oldId)]);
+    for (const [oldId, entry] of this.vanished) if (!this.pages.has(oldId)) gone.push([oldId, entry.record, entry.inode]);
+    const paired = new Set<PageId>();
+    for (const [oldId, oldRecord, inode] of gone) {
+      const pool = this.pages.has(oldId) ? [...fresh, ...lateFresh] : fresh;
+      const candidates = pool.filter((record) => !claimed.has(record.id) && record.kind === oldRecord.kind);
       if (candidates.length === 0) continue;
       // #3c444g85, in order:
       // 1. the same inode and mtime: a rename keeps both (POSIX, and NTFS), exact even for empty or
@@ -1681,7 +1703,6 @@ export class VaultStore {
       //    renamed board is recognised by its content;
       // 3. where inodes aren't stable (some network or sync mounts): the one new page with exactly the
       //    same content, never an empty one (two empty notes must not pair).
-      const inode = inodesBefore.get(oldId);
       const oldBoard = oldRecord.board ? serializeCanvas(oldRecord.board) : null;
       const sameContent = candidates.filter((record) =>
         oldBoard !== null ? record.board !== undefined && serializeCanvas(record.board) === oldBoard : record.content === oldRecord.content,
@@ -1692,6 +1713,9 @@ export class VaultStore {
         (oldBoard === null && oldRecord.content.trim() !== "" && sameContent.length === 1 ? sameContent[0] : undefined);
       if (!moved) continue;
       claimed.add(moved.id);
+      paired.add(oldId);
+      this.vanished.delete(oldId);
+      this.appeared.delete(moved.id);
       this.addRedirect(oldId, moved.id);
       historyMoves.push({ from: oldId, to: moved.id });
       // Same file, moved: identical content (a rename that also edits it is
@@ -1699,6 +1723,11 @@ export class VaultStore {
       if (moved.content === oldRecord.content) externalMoves.push({ from: oldId, to: moved.id });
     }
     for (const id of next.keys()) this.redirects.delete(id);
+    // #zsk48sie: what didn't pair now may pair in a later refresh.
+    for (const [oldId, oldRecord] of this.pages) {
+      if (!next.has(oldId) && !paired.has(oldId)) this.vanished.set(oldId, { record: oldRecord, inode: inodesBefore.get(oldId), at: now });
+    }
+    for (const record of fresh) if (!claimed.has(record.id)) this.appeared.set(record.id, now);
     // A re-read of our own last write (unchanged on disk) keeps knowing it.
     // §3: a page or board changed outside Gumply (not our own write) gets its new bytes as a version.
     const editedOutside: PageRecord[] = [];
