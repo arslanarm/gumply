@@ -3464,7 +3464,7 @@ export class VaultStore {
       }
       record.title = nextTitle;
       rewrittenPages.push(...(await this.rewriteLinksTo(id, record, previousTitle, beforeMetas)));
-      this.reindexAll();
+      this.reindexAfterRename(id, record);
     } else {
       this.recomputeSource(id);
     }
@@ -3824,7 +3824,7 @@ export class VaultStore {
       // A base's title is its file name (it has nowhere else to keep one).
       record.title = baseStem(targetId);
       rewrittenPages.push(...(await this.rewriteLinksTo(id, record, previousTitle, beforeMetas)));
-      this.reindexAll();
+      this.reindexAfterRename(id, record);
     }
     return {
       ...this.getBase(targetId),
@@ -4048,7 +4048,7 @@ export class VaultStore {
         if (!rewrittenPages.includes(relinkedId)) rewrittenPages.push(relinkedId);
       }
       rewrittenPages.sort((a, b) => a.localeCompare(b));
-      this.reindexAll();
+      this.reindexAfterRename(id, record);
     } else {
       this.recomputeSource(targetId);
     }
@@ -6113,6 +6113,49 @@ export class VaultStore {
       const record = this.pages.get(meta.id);
       if (!record) continue;
       this.edgesBySource.set(meta.id, this.edgesFor(record, metas));
+    }
+  }
+
+  /**
+   * #6pyunynv: the link index right after a title rename's own step. A full rebuild here cost ~1.3 s on
+   * the 10k vault before the first linking page was written, and the rename's last step rebuilds it anyway.
+   * In the batched path (`deferRewrites`) only these sources can differ from a full rebuild, so only they
+   * are recomputed, exactly as the rebuild would (`edgesFor` with `linkMetas`, which carries the alias):
+   * - the renamed page itself (its own links and self-links);
+   * - a source with an edge to the old id (now the renamed page, through the alias);
+   * - a source with an edge naming the new title or id (it may resolve differently now);
+   * - a source with an unresolved edge that resolves to the renamed page now (`[[New name]]` written before).
+   * A rename that moved sub-pages (a folder moved with it) or runs unbatched keeps the full rebuild.
+   */
+  private reindexAfterRename(oldId: PageId, record: PageRecord): void {
+    // Its folder: sub-pages, or a database's owned rows (`People.base` with `People/`, #7prbquxu).
+    const folder = `${record.id.replace(/\.(base|canvas)$/, "")}/`;
+    const movedChildren = oldId !== record.id && [...this.pages.keys()].some((key) => key.startsWith(folder));
+    if (!this.deferRewrites || movedChildren) {
+      this.reindexAll();
+      return;
+    }
+    this.indexGeneration += 1;
+    const metas = this.linkMetas();
+    const names = new Set([record.title, record.id, record.id.slice(record.id.lastIndexOf("/") + 1)].map((name) => name.toLowerCase()));
+    const affected = new Set<PageId>([record.id]);
+    for (const [source, edges] of this.edgesBySource) {
+      if (
+        edges.some(
+          (edge) =>
+            edge.target === oldId ||
+            names.has(edge.targetTitle.toLowerCase()) ||
+            (edge.target === null && [record.id, oldId].includes(resolveWikilink(edge.targetTitle, metas, source)?.id ?? "")),
+        )
+      ) {
+        affected.add(source);
+      }
+    }
+    if (oldId !== record.id) this.edgesBySource.delete(oldId);
+    for (const id of affected) {
+      const page = this.pages.get(id);
+      if (page) this.edgesBySource.set(id, this.edgesFor(page, metas));
+      else this.edgesBySource.delete(id);
     }
   }
 
