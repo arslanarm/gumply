@@ -73,9 +73,20 @@ describe("type guesses (never Select silently)", () => {
   });
 
   it("Select is offered for a column that repeats 12 or fewer values", () => {
-    expect(offersSelect(["Todo", "Doing", "Todo", "Done"])).toBe(true);
+    expect(offersSelect(["Todo", "Doing", "Todo", "Done", "Doing", "Todo"])).toBe(true);
     expect(offersSelect(["a", "b", "c"])).toBe(false);
     expect(offersSelect(Array.from({ length: 30 }, (_, i) => `v${i % 13}`))).toBe(false);
+  });
+
+  it("#bg7c9bzk (#faqr8pj9's #13): not for a column where most values aren't repeated, nor for a column of numbers", () => {
+    // The hunt's "Water every days": numbers, one repeat in six.
+    expect(offersSelect(["7", "14", "2", "3", "21", "7"])).toBe(false);
+    // Text with one repeat in five: most values are unique, so "each repeated" would be untrue.
+    expect(offersSelect(["Basil", "Cactus", "Mint", "Basil", "Aloe"])).toBe(false);
+    // Numbers that do repeat a lot are still a number column, not a Select.
+    expect(offersSelect(["1", "2", "1", "2", "1", "2"])).toBe(false);
+    // A real Select column: few values, each used more than once.
+    expect(offersSelect(["Full sun", "Shade", "Full sun", "Shade", "Partial", "Partial"])).toBe(true);
   });
 
   it("a Select's options from a pasted column: distinct, non-empty, a Multi-select's items split; capped at 200 (@lead, note f)", () => {
