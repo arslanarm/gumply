@@ -349,6 +349,16 @@ const MAX_GRAPH_DEPTH = 5;
 const MAX_TAGS = 200;
 
 /** Page plus the bits of on-disk state the index needs. */
+/** #7prbquxu: what a database-wide property rename or delete did (`POST /api/bases/:id/rows-property`). */
+export interface OwnedRowsChange {
+  /** The rows written. Empty when a rename was refused or put back. */
+  changed: PageId[];
+  /** Rows that refused (changed on disk meanwhile, read-only): a rename then changed nothing. */
+  skipped: Array<{ id: PageId; title: string }>;
+  /** A rename's new name that these rows already have: nothing was written. */
+  clash: Array<{ id: PageId; title: string }>;
+}
+
 interface PageRecord extends Omit<Page, "childCount"> {
   filePath: string;
   /**
@@ -3440,6 +3450,67 @@ export class VaultStore {
 
   createBase(input: CreateBaseInput): Promise<BaseDocument> {
     return this.enqueue(() => this.createBaseNow(input));
+  }
+
+  /**
+   * #7prbquxu (spec/database-tables §4, @opus-hunter's review): rename or delete a property in every row
+   * of an owned database: each page directly in its rows folder whose frontmatter has the key (even
+   * empty). One queued job, each row through the ordinary properties patch from its current version
+   * (so a write another app made meanwhile, even with the same size and time, is refused for that row).
+   * A rename is all or nothing: a name some row already has stops it before any write, and when a row
+   * refuses, the rows already renamed are put back. The `.base` is the caller's to save, on success only.
+   */
+  changeOwnedRowsProperty(id: PageId, change: { rename: { from: string; to: string } } | { remove: string }): Promise<OwnedRowsChange> {
+    return this.enqueue(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change));
+  }
+
+  private async changeOwnedRowsPropertyNow(
+    id: PageId,
+    change: { rename: { from: string; to: string } } | { remove: string },
+  ): Promise<OwnedRowsChange> {
+    const base = this.requireBase(id);
+    const folder = this.ownedRowsOf(base, id);
+    if (folder === null) throw badRequest("This database view doesn't own a rows folder.");
+    const key = "rename" in change ? change.rename.from : change.remove;
+    const to = "rename" in change ? change.rename.to : null;
+    if (!isValidPropertyKey(key) || (to !== null && !isValidPropertyKey(to))) throw badRequest("not a property name");
+    const prefix = `${folder}/`;
+    const rows: PageRecord[] = [];
+    const clash: PageRecord[] = [];
+    for (const [rowId, record] of this.pages) {
+      if ((record.kind ?? "page") !== "page" || !rowId.startsWith(prefix) || rowId.slice(prefix.length).includes("/")) continue;
+      let present: Set<string>;
+      try {
+        present = new Set(frontmatterKeys(parseNoteTemplate(await readFile(record.filePath, "utf8")).yaml));
+      } catch {
+        continue;
+      }
+      if (!present.has(key)) continue;
+      rows.push(record);
+      if (to !== null && present.has(to)) clash.push(record);
+    }
+    const named = (records: PageRecord[]) => records.map((record) => ({ id: record.id, title: record.title }));
+    if (clash.length) return { changed: [], skipped: [], clash: named(clash) };
+    const changed: Array<{ id: PageId; updated: string }> = [];
+    const skipped: PageRecord[] = [];
+    for (const record of rows) {
+      try {
+        const patch = to !== null ? { rename: [{ from: key, to }] } : { remove: [key] };
+        const page = await this.updateNow(record.id, { properties: patch, expectedUpdated: record.updated });
+        changed.push({ id: page.id, updated: page.updated });
+      } catch (error) {
+        if (!(error instanceof VaultError)) throw error;
+        skipped.push(record);
+      }
+    }
+    if (to !== null && skipped.length) {
+      // All or nothing: the rows already renamed go back.
+      for (const row of changed) {
+        await this.updateNow(row.id, { properties: { rename: [{ from: to, to: key }] }, expectedUpdated: row.updated }).catch(() => undefined);
+      }
+      return { changed: [], skipped: named(skipped), clash: [] };
+    }
+    return { changed: changed.map((row) => row.id), skipped: named(skipped), clash: [] };
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {

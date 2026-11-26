@@ -542,9 +542,15 @@ export const api = {
    * conditionally. Used by database views (cells, kanban, calendar). A null
    * value is written as a bare `key:`, as Obsidian does; the key stays.
    */
-  /** #7prbquxu: a properties patch with renames and removals (a database column renamed or deleted). */
-  patchPageProperties: (id: PageId, patch: PropertiesPatch, expectedUpdated: string): Promise<UpdatePageResult> =>
-    mutate(() => request(pagePath(id), { method: "PUT", body: JSON.stringify({ properties: patch, expectedUpdated }) })),
+  /**
+   * #7prbquxu: rename or delete a property in every row of an owned database, on the server in one
+   * job (a rename is all or nothing). `clash` / `skipped` name the rows that stopped it.
+   */
+  changeOwnedRowsProperty: (
+    baseId: PageId,
+    change: { rename: { from: string; to: string } } | { remove: string },
+  ): Promise<{ changed: PageId[]; skipped: Array<{ id: PageId; title: string }>; clash: Array<{ id: PageId; title: string }> }> =>
+    mutate(() => request(`${basePath(baseId)}/rows-property`, { method: "POST", body: JSON.stringify(change) })),
 
   setPageProperties: (
     id: PageId,

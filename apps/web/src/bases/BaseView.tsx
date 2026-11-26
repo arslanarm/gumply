@@ -7,7 +7,7 @@
  * only what changed) or a page's properties (`PUT /pages/:id`, v1.12).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, Page, PageId, PageMeta, PropertyType } from "@gumply/core";
+import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta, PropertyType } from "@gumply/core";
 import { ownedRowsFolder } from "@gumply/core";
 import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
@@ -288,97 +288,52 @@ export function BaseView(props: BaseViewProps) {
   );
 
   /**
-   * #7prbquxu (spec/database-tables §4, @opus-hunter's review): an owned database's column renamed or deleted.
-   * It reaches every row of the database (each page in its rows folder that has the key, even empty), read
-   * fresh, not only the rows the active view shows. A rename is all or nothing: a name some row already has
-   * stops it before any write; a row that refuses (changed on disk meanwhile, read-only) puts the rows already
-   * renamed back, leaves the base as it was, and is named.
+   * #7prbquxu (spec/database-tables §4, @opus-hunter's review): an owned database's column renamed or deleted
+   * in every row of the database (the server's one job over the rows folder, not the view's rows). The base
+   * names the new key only when every row followed; otherwise it's left as it was and the rows are named.
    */
-  const rowsWithKey = useCallback(async (key: string): Promise<Page[]> => {
-    const folder = ownedRowsFolder(docRef.current.config);
-    if (!folder) return [];
-    const prefix = `${folder}/`;
-    const metas = (await api.listPages()).filter(
-      (meta) => (meta.kind ?? "page") === "page" && meta.id.startsWith(prefix) && !meta.id.slice(prefix.length).includes("/"),
-    );
-    const pages = await Promise.all(metas.map((meta) => api.getPage(meta.id)));
-    return pages.filter((page) => page.properties?.some((property) => property.key === key));
-  }, []);
-  const titleList = (pages: ReadonlyArray<{ title: string }>) =>
-    pages.length > 5 ? `${pages.slice(0, 5).map((page) => page.title).join(", ")}…` : pages.map((page) => page.title).join(", ");
+  const titleList = (rows: ReadonlyArray<{ title: string }>) =>
+    rows.length > 5 ? `${rows.slice(0, 5).map((row) => row.title).join(", ")}…` : rows.map((row) => row.title).join(", ");
 
   const renameColumn = useCallback(
     async (column: BaseColumn, to: string) => {
       const from = column.id.slice(5);
-      let rows: Page[];
-      let typed: boolean;
       try {
-        rows = await rowsWithKey(from);
         // Whether the new name has a type in the vault already (asked before any row has it).
-        typed = (await api.listProperties()).some((info) => info.key === to);
+        const typed = (await api.listProperties()).some((info) => info.key === to);
+        const result = await api.changeOwnedRowsProperty(baseId, { rename: { from, to } });
+        if (result.clash.length) props.onError?.(t("bases.renameClash", { name: to, titles: titleList(result.clash) }));
+        else if (result.skipped.length) props.onError?.(t("bases.renameRowsFailed", { name: from, titles: titleList(result.skipped) }));
+        else {
+          // The new name takes the old one's type only when it has none (it may type other databases).
+          if (!typed && column.type && column.type !== "file" && column.type !== "formula") {
+            await api.setPropertyType(to, column.type as PropertyType).catch(() => undefined);
+          }
+          await saveConfig(renameKeyInConfig(docRef.current.config, from, to));
+        }
       } catch (error) {
         props.onError?.(errorText(error));
-        return;
       }
-      const clash = rows.filter((page) => page.properties?.some((property) => property.key === to));
-      if (clash.length) {
-        props.onError?.(t("bases.renameClash", { name: to, titles: titleList(clash) }));
-        return;
-      }
-      const done: Array<{ id: string; updated: string }> = [];
-      const failed: Page[] = [];
-      for (const page of rows) {
-        try {
-          const saved = await api.patchPageProperties(page.id, { rename: [{ from, to }] }, page.updated);
-          done.push({ id: page.id, updated: saved.updated });
-        } catch {
-          failed.push(page);
-        }
-      }
-      if (failed.length) {
-        // All or nothing: the rows already renamed go back.
-        for (const page of done) {
-          await api.patchPageProperties(page.id, { rename: [{ from: to, to: from }] }, page.updated).catch(() => undefined);
-        }
-        props.onError?.(t("bases.renameRowsFailed", { name: from, titles: titleList(failed) }));
-        await load();
-        return;
-      }
-      // The new name takes the old one's type only when it has none in the vault (it may type other databases).
-      if (!typed && column.type && column.type !== "file" && column.type !== "formula") {
-        await api.setPropertyType(to, column.type as PropertyType).catch(() => undefined);
-      }
-      await saveConfig(renameKeyInConfig(docRef.current.config, from, to));
       await load();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rowsWithKey, saveConfig, load],
+    [baseId, saveConfig, load],
   );
   const deleteColumn = useCallback(
     async (column: BaseColumn) => {
       const key = column.id.slice(5);
-      let rows: Page[];
       try {
-        rows = await rowsWithKey(key);
+        const result = await api.changeOwnedRowsProperty(baseId, { remove: key });
+        // A row that kept its value keeps the column too.
+        if (result.skipped.length) props.onError?.(t("bases.deleteRowsFailed", { name: key, titles: titleList(result.skipped) }));
+        else await saveConfig(dropKeyFromConfig(docRef.current.config, key));
       } catch (error) {
         props.onError?.(errorText(error));
-        return;
       }
-      const failed: Page[] = [];
-      for (const page of rows) {
-        try {
-          await api.patchPageProperties(page.id, { remove: [key] }, page.updated);
-        } catch {
-          failed.push(page);
-        }
-      }
-      // A row that kept its value keeps the column too.
-      if (failed.length) props.onError?.(t("bases.deleteRowsFailed", { name: key, titles: titleList(failed) }));
-      else await saveConfig(dropKeyFromConfig(docRef.current.config, key));
       await load();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rowsWithKey, saveConfig, load],
+    [baseId, saveConfig, load],
   );
   const setColumnType = useCallback(
     async (column: BaseColumn, type: PropertyType) => {

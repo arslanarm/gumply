@@ -500,6 +500,17 @@ export function createApiRoutes(store: VaultStore): Hono {
     return c.json(rewrittenPages.length > 0 ? { ...result, rewrittenPages } : result);
   });
 
+  // #7prbquxu: rename or delete a property in every row of an owned database (all or nothing for a rename).
+  api.post("/bases/:id/rows-property", async (c) => {
+    const body = await readJson(c);
+    const rename = body.rename as { from?: unknown; to?: unknown } | undefined;
+    if (rename && typeof rename === "object" && typeof rename.from === "string" && typeof rename.to === "string") {
+      return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { rename: { from: rename.from, to: rename.to } }));
+    }
+    if (typeof body.remove === "string") return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { remove: body.remove }));
+    throw badRequest("expected rename: {from, to} or remove: <key>");
+  });
+
   // #g95wkd9y: links are complete once the background index is done.
   api.get("/pages/:id/backlinks", async (c) => {
     await store.whenIndexed();
