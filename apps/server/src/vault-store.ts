@@ -3846,9 +3846,14 @@ export class VaultStore {
       return this.get(id);
     }
 
+    // #bg7c9bzk (#faqr8pj9's #20, @lead): a row a database makes (its parent is a database's own rows folder)
+    // writes `title:` only when the file name can't carry the title, and never `tags: []`, so Obsidian shows no
+    // empty properties on every row. Plain pages are unchanged.
+    const isRow = parentId !== null && this.ownerOfRowsFolder(parentId) !== null;
+    const titleKey = !isRow || titleFromId(id) !== title;
     const { mtimeMs: fileMtimeMs } = await this.writePage(
       filePath,
-      { title, ...(icon ? { icon } : {}), tags: [], created: now, updated: now },
+      { ...(titleKey ? { title } : {}), ...(icon ? { icon } : {}), ...(isRow ? {} : { tags: [] }), created: now, updated: now },
       content,
     );
 
@@ -3864,7 +3869,7 @@ export class VaultStore {
       filePath,
       fileMtimeMs,
       fmTags: [],
-      explicitTitle: true,
+      explicitTitle: titleKey,
       kind: "page",
     };
     if (icon) record.icon = icon;
