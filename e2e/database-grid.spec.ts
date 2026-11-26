@@ -189,3 +189,35 @@ test('an IME composition on an active cell starts the edit and keeps every chara
   await page.keyboard.press('Enter');
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: повар\nage: 41\n---\nBo\n');
 });
+
+test('a column rename skips a row changed on disk since the table read it, and says so (@lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
+
+  // The table's refreshes are held, so it keeps the versions it read; then another app edits Ann.
+  const held: Array<() => Promise<void>> = [];
+  await page.route('**/api/bases/**/view**', (route) => void held.push(() => route.continue()));
+  const ann = path.join(E2E_VAULT, 'People/Ann.md');
+  await fs.writeFile(ann, '---\nrole: Chef\nage: 30\n---\nAnn, edited elsewhere\n', 'utf8');
+  // As another app's save: a later modification time (the version the server compares).
+  const later = new Date(Date.now() + 5_000);
+  await fs.utimes(ann, later, later);
+  await expect.poll(async () => (await api.getPage(request, 'People/Ann')).content, { timeout: 15_000 }).toContain('edited elsewhere');
+
+  await page.getByTestId('base-th-note.role').click();
+  await page.getByTestId('base-rename-column').click();
+  const input = page.getByTestId('base-rename-column-input');
+  await input.fill('job');
+  await input.press('Enter');
+
+  // Bo follows; Ann keeps the other app's text, and the skipped row is reported.
+  await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\nage: 41\n---\nBo\n');
+  await expect(page.getByRole('alert')).toContainText("1 row couldn't be changed");
+  expect(await read('People/Ann.md')).toBe('---\nrole: Chef\nage: 30\n---\nAnn, edited elsewhere\n');
+
+  await page.unroute('**/api/bases/**/view**');
+  for (const release of held) await release();
+});
