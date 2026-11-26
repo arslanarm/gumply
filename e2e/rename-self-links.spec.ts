@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test, expect } from './fixtures';
-import { API_URL, E2E_VAULT } from './support/env';
+import { E2E_VAULT } from './support/env';
 import { expectPageTitle } from './support/ui';
 
 /**
@@ -48,7 +48,7 @@ test('renaming from the title rewrites the page\'s self-links, and typing right 
   await expect(page.getByTestId('editor-content')).not.toContainText('Parent');
 });
 
-test('typing during the rename of a page with only self-links: the typed text goes to History, and a notice says so (#h7j39kka, (A))', async ({ page, request, vault }) => {
+test('typing during the rename of a page with only self-links is taken in place (#h7j39kka, #z9hufufn): the typed text and [[Moved]] in the file, no remount, no notice', async ({ page, vault }) => {
   // No Parent/ folder: only the self-link makes the rename rewrite the page's own text.
   await vault.seed([{ title: 'Parent', content: 'Me: [[Parent]] here.\n' }]);
   // The title PUT is held for 2 s, so there is time to type while it runs.
@@ -62,6 +62,16 @@ test('typing during the rename of a page with only self-links: the typed text go
   );
   await page.goto('/#/Parent');
   await expectPageTitle(page, 'Parent');
+  // Counts editor mounts from now on: the in-place apply never remounts.
+  await page.evaluate(() => {
+    const w = window as unknown as { __mounts: number };
+    w.__mounts = 0;
+    new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node instanceof Element && (node.matches('[data-testid="editor-content"]') || node.querySelector('[data-testid="editor-content"]'))) w.__mounts += 1;
+    }).observe(document.body, { childList: true, subtree: true });
+  });
   await page.getByTestId('page-title').click();
   const input = page.getByTestId('page-title-input');
   await input.fill('Moved');
@@ -70,28 +80,18 @@ test('typing during the rename of a page with only self-links: the typed text go
   await page.keyboard.press('End');
   await page.keyboard.type(' Typed during.');
   await expect(page).toHaveURL(/#\/Moved$/, { timeout: 15_000 });
+  await page.keyboard.type(' Just after.');
   const file = path.join(E2E_VAULT, 'Moved.md');
-  await expect.poll(() => { try { return readFileSync(file, 'utf8'); } catch { return ''; } }, { timeout: 15_000 }).toContain('[[Moved]]');
-  const notice = page.getByTestId('undo-toast');
-  await expect(notice).toContainText('Your typing during the rename was saved in History.');
-  await notice.hover(); // pauses its 8 s timer
-  await page.waitForTimeout(3_000); // any late save has had its chance
+  await expect.poll(() => { try { return readFileSync(file, 'utf8'); } catch { return ''; } }, { timeout: 15_000 }).toContain('Just after.');
   const text = readFileSync(file, 'utf8');
-  expect(text).toContain('[[Moved]]');
+  expect(text).toContain('Me: [[Moved]] here. Typed during. Just after.');
   expect(text).not.toContain('[[Parent]]');
-  expect(text, 'the stale body was not saved').not.toContain('Typed during.');
   expect(existsSync(path.join(E2E_VAULT, 'Parent.md')), 'no old file left').toBe(false);
-  const items = ((await (await request.get(`${API_URL}/api/history/Moved`)).json()) as { items: Array<{ file: string; reason?: string }> }).items;
-  const kept = items.find((item) => item.reason === 'before-reload');
-  expect(kept, 'the typed text is in History').toBeDefined();
-  expect(await (await request.get(`${API_URL}/api/history/Moved/${encodeURIComponent(kept!.file)}`)).text()).toContain('Typed during.');
-  // Type only once focus is back in the body (keys in the remount instant itself: 0.9.6's known limit).
-  await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="editor-content"]')))).toBe(true);
-  await page.keyboard.type(' Typed on.');
-  await expect.poll(() => readFileSync(file, 'utf8'), { timeout: 15_000 }).toContain('Typed on.');
+  expect(await page.evaluate(() => (window as unknown as { __mounts: number }).__mounts), 'never remounted').toBe(0);
+  await expect(page.getByTestId('undo-toast').filter({ hasText: 'Your typing during the rename' })).toHaveCount(0);
+  // Undo the typing: the rename's change was kept out of the undo history.
+  for (let i = 0; i < 6; i++) await page.keyboard.press('ControlOrMeta+z');
+  await page.waitForTimeout(2_000);
   expect(readFileSync(file, 'utf8')).toContain('[[Moved]]');
   expect(readFileSync(file, 'utf8')).not.toContain('[[Parent]]');
-  // The notice's History button opens it (after the typing: Escape moves focus away).
-  await notice.getByRole('button', { name: 'History' }).click();
-  await expect(page.getByTestId('history-dialog')).toBeVisible();
 });
