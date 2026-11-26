@@ -456,6 +456,8 @@ function PropertyLinkedText({ text }: { text: string }) {
 }
 
 function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps) {
+  /** An Escape cancels: its blur must not commit (see `commit`). */
+  const cancelled = useRef(false);
   const t = useT();
   const stored = property.value === null || property.value === undefined ? "" : String(property.value);
   const [draft, setDraft] = useState(stored);
@@ -480,6 +482,12 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
     );
   }
   const commit = () => {
+    // #12 / #5q4vaacm: an Escape's blur commits nothing (the draft it reset isn't applied yet when the blur runs,
+    // so without this the typed text was saved).
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
     if (draft === stored) return;
     if (property.type === "number" && draft.trim() !== "" && !Number.isFinite(Number(draft.trim()))) {
       onInvalid("number");
@@ -504,6 +512,7 @@ function TextEditor({ property, autoFocus, onSave, onInvalid }: ValueEditorProps
       onKeyDown={(event) => {
         if (event.key === "Enter") (event.target as HTMLInputElement).blur();
         else if (event.key === "Escape") {
+          cancelled.current = true;
           setDraft(stored);
           (event.target as HTMLInputElement).blur();
         }
