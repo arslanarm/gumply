@@ -117,6 +117,34 @@ describe("the table's undo, all or nothing (#7prbquxu phase 4b)", () => {
     expect(existsSync(join(dir, "People/Ann.md"))).toBe(true);
   });
 
+  it("a Restore of the group that fails on the 3rd row keeps the two that came back, and the item lists only the rest (@opus-hunter's nit i, @lead)", async () => {
+    const { store, read } = await vault({ "People.base": BASE });
+    const pasted = await store.pasteIntoOwnedRows("People.base", {
+      rows: [
+        { title: "Bo", set: { role: "Pilot" } },
+        { title: "Cy", set: { role: "Cook" } },
+        { title: "Dee", set: { role: "Vet" } },
+      ],
+    });
+    const dee = await read("People/Dee.md");
+    await store.undoDatabaseChange("People.base", { drop: pasted.made.map((row) => ({ id: row.id, from: row.after })) });
+    const [group] = await store.listTrash();
+    failing.renameTo = "People/Dee.md";
+    await expect(store.restore(group!.trashId)).rejects.toThrow();
+    failing.renameTo = null;
+    // The two that came back are in the store at once (no rescan needed).
+    const ids = store.list().map((meta) => meta.id);
+    expect(ids).toEqual(expect.arrayContaining(["People/Bo", "People/Cy"]));
+    expect(ids).not.toContain("People/Dee");
+    const [rest] = await store.listTrash();
+    expect(rest).toMatchObject({ trashId: group!.trashId, undoRows: 1 });
+    expect(rest!.children.map((child) => child.id)).toEqual(["People/Dee"]);
+    // A second Restore brings the last one.
+    await store.restore(group!.trashId);
+    expect(await read("People/Dee.md")).toBe(dee);
+    expect(await store.listTrash()).toEqual([]);
+  });
+
   it("a redo refuses when the rows folder is gone, and makes no new folder (@opus-hunter)", async () => {
     const { dir, store } = await vault({ "People.base": BASE });
     const pasted = await store.pasteIntoOwnedRows("People.base", { rows: [{ title: "Bo", set: { role: "Pilot" } }] });
