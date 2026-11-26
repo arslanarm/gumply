@@ -1,0 +1,35 @@
+gumply:
+  rows: People
+filters:
+  and:
+    - file.folder == "People"
+formulas:
+  shout: role + "!"
+  loud: role
+properties:
+  note.stage:
+    gumplyType: select
+    gumplyOptions:
+      - value: Todo
+        color: blue
+      - value: Doing
+        color: orange
+      - value: Done
+        color: green
+    displayName: Phase
+views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - role
+      - stage
+      - formula.shout
+  - type: table
+    name: Done only
+    filters:
+      and:
+        - stage == "Done"
+    order:
+      - file.name
+      - stage
