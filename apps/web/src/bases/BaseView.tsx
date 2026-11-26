@@ -309,6 +309,25 @@ export function BaseView(props: BaseViewProps) {
     [baseId, writer],
   );
 
+  /** #7prbquxu phase 2: a block pasted into the grid, in one server request; refused rows are named. */
+  const pasteRows = useCallback(
+    async (rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>) => {
+      try {
+        await saverRef.current?.flush();
+        const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer });
+        if (result.refused.length) {
+          const refused = t("bases.pasteRefused", { titles: titleList(result.refused) });
+          props.onError?.(result.stuck.length ? `${refused} ${t("bases.pasteStuck", { titles: titleList(result.stuck) })}` : refused);
+        }
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseId, writer, load],
+  );
+
   const renameColumn = useCallback(
     async (column: BaseColumn, to: string) => {
       const from = column.id.slice(5);
@@ -578,7 +597,7 @@ export function BaseView(props: BaseViewProps) {
           onRename={rename}
           onNewRow={() => void newRow()}
           {...(ownedRowsFolder(config)
-            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
+            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onPasteRows: pasteRows, onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
             : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}

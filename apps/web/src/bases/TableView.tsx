@@ -19,6 +19,7 @@ import { AddColumn, COLUMN_TYPES } from "./AddColumn.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
 import { api } from "../api/client.js";
+import { plannedPaste, readPaste } from "./paste.js";
 import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
 
@@ -55,6 +56,8 @@ export interface TableViewProps {
   onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
   onSetColumnType?: (column: BaseColumn, type: PropertyType) => Promise<void>;
+  /** #7prbquxu phase 2: a block pasted at the active cell (one server request). */
+  onPasteRows?: (rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>) => Promise<void>;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
   onRenameDone?: () => void;
@@ -276,6 +279,8 @@ export function TableView(props: TableViewProps) {
   const [addColumnAnchor, setAddColumnAnchor] = useState<HTMLElement | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BaseColumn | null>(null);
+  /** #7prbquxu phase 2: what the last paste left out (a short note under the table). */
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
   const closeHeaderMenu = () => {
     setHeaderMenu(null);
     setRenaming(null);
@@ -423,6 +428,32 @@ export function TableView(props: TableViewProps) {
                 // Composed where typing doesn't apply (a checkbox, a read-only cell): dropped.
                 if (!typing) event.currentTarget.value = "";
               }}
+              onPaste={(event) => {
+                // While typing, the input takes the paste as text.
+                if (typing) return;
+                event.preventDefault();
+                const read = readPaste(event.clipboardData.getData("text/plain"), event.clipboardData.getData("text/html"));
+                const sink = event.currentTarget;
+                if ("value" in read) {
+                  // One value: as typing would (a date or select opens its editor; a checkbox or read-only cell ignores it).
+                  const title = isTitleColumn(activeColumn.id);
+                  const starts = title ? "type" : typingStarts(activeColumn.type, activeColumn.editable);
+                  if (starts === "type") {
+                    sink.value = read.value;
+                    setTyping(true);
+                  } else if (starts === "editor") setEditRequest({ rowId: activeRow.id, col: activePos.col });
+                  return;
+                }
+                const plan = plannedPaste(
+                  read.rows,
+                  activePos,
+                  columns,
+                  rowOrder.map((entry) => result.rows[entry.row]!.id),
+                  t("defaults.untitledPage"),
+                );
+                setPasteNote(plan.left || plan.pastLast ? t("bases.pasteLeftOut", { count: plan.left + plan.pastLast }) : null);
+                if (plan.rows.length) void props.onPasteRows?.(plan.rows);
+              }}
               onCopy={(event) => {
                 if (typing) return;
                 event.preventDefault();
@@ -477,6 +508,12 @@ export function TableView(props: TableViewProps) {
           ))}
         </div>
       </div>
+
+      {pasteNote ? (
+        <p className="base-typing-hint" role="status" data-testid="base-paste-note">
+          {pasteNote}
+        </p>
+      ) : null}
 
       {props.onAddRow && !props.readOnly && result.rows.length === 0 ? (
         <p className="base-typing-hint" data-testid="base-typing-hint">
