@@ -70,6 +70,17 @@ describe("punctuated property keys round-trip", () => {
     expect(editFrontmatterYaml(mixed, { rank: 4 })).toBe(mixed.replace("rank: 3", "rank: 4"));
   });
 
+  it("a rename of a plain key to a punctuated one (@opus-hunter's case): the value and the other lines stay, YAML reads it back", () => {
+    const inner = "role: Cook # by hand\nage: 30\n";
+    const renamed = editFrontmatterYaml(inner, {}, [{ from: "role", to: "Price ($)" }]);
+    expect(renamed).toBe("Price ($): Cook # by hand\nage: 30\n");
+    expect(parse(renamed)).toEqual({ "Price ($)": "Cook", age: 30 });
+    expect(parseFrontmatter(`---\n${renamed}---\n`).frontmatter).toEqual({ "Price ($)": "Cook", age: "30" });
+    const quoted = editFrontmatterYaml(inner, {}, [{ from: "role", to: "a: b" }]);
+    expect(quoted).toBe('"a: b": Cook # by hand\nage: 30\n');
+    expect(parse(quoted)).toEqual({ "a: b": "Cook", age: 30 });
+  });
+
   it("a list item, a comment or a flow line is never read as a key", () => {
     const note = parseFrontmatter("---\ntags:\n  - one\n# Price ($): 3\n- (x): 2\n[a]: 1\n---\n");
     expect(note.frontmatter).toEqual({ tags: ["one"] });
