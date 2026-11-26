@@ -33,7 +33,8 @@ describe("a key Gumply adds to a .base goes in Obsidian's order (#bg7c9bzk)", ()
   });
 
   it("a comment above views: stays directly above it when properties: goes in before (@graph-dev)", () => {
-    const source = "# my views\n" + VIEWS_ONLY;
+    // Not on the file's first line (that would be the document's own comment): between two keys.
+    const source = 'filters:\n  and:\n    - file.folder == "Books"\n# my views\n' + VIEWS_ONLY;
     const next = withSelectSettings(parseBase(source), "stage", { kind: "select", options: [{ value: "Todo", color: "blue" }] });
     const text = updateBaseSource(source, next);
     expect(text).toContain("# my views\nviews:\n");
