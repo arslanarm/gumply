@@ -296,9 +296,12 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
       "Elsewhere.md": "Not a row\n",
     });
     const url = `/api/bases/${encodeId("People.base")}/rows-paste`;
+    const seen = (await getJson<{ updated: string }>(app, `/api/pages/${encodeId("People/Ann")}`)).updated;
+    // An existing row without the version it was read at: refused (no blind overwrite through the API).
+    expect((await jsonRequest(app, "POST", url, { rows: [{ id: "People/Ann", set: { role: "Chef" } }] })).status).toBe(400);
     const response = await jsonRequest(app, "POST", url, {
       rows: [
-        { id: "People/Ann", set: { role: "Chef", age: 30 } },
+        { id: "People/Ann", expectedUpdated: seen, set: { role: "Chef", age: 30 } },
         { title: "Bo", set: { role: "Pilot", age: 41 } },
       ],
     });
@@ -309,7 +312,7 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toContain("age: 30\n");
     expect(await readFile(join(dir, "People/Bo.md"), "utf8")).toContain("role: Pilot\n");
     // Only rows of this database.
-    expect((await jsonRequest(app, "POST", url, { rows: [{ id: "Elsewhere", set: { role: "x" } }] })).status).toBe(400);
+    expect((await jsonRequest(app, "POST", url, { rows: [{ id: "Elsewhere", expectedUpdated: seen, set: { role: "x" } }] })).status).toBe(400);
     expect((await jsonRequest(app, "POST", url, { rows: [{ title: "", set: {} }] })).status).toBe(400);
   });
 
@@ -361,8 +364,8 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     };
     const result = await store.pasteIntoOwnedRows("People.base", {
       rows: [
-        { id: "People/Ann", set: { role: "Chef", age: 30 } },
-        { id: "People/Bo", set: { role: "Baker" } },
+        { id: "People/Ann", expectedUpdated: store.get("People/Ann").updated, set: { role: "Chef", age: 30 } },
+        { id: "People/Bo", expectedUpdated: store.get("People/Bo").updated, set: { role: "Baker" } },
         { title: "Cy", set: { role: "Diver" } },
       ],
     });
@@ -370,10 +373,9 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(result.created).toEqual([]);
     expect(result.refused.map((row) => row.title)).toEqual(["Bo"]);
     expect(result.stuck).toEqual([]);
-    // Ann has her old role again, and no age (she had none).
-    const ann = await readFile(join(dir, "People/Ann.md"), "utf8");
-    expect(ann).toContain("role: Cook\n");
-    expect(ann).not.toContain("age");
+    // Ann is back byte for byte (her old role, no age: she had none).
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
+    expect(result.trashed).toBe(0);
     // Cy was never made (the updates come first).
     expect((await readdir(join(dir, "People"))).sort()).toEqual(["Ann.md", "Bo.md"]);
   });
