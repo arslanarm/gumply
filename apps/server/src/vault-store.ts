@@ -1102,7 +1102,7 @@ export async function moveFileNoReplace(from: string, to: string): Promise<void>
   } catch (error) {
     const code = (error as { code?: string }).code ?? "";
     if (code === "EEXIST" && (await sameFile(from, to))) {
-      await rename(from, to);
+      await moveOntoSameFile(from, to);
       return;
     }
     if (code === "EEXIST" || code === "ENOENT") throw error;
@@ -1111,7 +1111,7 @@ export async function moveFileNoReplace(from: string, to: string): Promise<void>
       await copyFile(from, to, fsConstants.COPYFILE_EXCL);
     } catch (copyError) {
       if (isEexist(copyError) && (await sameFile(from, to))) {
-        await rename(from, to);
+        await moveOntoSameFile(from, to);
         return;
       }
       throw copyError;
@@ -1130,8 +1130,26 @@ export async function moveFileNoReplace(from: string, to: string): Promise<void>
 
 /** Whether two paths name one file (same inode and device), e.g. `note.md` and `Note.md` on macOS. */
 async function sameFile(a: string, b: string): Promise<boolean> {
-  const [x, y] = await Promise.all([stat(a).catch(() => null), stat(b).catch(() => null)]);
-  return x !== null && y !== null && x.ino === y.ino && x.dev === y.dev;
+  // 64-bit file ids (NTFS/ReFS) compared exactly; some FUSE and network mounts report 0 for every file (@opus-editor).
+  const [x, y] = await Promise.all([stat(a, { bigint: true }).catch(() => null), stat(b, { bigint: true }).catch(() => null)]);
+  return x !== null && y !== null && x.ino !== 0n && x.ino === y.ino && x.dev === y.dev;
+}
+
+/**
+ * `from` and `to` are one file (`sameFile`). Either the file system folds the two names into one entry (a case-only
+ * or NFC/NFD-only rename on APFS or NTFS): then it's a rename of that entry. Or they're two directory entries,
+ * hard links to one file (a crash between `link` and `unlink` leaves that): then `rename` would do nothing, so the
+ * extra name goes and the file is in one place (@opus-editor). Told apart by the directory listings: two entries
+ * means each name is listed as written.
+ */
+async function moveOntoSameFile(from: string, to: string): Promise<void> {
+  if (from === to) return;
+  const listed = async (path: string) => (await readdir(dirname(path)).catch(() => [] as string[])).includes(basename(path));
+  if ((await listed(from)) && (await listed(to))) {
+    await unlink(from);
+    return;
+  }
+  await rename(from, to);
 }
 
 const isEexist = (error: unknown) => (error as { code?: string } | null)?.code === "EEXIST";
