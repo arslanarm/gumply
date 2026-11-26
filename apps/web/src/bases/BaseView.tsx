@@ -20,7 +20,7 @@ import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
 import { BaseLinks } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
-import type { PastedRow } from "./paste.js";
+import { parseCsv, type PastedRow } from "./paste.js";
 import type { PreviewResult } from "./PastePreview.js";
 import { registerSaver } from "../lib/pending-saves.js";
 import type { SaveState } from "../editor/autosave.js";
@@ -91,6 +91,9 @@ export function BaseView(props: BaseViewProps) {
   const active = views.find((view) => view.name === activeName) ?? views[0] ?? null;
   const [result, setResult] = useState<BaseViewResult | null>(null);
   const resultRef = useRef(result);
+  /** #7prbquxu phase 2: "Import CSV…": the chosen file's rows, for the table's paste preview. */
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const [importBlock, setImportBlock] = useState<{ rows: string[][]; n: number } | null>(null);
   resultRef.current = result;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
@@ -544,9 +547,32 @@ export function BaseView(props: BaseViewProps) {
             onChangeConfig={(next) => void saveConfig(next)}
             onChangeView={changeView}
             openRequest={openRequest}
+            {...(ownedRowsFolder(config) && !embed ? { onImportCsv: () => csvInputRef.current?.click() } : {})}
           />
         ) : null}
       </div>
+
+      {ownedRowsFolder(config) && !embed ? (
+        <input
+          ref={csvInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          hidden
+          data-testid="base-import-csv-file"
+          onChange={(event) => {
+            const input = event.currentTarget;
+            const file = input.files?.[0];
+            input.value = "";
+            if (!file) return;
+            void file.text().then((text) => {
+              const rows = parseCsv(text);
+              if (rows.length && rows.some((row) => row.some((cell) => cell.trim() !== ""))) {
+                setImportBlock((current) => ({ rows, n: (current?.n ?? 0) + 1 }));
+              }
+            });
+          }}
+        />
+      ) : null}
 
       {!embed && views[0]?.type === "calendar" ? (
         // Obsidian opens a base (and `![[X.base]]`) on its first view, and has no Calendar (@opus-hunter, 1.14.4).
@@ -611,7 +637,7 @@ export function BaseView(props: BaseViewProps) {
           onRename={rename}
           onNewRow={() => void newRow()}
           {...(ownedRowsFolder(config)
-            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
+            ? { onAddRow: (title: string) => newRow(undefined, title), importBlock, onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
                 onPastePreview: (previewed: PreviewResult, viewName: string) => pasteRows(previewed.rows, { view: viewName, keys: previewed.keys }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
             : {})}
           onChangeView={changeView}

@@ -57,6 +57,8 @@ export interface TableViewProps {
   onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
   onSetColumnType?: (column: BaseColumn, type: PropertyType) => Promise<void>;
+  /** #7prbquxu phase 2: "Import CSV…" rows for the paste preview (`n` bumps to open it again). */
+  importBlock?: { rows: string[][]; n: number } | null;
   /** #7prbquxu phase 2, step 3: the preview's rows and columns, for this view (one server request). */
   onPastePreview?: (result: PreviewResult, view: string) => Promise<void>;
   /** #7prbquxu phase 2: a block pasted at the active cell (one server request). */
@@ -286,6 +288,11 @@ export function TableView(props: TableViewProps) {
   const [pasteNote, setPasteNote] = useState<string | null>(null);
   /** #7prbquxu phase 2, step 3: a block pasted on the typing row, waiting in the preview. */
   const [previewBlock, setPreviewBlock] = useState<string[][] | null>(null);
+  // "Import CSV…": the file's rows open the same preview as a paste.
+  useEffect(() => {
+    if (props.importBlock) setPreviewBlock(props.importBlock.rows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.importBlock?.n]);
   const knownKeys = useMemo(
     () => new Map(columns.filter((column) => column.id.startsWith("note.")).map((column) => [column.id.slice(5), column.type] as const)),
     [columns],

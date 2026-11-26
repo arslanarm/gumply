@@ -36,6 +36,8 @@ export interface ViewToolbarProps {
   onChangeView: (view: BaseView) => void;
   /** Open a panel from outside (Kanban's "Group by"); bump `n` to reopen. */
   openRequest?: { panel: Panel; n: number } | null;
+  /** #7prbquxu phase 2: an owned database's "Import CSV…" (in the ⋯ panel). */
+  onImportCsv?: () => void;
 }
 
 export function ViewToolbar(props: ViewToolbarProps) {
@@ -157,7 +159,15 @@ export function ViewToolbar(props: ViewToolbarProps) {
       <span className="base-tool-anchor">
         {button("settings", "more", t("bases.layout"))}
         {open === "settings" ? (
-          <SettingsPanel anchor={anchors.current.settings} config={config} result={result} view={view} onClose={close} onChange={props.onChangeView} />
+          <SettingsPanel
+            anchor={anchors.current.settings}
+            config={config}
+            result={result}
+            view={view}
+            onClose={close}
+            onChange={props.onChangeView}
+            {...(props.onImportCsv ? { onImportCsv: () => (close(), props.onImportCsv?.()) } : {})}
+          />
         ) : null}
       </span>
     </div>
@@ -232,6 +242,7 @@ function SettingsPanel(props: {
   view: BaseView;
   onClose: () => void;
   onChange: (view: BaseView) => void;
+  onImportCsv?: () => void;
 }) {
   const t = useT();
   const { view } = props;
@@ -380,6 +391,11 @@ function SettingsPanel(props: {
             </label>
           ))}
         </>
+      ) : null}
+      {props.onImportCsv ? (
+        <button type="button" className="button-secondary base-import-csv" data-testid="base-import-csv" onClick={props.onImportCsv}>
+          {t("bases.importCsv")}
+        </button>
       ) : null}
     </Popover>
   );

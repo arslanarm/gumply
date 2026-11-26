@@ -7,6 +7,18 @@
 
 /** Rows of cells from TSV: quoted fields may hold tabs, newlines and `""`; one trailing newline is ignored. */
 export function parseTsv(text: string): string[][] {
+  return parseDelimited(text, "\t");
+}
+
+/**
+ * Rows of cells from CSV ("Import CSV…", spec §5): RFC 4180 quoting, as the TSV reader, with commas;
+ * a byte-order mark at the start is dropped. Commas are split only here, never on paste.
+ */
+export function parseCsv(text: string): string[][] {
+  return parseDelimited(text.replace(/^\uFEFF/, ""), ",");
+}
+
+function parseDelimited(text: string, separator: "\t" | ","): string[][] {
   const source = text.replace(/\r\n?/g, "\n").replace(/\n$/, "");
   const rows: string[][] = [];
   let row: string[] = [];
@@ -31,12 +43,12 @@ export function parseTsv(text: string): string[][] {
         i += 1;
       }
       // Anything after the closing quote up to the separator is kept as written (Excel does too).
-      while (i < source.length && source[i] !== "\t" && source[i] !== "\n") {
+      while (i < source.length && source[i] !== separator && source[i] !== "\n") {
         cell += source[i];
         i += 1;
       }
     } else {
-      while (i < source.length && source[i] !== "\t" && source[i] !== "\n") {
+      while (i < source.length && source[i] !== separator && source[i] !== "\n") {
         cell += source[i];
         i += 1;
       }
