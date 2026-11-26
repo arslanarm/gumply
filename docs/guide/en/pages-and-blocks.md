@@ -49,6 +49,8 @@ With the keyboard: `Ctrl/Cmd+Shift+↑/↓` moves a block up or down, and `Ctrl/
 
 Select text to see the formatting toolbar: bold, italic, strikethrough, code, a link, a highlight, text and background **colours**, and **Turn into**. The usual shortcuts work too (`Ctrl/Cmd+B`, `Ctrl/Cmd+I`).
 
+Colours work on links too, and a coloured link still opens its page. **In Obsidian**, a coloured link works in reading view, but its live preview shows it as plain coloured text that doesn't open. The yellow highlight is the exception: Obsidian keeps a highlighted link working everywhere.
+
 ### Callouts and toggles
 
 A **callout** is a coloured box with a title, for a note, a tip or a warning. A **toggle** is a block whose contents fold away. In the file they're Obsidian callouts (`> [!note]`), so they show the same in Obsidian. Whether a toggle starts open or closed is set in its block actions; opening one while you read never changes the file.

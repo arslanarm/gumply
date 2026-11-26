@@ -313,35 +313,6 @@ export function currentColor(editor: Editor, kind: ColorKind): string | null {
 }
 
 /**
- * #gcba75f4: how much of the selection is links (a Markdown link's text, a wiki link). In Obsidian
- * only `==…==` colours a link without breaking it (a span around or inside a link turns it into
- * plain text in live preview), so links keep their colour: "only" means there's nothing else to
- * colour, "some" that the links in it will stay as they are.
- */
-export function linkCoverage(editor: Editor): "none" | "some" | "only" {
-  const { state } = editor;
-  const { from, to } = state.selection;
-  if (from === to) return "none";
-  const link = state.schema.marks.link;
-  let links = 0;
-  let other = 0;
-  state.doc.nodesBetween(from, to, (node) => {
-    if (!node.isInline) return true;
-    if (node.type.name === "wikiLink" || (node.isText && link && link.isInSet(node.marks))) links += 1;
-    // Spaces between links aren't text to colour ([[A]] [[B]] is links only).
-    else if (node.isText && (node.text ?? "").trim() !== "") other += 1;
-    return false;
-  });
-  if (links === 0) return "none";
-  return other === 0 ? "only" : "some";
-}
-
-/** #gcba75f4: a link can take Default (no colour) and the yellow highlight only. */
-export function linkCanTake(kind: ColorKind, name: ColorName | null): boolean {
-  return name === null || (kind === "background" && name === "yellow");
-}
-
-/**
  * Colour the selection (null = Default: remove the colour). The yellow
  * background is Obsidian's own highlight, `==text==` (#h368c8ni), so it is
  * the highlight mark; Default background removes that too.
@@ -361,15 +332,15 @@ export function applyColor(editor: Editor, kind: ColorKind, name: ColorName | nu
   } else if (name) {
     const type = state.schema.marks[kind === "text" ? COLOR_MARKS.text : COLOR_MARKS.background];
     if (type) {
-      // Links are never coloured (#h368c8ni, measured in Obsidian): the span
-      // ends before a link and starts again after it. `[[A|<span>…</span>]]`
-      // shows raw HTML in Obsidian, and a span around a link isn't
-      // clickable in its live preview. Atoms (wiki links, images, math) too.
+      // #zvwk8irb (@plony): links take every colour. A Markdown link's colour is written inside its
+      // text (`[<span>label</span>](url)`, the link mark is outermost), a wiki link's around it
+      // (`<span>[[Target]]</span>`; `[[A|<span>…</span>]]` would show raw HTML in Obsidian). Both
+      // keep the link in Obsidian's reading view; its live preview shows them as plain text (known
+      // limit). Other atoms (images, math, file cards) stay uncoloured.
       const mark = type.create({ color: paletteValue(kind, name) });
-      const link = state.schema.marks.link;
       state.doc.nodesBetween(from, to, (node, pos) => {
         if (!node.isInline) return true;
-        if (node.isText && !(link && link.isInSet(node.marks))) {
+        if (node.isText || node.type.name === "wikiLink") {
           tr = tr.addMark(Math.max(from, pos), Math.min(to, pos + node.nodeSize), mark);
         }
         return false;
