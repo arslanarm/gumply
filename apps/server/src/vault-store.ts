@@ -829,6 +829,18 @@ function mtimeVersion(mtimeMs: number): string {
 }
 
 /**
+ * #y5k39njn: a version strictly after `version` (1 ms later). A page's version
+ * is the newer of its `updated:` and its file time, so an outside edit that
+ * keeps the frontmatter with an older or equal file time (a sync tool keeping
+ * another device's mtime, a lagging clock, FAT's 2 s times) would keep the
+ * version: a save from before it would then pass the check and overwrite it.
+ */
+function laterVersion(version: string): string {
+  const at = Date.parse(version);
+  return Number.isNaN(at) ? new Date().toISOString() : new Date(at + 1).toISOString();
+}
+
+/**
  * The version of a note Gumply just wrote with an `updated:` key: the same rule
  * as reading it back (`readRecord`), the newer of that key and the file time.
  * The file time is usually a millisecond or more after the `updated:` written
@@ -1659,7 +1671,12 @@ export class VaultStore {
     for (const [id, record] of next) {
       const current = this.pages.get(id);
       if (current === record) continue;
-      if (!current || this.recordSignature(current) !== this.recordSignature(record)) changedIds.push(id);
+      if (!current || this.recordSignature(current) !== this.recordSignature(record)) {
+        changedIds.push(id);
+        // #y5k39njn: new content always gets a newer version, so a save from before it is refused.
+        // Never for a re-read of the very bytes we wrote last (@graph-dev's review).
+        if (current && record.updated <= current.updated && !this.isOwnBytes(record)) record.updated = laterVersion(current.updated);
+      }
       else if (current.fileMtimeMs !== record.fileMtimeMs || current.updated !== record.updated) {
         // #2wjvk3br: the very same bytes with a moved stat (a same-bytes rewrite or a touch):
         // take the new time and version now, silently. Other bytes the record doesn't show
@@ -1742,7 +1759,8 @@ export class VaultStore {
       // #2wjvk3br: an unchanged record keeps what the adopt step above learned.
       if (previous && previous !== record && previous.sameBytes && previous.sameBytes.now === record.updated) record.sameBytes = previous.sameBytes;
       if (own && own.version === record.updated) record.ownWrite = own;
-      else if (previous && this.recordSignature(previous) !== this.recordSignature(record)) editedOutside.push(record);
+      // #y5k39njn: a re-read of the very bytes we wrote last is never an outside edit (no outside History version).
+      else if (previous && this.recordSignature(previous) !== this.recordSignature(record) && !this.isOwnBytes(record)) editedOutside.push(record);
     }
 
     const previousIds = new Set(this.pages.keys());
@@ -1830,6 +1848,33 @@ export class VaultStore {
    * read. Re-read just this file: when only the stat moved (the same content),
    * adopt it and let the save go on. Returns true when the file is unchanged.
    */
+  /** #y5k39njn: `record` was read from exactly the bytes we wrote last to its file. */
+  private isOwnBytes(record: PageRecord): boolean {
+    const ours = this.ownBytes.get(record.filePath);
+    if (ours === undefined) return false;
+    const read = (this.bytesAt.get(record.filePath) ?? []).find((entry) => entry.mtimeMs === record.fileMtimeMs);
+    return read !== undefined && read.hash === ours;
+  }
+
+  /**
+   * Has the file changed since `record` was read or written? `info` is its stat
+   * now (null: gone). #2wjvk3br: a moved mtime with the same bytes (a touch the
+   * watcher hasn't processed yet) isn't a change. #y5k39njn: other bytes under
+   * the same file time are (a tool that keeps the mtime, FAT's 2 s times),
+   * known by the hash noted at the record's file time.
+   */
+  private async changedOnDiskSince(record: PageRecord, info: { mtimeMs: number } | null): Promise<boolean> {
+    if (info === null) return true;
+    if (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1) return !(await this.adoptIfSameBytes(record));
+    const known = (this.bytesAt.get(record.filePath) ?? []).find((entry) => entry.mtimeMs === record.fileMtimeMs);
+    if (!known) return false;
+    try {
+      return bytesHash(await readFile(record.filePath)) !== known.hash;
+    } catch {
+      return false;
+    }
+  }
+
   private async adoptIfSameBytes(record: PageRecord): Promise<boolean> {
     let fresh: PageRecord;
     try {
@@ -1850,8 +1895,16 @@ export class VaultStore {
    */
   private readonly bytesAt = new Map<string, Array<{ mtimeMs: number; hash: string }>>();
 
-  private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer): void {
+  /**
+   * #y5k39njn (@graph-dev's review): the hash of the last bytes we wrote to each
+   * file. A re-read of exactly those is never an outside edit, whatever the
+   * re-read record's signature says, so it never gets a moved-on version.
+   */
+  private readonly ownBytes = new Map<string, string>();
+
+  private noteBytes(filePath: string, mtimeMs: number, bytes: string | Buffer, ours = false): void {
     const hash = bytesHash(bytes);
+    if (ours) this.ownBytes.set(filePath, hash);
     const kept = (this.bytesAt.get(filePath) ?? []).filter((entry) => entry.mtimeMs !== mtimeMs);
     kept.push({ mtimeMs, hash });
     this.bytesAt.set(filePath, kept.slice(-3));
@@ -3177,7 +3230,7 @@ export class VaultStore {
       info = null;
     }
     // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     let conflictBackup: string | undefined;
     if (mtimeChanged || versionChanged) {
@@ -3298,7 +3351,7 @@ export class VaultStore {
       throw error;
     }
     stats = await statAfterRename(record.filePath, stats, next);
-    this.noteBytes(record.filePath, stats.mtimeMs, next);
+    this.noteBytes(record.filePath, stats.mtimeMs, next, true);
     const meta = canvasMeta(board);
     record.board = board;
     record.content = canvasText(board);
@@ -3410,7 +3463,7 @@ export class VaultStore {
       info = null;
     }
     // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     let conflictBackup: string | undefined;
     if (mtimeChanged || versionChanged) {
@@ -3485,7 +3538,7 @@ export class VaultStore {
       throw error;
     }
     stats = await statAfterRename(record.filePath, stats, text);
-    this.noteBytes(record.filePath, stats.mtimeMs, text);
+    this.noteBytes(record.filePath, stats.mtimeMs, text, true);
     record.baseSource = text;
     record.fileMtimeMs = stats.mtimeMs;
     record.updated = mtimeVersion(stats.mtimeMs);
@@ -3536,7 +3589,7 @@ export class VaultStore {
       info = null;
     }
     // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     // #z9hufufn: an ordinary save from a version that only renames' link rewrites have changed since
     // (their N10 chain runs from it to the page's version now, and no outside write moved the file) is
@@ -4126,7 +4179,8 @@ export class VaultStore {
         if (!apply) continue;
         const info = await stat(other.filePath).catch(() => null);
         if (!info) continue;
-        if (Math.abs(info.mtimeMs - other.fileMtimeMs) > 1) {
+        // #y5k39njn: also other bytes under the same file time (@graph-dev's review).
+        if (await this.changedOnDiskSince(other, info)) {
           // Changed outside since it was read: take the file as it is now, then rewrite that.
           await this.refreshFromDisk({ kind: "paths", paths: new Set([other.filePath]) });
           other = this.pages.get(this.resolveId(id));
@@ -4318,7 +4372,8 @@ export class VaultStore {
       } catch {
         info = null;
       }
-      if (info === null || Math.abs(info.mtimeMs - source.fileMtimeMs) > 1 || (input.expectedUpdated !== undefined && input.expectedUpdated !== source.updated)) {
+      // #y5k39njn: other bytes under the same file time are a change too (@graph-dev's review).
+      if ((await this.changedOnDiskSince(source, info)) || (input.expectedUpdated !== undefined && input.expectedUpdated !== source.updated)) {
         throw conflict("This page changed on disk.");
       }
       const found = findMentions(source.content, await this.mentionTermsOf(target.id));
@@ -5437,9 +5492,9 @@ export class VaultStore {
         skippedPages.push(record.id);
         continue;
       }
-      // D22: never write over a change this store hasn't seen.
-      const mtime = await stat(record.filePath).then((stats) => stats.mtimeMs, () => null);
-      if (mtime !== record.fileMtimeMs) {
+      // D22: never write over a change this store hasn't seen (#y5k39njn: other bytes under the same file time too).
+      const info = await stat(record.filePath).catch(() => null);
+      if (await this.changedOnDiskSince(record, info)) {
         skippedPages.push(record.id);
         continue;
       }
@@ -5877,9 +5932,10 @@ export class VaultStore {
     if (icon) record.icon = icon;
     this.setPropertyLinks(record, raw);
     // #kguq5bc5: the frontmatter for the properties index, so nothing reads this file again for it.
-    if (!this.rawPropertyCache.has(absolute) || this.rawPropertyCache.get(absolute)!.mtimeMs !== stats.mtimeMs) {
-      this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
-    }
+    // #y5k39njn: this read may hold other bytes under the same file time as the cached properties
+    // (a tool that keeps the mtime): what was cached for this file goes, and this read's YAML is kept.
+    this.rawPropertyCache.delete(absolute);
+    this.scanYaml.set(absolute, { mtimeMs: stats.mtimeMs, yaml: frontmatterYaml(raw) });
     return record;
   }
 
@@ -5990,7 +6046,7 @@ export class VaultStore {
       const entry = await this.historyEntry(record, file);
       const bytes = await this.versionBytes(record, entry);
       const info = await stat(record.filePath).catch(() => null);
-      const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+      const mtimeChanged = await this.changedOnDiskSince(record, info);
       if (mtimeChanged || !versionMatches(record, input.expectedUpdated, input.writer)) {
         throw conflict("This page changed on disk.");
       }
@@ -6327,7 +6383,7 @@ export class VaultStore {
   private async assertUnchanged(record: PageRecord, expected: string | undefined): Promise<void> {
     if (typeof expected !== "string") throw badRequest("expected versions are required");
     const info = await stat(record.filePath).catch(() => null);
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     if (mtimeChanged || !versionMatches(record, expected, undefined)) {
       throw conflict("This changed while you were comparing. Check again.");
     }
@@ -6786,7 +6842,7 @@ export class VaultStore {
       await rename(temporary, filePath);
       await this.rememberWrite(filePath, text);
       const { mtimeMs } = await statAfterRename(filePath, written, text);
-      this.noteBytes(filePath, mtimeMs, text);
+      this.noteBytes(filePath, mtimeMs, text, true);
       return {
         mtimeMs,
         // True when the version is the `updated:` just written; otherwise the
