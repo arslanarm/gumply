@@ -193,7 +193,14 @@ function patchNode(doc: Document, node: Node | null | undefined, previous: unkno
   return doc.createNode(next) as Node;
 }
 
-function patchMap(doc: Document, map: YAMLMap, previous: Record<string, unknown>, next: Record<string, unknown>): void {
+/**
+ * #bg7c9bzk (#faqr8pj9's #21): Obsidian 1.14.4's top-level order for a .base. It rewrites a file just by opening it
+ * when `properties:` comes after `views:`, so a key Gumply **adds** goes where Obsidian would put it. A file's
+ * existing keys are never moved.
+ */
+const TOP_LEVEL_ORDER = ["gumply", "filters", "formulas", "properties", "summaries", "views"];
+
+function patchMap(doc: Document, map: YAMLMap, previous: Record<string, unknown>, next: Record<string, unknown>, top = false): void {
   for (const key of Object.keys(previous)) {
     if (next[key] === undefined && previous[key] !== undefined) map.delete(key);
   }
@@ -202,7 +209,20 @@ function patchMap(doc: Document, map: YAMLMap, previous: Record<string, unknown>
     const existing = map.get(key, true) as Node | undefined;
     if (existing !== undefined && deepEqual(previous[key], value)) continue;
     const patched = patchNode(doc, existing, previous[key], value);
-    if (patched !== existing) map.set(key, patched);
+    if (patched === existing) continue;
+    const rank = TOP_LEVEL_ORDER.indexOf(key);
+    if (top && existing === undefined && rank !== -1) {
+      // Before the first existing key that Obsidian writes after this one; else at the end, as before.
+      const at = map.items.findIndex((pair) => {
+        const other = TOP_LEVEL_ORDER.indexOf(String((pair.key as { value?: unknown } | null)?.value ?? pair.key));
+        return other > rank;
+      });
+      if (at !== -1) {
+        map.items.splice(at, 0, doc.createPair(key, patched));
+        continue;
+      }
+    }
+    map.set(key, patched);
   }
 }
 
@@ -278,7 +298,7 @@ export function updateBaseSource(source: string, next: BaseConfig): string {
   if (deepEqual(previous, wanted)) return source;
   const before = doc.toString(STRINGIFY_OPTIONS);
   if (isMap(doc.contents) && isRecord(previous)) {
-    patchMap(doc, doc.contents, previous, wanted as Record<string, unknown>);
+    patchMap(doc, doc.contents, previous, wanted as Record<string, unknown>, true);
   } else {
     doc.contents = doc.createNode(wanted) as typeof doc.contents;
   }
