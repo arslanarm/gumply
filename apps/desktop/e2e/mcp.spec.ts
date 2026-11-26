@@ -202,6 +202,33 @@ test('writes nothing to the app\'s settings: no recent vaults, no window state',
   expect(listing()).toEqual(filesBefore);
 });
 
+test('#vduteee7: a rename it journals is the app\'s installation\'s (its id in the app\'s own userData), so the app finishes one it leaves half done', async () => {
+  test.setTimeout(120_000);
+  const userData = join(scratch, 'user-data');
+  mkdirSync(join(vault, '.gumply'), { recursive: true });
+  writeFileSync(join(vault, '.gumply', 'mcp.json'), JSON.stringify({ enabled: true, access: 'edit' }));
+  writeFileSync(join(vault, 'Linker.md'), 'See [[Plan]].\n');
+  expect(existsSync(join(userData, 'instance-id'))).toBe(false);
+
+  const transport = new StdioClientTransport({ command: electronPath, args: mcpArgs(), env: isolatedEnv(), stderr: 'pipe' });
+  const client = new Client({ name: 'desktop-rename', version: '1.0.0' }, { versionNegotiation: { mode: { pin: '2026-07-28' } } });
+  await client.connect(transport);
+  try {
+    const read = (await client.callTool({ name: 'read', arguments: { id: 'Plan' } })) as { structuredContent?: { updated?: string } };
+    const renamed = (await client.callTool({
+      name: 'update_page',
+      arguments: { id: 'Plan', expectedUpdated: read.structuredContent?.updated, title: 'Plan renamed' },
+    })) as { isError?: boolean };
+    expect(renamed.isError).toBeFalsy();
+  } finally {
+    await client.close();
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  // The id the rename was journalled under is the app's own (not one in --mcp's throwaway folder, gone at exit).
+  expect(existsSync(join(userData, 'instance-id'))).toBe(true);
+  expect(readFileSync(join(vault, 'Linker.md'), 'utf8')).toContain('[[Plan renamed]]');
+});
+
 test('exits 0 when stdin closes; 1 for a missing vault or MCP turned off; 2 without --vault', async () => {
   test.setTimeout(120_000);
   const closed = await runRaw(mcpArgs(), true);

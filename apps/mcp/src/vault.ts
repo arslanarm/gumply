@@ -12,6 +12,7 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { resolveWikilink, type PageMeta } from "@gumply/core";
+import type { InstanceId } from "../../server/src/instance-id.js";
 import { VaultStore } from "../../server/src/vault-store.js";
 import { ToolError } from "./errors.js";
 
@@ -48,9 +49,14 @@ export class Vault {
   /** Settles once the index is built; tool calls wait for it (the handshake doesn't). */
   ready: Promise<void> = Promise.resolve();
 
-  constructor(readonly root: string) {
+  /**
+   * `instanceId` (#vduteee7): the installation this process belongs to (the desktop app's, or the standalone
+   * server's). A rename this process journals is then the app's own, so the app finishes it at its next start
+   * instead of waiting 7 days as for another installation's.
+   */
+  constructor(readonly root: string, instanceId?: InstanceId) {
     // spec/version-history: what this store replaces is versioned as the AI app's.
-    this.store = new VaultStore(root, { historySource: "mcp" });
+    this.store = new VaultStore(root, { historySource: "mcp", ...(instanceId ? { instanceId } : {}) });
   }
 
   /** Start reading the vault. The server answers the handshake meanwhile. */

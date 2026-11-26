@@ -75,6 +75,13 @@ logUnhandledRejections();
 app.setName("Gumply");
 // Tests (and anyone who wants a separate profile) can move the settings.
 if (process.env.GUMPLY_DESKTOP_USER_DATA) app.setPath("userData", resolve(process.env.GUMPLY_DESKTOP_USER_DATA));
+/**
+ * #vduteee7 (@graph-dev's review): the app's own data folder, read before `--mcp` swaps `userData` for a throwaway
+ * one (A3). This installation's id lives here, for the window's server and for `--mcp` alike, so a rename an MCP
+ * process leaves half done is the app's to finish. A3 still holds: `--mcp` only ever creates the one `instance-id`
+ * file here, and only on a rename it journals (`ensure()`); never settings.
+ */
+const appUserData = app.getPath("userData");
 
 /**
  * A3: `--mcp` launches never touch the app's settings folder (recent vaults,
@@ -304,7 +311,7 @@ async function openVault(path: string): Promise<void> {
   server = await startGumplyServer({
     vaultPath: target,
     // D47: this installation's id, in app data (never the vault).
-    instanceId: instanceIdIn(app.getPath("userData")),
+    instanceId: instanceIdIn(appUserData),
     // A random free port; GUMPLY_DESKTOP_PORT pins one (tests, debugging).
     port: Number(process.env.GUMPLY_DESKTOP_PORT ?? 0) || 0,
     host: "127.0.0.1",
@@ -1033,7 +1040,8 @@ function runMcpMode(args: McpModeArgs): void {
     served.once("data", (chunk: Buffer | string) => trace(`stdin first ${chunk.length} bytes: ${JSON.stringify(String(chunk).slice(0, 120))}`));
     served.once("end", () => trace("stdin end"));
   }
-  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion(), ...(stdio ? { stdio } : {}) });
+  // #vduteee7: this installation's id (the app's own), so a rename this process leaves half done is the app's to finish.
+  runMcp({ vault: resolve(args.vault!), readOnly: args.readOnly, exit, version: app.getVersion(), instanceId: instanceIdIn(appUserData), ...(stdio ? { stdio } : {}) });
 }
 
 if (mcpMode) {
