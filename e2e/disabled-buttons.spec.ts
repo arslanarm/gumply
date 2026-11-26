@@ -6,8 +6,9 @@ import { E2E_VAULT } from './support/env';
 
 /**
  * #bg7c9bzk (#faqr8pj9's #19, and @graph-dev's shots of the paste dialog): a disabled main button must read as
- * disabled. It drops the accent fill an enabled one has, and its text stays AA (4.5:1) on its own fill. Checked on
- * the paste dialog's Paste (a duplicate column name) and the add-column popover's Add (no name yet), light and dark.
+ * disabled. It drops the accent fill an enabled one has, isn't faded, and its text stays AA (4.5:1) on its own fill.
+ * The rule is app-wide (@lead): checked on the paste dialog's Paste (a duplicate column name), the add-column
+ * popover's Add (no name yet) and Trash's "Empty Trash" (nothing in Trash, a secondary button), light and dark.
  */
 
 const BASE =
@@ -73,5 +74,15 @@ for (const theme of ['light', 'dark'] as const) {
     const submit = page.getByTestId('base-add-column-submit');
     await expect(submit).toBeDisabled();
     expectReadsDisabled(await look(submit));
+  });
+
+  test(`a disabled "Empty Trash" reads as disabled, with AA text (${theme})`, async ({ page, vault }) => {
+    void vault;
+    await page.addInitScript((value) => window.localStorage.setItem('gumply:theme', value), theme);
+    await page.goto('/');
+    await page.getByTestId('sidebar-trash').click();
+    const empty = page.getByTestId('trash-empty');
+    await expect(empty).toBeDisabled();
+    expectReadsDisabled(await look(empty));
   });
 }
