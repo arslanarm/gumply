@@ -109,4 +109,11 @@ describe("an empty flow list already in a base file (#7prbquxu, @lead)", () => {
     const next = updateBaseSource(source, withSelectSettings(parseBase(source), "stage", { kind: "select", options: [{ value: "Todo", color: "brown" }] }));
     expect(next).toBe(source.replace("    gumplyOptions: []\n", "    gumplyOptions:\n      - value: Todo\n        color: brown\n"));
   });
+
+  it("is the rule for any list in the file, not only options: a view's empty order gets its first column as a block (@polish-dev)", () => {
+    const source = "views:\n  - type: table\n    name: Table\n    order: []\n";
+    const config = parseBase(source);
+    const next = updateBaseSource(source, { ...config, views: [{ ...config.views[0]!, order: ["file.name"] }] });
+    expect(next).toBe("views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n");
+  });
 });
