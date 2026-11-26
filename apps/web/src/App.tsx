@@ -15,7 +15,7 @@ import {
   type DailyNoteSettings,
 } from "@gumply/core";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, renamedTargetFor, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
+import { api, ApiRequestError, consumeNewVaultPage, fileUrl, isVaultSyncing, onLinksNotRewritten, renamedTargetFor, takeUnreachableSeen, type BaseDocument } from "./api/client.js";
 // Only the board's shell: the editor (React Flow) is code-split inside it.
 import { BoardView, type BoardViewControls } from "./board/BoardView.js";
 import { BacklinksPanel } from "./components/BacklinksPanel.js";
@@ -321,6 +321,17 @@ export function App() {
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  // #bbh3n5p7: a rename, heading rename or move left some pages' links as they were (read-only on disk):
+  // say which, once, whichever view sent it.
+  useEffect(
+    () =>
+      onLinksNotRewritten((ids) => {
+        const titles = ids.map((id) => pagesRef.current.find((meta) => meta.id === id)?.title ?? id);
+        const shown = titles.slice(0, 3).join(", ") + (titles.length > 3 ? ", …" : "");
+        setToast({ message: t("links.notRewritten", { count: ids.length, pages: shown }), icon: "info" });
+      }),
+    [t],
+  );
   /** #9bx3aznb: the tag being renamed (its dialog is open). */
   const [tagRename, setTagRename] = useState<TagRenameRequest | null>(null);
   const [focusTarget, setFocusTarget] = useState<SidebarFocusTarget | null>(null);
