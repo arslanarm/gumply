@@ -4,6 +4,8 @@ A database is a table you fill yourself, like a spreadsheet or a Notion database
 
 If you'd rather show pages you already have (all your notes with a tag, say), use a [database view](database-views.md) instead.
 
+**In this chapter:** [Make one](#make-one) · [Fill it in like a spreadsheet](#fill-it-in-like-a-spreadsheet) · [Properties](#properties-the-columns) · [Paste from a spreadsheet](#paste-from-a-spreadsheet) · [Select and Multi-select](#select-and-multi-select) · [The rows folder](#the-rows-folder-in-the-sidebar) · [Undo](#undo) · [Delete and restore](#delete-and-restore) · [Good to know](#good-to-know)
+
 ![A database of people: names, roles as coloured chips, and the active cell](../img/database-table.en.png)
 
 ## Make one
@@ -17,7 +19,7 @@ Team.base     the table's settings: its columns, views and options
 Team/         one note per row, e.g. Team/Ada Lovelace.md
 ```
 
-A row's values are the note's [properties](properties-tags-templates.md), at the top of its file. The button above the table says **Rows: Team**, so you can tell a database from a view of existing pages.
+A row's values are the note's [properties](properties-tags-templates.md), at the top of its file. The button above the table says **Rows: Team**, so you can tell a database from a view of existing pages. Clicking it opens a short note about where the rows live.
 
 ## Fill it in like a spreadsheet
 
@@ -41,7 +43,7 @@ The name cell is the note's title: changing it renames the note, and links to it
 
 ## Properties (the columns)
 
-**Add a property:** click **+** at the end of the header, type a name and choose its type: Text, Number, Checkbox, Date, Date & time or List. For a **Select** or **Multi-select**, add it (as Text, say), then choose the type in its header's **Type** menu. If the name is already used elsewhere in your vault with another type, Gumply says so and keeps that type, so the two don't disagree.
+**Add a property:** click **+** at the end of the header, type a name and choose its type: Text, Number, Checkbox, Date, Date & time, List, **Select** or **Multi-select**. If the name is already used elsewhere in your vault with another type, Gumply says so and keeps that type, so the two don't disagree.
 
 **Change one:** click a column's header.
 
