@@ -3164,6 +3164,17 @@ input {
   overflow-y: auto;
 }
 
+/* #x8uddj3z: the report is long (a narrow window shows only its top half), so its Close and
+   Open folder buttons stay at the dialog's bottom edge while it scrolls, as in Notion's dialogs. */
+.notion-import-report > .modal-actions {
+  position: sticky;
+  bottom: -0.9rem;
+  margin: 0.6rem -1.2rem -0.9rem;
+  padding: 0.7rem 1.2rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
 .notion-import-drop {
   display: flex;
   flex-direction: column;

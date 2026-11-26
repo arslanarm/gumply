@@ -6,7 +6,7 @@
 import { Extension, type Editor } from "@tiptap/core";
 import type { IconName } from "../components/Icon.js";
 import { t } from "../i18n/index.js";
-import { currentModifierLabel } from "../lib/shortcuts.js";
+import { currentModifierLabel, withModifier } from "../lib/shortcuts.js";
 
 export type MarkName = "bold" | "italic" | "strike" | "code" | "highlight";
 
@@ -23,10 +23,10 @@ export interface MarkAction {
 export function markActions(): MarkAction[] {
   const mod = currentModifierLabel();
   return [
-    { mark: "bold", label: t("format.bold"), removeLabel: t("format.removeBold"), icon: "bold", keys: `${mod}+B` },
-    { mark: "italic", label: t("format.italic"), removeLabel: t("format.removeItalic"), icon: "italic", keys: `${mod}+I` },
+    { mark: "bold", label: t("format.bold"), removeLabel: t("format.removeBold"), icon: "bold", keys: withModifier(mod, "B") },
+    { mark: "italic", label: t("format.italic"), removeLabel: t("format.removeItalic"), icon: "italic", keys: withModifier(mod, "I") },
     { mark: "strike", label: t("format.strike"), removeLabel: t("format.removeStrike"), icon: "strike", keys: `${mod}+Shift+S` },
-    { mark: "code", label: t("format.code"), removeLabel: t("format.removeCode"), icon: "code", keys: `${mod}+E` },
+    { mark: "code", label: t("format.code"), removeLabel: t("format.removeCode"), icon: "code", keys: withModifier(mod, "E") },
     { mark: "highlight", label: t("format.highlight"), removeLabel: t("format.removeHighlight"), icon: "highlight", keys: `${mod}+Shift+H` },
   ];
 }
