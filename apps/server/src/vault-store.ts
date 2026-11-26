@@ -101,6 +101,7 @@ import {
   renameKeyInConfig,
   dropKeyFromConfig,
   propertyId,
+  nextOptionColor,
   selectSettings,
   selectedValues,
   withSelectSettings,
@@ -426,6 +427,13 @@ export interface OwnedRowsOption {
   base: BaseDocument;
   /** #7prbquxu phase 4b: each file written, with its version before and after (the table's undo). */
   files: UndoFile[];
+}
+
+/** #7prbquxu phase 2: a paste's new columns: added to this view's order; `selects` makes some of them Selects. */
+interface PasteColumns {
+  view: string;
+  keys: string[];
+  selects?: Record<string, { kind: "select" | "multiselect"; values: string[] }>;
 }
 
 /** #7prbquxu phase 2: the most rows one paste may write (the client asks once more above 1,000). */
@@ -4117,7 +4125,7 @@ export class VaultStore {
    */
   pasteIntoOwnedRows(
     id: PageId,
-    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: { view: string; keys: string[] } },
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: PasteColumns },
     options: { expectedUpdated?: string; writer?: string } = {},
   ): Promise<OwnedRowsPaste> {
     return this.enqueue(() => this.asDatabaseChange(() => this.pasteIntoOwnedRowsNow(this.resolveId(id), input, options)));
@@ -4125,7 +4133,7 @@ export class VaultStore {
 
   private async pasteIntoOwnedRowsNow(
     id: PageId,
-    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: { view: string; keys: string[] } },
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: PasteColumns },
     options: { expectedUpdated?: string; writer?: string },
   ): Promise<OwnedRowsPaste> {
     const base = this.requireBase(id);
@@ -4167,6 +4175,11 @@ export class VaultStore {
     // (it may have been renamed elsewhere while the preview was open).
     if (input.columns) {
       for (const key of input.columns.keys) if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+      for (const [key, select] of Object.entries(input.columns.selects ?? {})) {
+        if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+        if (select?.kind !== "select" && select?.kind !== "multiselect") throw badRequest(`not a Select kind for ${key}`);
+        if (!Array.isArray(select.values) || select.values.some((value) => typeof value !== "string")) throw badRequest(`Select values for ${key} must be text`);
+      }
       let config: BaseConfig;
       try {
         config = parseBase(base.baseSource ?? "");
@@ -4317,7 +4330,7 @@ export class VaultStore {
    */
   private async addColumnsToView(
     base: PageRecord,
-    columns: { view: string; keys: string[] },
+    columns: PasteColumns,
     options: { expectedUpdated?: string; writer?: string },
   ): Promise<boolean | UndoFile> {
     for (const key of columns.keys) if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
@@ -4332,8 +4345,22 @@ export class VaultStore {
     const order = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
     const shown = new Set(order.map((written) => propertyId(written)));
     const added = columns.keys.filter((key, index, all) => all.indexOf(key) === index && !shown.has(`note.${key}`));
-    if (added.length === 0) return true;
-    const next: BaseConfig = { ...config, views: config.views.map((item) => (item === view ? { ...item, order: [...order, ...added] } : item)) };
+    let next: BaseConfig = added.length
+      ? { ...config, views: config.views.map((item) => (item === view ? { ...item, order: [...order, ...added] } : item)) }
+      : config;
+    // #7prbquxu: a column the preview made a Select gets its options here, in the same write (one that's a
+    // Select already keeps its own, and gains the pasted values it doesn't have).
+    for (const [key, select] of Object.entries(columns.selects ?? {})) {
+      const current = selectSettings(next, key);
+      const options = current ? [...current.options] : [];
+      for (const value of select.values) {
+        if (typeof value === "string" && value !== "" && !options.some((option) => option.value === value)) {
+          options.push({ value, color: nextOptionColor(options) });
+        }
+      }
+      next = withSelectSettings(next, key, { kind: current?.kind ?? select.kind, options });
+    }
+    if (next === config) return true;
     const text = updateBaseSource(base.baseSource ?? "", next);
     if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) return false;
     try {

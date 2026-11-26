@@ -526,10 +526,14 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
     const writer = optionalString(body, "writer");
     if (writer !== undefined) options.writer = writer.slice(0, 64);
-    const columns = body.columns as { view?: unknown; keys?: unknown } | undefined;
+    const columns = body.columns as { view?: unknown; keys?: unknown; selects?: unknown } | undefined;
+    const selects =
+      columns && typeof columns.selects === "object" && columns.selects !== null && !Array.isArray(columns.selects)
+        ? { selects: columns.selects as Record<string, { kind: "select" | "multiselect"; values: string[] }> }
+        : {};
     const added =
       columns && typeof columns.view === "string" && Array.isArray(columns.keys) && columns.keys.every((key) => typeof key === "string")
-        ? { columns: { view: columns.view, keys: columns.keys as string[] } }
+        ? { columns: { view: columns.view, keys: columns.keys as string[], ...selects } }
         : {};
     return c.json(await store.pasteIntoOwnedRows(c.req.param("id"), { rows: body.rows as never, ...added }, options));
   });
