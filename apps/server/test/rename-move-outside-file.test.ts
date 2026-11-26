@@ -102,4 +102,20 @@ describe("a page rename or move never replaces a file another app just made at t
     expect(Object.values(all)).toEqual(expect.arrayContaining([MINE]));
     expect(store.list().some((meta) => meta.id === "DRAFT")).toBe(true);
   });
+
+  it("case-sensitive file system: a case-only rename (Draft → DRAFT) never replaces another app's DRAFT.md (@lead)", async () => {
+    const { dir, store } = await vault();
+    // Only where `Draft.md` and `DRAFT.md` are two files (Linux; skipped on macOS/Windows volumes).
+    await writeFile(join(dir, "draft-probe.md"), "", "utf8");
+    const { access, rm } = await import("node:fs/promises");
+    const caseSensitive = await access(join(dir, "DRAFT-PROBE.md")).then(() => false, () => true);
+    await rm(join(dir, "draft-probe.md"));
+    if (!caseSensitive) return;
+    outside.before = { target: "DRAFT.md", text: OUTSIDE };
+    await store.update("Draft", { title: "DRAFT" }).catch(() => undefined);
+    expect(outside.before, "the move was reached").toBeNull();
+    const all = await files(dir);
+    expect(all["DRAFT.md"]).toBe(OUTSIDE);
+    expect(Object.values(all).some((text) => text.includes("My notes."))).toBe(true);
+  });
 });
