@@ -439,6 +439,51 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(existsSync(historyDir(dir, "People/Cy"))).toBe(false);
   });
 
+  it("renames and clears a Select option in every row and in the base's options, each row's value as it is now (#7prbquxu phase 3)", async () => {
+    const base =
+      'gumply:\n  rows: Team\nfilters:\n  and:\n    - file.folder == "Team"\nproperties:\n  note.skills:\n    gumplyType: multiselect\n    gumplyOptions:\n      - value: Go\n        color: blue\n      - value: Rust\n        color: orange\n  note.level:\n    gumplyType: select\n    gumplyOptions:\n      - value: Senior\n        color: green\nviews:\n  - type: table\n    name: Table\n';
+    const { app, dir } = await vault({
+      "Team.base": base,
+      "Team/Ann.md": "---\nskills:\n  - Go\n  - Rust\nlevel: Senior\n---\nAnn\n",
+      // Another app added "C" here before the rename: it's kept.
+      "Team/Bo.md": "---\nskills:\n  - Rust\n  - Go\n  - C\n---\nBo\n",
+      "Team/Cy.md": "---\nskills:\n  - Rust\n---\nCy\n",
+    });
+    const url = `/api/bases/${encodeId("Team.base")}/rows-option`;
+    const read = (path: string) => readFile(join(dir, path), "utf8");
+
+    const renamed = (await (await jsonRequest(app, "POST", url, { key: "skills", rename: { from: "Go", to: "Golang" } })).json()) as { changed: string[] };
+    expect(renamed.changed.sort()).toEqual(["Team/Ann", "Team/Bo"]);
+    expect(await read("Team/Bo.md")).toContain("  - Rust\n  - Golang\n  - C\n");
+    expect(await read("Team/Cy.md")).toBe("---\nskills:\n  - Rust\n---\nCy\n");
+    expect(await read("Team.base")).toBe(base.replace("      - value: Go\n", "      - value: Golang\n"));
+
+    // A name another option has: refused before any write.
+    expect((await jsonRequest(app, "POST", url, { key: "skills", rename: { from: "Golang", to: "Rust" } })).status).toBe(400);
+
+    // Clear a Select's option: the rows lose the value, the base the option.
+    await jsonRequest(app, "POST", url, { key: "level", clear: "Senior" });
+    expect(await read("Team/Ann.md")).not.toContain("Senior");
+    expect(await read("Team.base")).not.toContain("value: Senior");
+  });
+
+  it("an option rename that a row refuses puts every written row back byte for byte, and leaves the base (#7prbquxu phase 3, @lead)", async () => {
+    const base = 'gumply:\n  rows: Team\nfilters:\n  and:\n    - file.folder == "Team"\nproperties:\n  note.level:\n    gumplyType: select\n    gumplyOptions:\n      - value: Senior\n        color: green\nviews:\n  - type: table\n    name: Table\n';
+    const ann = "---\nlevel: Senior # since 2026\n---\nAnn\n";
+    const { dir, store } = await vault({ "Team.base": base, "Team/Ann.md": ann, "Team/Bo.md": "---\nlevel: Senior\n---\nBo\n" });
+    const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "Team/Bo") throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
+      return updateNow(id, patch);
+    };
+    const result = await store.changeOwnedRowsOption("Team.base", { key: "level", rename: { from: "Senior", to: "Lead" } });
+    expect(result.refused.map((row) => row.title)).toEqual(["Bo"]);
+    expect(result.stuck).toEqual([]);
+    expect(await readFile(join(dir, "Team/Ann.md"), "utf8")).toBe(ann);
+    expect(await readFile(join(dir, "Team.base"), "utf8")).toBe(base);
+  });
+
   it("a row that can't be put back is named with the key it's left with (#7prbquxu, @lead)", async () => {
     const { dir, store } = await vault({
       "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
