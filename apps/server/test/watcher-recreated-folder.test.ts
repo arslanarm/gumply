@@ -1,4 +1,4 @@
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanupVaults, createTestServer } from "./helpers";
@@ -49,7 +49,7 @@ describe("a folder moved away and made again at the same path is watched again",
     }
   }, 20_000);
 
-  for (const how of ["moved away by another app", "moved to the Trash by Gumply"] as const) {
+  for (const how of ["moved away by another app", "moved to the Trash by Gumply", "deleted and made again (git checkout)"] as const) {
     it(`${how}: an outside edit inside the new folder is seen`, async () => {
       const { store, dir } = await createTestServer();
       store.startWatching();
@@ -62,8 +62,11 @@ describe("a folder moved away and made again at the same path is watched again",
 
         if (how === "moved away by another app") {
           await rename(join(dir, "Crew"), join(dir, ".gone-crew"));
-        } else {
+        } else if (how === "moved to the Trash by Gumply") {
           await store.remove("Crew");
+        } else {
+          // Deleted outright: the new directory may even get the same inode number back.
+          await rm(join(dir, "Crew"), { recursive: true });
         }
         // Made again at the same path straight away, inside the watcher's quiet gap, so no rescan runs in
         // between (the e2e's vault reset then writeVault, a sync tool's restore, a git checkout).
