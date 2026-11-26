@@ -10,7 +10,7 @@ import { cleanupVaults, createTestServer } from "./helpers";
  * (`rename`, or `link` for a move that mustn't replace). Synthetic vault.
  */
 
-const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string }, noHardLinks: false }));
+const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string }, noHardLinks: false, trashBusy: false }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -30,16 +30,23 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     if (outside.noHardLinks) throw Object.assign(new Error("EPERM: operation not permitted, link (test)"), { code: "EPERM" });
     return actual.link(from, to);
   };
-  return { ...actual, rename, link, default: { ...actual, rename, link } };
+  // A file in the Trash that can't be removed (a Windows lock, a read-only folder).
+  const unlink: typeof actual.unlink = async (path) => {
+    if (outside.trashBusy && String(path).includes(".trash")) throw Object.assign(new Error("EBUSY: resource busy or locked, unlink (test)"), { code: "EBUSY" });
+    return actual.unlink(path);
+  };
+  return { ...actual, rename, link, unlink, default: { ...actual, rename, link, unlink } };
 });
 
 beforeEach(() => {
   outside.before = null;
   outside.noHardLinks = false;
+  outside.trashBusy = false;
 });
 afterEach(async () => {
   outside.before = null;
   outside.noHardLinks = false;
+  outside.trashBusy = false;
   await cleanupVaults();
 });
 
@@ -82,5 +89,14 @@ describe("a page's Trash Restore never replaces a file another app just made at 
     await store.restore(trashId).catch(() => undefined);
     expect(outside.before, "the move was reached").toBeNull();
     expect(await texts()).toEqual([["Note 2.md", MINE], ["Note.md", OUTSIDE]]);
+  });
+
+  it("the Trash copy can't be removed (EBUSY): the Restore fails cleanly, the page stays in the Trash and nothing new is in the vault", async () => {
+    const { store, trashId, texts } = await trashed();
+    outside.trashBusy = true;
+    await expect(store.restore(trashId)).rejects.toThrow();
+    outside.trashBusy = false;
+    expect(await texts()).toEqual([]);
+    expect((await store.listTrash()).map((item) => item.trashId)).toEqual([trashId]);
   });
 });
