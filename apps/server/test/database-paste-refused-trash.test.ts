@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VaultStore } from "../src/vault-store";
@@ -58,5 +58,36 @@ describe("a refused paste's new rows in the Trash (#f4jkpja6 follow-up)", () => 
     expect(existsSync(join(dir, "People", "Bo.md"))).toBe(true);
     expect(existsSync(join(dir, "People", "Cy.md"))).toBe(true);
     expect(await store.listTrash()).toEqual([]);
+  });
+});
+
+describe("a refused paste's new row already deleted in another app (#f4jkpja6 follow-up, @opus-hunter's note a)", () => {
+  it("is skipped: not listed as stuck, not counted; the others still go to the Trash as one item", async () => {
+    const { dir, store } = await database({ "People/Ann.md": "Ann\n" });
+    // Cy and Di are made; writing Di's values fails, so the paste is refused. Just before, another app deleted Cy.
+    const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "People/Di") {
+        await rm(join(dir, "People", "Cy.md"));
+        throw Object.assign(new Error("EIO: i/o error (test)"), { code: "EIO" });
+      }
+      return updateNow(id, patch);
+    };
+    const result = await store.pasteIntoOwnedRows("People.base", {
+      rows: [
+        { title: "Cy", set: { role: "Diver" } },
+        { title: "Di", set: { role: "Pilot" } },
+      ],
+    });
+    expect(result.refused.map((row) => row.title)).toEqual(["Di"]);
+    expect(result.stuck).toEqual([]);
+    expect(result.trashed).toEqual([]);
+    expect(result.inTrash).toBe(1);
+    const trash = await store.listTrash();
+    expect(trash).toHaveLength(1);
+    expect(trash[0]!.children.map((child) => child.id)).toEqual(["People/Di"]);
+    expect(existsSync(join(dir, "People", "Cy.md"))).toBe(false);
+    expect(store.list().some((meta) => meta.id === "People/Cy")).toBe(false);
   });
 });
