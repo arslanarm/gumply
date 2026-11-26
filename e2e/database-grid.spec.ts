@@ -606,3 +606,27 @@ test('the paste preview offers Select for a column of repeated values, and makes
   expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
   await expect(page.getByTestId('base-table').getByTestId('base-option-chip').first()).toBeVisible();
 });
+
+test('a paste that takes a while says "Pasting N rows…" until it is done (@lead, before phases 2–4 ship)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { 'People.base': PEOPLE['People.base'] });
+  await fs.mkdir(path.join(E2E_VAULT, 'People'), { recursive: true });
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  // The server's answer is held back, as a big paste holds it.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/rows-paste', async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.getByTestId('base-typing-input').click();
+  await paste(page, 'Name\tage\nIvy\t31\nOtto\t8\nAl\t52\n');
+  await page.getByTestId('base-paste-confirm').click();
+  const status = page.getByTestId('base-pasting');
+  await expect(status).toHaveText(/Pasting 3 rows/);
+  await expect(status).toHaveAttribute('role', 'status');
+  release();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
+  await expect(status).toHaveCount(0);
+});
