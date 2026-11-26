@@ -1131,6 +1131,8 @@ export function GraphCanvas({
    * worker update).
    */
   const hullCache = useRef<{ key: string; hulls: Array<Array<[number, number]>> } | null>(null);
+  /** Bumped on every node-drag step (and the drop), so a dragged page's area follows it on the worker path. */
+  const dragStepRef = useRef(0);
   const dark = useMemo(() => luminance(colors.bg) < 0.4, [colors.bg]);
   const drawClusters = useCallback(
     (ctx: CanvasRenderingContext2D, scale: number): void => {
@@ -1139,7 +1141,7 @@ export function GraphCanvas({
       const drawn = nodesRef.current as PositionedNode[];
       const k = Math.max(scale, 0.05);
       // A worker-laid graph only moves on its updates; the engine moves every tick.
-      const key = engine.worker ? `${layoutFrame}|${drawn.length}|${clusterKey}` : "";
+      const key = engine.worker ? `${layoutFrame}|${drawn.length}|${clusterKey}|${dragStepRef.current}` : "";
       let hulls = hullCache.current && key !== "" && hullCache.current.key === key ? hullCache.current.hulls : null;
       if (!hulls) {
         const points: Array<Array<[number, number]>> = list.map(() => []);
@@ -1173,7 +1175,8 @@ export function GraphCanvas({
         ctx.fillStyle = color;
         ctx.fill();
         ctx.globalAlpha = edge * strength;
-        ctx.lineWidth = 1 / k;
+        // Under one device pixel, like every other whole-graph stroke (the Skia hairline path).
+        ctx.lineWidth = ghostStrokeWidth(window.devicePixelRatio) / k;
         ctx.strokeStyle = color;
         ctx.stroke();
       });
@@ -1324,6 +1327,7 @@ export function GraphCanvas({
         drag.node.fx = drag.node.x = g.x + drag.offsetX;
         drag.node.fy = drag.node.y = g.y + drag.offsetY;
         positionsRef.current += 1;
+        dragStepRef.current += 1;
         // Keep the simulation awake (alpha is capped, so this stays calm).
         graph.d3ReheatSimulation();
         return;
@@ -1345,6 +1349,7 @@ export function GraphCanvas({
         container.releasePointerCapture(event.pointerId);
       }
       if (moved) {
+        dragStepRef.current += 1;
         // Release the node (Obsidian-like); the local graph's centre page
         // stays pinned where it was dropped.
         if (node.id !== centerIdRef.current) {
