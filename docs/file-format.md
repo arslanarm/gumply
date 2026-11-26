@@ -46,7 +46,8 @@ Your notes are plain files in a folder you choose (your *vault*). You can read a
 |---|---|
 | Link to a page | `[[Page]]`, `[[Page\|shown text]]`, `[[Page#Heading]]`. When two pages share a name: `[[Folder/Page\|Page]]` |
 | Link to a block | `[[Page#^a1b2c3]]`, with ` ^a1b2c3` written after the block it points to |
-| Not a link | `\[[text]]` |
+| Markdown link to a page | `[text](Note.md)` is read as a link too (Gumply itself writes `[[ ]]`): next to the note first, then from the vault root. Renaming or moving the page updates its path and keeps how it's written. A path to a page that doesn't exist isn't shown as a page to create |
+| Not a link | `\[[text]]`, `\[text](url)` |
 | Embedded page, section, board, view | `![[Page]]`, `![[Page#Heading]]`, `![[Board.canvas\|480]]` (height in pixels), `![[Tasks.base#View]]` |
 | Image, file | `![pic](attachments/pic.png)`, `[report.pdf](attachments/report.pdf)`, relative to the page's own folder (`../attachments/pic.png` one level down); spaces written as `%20`. Obsidian's `![[pic.png]]` is read and kept |
 | Callout | `> [!tip] Title` and `> text` lines |
