@@ -196,6 +196,52 @@ describe("a property-only outside edit at the same file time (#dqdwz9qw's replay
   }
 });
 
+describe("a board and a base: an outside edit the record may not show, at the same file time (#vqm6gqpu)", () => {
+  it("a board whose unknown key changed (same size, mtime put back): the version moves on, and a stale board save is a 409", async () => {
+    const { store, dir } = await createTestServer();
+    const board = await store.createBoard({ title: "Map" });
+    const file = join(dir, board.meta.id);
+    const saved = await store.updateBoard(board.meta.id, {
+      board: { nodes: [{ id: "a", type: "text", text: "Hi", x: 0, y: 0, width: 100, height: 40 }], edges: [] },
+      expectedUpdated: board.meta.updated,
+    });
+    // Another app keeps a key of its own in the file (Obsidian plugins do), then changes its value.
+    const withKey = JSON.stringify({ ...JSON.parse(await readFile(file, "utf8")), "x-outside": "one" }, null, "\t");
+    await writeFile(file, withKey);
+    await store.rescan();
+    const version = store.getBoard(board.meta.id).meta.updated;
+    const { atime, mtime } = await stat(file);
+    await writeFile(file, withKey.replace('"x-outside": "one"', '"x-outside": "two"'));
+    await utimes(file, atime, mtime);
+    await store.rescan();
+    expect(store.getBoard(board.meta.id).meta.updated > version, "the version moves on").toBe(true);
+    const stale = await store
+      .updateBoard(board.meta.id, { board: { nodes: [], edges: [] }, expectedUpdated: version })
+      .then(() => "accepted", (error: Error) => error.message);
+    expect(stale).toMatch(/changed on disk/);
+    expect(await readFile(file, "utf8")).toContain('"x-outside": "two"');
+    void saved;
+  });
+
+  it("a base whose YAML changed (same size, mtime put back): the version moves on, and a stale base save is a 409", async () => {
+    const { store, dir } = await createTestServer();
+    const base = await store.createBase({ title: "Accounts" });
+    const file = join(dir, base.meta.id);
+    const version = base.meta.updated;
+    const before = await readFile(file, "utf8");
+    const { atime, mtime } = await stat(file);
+    const outside = before.replace("name: Table", "name: Tabel");
+    expect(outside.length).toBe(before.length);
+    await writeFile(file, outside);
+    await utimes(file, atime, mtime);
+    await store.rescan();
+    expect(store.list().find((meta) => meta.id === base.meta.id)!.updated > version, "the version moves on").toBe(true);
+    const stale = await store.updateBase(base.meta.id, { config: base.config, expectedUpdated: version }).then(() => "accepted", (error: Error) => error.message);
+    expect(stale).toMatch(/changed on disk/);
+    expect(await readFile(file, "utf8")).toContain("name: Tabel");
+  });
+});
+
 describe("the other writers check the bytes too (#y5k39njn, @graph-dev's grep)", () => {
   /** An outside edit of `name`'s file that keeps its file time; no refresh has read it yet. */
   async function sameTimeEdit(dir: string, name: string, edit: (text: string) => string): Promise<string> {
