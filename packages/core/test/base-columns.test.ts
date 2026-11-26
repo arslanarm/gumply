@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { BaseConfig } from "@gumply/core";
-import { dropKeyFromConfig, renameKeyInConfig } from "../src/bases/columns";
+import type { BaseConfig } from "../src/index";
+import { dropKeyFromConfig, renameKeyInConfig } from "../src/index";
 
 /** #7prbquxu: renaming or deleting a property of an owned database follows it through the base file. */
 const config: BaseConfig = {

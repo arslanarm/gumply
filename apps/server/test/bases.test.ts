@@ -237,6 +237,10 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await read("People/Cy.md")).toBe("---\njob:\nage: 7\n---\nCy\n");
     expect(await read("People/Deep/Dee.md")).toBe("---\nrole: Not a row\n---\nIn a sub-folder\n");
     expect(await read("Elsewhere.md")).toBe("---\nrole: Not a row\n---\nOutside\n");
+    // The same request renamed the column in the base, only that line (@lead: one request changes both).
+    expect(await read("People.base")).toBe(
+      'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    limit: 1\n    order:\n      - file.name\n      - job\n',
+    );
 
     // A name a row already has: nothing written.
     const clash = (await (await jsonRequest(app, "POST", url, { rename: { from: "job", to: "age" } })).json()) as { changed: string[]; clash: Array<{ title: string }> };
@@ -250,12 +254,39 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await read("People/Ann.md")).not.toContain("job");
     expect(await read("People/Ann.md")).toContain("Ann\n");
     expect(await read("People/Cy.md")).toBe("---\nage: 7\n---\nCy\n");
+    expect(await read("People.base")).not.toContain("job");
 
     // Not an owned database: refused.
     await writeFile(join(dir, "Plain.base"), "views:\n  - type: table\n    name: Table\n", "utf8");
     const store = new VaultStore(dir);
     await store.init();
     await expect(store.changeOwnedRowsProperty("Plain.base", { remove: "age" })).rejects.toThrow("doesn't own");
+  });
+
+  it("any error on a row puts the renamed rows back, and the base stays as it was (#7prbquxu, @lead)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - role\n';
+    const { dir, store } = await vault({ "People.base": base, "People/Ann.md": "---\nrole: Cook\n---\nAnn\n", "People/Bo.md": "---\nrole: Pilot\n---\nBo\n" });
+    const internals = store as unknown as { updateNow: (id: string, patch: unknown) => Promise<unknown> };
+    const updateNow = internals.updateNow.bind(store);
+    internals.updateNow = async (id, patch) => {
+      if (id === "People/Bo") throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
+      return updateNow(id, patch);
+    };
+    const result = await store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } });
+    expect(result.changed).toEqual([]);
+    expect(result.skipped.map((row) => row.title)).toEqual(["Bo"]);
+    expect(result.stuck).toEqual([]);
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
+    expect(await readFile(join(dir, "People.base"), "utf8")).toBe(base);
+  });
+
+  it("a base changed since the caller read it refuses before any row is written (#7prbquxu)", async () => {
+    const { dir, store } = await vault({
+      "People.base": 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n',
+      "People/Ann.md": "---\nrole: Cook\n---\nAnn\n",
+    });
+    await expect(store.changeOwnedRowsProperty("People.base", { rename: { from: "role", to: "job" } }, { expectedUpdated: "2000-01-01T00:00:00.000Z" })).rejects.toThrow("changed on disk");
+    expect(await readFile(join(dir, "People/Ann.md"), "utf8")).toBe("---\nrole: Cook\n---\nAnn\n");
   });
 
   it("a row that can't be put back is named with the key it's left with (#7prbquxu, @lead)", async () => {
