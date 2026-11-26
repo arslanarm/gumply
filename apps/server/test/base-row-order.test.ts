@@ -9,7 +9,8 @@ import { cleanupVaults, createTestServer, trackStore } from "./helpers";
  * #bg7c9bzk (#faqr8pj9's #9, @lead's ruling (a)): a database Gumply owns, whose view has no sort, lists its rows
  * oldest first (Notion's default), by the `created:` each row stores in its frontmatter (never the file's birth
  * time, which sync and git reset). A paste gives its rows increasing `created:` in the sheet's order. Rows with no
- * `created:` (made in Obsidian) come after, by name. A base Gumply doesn't own keeps its order. Synthetic vault.
+ * `created:` (made in Obsidian) count as oldest and come first, by name (@lead's revised ruling: new rows land at
+ * the bottom). A base Gumply doesn't own keeps its order. Synthetic vault.
  */
 
 afterEach(cleanupVaults);
@@ -35,7 +36,7 @@ describe("an owned database with no sort lists rows oldest first (#bg7c9bzk)", (
     expect(await order("Plants.base")).toEqual(["Zinnia", "Monstera", "Basil", "Cactus", "Aloe"]);
   });
 
-  it("rows with no created: (made in Obsidian) come after the others, by name", async () => {
+  it("rows with no created: (made in Obsidian) count as oldest: they come first, by name (@lead's revised ruling)", async () => {
     const { order } = await vault({
       "Plants.base": OWNED,
       "Plants/Mint.md": "---\ncreated: 2026-02-01T00:00:00.000Z\n---\nMint\n",
@@ -43,7 +44,7 @@ describe("an owned database with no sort lists rows oldest first (#bg7c9bzk)", (
       "Plants/Yarrow.md": "Yarrow, from Obsidian.\n",
       "Plants/Aloe.md": "Aloe, from Obsidian.\n",
     });
-    expect(await order("Plants.base")).toEqual(["Mint", "Basil", "Aloe", "Yarrow"]);
+    expect(await order("Plants.base")).toEqual(["Aloe", "Yarrow", "Mint", "Basil"]);
   });
 
   it("a view with its own sort, and a base Gumply doesn't own, keep their order", async () => {

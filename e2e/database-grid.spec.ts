@@ -404,7 +404,8 @@ test('"Import CSV…" in the ⋯ panel reads a file with commas into the same pr
   const preview = page.getByTestId('base-paste-preview');
   await expect(preview).toContainText('Paste 2 rows into “People”');
   await page.getByTestId('base-paste-confirm').click();
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Ivy', 'Smith, Jo']);
+  // #bg7c9bzk (#9, @lead's revised ruling): rows without created: (the fixture's Ann and Bo) come first, then the imported rows in the file's order.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo', 'Smith, Jo', 'Ivy']);
   await expect.poll(() => read('People/Smith, Jo.md')).toMatch(/role: Cook\n[^]*age: 52\n|age: 52\n[^]*role: Cook\n/);
 });
 
@@ -600,7 +601,8 @@ test('the paste preview offers Select for a column of repeated values, and makes
     if (r.method() !== 'GET' && /\/api\/(bases|pages)\b/.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
   });
   await page.getByTestId('base-paste-confirm').click();
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
+  // #bg7c9bzk (#9, @lead's revised ruling): a paste's rows are listed in the sheet's order.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ivy', 'Otto', 'Al']);
   await expect.poll(() => read('People.base')).toContain('  note.stage:\n    gumplyType: select\n    gumplyOptions:\n      - value: Todo\n        color: brown\n      - value: Done\n        color: orange\n');
   await expect.poll(() => read('People/Ivy.md')).toMatch(/stage: Todo\n/);
   expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
@@ -629,7 +631,8 @@ test('a paste that takes a while says "Pasting N rows…" until it is done (@lea
   await expect(status).toHaveAttribute('role', 'status');
   await expect(status).toHaveText(/Pasting 3 rows/);
   release();
-  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
+  // #bg7c9bzk (#9, @lead's revised ruling): a paste's rows are listed in the sheet's order.
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ivy', 'Otto', 'Al']);
   await expect(status).toHaveText('');
 });
 
