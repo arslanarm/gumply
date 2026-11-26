@@ -132,3 +132,89 @@ export function guessHeaderRow(rows: readonly string[][]): boolean {
   if (cells.some((cell) => guessType([cell]) !== "text")) return false;
   return cells.some((_, col) => guessType(rest.map((row) => row[col] ?? "")) !== "text");
 }
+
+/**
+ * A pasted cell as a value of its column's type, or null when it isn't one (left out, and counted).
+ * Checkboxes read TRUE/FALSE, yes/no, ✓ and empty; numbers allow thousands commas; dates take ISO and
+ * day-first `05.01.2026` / `05/01/2026`; other types as typed (lists split on commas).
+ */
+export function pastedValue(text: string, type: string): { value: string | number | boolean | string[] | null } | null {
+  const trimmed = text.trim();
+  if (type === "checkbox") {
+    const lower = trimmed.toLowerCase();
+    if (TRUE_WORDS.has(lower)) return { value: true };
+    if (FALSE_WORDS.has(lower)) return { value: false };
+    return null;
+  }
+  if (trimmed === "") return { value: null };
+  if (type === "number") {
+    const number = Number(trimmed.replace(/,(?=\d{3}(\D|$))/g, ""));
+    return Number.isFinite(number) ? { value: number } : null;
+  }
+  if (type === "date") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return { value: trimmed };
+    const dayFirst = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(trimmed);
+    if (dayFirst) return { value: `${dayFirst[3]}-${dayFirst[2]!.padStart(2, "0")}-${dayFirst[1]!.padStart(2, "0")}` };
+    return null;
+  }
+  if (type === "multitext" || type === "tags" || type === "aliases") {
+    const parts = trimmed
+      .split(",")
+      .map((part) => (type === "tags" ? part.trim().replace(/^#/, "") : part.trim()))
+      .filter((part, index, all) => part.length > 0 && all.indexOf(part) === index);
+    return { value: parts };
+  }
+  return { value: trimmed };
+}
+
+/** A column as the paste sees it. */
+export interface PasteColumn {
+  id: string;
+  type: string;
+  editable: boolean;
+}
+
+/**
+ * A block pasted at the active cell (spec §5): it overwrites down and right; rows past the end become new
+ * rows, named by the title column's value (or `untitled`). Not written: title cells of existing rows (a
+ * rename isn't a paste), read-only columns, values that don't fit their column's type, and columns past
+ * the last one (the "+" step comes later); each is counted, so the view can say so.
+ */
+export function plannedPaste(
+  block: readonly string[][],
+  start: { row: number; col: number },
+  columns: readonly PasteColumn[],
+  rowIds: readonly string[],
+  untitled: string,
+): { rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>; left: number; pastLast: number } {
+  const rows: Array<{ id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }> = [];
+  let left = 0;
+  let pastLast = 0;
+  block.forEach((cells, r) => {
+    const at = start.row + r;
+    const id = rowIds[at];
+    const row: { id?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> } = id === undefined ? { set: {} } : { id, set: {} };
+    cells.forEach((text, c) => {
+      const column = columns[start.col + c];
+      if (!column) {
+        if (r === 0) pastLast += 1;
+        return;
+      }
+      if (column.id === "file.name" || column.id === "file.basename") {
+        if (id === undefined) row.title = text.trim();
+        else if (text.trim() !== "") left += 1;
+        return;
+      }
+      if (!column.editable || !column.id.startsWith("note.")) {
+        left += 1;
+        return;
+      }
+      const value = pastedValue(text, column.type);
+      if (value === null) left += 1;
+      else row.set[column.id.slice(5)] = value.value;
+    });
+    if (id === undefined && !row.title) row.title = untitled;
+    if (id === undefined || Object.keys(row.set).length) rows.push(row);
+  });
+  return { rows, left, pastLast };
+}
