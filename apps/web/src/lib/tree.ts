@@ -62,6 +62,22 @@ export function isUnderHiddenRows(id: PageId, hidden: ReadonlySet<PageId>): bool
 }
 
 /**
+ * #7prbquxu (spec/database-tables §3, note e): the sidebar item to show as selected for the open page. A row in
+ * a rows folder the sidebar hides isn't in the tree, so its database stands for it; anything else is itself.
+ */
+export function sidebarSelection(pages: readonly PageMeta[], selectedId: PageId | null): PageId | null {
+  if (selectedId === null) return null;
+  const hidden = hiddenRowsFolders(pages);
+  if (hidden.size === 0 || !isUnderHiddenRows(selectedId, hidden)) return selectedId;
+  for (const folder of hidden) {
+    if (selectedId === folder || selectedId.startsWith(`${folder}/`)) {
+      return pages.find((page) => page.id === folder)?.ownedBy ?? selectedId;
+    }
+  }
+  return selectedId;
+}
+
+/**
  * Build the tree from `parentId` links. Pages whose parent is missing (or
  * whose parent chain loops) become roots instead of disappearing.
  */
