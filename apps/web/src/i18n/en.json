@@ -1651,7 +1651,9 @@
       "missingTarget": "The folder to import into no longer exists.",
       "offline": "Couldn't reach Gumply. Check that it's still running.",
       "other": "The import didn't work.",
-      "failed": "The import didn't finish: Gumply couldn't use this file as a Notion “Markdown & CSV” export."
+      "failed": "The import didn't finish: Gumply couldn't use this file as a Notion “Markdown & CSV” export.",
+      "damaged": "The export looks damaged. Download it again from Notion.",
+      "damagedFile": "The export looks damaged (file {{file}}). Download it again from Notion."
     },
     "details": "Details: {{error}}",
     "databasesTitle": "Databases",
@@ -1674,7 +1676,6 @@
       "symlink": "a symbolic link",
       "tooLarge": "larger than {{limit}}",
       "zipBomb": "compressed suspiciously well (a possible zip bomb)",
-      "sizeMismatch": "its size doesn't match the zip's header",
       "rowWithoutPage": "the row “{{title}}” has no page in the export",
       "typesNotRecorded": "property types not recorded: {{error}}"
     }

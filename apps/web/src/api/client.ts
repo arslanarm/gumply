@@ -287,7 +287,11 @@ export interface NotionImportJob {
   total: number;
   folder?: string;
   report?: NotionImportReport;
+  /** Why it failed, in English. */
   error?: string;
+  /** `damaged`: a corrupt or cut-short export (#4zzay6mn); `errorFile` names the entry when one can be named. */
+  errorCode?: "damaged";
+  errorFile?: string;
 }
 
 /** Vault-relative path → the API URL that serves it (`/api/files/...`). */

@@ -11,6 +11,7 @@ import { useT } from "../i18n/index.js";
 import {
   convertedLines,
   databaseLine,
+  failedJobMessage,
   folderName,
   IMPORT_ERROR_MESSAGES,
   importErrorKind,
@@ -100,8 +101,10 @@ export function NotionImportDialog({ target, onClose, onOpenFolder, onImported }
           return;
         }
         if (job.state === "failed") {
-          // The server's reason (English, e.g. "larger than 2 GB once unpacked") is the detail line.
-          setPhase({ kind: "error", message: t(IMPORT_ERROR_MESSAGES.failed), details: job.error ?? null });
+          // The server's reason (English, e.g. "larger than 2 GB once unpacked") is the detail line;
+          // a damaged export has its own words, naming the file (#4zzay6mn).
+          const failed = failedJobMessage(job);
+          setPhase({ kind: "error", message: t(failed.key, failed.vars), details: failed.details });
           return;
         }
         setPhase({ kind: "running", job });

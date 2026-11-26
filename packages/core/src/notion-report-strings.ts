@@ -17,7 +17,6 @@ export type NotionSkipCode =
   | "symlink"
   | "tooLarge"
   | "zipBomb"
-  | "sizeMismatch"
   | "rowWithoutPage"
   | "typesNotRecorded";
 
@@ -98,7 +97,6 @@ const EN: NotionReportStrings = {
     symlink: () => "a symbolic link",
     tooLarge: ({ limit }) => `larger than ${limit}`,
     zipBomb: () => "compressed suspiciously well (a possible zip bomb)",
-    sizeMismatch: () => "its size doesn't match the zip's header",
     rowWithoutPage: ({ title }) => `the row "${title}" has no page in the export`,
     typesNotRecorded: ({ error }) => `property types not recorded: ${error}`,
   },
@@ -143,7 +141,6 @@ const RU: NotionReportStrings = {
     symlink: () => "символическая ссылка",
     tooLarge: ({ limit }) => `больше ${limit}`,
     zipBomb: () => "сжато подозрительно сильно (возможно, zip-бомба)",
-    sizeMismatch: () => "размер не совпадает с заголовком zip",
     rowWithoutPage: ({ title }) => `у строки «${title}» нет страницы в экспорте`,
     typesNotRecorded: ({ error }) => `типы свойств не записаны: ${error}`,
   },
