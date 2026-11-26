@@ -1360,7 +1360,7 @@ export function App() {
       setAutoFocusTitle(true);
       if (window.innerWidth <= 900) setSidebarOpen(false);
       try {
-        const created = await api.createBase({ title: newBaseTitle(), parentId, rows: true });
+        const created = await api.createBase({ title: newBaseTitle(), parentId, rows: true, viewName: t("bases.newViewName.table") });
         await loadPages();
         setEditTitleId(created.meta.id);
         navigate(created.meta.id);
@@ -1380,6 +1380,7 @@ export function App() {
       try {
         const created = await api.createBase({
           title: title ?? newBaseTitle(),
+          viewName: t("bases.newViewName.table"),
           parentId,
           ...(parentId ? { source: { folder: parentId } } : {}),
         });
@@ -1432,7 +1433,7 @@ export function App() {
         let createdId: PageId;
         if (isBase(meta)) {
           const original = await api.getBase(id);
-          const created = await api.createBase({ title, parentId: meta.parentId });
+          const created = await api.createBase({ title, parentId: meta.parentId, viewName: t("bases.newViewName.table") });
           await api.saveBase(created.meta.id, { config: original.config, expectedUpdated: created.meta.updated });
           createdId = created.meta.id;
         } else if (isBoard(meta)) {
@@ -1608,6 +1609,7 @@ export function App() {
     try {
       const created = await api.createBase({
         title: newBaseTitle(),
+        viewName: t("bases.newViewName.table"),
         parentId,
         ...(parentId ? { source: { folder: parentId } } : {}),
       });

@@ -313,6 +313,8 @@ export interface CreateBaseInput {
    * folder's own pages. `source` is ignored.
    */
   rows?: boolean;
+  /** The first view's name, in the interface language (@polish-dev's note); "Table" when absent. */
+  viewName?: string;
 }
 
 export interface UpdateBaseInput {
@@ -370,6 +372,12 @@ export interface OwnedRowsChange {
   baseRefused?: boolean;
   /** The base as it is now (its version for the caller's next save). */
   base: BaseDocument;
+}
+
+/** A new base's first view name from the request: one line, trimmed, at most 64 characters; else none. */
+function viewNameOf(input: { viewName?: unknown }): { viewName?: string } {
+  const name = typeof input.viewName === "string" ? input.viewName.replace(/[\r\n]+/g, " ").trim().slice(0, 64) : "";
+  return name ? { viewName: name } : {};
 }
 
 /** #7prbquxu phase 3: what an option rename or clear did (`POST /api/bases/:id/rows-option`). */
@@ -4100,7 +4108,7 @@ export class VaultStore {
       this.redirects.delete(id);
       const filePath = this.filePathFor(id);
       await mkdir(join(this.root, rows), { recursive: true });
-      await writeFile(filePath, newBaseSource({ rows }), { encoding: "utf8", flag: "wx" });
+      await writeFile(filePath, newBaseSource({ rows, ...viewNameOf(input) }), { encoding: "utf8", flag: "wx" });
       const record = await this.readBaseRecord(filePath, id);
       record.parentId = parentId;
       this.pages.set(id, record);
@@ -4115,7 +4123,7 @@ export class VaultStore {
     await mkdir(dirname(filePath), { recursive: true });
     // A new view at a trashed view's path starts its own history (D41), as a new page or board does.
     await this.freshHistory(filePath);
-    await writeFile(filePath, newBaseSource({ folder, tag }), { encoding: "utf8", flag: "wx" });
+    await writeFile(filePath, newBaseSource({ folder, tag, ...viewNameOf(input) }), { encoding: "utf8", flag: "wx" });
     const record = await this.readBaseRecord(filePath, id);
     record.parentId = parentId;
     this.pages.set(id, record);

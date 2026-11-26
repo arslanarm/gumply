@@ -627,6 +627,8 @@ export const api = {
     source?: { folder?: PageId | null; tag?: string };
     /** #7prbquxu: a database with its own rows folder (spec/database-tables §1). */
     rows?: boolean;
+    /** The first view's name, in the interface language (the server writes "Table" without it). */
+    viewName?: string;
   }): Promise<BaseDocument> => mutate(() => request("/bases", { method: "POST", body: JSON.stringify(input) })),
 
   /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */

@@ -471,6 +471,7 @@ export function createApiRoutes(store: VaultStore): Hono {
         ...(typeof source.tag === "string" ? { tag: source.tag } : {}),
       },
       ...(body.rows === true ? { rows: true } : {}),
+      ...(typeof body.viewName === "string" ? { viewName: body.viewName } : {}),
     });
     return c.json<BaseDocument>(base, 201);
   });
