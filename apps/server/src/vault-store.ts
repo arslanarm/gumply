@@ -16,6 +16,7 @@ import {
   type Property,
   type PropertyInfo,
   type PropertyType,
+  type PropertyValue,
   childPageId,
   collectLinkEdges,
   extractTags,
@@ -94,10 +95,15 @@ import {
   type WikiLink,
   newBaseSource,
   ownedRowsFolder,
+  rowsShown,
   parseBase,
   updateBaseSource,
   renameKeyInConfig,
   dropKeyFromConfig,
+  propertyId,
+  selectSettings,
+  selectedValues,
+  withSelectSettings,
   withOwnedRows,
   type BaseConfig,
   type CanvasBoard,
@@ -308,6 +314,8 @@ export interface CreateBaseInput {
    * folder's own pages. `source` is ignored.
    */
   rows?: boolean;
+  /** The first view's name, in the interface language (@polish-dev's note); "Table" when absent. */
+  viewName?: string;
 }
 
 export interface UpdateBaseInput {
@@ -365,6 +373,82 @@ export interface OwnedRowsChange {
   baseRefused?: boolean;
   /** The base as it is now (its version for the caller's next save). */
   base: BaseDocument;
+  /** #7prbquxu phase 4b: each file written, with its version before and after (the table's undo). */
+  files: UndoFile[];
+}
+
+/** A new base's first view name from the request: one line, trimmed, at most 64 characters; else none. */
+function viewNameOf(input: { viewName?: unknown }): { viewName?: string } {
+  const name = typeof input.viewName === "string" ? input.viewName.replace(/[\r\n]+/g, " ").trim().slice(0, 64) : "";
+  return name ? { viewName: name } : {};
+}
+
+/** #7prbquxu phase 4b: one undo (or redo) step of the table (`POST /api/bases/:id/undo`). */
+export interface UndoInput {
+  /** Files back to an earlier version `to`, each only while at `from`. */
+  files?: Array<{ id: PageId; from: string; to: string }>;
+  /** Rows a paste made, moved to the Trash while still at `from` (each its own Trash item). */
+  drop?: Array<{ id: PageId; from: string }>;
+  /** Rows an undo dropped, brought back from their Trash entry at their id (a redo of a paste). */
+  create?: Array<{ id: PageId; trashId: string }>;
+}
+
+/** What an undo step did; `files`, `dropped` and `created` give its inverse (redo). Empty with `refused`. */
+export interface UndoResult {
+  refused: Array<{ id: PageId; title: string }>;
+  files: UndoFile[];
+  dropped: Array<{ id: PageId; before: string; trashId: string }>;
+  created: Array<{ id: PageId; after: string }>;
+  base?: BaseDocument;
+}
+
+/** #7prbquxu phase 4b: a file a database op wrote, with its version before and after (History keeps both). */
+export interface UndoFile {
+  id: PageId;
+  before: string;
+  after: string;
+}
+
+/** The written rows (and the base, when written) as undo files. */
+function filesOf(rows: ReadonlyArray<{ id: PageId; before: string; updated: string }>, base: UndoFile | null): UndoFile[] {
+  return [...rows.map((row) => ({ id: row.id, before: row.before, after: row.updated })), ...(base ? [base] : [])];
+}
+
+/** #7prbquxu phase 3: what an option rename or clear did (`POST /api/bases/:id/rows-option`). */
+export interface OwnedRowsOption {
+  /** Rows changed; empty when it was refused and put back. */
+  changed: PageId[];
+  refused: Array<{ id: PageId; title: string }>;
+  stuck: Array<{ id: PageId; title: string }>;
+  /** The base changed meanwhile: the rows were put back. */
+  baseRefused?: boolean;
+  /** The base as it is now (its options and version). */
+  base: BaseDocument;
+  /** #7prbquxu phase 4b: each file written, with its version before and after (the table's undo). */
+  files: UndoFile[];
+}
+
+/** #7prbquxu phase 2: the most rows one paste may write (the client asks once more above 1,000). */
+const MAX_PASTE_ROWS = 5_000;
+
+/** #7prbquxu phase 2: what a paste into an owned database did (`POST /api/bases/:id/rows-paste`). */
+export interface OwnedRowsPaste {
+  /** Existing rows whose values were set; empty when the paste was refused and put back. */
+  changed: PageId[];
+  /** New rows made in the rows folder. */
+  created: PageId[];
+  /** Rows that refused (changed on disk meanwhile, read-only, an error): then nothing was kept. */
+  refused: Array<{ id: PageId; title: string }>;
+  /** Rows that couldn't be put back (they keep the pasted values, or a new row stayed). */
+  stuck: Array<{ id: PageId; title: string }>;
+  /** After a refusal: new rows that changed meanwhile, so they went to the Trash (unchanged ones are deleted outright). */
+  trashed: Array<{ id: PageId; title: string }>;
+  /** The new columns couldn't be added (the base changed meanwhile): the rows were put back too. */
+  baseRefused?: boolean;
+  /** #7prbquxu phase 4b: existing rows (and the base) written, with versions before and after. */
+  files: UndoFile[];
+  /** #7prbquxu phase 4b: the new rows made, with the version this paste left them at. */
+  made: Array<{ id: PageId; after: string }>;
 }
 
 interface PageRecord extends Omit<Page, "childCount"> {
@@ -633,6 +717,15 @@ interface TrashEntry {
   deletedAt: string;
   /** A plain folder (D33): `file` is its directory. */
   folder: boolean;
+  /** #7prbquxu phase 4: a database deleted with its rows: the rows folder's own entry, restored with it. */
+  with?: string;
+  /** #7prbquxu phase 4: this folder entry belongs to a database's entry (not listed on its own). */
+  partOf?: string;
+  /**
+   * #7prbquxu phase 4 (@lead): the rows one table undo took out, as one item: `id` and `file` are their folder
+   * (which stays in the vault), `deleted` the rows directly in it, each at its own path inside the entry.
+   */
+  rows?: boolean;
 }
 
 /** `.trash/<trashId>/meta.json` (D11). */
@@ -643,8 +736,11 @@ interface TrashManifest {
   deletedAt: string;
   /** Vault-relative file of `id` (v1.7: `.md` or `.canvas`); old manifests: `${id}.md`. */
   file?: string;
-  /** "folder" for a plain folder (D33); `file` is then the directory. */
+  /** "folder" for a plain folder (D33); `file` is then the directory. "rows": see TrashEntry. */
   kind?: string;
+  /** #7prbquxu phase 4: see TrashEntry. */
+  with?: string;
+  partOf?: string;
 }
 
 const BOARD_EXTENSION = ".canvas";
@@ -2279,7 +2375,23 @@ export class VaultStore {
       if (own) meta.conflicts = own;
       return meta;
     });
+    // #7prbquxu phase 4: which database owns which rows folder (the sidebar hides those folders by default).
+    const ownerOf = new Map<PageId, PageId>();
+    for (const meta of metas) {
+      if (meta.kind !== "base") continue;
+      const record = this.pages.get(meta.id);
+      const rows = record ? this.ownedRowsOf(record, meta.id) : null;
+      if (!rows || !record) continue;
+      meta.rowsFolder = rows;
+      try {
+        if (rowsShown(parseBase(record.baseSource ?? ""))) meta.showRows = true;
+      } catch {
+        // ownedRowsOf parsed it already; a parse error means it isn't owned.
+      }
+      ownerOf.set(rows, meta.id);
+    }
     for (const folder of this.folders.values()) {
+      const owner = ownerOf.get(folder.id);
       metas.push({
         id: folder.id,
         kind: "folder",
@@ -2290,6 +2402,7 @@ export class VaultStore {
         created: FOLDER_TIME,
         updated: FOLDER_TIME,
         otherFiles: folder.otherFiles,
+        ...(owner ? { ownedBy: owner } : {}),
       });
     }
     return metas.sort((a, b) => a.id.localeCompare(b.id));
@@ -2847,9 +2960,319 @@ export class VaultStore {
     return this.enqueue(() => this.renameTagNow(from, to, skip));
   }
 
-  async remove(id: PageId): Promise<DeletePageResult> {
+  /** `withRows` (#7prbquxu phase 4): a database that owns its rows folder takes it to the Trash too, as one item. */
+  async remove(id: PageId, options: { withRows?: boolean } = {}): Promise<DeletePageResult> {
     await this.renameSettled(this.resolveId(id));
-    return this.enqueue(() => this.removeNow(this.resolveId(id)));
+    return this.enqueue(() => (options.withRows ? this.removeWithRowsNow(this.resolveId(id)) : this.removeNow(this.resolveId(id))));
+  }
+
+  /**
+   * #7prbquxu phase 4b (spec/database-tables §7, @lead): the table's undo (and redo), one queued job, all or nothing.
+   * Only this base and the rows directly in the folder it owns. `files` go back to an earlier History version of
+   * the same file (`to`), each only while it's still at `from` (version and bytes); `drop` moves rows a paste made
+   * to the Trash, only while unchanged; `create` brings such rows back from their Trash entry (a redo).
+   * Everything is checked before any write: a row changed since or read-only, a missing History version or Trash
+   * entry, a name taken, or the rows folder gone refuses the whole step and names the rows. A write failing part
+   * way puts back everything already written. Each file's current bytes are kept as a History version first, so
+   * the answer's inverse (redo) can always be applied.
+   */
+  undoDatabaseChange(id: PageId, input: UndoInput): Promise<UndoResult> {
+    return this.enqueue(() => this.asDatabaseChange(() => this.undoDatabaseChangeNow(this.resolveId(id), input)));
+  }
+
+  private async historyBytes(id: PageId, version: string): Promise<Buffer | null> {
+    const dir = historyDir(this.root, id);
+    const { entries } = await readHistory(dir).catch(() => ({ entries: [] as HistoryEntry[] }));
+    const entry = [...entries].reverse().find((candidate) => candidate.version === version);
+    return entry ? readFile(join(dir, entry.file)).catch(() => null) : null;
+  }
+
+  private async undoDatabaseChangeNow(id: PageId, input: UndoInput): Promise<UndoResult> {
+    const base = this.requireBase(id);
+    // The rows folder this database owns by name; scope is checked against it even when it's gone.
+    const folder = id.slice(0, -idExtension("base").length);
+    const owned = this.ownedRowsOf(base, id) !== null && (await this.folderExists(folder));
+    const files = Array.isArray(input?.files) ? input.files : [];
+    const drop = Array.isArray(input?.drop) ? input.drop : [];
+    const create = Array.isArray(input?.create) ? input.create : [];
+    const inRows = (rowId: PageId) => rowId.startsWith(`${folder}/`) && !rowId.slice(folder.length + 1).includes("/");
+    const refused: Array<{ id: PageId; title: string }> = [];
+    const titleOf = (rowId: PageId) => this.pages.get(rowId)?.title ?? (rowId.split("/").pop() ?? rowId);
+    const refuse = (rowId: PageId) => refused.push({ id: rowId, title: titleOf(rowId) });
+    // @lead's point 1: only this base and its own rows, each `to` a version of that same file.
+    for (const file of files) {
+      if (typeof file?.id !== "string" || typeof file.from !== "string" || typeof file.to !== "string") throw badRequest("each file needs id, from and to");
+      if (file.id !== id && !inRows(file.id)) throw badRequest(`not this database or one of its rows: ${file.id}`);
+    }
+    for (const row of drop) {
+      if (typeof row?.id !== "string" || typeof row.from !== "string") throw badRequest("each dropped row needs id and from");
+      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
+    }
+    for (const row of create) {
+      if (typeof row?.id !== "string" || typeof row.trashId !== "string") throw badRequest("each row to bring back needs id and trashId");
+      if (!inRows(row.id)) throw badRequest(`not one of this database's rows: ${row.id}`);
+    }
+    const writable = async (record: PageRecord) => assertWritable(record.filePath).then(() => true, () => false);
+    const unchanged = async (record: PageRecord, from: string) =>
+      record.updated === from && !(await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null)));
+
+    // Check everything first: a row changed since, read-only, a missing History version or Trash entry, a name
+    // taken, or the rows folder gone refuses the whole step (the rows named).
+    const planned: Array<{ record: PageRecord; from: string; bytes: Buffer }> = [];
+    for (const file of files) {
+      const record = this.pages.get(file.id);
+      const isRow = file.id !== id;
+      const bytes = record && (await unchanged(record, file.from)) ? await this.historyBytes(file.id, file.to) : null;
+      if (!record || !bytes || (isRow && !owned) || !(await writable(record))) {
+        refuse(file.id);
+        continue;
+      }
+      planned.push({ record, from: file.from, bytes });
+    }
+    const dropping: PageRecord[] = [];
+    for (const row of drop) {
+      const record = this.pages.get(row.id);
+      if (!owned || !record || this.hasChildren(row.id) || !(await unchanged(record, row.from)) || !(await writable(record))) {
+        refuse(row.id);
+        continue;
+      }
+      dropping.push(record);
+    }
+    const bringing: Array<{ entry: TrashEntry; id: PageId }> = [];
+    for (const row of create) {
+      const entry = /^[A-Za-z0-9-]+$/.test(row.trashId) ? await this.readTrashEntry(row.trashId) : null;
+      // A group of rows an undo took out (or, from before groups, one row's own entry).
+      const holds =
+        entry !== null &&
+        (entry.rows ? entry.id === folder && entry.deleted.includes(row.id) : !entry.folder && !entry.with && entry.id === row.id && entry.deleted.length === 1);
+      const good =
+        owned &&
+        holds &&
+        (await this.readTrashedRecord(entry!, row.id)) !== null &&
+        !this.pages.has(row.id) &&
+        !(await pathExists(this.filePathFor(row.id))) &&
+        !(await pathExists(join(this.root, row.id)));
+      if (!good) {
+        refuse(row.id);
+        continue;
+      }
+      bringing.push({ entry: entry!, id: row.id });
+    }
+    if (refused.length) return { refused, files: [], dropped: [], created: [] };
+
+    // Then write. Each file's current bytes go into History first (redo reads them) and are kept here, so a write
+    // failing part way puts everything already written back (@lead's point 2): never a half-undo.
+    const written: Array<{ id: PageId; before: string; bytes: Buffer; isBase: boolean }> = [];
+    const trashed: Array<{ record: PageRecord; trashId: string }> = [];
+    const brought: Array<{ entry: TrashEntry; record: PageRecord }> = [];
+    let droppedTo: string | null = null;
+    try {
+      for (const { record, from, bytes } of planned) {
+        const current = await readFile(record.filePath);
+        if (record.kind === "base") {
+          await this.writeBaseFile(record, bytes.toString("utf8"));
+          written.push({ id: record.id, before: from, bytes: current, isBase: true });
+          continue;
+        }
+        await this.versionBeforeWrite(record.filePath, current);
+        if (!(await this.putPasteBytesBack(record.id, bytes, from))) throw conflict(`${record.title} changed while it was being undone`);
+        written.push({ id: record.id, before: from, bytes: current, isBase: false });
+      }
+      if (dropping.length) {
+        droppedTo = await this.trashRowsForUndo(folder, dropping);
+        for (const record of dropping) trashed.push({ record, trashId: droppedTo });
+      }
+      for (const { entry, id: rowId } of bringing) brought.push({ entry, record: await this.bringRowBackForRedo(entry, rowId) });
+    } catch (error) {
+      const stuck = await this.putUndoBack(written, trashed, brought);
+      console.error(`[gumply] undo in ${id} failed part way; put back${stuck.length ? `, except ${stuck.join(", ")}` : ""}:`, error);
+      if (stuck.length) throw conflict(`The undo failed part way, and these couldn't be put back: ${stuck.join(", ")}`);
+      throw conflict("The undo failed part way; everything was put back as it was.");
+    }
+    // Done: the brought rows leave their Trash entries; an entry with nothing left goes.
+    const byEntry = new Map<string, { entry: TrashEntry; ids: Set<PageId> }>();
+    for (const { entry, record } of brought) {
+      const group = byEntry.get(entry.trashId) ?? { entry, ids: new Set<PageId>() };
+      group.ids.add(record.id);
+      byEntry.set(entry.trashId, group);
+    }
+    for (const { entry, ids } of byEntry.values()) await this.takeRowsOutOfTrashEntry(entry, ids);
+    if (written.length || trashed.length || brought.length) {
+      await this.syncFolders();
+      this.reindexAll();
+    }
+    return {
+      refused: [],
+      files: written.map((file) => ({ id: file.id, before: file.before, after: this.pages.get(file.id)!.updated })),
+      dropped: trashed.map(({ record, trashId }) => ({ id: record.id, before: record.updated, trashId })),
+      created: brought.map(({ record }) => ({ id: record.id, after: record.updated })),
+      base: this.getBase(id),
+    };
+  }
+
+  /**
+   * #7prbquxu phase 4b (@lead's point 3): the rows one table undo drops go to the Trash as **one** item, "N rows
+   * from People" (never deleted outright; their History stays), as our own write, without a rebuild per row.
+   * A redo, or Restore, brings them back. A move failing part way puts the moved rows back and throws.
+   */
+  private async trashRowsForUndo(folder: PageId, records: readonly PageRecord[]): Promise<string> {
+    const trashId = await this.freeTrashId();
+    const trashDir = join(this.trashRoot, trashId);
+    for (const record of records) await this.snapshotRecord(record, this.historySource, "trash");
+    const manifest: TrashManifest = {
+      id: folder,
+      trashId,
+      deleted: records.map((record) => record.id),
+      deletedAt: new Date().toISOString(),
+      file: folder,
+      kind: "rows",
+    };
+    const moved: Array<{ from: string; to: string }> = [];
+    try {
+      await mkdir(join(trashDir, folder), { recursive: true });
+      await writeAtomic(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2));
+      for (const record of records) {
+        const to = join(trashDir, relative(this.root, record.filePath));
+        this.markOwnWrite(record.filePath);
+        await rename(record.filePath, to);
+        moved.push({ from: record.filePath, to });
+      }
+    } catch (error) {
+      for (const { from, to } of moved.reverse()) await rename(to, from).catch(() => undefined);
+      await rm(trashDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+    for (const record of records) {
+      this.pages.delete(record.id);
+      this.forgetSessionBytes(record.id);
+    }
+    return trashId;
+  }
+
+  /** A redo: one row back from its Trash entry, at its id (checked free); the entry is updated once the whole step is done. */
+  private async bringRowBackForRedo(entry: TrashEntry, id: PageId): Promise<PageRecord> {
+    const source = resolve(entry.dir, this.trashedFileOf(entry, id));
+    const target = this.filePathFor(id);
+    this.markOwnWrite(target);
+    await rename(source, target);
+    const record = await this.readRecord(target, id);
+    record.parentId = parentOf(id);
+    this.pages.set(id, record);
+    return record;
+  }
+
+  /** Rows a redo brought back leave their Trash entry: it goes when nothing is left, else it lists the rest. */
+  private async takeRowsOutOfTrashEntry(entry: TrashEntry, ids: ReadonlySet<PageId>): Promise<void> {
+    const rest = entry.deleted.filter((id) => !ids.has(id));
+    if (!entry.rows || rest.length === 0) {
+      await rm(entry.dir, { recursive: true, force: true }).catch(() => undefined);
+      return;
+    }
+    const file = join(entry.dir, "meta.json");
+    try {
+      const manifest = JSON.parse(await readFile(file, "utf8")) as TrashManifest;
+      manifest.deleted = rest;
+      await writeAtomic(file, JSON.stringify(manifest, null, 2));
+    } catch (error) {
+      console.warn(`[gumply] redo: the Trash entry ${entry.trashId} still lists rows that are back:`, error);
+    }
+  }
+
+  /** An undo that failed part way: the brought rows back to the Trash, the trashed ones back in place, the written files' bytes back. Returns what couldn't be. */
+  private async putUndoBack(
+    written: ReadonlyArray<{ id: PageId; bytes: Buffer; isBase: boolean }>,
+    trashed: ReadonlyArray<{ record: PageRecord; trashId: string }>,
+    brought: ReadonlyArray<{ entry: TrashEntry; record: PageRecord }>,
+  ): Promise<string[]> {
+    const stuck: string[] = [];
+    for (const { entry, record } of [...brought].reverse()) {
+      try {
+        this.markOwnWrite(record.filePath);
+        await rename(record.filePath, resolve(entry.dir, this.trashedFileOf(entry, record.id)));
+        this.pages.delete(record.id);
+      } catch {
+        stuck.push(record.title);
+      }
+    }
+    const trashDirs = new Set<string>();
+    for (const { record, trashId } of [...trashed].reverse()) {
+      try {
+        const trashDir = join(this.trashRoot, trashId);
+        trashDirs.add(trashDir);
+        this.markOwnWrite(record.filePath);
+        await rename(join(trashDir, relative(this.root, record.filePath)), record.filePath);
+        this.pages.set(record.id, await this.readRecord(record.filePath, record.id).then((fresh) => ({ ...fresh, parentId: record.parentId })));
+      } catch {
+        stuck.push(record.title);
+      }
+    }
+    // The group's entry goes only when every row is back in place.
+    if (stuck.length === 0) for (const dir of trashDirs) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    for (const file of [...written].reverse()) {
+      const record = this.pages.get(file.id);
+      try {
+        if (!record) throw new Error("gone");
+        if (file.isBase) await this.writeBaseFile(record, file.bytes.toString("utf8"));
+        else if (!(await this.putPasteBytesBack(file.id, file.bytes, record.updated))) throw new Error("changed");
+      } catch {
+        stuck.push(record?.title ?? file.id);
+      }
+    }
+    if (written.length || trashed.length || brought.length) {
+      await this.syncFolders().catch(() => undefined);
+      this.reindexAll();
+    }
+    return stuck;
+  }
+
+  /**
+   * #7prbquxu phase 4b (@lead): a database op's writes keep each file's bytes before it as a History version,
+   * never coalesced into an edit session (reason "database"), so the table's undo can always find them.
+   */
+  private async asDatabaseChange<T>(work: () => Promise<T>): Promise<T> {
+    const saved = this.historyReason;
+    this.historyReason = "database";
+    try {
+      return await work();
+    } finally {
+      this.historyReason = saved;
+    }
+  }
+
+  /**
+   * #7prbquxu phase 4 (spec/database-tables §1): delete a database and its rows folder together. The folder goes
+   * to the Trash first, then the base; their two entries are linked, so the Trash lists one item and restoring
+   * it brings both back. A base that owns no folder is an ordinary delete.
+   */
+  private async removeWithRowsNow(id: PageId): Promise<DeletePageResult> {
+    const record = this.require(id);
+    const rows = record.kind === "base" ? this.ownedRowsOf(record, id) : null;
+    if (!rows || !this.folders.has(rows)) return this.removeNow(id);
+    const folder = await this.removeFolderNow(rows);
+    let base: DeletePageResult;
+    try {
+      base = await this.removeNow(id);
+    } catch (error) {
+      // The base stayed: its rows come back too.
+      await this.restoreFolderNow(await this.openTrashEntry(folder.trashId)).catch(() => undefined);
+      throw error;
+    }
+    await this.linkTrashEntries(base.trashId, folder.trashId);
+    return { trashId: base.trashId, deleted: [...base.deleted, ...folder.deleted] };
+  }
+
+  /** Mark a database's entry and its rows folder's entry as one (their manifests name each other). */
+  private async linkTrashEntries(baseTrashId: string, rowsTrashId: string): Promise<void> {
+    for (const [trashId, field, other] of [
+      [baseTrashId, "with", rowsTrashId],
+      [rowsTrashId, "partOf", baseTrashId],
+    ] as const) {
+      const file = join(this.trashRoot, trashId, "meta.json");
+      const manifest = JSON.parse(await readFile(file, "utf8")) as TrashManifest;
+      manifest[field] = other;
+      // Replaced whole (temp + rename): a torn manifest would hide the entry from the Trash (@opus-hunter's note a).
+      await writeAtomic(file, JSON.stringify(manifest, null, 2));
+    }
   }
 
   restore(trashId: string): Promise<RestoreResult> {
@@ -2872,6 +3295,12 @@ export class VaultStore {
       const entry = await this.openTrashEntry(trashId);
       await rm(entry.dir, { recursive: true, force: true });
       await this.dropTrashedHistory(entry);
+      // A database deleted with its rows: they go with it.
+      const rows = entry.with ? await this.readTrashEntry(entry.with) : null;
+      if (rows) {
+        await rm(rows.dir, { recursive: true, force: true });
+        await this.dropTrashedHistory(rows);
+      }
     });
   }
 
@@ -2893,11 +3322,13 @@ export class VaultStore {
   emptyTrash(): Promise<number> {
     return this.enqueue(async () => {
       const entries = await this.trashEntries();
+      const ids = new Set(entries.map((entry) => entry.trashId));
       for (const entry of entries) {
         await rm(entry.dir, { recursive: true, force: true });
         await this.dropTrashedHistory(entry);
       }
-      return entries.length;
+      // The count the Trash listed: a database's rows entry is part of its item (#7prbquxu phase 4a, note c).
+      return entries.filter((entry) => !(entry.partOf && ids.has(entry.partOf))).length;
     });
   }
 
@@ -3571,7 +4002,7 @@ export class VaultStore {
     change: { rename: { from: string; to: string } } | { remove: string },
     options: { expectedUpdated?: string; writer?: string } = {},
   ): Promise<OwnedRowsChange> {
-    return this.enqueue(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change, options));
+    return this.enqueue(() => this.asDatabaseChange(() => this.changeOwnedRowsPropertyNow(this.resolveId(id), change, options)));
   }
 
   private async changeOwnedRowsPropertyNow(
@@ -3614,15 +4045,16 @@ export class VaultStore {
     }
     const named = (records: PageRecord[]) => records.map((record) => ({ id: record.id, title: record.title }));
     const answer = (result: Omit<OwnedRowsChange, "base">): OwnedRowsChange => ({ ...result, base: this.getBase(id) });
-    if (clash.length) return answer({ changed: [], skipped: [], clash: named(clash), stuck: [] });
+    if (clash.length) return answer({ changed: [], skipped: [], clash: named(clash), stuck: [], files: [] });
 
-    const changed: Array<{ id: PageId; updated: string }> = [];
+    const changed: Array<{ id: PageId; updated: string; before: string }> = [];
     const skipped: PageRecord[] = [];
     for (const record of rows) {
       try {
         const patch = to !== null ? { rename: [{ from: key, to }] } : { remove: [key] };
+        const before = record.updated;
         const page = await this.updateNow(record.id, { properties: patch, expectedUpdated: record.updated });
-        changed.push({ id: page.id, updated: page.updated });
+        changed.push({ id: page.id, updated: page.updated, before });
       } catch (error) {
         // Any error (a refusal, a lock, I/O): this row didn't change. One the store didn't expect is logged.
         if (!(error instanceof VaultError)) console.warn(`[gumply] database column change: ${record.id} failed:`, error);
@@ -3632,12 +4064,14 @@ export class VaultStore {
 
     const next = to !== null ? renameKeyInConfig(config, key, to) : dropKeyFromConfig(config, key);
     const text = updateBaseSource(base.baseSource ?? "", next);
+    let baseFile: { id: PageId; before: string; after: string } | null = null;
     const writeBase = async (): Promise<boolean> => {
       if (text === base.baseSource) return true;
       if (!(await baseUnchanged())) return false;
       try {
         const replaced = base.updated;
         await this.writeBaseFile(base, text);
+        baseFile = { id: base.id, before: replaced, after: base.updated };
         if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
         else delete base.ownWrite;
         return true;
@@ -3650,10 +4084,17 @@ export class VaultStore {
     if (to === null) {
       // A delete: the column goes only when every row lost the key.
       const baseWritten = skipped.length === 0 ? await writeBase() : false;
-      return answer({ changed: changed.map((row) => row.id), skipped: named(skipped), clash: [], stuck: [], ...(skipped.length === 0 && !baseWritten ? { baseRefused: true } : {}) });
+      return answer({
+        changed: changed.map((row) => row.id),
+        skipped: named(skipped),
+        clash: [],
+        stuck: [],
+        files: filesOf(changed, baseFile),
+        ...(skipped.length === 0 && !baseWritten ? { baseRefused: true } : {}),
+      });
     }
     const baseWritten = skipped.length === 0 && (await writeBase());
-    if (baseWritten) return answer({ changed: changed.map((row) => row.id), skipped: [], clash: [], stuck: [] });
+    if (baseWritten) return answer({ changed: changed.map((row) => row.id), skipped: [], clash: [], stuck: [], files: filesOf(changed, baseFile) });
     // All or nothing: the rows already renamed go back. One that can't (changed again, locked, an error)
     // keeps the new name and is named, so nothing is silently half-renamed (@lead).
     const stuck: PageRecord[] = [];
@@ -3666,7 +4107,366 @@ export class VaultStore {
         if (record) stuck.push(record);
       }
     }
-    return answer({ changed: [], skipped: named(skipped), clash: [], stuck: named(stuck), ...(skipped.length === 0 ? { baseRefused: true } : {}) });
+    return answer({ changed: [], skipped: named(skipped), clash: [], stuck: named(stuck), files: [], ...(skipped.length === 0 ? { baseRefused: true } : {}) });
+  }
+
+  /**
+   * #7prbquxu phase 2 (spec/database-tables §5, @lead): a block pasted into an owned database, in one
+   * queued job. Existing rows get their values set (each from the version the table showed, so a row
+   * another app changed since refuses, even at the same size and time once #vqm6gqpu's byte check is in); then new rows are made in the rows folder with theirs. All or nothing: on
+   * any refusal or error, the rows already set get their old values back (keys they didn't have are
+   * removed again) and the new rows go to the Trash; the refused rows are named, and any that can't be
+   * put back are `stuck`.
+   */
+  pasteIntoOwnedRows(
+    id: PageId,
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: { view: string; keys: string[] } },
+    options: { expectedUpdated?: string; writer?: string } = {},
+  ): Promise<OwnedRowsPaste> {
+    return this.enqueue(() => this.asDatabaseChange(() => this.pasteIntoOwnedRowsNow(this.resolveId(id), input, options)));
+  }
+
+  private async pasteIntoOwnedRowsNow(
+    id: PageId,
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: { view: string; keys: string[] } },
+    options: { expectedUpdated?: string; writer?: string },
+  ): Promise<OwnedRowsPaste> {
+    const base = this.requireBase(id);
+    const folder = this.ownedRowsOf(base, id);
+    if (folder === null) throw badRequest("This database view doesn't own a rows folder.");
+    if (!input || !Array.isArray(input.rows) || input.rows.length === 0) throw badRequest("rows must be a non-empty list");
+    if (input.rows.length > MAX_PASTE_ROWS) throw badRequest(`at most ${MAX_PASTE_ROWS} rows in one paste`);
+    if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) {
+      throw conflict("This database view changed on disk.");
+    }
+    const prefix = `${folder}/`;
+    const existing: Array<{ record: PageRecord; set: Record<string, PropertyValue>; expected: string }> = [];
+    const fresh: Array<{ title: string; set: Record<string, PropertyValue> }> = [];
+    const given = new Set<PageId>();
+    for (const row of input.rows) {
+      if (!row || typeof row.set !== "object" || row.set === null || Array.isArray(row.set)) throw badRequest("each row needs a set object");
+      for (const key of Object.keys(row.set)) {
+        if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+      }
+      if (row.id !== undefined) {
+        const record = this.pages.get(this.resolveId(row.id));
+        if (!record || (record.kind ?? "page") !== "page" || !record.id.startsWith(prefix) || record.id.slice(prefix.length).includes("/")) {
+          throw badRequest(`not a row of this database: ${row.id}`);
+        }
+        // Required (@opus-hunter): values are set over the version the table showed, never blind and never
+        // over a newer outside edit.
+        if (typeof row.expectedUpdated !== "string") throw badRequest(`an existing row needs the version it was read at (expectedUpdated): ${row.id}`);
+        if (given.has(record.id)) throw badRequest(`a row is given twice: ${record.id}`);
+        given.add(record.id);
+        existing.push({ record, set: row.set, expected: row.expectedUpdated });
+      } else {
+        const title = typeof row.title === "string" ? row.title.trim() : "";
+        if (!title) throw badRequest("a new row needs a title");
+        fresh.push({ title, set: row.set });
+      }
+    }
+
+    // The new columns are checked before any write too (@opus-hunter): each key, and that the view still exists
+    // (it may have been renamed elsewhere while the preview was open).
+    if (input.columns) {
+      for (const key of input.columns.keys) if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+      let config: BaseConfig;
+      try {
+        config = parseBase(base.baseSource ?? "");
+      } catch (error) {
+        if (error instanceof BaseParseError) throw badRequest(`This base file isn't valid YAML: ${error.message}`);
+        throw error;
+      }
+      if (!config.views.some((item) => item.name === input.columns!.view)) throw badRequest(`no view named ${input.columns.view}`);
+    }
+
+    const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
+    const refused: Array<{ id: PageId; title: string }> = [];
+    // Each set row's bytes before the paste, to put back exactly (D37), and the version our write left.
+    const done: Array<{ id: PageId; updated: string; bytes: Buffer; before: string }> = [];
+    for (const { record, set, expected } of existing) {
+      try {
+        const bytes = await readFile(record.filePath);
+        const before = record.updated;
+        const page = await this.updateNow(record.id, { properties: { set }, expectedUpdated: expected });
+        done.push({ id: page.id, updated: page.updated, bytes, before });
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: ${record.id} failed:`, error);
+        refused.push({ id: record.id, title: record.title });
+        // The paste is refused anyway: write no more rows (fewer to put back).
+        break;
+      }
+    }
+    // Each new row with the version this job's last write left it at.
+    const created: Array<{ id: PageId; title: string; updated: string }> = [];
+    if (refused.length === 0) {
+      for (const row of fresh) {
+        let made: Page | null = null;
+        try {
+          made = await this.createNow({ title: row.title, parentId: folder });
+          const entry = { id: made.id, title: made.title, updated: made.updated };
+          created.push(entry);
+          if (Object.keys(row.set).length) entry.updated = (await this.updateNow(made.id, { properties: { set: row.set }, expectedUpdated: made.updated })).updated;
+        } catch (error) {
+          if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: a new row "${row.title}" failed:`, error);
+          refused.push({ id: made?.id ?? row.title, title: row.title });
+          break;
+        }
+      }
+    }
+    // New columns (a paste's headers): added to the view's order in the same job, after the rows.
+    let baseRefused = false;
+    let baseFile: UndoFile | null = null;
+    if (refused.length === 0 && input.columns && input.columns.keys.length) {
+      const written = await this.addColumnsToView(base, input.columns, options);
+      baseRefused = written === false;
+      if (typeof written === "object") baseFile = written;
+      if (baseRefused) refused.push({ id, title: base.title });
+    }
+    if (refused.length === 0) {
+      return {
+        changed: done.map((row) => row.id),
+        created: created.map((row) => row.id),
+        refused: [],
+        stuck: [],
+        trashed: [],
+        files: filesOf(done, baseFile),
+        made: created.map((row) => ({ id: row.id, after: row.updated })),
+      };
+    }
+
+    // All or nothing: the set rows get their exact earlier bytes back (only while the file is still as our
+    // write left it), the new rows go to the Trash (counted, so the alert can say so).
+    const stuck: Array<{ id: PageId; title: string }> = [];
+    let putBack = 0;
+    for (const row of done) {
+      try {
+        if (await this.putPasteBytesBack(row.id, row.bytes, row.updated)) putBack += 1;
+        else {
+          const record = this.pages.get(row.id);
+          if (record) stuck.push({ id: record.id, title: record.title });
+        }
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: putting ${row.id} back failed:`, error);
+        const record = this.pages.get(row.id);
+        if (record) stuck.push({ id: record.id, title: record.title });
+      }
+    }
+    // A new row this job made, still exactly as it left it, is deleted outright (no Trash, no History: it
+    // never existed for anyone). One changed meanwhile goes to the Trash instead, and is named (@lead).
+    const trashed: Array<{ id: PageId; title: string }> = [];
+    let dropped = 0;
+    for (const row of created) {
+      try {
+        if (await this.dropPastedRow(row.id, row.updated)) dropped += 1;
+        else {
+          await this.removeNow(row.id);
+          trashed.push({ id: row.id, title: row.title });
+        }
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: removing the new row ${row.id} failed:`, error);
+        stuck.push({ id: row.id, title: row.title });
+      }
+    }
+    if (putBack || dropped) this.reindexAll();
+    return { changed: [], created: [], refused: named(refused), stuck, trashed, files: [], made: [], ...(baseRefused ? { baseRefused: true } : {}) };
+  }
+
+  /**
+   * #7prbquxu phase 2 (@lead): a refused paste's new row, deleted outright with its History, but only while it's
+   * exactly as this job left it (`version`, no outside change, no sub-pages). False otherwise (it goes to the Trash).
+   */
+  private async dropPastedRow(id: PageId, version: string): Promise<boolean> {
+    const record = this.pages.get(id);
+    if (!record || record.updated !== version || this.hasChildren(id)) return false;
+    if (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null))) return false;
+    await rm(record.filePath);
+    this.pages.delete(id);
+    this.forgetSessionBytes(id);
+    await rm(historyDir(this.root, id), { recursive: true, force: true });
+    return true;
+  }
+
+  /**
+   * #7prbquxu phase 2 (@opus-hunter): a refused paste's put-back of one row: its exact bytes from before the
+   * paste, written as History's restore writes, and only while the file is still as the paste's write left it
+   * (`version`, and no outside change). False when it moved on (the row is then named as stuck).
+   */
+  private async putPasteBytesBack(id: PageId, bytes: Buffer, version: string): Promise<boolean> {
+    const record = this.pages.get(id);
+    if (!record || record.updated !== version) return false;
+    if (await this.changedOnDiskSince(record, await stat(record.filePath).catch(() => null))) return false;
+    await assertWritable(record.filePath);
+    const temporary = tempPathBeside(record.filePath);
+    try {
+      await writeFile(temporary, bytes);
+      this.markOwnWrite(record.filePath);
+      await rename(temporary, record.filePath);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    const fresh = await this.readRecord(record.filePath, record.id);
+    fresh.parentId = record.parentId;
+    this.pages.set(record.id, fresh);
+    this.forgetSessionBytes(record.id);
+    await saveVersion(this.root, { id: record.id, ext: historyExt(record.kind), bytes, version: fresh.updated, source: "app" });
+    return true;
+  }
+
+  /**
+   * #7prbquxu phase 2: append keys to one view's columns (`order`), in only the lines that change; the base
+   * must still be as the caller read it. False when it changed meanwhile or can't be written.
+   */
+  private async addColumnsToView(
+    base: PageRecord,
+    columns: { view: string; keys: string[] },
+    options: { expectedUpdated?: string; writer?: string },
+  ): Promise<boolean | UndoFile> {
+    for (const key of columns.keys) if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+    let config: BaseConfig;
+    try {
+      config = parseBase(base.baseSource ?? "");
+    } catch {
+      return false;
+    }
+    const view = config.views.find((item) => item.name === columns.view);
+    if (!view) throw badRequest(`no view named ${columns.view}`);
+    const order = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
+    const shown = new Set(order.map((written) => propertyId(written)));
+    const added = columns.keys.filter((key, index, all) => all.indexOf(key) === index && !shown.has(`note.${key}`));
+    if (added.length === 0) return true;
+    const next: BaseConfig = { ...config, views: config.views.map((item) => (item === view ? { ...item, order: [...order, ...added] } : item)) };
+    const text = updateBaseSource(base.baseSource ?? "", next);
+    if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) return false;
+    try {
+      const replaced = base.updated;
+      await this.writeBaseFile(base, text);
+      if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
+      else delete base.ownWrite;
+      return { id: base.id, before: replaced, after: base.updated };
+    } catch (error) {
+      if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: writing ${base.id} failed:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * #7prbquxu phase 3 (spec §6, @lead): rename a Select option, or clear it, in every row of an owned database
+   * and in the base's options, in one queued job. Rows are each page directly in the rows folder whose value
+   * holds the option, read fresh, so the change is made on the value as it is now (an outside edit is carried
+   * along, never overwritten): a Select's text, or the item in a Multi-select's list. All or nothing: a refusal
+   * or error on a row, or a base changed meanwhile, puts every written row's exact earlier bytes back and
+   * leaves the base; refused rows are named, rows that can't be put back are `stuck`.
+   */
+  changeOwnedRowsOption(
+    id: PageId,
+    change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string },
+    options: { expectedUpdated?: string; writer?: string } = {},
+  ): Promise<OwnedRowsOption> {
+    return this.enqueue(() => this.asDatabaseChange(() => this.changeOwnedRowsOptionNow(this.resolveId(id), change, options)));
+  }
+
+  private async changeOwnedRowsOptionNow(
+    id: PageId,
+    change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string },
+    options: { expectedUpdated?: string; writer?: string },
+  ): Promise<OwnedRowsOption> {
+    const base = this.requireBase(id);
+    const folder = this.ownedRowsOf(base, id);
+    if (folder === null) throw badRequest("This database view doesn't own a rows folder.");
+    const key = change.key;
+    if (!isValidPropertyKey(key)) throw badRequest("not a property name");
+    const from = "rename" in change ? change.rename.from : change.clear;
+    const to = "rename" in change ? change.rename.to.trim() : null;
+    if (typeof from !== "string" || from === "" || (to !== null && to === "")) throw badRequest("an option value is needed");
+    if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) {
+      throw conflict("This database view changed on disk.");
+    }
+    let config: BaseConfig;
+    try {
+      config = parseBase(base.baseSource ?? "");
+    } catch (error) {
+      if (error instanceof BaseParseError) throw badRequest(`This base file isn't valid YAML: ${error.message}`);
+      throw error;
+    }
+    const settings = selectSettings(config, key);
+    if (!settings) throw badRequest(`"${key}" isn't a Select in this database`);
+    // A rename to the same name (after trimming) is nothing to do (@opus-hunter).
+    if (to === from) return { changed: [], refused: [], stuck: [], files: [], base: this.getBase(id) };
+    if (to !== null && to !== from && settings.options.some((option) => option.value === to)) throw badRequest(`there's already an option "${to}"`);
+
+    const named = (records: Array<{ id: PageId; title: string }>) => records.map((record) => ({ id: record.id, title: record.title }));
+    const prefix = `${folder}/`;
+    const done: Array<{ id: PageId; updated: string; bytes: Buffer; before: string }> = [];
+    const refused: Array<{ id: PageId; title: string }> = [];
+    for (const [rowId, record] of this.pages) {
+      if ((record.kind ?? "page") !== "page" || !rowId.startsWith(prefix) || rowId.slice(prefix.length).includes("/")) continue;
+      try {
+        const bytes = await readFile(record.filePath);
+        const raw = readRawProperties(parseNoteTemplate(bytes.toString("utf8")).yaml).find((property) => property.key === key);
+        if (!raw || !selectedValues(raw.value).includes(from)) continue;
+        // The value as it is now, with only this option changed.
+        let next: PropertyValue;
+        if (Array.isArray(raw.value)) {
+          const items = selectedValues(raw.value).flatMap((item) => (item === from ? (to === null ? [] : [to]) : [item]));
+          next = items.filter((item, index) => items.indexOf(item) === index);
+        } else next = to;
+        const before = record.updated;
+        const page = await this.updateNow(record.id, { properties: { set: { [key]: next } }, expectedUpdated: record.updated });
+        done.push({ id: page.id, updated: page.updated, bytes, before });
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: ${record.id} failed:`, error);
+        refused.push({ id: record.id, title: record.title });
+        // Refused anyway: write no more rows (fewer to put back).
+        break;
+      }
+    }
+
+    let baseRefused = false;
+    let baseFile: UndoFile | null = null;
+    if (refused.length === 0) {
+      const nextOptions =
+        to === null
+          ? settings.options.filter((option) => option.value !== from)
+          : settings.options.map((option) => (option.value === from ? { ...option, value: to } : option));
+      const text = updateBaseSource(base.baseSource ?? "", withSelectSettings(config, key, { ...settings, options: nextOptions }));
+      if (text !== base.baseSource) {
+        if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) baseRefused = true;
+        else {
+          try {
+            const replaced = base.updated;
+            await this.writeBaseFile(base, text);
+            baseFile = { id: base.id, before: replaced, after: base.updated };
+            if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
+            else delete base.ownWrite;
+          } catch (error) {
+            if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: writing ${base.id} failed:`, error);
+            baseRefused = true;
+          }
+        }
+      }
+      if (!baseRefused) return { changed: done.map((row) => row.id), refused: [], stuck: [], files: filesOf(done, baseFile), base: this.getBase(id) };
+    }
+
+    // All or nothing: every written row gets its exact earlier bytes back.
+    const stuck: Array<{ id: PageId; title: string }> = [];
+    let putBack = 0;
+    for (const row of done) {
+      try {
+        if (await this.putPasteBytesBack(row.id, row.bytes, row.updated)) putBack += 1;
+        else {
+          const record = this.pages.get(row.id);
+          if (record) stuck.push({ id: record.id, title: record.title });
+        }
+      } catch (error) {
+        if (!(error instanceof VaultError)) console.warn(`[gumply] database option change: putting ${row.id} back failed:`, error);
+        const record = this.pages.get(row.id);
+        if (record) stuck.push({ id: record.id, title: record.title });
+      }
+    }
+    if (putBack) this.reindexAll();
+    return { changed: [], refused: named(refused), stuck, files: [], ...(baseRefused ? { baseRefused: true } : {}), base: this.getBase(id) };
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
@@ -3729,7 +4529,7 @@ export class VaultStore {
       this.redirects.delete(id);
       const filePath = this.filePathFor(id);
       await mkdir(join(this.root, rows), { recursive: true });
-      await writeFile(filePath, newBaseSource({ rows }), { encoding: "utf8", flag: "wx" });
+      await writeFile(filePath, newBaseSource({ rows, ...viewNameOf(input) }), { encoding: "utf8", flag: "wx" });
       const record = await this.readBaseRecord(filePath, id);
       record.parentId = parentId;
       this.pages.set(id, record);
@@ -3744,7 +4544,7 @@ export class VaultStore {
     await mkdir(dirname(filePath), { recursive: true });
     // A new view at a trashed view's path starts its own history (D41), as a new page or board does.
     await this.freshHistory(filePath);
-    await writeFile(filePath, newBaseSource({ folder, tag }), { encoding: "utf8", flag: "wx" });
+    await writeFile(filePath, newBaseSource({ folder, tag, ...viewNameOf(input) }), { encoding: "utf8", flag: "wx" });
     const record = await this.readBaseRecord(filePath, id);
     record.parentId = parentId;
     this.pages.set(id, record);
@@ -5049,7 +5849,7 @@ export class VaultStore {
 
     try {
       await mkdir(dirname(pageInTrash), { recursive: true });
-      await writeFile(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2), "utf8");
+      await writeAtomic(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2));
       if (pageExists) await rename(record.filePath, pageInTrash);
       if (childExists) {
         await mkdir(dirname(childInTrash), { recursive: true });
@@ -5100,20 +5900,39 @@ export class VaultStore {
       const manifest = JSON.parse(await readFile(join(dir, "meta.json"), "utf8")) as Partial<TrashManifest>;
       if (!manifest || typeof manifest.id !== "string" || !isValidPageId(manifest.id)) return null;
       const top = manifest.id;
+      const rows = manifest.kind === "rows";
       const deleted = Array.isArray(manifest.deleted)
         ? manifest.deleted.filter(
             (id): id is PageId =>
-              typeof id === "string" && isValidPageId(id) && (id === top || id.startsWith(`${top}/`)),
+              typeof id === "string" &&
+              isValidPageId(id) &&
+              // A group of rows: only pages directly in their folder (the folder itself isn't in the Trash).
+              (rows ? parentOf(id) === top : id === top || id.startsWith(`${top}/`)),
           )
         : [];
-      if (!deleted.includes(top)) deleted.unshift(top);
+      if (rows && deleted.length === 0) return null;
+      if (!rows && !deleted.includes(top)) deleted.unshift(top);
       const folder = manifest.kind === "folder";
       // v1.7 manifests name the file (`.md` or `.canvas`); older ones mean `.md`.
       const file =
         typeof manifest.file === "string" && manifest.file.length > 0 ? manifest.file : folder ? top : `${top}.md`;
       if (!this.insideTrashEntry(dir, file)) return null;
       const deletedAt = typeof manifest.deletedAt === "string" ? manifest.deletedAt : (await stat(dir)).mtime.toISOString();
-      return { trashId, dir, id: top, file, deleted, deletedAt, folder };
+      const linked = (value: unknown) => (typeof value === "string" && /^[A-Za-z0-9-]+$/.test(value) ? value : undefined);
+      const withId = linked(manifest.with);
+      const partOf = linked(manifest.partOf);
+      return {
+        trashId,
+        dir,
+        id: top,
+        file,
+        deleted,
+        deletedAt,
+        folder,
+        ...(withId ? { with: withId } : {}),
+        ...(partOf ? { partOf } : {}),
+        ...(rows ? { rows: true } : {}),
+      };
     } catch {
       return null;
     }
@@ -5213,9 +6032,8 @@ export class VaultStore {
     const folderPath = entry.folder ? await this.trashedFolderPath(entry) : null;
     if (entry.folder && !folderPath) return null;
     const name = entry.id.split("/").pop() ?? entry.id;
-    const top: { kind: TrashItem["kind"]; title: string; icon?: string } | null = folderPath
-      ? { kind: "folder", title: name }
-      : await this.readTrashedRecord(entry, entry.id);
+    const top: { kind: TrashItem["kind"]; title: string; icon?: string } | null =
+      folderPath || entry.rows ? { kind: "folder", title: name } : await this.readTrashedRecord(entry, entry.id);
     if (!top) return null;
     const children: TrashedPage[] = [];
     const ids = entry.deleted.filter((id) => id !== entry.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -5256,12 +6074,28 @@ export class VaultStore {
       originalParentTitle,
       children,
       ...(folderPath ? { otherFiles: await this.countOtherFiles(folderPath) } : {}),
+      ...(await this.trashedRowsOf(entry)),
+      ...(entry.rows ? { undoRows: children.length } : {}),
     };
+  }
+
+  /** #7prbquxu phase 4a (note c): a database deleted with its rows says how many rows (and other files) go with it. */
+  private async trashedRowsOf(entry: TrashEntry): Promise<{ rows?: number; otherFiles?: number }> {
+    const rows = entry.with ? await this.readTrashEntry(entry.with) : null;
+    if (!rows) return {};
+    const item = await this.trashItemFor(rows);
+    if (!item) return {};
+    const count = item.children.filter((child) => child.kind !== "folder").length;
+    return { rows: count, ...(item.otherFiles ? { otherFiles: item.otherFiles } : {}) };
   }
 
   private async listTrashNow(): Promise<TrashItem[]> {
     const items: TrashItem[] = [];
-    for (const entry of await this.trashEntries()) {
+    const entries = await this.trashEntries();
+    const ids = new Set(entries.map((entry) => entry.trashId));
+    for (const entry of entries) {
+      // A database's rows folder is in the Trash with it: one item (restored together).
+      if (entry.partOf && ids.has(entry.partOf)) continue;
       const item = await this.trashItemFor(entry);
       if (item) items.push(item);
     }
@@ -5273,6 +6107,8 @@ export class VaultStore {
     const item = await this.trashItemFor(entry);
     if (!item) throw notFound("Trash entry not found");
     const target = id ?? entry.id;
+    // A group of rows (#7prbquxu): like a folder, the item itself has no document.
+    if (entry.rows && target === entry.id) return { item, page: null };
     if (typeof target !== "string" || !entry.deleted.includes(target)) throw notFound("Page not found in this trash entry");
     // A folder has no document of its own: the client shows its children.
     if (entry.folder && target === entry.id) return { item, page: null };
@@ -5359,9 +6195,14 @@ export class VaultStore {
    * Sub-pages come back inside it. Attachment links and board cards follow a
    * changed location (D23, D25).
    */
-  private async restoreNow(trashId: string): Promise<RestoreResult> {
+  private async restoreNow(trashId: string, targetId?: PageId): Promise<RestoreResult> {
     const entry = await this.openTrashEntry(trashId);
-    if (entry.folder) return this.restoreFolderNow(entry);
+    if (entry.folder) return this.restoreFolderNow(entry, targetId);
+    if (entry.rows) return this.restoreRowsNow(entry);
+    if (entry.with && targetId === undefined) {
+      const rows = await this.readTrashEntry(entry.with);
+      if (rows) return this.restoreWithRowsNow(entry, rows);
+    }
     const pageSource = resolve(entry.dir, entry.file);
     // Only a real file comes back (never a symlink planted in `.trash/`).
     if (!(await this.readTrashedRecord(entry, entry.id))) throw notFound("Trash entry not found");
@@ -5378,7 +6219,7 @@ export class VaultStore {
     const name = entry.id.split("/").pop() ?? entry.id;
     const stem = name.slice(0, name.length - idExtension(kind).length);
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
+    const newId = targetId ?? (await this.restoreTarget(folder, stem, hasFolder, taken, kind));
 
     const pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
     const childTarget = join(this.root, newId);
@@ -5437,11 +6278,90 @@ export class VaultStore {
   }
 
   /**
+   * #7prbquxu phase 4 (@lead): the rows one table undo took out come back together, into their folder (made again
+   * if it's gone), each at its own name or, when that's taken now, the usual " 2"; their History follows.
+   */
+  private async restoreRowsNow(entry: TrashEntry): Promise<RestoreResult> {
+    const folder = entry.id;
+    await mkdir(join(this.root, folder), { recursive: true });
+    const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
+    const moved: Array<{ from: PageId; to: PageId }> = [];
+    // Listed rows no longer in the entry (back some other way): taken out too once the loop has finished.
+    const skipped: PageId[] = [];
+    let finished = false;
+    try {
+      for (const id of entry.deleted) {
+        const record = await this.readTrashedRecord(entry, id);
+        if (!record) {
+          skipped.push(id);
+          continue;
+        }
+        const name = id.split("/").pop() ?? id;
+        const kind = record.kind;
+        const stem = name.slice(0, name.length - idExtension(kind).length);
+        const to = await this.restoreTarget(folder, stem, false, taken, kind);
+        taken.add(collisionKey(to));
+        const target = this.filePathFor(to);
+        this.markOwnWrite(target);
+        await rename(resolve(entry.dir, this.trashedFileOf(entry, id)), target);
+        moved.push({ from: id, to });
+      }
+      finished = true;
+    } finally {
+      // Also when a row fails part way (@opus-hunter's nit i): the rows already back are in the store at once,
+      // and the item lists only what's still in it (it goes when nothing is).
+      await this.takeRowsOutOfTrashEntry(entry, new Set([...moved.map((move) => move.from), ...(finished ? skipped : [])]));
+      await this.rebuild();
+      for (const { from, to } of moved) if (from !== to) await this.followHistory(from, to);
+    }
+    const restoredIds = new Set(moved.map((move) => move.to));
+    return {
+      restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)),
+      id: folder,
+      movedToTopLevel: false,
+      renamed: moved.some(({ from, to }) => from !== to),
+    };
+  }
+
+  /**
+   * #7prbquxu phase 4: a database deleted with its rows comes back with them, at a name free as both a base and a
+   * folder (as New database picks one); when that isn't the old name, its marker and filter follow the folder.
+   */
+  private async restoreWithRowsNow(entry: TrashEntry, rows: TrashEntry): Promise<RestoreResult> {
+    const parent = parentOf(entry.id);
+    const parentAlive = parent === null || (await this.folderExists(parent));
+    const stem = childPageId(parentAlive ? parent : null, (entry.id.split("/").pop() ?? entry.id).slice(0, -idExtension("base").length));
+    const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
+    const baseId = await this.freeTarget(stem, true, taken, "base");
+    const rowsId = baseId.slice(0, -idExtension("base").length);
+    const folderResult = await this.restoreFolderNow(rows, rowsId);
+    let result: RestoreResult;
+    try {
+      result = await this.restoreNow(entry.trashId, baseId);
+    } catch (error) {
+      // @opus-hunter's note d: the rows are back, the database stays in the Trash; say so where it can be found.
+      console.error(`[gumply] restoring ${entry.id}: its rows came back to ${rowsId}, but the database stayed in the Trash (${entry.trashId}):`, error);
+      throw error;
+    }
+    const record = this.pages.get(result.id);
+    if (record && rowsId !== rows.id) {
+      try {
+        const text = updateBaseSource(record.baseSource ?? "", withOwnedRows(parseBase(record.baseSource ?? ""), rowsId));
+        if (text !== record.baseSource) await this.writeBaseFile(record, text);
+      } catch (error) {
+        console.warn(`[gumply] restoring ${result.id}: its rows folder is ${rowsId}, but the base couldn't follow:`, error);
+      }
+    }
+    const restoredIds = new Set([...result.restored, ...folderResult.restored].map((meta) => meta.id));
+    return { ...result, restored: this.pageMetas({ withCopies: true }).filter((meta) => restoredIds.has(meta.id)) };
+  }
+
+  /**
    * Put a plain folder (D33) back: the directory with everything in it, where
    * it was if its parent folder still exists (else at the top level), with
    * ` 2` when the name is taken by a page, board or folder.
    */
-  private async restoreFolderNow(entry: TrashEntry): Promise<RestoreResult> {
+  private async restoreFolderNow(entry: TrashEntry, targetId?: PageId): Promise<RestoreResult> {
     const source = await this.trashedFolderPath(entry);
     if (!source) throw notFound("Trash entry not found");
     const originalParent = parentOf(entry.id);
@@ -5449,7 +6369,7 @@ export class VaultStore {
     const folder = parentAlive ? originalParent : null;
     const name = entry.id.split("/").pop() ?? entry.id;
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = await this.restoreTarget(folder, name, true, taken, "page");
+    const newId = targetId ?? (await this.restoreTarget(folder, name, true, taken, "page"));
     const target = join(this.root, newId);
     if (!target.startsWith(`${this.root}${sep}`)) throw notFound("Trash entry not found");
 
@@ -5970,7 +6890,7 @@ export class VaultStore {
     };
     try {
       await mkdir(dirname(inTrash), { recursive: true });
-      await writeFile(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2), "utf8");
+      await writeAtomic(join(trashDir, "meta.json"), JSON.stringify(manifest, null, 2));
       await rename(dir, inTrash);
     } catch (error) {
       await rename(inTrash, dir).catch(() => undefined);

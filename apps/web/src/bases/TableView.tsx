@@ -4,21 +4,25 @@
  * scroll as smoothly as 20. Note properties are edited in place and written
  * to the page's frontmatter; file properties and formulas are read-only.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
-import { isValidPropertyKey, PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
+import { isValidPropertyKey, selectSettings, type SelectKind, PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
 import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { ownedRowsFolder, propertyId } from "@gumply/core";
 import { isTitleColumn, propertyLabel, writtenId } from "./labels.js";
-import { BaseText } from "./values.js";
+import { BaseSelectActions, BaseSelects, BaseText, SelectChips } from "./values.js";
+import { SelectPicker } from "./SelectPicker.js";
+import { OptionsEditor } from "./OptionsEditor.js";
 import { AddColumn, COLUMN_TYPES } from "./AddColumn.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PropertyTypeIcon } from "../components/PropertiesBlock.js";
 import { api } from "../api/client.js";
+import { plannedPaste, readPaste, type PastedRow } from "./paste.js";
+import { PastePreview, type PreviewResult } from "./PastePreview.js";
 import { copiedText, gridMoveFor, moveCell, typedValue, typingStarts, type GridMove, type GridPosition } from "./grid.js";
 import { formatDateValue } from "../lib/dates.js";
 
@@ -54,7 +58,15 @@ export interface TableViewProps {
   /** #7prbquxu: an owned database's column menu: rename the key in its rows, delete it from them, change its type. */
   onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
-  onSetColumnType?: (column: BaseColumn, type: PropertyType) => Promise<void>;
+  onSetColumnType?: (column: BaseColumn, type: PropertyType | SelectKind) => Promise<void>;
+  /** #7prbquxu phase 4b: "+" changes the view through this (one undoable step), when given. */
+  onAddColumnView?: (view: BaseView) => void;
+  /** #7prbquxu phase 2: "Import CSV…" rows for the paste preview (`n` bumps to open it again). */
+  importBlock?: { rows: string[][]; n: number } | null;
+  /** #7prbquxu phase 2, step 3: the preview's rows and columns, for this view (one server request). */
+  onPastePreview?: (result: PreviewResult, view: string) => Promise<void>;
+  /** #7prbquxu phase 2: a block pasted at the active cell (one server request). */
+  onPasteRows?: (rows: PastedRow[]) => Promise<void>;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
   onRenameDone?: () => void;
@@ -131,7 +143,8 @@ export function TableView(props: TableViewProps) {
   const offsets = widths.map((_, index) => widths.slice(0, index).reduce((a, b) => a + b, 0));
   const [active, setActive] = useState<{ rowId: string; col: number } | null>(null);
   const [typing, setTyping] = useState(false);
-  const [editRequest, setEditRequest] = useState<{ rowId: string; col: number } | null>(null);
+  const [editRequest, setEditRequest] = useState<{ rowId: string; col: number; seed?: string } | null>(null);
+  const selects = useContext(BaseSelects);
   const [pendingActive, setPendingActive] = useState<{ rowId: string; col: number } | null>(null);
   const sinkRef = useRef<HTMLInputElement | null>(null);
   const typingInputRef = useRef<HTMLInputElement | null>(null);
@@ -141,6 +154,16 @@ export function TableView(props: TableViewProps) {
     return at < 0 ? null : { row: at, col: Math.min(active.col, columns.length - 1) };
   }, [active, rowOrder, result.rows, columns.length]);
   const activeRow = activePos ? result.rows[rowOrder[activePos.row]!.row] : undefined;
+  /** #7prbquxu phase 2: where a Shift+arrow block started; with the active cell it spans the selection. */
+  const [anchor, setAnchor] = useState<{ rowId: string; col: number } | null>(null);
+  const selection = useMemo(() => {
+    if (!anchor || !activePos) return null;
+    const at = rowOrder.findIndex((entry) => result.rows[entry.row]?.id === anchor.rowId);
+    if (at < 0) return null;
+    const col = Math.min(anchor.col, columns.length - 1);
+    if (at === activePos.row && col === activePos.col) return null;
+    return { top: Math.min(at, activePos.row), bottom: Math.max(at, activePos.row), left: Math.min(col, activePos.col), right: Math.max(col, activePos.col) };
+  }, [anchor, activePos, rowOrder, result.rows, columns.length]);
   const activeColumn = activePos ? columns[activePos.col] : undefined;
 
   // A row made from the typing row (Tab) becomes active once the table shows it.
@@ -231,7 +254,13 @@ export function TableView(props: TableViewProps) {
     const move = gridMoveFor(event.key, event.shiftKey);
     if (move) {
       event.preventDefault();
-      go(moveCell(activePos, move, rowOrder.length, columns.length));
+      // #7prbquxu phase 2: Shift+arrows grow a block from where they started (for Copy); other moves drop it.
+      const extending = event.shiftKey && event.key.startsWith("Arrow");
+      if (extending && !anchor) setAnchor({ rowId: activeRow.id, col: activePos.col });
+      if (!extending) setAnchor(null);
+      const to = moveCell(activePos, move, rowOrder.length, columns.length);
+      if (extending && to === "past-end") return;
+      go(to);
       return;
     }
     const title = isTitleColumn(activeColumn.id);
@@ -256,6 +285,10 @@ export function TableView(props: TableViewProps) {
       return;
     }
     if (event.key === "Escape") {
+      if (anchor) {
+        setAnchor(null);
+        return;
+      }
       setActive(null);
       sink.blur();
       return;
@@ -264,7 +297,11 @@ export function TableView(props: TableViewProps) {
     if (event.key.length === 1) {
       const starts = title ? "type" : typingStarts(activeColumn.type, activeColumn.editable);
       if (starts === "none") event.preventDefault();
-      else if (starts === "editor") {
+      else if (!title && activeColumn.editable && selects.has(activeColumn.id)) {
+        // #7prbquxu phase 3: a Select opens its picker with the typed character as the search.
+        event.preventDefault();
+        setEditRequest({ rowId: activeRow.id, col: activePos.col, seed: event.key });
+      } else if (starts === "editor") {
         event.preventDefault();
         setEditRequest({ rowId: activeRow.id, col: activePos.col });
       }
@@ -276,6 +313,22 @@ export function TableView(props: TableViewProps) {
   const [addColumnAnchor, setAddColumnAnchor] = useState<HTMLElement | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BaseColumn | null>(null);
+  /** #7prbquxu phase 3: "Edit options…" open for this column. */
+  const [editingOptions, setEditingOptions] = useState<{ column: BaseColumn; anchor: HTMLElement } | null>(null);
+  const optionActions = useContext(BaseSelectActions);
+  /** #7prbquxu phase 2: what the last paste left out (a short note under the table). */
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
+  /** #7prbquxu phase 2, step 3: a block pasted on the typing row, waiting in the preview. */
+  const [previewBlock, setPreviewBlock] = useState<string[][] | null>(null);
+  // "Import CSV…": the file's rows open the same preview as a paste.
+  useEffect(() => {
+    if (props.importBlock) setPreviewBlock(props.importBlock.rows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.importBlock?.n]);
+  const knownKeys = useMemo(
+    () => new Map(columns.filter((column) => column.id.startsWith("note.")).map((column) => [column.id.slice(5), column.type] as const)),
+    [columns],
+  );
   const closeHeaderMenu = () => {
     setHeaderMenu(null);
     setRenaming(null);
@@ -285,7 +338,7 @@ export function TableView(props: TableViewProps) {
   const addColumn = async (key: string, type: PropertyType, setType: boolean) => {
     // Only when the types file has none for the key (a key typed there but used nowhere keeps its type).
     if (setType) await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
-    props.onChangeView({ ...view, order: [...viewOrder, key] });
+    (props.onAddColumnView ?? props.onChangeView)({ ...view, order: [...viewOrder, key] });
   };
   const sorts = Array.isArray(view.sort) ? view.sort : [];
 
@@ -324,6 +377,7 @@ export function TableView(props: TableViewProps) {
                 const rowId = target.closest<HTMLElement>("[data-row-id]")?.dataset.rowId;
                 if (!cell || rowId === undefined || target.closest("button, a, input")) return;
                 setActive({ rowId, col: Number(cell.dataset.gridCol) });
+                setAnchor(null);
               }
             : undefined
         }
@@ -386,6 +440,7 @@ export function TableView(props: TableViewProps) {
                 readOnly={props.readOnly}
                 renaming={props.renameRowId === row.id}
                 editCol={editRequest?.rowId === row.id ? editRequest.col : null}
+                editSeed={editRequest?.rowId === row.id ? editRequest.seed : undefined}
                 onOpen={props.onOpen}
                 onEditValue={props.onEditValue}
                 onRename={props.onRename}
@@ -394,6 +449,20 @@ export function TableView(props: TableViewProps) {
               />
             );
           })}
+          {grid && selection ? (
+            <div
+              className="base-grid-selection"
+              data-testid="base-grid-selection"
+              data-range={`${selection.top}:${selection.left}-${selection.bottom}:${selection.right}`}
+              aria-hidden="true"
+              style={{
+                top: rowOrder[selection.top]!.itemIndex * rowHeight,
+                height: (rowOrder[selection.bottom]!.itemIndex - rowOrder[selection.top]!.itemIndex + 1) * rowHeight,
+                left: offsets[selection.left],
+                width: widths.slice(selection.left, selection.right + 1).reduce((a, b) => a + b, 0),
+              }}
+            />
+          ) : null}
           {grid && activePos && activeRow && activeColumn && !editRequest ? (
             <input
               ref={sinkRef}
@@ -414,6 +483,7 @@ export function TableView(props: TableViewProps) {
               onKeyDown={onSinkKeyDown}
               onInput={(event) => {
                 if (!typing && event.currentTarget.value) setTyping(true);
+                setAnchor(null);
               }}
               onCompositionStart={() => {
                 const title = isTitleColumn(activeColumn.id);
@@ -423,11 +493,54 @@ export function TableView(props: TableViewProps) {
                 // Composed where typing doesn't apply (a checkbox, a read-only cell): dropped.
                 if (!typing) event.currentTarget.value = "";
               }}
+              onPaste={(event) => {
+                // While typing, the input takes the paste as text.
+                if (typing) return;
+                event.preventDefault();
+                const read = readPaste(event.clipboardData.getData("text/plain"), event.clipboardData.getData("text/html"));
+                const sink = event.currentTarget;
+                if ("value" in read) {
+                  // One value: as typing would (a date or select opens its editor; a checkbox or read-only cell ignores it).
+                  const title = isTitleColumn(activeColumn.id);
+                  const starts = title ? "type" : typingStarts(activeColumn.type, activeColumn.editable);
+                  if (starts === "type") {
+                    sink.value = read.value;
+                    setTyping(true);
+                  } else if (starts === "editor") setEditRequest({ rowId: activeRow.id, col: activePos.col });
+                  return;
+                }
+                const plan = plannedPaste(
+                  read.rows,
+                  activePos,
+                  columns,
+                  rowOrder.map((entry) => ({ id: result.rows[entry.row]!.id, updated: result.rows[entry.row]!.updated })),
+                  t("defaults.untitledPage"),
+                );
+                setPasteNote(plan.left || plan.pastLast ? t("bases.pasteLeftOut", { count: plan.left + plan.pastLast }) : null);
+                if (plan.rows.length) void props.onPasteRows?.(plan.rows);
+              }}
               onCopy={(event) => {
                 if (typing) return;
                 event.preventDefault();
-                const text = isTitleColumn(activeColumn.id) ? activeRow.title : copiedText(activeRow.values[activeColumn.id] ?? null, activeColumn.type);
-                event.clipboardData.setData("text/plain", text);
+                const cellText = (row: BaseRow, column: BaseColumn) =>
+                  isTitleColumn(column.id) ? row.title : copiedText(row.values[column.id] ?? null, column.type);
+                if (!selection) {
+                  event.clipboardData.setData("text/plain", cellText(activeRow, activeColumn));
+                  return;
+                }
+                // A block: TSV (quoted where a cell holds a tab, a newline or a quote) and an HTML table.
+                const grid: string[][] = [];
+                for (let r = selection.top; r <= selection.bottom; r += 1) {
+                  const row = result.rows[rowOrder[r]!.row]!;
+                  grid.push(columns.slice(selection.left, selection.right + 1).map((column) => cellText(row, column)));
+                }
+                const quoted = (text: string) => (/[\t\n"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text);
+                const html = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+                event.clipboardData.setData("text/plain", grid.map((cells) => cells.map(quoted).join("\t")).join("\n"));
+                event.clipboardData.setData(
+                  "text/html",
+                  `<table>${grid.map((cells) => `<tr>${cells.map((text) => `<td>${html(text)}</td>`).join("")}</tr>`).join("")}</table>`,
+                );
               }}
               onBlur={() => {
                 if (typing) void commitTyping();
@@ -448,6 +561,7 @@ export function TableView(props: TableViewProps) {
             onAdded={(rowId, next) => {
               if (next) setPendingActive({ rowId, col: Math.min(1, columns.length - 1) });
             }}
+            {...(props.onPastePreview ? { onPasteBlock: setPreviewBlock } : {})}
           />
         ) : result.rows.length === 0 ? (
           <div className="base-empty" data-testid="base-empty">
@@ -477,6 +591,12 @@ export function TableView(props: TableViewProps) {
           ))}
         </div>
       </div>
+
+      {pasteNote ? (
+        <p className="base-typing-hint" role="status" data-testid="base-paste-note">
+          {pasteNote}
+        </p>
+      ) : null}
 
       {props.onAddRow && !props.readOnly && result.rows.length === 0 ? (
         <p className="base-typing-hint" data-testid="base-typing-hint">
@@ -510,6 +630,7 @@ export function TableView(props: TableViewProps) {
           {grid && headerMenu.column.editable && headerMenu.column.id.startsWith("note.") ? (
             <ColumnEdits
               column={headerMenu.column}
+              {...(selectSettings(config, headerMenu.column.id.slice(5)) ? { kind: selectSettings(config, headerMenu.column.id.slice(5))!.kind } : {})}
               shown={viewOrder.map((id) => writtenId(propertyId(id)))}
               renaming={renaming}
               onStartRename={() => setRenaming(headerMenu.column.id.slice(5))}
@@ -528,9 +649,37 @@ export function TableView(props: TableViewProps) {
                 setConfirmDelete(headerMenu.column);
                 closeHeaderMenu();
               }}
+              onEditOptions={() => {
+                setEditingOptions({ column: headerMenu.column, anchor: headerMenu.anchor });
+                closeHeaderMenu();
+              }}
             />
           ) : null}
         </Popover>
+      ) : null}
+      {previewBlock ? (
+        <PastePreview
+          block={previewBlock}
+          database={(ownedRowsFolder(config) ?? "").split("/").pop() ?? ""}
+          known={knownKeys}
+          untitled={t("defaults.untitledPage")}
+          onCancel={() => setPreviewBlock(null)}
+          onPaste={(previewed) => {
+            setPreviewBlock(null);
+            void props.onPastePreview?.(previewed, view.name);
+          }}
+        />
+      ) : null}
+      {editingOptions && selects.get(editingOptions.column.id) && optionActions ? (
+        <OptionsEditor
+          anchor={editingOptions.anchor}
+          label={propertyLabel(editingOptions.column.id, config, t)}
+          settings={selects.get(editingOptions.column.id)!}
+          onClose={() => setEditingOptions(null)}
+          onSetOptions={(options) => optionActions.setOptions(editingOptions.column.id, options)}
+          onRename={(from, to) => optionActions.renameOption(editingOptions.column.id, from, to)}
+          onClear={(value) => optionActions.clearOption(editingOptions.column.id, value)}
+        />
       ) : null}
       {confirmDelete ? (
         <ConfirmDialog
@@ -561,8 +710,11 @@ function ColumnEdits(props: {
   onStartRename: () => void;
   onRenameChange: (name: string) => void;
   onRename: (to: string) => Promise<void>;
-  onSetType: (type: PropertyType) => Promise<void>;
+  onSetType: (type: PropertyType | SelectKind) => Promise<void>;
   onDelete: () => void;
+  /** #7prbquxu phase 3: the column is a Select or Multi-select in this database. */
+  kind?: SelectKind;
+  onEditOptions?: () => void;
 }) {
   const t = useT();
   const key = props.column.id.slice(5);
@@ -609,20 +761,43 @@ function ColumnEdits(props: {
         </div>
       )}
       <div className="base-panel-title">{t("properties.type")}</div>
-      {COLUMN_TYPES.map((type) => (
+      {COLUMN_TYPES.map((type) => {
+        const current = !props.kind && type === props.column.type;
+        return (
+          <button
+            key={type}
+            type="button"
+            role="menuitemradio"
+            aria-checked={current}
+            className={current ? "is-current" : ""}
+            data-testid={`base-column-type-${type}`}
+            onClick={() => void (current ? undefined : props.onSetType(type))}
+          >
+            <PropertyTypeIcon type={type} size={14} />
+            {t(`properties.types.${type}`)}
+          </button>
+        );
+      })}
+      {(["select", "multiselect"] as const).map((kind) => (
         <button
-          key={type}
+          key={kind}
           type="button"
           role="menuitemradio"
-          aria-checked={type === props.column.type}
-          className={type === props.column.type ? "is-current" : ""}
-          data-testid={`base-column-type-${type}`}
-          onClick={() => void (type === props.column.type ? undefined : props.onSetType(type))}
+          aria-checked={props.kind === kind}
+          className={props.kind === kind ? "is-current" : ""}
+          data-testid={`base-column-type-${kind}`}
+          onClick={() => void (props.kind === kind ? undefined : props.onSetType(kind))}
         >
-          <PropertyTypeIcon type={type} size={14} />
-          {t(`properties.types.${type}`)}
+          <Icon name={kind === "select" ? "chevronDown" : "tag"} size={14} />
+          {t(kind === "select" ? "bases.selectType" : "bases.multiselectType")}
         </button>
       ))}
+      {props.kind && props.onEditOptions ? (
+        <button type="button" role="menuitem" data-testid="base-edit-options" onClick={props.onEditOptions}>
+          <Icon name="palette" size={14} />
+          {t("bases.editOptions")}
+        </button>
+      ) : null}
       <div className="base-menu-separator" role="separator" />
       <button type="button" role="menuitem" className="is-danger" data-testid="base-delete-column" onClick={props.onDelete}>
         <Icon name="trash" size={14} />
@@ -645,6 +820,8 @@ function TypingRow(props: {
   onUp: () => void;
   /** The row was made; `next` when Tab asked to go on into its second column. */
   onAdded: (rowId: string, next: boolean) => void;
+  /** #7prbquxu phase 2: a block pasted here opens the preview (one value is typed as usual). */
+  onPasteBlock?: (block: string[][]) => void;
 }) {
   const t = useT();
   const [draft, setDraft] = useState("");
@@ -676,6 +853,13 @@ function TypingRow(props: {
           value={draft}
           readOnly={busy}
           onChange={(event) => setDraft(event.target.value)}
+          onPaste={(event) => {
+            if (!props.onPasteBlock) return;
+            const read = readPaste(event.clipboardData.getData("text/plain"), event.clipboardData.getData("text/html"));
+            if ("value" in read) return;
+            event.preventDefault();
+            props.onPasteBlock(read.rows);
+          }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "Enter") {
@@ -720,6 +904,8 @@ interface TableRowProps {
   renaming: boolean;
   /** #7prbquxu: the column whose editor the database grid asked to open in this row. */
   editCol?: number | null;
+  /** #7prbquxu phase 3: the character typed to open it (a Select picker's first search letter). */
+  editSeed?: string | undefined;
   onOpen: (id: string) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   onRename: (row: BaseRow, title: string) => Promise<string | void>;
@@ -746,6 +932,7 @@ const TableRow = memo(function TableRow(props: TableRowProps) {
             readOnly={props.readOnly}
             onEditValue={props.onEditValue}
             editRequested={props.editCol === col}
+            {...(props.editCol === col && props.editSeed ? { editSeed: props.editSeed } : {})}
             {...(props.onRequestEdit ? { onRequestEdit: props.onRequestEdit } : {})}
             {...(props.onEditDone ? { onEditDone: props.onEditDone } : {})}
           />
@@ -839,10 +1026,13 @@ function ValueCell(props: {
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   /** #7prbquxu: the database grid asks this cell's editor to open (Enter, F2, a date typed). */
   editRequested?: boolean;
+  editSeed?: string;
   onRequestEdit?: (rowId: string, col: number) => void;
   onEditDone?: () => void;
 }) {
   const t = useT();
+  const select = useContext(BaseSelects).get(props.column.id);
+  const selectActions = useContext(BaseSelectActions);
   const { row, column } = props;
   const value = row.values[column.id] ?? null;
   const editable = column.editable && !props.readOnly;
@@ -880,6 +1070,33 @@ function ValueCell(props: {
           checked={value === true}
           disabled={!editable}
           onChange={() => void props.onEditValue(row, column, value !== true)}
+        />
+      </div>
+    );
+  }
+
+  // A Select opens its picker in the same render as the grid's request (no state round-trip), so keys typed right
+  // after the first one land in its search.
+  if (select && (editing || (props.editRequested && editable))) {
+    return (
+      <div
+        className="base-td is-editing"
+        role="cell"
+        data-grid-col={props.col}
+        data-testid={`base-cell-editor-${row.id}-${column.id}`}
+        onBlur={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Element | null)) return;
+          setEditing(false);
+        }}
+      >
+        <SelectChips value={value} settings={select} />
+        <SelectPicker
+          settings={select}
+          value={value}
+          {...(props.editSeed ? { initialQuery: props.editSeed } : {})}
+          onChange={(next) => props.onEditValue(row, column, next)}
+          onAddOption={(option) => selectActions?.addOption(column.id, option) ?? Promise.resolve()}
+          onClose={() => setEditing(false)}
         />
       </div>
     );
@@ -925,8 +1142,9 @@ function ValueCell(props: {
   }
 
   const lists = column.type === "multitext" || column.type === "tags" || column.type === "aliases";
-  const content =
-    lists && Array.isArray(value) ? (
+  const content = select ? (
+    <SelectChips value={value} settings={select} />
+  ) : lists && Array.isArray(value) ? (
       <span className="base-chips">
         {value.map((item, index) => (
           <span className="base-chip" key={`${item}-${index}`}>

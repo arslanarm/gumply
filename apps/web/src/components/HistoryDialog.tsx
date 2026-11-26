@@ -297,6 +297,7 @@ export function HistoryDialog({ target, pages, onClose, onRestored, reconnectKey
     if (entry.folder !== undefined) return t("history.movedFrom", { folder: entry.folder === "" ? t("history.topLevel") : entry.folder });
     if (entry.reason === "session" || entry.reason === "trash" || entry.reason === "conflict") return t(`history.reason.${entry.reason}` as const);
     if (entry.reason === "before-reload") return t("history.reason.beforeReload");
+    if (entry.reason === "database") return t("history.reason.database");
     return null;
   };
 

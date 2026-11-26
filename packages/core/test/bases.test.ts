@@ -12,6 +12,7 @@ import {
   runBaseView,
   typedProperties,
   updateBaseSource,
+  type BaseConfig,
   type BaseSourceRow,
   type EvalContext,
   type FileInfo,
@@ -359,6 +360,25 @@ describe("runBaseView", () => {
     expect(result.rows[0]!.values).toEqual({ "file.name": "Beta.md", "note.status": "Done", "note.due": "2026-11-01" });
     expect(result.total).toBe(3);
     expect(result.warnings).toEqual([]);
+  });
+
+  it("a kanban grouped by a Select without groupOrder follows the options' order, every option a column (#7prbquxu phase 3)", () => {
+    const selectConfig: BaseConfig = {
+      properties: {
+        "note.stage": { gumplyType: "select", gumplyOptions: [{ value: "Todo", color: "gray" }, { value: "Doing", color: "blue" }, { value: "Done", color: "green" }] },
+      },
+      views: [{ type: "kanban", name: "Board", groupBy: { property: "note.stage", direction: "ASC" } }],
+    };
+    const selectRows = [row("A.md", { stage: "Done" }), row("B.md", { stage: "Todo" }), row("C.md", { stage: "Later" }), row("D.md")];
+    const result = runBaseView({ config: selectConfig, rows: selectRows, types: TYPES, now: NOW });
+    // The options in order (Doing has no rows but is a column), then a value outside them, then no value.
+    expect(result.groups!.map((group) => [group.label, group.rows.map((i) => result.rows[i]!.title)])).toEqual([
+      ["Todo", ["B"]],
+      ["Doing", []],
+      ["Done", ["A"]],
+      ["Later", ["C"]],
+      ["", ["D"]],
+    ]);
   });
 
   it("groups in groupOrder for a kanban view", () => {

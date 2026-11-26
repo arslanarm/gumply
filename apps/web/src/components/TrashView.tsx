@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { PageId, TrashedPage, TrashItem } from "@gumply/core";
 import { useT } from "../i18n/index.js";
 import { relativeTime } from "../lib/search.js";
-import { filterTrash, trashDepth, trashLocation, trashedCount } from "../lib/trash.js";
+import { filterTrash, trashDepth, trashLocation, trashTitle, trashedCount } from "../lib/trash.js";
 import { HistoryOrphans } from "./HistoryOrphans.js";
 import { Icon } from "./Icon.js";
 
@@ -102,13 +102,16 @@ export function TrashView({ items, error, desktop, onOpen, onRestore, onDeleteFo
                       <ItemIcon page={item} />
                     </span>
                     <span className="trash-item-text">
-                      <span className="trash-item-title">{item.title}</span>
+                      <span className="trash-item-title">{trashTitle(item)}</span>
                       <span className="trash-item-meta">
                         {location ? (
                           <>
                             {t("trash.in", { location })}
                             {item.originalParentTitle === null ? t("trash.noLongerThere") : ""} ·{" "}
                           </>
+                        ) : null}
+                        {item.rows !== undefined ? (
+                          <span data-testid="trash-item-rows">{t("trash.withRows", { rows: t("counts.rows", { count: item.rows }) })} · </span>
                         ) : null}
                         {t("trash.deleted", { time: relativeTime(item.deletedAt) })}
                       </span>

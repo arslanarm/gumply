@@ -46,6 +46,14 @@ export interface PageMeta {
   conflictOf?: PageId | null;
   /** v1.29: on an original, how many conflict copies sit beside it. */
   conflicts?: number;
+  /**
+   * #7prbquxu phase 4 (spec/database-tables §3): on a database that owns its rows folder, that folder's id,
+   * and whether its marker asks to show the rows in the sidebar (they're hidden there by default).
+   */
+  rowsFolder?: PageId;
+  showRows?: boolean;
+  /** #7prbquxu phase 4: on a folder an owned database keeps its rows in, that database's id. */
+  ownedBy?: PageId;
 }
 
 /** Full page: metadata plus the Markdown body (without frontmatter). */
@@ -129,8 +137,18 @@ export interface TrashItem extends TrashedPage {
   originalParentTitle: string | null;
   /** Sub-pages deleted with it, parents before children. */
   children: TrashedPage[];
-  /** Folders only: files in it that aren't pages or boards (PDFs, images…). */
+  /**
+   * Folders: files in it that aren't pages or boards (PDFs, images…). A database deleted with its rows: those
+   * in its rows folder.
+   */
   otherFiles?: number;
+  /** #7prbquxu phase 4a: a database deleted with its rows folder (one Trash item): the rows that went with it. */
+  rows?: number;
+  /**
+   * #7prbquxu phase 4: the rows one table undo took out, as one item ("N rows from People"): `id` and `title` are
+   * their folder (still in the vault), `children` the rows. Restore brings them all back into it.
+   */
+  undoRows?: number;
 }
 
 /** `GET /api/trash/:trashId[?id=]`: a trashed page or board, read-only. */

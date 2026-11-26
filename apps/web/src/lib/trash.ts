@@ -16,9 +16,15 @@ export function filterTrash(items: readonly TrashItem[], query: string): TrashIt
   );
 }
 
-/** Pages and boards in the trash, sub-pages included. */
+/** Pages and boards in the trash, sub-pages and a database's rows included. */
 export function trashedCount(items: readonly TrashItem[]): number {
-  return items.reduce((total, item) => total + 1 + item.children.length, 0);
+  // A group of rows an undo took out counts its rows only (the folder itself isn't in the Trash).
+  return items.reduce((total, item) => total + (item.undoRows !== undefined ? item.children.length : 1 + item.children.length + (item.rows ?? 0)), 0);
+}
+
+/** The title a Trash item shows: its own, or "2 rows from People" for the rows a table undo took out. */
+export function trashTitle(item: TrashItem): string {
+  return item.undoRows !== undefined ? t("trash.undoRows", { count: item.undoRows, name: item.title }) : item.title;
 }
 
 /** "Projects", or "Projects (no longer there)"; "" at the top level. */
@@ -34,6 +40,14 @@ export function deleteForeverBody(item: TrashItem): string {
 }
 
 function deleteForeverWhat(item: TrashItem): string {
+  // #7prbquxu phase 4: the rows a table undo took out (their folder stays).
+  if (item.undoRows !== undefined) return t("trash.forever.undoRows", { count: item.undoRows, name: item.title });
+  // #7prbquxu phase 4a (note c): a database deleted with its rows folder takes them along.
+  if (item.kind === "base" && item.rows !== undefined) {
+    const parts = [t("counts.rows", { count: item.rows })];
+    if (item.otherFiles) parts.push(t("counts.otherFiles", { count: item.otherFiles }));
+    return t("trash.forever.database", { contents: listJoin(parts) });
+  }
   if (item.kind === "folder") {
     const parts = [t("counts.pagesOrBoards", { count: item.children.length })];
     if (item.otherFiles) parts.push(t("counts.otherFiles", { count: item.otherFiles }));
@@ -53,7 +67,7 @@ export function emptyTrashBody(items: readonly TrashItem[]): string {
 export function restoredMessage(item: TrashItem, result: RestoreResult): string {
   const name = result.id.split("/").pop() ?? result.id;
   const shown = item.kind === "whiteboard" ? name.replace(/\.canvas$/i, "") : item.kind === "base" ? name.replace(/\.base$/i, "") : name;
-  const vars = { title: item.title, name: shown, location: trashLocation(item) };
+  const vars = { title: trashTitle(item), name: shown, location: trashLocation(item) };
   if (result.movedToTopLevel && result.renamed) return t("trash.restored.toTopAs", vars);
   if (result.movedToTopLevel) return t("trash.restored.toTop", vars);
   if (result.renamed) return t("trash.restored.as", vars);

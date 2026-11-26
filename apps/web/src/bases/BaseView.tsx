@@ -8,8 +8,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta, PropertyType } from "@gumply/core";
-import { ownedRowsFolder } from "@gumply/core";
-import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
+import { nextOptionColor, ownedRowsFolder, propertyId, selectedValues, selectSettings, withSelectSettings, type SelectKind, type SelectOption, type SelectSettings } from "@gumply/core";
+import { api, ApiRequestError, type BaseDocument, type UndoInput } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
 import { t as translate, useT, type MessageKey } from "../i18n/index.js";
 import { Popover } from "./Popover.js";
@@ -18,8 +18,10 @@ import { ViewToolbar, type Panel } from "./ViewToolbar.js";
 import { CardsView, KanbanView, ListView } from "./layouts.js";
 import { CalendarView } from "./CalendarView.js";
 import { baseSource, viewClauses } from "./rules.js";
-import { BaseLinks } from "./values.js";
+import { BaseLinks, BaseSelectActions, BaseSelects } from "./values.js";
 import { BaseSaver, pendingSaverFor } from "./base-saver.js";
+import { parseCsv, type PastedRow } from "./paste.js";
+import type { PreviewResult } from "./PastePreview.js";
 import { registerSaver } from "../lib/pending-saves.js";
 import type { SaveState } from "../editor/autosave.js";
 import "./bases.css";
@@ -44,6 +46,12 @@ function layoutIcon(type: string): IconName {
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/** #7prbquxu phase 4b: one step of the table's undo or redo. */
+type UndoStep =
+  | { kind: "files"; input: UndoInput }
+  | { kind: "config"; from: BaseConfig; to: BaseConfig }
+  | { kind: "cell"; rowId: string; key: string; before: BaseValue; after: BaseValue; version: string };
 
 export interface BaseViewProps {
   baseId: PageId;
@@ -84,12 +92,35 @@ export function BaseView(props: BaseViewProps) {
   const docRef = useRef(doc);
   docRef.current = doc;
   const config = doc.config;
+  // #7prbquxu phase 3: this base's Select and Multi-select columns, for the chips in every layout.
+  const selects = useMemo(() => {
+    const map = new Map<string, SelectSettings>();
+    for (const id of Object.keys(config.properties ?? {})) {
+      const key = propertyId(id).startsWith("note.") ? propertyId(id).slice(5) : null;
+      const settings = key ? selectSettings(config, key) : null;
+      if (key && settings) map.set(`note.${key}`, settings);
+    }
+    return map;
+  }, [config]);
   const views = config.views;
   const [activeName, setActiveName] = useState<string | null>(() => embed?.viewName ?? views[0]?.name ?? null);
   const active = views.find((view) => view.name === activeName) ?? views[0] ?? null;
   const [result, setResult] = useState<BaseViewResult | null>(null);
   const resultRef = useRef(result);
+  /** #7prbquxu phase 2: "Import CSV…": the chosen file's rows, for the table's paste preview. */
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const [importBlock, setImportBlock] = useState<{ rows: string[][]; n: number } | null>(null);
   resultRef.current = result;
+  /**
+   * #7prbquxu phase 4b (spec/database-tables §7): the table's undo and redo for this session (closing the
+   * table or reloading drops them). Each step, applied, returns its inverse for the other stack.
+   */
+  const undoStack = useRef<UndoStep[]>([]);
+  const redoStack = useRef<UndoStep[]>([]);
+  const recordStep = (step: UndoStep) => {
+    undoStack.current.push(step);
+    redoStack.current = [];
+  };
   const [loadError, setLoadError] = useState<string | null>(null);
   const [renameRowId, setRenameRowId] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState<{ panel: Panel; n: number } | null>(null);
@@ -274,7 +305,8 @@ export function BaseView(props: BaseViewProps) {
       );
       let saved = true;
       try {
-        await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, row.updated);
+        const saved = await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, row.updated);
+        recordStep({ kind: "cell", rowId: saved.id, key: column.id.slice(5), before: row.values[column.id] ?? null, after: value, version: saved.updated });
       } catch (error) {
         saved = false;
         props.onError?.(errorText(error));
@@ -303,10 +335,53 @@ export function BaseView(props: BaseViewProps) {
       saverRef.current?.setVersion(result.base.meta.updated);
       docRef.current = result.base;
       setDoc(result.base);
+      if (result.files.length) recordStep({ kind: "files", input: { files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })) } });
       return result;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [baseId, writer],
+  );
+
+  /** #7prbquxu phase 2: a block pasted into the grid, in one server request; refused rows are named. */
+  const pasteRows = useCallback(
+    async (rows: PastedRow[], columns?: { view: string; keys: string[] }, types?: Record<string, PropertyType>) => {
+      try {
+        await saverRef.current?.flush();
+        const result = await api.pasteRows(baseId, rows, { expectedUpdated: docRef.current.meta.updated, writer, ...(columns ? { columns } : {}) });
+        if (result.files.length || result.made.length) {
+          recordStep({
+            kind: "files",
+            input: {
+              files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
+              drop: result.made.map((row) => ({ id: row.id, from: row.after })),
+            },
+          });
+        }
+        if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
+        else if (!result.refused.length) {
+          // New columns from the preview take their chosen type only where the vault has none.
+          for (const [key, type] of Object.entries(types ?? {})) await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
+        }
+        if (columns) {
+          // The server added the columns to the base: take it, with its version for the next save.
+          const doc = await api.getBase(baseId);
+          saverRef.current?.setVersion(doc.meta.updated);
+          docRef.current = doc;
+          setDoc(doc);
+        }
+        if (result.refused.length && !result.baseRefused) {
+          const parts = [t("bases.pasteRefused", { titles: titleList(result.refused) })];
+          if (result.trashed.length) parts.push(t("bases.pasteTrashed", { titles: titleList(result.trashed) }));
+          if (result.stuck.length) parts.push(t("bases.pasteStuck", { titles: titleList(result.stuck) }));
+          props.onError?.(parts.join(" "));
+        }
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseId, writer, load],
   );
 
   const renameColumn = useCallback(
@@ -349,18 +424,168 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [changeRows, load],
   );
+  /**
+   * A column's type. Select and Multi-select (#7prbquxu phase 3, spec §6) live in this base's properties,
+   * seeded with the values its rows have (in the order they first appear, each its own colour); the types
+   * file keeps text or a list (set only where it has none). Any other type is the vault's (types.json), and
+   * leaving Select drops the options from the base.
+   */
   const setColumnType = useCallback(
-    async (column: BaseColumn, type: PropertyType) => {
+    async (column: BaseColumn, type: PropertyType | SelectKind) => {
+      const key = column.id.slice(5);
       try {
-        await api.setPropertyType(column.id.slice(5), type);
+        const config = docRef.current.config;
+        if (type === "select" || type === "multiselect") {
+          const settings = selectSettings(config, key);
+          const options: SelectOption[] = settings ? [...settings.options] : [];
+          for (const row of resultRef.current?.rows ?? []) {
+            for (const value of selectedValues(row.values[column.id])) {
+              if (!options.some((option) => option.value === value)) options.push({ value, color: nextOptionColor(options) });
+            }
+          }
+          await saveConfig(withSelectSettings(config, key, { kind: type, options }));
+          recordStep({ kind: "config", from: docRef.current.config, to: config });
+          await api.setPropertyType(key, type === "select" ? "text" : "multitext", { ifAbsent: true }).catch(() => undefined);
+        } else {
+          if (selectSettings(config, key)) {
+            await saveConfig(withSelectSettings(config, key, null));
+            recordStep({ kind: "config", from: docRef.current.config, to: config });
+          }
+          await api.setPropertyType(key, type);
+        }
       } catch (error) {
         props.onError?.(errorText(error));
       }
       await load();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [load],
+    [load, saveConfig],
   );
+
+  /** #7prbquxu phase 3: an option renamed or cleared in every row and the base; the view takes the base back. */
+  const changeOption = async (change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string }) => {
+    try {
+      await saverRef.current?.flush();
+      const result = await api.changeOwnedRowsOption(baseId, change, { expectedUpdated: docRef.current.meta.updated, writer });
+      saverRef.current?.setVersion(result.base.meta.updated);
+      docRef.current = result.base;
+      setDoc(result.base);
+      if (result.files.length) recordStep({ kind: "files", input: { files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })) } });
+      if (result.baseRefused) props.onError?.(t("bases.columnBaseChanged"));
+      else if (result.refused.length) {
+        const refused = t("bases.optionRefused", { titles: titleList(result.refused) });
+        props.onError?.(result.stuck.length ? `${refused} ${t("bases.pasteStuck", { titles: titleList(result.stuck) })}` : refused);
+      }
+    } catch (error) {
+      props.onError?.(errorText(error));
+    }
+    await load();
+  };
+
+  /** #7prbquxu phase 3: a new option for a Select column, with the next colour (saved in the base). */
+  const selectActions = useMemo(
+    () => ({
+      addOption: async (columnId: string, value: string) => {
+        const key = columnId.replace(/^note\./, "");
+        const config = docRef.current.config;
+        const settings = selectSettings(config, key);
+        if (!settings || settings.options.some((option) => option.value === value)) return;
+        await saveConfig(withSelectSettings(config, key, { ...settings, options: [...settings.options, { value, color: nextOptionColor(settings.options) }] }));
+      },
+      setOptions: async (columnId: string, options: SelectOption[]) => {
+        const key = columnId.replace(/^note\./, "");
+        const config = docRef.current.config;
+        const settings = selectSettings(config, key);
+        if (settings) {
+          await saveConfig(withSelectSettings(config, key, { ...settings, options }));
+          recordStep({ kind: "config", from: docRef.current.config, to: config });
+        }
+      },
+      renameOption: (columnId: string, from: string, to: string) => changeOption({ key: columnId.replace(/^note\./, ""), rename: { from, to } }),
+      clearOption: (columnId: string, value: string) => changeOption({ key: columnId.replace(/^note\./, ""), clear: value }),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [saveConfig],
+  );
+
+  /** Apply one undo or redo step; its inverse, or null when it was refused (and said so). */
+  const applyStep = async (step: UndoStep): Promise<UndoStep | null> => {
+    await saverRef.current?.flush();
+    if (step.kind === "config") {
+      // Only while the base is as the step left it.
+      if (JSON.stringify(docRef.current.config) !== JSON.stringify(step.from)) {
+        props.onError?.(t("bases.undoChanged"));
+        return null;
+      }
+      await saveConfig(step.to);
+      return { kind: "config", from: step.to, to: step.from };
+    }
+    if (step.kind === "cell") {
+      try {
+        const saved = await api.setPageProperties(step.rowId, { [step.key]: step.before as string | number | boolean | string[] | null }, step.version);
+        return { kind: "cell", rowId: saved.id, key: step.key, before: step.after, after: step.before, version: saved.updated };
+      } catch {
+        props.onError?.(t("bases.undoChanged"));
+        return null;
+      }
+    }
+    const result = await api.undoDatabaseChange(baseId, step.input);
+    if (result.refused.length) {
+      props.onError?.(t("bases.undoRefused", { titles: titleList(result.refused) }));
+      return null;
+    }
+    if (result.base) {
+      saverRef.current?.setVersion(result.base.meta.updated);
+      docRef.current = result.base;
+      setDoc(result.base);
+    }
+    return {
+      kind: "files",
+      input: {
+        files: result.files.map((file) => ({ id: file.id, from: file.after, to: file.before })),
+        drop: result.created.map((row) => ({ id: row.id, from: row.after })),
+        create: result.dropped.map((row) => ({ id: row.id, trashId: row.trashId })),
+      },
+    };
+  };
+  const undoOrRedo = async (redo: boolean) => {
+    const from = redo ? redoStack : undoStack;
+    const to = redo ? undoStack : redoStack;
+    const step = from.current.pop();
+    if (!step) return;
+    try {
+      const inverse = await applyStep(step);
+      if (inverse) to.current.push(inverse);
+    } catch (error) {
+      props.onError?.(errorText(error));
+    }
+    await load();
+  };
+  /** Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z in the table; a text field being edited keeps its own undo. */
+  const onUndoKey = (event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "key" | "target" | "preventDefault">) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "z") return;
+    const target = event.target as HTMLElement;
+    const sinkIdle = target.dataset.testid === "base-grid-cell" && !target.classList.contains("is-typing");
+    const editing = target.isContentEditable || ((target.tagName === "INPUT" || target.tagName === "TEXTAREA") && !sinkIdle);
+    if (editing || !ownedRowsFolder(docRef.current.config)) return;
+    event.preventDefault();
+    void undoOrRedo(event.shiftKey);
+  };
+  // Focus can fall to the page itself (a confirm dialog closed, the menu item that opened it gone): Cmd+Z there
+  // still means this table, when it's the open view (not an embed).
+  const undoKeyRef = useRef(onUndoKey);
+  undoKeyRef.current = onUndoKey;
+  useEffect(() => {
+    if (embed) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      undoKeyRef.current(event);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [embed]);
 
   /** Kanban drop, calendar move: one note property of one page. */
   const setValue = useCallback(
@@ -473,7 +698,9 @@ export function BaseView(props: BaseViewProps) {
 
   return (
     <BaseLinks.Provider value={baseLinks}>
-    <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1}>
+    <BaseSelects.Provider value={selects}>
+    <BaseSelectActions.Provider value={selectActions}>
+    <div className={`base-view${embed ? " is-embedded" : ""}`} data-testid="base-view" ref={rootRef} tabIndex={-1} onKeyDown={onUndoKey}>
       {inlineConflict ? (
         <div className="banner base-banner base-conflict" role="alert" data-testid="base-conflict" ref={conflictRef}>
           <span>{t("bases.conflict")}</span>
@@ -511,9 +738,32 @@ export function BaseView(props: BaseViewProps) {
             onChangeConfig={(next) => void saveConfig(next)}
             onChangeView={changeView}
             openRequest={openRequest}
+            {...(ownedRowsFolder(config) && !embed ? { onImportCsv: () => csvInputRef.current?.click() } : {})}
           />
         ) : null}
       </div>
+
+      {ownedRowsFolder(config) && !embed ? (
+        <input
+          ref={csvInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          hidden
+          data-testid="base-import-csv-file"
+          onChange={(event) => {
+            const input = event.currentTarget;
+            const file = input.files?.[0];
+            input.value = "";
+            if (!file) return;
+            void file.text().then((text) => {
+              const rows = parseCsv(text);
+              if (rows.length && rows.some((row) => row.some((cell) => cell.trim() !== ""))) {
+                setImportBlock((current) => ({ rows, n: (current?.n ?? 0) + 1 }));
+              }
+            });
+          }}
+        />
+      ) : null}
 
       {!embed && views[0]?.type === "calendar" ? (
         // Obsidian opens a base (and `![[X.base]]`) on its first view, and has no Calendar (@opus-hunter, 1.14.4).
@@ -578,7 +828,13 @@ export function BaseView(props: BaseViewProps) {
           onRename={rename}
           onNewRow={() => void newRow()}
           {...(ownedRowsFolder(config)
-            ? { onAddRow: (title: string) => newRow(undefined, title), onRenameColumn: renameColumn, onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
+            ? { onAddRow: (title: string) => newRow(undefined, title), importBlock, onAddColumnView: (view: BaseViewConfig) => {
+                  const before = docRef.current.config;
+                  changeView(view);
+                  recordStep({ kind: "config", from: docRef.current.config, to: before });
+                },
+                onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
+                onPastePreview: (previewed: PreviewResult, viewName: string) => pasteRows(previewed.rows, { view: viewName, keys: previewed.keys }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
             : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}
@@ -588,6 +844,8 @@ export function BaseView(props: BaseViewProps) {
         <div className="base-loading" aria-busy="true" />
       )}
     </div>
+    </BaseSelectActions.Provider>
+    </BaseSelects.Provider>
     </BaseLinks.Provider>
   );
 }

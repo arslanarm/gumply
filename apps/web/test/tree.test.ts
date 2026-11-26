@@ -157,3 +157,33 @@ describe("plain folders (D33)", () => {
     expect(canMovePage(pages, "Work/Old", null)).toBe(true);
   });
 });
+
+describe("a database's own rows folder (#7prbquxu phase 4, spec/database-tables §3)", () => {
+  const pages = (showRows: boolean): PageMeta[] => [
+    { ...meta("People.base", "People"), kind: "base", rowsFolder: "People", ...(showRows ? { showRows: true } : {}) },
+    { ...meta("People", "People"), kind: "folder", ownedBy: "People.base" },
+    meta("People/Ann", "Ann", "People"),
+    { ...meta("People/Notes", "Notes", "People"), kind: "folder" },
+    meta("People/Notes/Deep", "Deep", "People/Notes"),
+    { ...meta("Projects", "Projects"), kind: "folder" },
+  ];
+
+  it("hides the folder and everything in it while the database doesn't ask to show its rows", () => {
+    expect(shape(buildPageTree(pages(false)))).toEqual(shape(buildPageTree([pages(false)[0]!, pages(false)[5]!])));
+  });
+
+  it("shows them when the database asks to (the marker's showRows)", () => {
+    const ids = (nodes: ReturnType<typeof buildPageTree>): string[] => nodes.flatMap((node) => [node.page.id, ...ids(node.children)]);
+    expect(ids(buildPageTree(pages(true))).sort()).toEqual(["People", "People.base", "People/Ann", "People/Notes", "People/Notes/Deep", "Projects"]);
+  });
+
+  it("a folder no database owns any more shows as any folder", () => {
+    const loose = pages(false).map((page) => {
+      const { rowsFolder, ownedBy, ...rest } = page;
+      void rowsFolder;
+      void ownedBy;
+      return rest;
+    });
+    expect(buildPageTree(loose).some((node) => node.page.id === "People")).toBe(true);
+  });
+});

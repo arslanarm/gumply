@@ -4,6 +4,7 @@ import {
   formatWikilink,
   pageLook,
   resolveWikilink,
+  withRowsShown,
   type Backlink,
   type BoardDocument,
   type Page,
@@ -50,7 +51,7 @@ import type { BoardTemplateId } from "./board/templates.js";
 import { idFromVaultPath, isBoard, isBoardId, newBoardTitle, vaultPathOf } from "./lib/boards.js";
 import { isBase, isBaseId, newBaseTitle } from "./lib/bases.js";
 import { BaseView, type BaseViewControls } from "./bases/BaseView.js";
-import { focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
+import { databaseDeleteAsk, focusAfterDelete, folderContents, folderDeleteBody } from "./lib/delete.js";
 import { chooseLandingPage } from "./lib/first-run.js";
 import { errorMessage, isNotFound, serverDownMessage } from "./lib/errors.js";
 import { freshRetrySchedule, takeRetry } from "./lib/save-retry.js";
@@ -71,7 +72,7 @@ import {
   trashRouteFromHash,
   type TrashRoute,
 } from "./lib/routing.js";
-import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashedCount } from "./lib/trash.js";
+import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashTitle, trashedCount } from "./lib/trash.js";
 import { currentModifierLabel, isTypingTarget } from "./lib/shortcuts.js";
 import {
   availableCommands,
@@ -117,6 +118,10 @@ interface PendingDelete {
   subPages: number;
   /** D33: a folder's own confirm line ("Its 3 pages and 2 other files …"). */
   body?: string;
+  /** #7prbquxu phase 4: a database with its own rows folder, and how many rows it holds. */
+  rows?: number;
+  /** …and other files (images, PDFs…) in that folder (note b: they never go to the Trash without asking). */
+  otherFiles?: number;
 }
 
 interface ToastState {
@@ -1360,7 +1365,7 @@ export function App() {
       setAutoFocusTitle(true);
       if (window.innerWidth <= 900) setSidebarOpen(false);
       try {
-        const created = await api.createBase({ title: newBaseTitle(), parentId, rows: true });
+        const created = await api.createBase({ title: newBaseTitle(), parentId, rows: true, viewName: t("bases.newViewName.table") });
         await loadPages();
         setEditTitleId(created.meta.id);
         navigate(created.meta.id);
@@ -1372,6 +1377,24 @@ export function App() {
   );
 
   /** D34: "New view of pages…" (was "New database view"): a table of the folder it's created in. */
+  /**
+   * #7prbquxu phase 4 (spec/database-tables §3): "Show rows in the sidebar" writes the marker's showRows (only
+   * that line, from the base's version), and the tree follows the listing.
+   */
+  const handleToggleRows = useCallback(
+    async (baseId: PageId, shown: boolean) => {
+      try {
+        const doc = await api.getBase(baseId);
+        await api.saveBase(baseId, { config: withRowsShown(doc.config, shown), expectedUpdated: doc.meta.updated });
+        await loadPages();
+      } catch (error) {
+        setActionError(errorMessage(error));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const handleCreateBase = useCallback(
     async (parentId: PageId | null, title?: string) => {
       setActionError(null);
@@ -1380,6 +1403,7 @@ export function App() {
       try {
         const created = await api.createBase({
           title: title ?? newBaseTitle(),
+          viewName: t("bases.newViewName.table"),
           parentId,
           ...(parentId ? { source: { folder: parentId } } : {}),
         });
@@ -1432,7 +1456,7 @@ export function App() {
         let createdId: PageId;
         if (isBase(meta)) {
           const original = await api.getBase(id);
-          const created = await api.createBase({ title, parentId: meta.parentId });
+          const created = await api.createBase({ title, parentId: meta.parentId, viewName: t("bases.newViewName.table") });
           await api.saveBase(created.meta.id, { config: original.config, expectedUpdated: created.meta.updated });
           createdId = created.meta.id;
         } else if (isBoard(meta)) {
@@ -1608,6 +1632,7 @@ export function App() {
     try {
       const created = await api.createBase({
         title: newBaseTitle(),
+        viewName: t("bases.newViewName.table"),
         parentId,
         ...(parentId ? { source: { folder: parentId } } : {}),
       });
@@ -2003,13 +2028,13 @@ export function App() {
   }, [applySavedPage]);
 
   const performDelete = useCallback(
-    async (id: PageId) => {
+    async (id: PageId, withRows = false) => {
       setActionError(null);
 
       const wasBoard = isBoardId(id);
       const wasBase = isBaseId(id);
       try {
-        const result = await api.deletePage(id);
+        const result = await api.deletePage(id, withRows ? { withRows: true } : {});
         const nextId = focusAfterDelete(pages, id);
         const list = await loadPages();
 
@@ -2083,7 +2108,7 @@ export function App() {
     try {
       if (pending.kind === "forever") {
         await api.deleteTrashed(pending.item.trashId);
-        setToast({ message: t("trash.deletedForever", { title: pending.item.title }), icon: "trash" });
+        setToast({ message: t("trash.deletedForever", { title: trashTitle(pending.item) }), icon: "trash" });
         // A trashed page that is gone now: back to the list.
         if (trashRoute?.trashId === pending.item.trashId) navigateTrash();
       } else {
@@ -2102,6 +2127,13 @@ export function App() {
       if (!target) return;
       // D33: a folder asks first when it holds anything (pages, boards or
       // other files, at any depth); an empty one goes straight to the trash.
+      // #7prbquxu phase 4: a database with its own rows asks whether they go too (an empty one takes its folder along).
+      if (target.kind === "base" && target.rowsFolder) {
+        const ask = databaseDeleteAsk(pages, target);
+        if (ask === null) void performDelete(id, true);
+        else setPendingDelete({ page: target, subPages: 0, rows: ask.rows, otherFiles: ask.otherFiles });
+        return;
+      }
       if (target.kind === "folder") {
         const contents = folderContents(pages, id);
         if (contents.pages + contents.boards + contents.otherFiles > 0) {
@@ -2123,12 +2155,15 @@ export function App() {
     if (pending) moveFocus(pending.page.id);
   }, [pendingDelete, moveFocus]);
 
-  const confirmDelete = useCallback(() => {
-    const pending = pendingDelete;
-    if (!pending) return;
-    setPendingDelete(null);
-    void performDelete(pending.page.id);
-  }, [pendingDelete, performDelete]);
+  const confirmDelete = useCallback(
+    (withRows: boolean) => {
+      const pending = pendingDelete;
+      if (!pending) return;
+      setPendingDelete(null);
+      void performDelete(pending.page.id, pending.rows !== undefined && withRows);
+    },
+    [pendingDelete, performDelete],
+  );
 
   /** Focus a page row if it is still rendered (after a move). */
   const focusPageRow = useCallback((id: PageId) => {
@@ -2521,6 +2556,9 @@ export function App() {
     "page.add-base": () => {
       if (commandPage) void handleCreateBase(commandPage.id);
     },
+    "page.show-rows": () => {
+      if (commandPage) void handleToggleRows(commandPage.id, !commandPage.showRows);
+    },
     "page.new-from-template": () => setTemplatePicker({ mode: "new", parentId: commandPage?.id ?? null }),
     "page.import-notion": () => setNotionImport({ target: importDefaultTarget }),
     "page.export-html": () => {
@@ -2690,6 +2728,7 @@ export function App() {
           footer={<UpdateNotice state={updates} hidden={hiddenUpdate} onHide={setHiddenUpdate} />}
           onCreateBoard={closingSidebar((parentId: PageId | null) => setGalleryParent({ parentId }))}
           onCreateBase={(parentId) => void handleCreateBase(parentId)}
+          onToggleRows={(baseId, shown) => void handleToggleRows(baseId, shown)}
           onCreateDatabase={(parentId) => void handleCreateDatabase(parentId)}
           pages={pages}
           selectedId={selectedId}
@@ -3101,6 +3140,7 @@ export function App() {
           title={pendingDelete.page.title}
           subPages={pendingDelete.subPages}
           body={pendingDelete.body}
+          {...(pendingDelete.rows !== undefined ? { rows: pendingDelete.rows, rowsOtherFiles: pendingDelete.otherFiles ?? 0 } : {})}
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
         />

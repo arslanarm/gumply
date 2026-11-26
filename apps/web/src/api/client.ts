@@ -479,10 +479,11 @@ export const api = {
       request(`/properties/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ type, ...(options.ifAbsent ? { ifAbsent: true } : {}) }) }),
     ),
 
-  deletePage: (id: PageId): Promise<DeletePageResult> =>
+  /** `withRows` (#7prbquxu phase 4): a database takes its own rows folder to the Trash with it, as one item. */
+  deletePage: (id: PageId, options: { withRows?: boolean } = {}): Promise<DeletePageResult> =>
     mutate(async () => {
       const result = await request<{ trashId?: string; deleted?: PageId[] } | undefined>(
-        pagePath(id),
+        `${pagePath(id)}${options.withRows ? "?withRows=1" : ""}`,
         { method: "DELETE" },
       );
       if (!result) return { trashId: null, deleted: [id] };
@@ -545,6 +546,44 @@ export const api = {
    * conditionally. Used by database views (cells, kanban, calendar). A null
    * value is written as a bare `key:`, as Obsidian does; the key stays.
    */
+  /** #7prbquxu phase 4b: one step of the table's undo or redo (all or nothing). */
+  undoDatabaseChange: (baseId: PageId, input: UndoInput): Promise<UndoResult> =>
+    mutate(() => request(`${basePath(baseId)}/undo`, { method: "POST", body: JSON.stringify(input) })),
+
+  /** #7prbquxu phase 3: rename or clear a Select option in every row and in the base (one request, all or nothing). */
+  changeOwnedRowsOption: (
+    baseId: PageId,
+    change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string },
+    options: { expectedUpdated: string; writer: string },
+  ): Promise<{
+    changed: PageId[];
+    refused: Array<{ id: PageId; title: string }>;
+    stuck: Array<{ id: PageId; title: string }>;
+    baseRefused?: boolean;
+    base: BaseDocument;
+    /** #7prbquxu phase 4b: each file written, its versions before and after (the table's undo). */
+    files: UndoFile[];
+  }> => mutate(() => request(`${basePath(baseId)}/rows-option`, { method: "POST", body: JSON.stringify({ ...change, ...options }) })),
+
+  /** #7prbquxu phase 2: a block pasted into an owned database: existing rows set, new rows made, all or nothing. */
+  pasteRows: (
+    baseId: PageId,
+    /** Existing rows carry the version they were shown at (`expectedUpdated`); new rows a title. */
+    rows: Array<{ id?: PageId; expectedUpdated?: string; title?: string; set: Record<string, string | number | boolean | string[] | null> }>,
+    options: { expectedUpdated: string; writer: string; columns?: { view: string; keys: string[] } },
+  ): Promise<{
+    changed: PageId[];
+    created: PageId[];
+    refused: Array<{ id: PageId; title: string }>;
+    stuck: Array<{ id: PageId; title: string }>;
+    /** After a refusal: new rows that changed meanwhile, so they went to the Trash (unchanged ones are gone). */
+    trashed: Array<{ id: PageId; title: string }>;
+    baseRefused?: boolean;
+    files: UndoFile[];
+    /** The new rows made, at the version this paste left them. */
+    made: Array<{ id: PageId; after: string }>;
+  }> => mutate(() => request(`${basePath(baseId)}/rows-paste`, { method: "POST", body: JSON.stringify({ rows, ...options }) })),
+
   /**
    * #7prbquxu: rename or delete a property in every row of an owned database, on the server in one
    * job (a rename is all or nothing). `clash` / `skipped` name the rows that stopped it.
@@ -562,6 +601,8 @@ export const api = {
     baseRefused?: boolean;
     /** The base as it is now: the view takes its config and version. */
     base: BaseDocument;
+    /** #7prbquxu phase 4b: each file written, its versions before and after (the table's undo). */
+    files: UndoFile[];
   }> =>
     mutate(() => request(`${basePath(baseId)}/rows-property`, { method: "POST", body: JSON.stringify({ ...change, ...options }) })),
 
@@ -611,6 +652,8 @@ export const api = {
     source?: { folder?: PageId | null; tag?: string };
     /** #7prbquxu: a database with its own rows folder (spec/database-tables §1). */
     rows?: boolean;
+    /** The first view's name, in the interface language (the server writes "Table" without it). */
+    viewName?: string;
   }): Promise<BaseDocument> => mutate(() => request("/bases", { method: "POST", body: JSON.stringify(input) })),
 
   /** Graph payload (spec/api v1.2); `center`/`depth` produce a local graph. */
@@ -699,7 +742,32 @@ export const api = {
 const historyPath = (id: PageId): string => `/history/${encodeURIComponent(id)}`;
 
 export type HistorySource = "app" | "external" | "mcp" | "import" | "restore";
-export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict" | "before-reload";
+export type HistoryReason = "edit" | "session" | "rename" | "move" | "trash" | "before-restore" | "conflict" | "before-reload" | "database";
+
+/** #7prbquxu phase 4b: a file a database op wrote, with its version before and after. */
+export interface UndoFile {
+  id: PageId;
+  before: string;
+  after: string;
+}
+
+/** #7prbquxu phase 4b: one undo (or redo) step of the table. */
+export interface UndoInput {
+  files?: Array<{ id: PageId; from: string; to: string }>;
+  /** Rows a paste made: to the Trash (each its own item). */
+  drop?: Array<{ id: PageId; from: string }>;
+  /** Rows an undo dropped: back from their Trash entry (a redo). */
+  create?: Array<{ id: PageId; trashId: string }>;
+}
+
+/** What a step did: its inverse (redo) from `files`, `dropped` and `created`; empty with `refused`. */
+export interface UndoResult {
+  refused: Array<{ id: PageId; title: string }>;
+  files: UndoFile[];
+  dropped: Array<{ id: PageId; before: string; trashId: string }>;
+  created: Array<{ id: PageId; after: string }>;
+  base?: BaseDocument;
+}
 
 /** One version in `GET /history/:id` (spec/api-version-history). */
 export interface HistoryItem {

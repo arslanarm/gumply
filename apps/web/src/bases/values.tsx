@@ -5,7 +5,7 @@
  * removed from the file, as Obsidian does.
  */
 import { createContext, useContext, type CSSProperties } from "react";
-import { resolveWikilink, type BaseColumn, type BaseRow, type BaseValue, type BaseView, type PageId, type PageMeta } from "@gumply/core";
+import { selectedValues, resolveWikilink, type SelectOption, type SelectSettings, type BaseColumn, type BaseRow, type BaseValue, type BaseView, type PageId, type PageMeta } from "@gumply/core";
 import { fileUrl } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
 import { hasWikilink, LinkedText } from "../components/PropertyLinks.js";
@@ -16,6 +16,44 @@ import { WIKILINK_INNER, WIKILINK_TARGET } from "@gumply/core";
 
 /** What `[[links]]` in values need: the vault's pages and how to open one (#vc4hivrr). */
 export const BaseLinks = createContext<{ pages: readonly PageMeta[]; onOpen: (id: PageId) => void } | null>(null);
+
+/** #7prbquxu phase 3: this base's Select and Multi-select columns by column id (`note.status`). */
+export const BaseSelects = createContext<ReadonlyMap<string, SelectSettings>>(new Map());
+/** #7prbquxu phase 3: changes to a Select's options (they live in the base). */
+export const BaseSelectActions = createContext<{
+  addOption: (columnId: string, value: string) => Promise<void>;
+  /** "Edit options…": the options' colours and order (and removing one without touching the rows), in the base only. */
+  setOptions: (columnId: string, options: SelectOption[]) => Promise<void>;
+  /** A rename, or a clear from the rows, in every row and the base (one server request, all or nothing). */
+  renameOption: (columnId: string, from: string, to: string) => Promise<void>;
+  clearOption: (columnId: string, value: string) => Promise<void>;
+} | null>(null);
+
+/**
+ * A Select or Multi-select value as coloured chips (spec §6). A value that isn't one of the options
+ * (typed in Obsidian, say) is a plain chip, marked so the picker can offer "Add as option".
+ */
+export function SelectChips({ value, settings }: { value: BaseValue; settings: SelectSettings }) {
+  const values = selectedValues(value);
+  if (values.length === 0) return null;
+  return (
+    <span className="base-chips">
+      {values.map((item, index) => {
+        const option = settings.options.find((candidate) => candidate.value === item);
+        return (
+          <span
+            className={`base-option${option ? "" : " is-unknown"}`}
+            data-color={option?.color ?? "none"}
+            data-testid="base-option-chip"
+            key={`${item}-${index}`}
+          >
+            {item}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 /**
  * A text value with its `[[links]]` as links (a page opens; an attachment
@@ -40,6 +78,8 @@ export function BaseText({ text, rowId }: { text: string; rowId: string }) {
 /** One value, compact: chips for lists, a tick for checkboxes, dates in the interface language. */
 export function ValueText({ value, column, rowId }: { value: BaseValue; column: BaseColumn; rowId: string }) {
   const t = useT();
+  const select = useContext(BaseSelects).get(column.id);
+  if (select) return <SelectChips value={value} settings={select} />;
   if (value === null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
   if (typeof value === "boolean") {
     return (

@@ -27,6 +27,8 @@ export interface SidebarProps {
   onCreateBoard: (parentId: PageId | null) => void;
   /** New database view at the top level or inside a page or folder (D34). */
   onCreateBase?: (parentId: PageId | null) => void;
+  /** #7prbquxu phase 4: show or hide an owned database's rows folder in the sidebar. */
+  onToggleRows?: (baseId: PageId, shown: boolean) => void;
   /** #7prbquxu: "New database", an empty table with its own rows folder. */
   onCreateDatabase?: (parentId: PageId | null) => void;
   onRename: (id: PageId, title: string) => Promise<void>;
@@ -294,6 +296,7 @@ export function Sidebar(props: SidebarProps) {
     onMove: props.onMove,
     onCreateBoard: props.onCreateBoard,
     onCreateBase: props.onCreateBase,
+    onToggleRows: props.onToggleRows,
     onNewFromTemplate: props.onNewFromTemplate,
     onExportHtml: props.onExportHtml,
     onImportNotion: props.onImportNotion,
@@ -309,6 +312,7 @@ export function Sidebar(props: SidebarProps) {
   latest.current = {
     onCreateBoard: props.onCreateBoard,
     onCreateBase: props.onCreateBase,
+    onToggleRows: props.onToggleRows,
     onOpen: props.onOpen,
     onDelete: props.onDelete,
     onStartMove: props.onStartMove,
@@ -339,6 +343,7 @@ export function Sidebar(props: SidebarProps) {
         latest.current.expand(id);
         latest.current.onCreateBase?.(id);
       },
+      onToggleRows: (id: PageId, shown: boolean) => latest.current.onToggleRows?.(id, shown),
       onDelete: (id: PageId) => latest.current.onDelete(id),
       onToggle: (id: PageId) => latest.current.toggle(id),
       onStartMove: (id: PageId) => latest.current.onStartMove(id),

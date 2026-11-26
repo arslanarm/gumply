@@ -48,6 +48,19 @@ export function isSelfOrDescendant(id: PageId, candidate: PageId): boolean {
   return candidate === id || candidate.startsWith(`${id}/`);
 }
 
+/** The rows folders owned by a database that doesn't show its rows in the sidebar. */
+export function hiddenRowsFolders(pages: readonly PageMeta[]): Set<PageId> {
+  const shown = new Set(pages.filter((page) => page.rowsFolder && page.showRows).map((page) => page.id));
+  return new Set(pages.filter((page) => page.kind === "folder" && page.ownedBy && !shown.has(page.ownedBy)).map((page) => page.id));
+}
+
+/** The folder itself, or anything inside it. */
+export function isUnderHiddenRows(id: PageId, hidden: ReadonlySet<PageId>): boolean {
+  if (hidden.has(id)) return true;
+  for (const folder of hidden) if (id.startsWith(`${folder}/`)) return true;
+  return false;
+}
+
 /**
  * Build the tree from `parentId` links. Pages whose parent is missing (or
  * whose parent chain loops) become roots instead of disappearing.
@@ -55,7 +68,12 @@ export function isSelfOrDescendant(id: PageId, candidate: PageId): boolean {
 export function buildPageTree(pages: readonly PageMeta[]): PageTreeNode[] {
   // D43: a sync conflict copy beside its page isn't in the tree; the page's
   // badge and the Conflicts list lead to it. An orphan copy (null) stays.
-  const sorted = pages.filter((page) => typeof page.conflictOf !== "string").sort(comparePages);
+  // #7prbquxu phase 4 (spec/database-tables §3): a database's own rows folder isn't in the tree, and
+  // nothing under it is, unless the database asks to show its rows; the database item stands for it.
+  const hidden = hiddenRowsFolders(pages);
+  const sorted = pages
+    .filter((page) => typeof page.conflictOf !== "string" && !isUnderHiddenRows(page.id, hidden))
+    .sort(comparePages);
   const nodes = new Map<PageId, PageTreeNode>();
   for (const page of sorted) nodes.set(page.id, { page, children: [] });
 

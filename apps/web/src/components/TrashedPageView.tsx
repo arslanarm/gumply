@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PageId, PageMeta, TrashedDocument, TrashItem } from "@gumply/core";
 import { api } from "../api/client.js";
+import { trashTitle } from "../lib/trash.js";
 import { useT } from "../i18n/index.js";
 import { errorMessage } from "../lib/errors.js";
 import { relativeTime } from "../lib/search.js";
@@ -69,7 +70,7 @@ function TrashedFolder(props: TrashedPageViewProps & { item: TrashItem }) {
               <Icon name="folder" size={34} />
             </span>
             <h1 className="page-title trashed-title" data-testid="trashed-title">
-              {item.title}
+              {trashTitle(item)}
             </h1>
           </div>
           <p className="page-meta">{t("trash.deletedAt", { time: relativeTime(item.deletedAt) })}</p>

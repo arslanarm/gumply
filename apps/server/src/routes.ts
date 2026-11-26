@@ -241,7 +241,8 @@ export function createApiRoutes(store: VaultStore): Hono {
   });
 
   api.delete("/pages/:id", async (c) => {
-    const result = await store.remove(c.req.param("id"));
+    // #7prbquxu phase 4: ?withRows=1 takes a database's own rows folder to the Trash with it, as one item.
+    const result = await store.remove(c.req.param("id"), { withRows: c.req.query("withRows") === "1" });
     return c.json<DeletePageResult>(result);
   });
 
@@ -471,6 +472,7 @@ export function createApiRoutes(store: VaultStore): Hono {
         ...(typeof source.tag === "string" ? { tag: source.tag } : {}),
       },
       ...(body.rows === true ? { rows: true } : {}),
+      ...(typeof body.viewName === "string" ? { viewName: body.viewName } : {}),
     });
     return c.json<BaseDocument>(base, 201);
   });
@@ -514,6 +516,45 @@ export function createApiRoutes(store: VaultStore): Hono {
     }
     if (typeof body.remove === "string") return c.json(await store.changeOwnedRowsProperty(c.req.param("id"), { remove: body.remove }, options));
     throw badRequest("expected rename: {from, to} or remove: <key>");
+  });
+
+  // #7prbquxu phase 2: a block pasted into an owned database (existing rows set, new rows made; all or nothing).
+  api.post("/bases/:id/rows-paste", async (c) => {
+    const body = await readJson(c);
+    const options: { expectedUpdated?: string; writer?: string } = {};
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) options.writer = writer.slice(0, 64);
+    const columns = body.columns as { view?: unknown; keys?: unknown } | undefined;
+    const added =
+      columns && typeof columns.view === "string" && Array.isArray(columns.keys) && columns.keys.every((key) => typeof key === "string")
+        ? { columns: { view: columns.view, keys: columns.keys as string[] } }
+        : {};
+    return c.json(await store.pasteIntoOwnedRows(c.req.param("id"), { rows: body.rows as never, ...added }, options));
+  });
+
+  // #7prbquxu phase 3: rename or clear a Select option in every row of an owned database and in its base.
+  api.post("/bases/:id/rows-option", async (c) => {
+    const body = await readJson(c);
+    const options: { expectedUpdated?: string; writer?: string } = {};
+    const expectedUpdated = optionalString(body, "expectedUpdated");
+    if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
+    const writer = optionalString(body, "writer");
+    if (writer !== undefined) options.writer = writer.slice(0, 64);
+    if (typeof body.key !== "string") throw badRequest("key is needed");
+    const rename = body.rename as { from?: unknown; to?: unknown } | undefined;
+    if (rename && typeof rename.from === "string" && typeof rename.to === "string") {
+      return c.json(await store.changeOwnedRowsOption(c.req.param("id"), { key: body.key, rename: { from: rename.from, to: rename.to } }, options));
+    }
+    if (typeof body.clear === "string") return c.json(await store.changeOwnedRowsOption(c.req.param("id"), { key: body.key, clear: body.clear }, options));
+    throw badRequest("expected rename: {from, to} or clear: <value>");
+  });
+
+  // #7prbquxu phase 4b: one step of the table's undo or redo (files back to a History version, rows to the Trash or back from it).
+  api.post("/bases/:id/undo", async (c) => {
+    const body = await readJson(c);
+    return c.json(await store.undoDatabaseChange(c.req.param("id"), body as never));
   });
 
   // #g95wkd9y: links are complete once the background index is done.
