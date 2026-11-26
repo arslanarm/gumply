@@ -468,6 +468,12 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await read("Team/Cy.md")).toBe("---\nskills:\n  - Rust\n---\nCy\n");
     expect(await read("Team.base")).toBe(base.replace("      - value: Go\n", "      - value: Golang\n"));
 
+    // A rename to the same name (after trimming) changes nothing at all.
+    const before = await read("Team/Ann.md");
+    const same = (await (await jsonRequest(app, "POST", url, { key: "skills", rename: { from: "Golang", to: " Golang " } })).json()) as { changed: string[] };
+    expect(same.changed).toEqual([]);
+    expect(await read("Team/Ann.md")).toBe(before);
+
     // A name another option has: refused before any write.
     expect((await jsonRequest(app, "POST", url, { key: "skills", rename: { from: "Golang", to: "Rust" } })).status).toBe(400);
 
