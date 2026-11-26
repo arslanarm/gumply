@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView as BaseViewConfig, BaseViewResult, PageId, PageMeta, PropertyType } from "@gumply/core";
-import { ownedRowsFolder } from "@gumply/core";
+import { nextOptionColor, ownedRowsFolder, selectedValues, selectSettings, withSelectSettings, type SelectKind, type SelectOption } from "@gumply/core";
 import { api, ApiRequestError, type BaseDocument } from "../api/client.js";
 import { Icon, type IconName } from "../components/Icon.js";
 import { t as translate, useT, type MessageKey } from "../i18n/index.js";
@@ -387,17 +387,38 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [changeRows, load],
   );
+  /**
+   * A column's type. Select and Multi-select (#7prbquxu phase 3, spec §6) live in this base's properties,
+   * seeded with the values its rows have (in the order they first appear, each its own colour); the types
+   * file keeps text or a list (set only where it has none). Any other type is the vault's (types.json), and
+   * leaving Select drops the options from the base.
+   */
   const setColumnType = useCallback(
-    async (column: BaseColumn, type: PropertyType) => {
+    async (column: BaseColumn, type: PropertyType | SelectKind) => {
+      const key = column.id.slice(5);
       try {
-        await api.setPropertyType(column.id.slice(5), type);
+        const config = docRef.current.config;
+        if (type === "select" || type === "multiselect") {
+          const settings = selectSettings(config, key);
+          const options: SelectOption[] = settings ? [...settings.options] : [];
+          for (const row of resultRef.current?.rows ?? []) {
+            for (const value of selectedValues(row.values[column.id])) {
+              if (!options.some((option) => option.value === value)) options.push({ value, color: nextOptionColor(options) });
+            }
+          }
+          await saveConfig(withSelectSettings(config, key, { kind: type, options }));
+          await api.setPropertyType(key, type === "select" ? "text" : "multitext", { ifAbsent: true }).catch(() => undefined);
+        } else {
+          if (selectSettings(config, key)) await saveConfig(withSelectSettings(config, key, null));
+          await api.setPropertyType(key, type);
+        }
       } catch (error) {
         props.onError?.(errorText(error));
       }
       await load();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [load],
+    [load, saveConfig],
   );
 
   /** Kanban drop, calendar move: one note property of one page. */

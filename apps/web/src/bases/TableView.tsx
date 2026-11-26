@@ -9,7 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BaseColumn, BaseConfig, BaseRow, BaseValue, BaseView, BaseViewResult } from "@gumply/core";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
-import { isValidPropertyKey, PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
+import { isValidPropertyKey, selectSettings, type SelectKind, PROPERTY_TYPES, WIKILINK_INNER, WIKILINK_PART, type Property, type PropertyType } from "@gumply/core";
 import { PropertyValueEditor } from "../components/PropertiesBlock.js";
 import { Popover } from "./Popover.js";
 import { ownedRowsFolder, propertyId } from "@gumply/core";
@@ -56,7 +56,7 @@ export interface TableViewProps {
   /** #7prbquxu: an owned database's column menu: rename the key in its rows, delete it from them, change its type. */
   onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
-  onSetColumnType?: (column: BaseColumn, type: PropertyType) => Promise<void>;
+  onSetColumnType?: (column: BaseColumn, type: PropertyType | SelectKind) => Promise<void>;
   /** #7prbquxu phase 2: "Import CSV…" rows for the paste preview (`n` bumps to open it again). */
   importBlock?: { rows: string[][]; n: number } | null;
   /** #7prbquxu phase 2, step 3: the preview's rows and columns, for this view (one server request). */
@@ -617,6 +617,7 @@ export function TableView(props: TableViewProps) {
           {grid && headerMenu.column.editable && headerMenu.column.id.startsWith("note.") ? (
             <ColumnEdits
               column={headerMenu.column}
+              {...(selectSettings(config, headerMenu.column.id.slice(5)) ? { kind: selectSettings(config, headerMenu.column.id.slice(5))!.kind } : {})}
               shown={viewOrder.map((id) => writtenId(propertyId(id)))}
               renaming={renaming}
               onStartRename={() => setRenaming(headerMenu.column.id.slice(5))}
@@ -681,8 +682,10 @@ function ColumnEdits(props: {
   onStartRename: () => void;
   onRenameChange: (name: string) => void;
   onRename: (to: string) => Promise<void>;
-  onSetType: (type: PropertyType) => Promise<void>;
+  onSetType: (type: PropertyType | SelectKind) => Promise<void>;
   onDelete: () => void;
+  /** #7prbquxu phase 3: the column is a Select or Multi-select in this database. */
+  kind?: SelectKind;
 }) {
   const t = useT();
   const key = props.column.id.slice(5);
@@ -729,18 +732,35 @@ function ColumnEdits(props: {
         </div>
       )}
       <div className="base-panel-title">{t("properties.type")}</div>
-      {COLUMN_TYPES.map((type) => (
+      {COLUMN_TYPES.map((type) => {
+        const current = !props.kind && type === props.column.type;
+        return (
+          <button
+            key={type}
+            type="button"
+            role="menuitemradio"
+            aria-checked={current}
+            className={current ? "is-current" : ""}
+            data-testid={`base-column-type-${type}`}
+            onClick={() => void (current ? undefined : props.onSetType(type))}
+          >
+            <PropertyTypeIcon type={type} size={14} />
+            {t(`properties.types.${type}`)}
+          </button>
+        );
+      })}
+      {(["select", "multiselect"] as const).map((kind) => (
         <button
-          key={type}
+          key={kind}
           type="button"
           role="menuitemradio"
-          aria-checked={type === props.column.type}
-          className={type === props.column.type ? "is-current" : ""}
-          data-testid={`base-column-type-${type}`}
-          onClick={() => void (type === props.column.type ? undefined : props.onSetType(type))}
+          aria-checked={props.kind === kind}
+          className={props.kind === kind ? "is-current" : ""}
+          data-testid={`base-column-type-${kind}`}
+          onClick={() => void (props.kind === kind ? undefined : props.onSetType(kind))}
         >
-          <PropertyTypeIcon type={type} size={14} />
-          {t(`properties.types.${type}`)}
+          <Icon name={kind === "select" ? "chevronDown" : "tag"} size={14} />
+          {t(kind === "select" ? "bases.selectType" : "bases.multiselectType")}
         </button>
       ))}
       <div className="base-menu-separator" role="separator" />

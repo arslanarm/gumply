@@ -1345,6 +1345,8 @@
     "renameClash": "These rows already have “{{name}}”: {{titles}}. Nothing was renamed.",
     "renameRowsFailed": "Couldn't rename “{{name}}” in these rows: {{titles}} (changed elsewhere, or read-only). Nothing was renamed.",
     "renameStuck": "These rows couldn't be put back and now have “{{name}}”: {{titles}}.",
+    "selectType": "Select",
+    "multiselectType": "Multi-select",
     "importCsv": "Import CSV…",
     "pasteHeading_one": "Paste {{count}} row into “{{name}}”",
     "pasteHeading_other": "Paste {{count}} rows into “{{name}}”",
