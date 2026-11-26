@@ -122,3 +122,45 @@ test('"+" at the end of the header adds a property column; a key typed elsewhere
   await expect(page.getByTestId('base-add-column-error')).toContainText('role');
   await expect(page.getByTestId('base-add-column-submit')).toBeDisabled();
 });
+
+test('the column menu renames a property in the rows, changes its type, and deletes it from all rows', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { ...PEOPLE, 'Elsewhere.md': '---\nrole: Not a row\n---\nOutside the database\n' });
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
+
+  // Rename "role" to "job": this database's rows and its column follow; a page outside keeps "role".
+  await page.getByTestId('base-th-note.role').click();
+  await page.getByTestId('base-rename-column').click();
+  const input = page.getByTestId('base-rename-column-input');
+  await input.fill('job');
+  await input.press('Enter');
+  await expect.poll(() => read('People/Ann.md')).toBe('---\njob: Cook\nage: 30\n---\nAnn\n');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\nage: 41\n---\nBo\n');
+  expect(await read('Elsewhere.md')).toBe('---\nrole: Not a row\n---\nOutside the database\n');
+  await expect.poll(() => read('People.base')).toContain('      - job\n      - age\n');
+  await expect(page.getByTestId('base-th-note.job')).toBeVisible();
+
+  // Change "age" to Text: the type is set; the values stay as written.
+  await page.getByTestId('base-th-note.age').click();
+  await page.getByTestId('base-column-type-text').click();
+  await expect
+    .poll(async () => ((await (await request.get(`${API_URL}/api/properties`)).json()) as Array<{ key: string; type: string }>).find((info) => info.key === 'age')?.type)
+    .toBe('text');
+  expect(await read('People/Ann.md')).toContain('age: 30\n');
+
+  // Delete "age" from all rows: asked first (Cancel changes nothing), then gone from rows and columns.
+  await page.getByTestId('base-th-note.age').click();
+  await page.getByTestId('base-delete-column').click();
+  await expect(page.getByTestId('base-delete-column-dialog')).toBeVisible();
+  await page.getByTestId('base-delete-column-dialog-cancel').click();
+  expect(await read('People/Ann.md')).toContain('age: 30\n');
+  await page.getByTestId('base-th-note.age').click();
+  await page.getByTestId('base-delete-column').click();
+  await page.getByTestId('base-delete-column-dialog-confirm').click();
+  await expect.poll(() => read('People/Ann.md')).toBe('---\njob: Cook\n---\nAnn\n');
+  await expect.poll(() => read('People/Bo.md')).toBe('---\njob: Pilot\n---\nBo\n');
+  await expect.poll(() => read('People.base')).not.toContain('age');
+  await expect(page.getByTestId('base-th-note.age')).toHaveCount(0);
+});
