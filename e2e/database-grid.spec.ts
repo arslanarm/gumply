@@ -433,3 +433,21 @@ test('Shift+arrows select a block, and Copy gives it as TSV and an HTML table (p
   await page.keyboard.press('ArrowUp');
   await expect(page.getByTestId('base-grid-selection')).toHaveCount(0);
 });
+
+test('the column menu makes a column a Select: its options come from the rows, in this base only (phase 3)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page, ['Ann', 'Bo']);
+  await page.getByTestId('base-th-note.role').click();
+  await page.getByTestId('base-column-type-select').click();
+  await expect
+    .poll(() => read('People.base'))
+    .toContain('properties:\n  note.role:\n    gumplyType: select\n    gumplyOptions:\n      - value: Cook\n        color: brown\n      - value: Pilot\n        color: orange\n');
+  // The rows are untouched: a Select is plain text in them.
+  expect(await read('People/Ann.md')).toBe(PEOPLE['People/Ann.md']);
+  // The menu now says Select; choosing Text drops the options again.
+  await page.getByTestId('base-th-note.role').click();
+  await expect(page.getByTestId('base-column-type-select')).toHaveAttribute('aria-checked', 'true');
+  await page.getByTestId('base-column-type-text').click();
+  await expect.poll(() => read('People.base')).not.toContain('gumplyType');
+});
