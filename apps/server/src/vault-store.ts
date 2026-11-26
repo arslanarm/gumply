@@ -2642,8 +2642,19 @@ export class VaultStore {
           const folder = this.deferredFolder as { from: PageId; to: PageId } | null;
           if (folder && !captured) {
             // No batched rewrite to join: the folder's links follow now, as before #ber4hvce.
-            const linked = await this.rewriteFolderLinks(folder.from, folder.to);
-            return { result: { ...result, rewrittenPages: [...new Set([...result.rewrittenPages, ...linked])] }, job: null };
+            // #bbh3n5p7 (@graph-dev's nit): a read-only page this pass skips is named in the answer too.
+            // Not reachable today, so no unit case: `deferredFolder` is set only by relocateNow, and every
+            // title change that calls it (pages, boards, bases in updateNow / updateBoardNow / updateBaseNow)
+            // then calls rewriteLinksTo, which under deferRewrites always captures a job; a plain-folder
+            // rename (renameFolderNow) sets neither. Kept, and collected, in case a later path changes that.
+            const pass = await this.collectNotRewritten(async () => ({ linked: await this.rewriteFolderLinks(folder.from, folder.to) }));
+            const skipped = [
+              ...new Set([...((result as { linksNotRewritten?: PageId[] }).linksNotRewritten ?? []), ...((pass as { linksNotRewritten?: PageId[] }).linksNotRewritten ?? [])]),
+            ].sort((a, b) => a.localeCompare(b));
+            return {
+              result: { ...result, rewrittenPages: [...new Set([...result.rewrittenPages, ...pass.linked])], ...(skipped.length > 0 ? { linksNotRewritten: skipped } : {}) },
+              job: null,
+            };
           }
           return { result, job: captured && folder ? this.withFolderRewrite(captured, folder.from, folder.to) : captured };
         } catch (error) {
