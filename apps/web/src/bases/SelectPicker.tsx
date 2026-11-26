@@ -19,14 +19,15 @@ import { useT } from "../i18n/index.js";
 export function pickerPlacement(
   box: { top: number; bottom: number; left: number; width: number },
   natural: number,
-  view: { width: number; height: number; offsetTop: number },
+  view: { width: number; height: number; offsetTop: number; offsetLeft?: number },
   windowHeight: number,
 ): { left: number; width: number; maxHeight: number; top?: number; bottom?: number } {
   const below = view.offsetTop + view.height - box.bottom;
   const above = box.top - view.offsetTop;
   const up = below < natural + 8 && above > below;
   const width = Math.max(box.width, 224);
-  const left = Math.max(8, Math.min(box.left, view.width - width - 8));
+  const offsetLeft = view.offsetLeft ?? 0;
+  const left = Math.max(offsetLeft + 8, Math.min(box.left, offsetLeft + view.width - width - 8));
   const maxHeight = Math.max(96, (up ? above : below) - 8);
   return up ? { left, width, maxHeight, bottom: windowHeight - box.top } : { left, width, maxHeight, top: box.bottom };
 }
@@ -88,7 +89,7 @@ export function SelectPicker(props: {
       natural ??= picker.offsetHeight;
       const visual = window.visualViewport;
       const view = visual
-        ? { width: visual.width, height: visual.height, offsetTop: visual.offsetTop }
+        ? { width: visual.width, height: visual.height, offsetTop: visual.offsetTop, offsetLeft: visual.offsetLeft }
         : { width: window.innerWidth, height: window.innerHeight, offsetTop: 0 };
       setPlace(pickerPlacement(cell.getBoundingClientRect(), natural, view, window.innerHeight));
     };

@@ -22,4 +22,9 @@ describe("the Select picker's placement", () => {
     // The visual viewport shows 400..700 of the layout; the cell sits at 420, near its top: below it is.
     expect(pickerPlacement(cell(420), 200, { width: 1280, height: 300, offsetTop: 400 }, 800)).toEqual({ left: 300, width: 224, maxHeight: 238, top: 454 });
   });
+
+  it("with a pinch-zoomed page scrolled sideways, it stays inside the visible part (@opus-hunter)", () => {
+    // The visual viewport shows x 500..900; a cell at x 300 is left of it: the picker starts at its left edge + 8.
+    expect(pickerPlacement(cell(100), 200, { width: 400, height: 800, offsetTop: 0, offsetLeft: 500 }, 800)).toMatchObject({ left: 508, width: 224 });
+  });
 });
