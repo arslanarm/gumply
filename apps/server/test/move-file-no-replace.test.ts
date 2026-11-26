@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * for `Café.md` (NFC) and `Café.md` (NFD).
  */
 
-const fake = vi.hoisted(() => ({ linkExists: false, sameInode: null as null | boolean }));
+const fake = vi.hoisted(() => ({ linkExists: false, sameInode: null as null | boolean, zeroInode: false }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -26,7 +26,9 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     }
     // Both names answer, with one inode (the same file) or two (another file).
     const base = real ?? (await actual.stat(String(path).replace(/[^/]*$/, ""), options as never));
-    return Object.assign(Object.create(Object.getPrototypeOf(base)), base, { ino: fake.sameInode || String(path).endsWith("from.md") ? 4242 : 4343, dev: 7 });
+    const ino = fake.zeroInode ? 0 : fake.sameInode || String(path).endsWith("from.md") ? 4242 : 4343;
+    const big = Boolean((options as { bigint?: boolean } | undefined)?.bigint);
+    return Object.assign(Object.create(Object.getPrototypeOf(base)), base, { ino: big ? BigInt(ino) : ino, dev: big ? 7n : 7 });
   }) as typeof actual.stat;
   return { ...actual, link, stat, default: { ...actual, link, stat } };
 });
@@ -38,6 +40,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "gumply-move-"));
   fake.linkExists = false;
   fake.sameInode = null;
+  fake.zeroInode = false;
 });
 afterEach(async () => {
   fake.linkExists = false;
@@ -71,5 +74,27 @@ describe("moveFileNoReplace: the same file under another form of its name is a r
     await moveFileNoReplace(join(dir, "from.md"), join(dir, "to.md"));
     expect(await readFile(join(dir, "to.md"), "utf8")).toBe("Mine.\n");
     await expect(readFile(join(dir, "from.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("two hard links to one file (a crash between link and unlink leaves that): the extra name goes, the file is in one place (@opus-editor)", async () => {
+    const { link } = await import("node:fs");
+    await writeFile(join(dir, "from.md"), "Mine.\n", "utf8");
+    await new Promise<void>((resolve, reject) => link(join(dir, "from.md"), join(dir, "to.md"), (error) => (error ? reject(error) : resolve())));
+    await moveFileNoReplace(join(dir, "from.md"), join(dir, "to.md"));
+    expect(await readFile(join(dir, "to.md"), "utf8")).toBe("Mine.\n");
+    await expect(readFile(join(dir, "from.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("a mount that reports inode 0 for every file: never taken for the same file, so a clash moves nothing (@opus-editor)", async () => {
+    await writeFile(join(dir, "from.md"), "Mine.\n", "utf8");
+    await writeFile(join(dir, "to.md"), "Theirs.\n", "utf8");
+    fake.linkExists = true;
+    fake.sameInode = true;
+    fake.zeroInode = true;
+    await expect(moveFileNoReplace(join(dir, "from.md"), join(dir, "to.md"))).rejects.toMatchObject({ code: "EEXIST" });
+    fake.sameInode = null;
+    fake.zeroInode = false;
+    expect(await readFile(join(dir, "to.md"), "utf8")).toBe("Theirs.\n");
+    expect(await readFile(join(dir, "from.md"), "utf8")).toBe("Mine.\n");
   });
 });
