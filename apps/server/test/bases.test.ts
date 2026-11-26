@@ -597,6 +597,11 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     // #f4jkpja6: both made rows are in the Trash, restorable, and Cy's History is kept.
     const trashIds = (await store.listTrash()).flatMap((item) => [item.id, ...item.children.map((child) => child.id)]);
     expect(trashIds).toEqual(expect.arrayContaining(["People/Cy", "People/Di"]));
+    // The follow-up (@lead): as one item, "2 rows from People".
+    const trash = await store.listTrash();
+    expect(trash).toHaveLength(1);
+    expect(trash[0]).toMatchObject({ id: "People", undoRows: 2 });
+    expect(result.inTrash).toBe(2);
     const { historyDir } = await import("../src/history");
     expect(existsSync(historyDir(dir, "People/Cy"))).toBe(true);
   });
