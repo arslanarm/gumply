@@ -1484,6 +1484,10 @@ ol.base-list {
   border-color: var(--danger);
 }
 
+.base-paste-column .base-input[aria-invalid="true"]:focus-visible {
+  outline-color: var(--danger);
+}
+
 .base-paste-first {
   padding: 0.3rem 0;
   font-weight: 600;
