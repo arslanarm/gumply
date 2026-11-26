@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { constants as fsConstants, existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
+import { copyFile, link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   coercePropertyValue,
@@ -833,6 +833,27 @@ async function pathExists(path: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * #bfy92cu6 (backport to 0.9.7): move one file to `to` only if nothing is there, never replacing a file another
+ * app made at that name since we checked (`rename` would). `link` fails with EEXIST atomically; then the source
+ * goes. Where hard links aren't available (FAT/exFAT, some network mounts; any `link` error but EEXIST and
+ * ENOENT), the file is copied with COPYFILE_EXCL, itself no-replace, its times kept, then the source goes.
+ */
+async function moveFileNoReplace(from: string, to: string): Promise<void> {
+  try {
+    await link(from, to);
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code === "EEXIST" || code === "ENOENT") throw error;
+    const info = await stat(from);
+    await copyFile(from, to, fsConstants.COPYFILE_EXCL);
+    await utimes(to, info.atime, info.mtime).catch(() => undefined);
+  }
+  await unlink(from);
+}
+
+const isEexist = (error: unknown) => (error as { code?: string } | null)?.code === "EEXIST";
 
 /**
  * Markdown vault with an in-memory page + link index (D2/D4).
@@ -4307,16 +4328,26 @@ export class VaultStore {
     const name = entry.id.split("/").pop() ?? entry.id;
     const stem = name.slice(0, name.length - idExtension(kind).length);
     const taken = new Set([...this.pages.keys()].map(collisionKey));
-    const newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
-
-    const pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
-    const childTarget = join(this.root, newId);
-    if (!pageTarget.startsWith(`${this.root}${sep}`) || !childTarget.startsWith(`${this.root}${sep}`)) {
-      throw notFound("Trash entry not found");
+    let newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
+    let pageTarget = "";
+    let childTarget = "";
+    // #bfy92cu6: the file never replaces one another app made at its name since the check; then the next " 2".
+    for (let attempt = 0; ; attempt += 1) {
+      pageTarget = newId === entry.id ? resolve(this.root, entry.file) : this.filePathFor(newId);
+      childTarget = join(this.root, newId);
+      if (!pageTarget.startsWith(`${this.root}${sep}`) || !childTarget.startsWith(`${this.root}${sep}`)) {
+        throw notFound("Trash entry not found");
+      }
+      await mkdir(dirname(pageTarget), { recursive: true });
+      try {
+        await moveFileNoReplace(pageSource, pageTarget);
+        break;
+      } catch (error) {
+        if (!isEexist(error) || attempt >= 20) throw error;
+        taken.add(collisionKey(newId));
+        newId = await this.restoreTarget(folder, stem, hasFolder, taken, kind);
+      }
     }
-
-    await mkdir(dirname(pageTarget), { recursive: true });
-    await rename(pageSource, pageTarget);
     if (hasFolder) {
       await mkdir(dirname(childTarget), { recursive: true });
       try {
