@@ -6283,10 +6283,16 @@ export class VaultStore {
     await mkdir(join(this.root, folder), { recursive: true });
     const taken = new Set([...this.pages.keys(), ...this.folders.keys()].map(collisionKey));
     const moved: Array<{ from: PageId; to: PageId }> = [];
+    // Listed rows no longer in the entry (back some other way): taken out too once the loop has finished.
+    const skipped: PageId[] = [];
+    let finished = false;
     try {
       for (const id of entry.deleted) {
         const record = await this.readTrashedRecord(entry, id);
-        if (!record) continue;
+        if (!record) {
+          skipped.push(id);
+          continue;
+        }
         const name = id.split("/").pop() ?? id;
         const kind = record.kind;
         const stem = name.slice(0, name.length - idExtension(kind).length);
@@ -6297,10 +6303,11 @@ export class VaultStore {
         await rename(resolve(entry.dir, this.trashedFileOf(entry, id)), target);
         moved.push({ from: id, to });
       }
+      finished = true;
     } finally {
       // Also when a row fails part way (@opus-hunter's nit i): the rows already back are in the store at once,
       // and the item lists only what's still in it (it goes when nothing is).
-      await this.takeRowsOutOfTrashEntry(entry, new Set(moved.map((move) => move.from)));
+      await this.takeRowsOutOfTrashEntry(entry, new Set([...moved.map((move) => move.from), ...(finished ? skipped : [])]));
       await this.rebuild();
       for (const { from, to } of moved) if (from !== to) await this.followHistory(from, to);
     }
