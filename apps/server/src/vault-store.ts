@@ -1117,13 +1117,17 @@ const isEexist = (error: unknown) => (error as { code?: string } | null)?.code =
 
 /**
  * #e3mwuspu: a page's (or board's, base's) own file to its new path on a rename or move, never over a file another
- * app made there since the check (`moveFileNoReplace`). A case-only rename (`note.md` → `Note.md`) is the same
- * file on macOS and Windows, where a link would find "itself" there, so it keeps `rename`.
+ * app made there since the check (`moveFileNoReplace`). A case-only rename (`note.md` → `Note.md`) on a
+ * case-insensitive file system (macOS, Windows) finds the same file at the new name, where a link would fail with
+ * EEXIST, so only then it keeps `rename`. On a case-sensitive one (Linux) `Note.md` is another file (@lead).
  */
 async function movePageFile(from: string, to: string): Promise<void> {
   if (from.toLowerCase() === to.toLowerCase()) {
-    await rename(from, to);
-    return;
+    const [source, target] = await Promise.all([stat(from), stat(to).catch(() => null)]);
+    if (target && target.ino === source.ino && target.dev === source.dev) {
+      await rename(from, to);
+      return;
+    }
   }
   await moveFileNoReplace(from, to);
 }
