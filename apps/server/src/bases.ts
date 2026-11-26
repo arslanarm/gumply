@@ -111,9 +111,10 @@ export class BaseQueries {
         if (link) row.files = { [link]: this.store.fileIndex.resolve(link, pathOf.get(row.id) ?? null) };
       }
     }
-    // #bg7c9bzk (#faqr8pj9's #9, @lead's ruling a): a database Gumply owns whose view has no sort lists its rows
-    // oldest first by the `created:` each row stores (never the file's birth time, which sync and git reset);
-    // rows without one (made in Obsidian) follow, by name. A base Gumply doesn't own keeps its order.
+    // #bg7c9bzk (#faqr8pj9's #9, @lead's revised ruling): a database Gumply owns whose view has no sort lists its
+    // rows oldest first by the `created:` each row stores (never the file's birth time, which sync and git reset).
+    // Rows without one (made in Obsidian, or before) count as oldest: first, by name; so new rows land at the bottom.
+    // A base Gumply doesn't own keeps its order.
     const sorts = Array.isArray(view?.sort) ? view.sort : [];
     if (ownedRowsFolder(document.config) !== null && sorts.length === 0 && !view?.groupBy) {
       const made = new Map(index.map((entry) => [entry.meta.id, entry.createdInFile ? Date.parse(entry.meta.created) : Number.NaN]));
@@ -122,8 +123,8 @@ export class BaseQueries {
         const x = made.get(a.id) ?? Number.NaN;
         const y = made.get(b.id) ?? Number.NaN;
         if (Number.isFinite(x) && Number.isFinite(y)) return x - y || named(a).localeCompare(named(b));
-        if (Number.isFinite(x)) return -1;
-        if (Number.isFinite(y)) return 1;
+        if (Number.isFinite(x)) return 1;
+        if (Number.isFinite(y)) return -1;
         return named(a).localeCompare(named(b));
       });
     }
