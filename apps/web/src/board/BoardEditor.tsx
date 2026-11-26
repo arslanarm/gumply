@@ -42,7 +42,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { currentModifierLabel, isTypingTarget } from "../lib/shortcuts.js";
+import { currentModifierLabel, isTypingTarget, withModifier } from "../lib/shortcuts.js";
 import { EDGE_TYPES } from "./BoardEdge.js";
 import { useBoardExport } from "./BoardExport.js";
 import { BoardMenu } from "./BoardMenu.js";
@@ -2003,7 +2003,7 @@ function BoardCanvas(props: BoardEditorProps) {
               />
             </div>
             <div className="board-toolbar-group">
-              <ToolButton icon="undo" label={t("common.undo")} keys={`${modifier}Z`} testId="board-undo" disabled={!canUndo(history)} onClick={doUndo} />
+              <ToolButton icon="undo" label={t("common.undo")} keys={withModifier(modifier, "Z")} testId="board-undo" disabled={!canUndo(history)} onClick={doUndo} />
               <ToolButton icon="redo" label={t("board.redo")} keys={`${modifier}+Shift+Z`} testId="board-redo" disabled={!canRedo(history)} onClick={doRedo} />
             </div>
             {shapeMenu && tool === "shape" ? (

@@ -46,10 +46,18 @@ export const SHORTCUT_KEYS = {
 
 export type ShortcutId = keyof typeof SHORTCUT_KEYS;
 
-/** The dialog's way of writing keys: "⌘K", "Ctrl+Shift+D". */
+/**
+ * The modifier and a key as each platform writes them: "⌘K" on Apple, "Ctrl+K" elsewhere
+ * (#t5n77tdv: it read "CtrlK" on Windows and Linux).
+ */
+export function withModifier(modifier: string, key: string): string {
+  return modifier === "⌘" ? `⌘${key}` : `${modifier}+${key}`;
+}
+
+/** The dialog's way of writing keys: "⌘K", "Ctrl+K", "Ctrl+Shift+D". */
 function written(id: ShortcutId, modifier: string): string {
   const keys = SHORTCUT_KEYS[id].map((key) => (key === "Mod" ? modifier : key));
-  return keys.length === 2 && keys[0] === modifier ? `${keys[0]}${keys[1]}` : keys.join("+");
+  return keys.length === 2 && keys[0] === modifier ? withModifier(modifier, keys[1]!) : keys.join("+");
 }
 
 export function shortcutGroups(modifier: string): ShortcutGroup[] {
@@ -77,10 +85,10 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: ">", label: t("shortcuts.labels.toggle") },
         { keys: "\"", label: t("shortcuts.labels.quote") },
         { keys: "```", label: t("shortcuts.labels.codeBlock") },
-        { keys: `${modifier}Z`, label: t("shortcuts.labels.undo") },
-        { keys: `${modifier}S`, label: t("shortcuts.labels.saveNow") },
+        { keys: `${withModifier(modifier, "Z")}`, label: t("shortcuts.labels.undo") },
+        { keys: `${withModifier(modifier, "S")}`, label: t("shortcuts.labels.saveNow") },
         { keys: `${modifier}+Shift+↑ / ↓`, label: t("shortcuts.labels.moveBlockUpDown") },
-        { keys: `${modifier}D`, label: t("shortcuts.labels.duplicateBlock") },
+        { keys: `${withModifier(modifier, "D")}`, label: t("shortcuts.labels.duplicateBlock") },
         // #e9bd64bb: with an image block selected (click it, or arrow onto it).
         { keys: "Shift+← / →", label: t("shortcuts.labels.resizeImage") },
       ],
@@ -107,11 +115,11 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: `${modifier}+${t("keys.scroll")} / ${t("keys.pinch")}`, label: t("shortcuts.labels.zoom") },
         { keys: written("boardFit", modifier), label: t("shortcuts.labels.fitToScreen") },
         { keys: `${t("keys.arrows")} / Shift+${t("keys.arrows")}`, label: t("shortcuts.labels.nudgeBy840") },
-        { keys: `${modifier}D`, label: t("shortcuts.labels.duplicate") },
-        { keys: `${modifier}C / ${modifier}V`, label: t("shortcuts.labels.copyPaste") },
+        { keys: `${withModifier(modifier, "D")}`, label: t("shortcuts.labels.duplicate") },
+        { keys: `${withModifier(modifier, "C")} / ${withModifier(modifier, "V")}`, label: t("shortcuts.labels.copyPaste") },
         { keys: "] / [", label: t("shortcuts.labels.bringToFrontSendToBack") },
         { keys: "Delete", label: t("shortcuts.labels.delete") },
-        { keys: `${modifier}Z / ${modifier}+Shift+Z`, label: t("shortcuts.labels.undoRedo") },
+        { keys: `${withModifier(modifier, "Z")} / ${modifier}+Shift+Z`, label: t("shortcuts.labels.undoRedo") },
       ],
     },
   ];

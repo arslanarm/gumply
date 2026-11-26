@@ -65,3 +65,20 @@ test('a conflict banner keeps its text readable; its buttons wrap under it', asy
   expect(text.width, 'the text is not squeezed beside the buttons').toBeGreaterThan(250);
   expect(actions.y, 'the buttons sit under the text').toBeGreaterThanOrEqual(text.y + text.height - 1);
 });
+
+test('the Compare dialog (ru) wraps its Keep buttons, never their labels (#t5n77tdv)', async ({ page, vault, request }) => {
+  await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
+  await vault.seed([{ title: 'Note', content: 'Mine.' }]);
+  const copy = 'Note.sync-conflict-20261122-143005-ABCDEFG';
+  await writeFile(path.join(E2E_VAULT, `${copy}.md`), 'Theirs.\n', 'utf8');
+  await expect.poll(async () => (await listPages(request)).some((p) => p.id === copy), { timeout: 10_000 }).toBe(true);
+  await page.goto('/#/Note');
+  await page.getByTestId('conflict-banner').getByTestId('conflict-banner-compare').click();
+  const dialog = page.getByTestId('conflict-compare');
+  await dialog.waitFor();
+  for (const id of ['conflict-keep-both', 'conflict-keep-copy', 'conflict-keep-page']) {
+    const button = (await dialog.getByTestId(id).boundingBox())!;
+    expect(button.height, `${id}: its label stays on one line`).toBeLessThan(40);
+    expect(button.x + button.width, `${id} is inside the window`).toBeLessThanOrEqual(420);
+  }
+});

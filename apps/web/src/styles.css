@@ -7847,8 +7847,15 @@ div.history-error > p {
 
 .conflict-actions-keep {
   display: flex;
+  /* #t5n77tdv: on a narrow window the buttons wrap (right-aligned), never their labels. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.5rem;
   margin-left: auto;
+}
+
+.conflict-actions button {
+  white-space: nowrap;
 }
 
 .conflict-section-title {
