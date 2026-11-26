@@ -445,6 +445,10 @@ test('the column menu makes a column a Select: its options come from the rows, i
     .toContain('properties:\n  note.role:\n    gumplyType: select\n    gumplyOptions:\n      - value: Cook\n        color: brown\n      - value: Pilot\n        color: orange\n');
   // The rows are untouched: a Select is plain text in them.
   expect(await read('People/Ann.md')).toBe(PEOPLE['People/Ann.md']);
+  // The cells show coloured chips.
+  const chips = page.getByTestId('base-table').getByTestId('base-option-chip');
+  await expect(chips).toHaveText(['Cook', 'Pilot']);
+  await expect(chips.first()).toHaveAttribute('data-color', 'brown');
   // The menu now says Select; choosing Text drops the options again.
   await page.getByTestId('base-th-note.role').click();
   await expect(page.getByTestId('base-column-type-select')).toHaveAttribute('aria-checked', 'true');
