@@ -106,54 +106,34 @@ describe("a renamed parent's folder links follow in the rename's batches (#ber4h
     expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]].\nMore.\n");
   });
 
-  it("a save in flight during the batches, from the version before the rename: a conflict, never the stale link written back; Keep mine keeps the edit and [[Hub 2/Sub]] (@lead, @opus-hunter)", async () => {
+  it("a save in flight during the batches, from the version before the rename: merged (#z9hufufn), the edit and [[Hub 2/Sub]], never the stale link", async () => {
     const dir = await vault();
     const store = await open(dir);
     const start = store.get("Hub");
-    // The edit is on another line than the link: N10 keeps the user's own lines as they typed them.
     const edited = start.content.replace("The hub.", "The hub, edited.");
     let inFlight: Promise<unknown> | null = null;
     store.afterRenameBatch = async () => {
       // The editor, still on the version before the rename, saves while the batches run (held until they end).
-      inFlight ??= store.update("Hub", { content: edited, expectedUpdated: start.updated }).then(
-        () => "saved",
-        (error: { status?: number }) => error.status ?? "error",
-      );
+      inFlight ??= store.update("Hub", { content: edited, expectedUpdated: start.updated }).catch((error: { status?: number }) => error.status ?? "error");
     };
     await store.update("Hub", { title: "Hub 2" });
-    const outcome = await inFlight;
-    // Deterministic: the save is held until the rename's rewrite ends (N9), and its version is the one
-    // before the rename (no writer, so no ownWrite to match): it is always a conflict, never luck.
-    expect(outcome).toBe(409);
-    // (b) would be the stale [[Hub/Sub]] back on disk: never, not before Keep mine and not after.
-    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).not.toContain("[[Hub/Sub]]");
-    await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
+    // Only the rename's own write and its link rewrite came after that version: merged, no conflict.
+    expect(await inFlight).toMatchObject({ renameLinksMerged: { links: 1 } });
     expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub, edited.\nIts own sub-page: [[Hub 2/Sub]].\n");
   });
 
-  it("KNOWN LIMIT (N10, until #z9hufufn): Keep mine with the edit ON the link's own line keeps that line as typed, stale [[Hub/Sub]] included; the rewritten version stays in History", async () => {
-    // Not a guarantee that Keep mine never brings the old link back: N10 keeps a line the user typed as
-    // typed (rename-keep-mine pins that rule). #z9hufufn re-applies the link change inside that line.
+  it("the edit ON the link's own line (#z9hufufn, was N10's known limit): the user's line, with [[Hub 2/Sub]] in it", async () => {
     const dir = await vault();
     const store = await open(dir);
     const start = store.get("Hub");
     const edited = start.content.replace("[[Hub/Sub]].", "[[Hub/Sub]], typed here.");
     let inFlight: Promise<unknown> | null = null;
     store.afterRenameBatch = async () => {
-      inFlight ??= store.update("Hub", { content: edited, expectedUpdated: start.updated }).then(
-        () => "saved",
-        (error: { status?: number }) => error.status ?? "error",
-      );
+      inFlight ??= store.update("Hub", { content: edited, expectedUpdated: start.updated }).catch((error: { status?: number }) => error.status ?? "error");
     };
     await store.update("Hub", { title: "Hub 2" });
-    expect(await inFlight).toBe(409);
-    await store.update("Hub 2", { content: edited, expectedUpdated: start.updated, force: true });
-    // Today's outcome, pinned: the user's line wins, with the old link in it.
-    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub.\nIts own sub-page: [[Hub/Sub]], typed here.\n");
-    // Nothing is lost: the version Keep mine replaced, with [[Hub 2/Sub]], is in the page's History.
-    const listed = await store.listHistory("Hub 2");
-    const texts = await Promise.all(listed.items.map(async (item) => (await store.readVersion("Hub 2", item.file)).bytes.toString("utf8")));
-    expect(texts.some((text) => text.includes("Its own sub-page: [[Hub 2/Sub]].\n"))).toBe(true);
+    expect(await inFlight).toMatchObject({ renameLinksMerged: { links: 1 } });
+    expect(await readFile(join(dir, "Hub 2.md"), "utf8")).toBe("The hub.\nIts own sub-page: [[Hub 2/Sub]], typed here.\n");
   });
 
   it("the renamed page's own pass failing once (a write error) never drops the batched rewrite; the batches retry it (@lead, @opus-editor)", async () => {

@@ -16,9 +16,32 @@ describe("mergeRenameLinks", () => {
     expect(mergeRenameLinks(base, theirs, ours).content).toBe("Intro.\nSee [[Hub 2]] for more.\nNotes.\nAbout the new one: [[Hub]].\n");
   });
 
-  it("the link line itself edited: the user's line wins", () => {
+  it("the link line itself edited (#z9hufufn): the user's line, with the rename's link inside it", () => {
     const ours = "Intro.\nSee [[Hub]] for much more.\nNotes.\n";
+    expect(mergeRenameLinks(base, theirs, ours)).toEqual({ content: "Intro.\nSee [[Hub 2]] for much more.\nNotes.\n", applied: 1 });
+  });
+
+  it("the link line edited, typing at its start or in its middle: the link follows (#z9hufufn)", () => {
+    expect(mergeRenameLinks(base, theirs, "Intro.\nSo: see [[Hub]] for more.\nNotes.\n").content).toBe("Intro.\nSo: see [[Hub 2]] for more.\nNotes.\n");
+    expect(mergeRenameLinks(base, theirs, "Intro.\nSee [[Hub]] (soon) for more.\nNotes.\n").content).toBe("Intro.\nSee [[Hub 2]] (soon) for more.\nNotes.\n");
+  });
+
+  it("the user changed the link itself, or typed it a second time in that line: their line as written (#z9hufufn)", () => {
+    const changed = "Intro.\nSee [[Other]] for more, edited.\nNotes.\n";
+    expect(mergeRenameLinks(base, theirs, changed)).toEqual({ content: changed, applied: 0 });
+    const twice = "Intro.\nSee [[Hub]] for more, and [[Hub]] again.\nNotes.\n";
+    expect(mergeRenameLinks(base, theirs, twice)).toEqual({ content: twice, applied: 0 });
+  });
+
+  it("the link line deleted, and a fresh line with an old link typed: the fresh line is the user's (#z9hufufn)", () => {
+    const ours = "Intro.\nNotes.\nAbout a new one: [[Hub]].\n";
     expect(mergeRenameLinks(base, theirs, ours)).toEqual({ content: ours, applied: 0 });
+  });
+
+  it("an edited line with a Markdown link and an embed: each follows (#z9hufufn)", () => {
+    const b = "Its own: [[Hub/Sub]] and ![pic](Hub/a.png).\n";
+    const t = "Its own: [[Hub 2/Sub]] and ![pic](Hub%202/a.png).\n";
+    expect(mergeRenameLinks(b, t, "Its own: [[Hub/Sub]] and ![pic](Hub/a.png), typed.\n").content).toBe("Its own: [[Hub 2/Sub]] and ![pic](Hub%202/a.png), typed.\n");
   });
 
   it("lines moved around: matched by text", () => {

@@ -74,9 +74,14 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     expect(text).toContain("About a new one: [[Hub]].");
   });
 
-  it("after the rename, the link line itself edited: the user's line wins", async () => {
+  it("after the rename, the link line itself edited: the user's line, with the rename's link inside it (#z9hufufn)", async () => {
     const { text } = await keepMine((text) => text.replace("See [[Hub]] for more.", "See [[Hub]] for much more."), "after");
-    expect(text).toContain("See [[Hub]] for much more.");
+    expect(text).toContain("See [[Hub renamed]] for much more.");
+  });
+
+  it("after the rename, the link itself edited by the user: their link as written (#z9hufufn)", async () => {
+    const { text } = await keepMine((text) => text.replace("See [[Hub]] for more.", "See [[Other]] for more."), "after");
+    expect(text).toContain("See [[Other]] for more.");
   });
 
   it("after the 10-minute window: the user's text as sent (as before)", async () => {
@@ -91,17 +96,33 @@ describe("Keep mine during a rename keeps the rename's link changes (N10)", { ti
     expect(text).toContain("See [[Hub renamed]] for more.");
   });
 
-  it("an ordinary save from the old version is still a conflict (no merge without Keep mine)", async () => {
-    const { store } = await vault();
+  it("an ordinary save from the old version that only the rename changed since: merged, not a conflict (#z9hufufn)", async () => {
+    const { dir, store } = await vault();
     const target = firstLinker(store);
     const start = store.get(target);
-    let refused: unknown = null;
+    let answer: unknown = null;
     store.afterRenameBatch = async () => {
-      if (refused) return;
-      refused = await store.update(target, { content: `${start.content}x\n`, expectedUpdated: start.updated }).catch((error: unknown) => error);
+      if (answer || !store.get(target).content.includes("[[Hub renamed]]")) return; // after its batch ran
+      answer = await store.update(target, { content: `${start.content}x`, expectedUpdated: start.updated }).catch((error: unknown) => error);
     };
     await store.update("Hub", { title: "Hub renamed" });
+    expect(answer).toMatchObject({ renameLinksMerged: { links: 1, titles: ["Hub renamed"] } });
+    const text = await readFile(join(dir, `${target}.md`), "utf8");
+    expect(text).toContain("See [[Hub renamed]] for more.");
+    expect(text).toMatch(/\nx\n?$/);
+  });
+
+  it("an ordinary save from the old version after a real outside change too: still a conflict (#z9hufufn, the control)", async () => {
+    const { dir, store } = await vault();
+    const target = firstLinker(store);
+    const start = store.get(target);
+    await store.update("Hub", { title: "Hub renamed" });
+    // Another program edits the file after the rename (the store hasn't re-read it yet).
+    const file = join(dir, `${target}.md`);
+    await writeFile(file, (await readFile(file, "utf8")).replace("Notes.", "Notes, from outside."));
+    const refused = await store.update(target, { content: `${start.content}x`, expectedUpdated: start.updated }).catch((error: unknown) => error);
     expect(refused).toMatchObject({ status: 409 });
+    expect(await readFile(file, "utf8")).toContain("Notes, from outside.");
   });
 
   it("Keep mine's backup is still the exact version it replaced (the rename's), and only link lines differ from what was sent", async () => {
