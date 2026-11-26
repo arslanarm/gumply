@@ -104,7 +104,7 @@ test.describe('text and background colour', () => {
     await expectSaved(request, 'Colours', expected.replace(`${RED_TEXT}alpha</span>`, 'alpha'));
   });
 
-  test('a range across bold is one span per piece; links are never coloured', async ({ page, request, vault }) => {
+  test('a range across bold and links colours every piece, links included (#zvwk8irb)', async ({ page, request, vault }) => {
     await vault.seed([{ title: 'Pieces', content: 'one **two** [three](https://example.com) four [[Pieces]] five' }]);
     await openPage(page, 'Pieces');
     await page.getByTestId('editor-content').getByText('one').click();
@@ -113,11 +113,12 @@ test.describe('text and background colour', () => {
     await expect(page.getByTestId('selection-toolbar')).toBeVisible();
     await page.getByTestId('format-color').click();
     await page.getByTestId('color-text-green').click();
-    await expectSaved(
-      request,
-      'Pieces',
-      `${GREEN_TEXT}one </span>**${GREEN_TEXT}two</span>**${GREEN_TEXT} </span>[three](https://example.com)${GREEN_TEXT} four </span>[[Pieces]]${GREEN_TEXT} five</span>`,
-    );
+    await expect.poll(async () => (await api.getPage(request, 'Pieces')).content, { timeout: 8_000 }).toContain(`[${GREEN_TEXT}three</span>](https://example.com)`);
+    const saved = (await api.getPage(request, 'Pieces')).content;
+    // The bold piece, the Markdown link's text and the wiki link are all green; nothing else changed.
+    expect(saved).toContain(`**${GREEN_TEXT}two</span>**`);
+    expect(saved).toMatch(new RegExp(`${GREEN_TEXT.replace(/[()]/g, '\\$&')}[^<]*\\[\\[Pieces\\]\\][^<]*</span>`));
+    expect(saved.replace(/<\/?span[^>]*>/g, '')).toBe('one **two** [three](https://example.com) four [[Pieces]] five');
   });
 
   test('right-click menu: Colour opens the palette; keyboard: arrows and Enter', async ({ page, request, vault }) => {
@@ -221,12 +222,13 @@ test.describe('text and background colour', () => {
 });
 
 /**
- * #gcba75f4: in Obsidian only `==…==` colours a link without breaking it (a span around or inside a
- * link turns it into plain text in live preview), so links keep their colour. The palette says so
- * instead of doing nothing: on a link-only selection the colours a link can't take are unavailable,
- * with the reason; on a mixed one, a note says the links keep theirs.
+ * #zvwk8irb (@plony: "every colour should work" on links). Every swatch works on a link: a Markdown
+ * link's colour is written inside its text (`[<span>label</span>](url)`), a wiki link's around it
+ * (`<span>[[Target]]</span>`), and yellow stays Obsidian's `==…==`. The link stays a link in Gumply
+ * after reload (it navigates), and Default gives back the plain link's bytes. In Obsidian both forms
+ * work in reading view; its live preview shows them as plain text (the guide's known limits).
  */
-test.describe('colour on links says why (#gcba75f4)', () => {
+test.describe('every colour works on links (#zvwk8irb)', () => {
   /** Select the line under "Top" with the keyboard (clicking a link would follow it). */
   async function selectLineUnderTop(page: Page) {
     await page.getByTestId('editor-content').getByText('Top', { exact: true }).click();
@@ -236,37 +238,73 @@ test.describe('colour on links says why (#gcba75f4)', () => {
     await expect(page.getByTestId('selection-toolbar')).toBeVisible();
   }
 
-  test('a selection that is only a link: text colours and other backgrounds are unavailable, with the reason; yellow works', async ({ page, request, vault }) => {
-    await vault.seed([{ title: 'Link only', content: 'Top\n\n[label](https://example.com)' }]);
-    await openPage(page, 'Link only');
-    await selectLineUnderTop(page);
+  async function pick(page: Page, swatch: string) {
     await page.getByTestId('format-color').click();
     const palette = page.getByTestId('selection-color-palette');
-    await expect(palette.getByTestId('color-text-red')).toHaveAttribute('aria-disabled', 'true');
-    await expect(palette.getByTestId('color-background-blue')).toHaveAttribute('aria-disabled', 'true');
-    await expect(palette.getByTestId('color-background-yellow')).not.toHaveAttribute('aria-disabled', 'true');
-    await expect(palette.getByTestId('color-link-note')).toHaveText('Links can only be highlighted in yellow, so they keep working in Obsidian.');
-    // An unavailable colour does nothing, and the palette stays open (force: Playwright itself won't
-    // click an aria-disabled button; a person's click must do nothing).
-    await palette.getByTestId('color-text-red').click({ force: true });
-    await expect(palette).toBeVisible();
-    await page.waitForTimeout(800);
-    expect(fileBytes('Link only')).not.toContain('<span');
-    await palette.getByTestId('color-background-yellow').click();
-    await expectSaved(request, 'Link only', 'Top\n\n[==label==](https://example.com)');
+    await expect(palette.locator('[aria-disabled="true"]')).toHaveCount(0);
+    await expect(palette.getByTestId('color-link-note')).toHaveCount(0);
+    await palette.getByTestId(swatch).click();
+  }
+
+  test('a Markdown link takes a text colour inside its text, stays a link after reload, and Default gives the bytes back', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Md link', content: 'Top\n\n[label](https://example.com)' }]);
+    await openPage(page, 'Md link');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-text-red');
+    await expectSaved(request, 'Md link', `Top\n\n[${RED_TEXT}label</span>](https://example.com)`);
+    await page.reload();
+    const label = page.getByTestId('editor-content').getByText('label', { exact: true });
+    await expect(label).toBeVisible();
+    expect(await label.evaluate((element) => element.closest('a')?.getAttribute('href'))).toBe('https://example.com');
+    expect(await label.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(233, 49, 71)');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-text-default');
+    await expectSaved(request, 'Md link', 'Top\n\n[label](https://example.com)');
   });
 
-  test('a line holding only a wiki link gets the toolbar, and yellow highlights the link', async ({ page, request, vault }) => {
-    await vault.seed([{ title: 'Target', content: 'x' }, { title: 'Wiki only', content: 'Top\n\n[[Target]]' }]);
-    await openPage(page, 'Wiki only');
+  test('a wiki link takes a text colour around it, stays a link that navigates after reload, and Default gives the bytes back', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Target', content: 'The target page.' }, { title: 'Wiki colour', content: 'Top\n\n[[Target]]' }]);
+    await openPage(page, 'Wiki colour');
     await selectLineUnderTop(page);
-    await page.getByTestId('format-color').click();
-    const palette = page.getByTestId('selection-color-palette');
-    await expect(palette.getByTestId('color-text-green')).toHaveAttribute('aria-disabled', 'true');
-    await palette.getByTestId('color-background-yellow').click();
-    await expectSaved(request, 'Wiki only', 'Top\n\n==[[Target]]==');
+    await pick(page, 'color-text-green');
+    await expectSaved(request, 'Wiki colour', `Top\n\n${GREEN_TEXT}[[Target]]</span>`);
+    await page.reload();
+    const link = page.getByTestId('editor-content').locator('.wiki-link-label', { hasText: 'Target' });
+    await expect(link).toBeVisible();
+    expect(await link.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(8, 185, 78)');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-text-default');
+    await expectSaved(request, 'Wiki colour', 'Top\n\n[[Target]]');
+    // Coloured again, it still navigates.
+    await selectLineUnderTop(page);
+    await pick(page, 'color-text-green');
+    await expectSaved(request, 'Wiki colour', `Top\n\n${GREEN_TEXT}[[Target]]</span>`);
+    await page.getByTestId('editor-content').locator('.wiki-link-label', { hasText: 'Target' }).click();
+    await expect(page).toHaveURL(/#\/Target$/);
+  });
+
+  test('a wiki link takes a background colour around it; yellow stays ==…==', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Target', content: 'x' }, { title: 'Wiki bg', content: 'Top\n\n[[Target]]' }]);
+    await openPage(page, 'Wiki bg');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-background-blue');
+    await expectSaved(request, 'Wiki bg', `Top\n\n${BLUE_BG}[[Target]]</span>`);
+    await selectLineUnderTop(page);
+    await pick(page, 'color-background-yellow');
+    await expectSaved(request, 'Wiki bg', 'Top\n\n==[[Target]]==');
     await page.reload();
     await expect(page.getByTestId('editor-content').locator('mark')).toContainText('Target');
+  });
+
+  test('text and a link together: both are coloured', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Mixed', content: 'Top\n\nsee [label](https://example.com) here' }]);
+    await openPage(page, 'Mixed');
+    await selectLineUnderTop(page);
+    await pick(page, 'color-text-red');
+    await expect.poll(async () => (await api.getPage(request, 'Mixed')).content, { timeout: 8_000 }).toContain(`[${RED_TEXT}label</span>](https://example.com)`);
+    const saved = (await api.getPage(request, 'Mixed')).content;
+    expect(saved).toContain(`${RED_TEXT}see </span>`);
+    expect(saved.replace(/<\/?span[^>]*>/g, '')).toBe('Top\n\nsee [label](https://example.com) here');
   });
 
   test('on a line holding only a wiki link, no Code or Link button, and Mod+K leaves it alone', async ({ page, vault }) => {
@@ -299,44 +337,5 @@ test.describe('colour on links says why (#gcba75f4)', () => {
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 10_000 });
     expect(fileBytes('Wiki code key')).toContain('Top!\n\n[[Target]]');
     expect(fileBytes('Wiki code key')).not.toContain('`');
-  });
-
-  test('two wiki links with a space between them count as links only', async ({ page, vault }) => {
-    await vault.seed([{ title: 'A', content: 'a' }, { title: 'B', content: 'b' }, { title: 'Two links', content: 'Top\n\n[[A]] [[B]]' }]);
-    await openPage(page, 'Two links');
-    await selectLineUnderTop(page);
-    await page.getByTestId('format-color').click();
-    await expect(page.getByTestId('selection-color-palette').getByTestId('color-text-red')).toHaveAttribute('aria-disabled', 'true');
-    await expect(page.getByTestId('color-link-note')).toHaveText('Links can only be highlighted in yellow, so they keep working in Obsidian.');
-  });
-
-  test('text and a link together: the text is coloured, and a note says the link keeps its colour', async ({ page, request, vault }) => {
-    await vault.seed([{ title: 'Mixed', content: 'Top\n\nsee [label](https://example.com) here' }]);
-    await openPage(page, 'Mixed');
-    await selectLineUnderTop(page);
-    await page.getByTestId('format-color').click();
-    const palette = page.getByTestId('selection-color-palette');
-    await expect(palette.getByTestId('color-link-note')).toHaveText('Links in the selection keep their colour: only yellow can highlight a link.');
-    await expect(palette.getByTestId('color-text-red')).not.toHaveAttribute('aria-disabled', 'true');
-    await palette.getByTestId('color-text-red').click();
-    await expectSaved(request, 'Mixed', `Top\n\n${RED_TEXT}see </span>[label](https://example.com)${RED_TEXT} here</span>`);
-  });
-
-  test('plain text: no note', async ({ page, vault }) => {
-    await vault.seed([{ title: 'Plain', content: 'Top\n\njust words' }]);
-    await openPage(page, 'Plain');
-    await selectLineUnderTop(page);
-    await page.getByTestId('format-color').click();
-    await expect(page.getByTestId('selection-color-palette')).toBeVisible();
-    await expect(page.getByTestId('color-link-note')).toHaveCount(0);
-  });
-
-  test('Russian: the reason is translated', async ({ page, vault }) => {
-    await page.addInitScript(() => window.localStorage.setItem('gumply:language', 'ru'));
-    await vault.seed([{ title: 'Link ru', content: 'Top\n\n[label](https://example.com)' }]);
-    await openPage(page, 'Link ru');
-    await selectLineUnderTop(page);
-    await page.getByTestId('format-color').click();
-    await expect(page.getByTestId('color-link-note')).toHaveText('Ссылку можно выделить только жёлтым: так она продолжит работать в Obsidian.');
   });
 });
