@@ -199,6 +199,23 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     expect(await readFile(join(dir, "Old client.base"), "utf8")).toContain("    name: Table\n");
   });
 
+  it("lists which database owns which rows folder, and whether it shows its rows (#7prbquxu phase 4)", async () => {
+    const base = 'gumply:\n  rows: People\nfilters:\n  and:\n    - file.folder == "People"\nviews:\n  - type: table\n    name: Table\n';
+    const { app, dir } = await vault({ "People.base": base, "People/Ann.md": "Ann\n", "Plain.base": "views:\n  - type: table\n    name: Table\n", "Other/Note.md": "Note\n" });
+    let listed = await getJson<PageMeta[]>(app, "/api/pages");
+    expect(listed.find((meta) => meta.id === "People.base")).toMatchObject({ rowsFolder: "People" });
+    expect(listed.find((meta) => meta.id === "People.base")).not.toHaveProperty("showRows");
+    expect(listed.find((meta) => meta.id === "People")).toMatchObject({ kind: "folder", ownedBy: "People.base" });
+    expect(listed.find((meta) => meta.id === "Plain.base")).not.toHaveProperty("rowsFolder");
+    expect(listed.find((meta) => meta.id === "Other")).not.toHaveProperty("ownedBy");
+    // The marker's showRows is listed (written by "Show rows in the sidebar").
+    await writeFile(join(dir, "People.base"), base.replace("  rows: People\n", "  rows: People\n  showRows: true\n"), "utf8");
+    const store = new VaultStore(dir);
+    await store.init();
+    listed = store.list();
+    expect(listed.find((meta) => meta.id === "People.base")).toMatchObject({ rowsFolder: "People", showRows: true });
+  });
+
   it("renaming a database that owns its rows folder takes the folder along (#7prbquxu)", async () => {
     const { app, dir, store } = await vault({ "Elsewhere/People.md": "Not in the way\n", "Ref.md": "See [[Untitled database/Ada]].\n" });
     await jsonRequest(app, "POST", "/api/bases", { title: "Untitled database", rows: true });
