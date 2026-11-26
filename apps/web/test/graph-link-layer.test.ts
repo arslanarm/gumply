@@ -170,8 +170,9 @@ describe("the cached link picture (#pifuz5zs)", () => {
     });
 
     it("the painter draws a crossing link only across the view; a dashed one from its aligned start", () => {
-      const nodes = [{ id: "A", x: -100, y: 50 }, { id: "B", x: 200, y: 50 }, { id: "?G", x: -100, y: 50 }];
-      const links = [{ source: nodes[0], target: nodes[1] }, { source: nodes[2], target: nodes[1] }];
+      // A link is dashed by its target (a page not created yet), so the ghost is the second link's target.
+      const nodes = [{ id: "A", x: -100, y: 50 }, { id: "B", x: 200, y: 50 }, { id: "?G", x: 200, y: 50 }];
+      const links = [{ source: nodes[0], target: nodes[1] }, { source: nodes[0], target: nodes[2] }];
       const points: Array<[string, number, number]> = [];
       const { painter } = recorder();
       painter.moveTo = (x, y) => points.push(["move", x, y]);
