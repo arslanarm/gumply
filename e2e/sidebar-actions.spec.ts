@@ -83,6 +83,17 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
     await expect(row).toBeFocused();
   });
 
+  test("a row opened from a hidden rows folder shows its database as the selected sidebar item (#7prbquxu, spec §3 note e)", async ({ page, request, vault }) => {
+    void vault;
+    expect((await request.post(`${API_URL}/api/bases`, { data: { title: 'People', rows: true, viewName: 'Table' } })).status()).toBe(201);
+    await request.post(`${API_URL}/api/pages`, { data: { title: 'Ann', parentId: 'People' } });
+    await page.goto(`/#/${encodeURIComponent('People')}/Ann`);
+    await expect(page.getByTestId('editor-content')).toBeVisible();
+    // The row's folder is hidden, so the database item stands for it, selected.
+    await expect(page.getByTestId('page-item-People/Ann')).toHaveCount(0);
+    await expect(page.locator('[data-page-id="People.base"]')).toHaveAttribute('aria-selected', 'true');
+  });
+
   test("a database's own rows folder is hidden under it; its ⋯ menu shows them, and the menu's exact list (#7prbquxu phase 4)", async ({ page, request, vault }) => {
     void vault;
     const created = await request.post(`${API_URL}/api/bases`, { data: { title: 'People', rows: true, viewName: 'Table' } });

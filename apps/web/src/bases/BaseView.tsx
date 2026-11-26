@@ -473,6 +473,29 @@ export function BaseView(props: BaseViewProps) {
     [load, saveConfig],
   );
 
+  /**
+   * #7prbquxu (spec §4, @lead): "+" with Select or Multi-select. The view gains the column and the base its Select
+   * settings, with no options yet, in one write and one undo step; the types file gets text or a list where it has
+   * none, as the column menu's Select does.
+   */
+  const addSelectColumn = useCallback(
+    async (view: BaseViewConfig, key: string, kind: SelectKind) => {
+      if (!active) return;
+      const before = docRef.current.config;
+      const withView = { ...before, views: before.views.map((item) => (item.name === active.name ? view : item)) };
+      try {
+        await saveConfig(withSelectSettings(withView, key, { kind, options: [] }));
+        recordStep({ kind: "config", from: docRef.current.config, to: before });
+        await api.setPropertyType(key, kind === "select" ? "text" : "multitext", { ifAbsent: true }).catch(() => undefined);
+      } catch (error) {
+        props.onError?.(errorText(error));
+      }
+      await load();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [active, load, saveConfig],
+  );
+
   /** #7prbquxu phase 3: an option renamed or cleared in every row and the base; the view takes the base back. */
   const changeOption = async (change: { key: string; rename: { from: string; to: string } } | { key: string; clear: string }) => {
     try {
@@ -851,7 +874,7 @@ export function BaseView(props: BaseViewProps) {
                 },
                 onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
                 onPastePreview: (previewed: PreviewResult, viewName: string) =>
-                  pasteRows(previewed.rows, { view: viewName, keys: previewed.keys, selects: previewed.selects }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType }
+                  pasteRows(previewed.rows, { view: viewName, keys: previewed.keys, selects: previewed.selects }, previewed.types), onDeleteColumn: deleteColumn, onSetColumnType: setColumnType, onAddSelectColumn: addSelectColumn }
             : {})}
           onChangeView={changeView}
           renameRowId={renameRowId}

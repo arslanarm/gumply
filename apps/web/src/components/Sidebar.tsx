@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import type { PageId, PageMeta } from "@gumply/core";
 import { preloadGraph } from "../lazy-parts.js";
-import { buildPageTree, canMovePage, pageTrail, shareTree, type PageTreeNode } from "../lib/tree.js";
+import { buildPageTree, canMovePage, pageTrail, shareTree, sidebarSelection, type PageTreeNode } from "../lib/tree.js";
 import { createRowStateStore } from "./sidebar-row-state.js";
 import { Icon } from "./Icon.js";
 import { PageItem, TreeChunks } from "./PageItem.js";
@@ -74,7 +74,9 @@ export interface SidebarProps {
 
 export function Sidebar(props: SidebarProps) {
   const t = useT();
-  const { pages, selectedId, status, error, focusTarget } = props;
+  const { pages, status, error, focusTarget } = props;
+  // #7prbquxu (§3 note e): a row in a hidden rows folder is shown as its database, the item that stands for it.
+  const selectedId = useMemo(() => sidebarSelection(pages, props.selectedId), [pages, props.selectedId]);
   // #8gudbajp: unchanged nodes keep their identity across list refreshes, so only changed rows render.
   const sharedNodes = useRef<ReadonlyMap<PageId, PageTreeNode>>(new Map());
   const tree = useMemo(() => {

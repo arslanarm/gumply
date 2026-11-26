@@ -632,3 +632,28 @@ test('a paste that takes a while says "Pasting N rows…" until it is done (@lea
   await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Al', 'Ivy', 'Otto']);
   await expect(status).toHaveText('');
 });
+
+test('"+" offers Select and Multi-select: the new column is a Select with no options yet, in one base write, and its cells open the picker (@lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
+  await page.getByTestId('base-add-column-button').click();
+  await page.getByTestId('base-add-column-name').fill('stage');
+  await page.getByTestId('base-add-column-type-select').click();
+  await page.getByTestId('base-add-column-submit').click();
+  await expect(page.getByTestId('base-add-column')).toHaveCount(0);
+  // The view shows it, and the base holds it as a Select (no options until a value is added).
+  await expect.poll(() => read('People.base')).toContain('      - stage\n');
+  await expect.poll(() => read('People.base')).toMatch(/note\.stage:\n\s+gumplyType: select\n/);
+  // A cell opens the Select picker; a typed value becomes the first option.
+  // The columns are Name, role, age, then stage (grid column 3).
+  await page.locator('[data-row-id="People/Ann"] [data-grid-col="3"]').click();
+  const picker = page.getByTestId('base-select-picker');
+  await expect(picker).toBeVisible();
+  await page.keyboard.type('Todo');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read('People/Ann.md')).toMatch(/stage: Todo\n/);
+  await expect.poll(() => read('People.base')).toMatch(/- value: Todo\n/);
+});

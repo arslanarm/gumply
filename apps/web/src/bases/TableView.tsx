@@ -59,6 +59,8 @@ export interface TableViewProps {
   onRenameColumn?: (column: BaseColumn, to: string) => Promise<void>;
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
   onSetColumnType?: (column: BaseColumn, type: PropertyType | SelectKind) => Promise<void>;
+  /** #7prbquxu (spec §4): "+" with Select or Multi-select: the view's new column and its Select settings, one write. */
+  onAddSelectColumn?: (view: BaseView, key: string, kind: SelectKind) => Promise<void>;
   /** #7prbquxu phase 4b: "+" changes the view through this (one undoable step), when given. */
   onAddColumnView?: (view: BaseView) => void;
   /** #7prbquxu phase 2: "Import CSV…" rows for the paste preview (`n` bumps to open it again). */
@@ -336,10 +338,16 @@ export function TableView(props: TableViewProps) {
   };
   const viewOrder = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
   // #7prbquxu: "+" adds a column (spec/database-tables §4); the type goes to types.json only for a new key.
-  const addColumn = async (key: string, type: PropertyType, setType: boolean) => {
+  const addColumn = async (key: string, type: PropertyType | SelectKind, setType: boolean) => {
+    const next = { ...view, order: [...viewOrder, key] };
+    // A Select or Multi-select: the column and its (empty) options in one base write (@lead, spec §4).
+    if ((type === "select" || type === "multiselect") && props.onAddSelectColumn) {
+      await props.onAddSelectColumn(next, key, type);
+      return;
+    }
     // Only when the types file has none for the key (a key typed there but used nowhere keeps its type).
-    if (setType) await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
-    (props.onAddColumnView ?? props.onChangeView)({ ...view, order: [...viewOrder, key] });
+    if (setType && type !== "select" && type !== "multiselect") await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
+    (props.onAddColumnView ?? props.onChangeView)(next);
   };
   const sorts = Array.isArray(view.sort) ? view.sort : [];
 
