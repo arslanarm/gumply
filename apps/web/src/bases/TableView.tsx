@@ -1140,6 +1140,9 @@ function ValueCell(props: {
     );
   }
 
+  // Only single text and number values: a list's Enter adds an item, a date's belongs to its picker.
+  const enterMovesDown = column.type === "text" || column.type === "number";
+
   if (editing) {
     // The properties header's own editor (v1.12, #qw4pcm2h), without chrome.
     const property: Property = {
@@ -1162,7 +1165,12 @@ function ValueCell(props: {
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setEditing(false);
-          else tabOut(event);
+          else if (event.key === "Enter" && enterMovesDown && props.onEditDone && !event.nativeEvent.isComposing) {
+            // #5q4vaacm (spec §4): Enter commits (the editor's own Enter, a blur) and moves down, as typing over a
+            // cell does. Lists keep Enter for their next item, and dates for their picker.
+            moveAfter.current = "down";
+            setEditing(false);
+          } else tabOut(event);
         }}
       >
         <PropertyValueEditor
