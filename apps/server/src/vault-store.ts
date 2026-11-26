@@ -99,6 +99,7 @@ import {
   updateBaseSource,
   renameKeyInConfig,
   dropKeyFromConfig,
+  propertyId,
   withOwnedRows,
   type BaseConfig,
   type CanvasBoard,
@@ -381,6 +382,8 @@ export interface OwnedRowsPaste {
   refused: Array<{ id: PageId; title: string }>;
   /** Rows that couldn't be put back (they keep the pasted values, or a new row stayed). */
   stuck: Array<{ id: PageId; title: string }>;
+  /** The new columns couldn't be added (the base changed meanwhile): the rows were put back too. */
+  baseRefused?: boolean;
 }
 
 interface PageRecord extends Omit<Page, "childCount"> {
@@ -3692,7 +3695,7 @@ export class VaultStore {
    */
   pasteIntoOwnedRows(
     id: PageId,
-    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }> },
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: { view: string; keys: string[] } },
     options: { expectedUpdated?: string; writer?: string } = {},
   ): Promise<OwnedRowsPaste> {
     return this.enqueue(() => this.pasteIntoOwnedRowsNow(this.resolveId(id), input, options));
@@ -3700,7 +3703,7 @@ export class VaultStore {
 
   private async pasteIntoOwnedRowsNow(
     id: PageId,
-    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }> },
+    input: { rows: Array<{ id?: PageId; title?: string; set: Record<string, PropertyValue>; expectedUpdated?: string }>; columns?: { view: string; keys: string[] } },
     options: { expectedUpdated?: string; writer?: string },
   ): Promise<OwnedRowsPaste> {
     const base = this.requireBase(id);
@@ -3770,6 +3773,12 @@ export class VaultStore {
         }
       }
     }
+    // New columns (a paste's headers): added to the view's order in the same job, after the rows.
+    let baseRefused = false;
+    if (refused.length === 0 && input.columns && input.columns.keys.length) {
+      baseRefused = !(await this.addColumnsToView(base, input.columns, options));
+      if (baseRefused) refused.push({ id, title: base.title });
+    }
     if (refused.length === 0) return { changed: done.map((row) => row.id), created: created.map((row) => row.id), refused: [], stuck: [] };
 
     // All or nothing: the set rows get their old values back, the new rows go to the Trash.
@@ -3791,7 +3800,44 @@ export class VaultStore {
         stuck.push(row);
       }
     }
-    return { changed: [], created: [], refused: named(refused), stuck };
+    return { changed: [], created: [], refused: named(refused), stuck, ...(baseRefused ? { baseRefused: true } : {}) };
+  }
+
+  /**
+   * #7prbquxu phase 2: append keys to one view's columns (`order`), in only the lines that change; the base
+   * must still be as the caller read it. False when it changed meanwhile or can't be written.
+   */
+  private async addColumnsToView(
+    base: PageRecord,
+    columns: { view: string; keys: string[] },
+    options: { expectedUpdated?: string; writer?: string },
+  ): Promise<boolean> {
+    for (const key of columns.keys) if (!isValidPropertyKey(key) || HEADER_KEYS.includes(key)) throw badRequest(`not a property name: ${key}`);
+    let config: BaseConfig;
+    try {
+      config = parseBase(base.baseSource ?? "");
+    } catch {
+      return false;
+    }
+    const view = config.views.find((item) => item.name === columns.view);
+    if (!view) throw badRequest(`no view named ${columns.view}`);
+    const order = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
+    const shown = new Set(order.map((written) => propertyId(written)));
+    const added = columns.keys.filter((key, index, all) => all.indexOf(key) === index && !shown.has(`note.${key}`));
+    if (added.length === 0) return true;
+    const next: BaseConfig = { ...config, views: config.views.map((item) => (item === view ? { ...item, order: [...order, ...added] } : item)) };
+    const text = updateBaseSource(base.baseSource ?? "", next);
+    if ((await this.changedOnDiskSince(base, await stat(base.filePath).catch(() => null))) || !versionMatches(base, options.expectedUpdated, options.writer)) return false;
+    try {
+      const replaced = base.updated;
+      await this.writeBaseFile(base, text);
+      if (options.writer) base.ownWrite = { version: base.updated, replaced, writer: options.writer };
+      else delete base.ownWrite;
+      return true;
+    } catch (error) {
+      if (!(error instanceof VaultError)) console.warn(`[gumply] database paste: writing ${base.id} failed:`, error);
+      return false;
+    }
   }
 
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {

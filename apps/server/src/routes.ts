@@ -524,7 +524,12 @@ export function createApiRoutes(store: VaultStore): Hono {
     if (expectedUpdated !== undefined) options.expectedUpdated = expectedUpdated;
     const writer = optionalString(body, "writer");
     if (writer !== undefined) options.writer = writer.slice(0, 64);
-    return c.json(await store.pasteIntoOwnedRows(c.req.param("id"), { rows: body.rows as never }, options));
+    const columns = body.columns as { view?: unknown; keys?: unknown } | undefined;
+    const added =
+      columns && typeof columns.view === "string" && Array.isArray(columns.keys) && columns.keys.every((key) => typeof key === "string")
+        ? { columns: { view: columns.view, keys: columns.keys as string[] } }
+        : {};
+    return c.json(await store.pasteIntoOwnedRows(c.req.param("id"), { rows: body.rows as never, ...added }, options));
   });
 
   // #g95wkd9y: links are complete once the background index is done.
