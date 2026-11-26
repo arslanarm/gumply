@@ -606,6 +606,10 @@
     "noTargets": "No pages to move to."
   },
   "links": {
+    "notRewritten_one": "Links in {{count}} page weren't updated: it couldn't be written (it may be read-only): {{pages}}",
+    "notRewritten_few": "Links in {{count}} pages weren't updated: they couldn't be written (they may be read-only): {{pages}}",
+    "notRewritten_many": "Links in {{count}} pages weren't updated: they couldn't be written (they may be read-only): {{pages}}",
+    "notRewritten_other": "Links in {{count}} pages weren't updated: they couldn't be written (they may be read-only): {{pages}}",
     "noMatch": "No pages match"
   },
   "emoji": {

@@ -1,4 +1,4 @@
-import { chmod, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { historyDir, readHistory } from "../src/history";
@@ -67,6 +67,37 @@ describe.skipIf(asRoot)("a read-only file is never replaced (#bajn9rna)", () => 
       expect(await readFile(join(dir, "Daily.md"), "utf8")).toBe("Today: [[Plan#Objectives]].\n");
       expect(await readFile(notes, "utf8")).toBe("Read [[Plan#Goals]].\n");
       expect(await mode(notes)).toBe(0o444);
+    } finally {
+      await chmod(notes, 0o644);
+    }
+  });
+
+  // #bbh3n5p7: the answer names the pages whose links were left as they were, so the app can say so.
+  it("the answers name a read-only linking page in linksNotRewritten: a heading rename, a title rename, a folder rename", async () => {
+    const { store, dir } = await createTestServer();
+    await writeFile(join(dir, "Plan.md"), "# Plan\n\n## Goals\n\nShip it.\n");
+    await mkdir(join(dir, "Box"), { recursive: true });
+    await writeFile(join(dir, "Box", "Inside.md"), "Inside.\n");
+    await writeFile(join(dir, "Notes.md"), "Read [[Plan#Goals]], [[Plan]] and [[Box/Inside]].\n");
+    await writeFile(join(dir, "Daily.md"), "Today: [[Plan#Goals]], [[Plan]] and [[Box/Inside]].\n");
+    await store.rescan();
+    const notes = join(dir, "Notes.md");
+    await chmod(notes, 0o444);
+    try {
+      const plan = store.get("Plan");
+      const heading = await store.update("Plan", { content: plan.content.replace("## Goals", "## Objectives"), expectedUpdated: plan.updated });
+      expect((heading as { linksNotRewritten?: string[] }).linksNotRewritten).toEqual(["Notes"]);
+      expect(heading.rewrittenPages).toEqual(["Daily"]);
+
+      const title = await store.update("Plan", { title: "Plan 2026" });
+      await store.settleRenames?.(10_000);
+      expect((title as { linksNotRewritten?: string[] }).linksNotRewritten).toEqual(["Notes"]);
+
+      const folder = await store.update("Box", { title: "Crate" });
+      await store.settleRenames?.(10_000);
+      expect((folder as { linksNotRewritten?: string[] }).linksNotRewritten).toEqual(["Notes"]);
+      expect(await readFile(notes, "utf8")).toBe("Read [[Plan#Goals]], [[Plan]] and [[Box/Inside]].\n");
+      expect(await readFile(join(dir, "Daily.md"), "utf8")).toBe("Today: [[Plan 2026#Objectives]], [[Plan 2026]] and [[Crate/Inside]].\n");
     } finally {
       await chmod(notes, 0o644);
     }

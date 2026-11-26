@@ -208,6 +208,8 @@ export type UpdatePageResult = Page & {
   renameLinksMerged?: { links: number; titles: string[] };
   /** #z9hufufn: a rename rewrote this page's own body, starting from this version. */
   ownRewriteFrom?: string;
+  /** v1.35, #bbh3n5p7: pages whose links a rename, heading rename or move left as they were (read-only, a write error). */
+  linksNotRewritten?: PageId[];
 };
 
 /** DELETE result: v1.1 returns a trash id; v1.0 returns 204 (no trash). */
@@ -249,7 +251,7 @@ export interface SaveBaseInput {
   writer?: string;
 }
 
-export type SaveBaseResult = BaseDocument & { rewrittenPages?: PageId[]; conflictBackup?: string };
+export type SaveBaseResult = BaseDocument & { rewrittenPages?: PageId[]; conflictBackup?: string; linksNotRewritten?: PageId[] };
 
 /** spec/api v1.7: a board and its tree metadata (`meta.kind === "whiteboard"`). */
 export type BoardResponse = BoardDocument;
@@ -307,8 +309,27 @@ export function fileUrl(path: string): string {
  */
 let mutationChain: Promise<void> = Promise.resolve();
 
+/**
+ * #bbh3n5p7: told when any write's answer names pages whose links were left as they were
+ * (`linksNotRewritten`: a rename, a heading rename or a move met a read-only page), so the
+ * app says so once, whichever view sent it.
+ */
+const notRewrittenListeners = new Set<(ids: PageId[]) => void>();
+export function onLinksNotRewritten(listener: (ids: PageId[]) => void): () => void {
+  notRewrittenListeners.add(listener);
+  return () => notRewrittenListeners.delete(listener);
+}
+function noteNotRewritten(value: unknown): void {
+  const ids = typeof value === "object" && value !== null ? (value as { linksNotRewritten?: unknown }).linksNotRewritten : undefined;
+  if (!Array.isArray(ids) || ids.length === 0) return;
+  for (const listener of notRewrittenListeners) listener(ids.filter((id): id is PageId => typeof id === "string"));
+}
+
 function mutate<T>(task: () => Promise<T>): Promise<T> {
-  const result = mutationChain.then(task, task);
+  const result = mutationChain.then(task, task).then((value) => {
+    noteNotRewritten(value);
+    return value;
+  });
   mutationChain = result.then(
     () => undefined,
     () => undefined,

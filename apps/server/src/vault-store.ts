@@ -1011,6 +1011,8 @@ export class VaultStore {
   private writeQueue: Promise<unknown> = Promise.resolve();
   /** Old id -> new id after a rename, for stale URLs/tabs in this session. */
   private readonly redirects = new Map<PageId, PageId>();
+  /** #bbh3n5p7: while a store operation runs, the pages its link pass left as they were (see `collectNotRewritten`). */
+  private notRewritten: PageId[] | null = null;
   /** #zsk48sie: pages that vanished from disk unpaired (with the file identity they had), by id. */
   private readonly vanished = new Map<PageId, { record: PageRecord; inode: string | undefined; at: number }>();
   /** #zsk48sie: pages that appeared on disk unpaired, by id, and when. */
@@ -2542,9 +2544,28 @@ export class VaultStore {
     await this.renameSettled(this.resolveId(id));
     // #xgnvipyd: a plain title rename lets other saves through while it rewrites the links to it.
     if (patch.title !== undefined && patch.content === undefined) {
-      return this.renameInBatches(this.resolveId(id), () => this.updateNow(this.resolveId(id), patch), (page) => page.id);
+      return this.renameInBatches(this.resolveId(id), () => this.collectNotRewritten(() => this.updateNow(this.resolveId(id), patch)), (page) => page.id);
     }
-    return this.enqueue(() => this.updateNow(this.resolveId(id), patch));
+    return this.enqueue(() => this.collectNotRewritten(() => this.updateNow(this.resolveId(id), patch)));
+  }
+
+  /**
+   * #bbh3n5p7: the pages a link pass (`rewriteEach`) left as they were (read-only on disk) during the
+   * store operation `run`, named in its answer as `linksNotRewritten` (spec/api v1.35, as a batched
+   * rename's write failures are). Operations run one at a time in the queue, so one list is enough.
+   */
+  private async collectNotRewritten<T extends object>(run: () => Promise<T>): Promise<T> {
+    const outer = this.notRewritten;
+    const mine: PageId[] = [];
+    this.notRewritten = mine;
+    try {
+      const result = await run();
+      if (mine.length === 0) return result;
+      const already = (result as { linksNotRewritten?: PageId[] }).linksNotRewritten ?? [];
+      return { ...result, linksNotRewritten: [...new Set([...already, ...mine])].sort((a, b) => a.localeCompare(b)) };
+    } finally {
+      this.notRewritten = outer;
+    }
   }
 
   /** #xgnvipyd (spec/api v1.35): renames whose link rewrite is still running: the old title and id → the page's id now. */
@@ -2621,8 +2642,19 @@ export class VaultStore {
           const folder = this.deferredFolder as { from: PageId; to: PageId } | null;
           if (folder && !captured) {
             // No batched rewrite to join: the folder's links follow now, as before #ber4hvce.
-            const linked = await this.rewriteFolderLinks(folder.from, folder.to);
-            return { result: { ...result, rewrittenPages: [...new Set([...result.rewrittenPages, ...linked])] }, job: null };
+            // #bbh3n5p7 (@graph-dev's nit): a read-only page this pass skips is named in the answer too.
+            // Not reachable today, so no unit case: `deferredFolder` is set only by relocateNow, and every
+            // title change that calls it (pages, boards, bases in updateNow / updateBoardNow / updateBaseNow)
+            // then calls rewriteLinksTo, which under deferRewrites always captures a job; a plain-folder
+            // rename (renameFolderNow) sets neither. Kept, and collected, in case a later path changes that.
+            const pass = await this.collectNotRewritten(async () => ({ linked: await this.rewriteFolderLinks(folder.from, folder.to) }));
+            const skipped = [
+              ...new Set([...((result as { linksNotRewritten?: PageId[] }).linksNotRewritten ?? []), ...((pass as { linksNotRewritten?: PageId[] }).linksNotRewritten ?? [])]),
+            ].sort((a, b) => a.localeCompare(b));
+            return {
+              result: { ...result, rewrittenPages: [...new Set([...result.rewrittenPages, ...pass.linked])], ...(skipped.length > 0 ? { linksNotRewritten: skipped } : {}) },
+              job: null,
+            };
           }
           return { result, job: captured && folder ? this.withFolderRewrite(captured, folder.from, folder.to) : captured };
         } catch (error) {
@@ -2664,8 +2696,12 @@ export class VaultStore {
         return {
           ...result,
           rewrittenPages: rewritten.sort((a, b) => a.localeCompare(b)),
-          // v1.35: the pages whose rewrite failed (a write error) are named in the answer too.
-          ...(job.failed.length > 0 ? { linksNotRewritten: [...job.failed].sort((a, b) => a.localeCompare(b)) } : {}),
+          // v1.35: the pages whose rewrite failed (a write error) are named in the answer too, with the
+          // ones the rename's first step left (#bbh3n5p7: read-only, from rewriteEach).
+          ...(() => {
+            const all = [...new Set([...((result as { linksNotRewritten?: PageId[] }).linksNotRewritten ?? []), ...job.failed])];
+            return all.length > 0 ? { linksNotRewritten: all.sort((a, b) => a.localeCompare(b)) } : {};
+          })(),
         };
       });
     } finally {
@@ -2744,9 +2780,9 @@ export class VaultStore {
     });
   }
 
-  async move(id: PageId, parentId: PageId | null): Promise<Page> {
+  async move(id: PageId, parentId: PageId | null): Promise<Page & { linksNotRewritten?: PageId[] }> {
     await this.renameSettled(this.resolveId(id));
-    return this.enqueue(() => this.moveNow(this.resolveId(id), parentId));
+    return this.enqueue(() => this.collectNotRewritten(() => this.moveNow(this.resolveId(id), parentId)));
   }
 
   // --- whiteboards (D25, spec/api v1.7) -----------------------------------
@@ -2768,9 +2804,9 @@ export class VaultStore {
   ): Promise<BoardDocument & { rewrittenPages: PageId[]; conflictBackup?: string; repairBackup?: string }> {
     await this.renameSettled(this.resolveId(id));
     if (patch.title !== undefined && patch.board === undefined) {
-      return this.renameInBatches(this.resolveId(id), () => this.updateBoardNow(this.resolveId(id), patch), (doc) => doc.meta.id);
+      return this.renameInBatches(this.resolveId(id), () => this.collectNotRewritten(() => this.updateBoardNow(this.resolveId(id), patch)), (doc) => doc.meta.id);
     }
-    return this.enqueue(() => this.updateBoardNow(this.resolveId(id), patch));
+    return this.enqueue(() => this.collectNotRewritten(() => this.updateBoardNow(this.resolveId(id), patch)));
   }
 
   /** #rpugpydh: the page links in a page's frontmatter that count (core `propertyLinks`), in file order. */
@@ -3401,9 +3437,9 @@ export class VaultStore {
   async updateBase(id: PageId, patch: UpdateBaseInput): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
     await this.renameSettled(this.resolveId(id));
     if (patch.title !== undefined && patch.config === undefined) {
-      return this.renameInBatches(this.resolveId(id), () => this.updateBaseNow(this.resolveId(id), patch), (doc) => doc.meta.id);
+      return this.renameInBatches(this.resolveId(id), () => this.collectNotRewritten(() => this.updateBaseNow(this.resolveId(id), patch)), (doc) => doc.meta.id);
     }
-    return this.enqueue(() => this.updateBaseNow(this.resolveId(id), patch));
+    return this.enqueue(() => this.collectNotRewritten(() => this.updateBaseNow(this.resolveId(id), patch)));
   }
 
   /** Pages (not boards, bases or folders) with what base expressions read. */
@@ -4062,6 +4098,7 @@ export class VaultStore {
         // as N9's batches skip a page whose write fails. Any other error stops the pass as before.
         if (error instanceof VaultError && error.status === 423) {
           console.warn(`[gumply] links in ${other.id} not rewritten: the file is read-only`);
+          this.notRewritten?.push(other.id);
           continue;
         }
         throw error;
