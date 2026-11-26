@@ -923,6 +923,12 @@ export function GraphCanvas({
       hovered: () => hoveredRef.current,
       // #xb4b54gr: the groups drawn (sizes, biggest first) and the clusters key.
       clusters: () => ({ sizes: clustersRef.current.list.map((info) => info.size), modularity: clustersRef.current.modularity ?? null }),
+      // #xb4b54gr: each area's outline as last drawn (before padding), in container CSS px.
+      areas: () => {
+        const graph = graphRef.current;
+        if (!graph) return [];
+        return (hullCache.current?.hulls ?? []).map((hull) => hull.map(([x, y]) => graph.graph2ScreenCoords(x, y)));
+      },
     };
     return () => {
       delete registry[testId];

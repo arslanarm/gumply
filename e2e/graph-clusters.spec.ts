@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { api, test, expect } from './fixtures';
 import { E2E_VAULT } from './support/env';
 
 /**
@@ -121,4 +122,54 @@ test('folder mode groups by folder, in Russian', async ({ page, vault }) => {
   await expect(page.getByTestId('graph-clusters-none')).toContainText('Групп из 3 и более страниц не найдено');
   // No group found, so the Legend has nothing to explain.
   await expect(page.getByTestId('graph-legend-clusters')).toHaveCount(0);
+});
+
+type Point = { x: number; y: number };
+const areas = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { areas: () => Point[][] }> }).__gumplyGraphs['graph-canvas']!.areas());
+
+test('on a big graph (worker layout) a dragged page takes its area along (@graph-dev\'s review)', async ({ page, request, vault }) => {
+  test.setTimeout(240_000);
+  await vault.reset();
+  // 1,600 pages (over the 1,500-node worker threshold) in 8 topics of 200, each page linking the next 3 of its topic.
+  const dir = path.join(E2E_VAULT, 'Big');
+  await fs.mkdir(dir, { recursive: true });
+  try {
+    await Promise.all(
+      Array.from({ length: 1_600 }, (_, n) => {
+        const topic = Math.floor(n / 200);
+        const links = [1, 2, 3].map((s) => `[[Topic ${topic} note ${(n % 200 + s) % 200}]]`).join(' ');
+        return fs.writeFile(path.join(dir, `Topic ${topic} note ${n % 200}.md`), `Notes. ${links}\n`);
+      }),
+    );
+    await expect.poll(async () => (await api.listPages(request)).filter((meta) => meta.id.startsWith('Big/')).length, { timeout: 120_000 }).toBe(1_600);
+
+    await page.goto('/');
+    await page.getByTestId('sidebar-graph').click();
+    const canvas = page.getByTestId('graph-canvas');
+    await canvas.waitFor({ state: 'attached', timeout: 60_000 });
+    await expect(canvas).toHaveAttribute('data-graph-layout', 'worker', { timeout: 60_000 });
+    await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 120_000 });
+    await expect.poll(async () => (await areas(page)).length, { timeout: 30_000 }).toBeGreaterThan(0);
+    await page.waitForTimeout(1_000); // the fit tween
+
+    // A corner of the first area is a page; drag that page into the area's middle.
+    const before = (await areas(page))[0]!;
+    const corner = before[0]!;
+    const middle = { x: before.reduce((sum, p) => sum + p.x, 0) / before.length, y: before.reduce((sum, p) => sum + p.y, 0) / before.length };
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.move(box.x + corner.x, box.y + corner.y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + middle.x, box.y + middle.y, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+
+    // The area no longer has a corner where the page was: it was redrawn around the page's new place.
+    const after = (await areas(page))[0]!;
+    const near = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y) < 2;
+    expect(after.some((p) => near(p, corner))).toBe(false);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+    await expect.poll(async () => (await api.listPages(request)).some((meta) => meta.id.startsWith('Big/')), { timeout: 60_000 }).toBe(false);
+  }
 });
