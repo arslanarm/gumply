@@ -70,6 +70,9 @@ export function SelectPicker(props: {
     [props.settings.options, trimmed],
   );
   const exact = props.settings.options.some((option) => option.value === trimmed);
+  // #pzqmduua: when nothing matches, Enter adds the query; that item is then the active option, so a screen reader
+  // hears what Enter will do (and it's shown highlighted).
+  const adding = shown.length === 0 && trimmed !== "" && !exact;
   const unknown = current.filter((item) => !props.settings.options.some((option) => option.value === item));
 
   const pick = async (value: string) => {
@@ -109,7 +112,7 @@ export function SelectPicker(props: {
         aria-expanded={true}
         aria-autocomplete="list"
         aria-controls={listId}
-        aria-activedescendant={shown[highlight] ? `${listId}-${highlight}` : undefined}
+        aria-activedescendant={shown[highlight] ? `${listId}-${highlight}` : adding ? `${listId}-add` : undefined}
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -159,8 +162,11 @@ export function SelectPicker(props: {
         })}
         {trimmed && !exact ? (
           <button
+            id={`${listId}-add`}
             type="button"
-            className="base-select-option is-add"
+            role="option"
+            aria-selected={false}
+            className={`base-select-option is-add${adding ? " is-highlighted" : ""}`}
             data-testid="base-select-add"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void add(trimmed)}
@@ -173,6 +179,8 @@ export function SelectPicker(props: {
           <button
             key={`unknown-${item}`}
             type="button"
+            role="option"
+            aria-selected={false}
             className="base-select-option is-add"
             data-testid="base-select-add-unknown"
             onMouseDown={(event) => event.preventDefault()}
