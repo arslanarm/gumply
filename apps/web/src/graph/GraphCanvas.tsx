@@ -337,6 +337,17 @@ export function GraphCanvas({
   const size = useElementSize(containerRef);
   /** #nadk3urm: the effects re-run when a force changes, not when a new object has the same values. */
   const forcesKey = forcesToken(forces);
+  /**
+   * How many times a changed set of forces has re-arranged the graph (0 at first): lets tests check that
+   * a slider re-arranges once per change, not once per key press.
+   */
+  const [forcesRuns, setForcesRuns] = useState(0);
+  const appliedForces = useRef(forcesKey);
+  useEffect(() => {
+    if (appliedForces.current === forcesKey) return;
+    appliedForces.current = forcesKey;
+    setForcesRuns((runs) => runs + 1);
+  }, [forcesKey]);
   const sizeRef = useRef(size);
   sizeRef.current = size;
   const colors = useThemeColors();
@@ -1349,6 +1360,7 @@ export function GraphCanvas({
         data-graph-fit-reason={fitReason}
         data-graph-engine={engineStopped ? "stopped" : "running"}
         data-graph-layout={engine.worker ? "worker" : "engine"}
+        data-graph-forces-runs={String(forcesRuns)}
         data-graph-arranging={arranging === null ? undefined : "true"}
         role="img"
         aria-label={ariaLabel}

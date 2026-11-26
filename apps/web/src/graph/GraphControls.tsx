@@ -12,7 +12,7 @@ import {
   type GraphGroup,
   type GraphSettings,
 } from "@gumply/core";
-import { useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { useT, type MessageKey } from "../i18n/index.js";
 import { FALLBACK_GRAPH_PALETTE } from "./graph-model.js";
@@ -40,23 +40,48 @@ const FORCES: Array<{ key: keyof GraphForces; label: MessageKey }> = [
   { key: "linkDistance", label: "graph.panel.forceLinkDistance" },
 ];
 
+/** How long after the last key press a keyboard change is applied (five taps re-arrange once). */
+export const FORCE_KEY_SETTLE_MS = 400;
+
 /**
  * #nadk3urm: one force as a slider (a multiplier, shown as a percentage).
  * While it's dragged only the slider moves; the value is applied, and the
- * graph re-arranged, when it's let go (a 10k graph takes ~20 s to arrange).
+ * graph re-arranged, when it's let go (a 10k graph takes ~20 s to arrange):
+ * - a drag: on the pointer's release anywhere in the window (Firefox and
+ *   Safari don't always send it to the slider when it ends outside);
+ * - keys: FORCE_KEY_SETTLE_MS after the last key press;
+ * - at once when the slider loses focus or the panel closes.
  */
 function ForceSlider({ name, label, value, onCommit }: { name: keyof GraphForces; label: MessageKey; value: number; onCommit: (value: number) => void }) {
   const t = useT();
   const labelId = useId();
   const [draft, setDraft] = useState<number | null>(null);
+  const draftRef = useRef<number | null>(null);
+  const keyTimer = useRef<number | null>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  const commit = useCallback(() => {
+    if (keyTimer.current !== null) {
+      window.clearTimeout(keyTimer.current);
+      keyTimer.current = null;
+    }
+    window.removeEventListener("pointerup", commit);
+    window.removeEventListener("pointercancel", commit);
+    const next = draftRef.current;
+    if (next === null) return;
+    draftRef.current = null;
+    setDraft(null);
+    if (next !== valueRef.current) onCommitRef.current(next);
+  }, []);
+  // A pending change isn't lost when the panel closes.
+  useEffect(() => commit, [commit]);
+
   const shown = draft ?? value;
   const range = GRAPH_FORCE_RANGES[name];
   const percent = Math.round(shown * 100);
-  const commit = () => {
-    if (draft === null) return;
-    setDraft(null);
-    if (draft !== value) onCommit(draft);
-  };
   return (
     <label className="graph-panel-slider">
       <span className="graph-panel-slider-label" id={labelId}>
@@ -71,9 +96,18 @@ function ForceSlider({ name, label, value, onCommit }: { name: keyof GraphForces
         step={range.step}
         value={shown}
         aria-valuetext={t(shown === DEFAULT_GRAPH_FORCES[name] ? "graph.panel.forceValueDefault" : "graph.panel.forceValue", { percent })}
-        onChange={(event) => setDraft(Number(event.target.value))}
-        onPointerUp={commit}
-        onKeyUp={commit}
+        onChange={(event) => {
+          draftRef.current = Number(event.target.value);
+          setDraft(draftRef.current);
+        }}
+        onPointerDown={() => {
+          window.addEventListener("pointerup", commit);
+          window.addEventListener("pointercancel", commit);
+        }}
+        onKeyUp={() => {
+          if (keyTimer.current !== null) window.clearTimeout(keyTimer.current);
+          keyTimer.current = window.setTimeout(commit, FORCE_KEY_SETTLE_MS);
+        }}
         onBlur={commit}
       />
       <span className="graph-panel-slider-value" aria-hidden="true">

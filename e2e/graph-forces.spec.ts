@@ -71,7 +71,24 @@ test('four labelled sliders at 100%; Center at 0 is saved when let go, kept afte
   await expect.poll(savedForces, { timeout: 5_000 }).toEqual({ center: 1, repel: 1, linkStrength: 1, linkDistance: 1 });
 });
 
-test('while a slider is dragged nothing is saved; letting go saves once', async ({ page, vault }) => {
+test('five arrow-key taps re-arrange the graph once, after the last one', async ({ page, vault }) => {
+  test.setTimeout(60_000);
+  await seed(vault);
+  await openForces(page);
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-forces-runs', '0');
+  const center = page.getByRole('slider', { name: 'Center force' });
+  await center.focus();
+  for (let i = 0; i < 5; i += 1) await center.press('ArrowLeft');
+  await expect(center).toHaveAttribute('aria-valuetext', '75%');
+  await expect(canvas).toHaveAttribute('data-graph-forces-runs', '1', { timeout: 5_000 });
+  await expect.poll(savedForces, { timeout: 5_000 }).toEqual({ center: 0.75, repel: 1, linkStrength: 1, linkDistance: 1 });
+  // Nothing more comes after the settle.
+  await page.waitForTimeout(1_000);
+  await expect(canvas).toHaveAttribute('data-graph-forces-runs', '1');
+});
+
+test('while a slider is dragged nothing is saved; letting go (even outside the slider) saves once', async ({ page, vault }) => {
   test.setTimeout(60_000);
   await seed(vault);
   await openForces(page);
@@ -85,6 +102,9 @@ test('while a slider is dragged nothing is saved; letting go saves once', async 
   await expect(repel).not.toHaveAttribute('aria-valuetext', '100% (default)');
   await page.waitForTimeout(800);
   expect(savedForces()).toBeNull();
+  // Let go well outside the slider (Firefox and Safari may not send the release to it; the window gets it).
+  await page.mouse.move(box.x + box.width * 0.9, y + 200, { steps: 2 });
   await page.mouse.up();
   await expect.poll(() => savedForces()?.repel ?? null, { timeout: 5_000 }).toBeGreaterThan(2);
+  await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-graph-forces-runs', '1');
 });
