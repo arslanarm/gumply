@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Backlink, GraphData } from "@gumply/core";
 import { cleanupVaults, createPage, createTestServer, getJson, jsonRequest } from "./helpers";
@@ -61,5 +63,39 @@ describe("Markdown links to pages", () => {
 
     await createPage(app, { title: "Later" });
     expect((await getJson<Backlink[]>(app, `${pagePath("Later")}/backlinks`)).map((link) => link.page.id)).toEqual(["Source"]);
+  });
+
+  it("follow a rename: [x](Note.md) is rewritten in its own form in the rename's batches, and the backlink follows", async () => {
+    const { app, dir } = await createTestServer();
+    await createPage(app, { title: "Projects" });
+    await createPage(app, { title: "Plan", parentId: "Projects" });
+    await createPage(app, { title: "Q1 notes", parentId: "Projects", content: "Read [the plan](Plan.md#Goals) and [it](<Plan.md>). [[Home]]" });
+    await createPage(app, { title: "Journal", content: "See [p](Projects/Plan.md \"P\"). Untouched: [web](https://example.com/Plan.md)." });
+
+    const renamed = await jsonRequest(app, "PUT", pagePath("Projects/Plan"), { title: "Road map" });
+    expect(renamed.status).toBe(200);
+
+    expect(await readFile(join(dir, "Projects", "Q1 notes.md"), "utf8")).toContain("Read [the plan](Road%20map.md#Goals) and [it](<Road map.md>). [[Home]]");
+    // The body changes only in the link's path (the rewrite also moves `updated:`, as for [[links]]).
+    expect(await readFile(join(dir, "Journal.md"), "utf8")).toContain('See [p](Projects/Road%20map.md "P"). Untouched: [web](https://example.com/Plan.md).');
+    const links = await getJson<Backlink[]>(app, `${pagePath("Projects/Road map")}/backlinks`);
+    expect(links.map((link) => link.page.id).sort()).toEqual(["Journal", "Projects/Q1 notes"]);
+  });
+
+  it("follow a move: the path is rebuilt in the link's own form", async () => {
+    const { app, dir } = await createTestServer();
+    await createPage(app, { title: "Projects" });
+    await createPage(app, { title: "Archive" });
+    await createPage(app, { title: "Plan", parentId: "Projects" });
+    await createPage(app, { title: "Q1 notes", parentId: "Projects", content: "Read [the plan](Plan.md)." });
+    await createPage(app, { title: "Journal", content: "See [p](Projects/Plan.md)." });
+
+    const moved = await jsonRequest(app, "POST", `${pagePath("Projects/Plan")}/move`, { parentId: "Archive" });
+    expect(moved.status).toBe(200);
+
+    expect(await readFile(join(dir, "Projects", "Q1 notes.md"), "utf8")).toContain("Read [the plan](../Archive/Plan.md).");
+    expect(await readFile(join(dir, "Journal.md"), "utf8")).toContain("See [p](Archive/Plan.md).");
+    const links = await getJson<Backlink[]>(app, `${pagePath("Archive/Plan")}/backlinks`);
+    expect(links.map((link) => link.page.id).sort()).toEqual(["Journal", "Projects/Q1 notes"]);
   });
 });

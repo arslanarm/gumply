@@ -3,6 +3,7 @@ import {
   attachmentHref,
   looksLikeAttachmentHref,
   markdownPageLinks,
+  relinkPageFile,
   relinkAttachments,
   resolveAttachmentHref,
 } from "../src/attachment-paths.js";
@@ -158,5 +159,65 @@ describe("markdownPageLinks (#idmfvvkg: Markdown links to pages, Obsidian parity
       "[[Home]]",
     ].join("\n");
     expect(markdownPageLinks("Projects/Plan", body, isPage)).toEqual([]);
+  });
+});
+
+describe("relinkPageFile (#idmfvvkg: a page rename or move rewrites Markdown links to it, each in its own form)", () => {
+  const pages = new Set(["Home", "Projects/Q1 notes", "Archive/Old", "Plan"]);
+  // The renamed page's old file is gone by now; the rewrite still recognises links to it.
+  const isPage = (id: string) => pages.has(id);
+
+  it("a rename in place swaps only the file name, keeping ./, ../, <…>, %20, the suffix and a title", () => {
+    const from = "Projects/Plan.md";
+    const to = "Projects/Road map.md";
+    const body = [
+      "[a](Plan.md)",
+      "[b](./Plan.md#Goals)",
+      "[c](<Plan.md>)",
+      '[d](Plan.md "The plan")',
+      "![e](Plan.md)",
+      "[other](Q1%20notes.md)",
+    ].join("\n");
+    const out = relinkPageFile(body, "Projects/Q1 notes", from, to, isPage);
+    expect(out.content).toBe(
+      ["[a](Road%20map.md)", "[b](./Road%20map.md#Goals)", "[c](<Road map.md>)", '[d](Road%20map.md "The plan")', "![e](Road%20map.md)", "[other](Q1%20notes.md)"].join("\n"),
+    );
+    expect(out.count).toBe(5);
+    expect(relinkPageFile("[x](../Projects/Plan.md)", "Archive/Old", from, to, isPage).content).toBe("[x](../Projects/Road%20map.md)");
+    // Vault-root form from a nested note stays vault-root; absolute stays absolute.
+    expect(relinkPageFile("[x](Projects/Plan.md)", "Archive/Old", from, to, isPage).content).toBe("[x](Projects/Road%20map.md)");
+    expect(relinkPageFile("[x](/Projects/Plan.md)", "Archive/Old", from, to, isPage).content).toBe("[x](/Projects/Road%20map.md)");
+  });
+
+  it("a move rebuilds the path in the link's own form", () => {
+    const from = "Projects/Plan.md";
+    const to = "Archive/Plan.md";
+    expect(relinkPageFile("[r](Plan.md#Goals)", "Projects/Q1 notes", from, to, isPage).content).toBe("[r](../Archive/Plan.md#Goals)");
+    expect(relinkPageFile("[v](Projects/Plan.md)", "Home", from, to, isPage).content).toBe("[v](Archive/Plan.md)");
+    expect(relinkPageFile("[a](/Projects/Plan.md)", "Home", from, to, isPage).content).toBe("[a](/Archive/Plan.md)");
+  });
+
+  it("leaves everything else byte for byte: other pages, a same-named root page, URLs, code, an escaped \\[", () => {
+    const from = "Projects/Plan.md";
+    const to = "Projects/Roadmap.md";
+    const body = [
+      "[root](../Plan.md)",
+      "[web](https://example.com/Projects/Plan.md)",
+      "`[c](Plan.md)`",
+      "\\[not a link](Plan.md)",
+      "[[Plan]]",
+      "Plan.md in prose",
+    ].join("\n");
+    const out = relinkPageFile(body, "Projects/Q1 notes", from, to, isPage);
+    expect(out).toEqual({ content: body, count: 0 });
+  });
+});
+
+describe("MARKDOWN_LINK skips an escaped \\[ (#idmfvvkg, @polish-dev's note 2)", () => {
+  it("markdownPageLinks ignores \\[x](Note.md), and relinkAttachments keeps its bytes", () => {
+    expect(markdownPageLinks("Home", "\\[x](Home.md) and [y](Home.md)", () => true)).toEqual(["Home"]);
+    // A note-relative link follows its note (#sj5a2trb); the escaped one is text and keeps its bytes.
+    const body = "\\[a](pic.png) ![b](pic.png)";
+    expect(relinkAttachments(body, "Home", "Notes/Day", (path) => path === "pic.png")).toBe("\\[a](pic.png) ![b](../pic.png)");
   });
 });
