@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { APIRequestContext } from '@playwright/test';
-import { expect, test } from './fixtures';
+import type { APIRequestContext, Page } from '@playwright/test';
+import { expect, test, type Vault } from './fixtures';
 import { API_URL, E2E_VAULT } from './support/env';
 import { expectPageTitle } from './support/ui';
 
@@ -77,7 +77,7 @@ test('#2zugp8qc: Enter while the last letter\'s headings are still loading write
 });
 
 /** `[[Target#<typed>` in an empty note, the menu showing `expected`; then Target's answers are held (a loaded machine). */
-async function typeThenHold(page: import('@playwright/test').Page, vault: { seed: (pages: Array<{ title: string; content: string }>) => Promise<Array<{ id: string }>> }, typed: string, expected: string) {
+async function typeThenHold(page: Page, vault: Vault, typed: string, expected: string) {
   await vault.seed([{ title: 'Target', content: '## Goals\n\nText.\n\n## Risks\n\nMore.\n' }]);
   const [note] = await vault.seed([{ title: 'Note', content: '' }]);
   await page.goto(`/#/${encodeURIComponent(note!.id)}`);
