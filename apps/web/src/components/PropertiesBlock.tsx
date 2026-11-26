@@ -558,7 +558,8 @@ function ListEditor({ property, autoFocus, onSave, links, adornment }: Omit<Valu
           data-testid={`property-chip-${item}`}
           title={notTags.has(item) ? t("properties.tagsDigits") : undefined}
         >
-          {tags ? `#${item}` : links ? <PropertyLinkedText text={item} /> : item}
+          {/* #jtck4izu: the label shrinks with an ellipsis, so a long value never runs off a narrow window. */}
+          <span className="property-chip-label" title={item}>{tags ? `#${item}` : links ? <PropertyLinkedText text={item} /> : item}</span>
           <button
             type="button"
             className="property-chip-remove"
