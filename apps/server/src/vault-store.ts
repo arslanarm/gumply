@@ -4375,8 +4375,10 @@ export class VaultStore {
     const grouped: PageRecord[] = [];
     let inTrash = 0;
     for (const row of created) {
+      // Already gone (deleted in another app meanwhile): nothing to take back, and nothing stuck (@opus-hunter).
+      const record = this.pages.get(row.id);
+      if (!record) continue;
       try {
-        const record = this.require(row.id);
         if (!(await this.pastedRowUnchanged(record, row.updated))) trashed.push({ id: row.id, title: row.title });
         if (!this.hasChildren(row.id)) {
           grouped.push(record);
