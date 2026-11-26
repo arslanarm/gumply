@@ -24,14 +24,15 @@ for (const [lang, label] of [['en', 'Group by'], ['ru', 'Группироват�
     await page.getByTestId('base-group-button').click();
     const lead = page.getByTestId('base-group-panel').locator('.base-rule-lead');
     await expect(lead).toHaveText(label);
-    const size = await lead.evaluate((element) => ({
-      scroll: element.scrollWidth,
-      client: element.clientWidth,
-      height: element.getBoundingClientRect().height,
-      line: parseFloat(getComputedStyle(element).lineHeight) || 20,
-    }));
+    const size = await lead.evaluate((element) => {
+      // The text's own line boxes: one distinct top per rendered line.
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const tops = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top)));
+      return { scroll: element.scrollWidth, client: element.clientWidth, lines: tops.size };
+    });
     expect(size.scroll, 'the whole label fits its box').toBeLessThanOrEqual(size.client + 1);
-    expect(size.height, 'one line').toBeLessThan(size.line * 1.5);
+    expect(size.lines, 'one line').toBe(1);
   });
 }
 
