@@ -829,6 +829,18 @@ function mtimeVersion(mtimeMs: number): string {
 }
 
 /**
+ * #y5k39njn: a version strictly after `version` (1 ms later). A page's version
+ * is the newer of its `updated:` and its file time, so an outside edit that
+ * keeps the frontmatter with an older or equal file time (a sync tool keeping
+ * another device's mtime, a lagging clock, FAT's 2 s times) would keep the
+ * version: a save from before it would then pass the check and overwrite it.
+ */
+function laterVersion(version: string): string {
+  const at = Date.parse(version);
+  return Number.isNaN(at) ? new Date().toISOString() : new Date(at + 1).toISOString();
+}
+
+/**
  * The version of a note Gumply just wrote with an `updated:` key: the same rule
  * as reading it back (`readRecord`), the newer of that key and the file time.
  * The file time is usually a millisecond or more after the `updated:` written
@@ -1659,7 +1671,11 @@ export class VaultStore {
     for (const [id, record] of next) {
       const current = this.pages.get(id);
       if (current === record) continue;
-      if (!current || this.recordSignature(current) !== this.recordSignature(record)) changedIds.push(id);
+      if (!current || this.recordSignature(current) !== this.recordSignature(record)) {
+        changedIds.push(id);
+        // #y5k39njn: new content always gets a newer version, so a save from before it is refused.
+        if (current && record.updated <= current.updated) record.updated = laterVersion(current.updated);
+      }
       else if (current.fileMtimeMs !== record.fileMtimeMs || current.updated !== record.updated) {
         // #2wjvk3br: the very same bytes with a moved stat (a same-bytes rewrite or a touch):
         // take the new time and version now, silently. Other bytes the record doesn't show
@@ -1830,6 +1846,25 @@ export class VaultStore {
    * read. Re-read just this file: when only the stat moved (the same content),
    * adopt it and let the save go on. Returns true when the file is unchanged.
    */
+  /**
+   * Has the file changed since `record` was read or written? `info` is its stat
+   * now (null: gone). #2wjvk3br: a moved mtime with the same bytes (a touch the
+   * watcher hasn't processed yet) isn't a change. #y5k39njn: other bytes under
+   * the same file time are (a tool that keeps the mtime, FAT's 2 s times),
+   * known by the hash noted at the record's file time.
+   */
+  private async changedOnDiskSince(record: PageRecord, info: { mtimeMs: number } | null): Promise<boolean> {
+    if (info === null) return true;
+    if (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1) return !(await this.adoptIfSameBytes(record));
+    const known = (this.bytesAt.get(record.filePath) ?? []).find((entry) => entry.mtimeMs === record.fileMtimeMs);
+    if (!known) return false;
+    try {
+      return bytesHash(await readFile(record.filePath)) !== known.hash;
+    } catch {
+      return false;
+    }
+  }
+
   private async adoptIfSameBytes(record: PageRecord): Promise<boolean> {
     let fresh: PageRecord;
     try {
@@ -3177,7 +3212,7 @@ export class VaultStore {
       info = null;
     }
     // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     let conflictBackup: string | undefined;
     if (mtimeChanged || versionChanged) {
@@ -3410,7 +3445,7 @@ export class VaultStore {
       info = null;
     }
     // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     let conflictBackup: string | undefined;
     if (mtimeChanged || versionChanged) {
@@ -3536,7 +3571,7 @@ export class VaultStore {
       info = null;
     }
     // #2wjvk3br: a moved mtime with the same content (a touch the watcher hasn't processed yet) isn't a change.
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     const versionChanged = !versionMatches(record, patch.expectedUpdated, patch.writer);
     // #z9hufufn: an ordinary save from a version that only renames' link rewrites have changed since
     // (their N10 chain runs from it to the page's version now, and no outside write moved the file) is
@@ -5990,7 +6025,7 @@ export class VaultStore {
       const entry = await this.historyEntry(record, file);
       const bytes = await this.versionBytes(record, entry);
       const info = await stat(record.filePath).catch(() => null);
-      const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+      const mtimeChanged = await this.changedOnDiskSince(record, info);
       if (mtimeChanged || !versionMatches(record, input.expectedUpdated, input.writer)) {
         throw conflict("This page changed on disk.");
       }
@@ -6327,7 +6362,7 @@ export class VaultStore {
   private async assertUnchanged(record: PageRecord, expected: string | undefined): Promise<void> {
     if (typeof expected !== "string") throw badRequest("expected versions are required");
     const info = await stat(record.filePath).catch(() => null);
-    const mtimeChanged = info === null || (Math.abs(info.mtimeMs - record.fileMtimeMs) > 1 && !(await this.adoptIfSameBytes(record)));
+    const mtimeChanged = await this.changedOnDiskSince(record, info);
     if (mtimeChanged || !versionMatches(record, expected, undefined)) {
       throw conflict("This changed while you were comparing. Check again.");
     }
