@@ -12,7 +12,7 @@ import { cleanupVaults, createTestServer } from "./helpers";
  * just before the move. Synthetic vault.
  */
 
-const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string; dir?: boolean } }));
+const outside = vi.hoisted(() => ({ before: null as null | { target: string; text: string; dir?: boolean }, noHardLinks: false }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -33,6 +33,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
   const link: typeof actual.link = async (from, to) => {
     await outsideFirst(to);
+    // A file system without hard links (FAT/exFAT USB vaults): the move falls back to a no-replace copy.
+    if (outside.noHardLinks) throw Object.assign(new Error("EPERM: operation not permitted, link (test)"), { code: "EPERM" });
     return actual.link(from, to);
   };
   return { ...actual, rename, link, default: { ...actual, rename, link } };
@@ -40,9 +42,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 beforeEach(() => {
   outside.before = null;
+  outside.noHardLinks = false;
 });
 afterEach(async () => {
   outside.before = null;
+  outside.noHardLinks = false;
   await cleanupVaults();
 });
 
@@ -113,5 +117,34 @@ describe("a row brought back never replaces a file another app just made at its 
     await store.restore(item!.trashId).catch(() => undefined);
     expect(outside.before, "the move was reached").toBeNull();
     expect(await outsideTextKept(dir)).toBe(true);
+  });
+});
+
+describe("on a file system without hard links (FAT/exFAT; `link` throws EPERM) a Restore still never replaces (#bfy92cu6)", () => {
+  it("a page comes back by a no-replace copy, bytes and time kept, and the Trash entry goes", async () => {
+    const server = await createTestServer();
+    await writeFile(join(server.dir, "Note.md"), "Mine, trashed.\n", "utf8");
+    await server.store.rescan();
+    const { stat } = await import("node:fs/promises");
+    const mtime = (await stat(join(server.dir, "Note.md"))).mtimeMs;
+    const { trashId } = await server.store.remove("Note");
+    outside.noHardLinks = true;
+    await server.store.restore(trashId!);
+    expect(await readFile(join(server.dir, "Note.md"), "utf8")).toBe("Mine, trashed.\n");
+    expect(Math.abs((await stat(join(server.dir, "Note.md"))).mtimeMs - mtime)).toBeLessThan(1000);
+    expect(await server.store.listTrash()).toEqual([]);
+  });
+
+  it("an outside file at the name: the copy refuses to replace it, and the page comes back as \"Note 2\"", async () => {
+    const server = await createTestServer();
+    await writeFile(join(server.dir, "Note.md"), "Mine, trashed.\n", "utf8");
+    await server.store.rescan();
+    const { trashId } = await server.store.remove("Note");
+    outside.noHardLinks = true;
+    outside.before = { target: "Note.md", text: OUTSIDE };
+    await server.store.restore(trashId!);
+    expect(outside.before, "the move was reached").toBeNull();
+    expect(await readFile(join(server.dir, "Note.md"), "utf8")).toBe(OUTSIDE);
+    expect(await readFile(join(server.dir, "Note 2.md"), "utf8")).toBe("Mine, trashed.\n");
   });
 });
