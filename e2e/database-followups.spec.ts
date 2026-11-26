@@ -180,7 +180,7 @@ test('a resize whose own scroll moves the cell up under the sticky header brings
 
 /**
  * Whether the open picker lies inside the window, and the row's Select cell's middle inside the table's visible
- * box (below the sticky head, above the scroller's bottom): seen, not just present.
+ * box (below the sticky head, above the sticky foot and the scroller's bottom): seen, not just present.
  */
 async function pickerAndCellInView(page: Page, rowId: string): Promise<{ picker: boolean; cell: boolean }> {
   return page.evaluate((id) => {
@@ -188,8 +188,10 @@ async function pickerAndCellInView(page: Page, rowId: string): Promise<{ picker:
     const inWindow = picker.top >= 0 && picker.bottom <= window.innerHeight && picker.height > 0;
     const scroller = document.querySelector('[data-testid="base-table-scroll"]')!.getBoundingClientRect();
     const head = document.querySelector('.base-table-head')!.getBoundingClientRect();
+    // The footer row is sticky too (@polish-dev): a cell under it isn't seen either.
+    const foot = document.querySelector('.base-table-foot')?.getBoundingClientRect();
     const cell = document.querySelector(`[data-row-id="${id}"] [data-grid-col="1"]`)!.getBoundingClientRect();
     const middle = (cell.top + cell.bottom) / 2;
-    return { picker: inWindow, cell: middle >= Math.max(scroller.top, head.bottom) && middle <= scroller.bottom };
+    return { picker: inWindow, cell: middle >= Math.max(scroller.top, head.bottom) && middle <= Math.min(scroller.bottom, foot?.top ?? Infinity) };
   }, rowId);
 }
