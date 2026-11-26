@@ -2115,6 +2115,9 @@ export class VaultStore {
     if (cached && cached.of === record && cached.mtimeMs === record.fileMtimeMs) return cached.raw;
     const scanned = this.rawPropertiesFromScan(record);
     if (scanned) return scanned;
+    // #dqdwz9qw (@opus-editor's review): the file time this read is for, taken before the await, so a
+    // record changed in place meanwhile never takes this (older) read under its new time.
+    const mtimeMs = record.fileMtimeMs;
     let raw: RawProperty[] = [];
     try {
       this.propertyFileReads += 1;
@@ -2122,7 +2125,7 @@ export class VaultStore {
     } catch {
       raw = [];
     }
-    this.rawPropertyCache.set(record.filePath, { mtimeMs: record.fileMtimeMs, raw, of: record });
+    this.rawPropertyCache.set(record.filePath, { mtimeMs, raw, of: record });
     return raw;
   }
 
