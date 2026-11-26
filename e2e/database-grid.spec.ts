@@ -350,3 +350,33 @@ test('one pasted value goes into the active cell as typing would, commas and all
   await page.keyboard.press('Enter');
   await expect.poll(() => read('People/Bo.md')).toMatch(/^---\nrole: "?Cook, head"?\nage: 41\n---\nBo\n$/);
 });
+
+test('a block pasted on the typing row of an empty database opens the preview; Paste makes the rows and columns in one request (phase 2, step 3)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, { 'People.base': PEOPLE['People.base'] });
+  await fs.mkdir(path.join(E2E_VAULT, 'People'), { recursive: true });
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  const typing = page.getByTestId('base-typing-input');
+  await typing.click();
+  await paste(page, 'Name\tshoe size\trole\nIvy\t38\tCook\nOtto\t42\tPilot\n');
+
+  const preview = page.getByTestId('base-paste-preview');
+  await expect(preview).toContainText('Paste 2 rows into “People”');
+  await expect(page.getByTestId('base-paste-headers')).toBeChecked();
+  await expect(page.getByTestId('base-paste-name-1')).toHaveValue('shoe size');
+  await expect(page.getByTestId('base-paste-type-1')).toHaveValue('number');
+  // "role" is a column already: its type is kept.
+  await expect(page.getByTestId('base-paste-type-2')).toBeDisabled();
+
+  const writes: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() !== 'GET' && /\/api\/(bases|pages)\b/.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
+  });
+  await page.getByTestId('base-paste-confirm').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ivy', 'Otto']);
+  await expect.poll(() => read('People/Ivy.md')).toMatch(/shoe size: 38\n/);
+  await expect.poll(() => read('People/Otto.md')).toMatch(/role: Pilot\n/);
+  await expect.poll(() => read('People.base')).toContain('      - age\n      - shoe size\n');
+  expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
+});
