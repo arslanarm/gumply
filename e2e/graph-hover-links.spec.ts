@@ -97,6 +97,9 @@ test('a hover change on a big graph draws only the hovered node\'s links, not ev
   test.info().annotations.push({ type: 'lineTo', description: `hover another node: ${onSecond}; hover nothing: ${offAgain} (of ${totalLinks} links)` });
 
   // A node here has ~4 links (2 out, ~2 in); a few frames may each draw them. Far below every link.
+  // The hovered node's own links are drawn live (so a run where nothing got hovered can't pass)…
+  expect(onSecond).toBeGreaterThan(0);
+  // …and nothing else: far below every link.
   expect(onSecond).toBeLessThan(100);
   expect(offAgain).toBeLessThan(100);
 });

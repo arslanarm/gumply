@@ -123,6 +123,8 @@ const LABEL_LINE_PX = 14;
 const MAX_LABEL_CHARS = 22;
 /** Dash for links into a "not created yet" page (graph units, as before). */
 const GHOST_LINK_DASH = [4, 3];
+/** #pifuz5zs: above this many device pixels only the resting link picture is kept (memory). */
+const LINK_LAYER_MAX_PIXELS = 8_000_000;
 
 
 function readThemeColors(): ThemeColors {
@@ -420,7 +422,10 @@ export function GraphCanvas({
       if (gestureRef.current) return false;
       if (!linkLayerOn()) return true;
       const hovered = hoveredRef.current;
-      return hovered !== null && (endpointId(link.source) === hovered || endpointId(link.target) === hovered);
+      if (hovered === null) return false;
+      // Above the memory cap there's no faded picture: while hovering, every link is drawn live, as before.
+      if (linkLayersRef.current.idleOnly) return true;
+      return endpointId(link.source) === hovered || endpointId(link.target) === hovered;
     },
     [linkEpoch, hoveredId], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -1316,17 +1321,32 @@ export function GraphCanvas({
    * The faded picture (shown while a node is hovered) is built in the next idle
    * moment, so even the first hover just copies it.
    */
-  const linkLayersRef = useRef<{ key: string; idle: HTMLCanvasElement | null; faded: HTMLCanvasElement | null; spare: HTMLCanvasElement[]; idleJob: number }>({
+  const linkLayersRef = useRef<{ key: string; idle: HTMLCanvasElement | null; faded: HTMLCanvasElement | null; spare: HTMLCanvasElement[]; idleJob: number; idleOnly: boolean }>({
     key: "",
     idle: null,
     faded: null,
     spare: [],
     idleJob: 0,
+    idleOnly: false,
   });
+  // The pictures are let go when the view closes or its tab is hidden (a pair is ~46 MB at DPR 2).
   useEffect(() => {
     const layers = linkLayersRef.current;
-    return () => {
+    const release = (): void => {
       if (layers.idleJob) (window.cancelIdleCallback ?? window.clearTimeout)(layers.idleJob);
+      layers.idleJob = 0;
+      layers.key = "";
+      layers.idle = null;
+      layers.faded = null;
+      layers.spare = [];
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") release();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      release();
     };
   }, []);
   const onFramePre = useCallback(
@@ -1336,6 +1356,9 @@ export function GraphCanvas({
       const dpr = window.devicePixelRatio || 1;
       const { width, height } = ctx.canvas;
       const layers = linkLayersRef.current;
+      // Memory cap: above ~8 M device pixels (a large window at DPR 2) only the resting picture is kept;
+      // while a node is hovered, the links are drawn live (see linkVisible), as before this cache.
+      layers.idleOnly = width * height > LINK_LAYER_MAX_PIXELS;
       const key = linkLayerKey({
         transform,
         width,
@@ -1371,6 +1394,7 @@ export function GraphCanvas({
         return layer;
       };
       const faded = hoveredRef.current !== null;
+      if (faded && layers.idleOnly) return;
       let layer = faded ? layers.faded : layers.idle;
       if (!layer) {
         layer = build(faded ? linkPaint.faded : linkPaint.idle);
@@ -1382,7 +1406,7 @@ export function GraphCanvas({
       ctx.drawImage(layer, 0, 0);
       ctx.restore();
       // The faded picture, ahead of the first hover.
-      if (!layers.faded && !layers.idleJob) {
+      if (!layers.faded && !layers.idleJob && !layers.idleOnly) {
         const wanted = key;
         const run = () => {
           layers.idleJob = 0;

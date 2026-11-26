@@ -32,20 +32,29 @@ function recorder() {
 }
 
 describe("the cached link picture (#pifuz5zs)", () => {
-  it("its key changes with the camera, the size, the positions, the data and the colours, and only then", () => {
-    const key = linkLayerKey(base);
-    expect(linkLayerKey({ ...base })).toBe(key);
-    const changed: LinkLayerInputs[] = [
-      { ...base, transform: { ...base.transform, a: 0.6, d: 0.6 } },
-      { ...base, transform: { ...base.transform, e: 401 } },
-      { ...base, transform: { ...base.transform, f: 299 } },
-      { ...base, width: 1601 },
-      { ...base, height: 901 },
-      { ...base, positions: 4 },
-      { ...base, data: "2" },
-      { ...base, style: "rgba(1,1,1,0.32)|rgba(1,1,1,0.08)|2" },
-    ];
-    for (const inputs of changed) expect(linkLayerKey(inputs)).not.toBe(key);
+  // Every input the resting links' look depends on (GraphCanvas: linkColor = linkPaint + hoveredId, linkWidth =
+  // hoveredId + DPR, linkLineDash = the link's target (data)). Selection, search dimming and group colours style
+  // nodes only; a filter, a search or the local graph's depth make new graph data. Each must give a new key.
+  const cases: Array<[string, LinkLayerInputs]> = [
+    ["a zoom", { ...base, transform: { ...base.transform, a: 0.6, d: 0.6 } }],
+    ["a pan across", { ...base, transform: { ...base.transform, e: 401 } }],
+    ["a pan down", { ...base, transform: { ...base.transform, f: 299 } }],
+    ["a resize (width)", { ...base, width: 1601 }],
+    ["a resize (height)", { ...base, height: 901 }],
+    ["the worker moving nodes, or a node dragged", { ...base, positions: 4 }],
+    ["new data: a filter, a search, the local graph's depth, a new page or link", { ...base, data: "2" }],
+    ["a theme change (the idle colour)", { ...base, style: "rgba(9,9,9,0.32)|rgba(1,1,1,0.08)|1" }],
+    ["a theme change (the faded colour)", { ...base, style: "rgba(1,1,1,0.32)|rgba(9,9,9,0.08)|1" }],
+    ["a device pixel ratio change (the hairline width)", { ...base, style: "rgba(1,1,1,0.32)|rgba(1,1,1,0.08)|2" }],
+  ];
+  for (const [what, inputs] of cases) {
+    it(`a new key for ${what}`, () => {
+      expect(linkLayerKey(inputs)).not.toBe(linkLayerKey(base));
+    });
+  }
+
+  it("the same key when nothing changed (a hover alone picks the other picture, it doesn't redraw it)", () => {
+    expect(linkLayerKey({ ...base, transform: { ...base.transform } })).toBe(linkLayerKey(base));
   });
 
   it("draws every placed link once: plain ones in one path, links to a page not created yet in a dashed one", () => {
