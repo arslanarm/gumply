@@ -40,13 +40,17 @@ export function PastePreview(props: {
   const id = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   // #bg7c9bzk (@lead, after C's shots): a sheet wider than the dialog scrolls sideways, and the scrollbar may be
-  // hidden until used; while columns are cut off at the right, the grid's right edge fades to say there's more.
+  // hidden until used; each side with columns cut off fades to say there's more (left too, @graph-dev's review).
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const [moreRight, setMoreRight] = useState(false);
+  const [overflow, setOverflow] = useState<"start" | "end" | "both" | undefined>(undefined);
   useEffect(() => {
     const grid = gridRef.current;
     if (!grid) return;
-    const update = () => setMoreRight(grid.scrollLeft + grid.clientWidth < grid.scrollWidth - 1);
+    const update = () => {
+      const start = grid.scrollLeft > 1;
+      const end = grid.scrollLeft + grid.clientWidth < grid.scrollWidth - 1;
+      setOverflow(start && end ? "both" : start ? "start" : end ? "end" : undefined);
+    };
     update();
     grid.addEventListener("scroll", update, { passive: true });
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(update) : null;
@@ -153,7 +157,7 @@ export function PastePreview(props: {
         </label>
         {/* #bg7c9bzk (#faqr8pj9's #11): one table, so each column's name and type sit over its own cells; it scrolls
             sideways inside the dialog when the sheet is wide, rather than running past its edge. */}
-        <div className="base-paste-grid" ref={gridRef} data-testid="base-paste-grid" data-overflow={moreRight ? "end" : undefined}>
+        <div className="base-paste-grid" ref={gridRef} data-testid="base-paste-grid" data-overflow={overflow}>
           <table className="base-paste-sample" data-testid="base-paste-sample">
             <colgroup>
               <col className="is-name" />
