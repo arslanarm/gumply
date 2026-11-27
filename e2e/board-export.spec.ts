@@ -394,8 +394,18 @@ test.describe('board export (#yewapn9k)', () => {
     await expect(button).toHaveAttribute('data-tooltip', 'Export as image…');
     await button.click();
     await expect(page.getByTestId('board-export-dialog')).toBeVisible();
+    // A real modal over the whole window, not just the board (@opus-editor: the board root is a size container).
+    const viewport = page.viewportSize()!;
+    const backdrop = (await page.locator('.modal-backdrop').boundingBox())!;
+    expect([backdrop.x, backdrop.y, backdrop.width, backdrop.height]).toEqual([0, 0, viewport.width, viewport.height]);
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('board-export-dialog')).toHaveCount(0);
+    // A short window (the #3nnx98m4 case): the whole dialog is still in view.
+    await page.setViewportSize({ width: 1280, height: 520 });
+    await button.click();
+    await expect(page.getByTestId('board-export-confirm')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('board-export-format-png')).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press('Escape');
     await expect(page.getByTestId('board-menu-button')).toHaveCount(0);
     // In the row's ⋯ too.
     await page.getByTestId(`page-item-${id}`).hover();
