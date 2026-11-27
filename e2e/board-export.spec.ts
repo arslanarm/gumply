@@ -56,13 +56,26 @@ async function openAligned(page: Page, id: string, minX: number, minY: number, t
   await expect(page.locator('.react-flow__node').first()).toBeVisible();
 }
 
-async function exportBoard(page: Page, format: 'png' | 'svg', options: { selection?: boolean; transparent?: boolean } = {}) {
-  await page.getByTestId('board-menu-button').click();
+/**
+ * #pypzxe6i: export is in the board's own ⋯ (its sidebar row; the canvas has no ⋯ any more): "Export as image…"
+ * opens a dialog with the format, "Selection only" and "Transparent background".
+ */
+async function openExport(page: Page, id: string) {
+  await page.getByTestId(`page-item-${id}`).hover();
+  await page.getByTestId(`page-menu-button-${id}`).click();
+  await page.getByTestId(`export-board-${id}`).click();
+  await expect(page.getByTestId('board-export-dialog')).toBeVisible();
+}
+
+async function exportBoard(page: Page, id: string, format: 'png' | 'svg', options: { selection?: boolean; transparent?: boolean } = {}) {
+  await openExport(page, id);
+  await page.getByTestId(`board-export-format-${format}`).check();
   const selection = page.getByTestId('board-export-selection');
   if (!(await selection.isDisabled()) && (await selection.isChecked()) !== Boolean(options.selection)) await selection.click();
   const transparent = page.getByTestId('board-export-transparent');
   if ((await transparent.isChecked()) !== Boolean(options.transparent)) await transparent.click();
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId(`board-export-${format}`).click()]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-confirm').click()]);
+  await expect(page.getByTestId('board-export-dialog')).toHaveCount(0);
   return download;
 }
 
@@ -165,7 +178,7 @@ test.describe('board export (#yewapn9k)', () => {
     await openAligned(page, id, 0, 0);
     await expect(page.getByTestId('board-image')).toBeVisible();
 
-    const png = await downloaded(await exportBoard(page, 'png'));
+    const png = await downloaded(await exportBoard(page, id, 'png'));
     const size = pngSize(png);
     const width = 620 + PADDING * 2;
     const height = 420 + PADDING * 2;
@@ -200,7 +213,7 @@ test.describe('board export (#yewapn9k)', () => {
     await openAligned(page, id, 0, 0);
     await expect(page.getByTestId('board-page-card-preview')).toContainText('Ship the export');
 
-    const svg = (await downloaded(await exportBoard(page, 'svg'))).toString('utf8');
+    const svg = (await downloaded(await exportBoard(page, id, 'svg'))).toString('utf8');
     validSvg(svg);
     // The font is embedded (latin, plus latin-ext for "é"? no: é is latin-1; italic for *note*).
     expect(svg).toMatch(/@font-face\{font-family:"Inter";font-style:normal;[^}]*src:url\(data:font\/woff2;base64,/);
@@ -217,7 +230,7 @@ test.describe('board export (#yewapn9k)', () => {
     expect(parsed).toMatchObject({ error: null, root: 'svg' });
     expect(parsed.texts).toBeGreaterThan(5);
 
-    const png = await downloaded(await exportBoard(page, 'png'));
+    const png = await downloaded(await exportBoard(page, id, 'png'));
     const width = 580 + PADDING * 2;
     const height = 360 + PADDING * 2;
     const screen = await screenCapture(page, width, height);
@@ -236,12 +249,13 @@ test.describe('board export (#yewapn9k)', () => {
     await openAligned(page, id, 0, 0, 'dark');
     await page.getByTestId('board-sticky').filter({ hasText: 'Keep me' }).click();
 
-    // With something selected, the menu offers (and pre-checks) "Selection only".
-    await page.getByTestId('board-menu-button').click();
+    // With something selected, the dialog offers (and pre-checks) "Selection only"; Escape closes it.
+    await openExport(page, id);
     await expect(page.getByTestId('board-export-selection')).toBeChecked();
     await page.keyboard.press('Escape');
+    await expect(page.getByTestId('board-export-dialog')).toHaveCount(0);
 
-    const selected = await exportBoard(page, 'svg', { selection: true });
+    const selected = await exportBoard(page, id, 'svg', { selection: true });
     expect(selected.suggestedFilename()).toBe('Two notes (selection).svg');
     const svg = (await downloaded(selected)).toString('utf8');
     expect(svg).toContain('Keep me');
@@ -249,8 +263,8 @@ test.describe('board export (#yewapn9k)', () => {
     expect(svg).toContain('width="224" height="224"');
 
     // Transparent: the corner is see-through; theme: the dark board surface.
-    const clear = await downloaded(await exportBoard(page, 'png', { selection: true, transparent: true }));
-    const opaque = await downloaded(await exportBoard(page, 'png', { selection: true, transparent: false }));
+    const clear = await downloaded(await exportBoard(page, id, 'png', { selection: true, transparent: true }));
+    const opaque = await downloaded(await exportBoard(page, id, 'png', { selection: true, transparent: false }));
     const corners = await page.evaluate(
       async ([a, b]) => {
         const pixel = async (data: string) => {
@@ -276,10 +290,10 @@ test.describe('board export (#yewapn9k)', () => {
     // Nothing selected: the whole board, and "Selection only" is unavailable.
     await page.keyboard.press('Escape');
     await page.mouse.click(700, 700);
-    const whole = await exportBoard(page, 'svg');
+    const whole = await exportBoard(page, id, 'svg');
     expect(whole.suggestedFilename()).toBe('Two notes.svg');
     expect((await downloaded(whole)).toString('utf8')).toContain('Leave me');
-    await page.getByTestId('board-menu-button').click();
+    await openExport(page, id);
     await expect(page.getByTestId('board-export-selection')).toBeDisabled();
   });
 
@@ -298,7 +312,7 @@ test.describe('board export (#yewapn9k)', () => {
       await openAligned(page, id, 0, 0, theme);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       for (const transparent of [false, true]) {
-        const svg = (await downloaded(await exportBoard(page, 'svg', { transparent }))).toString('utf8');
+        const svg = (await downloaded(await exportBoard(page, id, 'svg', { transparent }))).toString('utf8');
         validSvg(svg);
         // Only SVG 1.1 colour syntax: no CSS Color 4 functions, no rgba().
         const body = svg.replace(/<style>[\s\S]*?<\/style>/, '');
@@ -349,7 +363,11 @@ test.describe('board export (#yewapn9k)', () => {
         `1000-object ${format} export`,
         async () => {
           const started = Date.now();
-          const bytes = await downloaded(await exportBoard(page, format));
+          // The lab has no sidebar: its own "Export…" button opens the same dialog.
+          await page.getByTestId('lab-export').click();
+          await page.getByTestId(`board-export-format-${format}`).check();
+          const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-confirm').click()]);
+          const bytes = await downloaded(download);
           const elapsed = Date.now() - started;
           console.log(`1000 objects → ${format}: ${elapsed} ms, ${(bytes.length / 1024).toFixed(0)} KB`);
           return { bytes, elapsed };
@@ -362,6 +380,21 @@ test.describe('board export (#yewapn9k)', () => {
         // Every sticky made it in, not just the ones on screen.
         expect((bytes.toString('utf8').match(/Sticky \d+/g) ?? []).length).toBeGreaterThan(300);
       }
+    }
+  });
+
+  test('#pypzxe6i: one ⋯ for a board: its row menu has "Export as image…", the canvas has no ⋯, and page-only items are hidden', async ({ page, request, vault }) => {
+    void vault;
+    const id = 'One menu.canvas';
+    expect((await request.post('/api/boards', { data: { title: 'One menu' } })).status()).toBe(201);
+    await page.goto(`/#/${encodeURIComponent(id)}`);
+    await expect(page.getByTestId('board')).toBeVisible();
+    await expect(page.getByTestId('board-menu-button')).toHaveCount(0);
+    await page.getByTestId(`page-item-${id}`).hover();
+    await page.getByTestId(`page-menu-button-${id}`).click();
+    await expect(page.getByTestId(`export-board-${id}`)).toHaveText('Export as image…');
+    for (const pageOnly of ['import-notion', 'export-html', 'export-pdf', 'add-base', 'add-page']) {
+      await expect(page.getByTestId(`${pageOnly}-${id}`)).toHaveCount(0);
     }
   });
 });

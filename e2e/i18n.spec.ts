@@ -219,8 +219,12 @@ test.describe('Russian interface (#7h5utv23)', () => {
     };
     expect(board.board.nodes.map((node) => node.label).filter(Boolean)).toEqual(['Сделать', 'В работе', 'Готово']);
     await page.keyboard.press('Escape');
-    await page.getByTestId('board-menu-button').click();
-    await expect(page.getByTestId('board-export-png')).toHaveText('Экспорт в PNG');
+    // #pypzxe6i: export is in the board's own ⋯ (its row): the item and the dialog in Russian.
+    await page.getByTestId('page-item-Канбан.canvas').hover();
+    await page.getByTestId('page-menu-button-Канбан.canvas').click();
+    await expect(page.getByTestId('export-board-Канбан.canvas')).toHaveText('Экспортировать как изображение…');
+    await page.getByTestId('export-board-Канбан.canvas').click();
+    await expect(page.getByTestId('board-export-dialog')).toBeVisible();
     await expectNoEnglish(page, 'the board');
   });
 
