@@ -1,41 +1,10 @@
-/* The board ⋯ menu (spec/v0-6 §D): export. Same chrome as the zoom panel. */
-.board-menu {
-  position: relative;
-  margin: 14px;
+/* The board's export dialog (#pypzxe6i: it replaces the canvas's own ⋯ menu). The dialog itself is a `.modal`;
+   these are its option rows. */
+
+.board-export-dialog {
+  width: min(24rem, 92vw);
 }
 
-.board-menu-button {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--board-shadow-raised);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.board-menu-button:hover,
-.board-menu-button.is-open {
-  background: var(--hover);
-}
-
-.board-menu-list {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 220px;
-  padding: 4px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--board-shadow-raised);
-  z-index: 12;
-}
-
-.board-menu-item,
 .board-menu-check {
   display: flex;
   align-items: center;
@@ -52,20 +21,13 @@
   cursor: pointer;
 }
 
-.board-menu-item:hover:not(:disabled),
 .board-menu-check:hover:not(.is-disabled) {
   background: var(--hover);
 }
 
-.board-menu-item:disabled,
 .board-menu-check.is-disabled {
   color: var(--muted);
   cursor: default;
-}
-
-.board-menu-item svg {
-  color: var(--muted);
-  flex: none;
 }
 
 .board-menu-check input {
@@ -73,31 +35,4 @@
   width: 14px;
   height: 14px;
   accent-color: var(--accent);
-}
-
-.board-menu-separator {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
-}
-
-.board-menu-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid color-mix(in srgb, var(--text) 20%, transparent);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: board-menu-spin 0.8s linear infinite;
-}
-
-@keyframes board-menu-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .board-menu-spinner {
-    animation-duration: 2.4s;
-  }
 }

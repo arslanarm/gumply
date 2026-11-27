@@ -47,7 +47,7 @@ import {
 import { currentModifierLabel, isTypingTarget, withModifier } from "../lib/shortcuts.js";
 import { EDGE_TYPES } from "./BoardEdge.js";
 import { useBoardExport } from "./BoardExport.js";
-import { BoardMenu } from "./BoardMenu.js";
+import { BoardExportDialog, type ExportFormat } from "./BoardMenu.js";
 import { ConnectorToolbar } from "./ConnectorToolbar.js";
 import { BOARD_DRAG_MIME } from "./constants.js";
 import { BoardActionsContext, BoardLookContext, BoardRenderersContext, type BoardActions, type BoardRenderers } from "./context.js";
@@ -178,6 +178,8 @@ export interface BoardEditorControls {
   setTool: (tool: BoardTool) => void;
   /** #snuin2ja (Cmd+K): fit, zoom in or out, or 100%, as the zoom panel does. */
   view: (action: "fit" | "in" | "out" | "reset") => void;
+  /** #pypzxe6i: open the export dialog (from the board's own ⋯ or Cmd+K), with a format chosen or not. */
+  openExport: (format?: ExportFormat) => void;
 }
 
 export interface BoardFrame {
@@ -831,10 +833,19 @@ function BoardCanvas(props: BoardEditorProps) {
   // #snuin2ja: tool and view actions for Cmd+K, defined further down.
   const paletteRef = useRef<{ setTool: (tool: BoardTool) => void; view: (action: "fit" | "in" | "out" | "reset") => void } | null>(null);
 
+  // #pypzxe6i: the export dialog (its format, if one was asked for); the canvas has no ⋯ of its own.
+  const [exportDialog, setExportDialog] = useState<{ format?: ExportFormat } | null>(null);
+  // Start loading the export code as the dialog opens, as the old menu did.
+  const preloadExport = exporter.preload;
+  useEffect(() => {
+    if (exportDialog) preloadExport();
+  }, [exportDialog, preloadExport]);
+
   useEffect(() => {
     onReady?.({
       setTool: (tool) => paletteRef.current?.setTool(tool),
       view: (action) => paletteRef.current?.view(action),
+      openExport: (format) => setExportDialog(format ? { format } : {}),
       getBoard: () => boardRef.current,
       replaceBoard: (next) => {
         setEditing(null);
@@ -2245,10 +2256,6 @@ function BoardCanvas(props: BoardEditorProps) {
             </NodeToolbar>
             ) : null}
 
-            <Panel position="top-right">
-              <BoardMenu hasSelection={selectedNodeIds.length > 0} busy={exporter.busy} onExport={exporter.start} onOpen={exporter.preload} />
-            </Panel>
-
             <Panel position="bottom-right" className="board-zoom">
               <button type="button" className="board-zoom-button" aria-label={t("board.zoomOut")} data-tooltip={t("board.zoomOut")} data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
                 <BoardIcon name="minus" size={16} />
@@ -2325,6 +2332,15 @@ function BoardCanvas(props: BoardEditorProps) {
           {toolbarEdge ? <ConnectorToolbar edge={toolbarEdge} rootRef={rootRef} layoutKey={board} /> : null}
 
           {exporter.stage}
+          {exportDialog ? (
+            <BoardExportDialog
+              hasSelection={selectedNodeIds.length > 0}
+              busy={exporter.busy}
+              {...(exportDialog.format ? { initialFormat: exportDialog.format } : {})}
+              onExport={exporter.start}
+              onClose={() => setExportDialog(null)}
+            />
+          ) : null}
 
           {board.nodes.length === 0 ? (
             <div className="board-empty" data-testid="board-empty">

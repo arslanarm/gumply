@@ -48,6 +48,8 @@ export interface PageItemProps {
   onShowHistory?: (id: PageId) => void;
   /** B4: ⋯ → Import from Notion… into this page or folder. */
   onImportNotion?: (id: PageId) => void;
+  /** #pypzxe6i: a board's ⋯ → Export as image…. */
+  onExportBoard?: (id: PageId) => void;
   onRenameDraft: (value: string) => void;
   onStartRename: (id: PageId, title: string) => void;
   onCommitRename: () => void;
@@ -228,6 +230,7 @@ function PageItemRow(props: PageItemProps) {
       "page.import-notion": props.onImportNotion ? () => props.onImportNotion?.(page.id) : undefined,
       "page.export-html": props.onExportHtml ? () => props.onExportHtml?.(page.id) : undefined,
       "page.export-pdf": props.onExportPdf ? () => props.onExportPdf?.(page.id) : undefined,
+      "page.export-board": props.onExportBoard ? () => props.onExportBoard?.(page.id) : undefined,
       "page.history": props.onShowHistory ? () => props.onShowHistory?.(page.id) : undefined,
       "page.show-rows": props.onToggleRows ? () => props.onToggleRows?.(page.id, !page.showRows) : undefined,
       "page.delete": () => props.onDelete(page.id),

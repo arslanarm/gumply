@@ -2386,9 +2386,27 @@ export function App() {
 
   const editTitleRef = useRef(editTitleId);
   editTitleRef.current = editTitleId;
+  /** #pypzxe6i: "Export as image…" on a board that wasn't open yet: its dialog opens once the board is ready. */
+  const pendingBoardExport = useRef<PageId | null>(null);
+  const exportBoard = useCallback(
+    (id: PageId) => {
+      if (selectedRef.current === id && boardControls.current) {
+        boardControls.current.openExport();
+        return;
+      }
+      pendingBoardExport.current = id;
+      navigate(id);
+    },
+    [navigate],
+  );
   const handleBoardReady = useCallback((controls: BoardViewControls) => {
     boardControls.current = controls;
     setOutlineTick((value) => value + 1);
+    if (pendingBoardExport.current !== null && pendingBoardExport.current === selectedRef.current) {
+      pendingBoardExport.current = null;
+      controls.openExport();
+      return;
+    }
     // An existing board: put focus on the canvas so its shortcuts (N, V,
     // Delete…) work right away instead of landing in the title or the tree.
     if (editTitleRef.current !== null && editTitleRef.current === selectedRef.current) return;
@@ -2578,6 +2596,9 @@ export function App() {
     },
     "page.export-pdf": () => {
       if (openPageMeta) setPdfTarget(openPageMeta);
+    },
+    "page.export-board": () => {
+      if (commandPage) exportBoard(commandPage.id);
     },
     "page.history": () => {
       if (openHistoryMeta) setHistoryTarget(openHistoryMeta);
@@ -2772,6 +2793,7 @@ export function App() {
           onToday={() => void openToday()}
           onNewFromTemplate={closingSidebar((parentId: PageId | null) => setTemplatePicker({ mode: "new", parentId }))}
           onExportHtml={closingSidebar((id: PageId) => setExportTarget(pages.find((item) => item.id === id) ?? null))}
+          onExportBoard={closingSidebar(exportBoard)}
           onImportNotion={closingSidebar((id: PageId) => setNotionImport({ target: pages.find((item) => item.id === id) ?? null }))}
           onExportPdf={closingSidebar((id: PageId) => setPdfTarget(pages.find((item) => item.id === id) ?? null))}
           onShowHistory={closingSidebar((id: PageId) => setHistoryTarget(pages.find((item) => item.id === id) ?? null))}

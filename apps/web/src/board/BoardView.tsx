@@ -32,6 +32,8 @@ export interface BoardViewControls {
   /** #chbpc9yb: the board as it is now (unsaved changes included), or null before it's ready. */
   getBoard: () => ReturnType<BoardEditorControls["getBoard"]> | null;
   view: BoardEditorControls["view"];
+  /** #pypzxe6i: the export dialog (the board's own ⋯ and Cmd+K). */
+  openExport: BoardEditorControls["openExport"];
 }
 
 export interface BoardViewProps {
@@ -218,6 +220,7 @@ export function BoardView(props: BoardViewProps) {
         setTool: (tool) => editorRef.current?.setTool(tool),
         getBoard: () => editorRef.current?.getBoard() ?? null,
         view: (action) => editorRef.current?.view(action),
+        openExport: (format) => editorRef.current?.openExport(format),
       });
     },
     [autosave, load],
