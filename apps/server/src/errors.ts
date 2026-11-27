@@ -32,7 +32,8 @@ export function conflict(message: string): VaultError {
  * anything is written; the client says it in the user's language from `reason` and `title`.
  */
 export function nameTaken(title: string): VaultError {
-  return new VaultError(409, `A page called “${title}” is already here`, "name-taken", title);
+  // Kind-neutral: a page, board, database or folder may hold the name (@opus-editor).
+  return new VaultError(409, `“${title}” is already used here`, "name-taken", title);
 }
 
 export function payloadTooLarge(message: string): VaultError {
