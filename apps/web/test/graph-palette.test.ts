@@ -28,23 +28,33 @@ const closest = (palette: readonly string[]) => {
   for (let i = 0; i < palette.length; i += 1) for (let j = i + 1; j < palette.length; j += 1) min = Math.min(min, deltaE(palette[i]!, palette[j]!));
   return min;
 };
-function themePalette(theme: "light" | "dark"): string[] {
+/** A theme's graph palette and accent, read from its own block in styles.css (`:root` and `:root[data-theme="dark"]`). */
+function theme(name: "light" | "dark"): { palette: string[]; accent: string } {
   const css = readFileSync(join(__dirname, "../src/styles.css"), "utf8");
-  const blocks = [...css.matchAll(/--graph-(\d): (#[0-9a-f]{6});/gi)].map((match) => [Number(match[1]), match[2]!] as const);
-  const first = blocks.slice(0, 10);
-  const second = blocks.slice(10, 20);
-  return (theme === "light" ? first : second).sort((a, b) => a[0] - b[0]).map(([, hex]) => hex.toLowerCase());
+  const selector = name === "light" ? /^:root \{([^}]*)\}/m : /^:root\[data-theme="dark"\] \{([^}]*)\}/m;
+  const block = selector.exec(css)?.[1] ?? "";
+  const slots = [...block.matchAll(/--graph-(\d): (#[0-9a-f]{6});/gi)].map((match) => [Number(match[1]), match[2]!.toLowerCase()] as const);
+  const accent = /--accent: (#[0-9a-f]{6});/i.exec(block)?.[1]?.toLowerCase() ?? "";
+  return { palette: slots.sort((a, b) => a[0] - b[0]).map(([, hex]) => hex), accent };
 }
 
 describe("graph tag colours read apart (#yy347xgi (9))", () => {
   it("light: every pair at least ΔE 25 apart (it was 18.5: #3f7a34 against #6b7a2a)", () => {
-    expect(themePalette("light")).toEqual(FALLBACK_GRAPH_PALETTE.map((hex) => hex.toLowerCase()));
+    expect(theme("light").palette).toEqual(FALLBACK_GRAPH_PALETTE.map((hex) => hex.toLowerCase()));
     expect(closest(FALLBACK_GRAPH_PALETTE)).toBeGreaterThanOrEqual(25);
   });
 
   it("dark: every pair at least ΔE 22 apart (it was 21.9)", () => {
-    expect(themePalette("dark")).toHaveLength(10);
-    expect(closest(themePalette("dark"))).toBeGreaterThanOrEqual(22);
+    expect(theme("dark").palette).toHaveLength(10);
+    expect(closest(theme("dark").palette)).toBeGreaterThanOrEqual(22);
+  });
+
+  it("no slot reads as the accent (the current page's ring), light and dark: ΔE 25 at least (@opus-editor)", () => {
+    for (const name of ["light", "dark"] as const) {
+      const { palette, accent } = theme(name);
+      expect(accent, name).toMatch(/^#[0-9a-f]{6}$/);
+      for (const hex of palette) expect(deltaE(hex, accent), `${name} ${hex}`).toBeGreaterThanOrEqual(25);
+    }
   });
 });
 

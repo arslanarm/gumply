@@ -98,7 +98,8 @@
   --graph-6: #c9a0bd;
   --graph-7: #ff9dc2;
   --graph-8: #c49a82;
-  --graph-9: #a38be0;
+  /* #yy347xgi (9): a khaki olive, ΔE ≥ 32 from every slot, the grey page colour and the accent. */
+  --graph-9: #989040;
   --graph-page: #9a968e;
 }
 

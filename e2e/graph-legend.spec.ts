@@ -69,6 +69,8 @@ test('#yy347xgi (7, 8): the local graph labels its depth and has zoom and Fit', 
 
 test('#yy347xgi (6): a new group takes a colour no tag uses yet, and its query takes the keyboard', async ({ page, vault }) => {
   await seedVault(vault);
+  // #home hashes to the palette's first slot (and it's free), the colour a new group took before the fix.
+  await vault.seed([{ title: 'Garden', content: 'Beds. #home' }]);
   await page.setViewportSize({ width: 1500, height: 800 });
   await page.goto('/');
   await openGraph(page);
@@ -77,6 +79,9 @@ test('#yy347xgi (6): a new group takes a colour no tag uses yet, and its query t
     .getByTestId('graph-legend-tag')
     .evaluateAll((rows) => rows.map((row) => getComputedStyle(row.querySelector('.graph-legend-dot')!).backgroundColor));
   expect(tagColours.length).toBeGreaterThan(0);
+  // The premise: a tag (#home) is drawn in the palette's first colour, the one a new group would take before the
+  // fix (@opus-editor: pinned, so the case can't pass on both).
+  expect(tagColours).toContain('rgb(47, 95, 143)');
   await page.getByTestId('graph-panel-toggle').click();
   await page.getByTestId('graph-group-add').click();
   const query = page.getByTestId('graph-group-query').last();
