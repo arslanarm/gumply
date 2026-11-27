@@ -125,6 +125,8 @@ const LABEL_ALLOWANCE = 16;
 const MAX_FIT_ZOOM = 8;
 /** #yy347xgi (5): the gap between a tag node's dot and its ring, in CSS px. */
 const TAG_RING_GAP_PX = 2.5;
+/** #5n2p7phw: the live region waits this long after the last move, so a held key is read out once. */
+const ANNOUNCE_DEBOUNCE_MS = 150;
 /** #5n2p7phw: a keyboard move brings its node in when it's this close to the canvas's edge (CSS px). */
 const KEYBOARD_EDGE_PX = 40;
 /** #yy347xgi (4): up to this many matches of a search shown in context get their labels. */
@@ -436,6 +438,18 @@ export function GraphCanvas({
   const hoveredId = pointerHoverId ?? (keyboardFocus ? keyboardId : null);
   const keyboardRingId = keyboardFocus ? keyboardId : null;
   const [spoken, setSpoken] = useState("");
+  // #5n2p7phw: a held key moves the focus many times; only the node it stops on is read out (@opus-editor).
+  const spokenTimer = useRef<number | null>(null);
+  const announce = (text: string): void => {
+    if (spokenTimer.current !== null) window.clearTimeout(spokenTimer.current);
+    spokenTimer.current = window.setTimeout(() => {
+      spokenTimer.current = null;
+      setSpoken(text);
+    }, ANNOUNCE_DEBOUNCE_MS);
+  };
+  useEffect(() => () => {
+    if (spokenTimer.current !== null) window.clearTimeout(spokenTimer.current);
+  }, []);
   /** `[` / `]`: the node whose neighbours are being stepped through, where in its ring, and the node landed on. */
   const neighbourCursor = useRef<{ of: string; at: number; landed: string } | null>(null);
   const hintId = useId();
@@ -1589,19 +1603,24 @@ export function GraphCanvas({
     const graph = graphRef.current;
     if (!graph) return [];
     const points: Array<{ id: string; x: number; y: number }> = [];
+    // With "Show the rest", the keys walk only the matches (the rest is dimmed), @lead.
+    const only = spotlightRef.current;
     for (const node of nodesRef.current as PositionedNode[]) {
       if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
+      if (only && !only.has(node.id)) continue;
       const point = graph.graph2ScreenCoords(node.x as number, node.y as number);
       points.push({ id: node.id, x: point.x, y: point.y });
     }
     return points;
   };
   const startNode = (): string | null => {
-    const ids = new Set((nodesRef.current as PositionedNode[]).map((node) => node.id));
+    const only = spotlightRef.current;
+    const ids = new Set((nodesRef.current as PositionedNode[]).map((node) => node.id).filter((id) => !only || only.has(id)));
     for (const id of [highlightId, centerId]) if (id && ids.has(id)) return id;
     let best: string | null = null;
     let most = -1;
     for (const node of nodesRef.current as CanvasNode[]) {
+      if (!ids.has(node.id)) continue;
       const count = "linkCount" in node ? (node as GraphNode).linkCount : (node as GhostNode).refCount ?? 0;
       if (count > most) {
         most = count;
@@ -1613,7 +1632,7 @@ export function GraphCanvas({
   const focusNode = (id: string, keepCursor = false): void => {
     setKeyboardId(id);
     if (!keepCursor) neighbourCursor.current = null;
-    setSpoken(nodeStylesRef.current.get(id)?.spoken ?? "");
+    announce(nodeStylesRef.current.get(id)?.spoken ?? "");
     // The view follows: a node off screen (or near its edge) is brought in, as the user's own view.
     const graph = graphRef.current;
     const node = (nodesRef.current as PositionedNode[]).find((candidate) => candidate.id === id);
@@ -1627,14 +1646,34 @@ export function GraphCanvas({
       graph.centerAt(node.x, node.y, reducedMotion ? 0 : 250);
     }
   };
+  /** Keyboard mode: the node focus, its ring and the announcements. */
+  const startKeyboard = (): void => {
+    setKeyboardFocus(true);
+    const only = spotlightRef.current;
+    const keep = keyboardId && nodeStylesRef.current.has(keyboardId) && (!only || only.has(keyboardId));
+    const id = keep ? keyboardId : startNode();
+    if (id) focusNode(id);
+  };
   const onCanvasFocus = (event: React.FocusEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget) return;
-    setKeyboardFocus(true);
-    const id = keyboardId && nodeStylesRef.current.has(keyboardId) ? keyboardId : startNode();
-    if (id) focusNode(id);
+    // A click focuses the canvas too: only a keyboard focus starts keyboard mode (no ring after every click).
+    if (event.currentTarget.matches(":focus-visible")) startKeyboard();
   };
   const onCanvasKey = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return;
+    // Keys by position where layouts differ (a ru layout types х/ъ on [ ]), @opus-editor.
+    const code = event.nativeEvent.code;
+    const bracket = code === "BracketRight" || event.key === "]" ? "]" : code === "BracketLeft" || event.key === "[" ? "[" : null;
+    const zoomIn = event.key === "+" || event.key === "=" || code === "NumpadAdd";
+    const zoomOut = event.key === "-" || code === "NumpadSubtract" || code === "Minus";
+    const fitKey = event.key === "0" || code === "Digit0" || code === "Numpad0";
+    const moveKey = Boolean(bracket) || event.key.startsWith("Arrow") || event.key === "Enter";
+    // The first move key after a click on the canvas starts keyboard mode on the start node.
+    if (!keyboardFocus && moveKey) {
+      event.preventDefault();
+      startKeyboard();
+      return;
+    }
     const graph = graphRef.current;
     const current = keyboardId;
     const arrows: Record<string, ArrowDirection> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
@@ -1646,7 +1685,7 @@ export function GraphCanvas({
       if (next) focusNode(next);
       return;
     }
-    if ((event.key === "]" || event.key === "[") && current) {
+    if (bracket && current) {
       event.preventDefault();
       // Still stepping round the same node (the focus is where the last step landed)? Else this node is the centre.
       const cursor = neighbourCursor.current;
@@ -1654,10 +1693,11 @@ export function GraphCanvas({
       const points = screenPoints();
       const center = points.find((point) => point.id === anchor);
       const around = neighbourIds(links, anchor);
+      // points are already the matches only, with "Show the rest" on.
       const ring = center ? clockwiseNeighbours(center, points.filter((point) => around.has(point.id))) : [];
       if (ring.length === 0) return;
       const at = cursor && cursor.of === anchor && cursor.landed === current ? cursor.at : -1;
-      const step = event.key === "]" ? 1 : -1;
+      const step = bracket === "]" ? 1 : -1;
       const index = at === -1 ? (step === 1 ? 0 : ring.length - 1) : (at + step + ring.length) % ring.length;
       const target = ring[index]!;
       neighbourCursor.current = { of: anchor, at: index, landed: target };
@@ -1670,17 +1710,17 @@ export function GraphCanvas({
       if (node) handleNodeClickRef.current(node);
       return;
     }
-    if ((event.key === "+" || event.key === "=" || event.key === "-") && graph) {
+    if ((zoomIn || zoomOut) && graph) {
       event.preventDefault();
       stopCameraAnimation();
       userViewRef.current = true;
       const k = graph.zoom();
-      graph.zoom(event.key === "-" ? Math.max(0.06, k / 1.5) : Math.min(8, k * 1.5), reducedMotion ? 0 : 200);
+      graph.zoom(zoomOut ? Math.max(0.06, k / 1.5) : Math.min(8, k * 1.5), reducedMotion ? 0 : 200);
       const node = (nodesRef.current as PositionedNode[]).find((candidate) => candidate.id === current);
       if (node?.x !== undefined && node.y !== undefined) graph.centerAt(node.x, node.y, reducedMotion ? 0 : 200);
       return;
     }
-    if (event.key === "0") {
+    if (fitKey) {
       event.preventDefault();
       fitView(reducedMotion ? 0 : 300, "keyboard");
       return;
