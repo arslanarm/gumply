@@ -581,7 +581,23 @@ export const SCAN_CONCURRENCY = 32;
 type ScanOutcome =
   | { kind: "gone" }
   | { kind: "keep" }
-  | { kind: "cached" | "read"; key: string; record: PageRecord };
+  | { kind: "cached" | "read"; key: string; record: PageRecord; racy: boolean };
+
+/** One read-cache entry: see `readCache` and `isRacy`. */
+type ReadCacheEntry = { key: string; id: PageId; record: PageRecord; racy: boolean };
+
+/**
+ * #rwgtaffe: how long after a file's ctime a stat can still miss a change. The kernel stamps ctime from a
+ * coarse clock (a tick, 1–10 ms), and vfat/exFAT keep it at their 2 s file-time granularity, so a same-size edit
+ * that keeps the mtime can leave every stat field as it was. A cache entry stat'ed within this window of its
+ * ctime is "racy" (as in git's index) and is re-read by the next scan rather than trusted.
+ */
+const RACY_STAT_MS = 2_500;
+
+/** #rwgtaffe: `stats` were taken at `statAtMs`, within RACY_STAT_MS of the file's ctime (or a ctime ahead). */
+function isRacy(stats: { ctimeMs: number }, statAtMs: number): boolean {
+  return stats.ctimeMs > statAtMs - RACY_STAT_MS;
+}
 
 /**
  * `fn` over `items` with at most `limit` running at once; the results come
@@ -1351,7 +1367,7 @@ export class VaultStore {
    * a refresh while the file's `statKey` is unchanged: a 10,000-note rescan
    * is then a directory walk plus stats, not 10,000 reads and parses.
    */
-  private readCache = new Map<string, { key: string; id: PageId; record: PageRecord }>();
+  private readCache = new Map<string, ReadCacheEntry>();
   /** Files the watcher reported since the last refresh (absolute paths). */
   private readonly pendingPaths = new Set<string>();
   /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
@@ -1739,7 +1755,7 @@ export class VaultStore {
    */
   private async scanRecords(reread?: ReadonlySet<string>): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> }> {
     const next = new Map<PageId, PageRecord>();
-    const nextCache = new Map<string, { key: string; id: PageId; record: PageRecord }>();
+    const nextCache = new Map<string, ReadCacheEntry>();
     const directories: DirectoryScan = new Map();
     const others: string[] = [];
     const unreadableDirs: string[] = [];
@@ -1761,6 +1777,7 @@ export class VaultStore {
     // exactly those of a sequential read.
     const outcomes = await mapBounded(items, this.scanConcurrency, async ({ absolute, id }): Promise<ScanOutcome> => {
       let stats;
+      const statAtMs = Date.now();
       try {
         stats = await stat(absolute);
       } catch (error) {
@@ -1776,7 +1793,9 @@ export class VaultStore {
       const key = statKey(stats);
       const cached = this.readCache.get(absolute);
       // #g95wkd9y: an unchanged file keeps its record; a file the watcher named is always read.
-      if (cached && cached.key === key && cached.id === id && !reread?.has(absolute)) return { kind: "cached", key, record: cached.record };
+      // #rwgtaffe: not an entry stat'ed too close to its ctime: the same key may hide a later same-size edit.
+      if (cached && cached.key === key && cached.id === id && !cached.racy && !reread?.has(absolute)) return { kind: "cached", key, record: cached.record, racy: false };
+      const racy = isRacy(stats, statAtMs);
       const read = await this.readIfPresent(absolute, id);
       if (read === null) return { kind: "gone" }; // Deleted between the stat and the read.
       // #35q6kt6e: this one file can't be read right now (permissions, a lock
@@ -1784,7 +1803,7 @@ export class VaultStore {
       // record it had, if any, and isn't cached, so the next rescan tries it
       // again; the rest of the rescan goes on.
       if (read === UNREADABLE) return { kind: "keep" };
-      return { kind: "read", key, record: read };
+      return { kind: "read", key, record: read, racy };
     });
     items.forEach(({ absolute, id }, index) => {
       const outcome = outcomes[index]!;
@@ -1795,7 +1814,7 @@ export class VaultStore {
         return;
       }
       if (outcome.kind === "read") this.refreshTags(outcome.record);
-      nextCache.set(absolute, { key: outcome.key, id, record: outcome.record });
+      nextCache.set(absolute, { key: outcome.key, id, record: outcome.record, racy: outcome.racy });
       next.set(id, outcome.record);
     });
     // #35q6kt6e: a folder that couldn't be listed keeps the pages and boards it
@@ -1825,18 +1844,20 @@ export class VaultStore {
    * index doesn't know) returns null, and the caller walks.
    */
   private async rereadKnownFiles(paths: ReadonlySet<string>): Promise<{ pages: Map<PageId, PageRecord>; folders: Map<PageId, FolderRecord> } | null> {
-    const reads: Array<{ absolute: string; id: PageId; key: string }> = [];
+    const reads: Array<{ absolute: string; id: PageId; key: string; racy: boolean }> = [];
     for (const absolute of paths) {
       const cached = this.readCache.get(absolute);
       if (!cached || !this.pages.has(cached.id)) return null;
       try {
-        reads.push({ absolute, id: cached.id, key: statKey(await stat(absolute)) });
+        const statAtMs = Date.now();
+        const stats = await stat(absolute);
+        reads.push({ absolute, id: cached.id, key: statKey(stats), racy: isRacy(stats, statAtMs) });
       } catch {
         return null; // Deleted: the walk settles ids, parents and folders.
       }
     }
     const next = new Map(this.pages);
-    for (const { absolute, id, key } of reads) {
+    for (const { absolute, id, key, racy } of reads) {
       const record = await this.readIfPresent(absolute, id);
       if (record === null) return null; // Deleted after its stat: the walk settles it.
       // #35q6kt6e: unreadable right now: it keeps its record (already in `next`).
@@ -1845,7 +1866,7 @@ export class VaultStore {
       // The layout didn't change, so neither did the parent.
       record.parentId = this.pages.get(id)!.parentId;
       next.set(id, record);
-      this.readCache.set(absolute, { key, id, record });
+      this.readCache.set(absolute, { key, id, record, racy });
     }
     return { pages: next, folders: this.folders };
   }
