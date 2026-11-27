@@ -9,7 +9,7 @@
  */
 import { canvasNodeKind, type CanvasBoard, type CanvasEdge, type CanvasNode, type CanvasNodeKind } from "@gumply/core";
 import type { Edge, Node } from "@xyflow/react";
-import { closestSides } from "./model.js";
+import { closestSides, nodesInside } from "./model.js";
 
 export interface BoardNodeData extends Record<string, unknown> {
   node: CanvasNode;
@@ -105,21 +105,32 @@ export function syncNodes(
 }
 
 /**
- * Layers (#sdwrzdgx): nodes sit on even z-indexes in array order, and every
- * edge one above the last frame (group), so arrows between objects inside a
- * frame are drawn over its fill, as Obsidian does, and still under the cards.
- * Without frames, edges stay under every node.
+ * Layers (#sdwrzdgx): nodes sit on even z-indexes in array order. An edge
+ * sits just above the highest frame (group) that holds either of its ends, so
+ * an arrow inside a frame is drawn over the frame's fill (as in Obsidian) but
+ * stays under the cards; an edge with no end in a frame stays on 0, under
+ * every node, as before.
  */
 export function nodeLayer(index: number): number {
   return index * 2;
 }
 
-export function edgeLayer(board: CanvasBoard): number {
-  let last = -1;
-  board.nodes.forEach((node, index) => {
-    if (node.type === "group") last = index;
-  });
-  return last < 0 ? 0 : nodeLayer(last) + 1;
+/** Each node's layer floor for edges: one above the highest frame it lies inside (0 if none). */
+export function edgeFloors(board: CanvasBoard): Map<string, number> {
+  const floors = new Map<string, number>();
+  const frames = board.nodes.map((node, index) => ({ node, index })).filter(({ node }) => node.type === "group");
+  if (frames.length === 0) return floors;
+  for (const { node: frame, index } of frames) {
+    for (const inner of nodesInside(board, frame)) {
+      const layer = nodeLayer(index) + 1;
+      if ((floors.get(inner.id) ?? 0) < layer) floors.set(inner.id, layer);
+    }
+  }
+  return floors;
+}
+
+export function edgeLayer(edge: CanvasEdge, floors: ReadonlyMap<string, number>): number {
+  return Math.max(floors.get(edge.fromNode) ?? 0, floors.get(edge.toNode) ?? 0);
 }
 
 function edgeSides(edge: CanvasEdge, nodes: ReadonlyMap<string, CanvasNode>): [string, string] {
@@ -138,8 +149,9 @@ export function syncEdges(
 ): BoardFlowEdge[] {
   const byId = new Map(previous.map((edge) => [edge.id, edge]));
   const nodes = new Map(board.nodes.map((node) => [node.id, node]));
-  const layer = edgeLayer(board);
+  const floors = edgeFloors(board);
   return board.edges.map((edge) => {
+    const layer = edgeLayer(edge, floors);
     const old = byId.get(edge.id);
     const editing = edge.id === editingId;
     const [sourceHandle, targetHandle] = edgeSides(edge, nodes);
