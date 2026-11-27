@@ -110,6 +110,7 @@ import { Palette } from "./Swatch.js";
 import { t, useT } from "../i18n/index.js";
 import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
 import { motionMs } from "../lib/motion.js";
+import { freeSpot } from "./placement.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -718,7 +719,11 @@ function BoardCanvas(props: BoardEditorProps) {
     (path: string, client?: Point) => {
       const at = client ? toFlow(client) : viewCentre();
       const size = PAGE_CARD_SIZE;
-      addAndSelect(createFileNode({ x: at.x - size.width / 2, y: at.y - size.height / 2, ...size }, path));
+      const want = { x: at.x - size.width / 2, y: at.y - size.height / 2, ...size };
+      // #b9425ktw (#fzrwse3y's P3 5): from the toolbar (no drop point), the nearest free spot to the view's centre,
+      // so the card doesn't cover what's there; a card dropped at a point goes exactly there.
+      const corner = client ? want : freeSpot(want, boardRef.current.nodes);
+      addAndSelect(createFileNode({ ...corner, ...size }, path));
     },
     [addAndSelect, toFlow, viewCentre],
   );
