@@ -113,3 +113,44 @@ test('#5n2p7phw: the local graph by keyboard: in on the page itself, an arrow mo
   await page.keyboard.press('Enter');
   await expect(page).not.toHaveURL(/#\/Hub$/);
 });
+
+test('#5n2p7phw (@opus-editor): ] by its key position on a ru layout; no ring after a click; a held key is read out once', async ({ page, vault }) => {
+  await seed(vault);
+  await page.goto('/#/Hub');
+  await page.getByTestId('sidebar-graph').click();
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 15_000 });
+
+  // A click on the empty canvas focuses it, but shows no node ring (keyboard mode starts with a key).
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + 6, box.y + box.height - 6);
+  await expect(canvas).toBeFocused();
+  await expect(canvas).not.toHaveAttribute('data-graph-focused', /.+/);
+
+  // Into keyboard mode by Tab, on Hub.
+  await page.getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(canvas).toHaveAttribute('data-graph-focused', 'Hub');
+
+  // A ru layout types "ъ" on the ] key: it still steps round Hub's links (by the key's position).
+  await canvas.evaluate((element) => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'ъ', code: 'BracketRight', bubbles: true, cancelable: true }));
+  });
+  await expect(canvas).not.toHaveAttribute('data-graph-focused', 'Hub');
+  expect(['Alpha', 'Beta', 'Gamma', 'ghost:someday']).toContain(await canvas.getAttribute('data-graph-focused'));
+
+  // Five quick ] presses (a held key): the live region is written once, after the last.
+  const spoken = page.getByTestId('graph-canvas-spoken');
+  await expect(spoken).not.toHaveText('');
+  await spoken.evaluate((element) => {
+    const w = window as unknown as { __spokenWrites: number };
+    w.__spokenWrites = 0;
+    new MutationObserver(() => {
+      w.__spokenWrites += 1;
+    }).observe(element, { childList: true, characterData: true, subtree: true });
+  });
+  for (let i = 0; i < 5; i += 1) await page.keyboard.press(']', { delay: 10 });
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as unknown as { __spokenWrites: number }).__spokenWrites)).toBe(1);
+});
