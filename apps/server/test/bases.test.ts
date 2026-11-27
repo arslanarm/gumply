@@ -324,14 +324,16 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     // A path link into the folder follows it.
     expect(await readFile(join(dir, "Ref.md"), "utf8")).toBe("See [[People/Ada]].\n");
 
-    // A name whose folder is taken (a folder "Team/" exists): both get the next free name.
+    // #hazfav7a: a name whose folder is taken (a folder "Team/" exists): the rename is refused (it was "Team 2",
+    // titled "Team"), and the database and its rows stay where they are.
     await mkdir(join(dir, "Team"), { recursive: true });
     await store.rescan();
     const again = store.getBase("People.base");
     const second = await jsonRequest(app, "PUT", `/api/bases/${encodeId("People.base")}`, { title: "Team", expectedUpdated: again.meta.updated });
-    expect(((await second.json()) as { meta: PageMeta }).meta.id).toBe("Team 2.base");
-    expect(await readdir(join(dir, "Team 2"))).toEqual(["Ada.md"]);
-    expect(parseBase(await readFile(join(dir, "Team 2.base"), "utf8")).filters).toEqual({ and: ['file.folder == "Team 2"'] });
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { reason?: string }).reason).toBe("name-taken");
+    expect(await readdir(join(dir, "People"))).toEqual(["Ada.md"]);
+    expect(existsSync(join(dir, "Team 2.base"))).toBe(false);
   });
 
   it("renames or deletes a property in every row of an owned database, all or nothing (#7prbquxu, @opus-hunter's review)", async () => {

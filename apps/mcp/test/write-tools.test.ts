@@ -178,6 +178,17 @@ describe.each(ERAS)("write tools (%s client)", (era) => {
     expect((await historyOf("Welcome"))[0]).toMatchObject({ tool: "update_page" });
   });
 
+  it("#hazfav7a: update_page to a taken title is CONFLICT with reason name-taken, and nothing is written", async () => {
+    const read = await version("Injection");
+    const before = vaultHash(vault.dir);
+    const result = await mcp.call("update_page", { id: "Injection", expectedUpdated: read, title: "Welcome" });
+    expect(codeOf(result)).toBe("CONFLICT");
+    const error = result.structuredContent!.error as { message: string; reason?: string; title?: string };
+    expect(error).toMatchObject({ reason: "name-taken", title: "Welcome" });
+    expect(error.message).toContain("Welcome");
+    expect(vaultHash(vault.dir)).toEqual(before);
+  });
+
   it("trash_page: to the Trash only, with the version read", async () => {
     const read = await version("Injection");
     expect(codeOf(await mcp.call("trash_page", { id: "Injection", expectedUpdated: "2001-01-01T00:00:00.000Z" }))).toBe("CONFLICT");

@@ -44,11 +44,10 @@ describe("an exact rename (#5q4vaacm)", () => {
     expect(store.get("People/Annie").title).toBe("Annie");
   });
 
-  it("without `exact` the same rename takes the next free name, as before", async () => {
+  it("#hazfav7a: without `exact` the same rename is refused too (every title change is exact now), never \"Ann 2\"", async () => {
     const { dir, store } = await vault({ "People/Annie.md": "Annie.\n", "People/ann.md": "Another one.\n" });
-    const page = await store.update("People/Annie", { title: "Ann" });
-    expect(page.id).toBe("People/Ann 2");
-    expect(existsSync(join(dir, "People/Ann 2.md"))).toBe(true);
+    await expect(store.update("People/Annie", { title: "Ann" })).rejects.toMatchObject({ status: 409, reason: "name-taken" });
+    expect(existsSync(join(dir, "People/Ann 2.md"))).toBe(false);
   });
 
   it("renames as usual when the name is free, links following", async () => {

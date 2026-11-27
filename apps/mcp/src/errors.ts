@@ -54,7 +54,8 @@ function toToolError(error: unknown): ToolError {
             : error.status === 423
               ? "READ_ONLY"
               : "INVALID_INPUT";
-    return new ToolError(code, error.message);
+    // #hazfav7a: a reason the server gave ("name-taken") goes along, with its title.
+    return new ToolError(code, error.message, error.reason ? { reason: error.reason, title: error.title ?? null } : {});
   }
   // Never echo internals (paths, stacks) to the client; they go to stderr.
   console.error("[gumply mcp] unexpected error:", error);

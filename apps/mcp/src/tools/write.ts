@@ -66,6 +66,10 @@ export function registerWriteTools(server: McpServer, ctx: WriteContext, startup
   };
   /** The store's 409 (the file changed under us) as CONFLICT with the version on disk now. */
   const conflictFrom = async (error: unknown, id: string): Promise<never> => {
+    // #hazfav7a: a title another page has here isn't a stale read: say so, with the reason and the title.
+    if (error instanceof VaultError && error.reason === "name-taken") {
+      throw new ToolError("CONFLICT", error.message, { reason: error.reason, title: error.title ?? null });
+    }
     if (error instanceof VaultError && error.status === 409) {
       await vault.store.rescan();
       const now = vault.list().find((page) => page.id === id);

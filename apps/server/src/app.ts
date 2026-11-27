@@ -81,7 +81,10 @@ export function createApp(options: AppOptions): Hono {
 
   app.onError((error, c) => {
     if (error instanceof VaultError) {
-      return c.json<ApiError>({ error: error.message }, error.status);
+      return c.json<ApiError>(
+        { error: error.message, ...(error.reason ? { reason: error.reason } : {}), ...(error.title !== undefined ? { title: error.title } : {}) },
+        error.status,
+      );
     }
     console.error("[gumply] unhandled error:", error);
     return c.json<ApiError>({ error: "Internal server error" }, 500);

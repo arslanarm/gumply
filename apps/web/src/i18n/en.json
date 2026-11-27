@@ -11,6 +11,7 @@
     "hoursAgo_other": "{{count}} h ago"
   },
   "errors": {
+    "nameTaken": "“{{title}}” is already used here. Choose another name.",
     "serverDown": "Can't reach Gumply's local server.",
     "generic": "Something went wrong.",
     "serverDownHint": "Your pages are safe on disk. Start the app again to reconnect.",
