@@ -23,6 +23,7 @@ import { BaseSaver, pendingSaverFor } from "./base-saver.js";
 import { parseCsv, type PastedRow } from "./paste.js";
 import type { PreviewResult } from "./PastePreview.js";
 import { registerSaver } from "../lib/pending-saves.js";
+import { layoutKey } from "../lib/shortcuts.js";
 import type { SaveState } from "../editor/autosave.js";
 import "./bases.css";
 
@@ -661,8 +662,9 @@ export function BaseView(props: BaseViewProps) {
     await load();
   };
   /** Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z in the table; a text field being edited keeps its own undo. */
-  const onUndoKey = (event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "key" | "target" | "preventDefault">) => {
-    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "z") return;
+  const onUndoKey = (event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "key" | "code" | "target" | "preventDefault">) => {
+    // #9ajce8q3: by the layout's letter, or the key's position on a non-Latin layout (Ctrl+я is Ctrl+Z).
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || layoutKey(event) !== "z") return;
     const target = event.target as HTMLElement;
     const sinkIdle = target.dataset.testid === "base-grid-cell" && !target.classList.contains("is-typing");
     // #nr3rkgj2: the typing row's field, empty, has nothing of its own to undo (a paste leaves the keyboard there):

@@ -96,6 +96,7 @@ import { createExitTopExtension, focusStartNow } from "../editor/title-navigatio
 import { DocEdgeKeys } from "../editor/doc-edge-keys.js";
 import { t } from "../i18n/index.js";
 import { scrollBehavior } from "../lib/motion.js";
+import { layoutKey } from "../lib/shortcuts.js";
 
 export interface EditorControls {
   /** Id of the page this editor shows (controls outlive a page switch). */
@@ -970,7 +971,7 @@ export function Editor({
   useEffect(() => {
     if (readOnly) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      if ((event.metaKey || event.ctrlKey) && layoutKey(event) === "s") {
         event.preventDefault();
         void autosave.flush();
       }

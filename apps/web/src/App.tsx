@@ -73,7 +73,7 @@ import {
   type TrashRoute,
 } from "./lib/routing.js";
 import { deleteForeverBody, emptyTrashBody, restoredId, restoredMessage, trashTitle, trashedCount } from "./lib/trash.js";
-import { currentModifierLabel, isTypingTarget } from "./lib/shortcuts.js";
+import { currentModifierLabel, isTypingTarget, layoutKey } from "./lib/shortcuts.js";
 import {
   availableCommands,
   BOARD_TOOLS,
@@ -538,7 +538,7 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      if (!(event.metaKey || event.ctrlKey) || layoutKey(event) !== "k") return;
       // The editor took it: Mod+K with text selected adds a link (#bg3cb83t).
       if (event.defaultPrevented) return;
       if (pendingDelete || movingId || shortcutsOpen) return;
@@ -1524,7 +1524,7 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== "d") return;
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey || layoutKey(event) !== "d") return;
       if (pendingDelete || movingId || shortcutsOpen || searchOpen || templatePicker) return;
       // Browsers use it for "bookmark all tabs": ours wins inside the app.
       event.preventDefault();
