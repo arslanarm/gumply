@@ -16,6 +16,8 @@ import {
   isAttachmentNodeId,
   isTagNodeId,
   colouringTags,
+  queryHasTag,
+  toggleQueryTag,
   tagSlot,
   type GhostNode,
 } from "./graph-model.js";
@@ -55,7 +57,6 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [legendOpen, setLegendOpen] = useState(true);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [listMode, setListMode, listModeReady] = useGraphListMode("global");
@@ -103,14 +104,13 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
       model && filters
         ? filterGraph(model, {
             query,
-            tags: selectedTags,
             hideUnresolved: filters.hideUnresolved,
             showOrphans: filters.showOrphans,
             showTags: filters.showTags,
             attachments: filters.showAttachments ? data?.attachments : undefined,
           })
         : null,
-    [model, filters, query, selectedTags, data],
+    [model, filters, query, data],
   );
 
   // Stable arrays: a new identity on every render would restart the force
@@ -153,16 +153,10 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
     onOpenPage(id);
   };
 
-  const toggleTag = (tag: string) => {
-    setSelectedTags((previous) =>
-      previous.includes(tag) ? previous.filter((item) => item !== tag) : [...previous, tag],
-    );
-  };
+  // #yy347xgi (3): a chip is its `tag:#x` term in the search (shown there, editable, cleared with it).
+  const toggleTag = (tag: string) => setQuery((current) => toggleQueryTag(current, tag));
 
-  const clearFilters = () => {
-    setQuery("");
-    setSelectedTags([]);
-  };
+  const clearFilters = () => setQuery("");
 
   const createGhost = (ghost: GhostNode) => {
     setActionError(null);
@@ -181,7 +175,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   }, [data]);
   const hasBoards = useMemo(() => (data?.nodes ?? []).some((node) => node.kind === "whiteboard"), [data]);
   const hasVisible = (filtered?.nodes.length ?? 0) + (filtered?.ghosts.length ?? 0) + (filtered?.extras.length ?? 0) > 0;
-  const filtersActive = query.trim().length > 0 || selectedTags.length > 0;
+  const filtersActive = query.trim().length > 0;
 
   return (
     <section className="graph-view" aria-label={t("graph.title")}>
@@ -283,8 +277,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
             <button
               key={tag}
               type="button"
-              className={`graph-chip${selectedTags.includes(tag) ? " is-active" : ""}`}
-              aria-pressed={selectedTags.includes(tag)}
+              className={`graph-chip${queryHasTag(query, tag) ? " is-active" : ""}`}
+              aria-pressed={queryHasTag(query, tag)}
               onClick={() => toggleTag(tag)}
             >
               #{tag}

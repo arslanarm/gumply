@@ -190,10 +190,14 @@ export function filterGraph(model: GraphModel, filter: GraphFilter = {}): Filter
   );
   const visiblePages = new Set(nodes.map((node) => node.id));
 
+  // #yy347xgi (3): a page not created yet has no tags of its own; for a `tag:` term it carries its visible
+  // sources' tags, so `tag:#x` keeps the not-created pages that #x pages link to, as the tag chips always did.
+  const tagsOfVisible = new Map(nodes.map((node) => [node.id, node.tags]));
   const ghosts = filter.hideUnresolved
     ? []
     : model.ghosts.filter((ghost) => {
-        if (!matchesGraphQuery(query, { title: ghost.title, path: ghost.title, tags: [] })) return false;
+        const tags = [...new Set(ghost.sources.flatMap((source) => tagsOfVisible.get(source) ?? []))];
+        if (!matchesGraphQuery(query, { title: ghost.title, path: ghost.title, tags })) return false;
         // A text query matches ghost titles independently of their sources (spec/ux
         // §9: only a tag filter hides a ghost when all sources are filtered out).
         if (selected.size === 0) return true;
@@ -510,7 +514,7 @@ export function graphCounts(
 }
 
 /**
- * Visible header subtitle, e.g. "12 pages · 20 links · 2 missing". Counts the
+ * Visible header subtitle, e.g. "12 pages · 20 links · 2 not created yet". Counts the
  * same edges as the canvas aria label (ghosts included) and pluralises them.
  */
 export function graphSubtitle(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
@@ -522,7 +526,7 @@ export function graphSubtitle(graph: Pick<GraphModel, "nodes" | "ghosts" | "link
   ].join(" · ");
 }
 
-/** Canvas aria-label, e.g. "12 pages, 20 links, 2 missing" (spec/ux §9). */
+/** Canvas aria-label, e.g. "12 pages, 20 links, 2 not created yet" (spec/ux §9). */
 export function ariaSummary(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
   const counts = graphCounts(graph);
   return [
@@ -556,4 +560,29 @@ export function ghostDetail(ghost: GhostNode): string {
 /** Tooltip copy for a ghost: `“Title” — not created yet · N links · Click to create`. */
 export function ghostTooltip(ghost: GhostNode): string {
   return t("graph.ghostTooltip", { title: ghost.title, links: t("graph.links", { count: ghost.refCount }) });
+}
+
+/**
+ * #yy347xgi (3): the tag chips are `tag:#x` terms in the search, so the field shows what's applied and the chips
+ * and a typed query can never disagree. A chip is pressed when the query has its positive term.
+ */
+export function queryHasTag(query: string, tag: string): boolean {
+  const wanted = tag.toLowerCase();
+  return parseGraphQuery(query).some((terms) => terms.some((term) => term.op === "tag" && !term.negate && term.value === wanted));
+}
+
+/** Add the chip's `tag:#x` term to the query, or take every positive term for that tag out of it. */
+export function toggleQueryTag(query: string, tag: string): string {
+  const wanted = tag.toLowerCase();
+  if (!queryHasTag(query, tag)) return [query.trim(), `tag:#${tag}`].filter(Boolean).join(" ");
+  return query
+    .split(/\s+/)
+    .filter((token) => {
+      const match = /^tag:#?(.+)$/i.exec(token);
+      return !(match && match[1]!.toLowerCase() === wanted);
+    })
+    .join(" ")
+    .replace(/(^|\s)OR(\s+OR)+(\s|$)/g, "$1OR$3")
+    .replace(/^\s*OR\s+|\s+OR\s*$/g, "")
+    .trim();
 }
