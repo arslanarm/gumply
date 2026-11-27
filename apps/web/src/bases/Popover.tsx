@@ -39,9 +39,10 @@ export function Popover(props: {
       const below = rect.bottom + 4;
       const top = below + height > window.innerHeight - 8 && rect.top - height - 4 > 8 ? rect.top - height - 4 : below;
       // #bg7c9bzk (#faqr8pj9's #7): never taller than the room on its side, so it scrolls inside the window
-      // rather than past it; the CSS cap is high enough that a column menu fits whole at 800 px.
+      // rather than past it, and never past 36rem (an inline max-height overrides the CSS one, so both are here;
+      // @graph-dev's review). 36rem is high enough that a column menu fits whole at 800 px.
       const room = top === below ? window.innerHeight - below - 8 : rect.top - 4 - 8;
-      setStyle({ position: "fixed", left, top, maxHeight: Math.max(120, room) });
+      setStyle({ position: "fixed", left, top, maxHeight: `min(36rem, ${Math.max(120, room)}px)` });
     };
     place();
     window.addEventListener("resize", place);
