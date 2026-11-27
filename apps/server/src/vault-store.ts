@@ -6764,7 +6764,8 @@ export class VaultStore {
       (key) => key !== id && collisionKey(key) === collisionKey(newId),
     );
     if (this.pages.has(newId) || clash || (await pathExists(newFile))) {
-      throw conflict(`A page already exists at ${newId}`);
+      // #hazfav7a: the same refusal as a rename, so the client says it in the user's language.
+      throw nameTaken(record.title);
     }
 
     const oldDir = join(this.root, id);
