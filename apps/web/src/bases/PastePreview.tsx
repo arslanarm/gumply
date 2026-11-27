@@ -39,6 +39,29 @@ export function PastePreview(props: {
   const t = useT();
   const id = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // #bg7c9bzk (@lead, after C's shots): a sheet wider than the dialog scrolls sideways, and the scrollbar may be
+  // hidden until used; each side with columns cut off fades to say there's more (left too, @graph-dev's review).
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [overflow, setOverflow] = useState<"start" | "end" | "both" | undefined>(undefined);
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const update = () => {
+      const start = grid.scrollLeft > 1;
+      const end = grid.scrollLeft + grid.clientWidth < grid.scrollWidth - 1;
+      setOverflow(start && end ? "both" : start ? "start" : end ? "end" : undefined);
+    };
+    update();
+    grid.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(update) : null;
+    observer?.observe(grid);
+    const table = grid.firstElementChild;
+    if (table) observer?.observe(table);
+    return () => {
+      grid.removeEventListener("scroll", update);
+      observer?.disconnect();
+    };
+  }, []);
   useModal(dialogRef);
   const width = Math.max(...props.block.map((row) => row.length));
   const [headers, setHeaders] = useState(() => guessHeaderRow(props.block));
@@ -134,7 +157,7 @@ export function PastePreview(props: {
         </label>
         {/* #bg7c9bzk (#faqr8pj9's #11): one table, so each column's name and type sit over its own cells; it scrolls
             sideways inside the dialog when the sheet is wide, rather than running past its edge. */}
-        <div className="base-paste-grid">
+        <div className="base-paste-grid" ref={gridRef} data-testid="base-paste-grid" data-overflow={overflow}>
           <table className="base-paste-sample" data-testid="base-paste-sample">
             <colgroup>
               <col className="is-name" />
