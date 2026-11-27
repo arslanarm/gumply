@@ -501,9 +501,9 @@ describe("D20 follow-ups (#73xpk354)", () => {
       // A folder without its own page (no Work.md).
       "Work/Loose.md": "---\ntitle: Loose\n---\nL\n",
     });
-    const renamed = await store.update("Projects", { title: "Work" });
-    expect(renamed.id).toBe("Work 2");
-    expect(store.get("Work 2/Roadmap").content).toContain("R");
+    // #hazfav7a: the folder holds the name, so the rename is refused (it was "Work 2" titled "Work"); nothing moves.
+    await expect(store.update("Projects", { title: "Work" })).rejects.toMatchObject({ status: 409, reason: "name-taken" });
+    expect(store.get("Projects/Roadmap").content).toContain("R");
     await expect(readFile(join(dir, "Work", "Loose.md"), "utf8")).resolves.toContain("L");
   });
 
