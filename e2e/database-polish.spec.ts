@@ -87,7 +87,7 @@ test('#11: the paste preview\'s controls sit over their own columns, and a wide 
   }
 });
 
-test('#11 follow-up (@lead): a sheet wider than the dialog shows a fade at its right edge until scrolled to the end; a narrow one never does', async ({ page, request, vault }) => {
+test('#11 follow-up (@lead): a sheet wider than the dialog fades on each side that has columns cut off; a narrow one never does', async ({ page, request, vault }) => {
   void vault;
   await plants(page, request);
   const pasteSheet = async (text: string) => {
@@ -102,12 +102,15 @@ test('#11 follow-up (@lead): a sheet wider than the dialog shows a fade at its r
   const grid = page.getByTestId('base-paste-grid');
   await pasteSheet('Name\tWater every days\tLight level\tBought on\tIndoor plant\tPot size\nMint\t7\tSun\t2026-01-05\tyes\t12\n');
   await expect(grid).toHaveAttribute('data-overflow', 'end');
+  // Part way: cut off on both sides; at the end: only on the left (@graph-dev's review).
+  await grid.evaluate((element) => element.scrollTo({ left: 40 }));
+  await expect(grid).toHaveAttribute('data-overflow', 'both');
   await grid.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
-  await expect(grid).not.toHaveAttribute('data-overflow', 'end');
+  await expect(grid).toHaveAttribute('data-overflow', 'start');
   await page.getByTestId('base-paste-cancel').click();
   await pasteSheet('Name\tWater every days\nMint\t7\n');
   await expect(grid).toBeVisible();
-  await expect(grid).not.toHaveAttribute('data-overflow', 'end');
+  await expect(grid).not.toHaveAttribute('data-overflow');
 });
 
 test('#14: each row\'s rename button is named after its row', async ({ page, request, vault }) => {
