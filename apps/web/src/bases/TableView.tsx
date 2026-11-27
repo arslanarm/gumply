@@ -74,6 +74,8 @@ export interface TableViewProps {
   onPasteRows?: (rows: PastedRow[]) => Promise<void>;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
+  /** #qchedmun (R4): this table's identity (base and view) for Back to return to the row it opened; none in an embed. */
+  returnKey?: string;
   onRenameDone?: () => void;
 }
 
@@ -104,6 +106,35 @@ export function display(value: BaseValue, type: string): string {
   // `[[Page|alias]]` in a text property reads as its label.
   if (typeof value === "string") return value.replace(new RegExp(String.raw`\[\[(${WIKILINK_PART}*)(?:\|(${WIKILINK_INNER}*))?\]\]`, "g"), (_, target: string, alias?: string) => alias ?? target);
   return String(value);
+}
+
+/**
+ * #qchedmun (R4): where Back returns to. Kept in the table's own history entry (`history.state`), so only a history
+ * navigation back to that entry finds it; a fresh visit (the sidebar, a link) makes a new entry without it. (The app
+ * navigates with `location.hash`, which fires `popstate` itself, so a "popped since" flag can't tell them apart.)
+ */
+type TableReturn = { key: string; rowId: string; col: number };
+const RETURN_STATE = "gumplyTableReturn";
+function rememberReturn(entry: TableReturn): void {
+  try {
+    const state = (window.history.state ?? {}) as Record<string, unknown>;
+    window.history.replaceState({ ...state, [RETURN_STATE]: entry }, "");
+  } catch {
+    // No history API (tests, sandboxed frames): Back just doesn't restore.
+  }
+}
+function takeReturn(key: string): TableReturn | null {
+  try {
+    const state = (window.history.state ?? {}) as Record<string, unknown>;
+    const entry = state[RETURN_STATE] as TableReturn | undefined;
+    if (!entry || entry.key !== key) return null;
+    const { [RETURN_STATE]: _taken, ...rest } = state;
+    void _taken;
+    window.history.replaceState(Object.keys(rest).length ? rest : null, "");
+    return entry;
+  } catch {
+    return null;
+  }
 }
 
 export function TableView(props: TableViewProps) {
@@ -227,6 +258,24 @@ export function TableView(props: TableViewProps) {
     if (then) go(moveCell(from, then, rowOrder.length, columns.length));
   };
 
+  /** #qchedmun (R4): open a row, remembering it (and the column) so Back returns to it. */
+  const returnKey = props.returnKey;
+  const onOpenProp = props.onOpen;
+  const openRow = useCallback(
+    (rowId: string, col = 0) => {
+      if (returnKey) rememberReturn({ key: returnKey, rowId, col });
+      onOpenProp(rowId);
+    },
+    [returnKey, onOpenProp],
+  );
+  useEffect(() => {
+    if (!grid || !returnKey) return;
+    const back = takeReturn(returnKey);
+    // Not back from an open, or the row is gone meanwhile: nothing to return to.
+    if (!back || !result.rows.some((row) => row.id === back.rowId)) return;
+    setActive({ rowId: back.rowId, col: back.col });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid, returnKey]);
   /** #12: Tab reached the rows (the first row's Name, while no cell is active): that cell becomes active. */
   const enterGrid = useCallback((rowId: string) => setActive({ rowId, col: 0 }), []);
   const requestEdit = useCallback((rowId: string, col: number) => {
@@ -275,7 +324,7 @@ export function TableView(props: TableViewProps) {
     // #12 (#faqr8pj9): the rows are one Tab stop, so a keyboard user opens a row from its cells: Ctrl/Cmd+Enter.
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
       event.preventDefault();
-      props.onOpen(activeRow.id);
+      openRow(activeRow.id, activePos.col);
       return;
     }
     // Shift+Tab on the very first cell leaves the rows backwards (Tab past the last one already goes to the typing row).
@@ -509,7 +558,7 @@ export function TableView(props: TableViewProps) {
                 renaming={props.renameRowId === row.id}
                 editCol={editRequest?.rowId === row.id ? editRequest.col : null}
                 editSeed={editRequest?.rowId === row.id ? editRequest.seed : undefined}
-                onOpen={props.onOpen}
+                onOpen={openRow}
                 onEditValue={props.onEditValue}
                 onRename={props.onRename}
                 onRenameDone={grid ? renameDone : props.onRenameDone}
@@ -977,7 +1026,8 @@ interface TableRowProps {
   editCol?: number | null;
   /** #7prbquxu phase 3: the character typed to open it (a Select picker's first search letter). */
   editSeed?: string | undefined;
-  onOpen: (id: string) => void;
+  /** Open a row's page (`col`: the cell Back returns to, #qchedmun R4). */
+  onOpen: (id: string, col?: number) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   onRename: (row: BaseRow, title: string) => Promise<string | void>;
   onRenameDone?: () => void;
@@ -1014,6 +1064,7 @@ const TableRow = memo(function TableRow(props: TableRowProps) {
             {...(props.editCol === col && props.editSeed ? { editSeed: props.editSeed } : {})}
             {...(props.onRequestEdit ? { onRequestEdit: props.onRequestEdit } : {})}
             {...(props.onEditDone ? { onEditDone: props.onEditDone } : {})}
+            {...(props.grid ? { onOpenRow: (col: number) => props.onOpen(row.id, col) } : {})}
           />
         ),
       )}
@@ -1040,11 +1091,35 @@ function TitleCell(props: TableRowProps) {
     if (editing) inputRef.current?.select();
   }, [editing]);
 
+  /** #qchedmun (R5): set once Ctrl/Cmd+Enter has finished this edit, so the input's blur doesn't rename again. */
+  const finished = useRef(false);
+  useEffect(() => {
+    if (editing) finished.current = false;
+  }, [editing]);
   const finish = (save: boolean) => {
+    if (finished.current) return;
+    finished.current = true;
     setEditing(false);
     props.onRenameDone?.();
     const title = draft.trim();
     if (save && title && title !== row.title) void props.onRename(row, title);
+  };
+  /**
+   * #qchedmun (R5): Ctrl/Cmd+Enter renames first, then opens the row under its new id. The rename is awaited, so a
+   * refused one (a name clash) shows its error and opens nothing.
+   */
+  const finishAndOpen = async () => {
+    if (finished.current) return;
+    finished.current = true;
+    setEditing(false);
+    props.onRenameDone?.();
+    const title = draft.trim();
+    if (!title || title === row.title) {
+      props.onOpen(row.id);
+      return;
+    }
+    const id = await props.onRename(row, title);
+    if (typeof id === "string") props.onOpen(id);
   };
 
   return (
@@ -1067,7 +1142,11 @@ function TitleCell(props: TableRowProps) {
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => finish(true)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") finish(true);
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && props.grid) {
+              event.preventDefault();
+              void finishAndOpen();
+            } else if (event.key === "Enter") finish(true);
             else if (event.key === "Escape") finish(false);
           }}
         />
@@ -1115,6 +1194,8 @@ function ValueCell(props: {
   readOnly?: boolean;
   /** #12: in a database grid the cell isn't a Tab stop of its own (the grid's active cell is). */
   grid?: boolean;
+  /** #qchedmun (R5): Ctrl/Cmd+Enter in this cell's editor commits, then opens its row (at this column, for Back). */
+  onOpenRow?: (col: number) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   /** #7prbquxu: the database grid asks this cell's editor to open (Enter, F2, a date typed). */
   editRequested?: boolean;
@@ -1135,6 +1216,8 @@ function ValueCell(props: {
   // A click elsewhere has already moved focus, so it's left alone.
   const cellRef = useRef<HTMLDivElement | null>(null);
   const wasEditing = useRef(false);
+  /** #qchedmun (R5): the save this editor's commit started, so Ctrl/Cmd+Enter opens the row only after it. */
+  const savePending = useRef<Promise<boolean> | null>(null);
   /** #5q4vaacm: where Tab or Shift+Tab asked the grid to go once this editor has closed. */
   const moveAfter = useRef<GridMove | undefined>(undefined);
   useEffect(() => {
@@ -1151,6 +1234,10 @@ function ValueCell(props: {
     wasEditing.current = editing;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
+  // A fresh edit has no save of its own yet (#qchedmun R5).
+  useEffect(() => {
+    if (editing) savePending.current = null;
+  }, [editing]);
   useEffect(() => {
     if (props.editRequested && editable) setEditing(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1159,6 +1246,28 @@ function ValueCell(props: {
   // #5q4vaacm: in the database grid, Tab and Shift+Tab commit the editor (its own blur commit, as clicking away does)
   // and move on, like Notion and a spreadsheet. A Select picker (a portal) bubbles its keys here too: it closes
   // without picking.
+  // #qchedmun (R5): Ctrl/Cmd+Enter in an open editor commits (its own blur commit, as Tab does), then opens the row. A
+  // Select picker closes without picking.
+  const openAfter = (event: React.KeyboardEvent<HTMLElement>): boolean => {
+    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || !props.onOpenRow || event.nativeEvent.isComposing) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    // The blur starts the editor's commit (its `onSave`, below, records the save); the row opens once it's settled,
+    // so its page loads the saved version, not the one before (@graph-dev).
+    // A text editor's own Enter may already have blurred and started the save before this handler runs, so the
+    // pending save is taken as found, never reset first; it's reset when the editor opens.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setEditing(false);
+    const open = props.onOpenRow;
+    const col = props.col;
+    const pending = savePending.current;
+    savePending.current = null;
+    // A refused save (already reported) keeps the user on the table, where they can retry (@graph-dev, @lead).
+    void (pending ?? Promise.resolve(true)).then((saved) => {
+      if (saved) open(col);
+    });
+    return true;
+  };
   const tabOut = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab" || !props.onEditDone || event.nativeEvent.isComposing) return;
     // A date picker (a portal) keeps its own Tab: its month buttons, a datetime's time field, Today and Clear must stay
@@ -1200,7 +1309,9 @@ function ValueCell(props: {
           if (event.currentTarget.contains(event.relatedTarget as Element | null)) return;
           setEditing(false);
         }}
-        onKeyDown={tabOut}
+        onKeyDown={(event) => {
+          if (!openAfter(event)) tabOut(event);
+        }}
       >
         <SelectChips value={value} settings={select} />
         <SelectPicker
@@ -1242,6 +1353,8 @@ function ValueCell(props: {
           // Escape during an IME composition only ends the composition (the editor stays open).
           if (event.key === "Escape") {
             if (!event.nativeEvent.isComposing) setEditing(false);
+          } else if (openAfter(event)) {
+            // Committed and opened (#qchedmun R5).
           } else if (event.key === "Enter" && enterMovesDown && props.onEditDone && !event.nativeEvent.isComposing) {
             // #5q4vaacm (spec §4): Enter commits (the editor's own Enter, a blur) and moves down, as typing over a
             // cell does. Lists keep Enter for their next item, and dates for their picker.
@@ -1255,7 +1368,9 @@ function ValueCell(props: {
           autoFocus
           property={property}
           onSave={async (next) => {
-            const saved = await props.onEditValue(row, column, next);
+            const saving = props.onEditValue(row, column, next);
+            savePending.current = saving;
+            const saved = await saving;
             // Lists stay open for the next chip; single values close.
             if (saved && !Array.isArray(next)) setEditing(false);
             return saved;

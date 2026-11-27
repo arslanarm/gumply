@@ -208,7 +208,8 @@ export function SelectPicker(props: {
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
             setHighlight((at) => Math.max(at - 1, 0));
-          } else if (event.key === "Enter") {
+          } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+            // (Ctrl/Cmd+Enter goes on to the cell: it closes the picker and opens the row, #qchedmun R5.)
             event.preventDefault();
             // The highlighted match first (typing "C" and Enter picks "Cook"); a new option only when nothing
             // matches. Adding next to a match is the "Add “…”" item.

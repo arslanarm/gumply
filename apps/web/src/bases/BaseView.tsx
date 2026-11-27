@@ -937,6 +937,8 @@ export function BaseView(props: BaseViewProps) {
           result={result}
           maxHeight={maxHeight}
           onOpen={props.onOpen}
+          // #qchedmun (R4): Back after opening a row returns to it (the open table only, not an embed).
+          {...(embed ? {} : { returnKey: `${baseId}|${active.name}` })}
           onEditValue={editValue}
           onRename={rename}
           onNewRow={() => void newRow()}
