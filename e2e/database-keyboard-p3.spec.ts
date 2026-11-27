@@ -97,7 +97,14 @@ test('R5: Ctrl/Cmd+Enter in an open editor commits, then opens the row; in the N
   await page.keyboard.type('Diver');
   await page.keyboard.press('ControlOrMeta+Enter');
   await expect(page).toHaveURL(/#\/People\/Bo$/);
+  // The page opens on the saved value (the open waited for the save), so typing there is no conflict (@graph-dev).
+  await expect(page.getByTestId('property-value-role').locator('input')).toHaveValue('Diver');
   await expect.poll(() => read('People/Bo.md')).toContain('role: Diver\n');
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Flies.');
+  await expect.poll(() => read('People/Bo.md'), { timeout: 15_000 }).toContain('Flies.');
+  await expect(page.getByTestId('conflict-keep-mine')).toHaveCount(0);
 
   // The Name editor: renamed first, then the row opens under its new name.
   await page.goBack();
