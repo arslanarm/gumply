@@ -15,6 +15,7 @@ const board = (page: Page): Promise<BoardLike> => page.evaluate(() => (window as
 async function openLab(page: Page) {
   await page.goto('/board-lab.html?theme=light&reset=1');
   await expect(page.getByTestId('board')).toBeVisible();
+  await expect(page.getByTestId('board-toolbar')).toBeVisible();
 }
 
 /** A keydown as a given layout sends it, at the focused element (the board when nothing is focused). */
@@ -23,14 +24,6 @@ async function keydown(page: Page, init: { key: string; code: string; ctrlKey?: 
     const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
     target.dispatchEvent(new KeyboardEvent('keydown', { ...options, bubbles: true, cancelable: true }));
   }, init);
-}
-
-async function addSticky(page: Page, x: number, y: number, text: string) {
-  await page.mouse.dblclick(x, y);
-  await expect(page.getByTestId('board-text-editor')).toBeFocused();
-  await page.keyboard.type(text);
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('board-text-editor')).toHaveCount(0);
 }
 
 test('ru layout: tool letters pick their tools by the key\'s position', async ({ page }) => {
@@ -50,9 +43,17 @@ test('ru layout: tool letters pick their tools by the key\'s position', async ({
 });
 
 test('ru layout: ъ / х bring to front and send to back; Ctrl+я undoes', async ({ page }) => {
-  await openLab(page);
-  await addSticky(page, 400, 400, 'A');
-  await addSticky(page, 700, 400, 'B');
+  // Two stickies seeded through the lab's storage (double-clicks raced the board's first layout).
+  await page.goto('/board-lab.html?reset=1');
+  await page.evaluate((json) => window.localStorage.setItem('gumply:board-lab:lab', json), JSON.stringify({
+    nodes: [
+      { id: 'a', type: 'text', text: 'A', gumply: { kind: 'sticky' }, x: 0, y: 0, width: 200, height: 200, color: '3' },
+      { id: 'b', type: 'text', text: 'B', gumply: { kind: 'sticky' }, x: 400, y: 0, width: 200, height: 200, color: '3' },
+    ],
+    edges: [],
+  }));
+  await page.goto('/board-lab.html?theme=light');
+  await expect(page.getByTestId('board-sticky')).toHaveCount(2);
   const order = async () => (await board(page)).nodes.map((node) => node.text).join(',');
   expect(await order()).toBe('A,B');
   await page.getByTestId('board-sticky').first().click();
