@@ -109,15 +109,32 @@ export function display(value: BaseValue, type: string): string {
 }
 
 /**
- * #qchedmun (R4): the row each table last opened (by its `returnKey`), so Back returns to it as the active cell. Only
- * a history navigation (popstate) since the open restores it; a fresh visit (the sidebar) forgets it.
+ * #qchedmun (R4): where Back returns to. Kept in the table's own history entry (`history.state`), so only a history
+ * navigation back to that entry finds it; a fresh visit (the sidebar, a link) makes a new entry without it. (The app
+ * navigates with `location.hash`, which fires `popstate` itself, so a "popped since" flag can't tell them apart.)
  */
-const returnTo = new Map<string, { rowId: string; col: number }>();
-let poppedSinceOpen = false;
-if (typeof window !== "undefined") {
-  window.addEventListener("popstate", () => {
-    poppedSinceOpen = true;
-  });
+type TableReturn = { key: string; rowId: string; col: number };
+const RETURN_STATE = "gumplyTableReturn";
+function rememberReturn(entry: TableReturn): void {
+  try {
+    const state = (window.history.state ?? {}) as Record<string, unknown>;
+    window.history.replaceState({ ...state, [RETURN_STATE]: entry }, "");
+  } catch {
+    // No history API (tests, sandboxed frames): Back just doesn't restore.
+  }
+}
+function takeReturn(key: string): TableReturn | null {
+  try {
+    const state = (window.history.state ?? {}) as Record<string, unknown>;
+    const entry = state[RETURN_STATE] as TableReturn | undefined;
+    if (!entry || entry.key !== key) return null;
+    const { [RETURN_STATE]: _taken, ...rest } = state;
+    void _taken;
+    window.history.replaceState(Object.keys(rest).length ? rest : null, "");
+    return entry;
+  } catch {
+    return null;
+  }
 }
 
 export function TableView(props: TableViewProps) {
@@ -246,22 +263,17 @@ export function TableView(props: TableViewProps) {
   const onOpenProp = props.onOpen;
   const openRow = useCallback(
     (rowId: string, col = 0) => {
-      if (returnKey) {
-        returnTo.set(returnKey, { rowId, col });
-        poppedSinceOpen = false;
-      }
+      if (returnKey) rememberReturn({ key: returnKey, rowId, col });
       onOpenProp(rowId);
     },
     [returnKey, onOpenProp],
   );
   useEffect(() => {
     if (!grid || !returnKey) return;
-    const back = returnTo.get(returnKey);
-    if (!back) return;
-    returnTo.delete(returnKey);
-    // A fresh visit, or a row that's gone meanwhile: nothing to return to.
-    if (!poppedSinceOpen || !result.rows.some((row) => row.id === back.rowId)) return;
-    setActive(back);
+    const back = takeReturn(returnKey);
+    // Not back from an open, or the row is gone meanwhile: nothing to return to.
+    if (!back || !result.rows.some((row) => row.id === back.rowId)) return;
+    setActive({ rowId: back.rowId, col: back.col });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grid, returnKey]);
   /** #12: Tab reached the rows (the first row's Name, while no cell is active): that cell becomes active. */
@@ -1014,7 +1026,8 @@ interface TableRowProps {
   editCol?: number | null;
   /** #7prbquxu phase 3: the character typed to open it (a Select picker's first search letter). */
   editSeed?: string | undefined;
-  onOpen: (id: string) => void;
+  /** Open a row's page (`col`: the cell Back returns to, #qchedmun R4). */
+  onOpen: (id: string, col?: number) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   onRename: (row: BaseRow, title: string) => Promise<string | void>;
   onRenameDone?: () => void;
@@ -1051,7 +1064,7 @@ const TableRow = memo(function TableRow(props: TableRowProps) {
             {...(props.editCol === col && props.editSeed ? { editSeed: props.editSeed } : {})}
             {...(props.onRequestEdit ? { onRequestEdit: props.onRequestEdit } : {})}
             {...(props.onEditDone ? { onEditDone: props.onEditDone } : {})}
-            {...(props.grid ? { onOpenRow: () => props.onOpen(row.id) } : {})}
+            {...(props.grid ? { onOpenRow: (col: number) => props.onOpen(row.id, col) } : {})}
           />
         ),
       )}
@@ -1181,8 +1194,8 @@ function ValueCell(props: {
   readOnly?: boolean;
   /** #12: in a database grid the cell isn't a Tab stop of its own (the grid's active cell is). */
   grid?: boolean;
-  /** #qchedmun (R5): Ctrl/Cmd+Enter in this cell's editor commits, then opens its row. */
-  onOpenRow?: () => void;
+  /** #qchedmun (R5): Ctrl/Cmd+Enter in this cell's editor commits, then opens its row (at this column, for Back). */
+  onOpenRow?: (col: number) => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   /** #7prbquxu: the database grid asks this cell's editor to open (Enter, F2, a date typed). */
   editRequested?: boolean;
@@ -1203,6 +1216,8 @@ function ValueCell(props: {
   // A click elsewhere has already moved focus, so it's left alone.
   const cellRef = useRef<HTMLDivElement | null>(null);
   const wasEditing = useRef(false);
+  /** #qchedmun (R5): the save this editor's commit started, so Ctrl/Cmd+Enter opens the row only after it. */
+  const savePending = useRef<Promise<boolean> | null>(null);
   /** #5q4vaacm: where Tab or Shift+Tab asked the grid to go once this editor has closed. */
   const moveAfter = useRef<GridMove | undefined>(undefined);
   useEffect(() => {
@@ -1233,9 +1248,14 @@ function ValueCell(props: {
     if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || !props.onOpenRow || event.nativeEvent.isComposing) return false;
     event.preventDefault();
     event.stopPropagation();
+    // The blur starts the editor's commit (its `onSave`, below, records the save); the row opens once it's settled,
+    // so its page loads the saved version, not the one before (@graph-dev).
+    savePending.current = null;
     (document.activeElement as HTMLElement | null)?.blur();
     setEditing(false);
-    props.onOpenRow();
+    const open = props.onOpenRow;
+    const col = props.col;
+    void (savePending.current ?? Promise.resolve(true)).then(() => open(col));
     return true;
   };
   const tabOut = (event: React.KeyboardEvent<HTMLElement>) => {
@@ -1338,7 +1358,9 @@ function ValueCell(props: {
           autoFocus
           property={property}
           onSave={async (next) => {
-            const saved = await props.onEditValue(row, column, next);
+            const saving = props.onEditValue(row, column, next);
+            savePending.current = saving;
+            const saved = await saving;
             // Lists stay open for the next chip; single values close.
             if (saved && !Array.isArray(next)) setEditing(false);
             return saved;
