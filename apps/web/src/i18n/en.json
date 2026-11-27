@@ -93,7 +93,7 @@
       "moveUp": "Move up",
       "moveDown": "Move down",
       "removeGroup": "Remove group",
-      "groupsHint": "The first matching group colours a page. Queries: tag:#work, path:Folder, file:name, words, -word to exclude, OR.",
+      "groupsHint": "The first matching group colours a page. Queries: tag:#work, path:Folder, file:name, words, -word to exclude, OR, ( ) to group.",
       "forces": "Forces",
       "forceCenter": "Center force",
       "forceRepel": "Repel force",

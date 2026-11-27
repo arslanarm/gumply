@@ -572,31 +572,88 @@ export function queryHasTag(query: string, tag: string): boolean {
   return parseGraphQuery(query).some((terms) => terms.some((term) => term.op === "tag" && !term.negate && term.value === wanted));
 }
 
+/** The query's tokens, `(` and `)` standing alone, quoted phrases whole (as the core parser splits them). */
+function queryTokens(query: string): string[] {
+  return query.match(/[()]|-?(?:[A-Za-z]+:)?(?:"[^"]*"?|[^\s()]+)/g) ?? [];
+}
+
+/** Tokens back to text: no space after `(` or before `)`. */
+function joinTokens(tokens: readonly string[]): string {
+  let out = "";
+  for (const token of tokens) {
+    if (out && !out.endsWith("(") && token !== ")") out += " ";
+    out += token;
+  }
+  return out;
+}
+
+const isTagToken = (token: string): boolean => /^tag:#?[^\s()]+$/i.test(token);
+
 /**
- * Add the chip's `tag:#x` term to the query, or take every positive term for that tag out of it. A second chip
- * is written `OR tag:#b` (two chips mean "these tags", @lead), and taking one out takes its `OR` with it, so the
- * query stays valid.
+ * Add the chip's `tag:#x` term to the query, or take every positive term for that tag out of it. Two or more
+ * chips are one bracketed group, `(tag:#a OR tag:#b)` (@lead): they mean "either tag", while words typed beside
+ * them still narrow. Taking a chip out takes its `OR` along and unwraps a group left with one term.
  */
 export function toggleQueryTag(query: string, tag: string): string {
   const wanted = tag.toLowerCase();
-  const tokens = query.trim().split(/\s+/).filter(Boolean);
   const isTerm = (token: string) => {
-    const match = /^tag:#?(.+)$/i.exec(token);
+    const match = /^tag:#?([^\s()]+)$/i.exec(token);
     return Boolean(match && match[1]!.toLowerCase() === wanted);
   };
+  let tokens = queryTokens(query.trim());
   if (!queryHasTag(query, tag)) {
-    const otherChip = tokens.some((token) => /^tag:#?.+$/i.test(token));
-    return [...tokens, ...(otherChip ? ["OR"] : []), `tag:#${tag}`].join(" ");
+    const term = `tag:#${tag}`;
+    // An existing chip group: `( tag OR tag … )`.
+    for (let open = 0; open < tokens.length; open += 1) {
+      if (tokens[open] !== "(") continue;
+      const close = tokens.indexOf(")", open);
+      const inside = close === -1 ? [] : tokens.slice(open + 1, close);
+      if (inside.length && inside.every((token, i) => (i % 2 === 0 ? isTagToken(token) : token === "OR"))) {
+        tokens.splice(close, 0, "OR", term);
+        return joinTokens(tokens);
+      }
+    }
+    // A lone chip term at the top level becomes the group.
+    let depth = 0;
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i]!;
+      if (token === "(") depth += 1;
+      else if (token === ")") depth = Math.max(0, depth - 1);
+      else if (depth === 0 && isTagToken(token) && tokens[i - 1] !== "OR" && tokens[i + 1] !== "OR") {
+        tokens.splice(i, 1, "(", token, "OR", term, ")");
+        return joinTokens(tokens);
+      }
+    }
+    return joinTokens([...tokens, term]);
   }
+  // Out: each term with its OR (the one before it, unless that opens a group; else the one after it).
   const kept: string[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
-    if (!isTerm(tokens[i]!)) {
-      kept.push(tokens[i]!);
+    const token = tokens[i]!;
+    if (!isTerm(token)) {
+      kept.push(token);
       continue;
     }
-    // Take its OR along: the one before it, else the one after it.
     if (kept[kept.length - 1] === "OR") kept.pop();
     else if (tokens[i + 1] === "OR") i += 1;
   }
-  return kept.join(" ");
+  // Tidy groups: `()` goes, `(x)` unwraps.
+  tokens = kept;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let i = 0; i < tokens.length; i += 1) {
+      if (tokens[i] !== "(") continue;
+      if (tokens[i + 1] === ")") {
+        tokens.splice(i, 2);
+        changed = true;
+        break;
+      }
+      if (tokens[i + 2] === ")" && tokens[i + 1] !== "(" && tokens[i + 1] !== "OR") {
+        tokens.splice(i, 3, tokens[i + 1]!);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return joinTokens(tokens);
 }
