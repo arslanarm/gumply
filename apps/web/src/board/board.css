@@ -1242,3 +1242,9 @@ img.board-card-image {
     top: calc(100% + 8px);
   }
 }
+
+/* #sdwrzdgx: front/back on a frames-only selection (frames always sit behind cards). */
+.board-context-button[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}

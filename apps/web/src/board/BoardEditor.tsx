@@ -1487,12 +1487,11 @@ function BoardCanvas(props: BoardEditorProps) {
         fit();
         return;
       }
-      if (key === "]") {
-        reorder("front");
-        return;
-      }
-      if (key === "[") {
-        reorder("back");
+      if (key === "]" || key === "[") {
+        // #sdwrzdgx: frames always sit behind cards, so a frames-only selection doesn't reorder; say why.
+        const chosen = boardRef.current.nodes.filter((node) => selectedRef.current.nodes.includes(node.id));
+        if (chosen.length > 0 && chosen.every((node) => node.type === "group")) announce(t("board.framesBehind"));
+        else reorder(key === "]" ? "front" : "back");
         return;
       }
       if (event.shiftKey) return;
@@ -1803,6 +1802,8 @@ function BoardCanvas(props: BoardEditorProps) {
   );
   const commonColor =
     selectedNodes.length > 0 && selectedNodes.every((node) => node.color === selectedNodes[0]?.color) ? selectedNodes[0]?.color : null;
+  // #sdwrzdgx: frames always sit behind cards (as in Obsidian), so front/back can't move frames-only selections.
+  const framesOnly = selectedNodes.length > 0 && selectedNodes.every((node) => node.type === "group");
   const shapesSelected = selectedNodes.length > 0 && selectedNodes.every((node) => gumplyNodeData(node)?.kind === "shape");
   const selectedShape = shapesSelected ? (gumplyNodeData(selectedNodes[0] as CanvasNode) as { shape: GumplyShape }).shape : null;
   const showNodeToolbar = selectedNodeIds.length > 0 && !editing && !dragging && tool === "select";
@@ -1946,10 +1947,32 @@ function BoardCanvas(props: BoardEditorProps) {
                   </div>
                 ) : null}
                 <div className="board-context-group">
-                  <button type="button" className="board-context-button" aria-label={t("board.bringToFront")} data-tooltip={`${t("board.bringToFront")} · ]`} data-testid="board-front" onClick={() => reorder("front")}>
+                  <button
+                    type="button"
+                    className="board-context-button"
+                    aria-label={t("board.bringToFront")}
+                    aria-disabled={framesOnly || undefined}
+                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
+                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.bringToFront")} · ]`}
+                    data-testid="board-front"
+                    onClick={() => {
+                      if (!framesOnly) reorder("front");
+                    }}
+                  >
                     <BoardIcon name="front" size={16} />
                   </button>
-                  <button type="button" className="board-context-button" aria-label={t("board.sendToBack")} data-tooltip={`${t("board.sendToBack")} · [`} data-testid="board-back" onClick={() => reorder("back")}>
+                  <button
+                    type="button"
+                    className="board-context-button"
+                    aria-label={t("board.sendToBack")}
+                    aria-disabled={framesOnly || undefined}
+                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
+                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.sendToBack")} · [`}
+                    data-testid="board-back"
+                    onClick={() => {
+                      if (!framesOnly) reorder("back");
+                    }}
+                  >
                     <BoardIcon name="back" size={16} />
                   </button>
                   <button type="button" className="board-context-button is-danger" aria-label={t("common.delete")} data-tooltip={`${t("common.delete")} · Del`} data-testid="board-delete" onClick={deleteSelection}>
