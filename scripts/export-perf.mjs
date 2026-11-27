@@ -46,9 +46,11 @@ try {
       await page.waitForTimeout(800);
       const times = [];
       for (let run = 0; run < runs; run += 1) {
-        await page.getByTestId("board-menu-button").click();
+        // #pypzxe6i: the canvas's export button opens the export dialog; the format is chosen there.
+        await page.getByTestId("board-export-button").click();
+        await page.getByTestId(`board-export-format-${format}`).check();
         const started = Date.now();
-        const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId(`board-export-${format}`).click()]);
+        const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("board-export-confirm").click()]);
         await download.path();
         times.push(Date.now() - started);
       }
