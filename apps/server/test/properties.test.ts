@@ -131,7 +131,9 @@ describe("PUT /api/pages/:id { properties } writes only the touched lines", () =
     for (const properties of [
       { set: { title: "x" } },
       { set: { updated: "x" } },
-      { set: { "a:b": "x" } },
+      // #8s94nyhn: "a:b" is a valid key now (quoted on write); a line break and a .base prefix stay refused.
+      { set: { "two\nlines": "x" } },
+      { set: { "note.x": "x" } },
       { set: { rank: "lots" } },
       { set: { done: "maybe" } },
       { set: { due: "soon" } },
@@ -147,6 +149,17 @@ describe("PUT /api/pages/:id { properties } writes only the touched lines", () =
       expect(response.status, JSON.stringify(properties)).toBe(400);
     }
     expect(await readFile(join(dir, "Task.md"), "utf8")).toBe(OBSIDIAN_NOTE);
+  });
+
+  it("#8s94nyhn: punctuated keys are written so YAML reads them back, and the page reads them back too", async () => {
+    const { app, dir } = await vaultWith({ "Plant.md": "---\nWater every (days): 7\n'Pot (cm)': 12\n---\n\nFern.\n" });
+    const response = await put(app, "Plant", { properties: { set: { "Price ($)": "5", "a:b": "x", "Water every (days)": "9", "Pot (cm)": "14" } } });
+    expect(response.status).toBe(200);
+    const text = await readFile(join(dir, "Plant.md"), "utf8");
+    // The file's own spellings stay; a key YAML would split is quoted.
+    expect(text).toBe('---\nWater every (days): 9\n\'Pot (cm)\': 14\nPrice ($): "5"\n"a:b": x\n---\n\nFern.\n');
+    const page = await getJson<Page>(app, "/api/pages/Plant");
+    expect(Object.fromEntries(page.properties!.map((property) => [property.key, property.value]))).toMatchObject({ "Water every (days)": 9, "Pot (cm)": 14, "Price ($)": "5", "a:b": "x" });
   });
 
   it("is conditional like any save (D22): a stale version gets 409", async () => {

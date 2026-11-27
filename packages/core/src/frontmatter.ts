@@ -6,7 +6,7 @@
  * Nested objects and multi-line strings are out of scope for the MVP.
  */
 
-import { frontmatterKey, isTagsKey } from "./frontmatter-keys.js";
+import { frontmatterKey, isTagsKey, matchKeyLine, yamlKey } from "./frontmatter-keys.js";
 import { splitTrailingComment } from "./note-template.js";
 import { isWholeWikilink } from "./wikilink-syntax.js";
 
@@ -28,7 +28,6 @@ export interface ParsedNote {
 }
 
 const FRONTMATTER_FENCE = /^---\s*$/;
-const KEY_LINE = /^([\p{L}\p{N}_][\p{L}\p{N}_ -]*?):\s*(.*)$/u;
 const LIST_ITEM = /^[ \t]+-\s*(.*)$/;
 
 const KEY_ORDER = ["title", "icon", "tags", "created", "updated"] as const;
@@ -122,12 +121,13 @@ export function parseFrontmatter(raw: string): ParsedNote {
     const line = yamlLines[i] ?? "";
     if (line.trim().length === 0 || line.trimStart().startsWith("#")) continue;
 
-    const match = KEY_LINE.exec(line);
+    // #8s94nyhn: quoted keys and plain keys with punctuation too (`Water every (days): 7`).
+    const match = matchKeyLine(line);
     if (!match) continue;
 
-    const key = match[1] ?? "";
+    const key = match.key;
     // A trailing ` # comment` isn't part of the value (YAML, as Obsidian reads it).
-    const rawValue = splitTrailingComment(match[2] ?? "").value.trim();
+    const rawValue = splitTrailingComment(match.rest.trimStart()).value.trim();
 
     if (rawValue.startsWith("[") && rawValue.endsWith("]")) {
       frontmatter[key] = isTagsKey(key) ? normalizeTags(splitInlineList(rawValue)) : splitInlineList(rawValue);
@@ -214,20 +214,20 @@ export function serializeFrontmatter(frontmatter: Frontmatter): string {
 
     if (Array.isArray(value)) {
       if (value.length === 0) {
-        lines.push(`${key}: []`);
+        lines.push(`${yamlKey(key)}: []`);
       } else {
-        lines.push(`${key}:`);
+        lines.push(`${yamlKey(key)}:`);
         for (const item of value) lines.push(`  - ${formatScalar(String(item))}`);
       }
       continue;
     }
 
     if (typeof value === "string") {
-      lines.push(`${key}: ${formatScalar(value)}`);
+      lines.push(`${yamlKey(key)}: ${formatScalar(value)}`);
       continue;
     }
 
-    lines.push(`${key}: ${JSON.stringify(value)}`);
+    lines.push(`${yamlKey(key)}: ${JSON.stringify(value)}`);
   }
   lines.push("---");
   return lines.join("\n");
