@@ -39,6 +39,7 @@ import {
   useState,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -517,6 +518,15 @@ function BoardCanvas(props: BoardEditorProps) {
   const [shapeMenu, setShapeMenu] = useState(false);
   // #b9425ktw D: the context toolbar's Align panel (2+ objects selected).
   const [alignMenu, setAlignMenu] = useState(false);
+  const alignButtonRef = useRef<HTMLButtonElement | null>(null);
+  const alignMenuRef = useRef<HTMLDivElement | null>(null);
+  /** Opened from the keyboard: its first button takes the focus once it's there. */
+  const focusAlignMenu = useRef(false);
+  useEffect(() => {
+    if (!alignMenu || !focusAlignMenu.current) return;
+    focusAlignMenu.current = false;
+    alignMenuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  }, [alignMenu]);
   const [pagePicker, setPagePicker] = useState(false);
   const [dragging, setDragging] = useState(false);
   /** Kept current every render; read by the host through `isBusy`. */
@@ -1362,6 +1372,44 @@ function BoardCanvas(props: BoardEditorProps) {
     [apply],
   );
 
+  /**
+   * #b9425ktw D (@lead): the Align button and its 3×3 panel by keyboard. Enter or Space on the button opens the
+   * panel with the focus on its first button; arrows move in the grid (Home/End to the ends); Escape closes it and
+   * gives the focus back to the button. These keys are taken here (preventDefault), so the board's own (arrows move
+   * objects, Enter edits one, Escape clears the selection) don't also run.
+   */
+  const alignKeys = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const inMenu = alignMenuRef.current?.contains(target) ?? false;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (target === alignButtonRef.current) focusAlignMenu.current = !alignMenu;
+      (target as HTMLButtonElement).click();
+      return;
+    }
+    if (event.key === "Escape" && (inMenu || alignMenu)) {
+      event.preventDefault();
+      setAlignMenu(false);
+      alignButtonRef.current?.focus();
+      return;
+    }
+    if (!inMenu) return;
+    const buttons = [...(alignMenuRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+    const at = buttons.indexOf(target as HTMLButtonElement);
+    if (at === -1) return;
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 3, ArrowUp: -3 }[event.key as string];
+    let next = at;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = buttons.length - 1;
+    else if (step !== undefined) next = at + step;
+    else return;
+    event.preventDefault();
+    // Within the grid; a disabled button (distribute with two objects) is skipped in the direction of travel.
+    const direction = step !== undefined ? Math.sign(step) : event.key === "Home" ? 1 : -1;
+    while (next >= 0 && next < buttons.length && buttons[next]!.disabled) next += direction;
+    if (next >= 0 && next < buttons.length) buttons[next]!.focus();
+  }, [alignMenu]);
+
   /** #b9425ktw D (#fzrwse3y's P3 6): align or distribute the selected objects; one undo step, said aloud. */
   const arrange = useCallback(
     (how: Alignment | Distribution) => {
@@ -2073,9 +2121,10 @@ function BoardCanvas(props: BoardEditorProps) {
                   </div>
                 ) : null}
                 {selectedNodeIds.length >= 2 ? (
-                  <div className="board-context-group board-align">
+                  <div className="board-context-group board-align" onKeyDown={alignKeys}>
                     <button
                       type="button"
+                      ref={alignButtonRef}
                       className={`board-context-button${alignMenu ? " is-active" : ""}`}
                       aria-label={t("board.align")}
                       aria-haspopup="true"
@@ -2087,7 +2136,7 @@ function BoardCanvas(props: BoardEditorProps) {
                       <BoardIcon name="align-left" size={16} />
                     </button>
                     {alignMenu ? (
-                      <div className="board-align-menu" role="group" aria-label={t("board.align")} data-testid="board-align-menu">
+                      <div className="board-align-menu" ref={alignMenuRef} role="group" aria-label={t("board.align")} data-testid="board-align-menu">
                         {(
                           [
                             ["left", "align-left", "board.alignLeft"],
