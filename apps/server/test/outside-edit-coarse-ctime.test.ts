@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { historyDir, readHistory } from "../src/history";
 import { VaultStore } from "../src/vault-store";
-import { cleanupVaults, createTestServer } from "./helpers";
+import { cleanupVaults, createTestServer, trackStore } from "./helpers";
 
 /**
  * #rwgtaffe: a full rescan reuses a file's cached record while its stat key (mtime, size, inode, ctime) is the same.
@@ -99,13 +99,13 @@ describe("a same-size edit that keeps mtime and (coarse) ctime is still seen by 
     await writeFile(join(dir, "Steady.md"), "Steady.\n");
     // A ctime a little ahead of the clock (or in the stat's own millisecond, as a file written just before a rescan).
     held.ctimeMs = Date.now() + 5;
-    const store = new VaultStore(dir, { racyStatMs: 0 });
+    // Tracked, so its watcher is closed even if an assertion fails first (@graph-dev's review).
+    const store = trackStore(new VaultStore(dir, { racyStatMs: 0 }));
     await store.init();
     const file = join(dir, "Steady.md");
     const reads = held.reads.get(file) ?? 0;
     await store.rescan();
     await store.rescan();
     expect(held.reads.get(file) ?? 0).toBe(reads);
-    store.stopWatching();
   });
 });
