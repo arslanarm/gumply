@@ -1255,7 +1255,10 @@ function ValueCell(props: {
     setEditing(false);
     const open = props.onOpenRow;
     const col = props.col;
-    void (savePending.current ?? Promise.resolve(true)).then(() => open(col));
+    // A refused save (already reported) keeps the user on the table, where they can retry (@graph-dev, @lead).
+    void (savePending.current ?? Promise.resolve(true)).then((saved) => {
+      if (saved) open(col);
+    });
     return true;
   };
   const tabOut = (event: React.KeyboardEvent<HTMLElement>) => {
