@@ -49,11 +49,15 @@ test('#7: in a tall window a popover is still capped at 36rem (the room on its s
   await page.getByTestId('base-th-note.light').click();
   const menu = page.getByTestId('base-column-menu');
   await expect(menu).toBeVisible();
+  // The cap itself, not the menu's height: its items (about 431 px) fit under 36rem either way. Chrome may report
+  // the computed value resolved ("576px") or as written ("min(36rem, 1200px)"): take the smallest length in it.
   const { maxHeight, rem } = await menu.evaluate((element) => ({
-    maxHeight: parseFloat(getComputedStyle(element).maxHeight),
+    maxHeight: getComputedStyle(element).maxHeight,
     rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
   }));
-  expect(maxHeight).toBeLessThanOrEqual(36 * rem);
+  const lengths = [...maxHeight.matchAll(/([\d.]+)(px|rem)/g)].map(([, value, unit]) => parseFloat(value!) * (unit === "rem" ? rem : 1));
+  expect(lengths.length, maxHeight).toBeGreaterThan(0);
+  expect(Math.min(...lengths), maxHeight).toBeLessThanOrEqual(36 * rem);
 });
 
 test('#11: the paste preview\'s controls sit over their own columns, and a wide sheet stays inside the dialog', async ({ page, request, vault }) => {
