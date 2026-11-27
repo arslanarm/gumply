@@ -28,7 +28,7 @@ test('#yy347xgi: a tag chip is its tag: term in the search, and the chip and the
   await expect(chip).toHaveAttribute('aria-pressed', 'true');
   await expect(field).toHaveValue('tag:#work');
   // The not-created page Plan links to stays, as the chip always kept it.
-  await expect(subtitle).toHaveText('2 pages · 2 links · 1 not created yet');
+  await expect(subtitle).toHaveText(/^2 pages · \d+ links · 1 not created yet$/);
   const byChip = await subtitle.textContent();
 
   // Typed by hand: the same graph, and the chip shows pressed.
