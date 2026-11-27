@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GraphData, GraphNode } from "@gumply/core";
+import { parseGraphQuery, type GraphData, type GraphNode } from "@gumply/core";
 import {
   ariaSummary,
   buildGraphModel,
@@ -167,6 +167,8 @@ describe("filterGraph", () => {
     expect(typed.nodes.map((node) => node.id)).toEqual(chip.nodes.map((node) => node.id));
     expect(typed.ghosts.map((ghost) => ghost.title)).toEqual(["Missing Work"]);
     expect(typed.links).toEqual(chip.links);
+    // @lead: one that only #work pages link to belongs to #work, so -tag:#work drops it.
+    expect(filterGraph(model(), { query: "-tag:#work" }).ghosts.map((ghost) => ghost.title)).toEqual(["Missing Home"]);
     // A title search still matches a not-created page by its own title only.
     expect(filterGraph(model(), { query: "work" }).ghosts.map((ghost) => ghost.title)).toEqual(["Missing Work"]);
   });
@@ -368,5 +370,20 @@ describe("tag chips as query terms (#yy347xgi (3))", () => {
     expect(toggleQueryTag("tag:#Work tag:work", "work")).toBe("");
     expect(toggleQueryTag("tag:#home OR tag:#work", "work")).toBe("tag:#home");
     expect(queryHasTag("tag:#workshop", "work")).toBe(false);
+  });
+
+  it("two chips mean either tag (OR, @lead), and taking one out keeps the query valid", () => {
+    const both = toggleQueryTag(toggleQueryTag("", "work"), "home");
+    expect(both).toBe("tag:#work OR tag:#home");
+    expect(queryHasTag(both, "work") && queryHasTag(both, "home")).toBe(true);
+    // Two alternatives, one tag term each: either tag.
+    expect(parseGraphQuery(both)).toEqual([
+      [{ op: "tag", value: "work", negate: false }],
+      [{ op: "tag", value: "home", negate: false }],
+    ]);
+    // Out with the first: its OR goes too; out with the second: the same.
+    expect(toggleQueryTag(both, "work")).toBe("tag:#home");
+    expect(toggleQueryTag(both, "home")).toBe("tag:#work");
+    expect(toggleQueryTag("basil tag:#work OR tag:#home", "work")).toBe("basil tag:#home");
   });
 });

@@ -31,6 +31,14 @@ test('#yy347xgi: a tag chip is its tag: term in the search, and the chip and the
   await expect(subtitle).toHaveText(/^2 pages · \d+ links · 1 not created yet$/);
   const byChip = await subtitle.textContent();
 
+  // A second chip means either tag (OR); un-pressing one keeps the query valid.
+  const home = page.getByRole('button', { name: '#home' });
+  await home.click();
+  await expect(field).toHaveValue('tag:#work OR tag:#home');
+  await expect(subtitle).toHaveText(/^3 pages /);
+  await home.click();
+  await expect(field).toHaveValue('tag:#work');
+
   // Typed by hand: the same graph, and the chip shows pressed.
   await field.fill('');
   await expect(chip).toHaveAttribute('aria-pressed', 'false');
