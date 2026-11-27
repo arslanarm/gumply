@@ -84,13 +84,17 @@ test('#5n2p7phw: the global graph by keyboard: Tab in on the current page, arrow
   await page.keyboard.press('0');
   await expect(canvas).toHaveAttribute('data-graph-fit-reason', 'keyboard');
 
-  // Escape hands the keyboard to the search field.
+  // Escape hands the keyboard to the search field; a move's pending announcement doesn't speak after it.
+  await page.keyboard.press(']');
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('graph-filter')).toBeFocused();
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('graph-canvas-spoken')).toHaveText('');
 
-  // Back in, on the same node; Enter does what a click does.
-  await canvas.focus();
-  await expect(canvas).toHaveAttribute('data-graph-focused', moved);
+  // Back in (the ] before Escape moved it on); Enter does what a click does.
+  await page.getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(canvas).toHaveAttribute('data-graph-focused', /.+/);
   await page.keyboard.press('Enter');
   await expect(page).not.toHaveURL(/#graph$/);
 });
@@ -109,7 +113,10 @@ test('#5n2p7phw: the local graph by keyboard: in on the page itself, an arrow mo
   expect(moved).not.toBe('Hub');
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('local-graph-list-toggle')).toBeFocused();
-  await local.focus();
+  // Back in by Tab (a keyboard focus), on the node it left; Enter opens it.
+  await page.getByTestId('local-graph').getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(local).toHaveAttribute('data-graph-focused', moved);
   await page.keyboard.press('Enter');
   await expect(page).not.toHaveURL(/#\/Hub$/);
 });
@@ -164,4 +171,31 @@ test('#5n2p7phw (@opus-editor): ] by its key position on a ru layout; no ring af
   for (let i = 0; i < 5; i += 1) await page.keyboard.press(']', { delay: 10 });
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => (window as unknown as { __spokenWrites: number }).__spokenWrites)).toBe(1);
+});
+
+test('#5n2p7phw (@lead): with a search shown in context ("Show the rest"), the keys walk only the matches', async ({ page, vault }) => {
+  await seed(vault);
+  await page.goto('/#/Hub');
+  await page.getByTestId('sidebar-graph').click();
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  await page.getByTestId('graph-filter').fill('hub OR alpha OR beta');
+  const toggle = page.getByTestId('graph-show-rest');
+  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+  await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 15_000 });
+  const matches = ['Hub', 'Alpha', 'Beta'];
+
+  await page.getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(canvas).toHaveAttribute('data-graph-focused', 'Hub');
+  // ] round Hub's links: only Alpha and Beta (Gamma and the not-created page are dimmed, not walked).
+  for (let i = 0; i < 4; i += 1) {
+    await page.keyboard.press(']');
+    expect(['Alpha', 'Beta']).toContain(await canvas.getAttribute('data-graph-focused'));
+  }
+  // Every arrow lands on a match, or stays.
+  for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowUp']) {
+    await page.keyboard.press(key);
+    expect(matches).toContain(await canvas.getAttribute('data-graph-focused'));
+  }
 });

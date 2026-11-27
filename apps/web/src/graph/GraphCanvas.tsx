@@ -1732,6 +1732,9 @@ export function GraphCanvas({
     if (event.key === "Escape") {
       event.preventDefault();
       setKeyboardFocus(false);
+      // A move's pending announcement mustn't speak after leaving (@opus-editor).
+      if (spokenTimer.current !== null) window.clearTimeout(spokenTimer.current);
+      spokenTimer.current = null;
       setSpoken("");
       if (onLeave) onLeave();
       else event.currentTarget.blur();
@@ -1801,7 +1804,10 @@ export function GraphCanvas({
         tabIndex={0}
         onFocus={onCanvasFocus}
         onBlur={(event) => {
-          if (event.target === event.currentTarget) setKeyboardFocus(false);
+          if (event.target !== event.currentTarget) return;
+          setKeyboardFocus(false);
+          if (spokenTimer.current !== null) window.clearTimeout(spokenTimer.current);
+          spokenTimer.current = null;
         }}
         onKeyDown={onCanvasKey}
         data-graph-focused={keyboardRingId ?? undefined}
