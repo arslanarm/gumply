@@ -601,6 +601,9 @@ const RACY_STAT_MS = 2_500;
  * ahead: a cost bounded to those files (one read each per rescan), never a missed edit.
  */
 function isRacy(stats: { ctimeMs: number }, statAtMs: number, windowMs = RACY_STAT_MS): boolean {
+  // A 0 window turns the rule off (tests that count steady-state reuse): otherwise a ctime in the stat's own
+  // millisecond (ctimeMs has sub-ms precision, Date.now() doesn't) would still count, as trial-main31 saw.
+  if (windowMs <= 0) return false;
   return stats.ctimeMs > statAtMs - windowMs;
 }
 
