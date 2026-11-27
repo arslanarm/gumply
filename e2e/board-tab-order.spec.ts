@@ -31,7 +31,10 @@ test('the tool toolbar comes before the objects in Tab order, and the attributio
   expect(firstTool, stops.join(', ')).toBeGreaterThanOrEqual(0);
   expect(firstNode, stops.join(', ')).toBeGreaterThanOrEqual(0);
   expect(firstTool, stops.join(', ')).toBeLessThan(firstNode);
-  // From an object, Shift+Tab reaches a tool without passing the other objects' controls.
+  // From the first object, Shift+Tab goes to the toolbar (before, it left the board): one step back, not 19 Tabs on.
+  await page.locator('.react-flow__node').first().focus();
+  await page.keyboard.press('Shift+Tab');
+  expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="board-toolbar"]') !== null)).toBe(true);
   const attribution = page.locator('.react-flow__attribution a');
   await expect(attribution).toBeVisible();
   await expect(attribution).toHaveAttribute('tabindex', '-1');
