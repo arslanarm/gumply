@@ -370,8 +370,8 @@ const PALETTE = [
   "#8a6d00",
   "#7a4f6d",
   "#a63b7a",
-  "#6b4a37",
-  "#6b7a2a",
+  "#5a3a22",
+  "#6a3fb0",
 ];
 
 /** Fallback palette when CSS variables are unavailable (unit tests, SSR). */

@@ -9,6 +9,7 @@ import {
   ariaSummary,
   ATTACHMENT_PALETTE_INDEX,
   attachmentPath,
+  FALLBACK_GRAPH_PALETTE,
   buildGraphModel,
   filterGraph,
   graphSubtitle,
@@ -194,6 +195,9 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
     const group = groupColorer(groups ?? []);
     return colouringTags(model.nodes.filter((node) => !isAttachmentNodeId(node.id) && !group(node))).slice(0, 8);
   }, [model, groups]);
+
+  // #yy347xgi (6): the palette colours the tags here already use, so a new group doesn't repeat one.
+  const tagColors = useMemo(() => legendTags.map((tag) => FALLBACK_GRAPH_PALETTE[tagSlot(tag, tagSlots)]!).filter(Boolean), [legendTags, tagSlots]);
 
   /** Tag nodes search for their tag; attachment nodes open the file. */
   const openNode = (id: string) => {
@@ -445,7 +449,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
         ) : null}
 
         {controlsOpen && settings && status === "ready" && hasPages ? (
-          <GraphControls settings={settings} listMode={listMode} onChange={(next: GraphSettings) => updateSettings(next)} onClose={() => setControlsOpen(false)} />
+          <GraphControls settings={settings} listMode={listMode} usedColors={tagColors} onChange={(next: GraphSettings) => updateSettings(next)} onClose={() => setControlsOpen(false)} />
         ) : null}
 
         {legendOpen && !listMode && status === "ready" && hasPages ? (

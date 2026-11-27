@@ -24,6 +24,8 @@ export interface GraphControlsProps {
   onClose: () => void;
   /** #62tnekds: the graph shows as a list, so the forces (which only arrange the picture) wait. */
   listMode?: boolean;
+  /** #yy347xgi (6): colours tags already use (palette hex), so a new group takes one no tag or group uses. */
+  usedColors?: readonly string[];
 }
 
 type FilterFlag = Exclude<keyof GraphFilters, "search">;
@@ -119,7 +121,7 @@ function ForceSlider({ name, label, value, onCommit }: { name: keyof GraphForces
   );
 }
 
-export function GraphControls({ settings, onChange, onClose, listMode = false }: GraphControlsProps) {
+export function GraphControls({ settings, onChange, onClose, listMode = false, usedColors = [] }: GraphControlsProps) {
   const t = useT();
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [groupsOpen, setGroupsOpen] = useState(true);
@@ -137,8 +139,19 @@ export function GraphControls({ settings, onChange, onClose, listMode = false }:
     groups.splice(index + by, 0, group!);
     setGroups(groups);
   };
-  const addGroup = () =>
-    setGroups([...settings.groups, { query: "", color: nextGroupColor(settings.groups.map((group) => group.color), FALLBACK_GRAPH_PALETTE) }]);
+  // #yy347xgi (6): a new group's colour is one no group and no tag uses yet, and its query takes the keyboard.
+  const [focusNewGroup, setFocusNewGroup] = useState(false);
+  const groupsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!focusNewGroup) return;
+    setFocusNewGroup(false);
+    const queries = groupsRef.current?.querySelectorAll<HTMLInputElement>('[data-testid="graph-group-query"]');
+    queries?.[queries.length - 1]?.focus();
+  }, [focusNewGroup, settings.groups.length]);
+  const addGroup = () => {
+    setGroups([...settings.groups, { query: "", color: nextGroupColor([...settings.groups.map((group) => group.color), ...usedColors], FALLBACK_GRAPH_PALETTE) }]);
+    setFocusNewGroup(true);
+  };
 
   return (
     <aside className="graph-panel" data-testid="graph-controls" aria-label={t("graph.panel.title")}>
@@ -178,7 +191,7 @@ export function GraphControls({ settings, onChange, onClose, listMode = false }:
           {t("graph.panel.groups")}
         </button>
         {groupsOpen ? (
-          <div className="graph-panel-body">
+          <div className="graph-panel-body" ref={groupsRef}>
             {settings.groups.length === 0 ? <p className="graph-panel-hint">{t("graph.panel.noGroups")}</p> : null}
             <datalist id="graph-group-colors">
               {FALLBACK_GRAPH_PALETTE.map((color) => (
