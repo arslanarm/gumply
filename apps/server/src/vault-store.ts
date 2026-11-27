@@ -5884,7 +5884,8 @@ export class VaultStore {
       [...this.pages.keys(), ...this.folders.keys()].some((key) => key !== rows && collisionKey(key) === collisionKey(newRows)) ||
       (await pathExists(this.folderPathFor(newRows))) ||
       (await this.itemFileExists(newRows));
-    if (folderTaken) throw conflict(`A page or folder already exists at ${newRows}`);
+    // #pypzxe6i: the shared refusal, said in the user's language ("“Plants” is already used here").
+    if (folderTaken) throw nameTaken(segment);
     const oldParent = parentOf(baseId);
     await this.moveNow(baseId, parentId, { alone: true });
     const newBase = `${newRows}${idExtension("base")}`;
@@ -7048,7 +7049,8 @@ export class VaultStore {
       (await pathExists(this.folderPathFor(newId))) ||
       (await this.itemFileExists(newId))
     ) {
-      throw conflict(`A page or folder already exists at ${newId}`);
+      // #pypzxe6i: the shared refusal, as for a page, board or database.
+      throw nameTaken(segment);
     }
     await this.relocateFolderNow(id, newId);
     return this.folderPage(newId);
