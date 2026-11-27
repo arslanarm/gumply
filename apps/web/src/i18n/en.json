@@ -1061,7 +1061,7 @@
   "trash": {
     "title": "Trash",
     "empty": "Empty trash",
-    "introBefore": "Deleted pages and whiteboards stay here until you delete them for good. Their files are in the vault's",
+    "introBefore": "Deleted pages, whiteboards, databases and database rows stay here until you delete them for good. Their files are in the vault's",
     "introAfter": "folder.",
     "searchPlaceholder_one": "Search {{count}} deleted item",
     "searchPlaceholder_few": "Search {{count}} deleted items",
@@ -1070,9 +1070,9 @@
     "searchLabel": "Search the trash",
     "loading": "Loading the trash…",
     "emptyTitle": "The trash is empty",
-    "emptyBody": "When you delete a page or a whiteboard, it waits here in case you want it back.",
+    "emptyBody": "When you delete a page, a whiteboard, a database or its rows, they wait here in case you want them back.",
     "noMatch": "Nothing in the trash matches “{{query}}”.",
-    "listLabel": "Deleted pages and whiteboards",
+    "listLabel": "Deleted items",
     "in": "in {{location}}",
     "noLongerThere": " (no longer there)",
     "deleted": "deleted {{time}}",
@@ -1524,6 +1524,7 @@
       "Unchecked": "Unchecked"
     },
     "openPage": "Open {{title}}",
+    "renameRow": "Rename {{title}}",
     "editCell": "Edit {{property}} of {{title}}",
     "readOnlyCell": "Only note properties can be edited here.",
     "embedOpen": "Open database view “{{title}}”",

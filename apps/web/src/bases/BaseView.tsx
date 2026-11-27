@@ -282,23 +282,26 @@ export function BaseView(props: BaseViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Save a new config; only what changed is written (spec/api-bases). */
-  const saveConfig = useCallback(async (next: BaseConfig) => {
+  /** Save a new config; only what changed is written (spec/api-bases). True when it landed. */
+  const saveConfig = useCallback(async (next: BaseConfig): Promise<boolean> => {
     const shown = { ...docRef.current, config: next };
     docRef.current = shown;
     setDoc(shown);
-    await saverRef.current!.save(next);
+    return saverRef.current!.save(next);
   }, []);
 
-  const changeView = useCallback(
-    (view: BaseViewConfig) => {
-      if (!active) return;
+  /** Change the active view; resolves true when the change landed (#bg7c9bzk: "+" clears its focus marker otherwise). */
+  const saveView = useCallback(
+    (view: BaseViewConfig): Promise<boolean> => {
+      if (!active) return Promise.resolve(false);
       const current = docRef.current.config;
-      void saveConfig({ ...current, views: current.views.map((item) => (item.name === active.name ? view : item)) });
+      const saved = saveConfig({ ...current, views: current.views.map((item) => (item.name === active.name ? view : item)) });
       if (view.name !== active.name) setActiveName(view.name);
+      return saved;
     },
     [active, saveConfig],
   );
+  const changeView = useCallback((view: BaseViewConfig) => void saveView(view), [saveView]);
 
   /** #5q4vaacm: each row's cell writes in flight (chained), and the versions this view's own writes replaced. */
   const rowWrites = useRef(new Map<string, Promise<void>>());
@@ -514,18 +517,22 @@ export function BaseView(props: BaseViewProps) {
    * none, as the column menu's Select does.
    */
   const addSelectColumn = useCallback(
-    async (view: BaseViewConfig, key: string, kind: SelectKind) => {
-      if (!active) return;
+    async (view: BaseViewConfig, key: string, kind: SelectKind): Promise<boolean> => {
+      if (!active) return false;
       const before = docRef.current.config;
       const withView = { ...before, views: before.views.map((item) => (item.name === active.name ? view : item)) };
+      // #bg7c9bzk: whether the column landed ("+" clears its focus marker when it didn't).
+      let saved = false;
       try {
-        await saveConfig(withSelectSettings(withView, key, { kind, options: [] }));
+        saved = await saveConfig(withSelectSettings(withView, key, { kind, options: [] }));
         recordStep({ kind: "config", from: docRef.current.config, to: before });
         await api.setPropertyType(key, kind === "select" ? "text" : "multitext", { ifAbsent: true }).catch(() => undefined);
       } catch (error) {
+        saved = false;
         props.onError?.(errorText(error));
       }
       await load();
+      return saved;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [active, load, saveConfig],
@@ -936,8 +943,9 @@ export function BaseView(props: BaseViewProps) {
           {...(ownedRowsFolder(config)
             ? { onAddRow: (title: string) => newRow(undefined, title), importBlock, onAddColumnView: (view: BaseViewConfig) => {
                   const before = docRef.current.config;
-                  changeView(view);
+                  const saved = saveView(view);
                   recordStep({ kind: "config", from: docRef.current.config, to: before });
+                  return saved;
                 },
                 onRenameColumn: renameColumn, onPasteRows: (rows: PastedRow[]) => pasteRows(rows),
                 onPastePreview: (previewed: PreviewResult, viewName: string) =>

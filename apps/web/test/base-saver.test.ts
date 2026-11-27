@@ -23,6 +23,22 @@ function saver(send: (config: BaseConfig, options: { expectedUpdated: string; fo
 }
 
 describe("database view saves (#ups4ikpj)", () => {
+  it("#bg7c9bzk (@lead, after @graph-dev's review): save() says whether the change landed: true when written, false on an error or a conflict", async () => {
+    const ok = saver(async (c) => answer("v2", c));
+    expect(await ok.instance.save(config("a"))).toBe(true);
+    const failing = saver(async () => {
+      throw new Error("offline");
+    });
+    expect(await failing.instance.save(config("a"))).toBe(false);
+    expect(failing.events).toEqual(["error"]);
+    const conflicting = saver(async () => {
+      throw conflict();
+    });
+    expect(await conflicting.instance.save(config("a"))).toBe(false);
+    // Held by the conflict: a newer change isn't written either.
+    expect(await conflicting.instance.save(config("b"))).toBe(false);
+  });
+
   it("saves one at a time, each conditional on the version the last one wrote", async () => {
     const send = vi.fn(async (_c: BaseConfig, { expectedUpdated }: { expectedUpdated: string }) => answer(expectedUpdated === "v1" ? "v2" : "v3", _c));
     const { instance, events } = saver(send);

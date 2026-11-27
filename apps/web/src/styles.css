@@ -2005,8 +2005,18 @@ input {
   color: var(--on-accent);
 }
 
-.button-primary:hover {
+.button-primary:hover:not(:disabled) {
   filter: brightness(1.05);
+}
+
+/* #bg7c9bzk (#faqr8pj9's #19, and the paste dialog's Paste): a disabled main button drops the accent for a neutral
+   fill, so it reads as unavailable at a glance; its text stays AA (light 4.99:1, dark 5.66:1 on --hover). */
+.button-primary:disabled,
+.button-secondary:disabled {
+  background: var(--hover);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .button-secondary {
@@ -5231,11 +5241,6 @@ input {
   border-color: var(--danger);
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
-}
-
-.trash-empty-button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .trash-intro {

@@ -182,7 +182,8 @@
   flex-direction: column;
   gap: 0.35rem;
   width: 18rem;
-  max-height: 24rem;
+  /* #bg7c9bzk (#7): 24rem hid a column menu's last items ("Delete from all rows") under a scroll at 800 px. */
+  max-height: 36rem;
   overflow: auto;
   padding: 0.5rem;
   background: var(--panel);
@@ -1427,9 +1428,12 @@ ol.base-list {
   color: var(--on-accent);
 }
 
+/* #bg7c9bzk (#19): the same rule as .button-primary:disabled, not a faded accent (its text was under AA). */
 .base-popover.is-add-column button.base-add-column-submit:disabled {
-  opacity: 0.5;
-  cursor: default;
+  background: var(--hover);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 /* #7prbquxu: an owned database's column menu: rename, type, delete from all rows. */
@@ -1466,22 +1470,36 @@ ol.base-list {
   font-size: 0.8125rem;
 }
 
-.base-paste-columns {
-  display: flex;
-  gap: 0.5rem;
+.base-paste-grid {
+  max-width: 100%;
   margin: 0.5rem 0;
   overflow-x: auto;
 }
 
-.base-paste-column {
-  display: flex;
-  flex: 0 0 9.5rem;
-  flex-direction: column;
-  gap: 0.25rem;
+/* #bg7c9bzk (#11): the controls are the sample's header row, so they line up with its columns. */
+.base-paste-sample col {
+  width: 10rem;
 }
 
-.base-paste-column.is-name {
-  flex-basis: 7rem;
+.base-paste-sample col.is-name {
+  width: 8rem;
+}
+
+.base-paste-column {
+  padding: 0 0.4rem 0.4rem 0;
+  vertical-align: top;
+  font-weight: normal;
+  text-align: left;
+}
+
+.base-paste-column > * {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.base-paste-column > * + * {
+  margin-top: 0.25rem;
 }
 
 /* #8s94nyhn: the column name the problem is about. */
@@ -1505,7 +1523,9 @@ ol.base-list {
 }
 
 .base-paste-sample {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.8125rem;
 }
