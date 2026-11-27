@@ -1,11 +1,13 @@
 /**
- * The board's ⋯ menu (spec/v0-6 §D): Export as PNG (2×) or SVG, for the
- * whole board or the selection, on the theme background or transparent.
- * The two options are remembered for the next export.
+ * The board's export (spec/v0-6 §D): PNG (2×) or SVG, for the whole board or the selection, on the theme background
+ * or transparent; "transparent" is remembered for the next export. #pypzxe6i: one dialog, opened by the canvas's export
+ * button, the board's row ⋯ and Cmd+K.
  */
-import { useEffect, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "./board-menu.css";
 import { useT } from "../i18n/index.js";
+import { useModal } from "../lib/modal.js";
 
 export type ExportFormat = "png" | "svg";
 
@@ -34,16 +36,6 @@ function saveTransparent(transparent: boolean): void {
   }
 }
 
-function MoreIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.8" />
-      <circle cx="12" cy="12" r="1.8" />
-      <circle cx="19" cy="12" r="1.8" />
-    </svg>
-  );
-}
-
 function ExportIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -54,113 +46,127 @@ function ExportIcon() {
   );
 }
 
-export function BoardMenu({ hasSelection, busy, onExport, onOpen }: {
-  hasSelection: boolean;
-  /** An export is running: its items show progress and can't start another. */
-  busy: ExportFormat | null;
-  onExport: (request: ExportRequest) => void;
-  /** The menu opened (the host can start loading the export code). */
-  onOpen?: () => void;
-}) {
+/**
+ * #pypzxe6i (@lead): the canvas's own entry point, top right where its ⋯ was: one button that opens the export dialog
+ * (the board's row ⋯ and Cmd+K open the same one). While an export runs it shows a spinner.
+ */
+export function BoardExportButton({ busy, onClick }: { busy: ExportFormat | null; onClick: () => void }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const [selection, setSelection] = useState(hasSelection);
-  const [transparent, setTransparent] = useState(loadTransparent);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Opening the menu with objects selected offers to export just those.
-  useEffect(() => {
-    if (open) setSelection(hasSelection);
-  }, [open, hasSelection]);
-
-  const onOpenRef = useRef(onOpen);
-  onOpenRef.current = onOpen;
-  useEffect(() => {
-    if (open) onOpenRef.current?.();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        setOpen(false);
-      }
-    };
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKeyDown, true);
-    };
-  }, [open]);
-
-  const run = (format: ExportFormat) => {
-    if (busy) return;
-    onExport({ format, selection: selection && hasSelection, transparent });
-    setOpen(false);
-  };
-
   return (
     <div
       className="board-menu"
-      ref={ref}
       // The board must not start a selection, create a sticky or run shortcuts from here.
       onPointerDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
     >
       <button
         type="button"
-        className={`board-menu-button${open ? " is-open" : ""}`}
-        aria-label={t("board.menu.label")}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        data-tooltip={busy ? t("board.menu.exporting") : t("board.menu.more")}
-        data-testid="board-menu-button"
+        className="board-menu-button"
+        aria-label={t("board.export.menuItem")}
+        data-tooltip={busy ? t("board.menu.exporting") : t("board.export.menuItem")}
+        data-testid="board-export-button"
         aria-busy={busy ? "true" : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={onClick}
       >
-        {busy ? <span className="board-menu-spinner" aria-hidden="true" /> : <MoreIcon />}
+        {busy ? <span className="board-menu-spinner" aria-hidden="true" /> : <ExportIcon />}
       </button>
-      {open ? (
-        <div className="board-menu-list" role="menu" aria-label={t("board.menu.menuLabel")} data-testid="board-menu">
-          <button type="button" role="menuitem" className="board-menu-item" data-testid="board-export-png" disabled={busy !== null} onClick={() => run("png")}>
-            <ExportIcon />
-            <span>{t("board.menu.exportPng")}</span>
-          </button>
-          <button type="button" role="menuitem" className="board-menu-item" data-testid="board-export-svg" disabled={busy !== null} onClick={() => run("svg")}>
-            <ExportIcon />
-            <span>{t("board.menu.exportSvg")}</span>
-          </button>
-          <div className="board-menu-separator" role="separator" />
-          <label className={`board-menu-check${hasSelection ? "" : " is-disabled"}`}>
-            <input
-              type="checkbox"
-              checked={selection && hasSelection}
-              disabled={!hasSelection}
-              data-testid="board-export-selection"
-              onChange={(event) => setSelection(event.target.checked)}
-            />
-            <span>{t("board.menu.selectionOnly")}</span>
-          </label>
-          <label className="board-menu-check">
-            <input
-              type="checkbox"
-              checked={transparent}
-              data-testid="board-export-transparent"
-              onChange={(event) => {
-                setTransparent(event.target.checked);
-                saveTransparent(event.target.checked);
-              }}
-            />
-            <span>{t("board.menu.transparent")}</span>
-          </label>
-        </div>
-      ) : null}
     </div>
+  );
+}
+
+export function BoardExportDialog({ hasSelection, busy, initialFormat = "png", onExport, onClose }: {
+  hasSelection: boolean;
+  /** An export is running: Export shows it and can't start another. */
+  busy: ExportFormat | null;
+  initialFormat?: ExportFormat;
+  onExport: (request: ExportRequest) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const id = useId();
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModal(modalRef);
+  const [format, setFormat] = useState<ExportFormat>(initialFormat);
+  // Opened with objects selected, it offers to export just those (checked).
+  const [selection, setSelection] = useState(hasSelection);
+  const [transparent, setTransparent] = useState(loadTransparent);
+
+  const run = () => {
+    if (busy) return;
+    onExport({ format, selection: selection && hasSelection, transparent });
+    onClose();
+  };
+
+  // On the page's body (@opus-editor): the board root is a size container (#3nnx98m4), so a fixed backdrop inside it
+  // would cover and fit only the board, not the window. Out of the board root, its keys never reach the board either.
+  return createPortal(
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      // A portal still bubbles React events to its React parents (the board root): pointer and double-click events
+      // stop here, so nothing in the dialog starts a selection or a sticky on the board.
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      // The board must not take these keys (Escape is the dialog's).
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") onClose();
+      }}
+    >
+      <div className="modal board-export-dialog" role="dialog" ref={modalRef} aria-modal="true" aria-labelledby={`${id}-title`} data-testid="board-export-dialog">
+        <h2 id={`${id}-title`}>{t("board.export.dialogTitle")}</h2>
+        <fieldset className="export-dialog-group">
+          <legend>{t("board.export.format")}</legend>
+          {(["png", "svg"] as const).map((choice) => (
+            <label key={choice} className="export-dialog-choice">
+              <input
+                type="radio"
+                name={`${id}-format`}
+                value={choice}
+                data-testid={`board-export-format-${choice}`}
+                checked={format === choice}
+                onChange={() => setFormat(choice)}
+              />
+              <span>{t(choice === "png" ? "board.export.png" : "board.export.svg")}</span>
+            </label>
+          ))}
+        </fieldset>
+        <label className={`board-menu-check${hasSelection ? "" : " is-disabled"}`}>
+          <input
+            type="checkbox"
+            checked={selection && hasSelection}
+            disabled={!hasSelection}
+            data-testid="board-export-selection"
+            onChange={(event) => setSelection(event.target.checked)}
+          />
+          <span>{t("board.menu.selectionOnly")}</span>
+        </label>
+        <label className="board-menu-check">
+          <input
+            type="checkbox"
+            checked={transparent}
+            data-testid="board-export-transparent"
+            onChange={(event) => {
+              setTransparent(event.target.checked);
+              saveTransparent(event.target.checked);
+            }}
+          />
+          <span>{t("board.menu.transparent")}</span>
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="button-secondary" data-testid="board-export-cancel" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button type="button" className="button-primary" data-testid="board-export-confirm" disabled={busy !== null} onClick={run}>
+            {busy ? t("board.menu.exporting") : t("board.export.export")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

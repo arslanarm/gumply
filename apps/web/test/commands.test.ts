@@ -41,6 +41,8 @@ describe("the registry", () => {
       const all = [
         ...availableCommands(context(meta("P"), { editor: true, board: true, desktop: true }), { modifier: "Ctrl" }),
         ...availableCommands(context(owned), { modifier: "Ctrl" }),
+        // #pypzxe6i: a board's own commands (Export as image…).
+        ...availableCommands(context(meta("Map.canvas", "whiteboard")), { modifier: "Ctrl" }),
       ];
       for (const id of STATIC_COMMAND_IDS.filter((item) => item !== "view.search")) {
         const command = all.find((item) => item.id === id);
@@ -97,6 +99,9 @@ describe("context", () => {
     const board = ids(context(meta("Map.canvas", "whiteboard")));
     expect(board).toContain("page.history");
     expect(board).not.toContain("page.export-html");
+    // #pypzxe6i: a board's own export, and only a board's.
+    expect(board).toContain("page.export-board");
+    expect(note).not.toContain("page.export-board");
     expect(board).not.toContain("page.add-board");
     expect(board).not.toContain("page.new-from-template");
 

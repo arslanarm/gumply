@@ -597,16 +597,18 @@
     },
     "linkPage": "Link a page",
     "menu": {
-      "label": "Board menu",
-      "menuLabel": "Board",
       "exporting": "Exporting…",
-      "more": "More",
-      "exportPng": "Export as PNG",
-      "exportSvg": "Export as SVG",
       "selectionOnly": "Selection only",
       "transparent": "Transparent background"
     },
     "export": {
+      "command": "Export board as image…",
+      "menuItem": "Export as image…",
+      "dialogTitle": "Export board",
+      "format": "Format",
+      "png": "PNG (2×)",
+      "svg": "SVG",
+      "export": "Export",
       "failed": "The board couldn't be exported. {{detail}}",
       "empty": "There's nothing on this board to export yet.",
       "noCanvas": "Couldn't draw the image (no canvas)",

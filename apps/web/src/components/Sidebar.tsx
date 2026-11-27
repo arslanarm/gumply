@@ -53,6 +53,8 @@ export interface SidebarProps {
   onShowHistory?: (id: PageId) => void;
   /** B4: a row's ⋯ → Import from Notion… into it. */
   onImportNotion?: (id: PageId) => void;
+  /** #pypzxe6i: a board row's ⋯ → Export as image…. */
+  onExportBoard?: (id: PageId) => void;
   /** The global graph view is open (sidebar active state). */
   graphActive?: boolean;
   /** #ppag3ugh: the Trash row (with how many pages and boards are in it). */
@@ -302,6 +304,7 @@ export function Sidebar(props: SidebarProps) {
     onNewFromTemplate: props.onNewFromTemplate,
     onExportHtml: props.onExportHtml,
     onImportNotion: props.onImportNotion,
+    onExportBoard: props.onExportBoard,
     onExportPdf: props.onExportPdf,
     onShowHistory: props.onShowHistory,
     createChild,
@@ -324,6 +327,7 @@ export function Sidebar(props: SidebarProps) {
     onNewFromTemplate: props.onNewFromTemplate,
     onExportHtml: props.onExportHtml,
     onImportNotion: props.onImportNotion,
+    onExportBoard: props.onExportBoard,
     onExportPdf: props.onExportPdf,
     onShowHistory: props.onShowHistory,
     createChild,
@@ -357,6 +361,7 @@ export function Sidebar(props: SidebarProps) {
       },
       onExportHtml: (id: PageId) => latest.current.onExportHtml?.(id),
       onImportNotion: (id: PageId) => latest.current.onImportNotion?.(id),
+      onExportBoard: (id: PageId) => latest.current.onExportBoard?.(id),
       onExportPdf: (id: PageId) => latest.current.onExportPdf?.(id),
       onShowHistory: (id: PageId) => latest.current.onShowHistory?.(id),
       onStartRename: (id: PageId, title: string) => latest.current.startRename(id, title),

@@ -95,6 +95,8 @@ const PAGE_COMMANDS = {
   "page.import-notion": { group: "new", icon: "folderOpen", label: "notionImport.command", words: "search.importWords", en: "import from notion", testId: "search-import-notion", when: (c) => !kind(c.page)?.leaf },
   "page.export-html": { group: "page", icon: "download", label: "export.command", words: "search.exportWords", en: "export as html page save", testId: "search-export-html", when: (c) => !!kind(c.page)?.note },
   "page.export-pdf": { group: "page", icon: "file", label: "export.pdf.command", words: "search.pdfWords", en: "export as pdf print page", testId: "search-export-pdf", when: (c) => !!kind(c.page)?.note },
+  // #pypzxe6i: a board's export dialog (the canvas's export button, the row ⋯ and Cmd+K open the same one).
+  "page.export-board": { group: "page", icon: "download", label: "board.export.command", en: "export board as image png svg picture save", when: (c) => !!kind(c.page)?.board },
   "page.history": { group: "page", icon: "clock", label: "history.command", words: "search.historyWords", en: "history page history show page history version history versions restore version", testId: "search-history", when: (c) => !!kind(c.page) && !kind(c.page)!.folder },
   // #7prbquxu phase 4: a database that owns its rows folder shows or hides it in the sidebar.
   "page.show-rows": { group: "page", icon: "sidebar", label: "commands.page.toggleRows", en: "show hide rows in the sidebar database folder", when: (c) => c.page?.kind === "base" && !!c.page.rowsFolder },
@@ -107,7 +109,7 @@ export type PageCommandId = keyof typeof PAGE_COMMANDS;
 export const ROW_MENU: readonly (readonly PageCommandId[])[] = [
   ["page.rename", "page.duplicate", "page.copy-link", "page.move", "page.open-window", "page.show-rows"],
   ["page.add-page", "page.add-board", "page.add-base", "page.new-from-template"],
-  ["page.import-notion", "page.export-html", "page.export-pdf", "page.history"],
+  ["page.import-notion", "page.export-html", "page.export-pdf", "page.export-board", "page.history"],
   ["page.delete"],
 ];
 
@@ -140,6 +142,8 @@ export function menuLabel(id: PageCommandId, page: PageMeta): string {
       return t("export.menuItem");
     case "page.export-pdf":
       return t("export.pdf.menuItem");
+    case "page.export-board":
+      return t("board.export.menuItem");
     case "page.history":
       return t("history.menuItem");
     case "page.delete": {
@@ -165,6 +169,7 @@ export const ROW_TEST_IDS: Record<PageCommandId, string> = {
   "page.import-notion": "import-notion",
   "page.export-html": "export-html",
   "page.export-pdf": "export-pdf",
+  "page.export-board": "export-board",
   "page.history": "page-history",
   "page.show-rows": "toggle-rows",
   "page.delete": "delete-page",

@@ -1,4 +1,5 @@
-/* The board ⋯ menu (spec/v0-6 §D): export. Same chrome as the zoom panel. */
+/* The board's export (#pypzxe6i): the canvas's export button (same chrome as the zoom panel), and the dialog's
+   option rows (the dialog itself is a `.modal`). */
 .board-menu {
   position: relative;
   margin: 14px;
@@ -17,68 +18,8 @@
   cursor: pointer;
 }
 
-.board-menu-button:hover,
-.board-menu-button.is-open {
+.board-menu-button:hover {
   background: var(--hover);
-}
-
-.board-menu-list {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 220px;
-  padding: 4px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--board-shadow-raised);
-  z-index: 12;
-}
-
-.board-menu-item,
-.board-menu-check {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.board-menu-item:hover:not(:disabled),
-.board-menu-check:hover:not(.is-disabled) {
-  background: var(--hover);
-}
-
-.board-menu-item:disabled,
-.board-menu-check.is-disabled {
-  color: var(--muted);
-  cursor: default;
-}
-
-.board-menu-item svg {
-  color: var(--muted);
-  flex: none;
-}
-
-.board-menu-check input {
-  margin: 0 2px;
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent);
-}
-
-.board-menu-separator {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
 }
 
 .board-menu-spinner {
@@ -100,4 +41,40 @@
   .board-menu-spinner {
     animation-duration: 2.4s;
   }
+}
+
+.board-export-dialog {
+  width: min(24rem, 92vw);
+}
+
+.board-menu-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-menu-check:hover:not(.is-disabled) {
+  background: var(--hover);
+}
+
+.board-menu-check.is-disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.board-menu-check input {
+  margin: 0 2px;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
 }

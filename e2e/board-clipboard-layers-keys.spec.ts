@@ -179,8 +179,10 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
 
   test('an SVG export paints the arrow and its label after the frame', async ({ page }) => {
     await openGrouped(page);
-    await page.getByTestId('board-menu-button').click();
-    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-svg').click()]);
+    // #pypzxe6i: the canvas's export button opens the board's export dialog.
+    await page.getByTestId('board-export-button').click();
+    await page.getByTestId('board-export-format-svg').check();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-confirm').click()]);
     const path = await download.path();
     if (!path) throw new Error('download failed');
     const svg = readFileSync(path, 'utf8');
@@ -206,8 +208,10 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
       });
     await expect.poll(middle).toEqual({ line: 'm', label: 'm' });
 
-    await page.getByTestId('board-menu-button').click();
-    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-svg').click()]);
+    // #pypzxe6i: the canvas's export button opens the board's export dialog.
+    await page.getByTestId('board-export-button').click();
+    await page.getByTestId('board-export-format-svg').check();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-confirm').click()]);
     const path = await download.path();
     if (!path) throw new Error('download failed');
     const svg = readFileSync(path, 'utf8');
