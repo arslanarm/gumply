@@ -19,6 +19,8 @@ import {
   nodeRadius,
   nodeDetail,
   nodeTooltip,
+  queryHasTag,
+  toggleQueryTag,
   PAGE_NODE_COLOR,
   paletteIndex,
 } from "../src/graph/graph-model";
@@ -159,6 +161,16 @@ describe("filterGraph", () => {
     expect(filtered.tags).toEqual(["work"]);
   });
 
+  it("#yy347xgi (3): a typed tag: query gives the chip's graph: the not-created pages its pages link to stay", () => {
+    const chip = filterGraph(model(), { tags: ["work"] });
+    const typed = filterGraph(model(), { query: "tag:#work" });
+    expect(typed.nodes.map((node) => node.id)).toEqual(chip.nodes.map((node) => node.id));
+    expect(typed.ghosts.map((ghost) => ghost.title)).toEqual(["Missing Work"]);
+    expect(typed.links).toEqual(chip.links);
+    // A title search still matches a not-created page by its own title only.
+    expect(filterGraph(model(), { query: "work" }).ghosts.map((ghost) => ghost.title)).toEqual(["Missing Work"]);
+  });
+
   it("returns an empty view when nothing matches", () => {
     const filtered = filterGraph(model(), { query: "zzz" });
     expect(filtered.nodes).toEqual([]);
@@ -242,10 +254,10 @@ describe("accessible copy", () => {
         unresolved: [{ source: "a", targetTitle: "Ghost" }],
       }),
     );
-    expect(ariaSummary(model)).toBe("2 pages, 2 links, 1 missing");
+    expect(ariaSummary(model)).toBe("2 pages, 2 links, 1 not created yet");
 
     const empty = buildGraphModel(graphData());
-    expect(ariaSummary(empty)).toBe("0 pages, 0 links, 0 missing");
+    expect(ariaSummary(empty)).toBe("0 pages, 0 links, 0 not created yet");
   });
 
   it("subtitle and aria agree and both pluralise 1 correctly", () => {
@@ -258,8 +270,8 @@ describe("accessible copy", () => {
     );
     const counted = graphCounts(one);
     expect(counted).toEqual({ pages: 1, links: 1, missing: 1 });
-    expect(graphSubtitle(one)).toBe("1 page · 1 link · 1 missing");
-    expect(ariaSummary(one)).toBe("1 page, 1 link, 1 missing");
+    expect(graphSubtitle(one)).toBe("1 page · 1 link · 1 not created yet");
+    expect(ariaSummary(one)).toBe("1 page, 1 link, 1 not created yet");
 
     const two = buildGraphModel(
       graphData({
@@ -271,12 +283,12 @@ describe("accessible copy", () => {
         unresolved: [{ source: "a", targetTitle: "Ghost" }],
       }),
     );
-    expect(graphSubtitle(two)).toBe("2 pages · 2 links · 1 missing");
-    expect(ariaSummary(two)).toBe("2 pages, 2 links, 1 missing");
+    expect(graphSubtitle(two)).toBe("2 pages · 2 links · 1 not created yet");
+    expect(ariaSummary(two)).toBe("2 pages, 2 links, 1 not created yet");
 
     const single = buildGraphModel(graphData({ nodes: [{ ...page("a", "A"), linkCount: 0 }] }));
     expect(graphSubtitle(single)).toBe("1 page · 0 links");
-    expect(ariaSummary(single)).toBe("1 page, 0 links, 0 missing");
+    expect(ariaSummary(single)).toBe("1 page, 0 links, 0 not created yet");
   });
 
   it("describes real pages and ghosts with the exact tooltip copy", () => {
@@ -337,5 +349,24 @@ describe("colours", () => {
     const project = nodeColor(page("b", "B", ["project"]));
     expect(idea).not.toBe(project);
     expect(rgbDistance(idea, project)).toBeGreaterThan(60);
+  });
+});
+
+describe("tag chips as query terms (#yy347xgi (3))", () => {
+  it("a chip is pressed when the query has its positive tag: term, in any case and with or without #", () => {
+    expect(queryHasTag("tag:#work", "work")).toBe(true);
+    expect(queryHasTag("basil TAG:Work", "work")).toBe(true);
+    expect(queryHasTag("-tag:#work", "work")).toBe(false);
+    expect(queryHasTag("tag:#workshop", "work")).toBe(false);
+    expect(queryHasTag("", "work")).toBe(false);
+  });
+
+  it("toggling adds the term, and takes every positive term for that tag back out (a hand edit un-presses it)", () => {
+    expect(toggleQueryTag("", "work")).toBe("tag:#work");
+    expect(toggleQueryTag("basil", "work")).toBe("basil tag:#work");
+    expect(toggleQueryTag("basil tag:#work", "work")).toBe("basil");
+    expect(toggleQueryTag("tag:#Work tag:work", "work")).toBe("");
+    expect(toggleQueryTag("tag:#home OR tag:#work", "work")).toBe("tag:#home");
+    expect(queryHasTag("tag:#workshop", "work")).toBe(false);
   });
 });
