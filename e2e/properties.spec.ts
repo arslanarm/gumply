@@ -154,10 +154,16 @@ test.describe('properties', () => {
     await expect(page.getByTestId('property-error')).toBeVisible();
     await expect(count).toHaveValue('1');
     await page.getByTestId('property-add').click();
-    await page.getByTestId('property-add-input').fill('a:b');
+    // #8s94nyhn: punctuation is allowed in a name now; one a .base would read as another column is still refused.
+    await page.getByTestId('property-add-input').fill('note.x');
     await page.getByTestId('property-create').click();
     await expect(page.getByTestId('property-error')).toBeVisible();
     expect(read('Nums')).toBe('---\ncount: 1\n---\nx\n');
+    // …and `a:b` is accepted, written quoted so YAML reads it back as itself.
+    await page.getByTestId('property-add').click();
+    await page.getByTestId('property-add-input').fill('a:b');
+    await page.getByTestId('property-create').click();
+    await waitForFile('Nums', (text) => text === '---\ncount: 1\n"a:b":\n---\nx\n');
   });
 
   test("changing a type converts this page's value when it can, and only this page's (#qw4pcm2h review)", async ({ page, vault }) => {
