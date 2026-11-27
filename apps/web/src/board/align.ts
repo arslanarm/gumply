@@ -1,4 +1,5 @@
 import type { CanvasBoard, CanvasNode } from "@gumply/core";
+import { nodesInside } from "./model.js";
 
 /**
  * #b9425ktw D (#fzrwse3y's P3 6): align and distribute a multi-selection, as in Miro and FigJam. Only the selected
@@ -11,7 +12,27 @@ export type Distribution = "horizontal" | "vertical";
 
 const round = (value: number): number => Math.round(value);
 
-function withMoves(board: CanvasBoard, moves: ReadonlyMap<string, { x: number; y: number }>): CanvasBoard {
+/**
+ * The moves, plus what's inside each moved frame (not itself selected), by that frame's delta, as a drag or an
+ * arrow-key nudge carries it (@opus-editor's review). An item inside several moved frames follows the smallest.
+ */
+function withMoves(board: CanvasBoard, given: ReadonlyMap<string, { x: number; y: number }>, ids: ReadonlySet<string>): CanvasBoard {
+  const moves = new Map(given);
+  const carried = new Map<string, { dx: number; dy: number; area: number }>();
+  for (const frame of board.nodes) {
+    const to = given.get(frame.id);
+    if (frame.type !== "group" || !to || (to.x === frame.x && to.y === frame.y)) continue;
+    const area = frame.width * frame.height;
+    for (const inner of nodesInside(board, frame)) {
+      if (ids.has(inner.id)) continue;
+      const known = carried.get(inner.id);
+      if (!known || area < known.area) carried.set(inner.id, { dx: to.x - frame.x, dy: to.y - frame.y, area });
+    }
+  }
+  for (const node of board.nodes) {
+    const by = carried.get(node.id);
+    if (by) moves.set(node.id, { x: node.x + by.dx, y: node.y + by.dy });
+  }
   let changed = false;
   const nodes = board.nodes.map((node) => {
     const to = moves.get(node.id);
@@ -40,7 +61,7 @@ export function alignNodes(board: CanvasBoard, ids: ReadonlySet<string>, how: Al
     else y = bottom - node.height;
     moves.set(node.id, { x, y });
   }
-  return withMoves(board, moves);
+  return withMoves(board, moves, ids);
 }
 
 /** Equal gaps between the items along `axis`; the first and the last stay where they are. */
@@ -63,5 +84,5 @@ export function distributeNodes(board: CanvasBoard, ids: ReadonlySet<string>, ax
     moves.set(node.id, horizontal ? { x: position, y: node.y } : { x: node.x, y: position });
     cursor += size(node) + gap;
   });
-  return withMoves(board, moves);
+  return withMoves(board, moves, ids);
 }

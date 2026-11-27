@@ -128,17 +128,20 @@ const ALIGN_KEYS: Record<string, Alignment | Distribution> = {
   KeyH: "horizontal",
   KeyV: "vertical",
 };
-/** The same keys as written in tooltips and the `?` sheet. */
-export const ALIGN_SHORTCUTS: Record<Alignment | Distribution, string> = {
-  left: "Alt+Shift+L",
-  center: "Alt+Shift+C",
-  right: "Alt+Shift+R",
-  top: "Alt+Shift+T",
-  middle: "Alt+Shift+M",
-  bottom: "Alt+Shift+B",
-  horizontal: "Alt+Shift+H",
-  vertical: "Alt+Shift+V",
+const ALIGN_LETTERS: Record<Alignment | Distribution, string> = {
+  left: "L",
+  center: "C",
+  right: "R",
+  top: "T",
+  middle: "M",
+  bottom: "B",
+  horizontal: "H",
+  vertical: "V",
 };
+/** The keys as written in tooltips: ⌥⇧L on a Mac (where the app writes ⌘), Alt+Shift+L elsewhere (@opus-editor). */
+export function alignShortcut(how: Alignment | Distribution): string {
+  return currentModifierLabel() === "⌘" ? `⌥⇧${ALIGN_LETTERS[how]}` : `Alt+Shift+${ALIGN_LETTERS[how]}`;
+}
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -1439,7 +1442,9 @@ function BoardCanvas(props: BoardEditorProps) {
       const ids = new Set(selectedRef.current.nodes);
       const current = boardRef.current;
       const next = how === "horizontal" || how === "vertical" ? distributeNodes(current, ids, how) : alignNodes(current, ids, how);
-      if (next !== current) apply(() => next);
+      // Nothing to move (already lined up): no undo step, and nothing said (@opus-editor's nit).
+      if (next === current) return;
+      apply(() => next);
       announce(t("board.aligned", { count: ids.size }));
     },
     [announce, apply],
@@ -2188,8 +2193,8 @@ function BoardCanvas(props: BoardEditorProps) {
                             key={how}
                             className="board-context-button"
                             aria-label={t(label)}
-                            data-tooltip={`${t(label)} · ${ALIGN_SHORTCUTS[how]}`}
-                            aria-keyshortcuts={ALIGN_SHORTCUTS[how]}
+                            data-tooltip={`${t(label)} · ${alignShortcut(how)}`}
+                            aria-keyshortcuts={`Alt+Shift+${ALIGN_LETTERS[how]}`}
                             data-testid={`board-align-${how}`}
                             // Distributing needs three: the first and last stay, the ones between move.
                             disabled={(how === "horizontal" || how === "vertical") && selectedNodeIds.length < 3}
