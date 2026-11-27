@@ -363,8 +363,8 @@ test.describe('board export (#yewapn9k)', () => {
         `1000-object ${format} export`,
         async () => {
           const started = Date.now();
-          // The lab has no sidebar: its own "Export…" button opens the same dialog.
-          await page.getByTestId('lab-export').click();
+          // The lab has no sidebar: the canvas's export button opens the same dialog.
+          await page.getByTestId('board-export-button').click();
           await page.getByTestId(`board-export-format-${format}`).check();
           const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-confirm').click()]);
           const bytes = await downloaded(download);
@@ -383,13 +383,21 @@ test.describe('board export (#yewapn9k)', () => {
     }
   });
 
-  test('#pypzxe6i: one ⋯ for a board: its row menu has "Export as image…", the canvas has no ⋯, and page-only items are hidden', async ({ page, request, vault }) => {
+  test('#pypzxe6i: a board exports from its canvas button and from its row ⋯ ("Export as image…"), the same dialog; page-only items stay hidden', async ({ page, request, vault }) => {
     void vault;
     const id = 'One menu.canvas';
     expect((await request.post('/api/boards', { data: { title: 'One menu' } })).status()).toBe(201);
     await page.goto(`/#/${encodeURIComponent(id)}`);
     await expect(page.getByTestId('board')).toBeVisible();
+    // On the canvas: an export button (the board's own ⋯ menu is gone), opening the dialog.
+    const button = page.getByTestId('board-export-button');
+    await expect(button).toHaveAttribute('data-tooltip', 'Export as image…');
+    await button.click();
+    await expect(page.getByTestId('board-export-dialog')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('board-export-dialog')).toHaveCount(0);
     await expect(page.getByTestId('board-menu-button')).toHaveCount(0);
+    // In the row's ⋯ too.
     await page.getByTestId(`page-item-${id}`).hover();
     await page.getByTestId(`page-menu-button-${id}`).click();
     await expect(page.getByTestId(`export-board-${id}`)).toHaveText('Export as image…');

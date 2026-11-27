@@ -179,8 +179,8 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
 
   test('an SVG export paints the arrow and its label after the frame', async ({ page }) => {
     await openGrouped(page);
-    // #pypzxe6i: the lab's "Export…" opens the board's export dialog (the canvas has no ⋯ any more).
-    await page.getByTestId('lab-export').click();
+    // #pypzxe6i: the canvas's export button opens the board's export dialog.
+    await page.getByTestId('board-export-button').click();
     await page.getByTestId('board-export-format-svg').check();
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-confirm').click()]);
     const path = await download.path();
@@ -208,8 +208,8 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
       });
     await expect.poll(middle).toEqual({ line: 'm', label: 'm' });
 
-    // #pypzxe6i: the lab's "Export…" opens the board's export dialog (the canvas has no ⋯ any more).
-    await page.getByTestId('lab-export').click();
+    // #pypzxe6i: the canvas's export button opens the board's export dialog.
+    await page.getByTestId('board-export-button').click();
     await page.getByTestId('board-export-format-svg').check();
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-confirm').click()]);
     const path = await download.path();
