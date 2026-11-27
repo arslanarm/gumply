@@ -42,4 +42,22 @@ describe("freeSpot", () => {
     const at = freeSpot({ x: 0, y: 0, ...card }, items);
     expect(at).not.toEqual({ x: 0, y: 0 });
   });
+
+  it("with the visible part of the board given, only spots wholly inside it count (@opus-editor)", () => {
+    // The centre is taken; the nearest free spot (just above) is out of view, the one just below is in it.
+    const view = { x: -400, y: -100, width: 1200, height: 500 };
+    const items = [{ x: -40, y: -40, width: 400, height: 260 }];
+    const at = freeSpot({ x: 0, y: 0, ...card }, items, view);
+    expect(at.x).toBeGreaterThanOrEqual(view.x);
+    expect(at.y).toBeGreaterThanOrEqual(view.y);
+    expect(at.x + card.width).toBeLessThanOrEqual(view.x + view.width);
+    expect(at.y + card.height).toBeLessThanOrEqual(view.y + view.height);
+  });
+
+  it("the nearest free spot by straight-line distance, not the first ring's far corner", () => {
+    // Blocks around (0,0) leave free: a spot 3 steps straight down, and nothing nearer.
+    const items = [{ x: -400, y: -400, width: 1100, height: 520 }];
+    const at = freeSpot({ x: 0, y: 0, width: 100, height: 60 }, items);
+    expect(Math.hypot(at.x, at.y)).toBeLessThanOrEqual(160);
+  });
 });

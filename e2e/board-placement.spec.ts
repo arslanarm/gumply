@@ -44,3 +44,28 @@ test('a page card added from the toolbar lands next to the items at the view\'s 
   const centreFlow = before.reduce((sum, item) => sum + item.x + item.width / 2, 0) / before.length;
   expect(Math.abs(card.x + card.width / 2 - centreFlow)).toBeLessThan(700);
 });
+
+test('zoomed in to about 200 % with the centre taken, the new card is still in view (@opus-editor)', async ({ page }) => {
+  await page.goto('/board-lab.html?theme=light&reset=1');
+  const zoom = page.getByTestId('board-zoom-value');
+  for (let i = 0; i < 12 && parseInt((await zoom.textContent()) ?? '100', 10) < 200; i += 1) await page.getByTestId('board-zoom-in').click();
+  expect(parseInt((await zoom.textContent()) ?? '0', 10)).toBeGreaterThanOrEqual(190);
+  const view = (await page.getByTestId('board').boundingBox())!;
+  await page.mouse.dblclick(view.x + view.width / 2, view.y + view.height / 2);
+  await expect(page.getByTestId('board-text-editor')).toBeFocused();
+  await page.keyboard.type('Centre');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('board-text-editor')).toHaveCount(0);
+  await page.keyboard.press('v');
+  await page.getByTestId('board-tool-page').click();
+  await page.getByTestId('board-page-picker-input').fill('q1');
+  await page.keyboard.press('Enter');
+  const card = (await page.getByTestId('board-card-page').boundingBox())!;
+  const seen = card.x < view.x + view.width && card.x + card.width > view.x && card.y < view.y + view.height && card.y + card.height > view.y;
+  expect(seen, `card at ${Math.round(card.x)},${Math.round(card.y)} vs view ${Math.round(view.x)},${Math.round(view.y)} ${Math.round(view.width)}×${Math.round(view.height)}`).toBe(true);
+  // And it doesn't cover the sticky.
+  const sticky = (await page.getByTestId('board-sticky').boundingBox())!;
+  const covers = card.x < sticky.x + sticky.width && sticky.x < card.x + card.width && card.y < sticky.y + sticky.height && sticky.y < card.y + card.height;
+  expect(covers).toBe(false);
+});
+
