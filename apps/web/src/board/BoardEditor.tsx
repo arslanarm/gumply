@@ -114,6 +114,7 @@ import { clipboardPlainText } from "./clipboard-text.js";
 import { motionMs } from "../lib/motion.js";
 import { freeSpot, nearestFree } from "./placement.js";
 import { useAttributionOutOfTabOrder } from "./attribution.js";
+import { alignNodes, distributeNodes, type Alignment, type Distribution } from "./align.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -514,6 +515,8 @@ function BoardCanvas(props: BoardEditorProps) {
   const [tool, setTool] = useState<BoardTool>("select");
   const [shape, setShape] = useState<GumplyShape>("rect");
   const [shapeMenu, setShapeMenu] = useState(false);
+  // #b9425ktw D: the context toolbar's Align panel (2+ objects selected).
+  const [alignMenu, setAlignMenu] = useState(false);
   const [pagePicker, setPagePicker] = useState(false);
   const [dragging, setDragging] = useState(false);
   /** Kept current every render; read by the host through `isBusy`. */
@@ -560,6 +563,10 @@ function BoardCanvas(props: BoardEditorProps) {
     () => board.nodes.filter((node) => selection.nodes.has(node.id)).map((node) => node.id),
     [board, selection],
   );
+  // The Align panel closes with the multi-selection it was for.
+  useEffect(() => {
+    if (selectedNodeIds.length < 2) setAlignMenu(false);
+  }, [selectedNodeIds.length]);
   const selectedEdgeIds = useMemo(
     () => board.edges.filter((edge) => selection.edges.has(edge.id)).map((edge) => edge.id),
     [board, selection],
@@ -1355,6 +1362,18 @@ function BoardCanvas(props: BoardEditorProps) {
     [apply],
   );
 
+  /** #b9425ktw D (#fzrwse3y's P3 6): align or distribute the selected objects; one undo step, said aloud. */
+  const arrange = useCallback(
+    (how: Alignment | Distribution) => {
+      const ids = new Set(selectedRef.current.nodes);
+      const current = boardRef.current;
+      const next = how === "horizontal" || how === "vertical" ? distributeNodes(current, ids, how) : alignNodes(current, ids, how);
+      if (next !== current) apply(() => next);
+      announce(t("board.aligned", { count: ids.size }));
+    },
+    [announce, apply],
+  );
+
   const doUndo = useCallback(() => {
     setEditing(null);
     setHistory((current) => undo(current));
@@ -2051,6 +2070,52 @@ function BoardCanvas(props: BoardEditorProps) {
                         <BoardIcon name={item.shape} size={16} />
                       </button>
                     ))}
+                  </div>
+                ) : null}
+                {selectedNodeIds.length >= 2 ? (
+                  <div className="board-context-group board-align">
+                    <button
+                      type="button"
+                      className={`board-context-button${alignMenu ? " is-active" : ""}`}
+                      aria-label={t("board.align")}
+                      aria-haspopup="true"
+                      aria-expanded={alignMenu}
+                      data-tooltip={t("board.align")}
+                      data-testid="board-align"
+                      onClick={() => setAlignMenu((open) => !open)}
+                    >
+                      <BoardIcon name="align-left" size={16} />
+                    </button>
+                    {alignMenu ? (
+                      <div className="board-align-menu" role="group" aria-label={t("board.align")} data-testid="board-align-menu">
+                        {(
+                          [
+                            ["left", "align-left", "board.alignLeft"],
+                            ["center", "align-center", "board.alignCenter"],
+                            ["right", "align-right", "board.alignRight"],
+                            ["top", "align-top", "board.alignTop"],
+                            ["middle", "align-middle", "board.alignMiddle"],
+                            ["bottom", "align-bottom", "board.alignBottom"],
+                            ["horizontal", "distribute-horizontal", "board.distributeHorizontal"],
+                            ["vertical", "distribute-vertical", "board.distributeVertical"],
+                          ] as const
+                        ).map(([how, icon, label]) => (
+                          <button
+                            type="button"
+                            key={how}
+                            className="board-context-button"
+                            aria-label={t(label)}
+                            data-tooltip={t(label)}
+                            data-testid={`board-align-${how}`}
+                            // Distributing needs three: the first and last stay, the ones between move.
+                            disabled={(how === "horizontal" || how === "vertical") && selectedNodeIds.length < 3}
+                            onClick={() => arrange(how)}
+                          >
+                            <BoardIcon name={icon} size={16} />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="board-context-group">

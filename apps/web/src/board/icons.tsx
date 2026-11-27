@@ -76,6 +76,61 @@ const PATHS = {
       <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
     </>
   ),
+  // #b9425ktw D: align and distribute (Lucide's align-*/align-*-distribute shapes).
+  "align-left": (
+    <>
+      <path d="M4 3v18" />
+      <rect x="7" y="6" width="12" height="4" rx="1" />
+      <rect x="7" y="14" width="7" height="4" rx="1" />
+    </>
+  ),
+  "align-center": (
+    <>
+      <path d="M12 3v18" />
+      <rect x="5" y="6" width="14" height="4" rx="1" />
+      <rect x="8" y="14" width="8" height="4" rx="1" />
+    </>
+  ),
+  "align-right": (
+    <>
+      <path d="M20 3v18" />
+      <rect x="5" y="6" width="12" height="4" rx="1" />
+      <rect x="10" y="14" width="7" height="4" rx="1" />
+    </>
+  ),
+  "align-top": (
+    <>
+      <path d="M3 4h18" />
+      <rect x="6" y="7" width="4" height="12" rx="1" />
+      <rect x="14" y="7" width="4" height="7" rx="1" />
+    </>
+  ),
+  "align-middle": (
+    <>
+      <path d="M3 12h18" />
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="8" width="4" height="8" rx="1" />
+    </>
+  ),
+  "align-bottom": (
+    <>
+      <path d="M3 20h18" />
+      <rect x="6" y="5" width="4" height="12" rx="1" />
+      <rect x="14" y="10" width="4" height="7" rx="1" />
+    </>
+  ),
+  "distribute-horizontal": (
+    <>
+      <path d="M3 4v16M21 4v16" />
+      <rect x="9" y="7" width="6" height="10" rx="1" />
+    </>
+  ),
+  "distribute-vertical": (
+    <>
+      <path d="M4 3h16M4 21h16" />
+      <rect x="7" y="9" width="10" height="6" rx="1" />
+    </>
+  ),
   minus: <path d="M5 12h14" />,
   plus: <path d="M12 5v14M5 12h14" />,
   fit: (

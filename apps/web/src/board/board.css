@@ -789,6 +789,32 @@ img.board-card-image {
   color: var(--danger);
 }
 
+/* #b9425ktw D: the Align panel opens under its button: align on x, align on y, then distribute, three per row. */
+.board-align {
+  position: relative;
+}
+
+.board-align-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+}
+
+.board-align-menu .board-context-button:disabled {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .board-swatch {
   width: 22px;
   height: 22px;
