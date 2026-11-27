@@ -92,6 +92,11 @@ describe("parseGraphQuery / matchesGraphQuery", () => {
     expect(parseGraphQuery("x -(a OR -b)")).toEqual([[{ op: "text", value: "x", negate: false }, { op: "text", value: "a", negate: true }, { op: "text", value: "b", negate: false }]]);
     expect(matches("-(tag:#work OR tag:#личное)", plan)).toBe(false);
     expect(matches("-(tag:#home OR tag:#личное)", plan)).toBe(true);
+    // tag:( … ) applies the op to the group's bare words (not words that happen to follow "tag:").
+    expect(parseGraphQuery("tag:(a OR b)")).toEqual([[{ op: "tag", value: "a", negate: false }], [{ op: "tag", value: "b", negate: false }]]);
+    expect(parseGraphQuery("-tag:(a OR b)")).toEqual([[{ op: "tag", value: "a", negate: true }, { op: "tag", value: "b", negate: true }]]);
+    expect(parseGraphQuery("tag:(a path:x)")).toEqual([[{ op: "tag", value: "a", negate: false }, { op: "path", value: "x", negate: false }]]);
+    expect(matches("tag:(home OR work)", plan)).toBe(true);
     // A quoted phrase keeps its brackets.
     expect(parseGraphQuery('"q1 (draft)"')).toEqual([[{ op: "text", value: "q1 (draft)", negate: false }]]);
   });
