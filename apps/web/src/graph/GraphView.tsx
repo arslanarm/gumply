@@ -72,17 +72,19 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
       return null;
     }
   });
-  const [bodyWidth, setBodyWidth] = useState<number | null>(null);
+  // Only whether it's wide is kept, so a window drag re-renders only when it crosses the line (@opus-editor).
+  const [wide, setWide] = useState<boolean | null>(null);
   const bodyObserver = useRef<ResizeObserver | null>(null);
   const bodyRef = useCallback((element: HTMLDivElement | null) => {
     bodyObserver.current?.disconnect();
     bodyObserver.current = null;
     if (!element || typeof ResizeObserver === "undefined") return;
-    setBodyWidth(element.clientWidth);
-    bodyObserver.current = new ResizeObserver(() => setBodyWidth(element.clientWidth));
+    const measure = () => setWide(element.clientWidth >= LEGEND_MIN_WIDTH);
+    measure();
+    bodyObserver.current = new ResizeObserver(measure);
     bodyObserver.current.observe(element);
   }, []);
-  const legendOpen = legendChoice ?? (bodyWidth === null || bodyWidth >= LEGEND_MIN_WIDTH);
+  const legendOpen = legendChoice ?? wide ?? true;
   const setLegendOpen = (next: boolean) => {
     setLegendChoice(next);
     try {
@@ -495,7 +497,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               </p>
             ) : null}
             {/* #yy347xgi (5): with the Tags filter on, tag nodes (drawn with a ring of their colour). */}
-            {settings?.filters.showTags ? (
+            {settings?.filters.showTags && drawn?.extras.some((node) => isTagNodeId(node.id)) ? (
               <p className="graph-legend-row" data-testid="graph-legend-tag-node">
                 <span className="graph-legend-tag-node" aria-hidden="true" /> {t("graph.legendTagNode")}
               </p>

@@ -403,8 +403,8 @@ describe("tag chips as query terms (#yy347xgi (3))", () => {
     expect(toggleQueryTag("tag:(a OR -b)", "x")).toBe("(tag:#a OR -tag:#b OR tag:#x)");
     expect(toggleQueryTag("tag:(a OR -b)", "a")).toBe("-tag:#b");
     // A stray "-" in the group stays as typed, never "-tag:#".
-    expect(toggleQueryTag("tag:(a -)", "x")).not.toContain("-tag:#)");
-    expect(toggleQueryTag("tag:(a -)", "x")).not.toMatch(/-tag:#(\s|\)|$)/);
+    expect(toggleQueryTag("tag:(a -)", "x")).toBe("(tag:#a -) tag:#x");
+    expect(toggleQueryTag("tag:(a -#)", "a")).toBe("-#");
     expect(parseGraphQuery(toggleQueryTag("tag:(a OR -b)", "x"))).toEqual(parseGraphQuery("tag:(a OR -b OR x)"));
     // A negated group isn't a chip: left as typed.
     expect(toggleQueryTag("-tag:(work)", "home")).toBe("-tag:(work) tag:#home");

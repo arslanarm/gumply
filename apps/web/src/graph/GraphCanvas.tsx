@@ -700,8 +700,9 @@ export function GraphCanvas({
         fitTimer.current = null;
         // #yy347xgi (4): a fit to the matches the user asked for is kept over a data change.
         const pinned = matchFitRef.current;
-        // Matches renamed or deleted meanwhile (none left to fit): forget the pin and fit as usual (@opus-editor).
-        if (pinned && fitTarget(pinned)) {
+        // Matches renamed or deleted meanwhile (none of them drawn any more): forget the pin and fit as usual. A canvas
+        // too small to fit into (a collapsed panel) keeps the pin for later (@opus-editor).
+        if (pinned && nodesRef.current.some((node) => pinned.has(node.id))) {
           fitView(duration, "matches", pinned);
           userViewRef.current = true;
         } else {
@@ -711,7 +712,7 @@ export function GraphCanvas({
         if (markReady) setReady(true);
       }, 80);
     },
-    [fitView, fitTarget],
+    [fitView],
   );
 
   const lastDataKey = useRef<string | null>(null);
