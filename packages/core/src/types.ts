@@ -311,6 +311,10 @@ export interface Embed {
 /** Error body used for 400/404/409 responses. */
 export interface ApiError {
   error: string;
+  /** #hazfav7a: a machine-readable cause ("name-taken"), for the client to say in its own words. */
+  reason?: string;
+  /** The title `reason` is about. */
+  title?: string;
 }
 
 /** v1.21 (C1, spec/api-mentions): `GET /pages/:id/mentions`, one entry per mentioning page. */

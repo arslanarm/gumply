@@ -5,6 +5,10 @@ export class VaultError extends Error {
   constructor(
     readonly status: VaultErrorStatus,
     message: string,
+    /** A machine-readable cause the client says in its own words (#hazfav7a: "name-taken"). */
+    readonly reason?: string,
+    /** The title the reason is about. */
+    readonly title?: string,
   ) {
     super(message);
     this.name = "VaultError";
@@ -21,6 +25,14 @@ export function notFound(message: string): VaultError {
 
 export function conflict(message: string): VaultError {
   return new VaultError(409, message);
+}
+
+/**
+ * #hazfav7a: a rename to a name another page, board, database or folder has here (any letter case). Refused before
+ * anything is written; the client says it in the user's language from `reason` and `title`.
+ */
+export function nameTaken(title: string): VaultError {
+  return new VaultError(409, `A page called “${title}” is already here`, "name-taken", title);
 }
 
 export function payloadTooLarge(message: string): VaultError {

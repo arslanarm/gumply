@@ -139,7 +139,7 @@ import {
   type ConflictsList,
   type PossibleCopy,
 } from "@gumply/core";
-import { badRequest, conflict, notFound, payloadTooLarge, readOnly, VaultError } from "./errors.js";
+import { badRequest, conflict, nameTaken, notFound, payloadTooLarge, readOnly, VaultError } from "./errors.js";
 import {
   boardDiff,
   budgetFor,
@@ -4044,7 +4044,7 @@ export class VaultStore {
     // D20: the file name follows the title; the id keeps `.canvas`. The full
     // title is (re)applied to `gumply.title` on every save, so a client that
     // drops the key can't lose it (#phvu6zt9).
-    const targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle, "whiteboard") : id;
+    const targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle, "whiteboard", true) : id;
     board = withBoardTitle(board, nextTitle, boardStem(targetId));
 
     const replaced = record.updated;
@@ -4838,7 +4838,7 @@ export class VaultStore {
       const rows = this.ownedRowsOf(record, id);
       targetId = rows
         ? await this.renameOwnedTarget(id, record.parentId, nextTitle, rows)
-        : await this.renameTarget(id, record.parentId, nextTitle, "base");
+        : await this.renameTarget(id, record.parentId, nextTitle, "base", true);
       if (targetId !== id) {
         rewrittenPages.push(...(await this.relocateNow(id, targetId)));
         record = this.pages.get(targetId) ?? record;
@@ -5017,7 +5017,9 @@ export class VaultStore {
 
     // D20: only a title change renames the file; body/icon saves never move
     // it (old slug-named files are renamed the next time their title changes).
-    let targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle, "page", patch.exact === true) : id;
+    // #hazfav7a: every title change is exact: a taken name is refused, never "X 2" under the title "X" (two items
+    // that look the same). Creating something new still takes the next free name.
+    let targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle, "page", true) : id;
 
     const changes = ["updated"];
     if (nextTitle !== previousTitle) changes.push("title");
@@ -5829,8 +5831,8 @@ export class VaultStore {
       [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id).map(collisionKey),
     );
     const target = await this.freeTarget(stem, this.hasChildren(id), taken, kind);
-    // #5q4vaacm: `exact` takes this name or nothing (checked here, in the store's queue, before any write).
-    if (exact && target !== desired) throw conflict(`“${title}” is taken now`);
+    // #5q4vaacm, #hazfav7a: `exact` takes this name or nothing (checked here, in the store's queue, before any write).
+    if (exact && target !== desired) throw nameTaken(title);
     return target;
   }
 
@@ -5904,7 +5906,10 @@ export class VaultStore {
     const taken = new Set(
       [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id && key !== rows).map(collisionKey),
     );
-    return this.freeTarget(stem, true, taken, "base");
+    const target = await this.freeTarget(stem, true, taken, "base");
+    // #hazfav7a: a database that owns its rows renames exactly too (the base and its folder keep one name).
+    if (target !== desired) throw nameTaken(title);
+    return target;
   }
 
   private hasChildren(id: PageId): boolean {
