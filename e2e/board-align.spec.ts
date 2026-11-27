@@ -69,3 +69,37 @@ test('Distribute horizontally: equal gaps, the outer two stay; it needs three ob
   await expect(page.getByTestId('board-align-horizontal')).toBeDisabled();
   await expect(page.getByTestId('board-align-left')).toBeEnabled();
 });
+
+test('Align by keyboard (@lead): Tab reaches the button, Enter opens the panel on its first action, arrows move in the 3×3, Enter applies, Escape returns to the button', async ({ page }) => {
+  await threeStickies(page);
+  await page.keyboard.press('Control+a');
+  const button = page.getByTestId('board-align');
+  await expect(button).toBeVisible();
+  // Reachable by Tab from the board.
+  let reached = false;
+  for (let i = 0; i < 40 && !reached; i += 1) {
+    await page.keyboard.press('Tab');
+    reached = await button.evaluate((element) => element === document.activeElement);
+  }
+  expect(reached, 'the Align button is a Tab stop').toBe(true);
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('board-align-menu')).toBeVisible();
+  await expect(page.getByTestId('board-align-left')).toBeFocused();
+  // Right → centre; Down → middle (the row below); the board's arrows don't move anything meanwhile.
+  const before = await nodes(page);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('board-align-center')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByTestId('board-align-middle')).toBeFocused();
+  expect(await nodes(page)).toEqual(before);
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => new Set((await nodes(page)).map((node) => node.y + node.height / 2)).size).toBe(1);
+  // No object's editor opened by that Enter.
+  await expect(page.getByTestId('board-text-editor')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('board-align-menu')).toHaveCount(0);
+  await expect(button).toBeFocused();
+  // The selection is still there (Escape closed the panel, not the selection).
+  await expect(page.getByTestId('board-context-toolbar')).toBeVisible();
+});
+
