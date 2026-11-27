@@ -3835,7 +3835,7 @@ export class VaultStore {
   // --- mutations ---------------------------------------------------------
 
   private async createNow(input: CreatePageInput): Promise<Page> {
-    const title = typeof input.title === "string" ? input.title.trim() : "";
+    let title = typeof input.title === "string" ? input.title.trim() : "";
     if (title.length === 0) throw badRequest("title is required");
     if (title.length > MAX_TITLE_LENGTH) {
       throw badRequest(`title is too long (max ${MAX_TITLE_LENGTH} characters)`);
@@ -3859,6 +3859,10 @@ export class VaultStore {
 
     const baseId = childPageId(parentId, title);
     const id = await this.freeId(baseId);
+    // #hazfav7a (@lead: creating keeps "X 2", title included): a taken name gives the next free one, and the title
+    // follows it ("Pantry 2"), so the new page doesn't look the same as the one it's next to. A title only changed
+    // to fit a file name ("a/b" → "a-b") stays as typed.
+    if (id !== baseId && id.startsWith(baseId)) title = `${title}${id.slice(baseId.length)}`;
     this.redirects.delete(id);
     // #bg7c9bzk: strictly increasing within this process, so rows made in one go (a paste) keep their order by
     // `created:` even inside one millisecond.
@@ -4786,6 +4790,12 @@ export class VaultStore {
   private async updateBaseNow(
     id: PageId,
     patch: UpdateBaseInput,
+    /**
+     * #hazfav7a: a title the user typed for this database takes that name or nothing. Its rows folder's rename brings
+     * it along instead (`exact: false`): both take the next free name together ("Staff 2"), as before, which is the
+     * name each then shows, so nothing looks the same as something else.
+     */
+    options: { exact?: boolean } = {},
   ): Promise<BaseDocument & { rewrittenPages: PageId[]; conflictBackup?: string }> {
     let record = this.requireBase(id);
     let info;
@@ -4837,8 +4847,8 @@ export class VaultStore {
       // takes the folder along, so both keep one name; the marker and filter follow.
       const rows = this.ownedRowsOf(record, id);
       targetId = rows
-        ? await this.renameOwnedTarget(id, record.parentId, nextTitle, rows)
-        : await this.renameTarget(id, record.parentId, nextTitle, "base", true);
+        ? await this.renameOwnedTarget(id, record.parentId, nextTitle, rows, options.exact !== false)
+        : await this.renameTarget(id, record.parentId, nextTitle, "base", options.exact !== false);
       if (targetId !== id) {
         rewrittenPages.push(...(await this.relocateNow(id, targetId)));
         record = this.pages.get(targetId) ?? record;
@@ -5896,7 +5906,7 @@ export class VaultStore {
   }
 
   /** A new name for an owned database: free as a base **and** as a folder (its rows move too). */
-  private async renameOwnedTarget(id: PageId, parentId: PageId | null, title: string, rows: PageId): Promise<PageId> {
+  private async renameOwnedTarget(id: PageId, parentId: PageId | null, title: string, rows: PageId, exact = true): Promise<PageId> {
     const folder = parentOf(id) ?? parentId;
     const stem = childPageId(folder, title);
     const desired = `${stem}${idExtension("base")}`;
@@ -5908,7 +5918,7 @@ export class VaultStore {
     );
     const target = await this.freeTarget(stem, true, taken, "base");
     // #hazfav7a: a database that owns its rows renames exactly too (the base and its folder keep one name).
-    if (target !== desired) throw nameTaken(title);
+    if (exact && target !== desired) throw nameTaken(title);
     return target;
   }
 
@@ -6998,7 +7008,7 @@ export class VaultStore {
     // along and rewrites its marker and filter, so the two keep one name and the table keeps its rows.
     const owner = this.ownerOfRowsFolder(id);
     if (owner) {
-      const renamed = await this.updateBaseNow(owner, { title });
+      const renamed = await this.updateBaseNow(owner, { title }, { exact: false });
       const rows = renamed.meta.id.slice(0, -idExtension("base").length);
       return { ...this.folderPage(this.folders.has(rows) ? rows : id), rewrittenPages: renamed.rewrittenPages };
     }
