@@ -103,3 +103,23 @@ test('#yy347xgi (4): a search isolates by default; "Show the rest" keeps the res
   await expect(page.getByTestId('graph-show-rest')).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(async () => (await probe(page)).spotlight).toEqual(['Plan']);
 });
+
+test('#yy347xgi (4): a fit pinned to matches that a filter then removes is forgotten, and the view fits as usual', async ({ page, vault }) => {
+  await vault.seed([
+    { title: 'Plan', content: 'See [[Notes]] and [[Someday]]. #work' },
+    { title: 'Notes', content: 'Back to [[Plan]]. #work' },
+  ]);
+  await openGraph(page);
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  // Pin the fit to the not-created page's match.
+  await page.getByTestId('graph-filter').fill('someday');
+  const toggle = page.getByTestId('graph-show-rest');
+  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+  await page.getByTestId('graph-filter').press('Enter');
+  await expect(canvas).toHaveAttribute('data-graph-fit-reason', 'matches');
+  // "Existing files only" removes that page: the pin goes, and the next fit is the ordinary one.
+  await page.getByTestId('graph-panel-toggle').click();
+  await page.getByTestId('graph-filter-hideUnresolved').click();
+  await expect(canvas).not.toHaveAttribute('data-graph-fit-reason', 'matches', { timeout: 10_000 });
+});
