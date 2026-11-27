@@ -61,9 +61,11 @@ export interface TableViewProps {
   onDeleteColumn?: (column: BaseColumn) => Promise<void>;
   onSetColumnType?: (column: BaseColumn, type: PropertyType | SelectKind) => Promise<void>;
   /** #7prbquxu (spec §4): "+" with Select or Multi-select: the view's new column and its Select settings, one write. */
-  onAddSelectColumn?: (view: BaseView, key: string, kind: SelectKind) => Promise<void>;
+  /** Resolves false when the column didn't land (#bg7c9bzk). */
+  onAddSelectColumn?: (view: BaseView, key: string, kind: SelectKind) => Promise<boolean>;
   /** #7prbquxu phase 4b: "+" changes the view through this (one undoable step), when given. */
-  onAddColumnView?: (view: BaseView) => void;
+  /** Resolves false when the view change didn't land (#bg7c9bzk). */
+  onAddColumnView?: (view: BaseView) => Promise<boolean>;
   /** #7prbquxu phase 2: "Import CSV…" rows for the paste preview (`n` bumps to open it again). */
   importBlock?: { rows: string[][]; n: number } | null;
   /** #7prbquxu phase 2, step 3: the preview's rows and columns, for this view (one server request). */
@@ -384,18 +386,24 @@ export function TableView(props: TableViewProps) {
   const addColumn = async (key: string, type: PropertyType | SelectKind, setType: boolean) => {
     focusNewColumn.current = propertyId(key);
     const next = { ...view, order: [...viewOrder, key] };
+    // A failed add (an error, a conflict, a throw) mustn't leave the marker set, or a later column with this id
+    // would take the focus (@graph-dev, @lead: tied to the result, not to a timer).
+    const failed = () => {
+      if (focusNewColumn.current === propertyId(key)) focusNewColumn.current = null;
+    };
     try {
       // A Select or Multi-select: the column and its (empty) options in one base write (@lead, spec §4).
       if ((type === "select" || type === "multiselect") && props.onAddSelectColumn) {
-        await props.onAddSelectColumn(next, key, type);
+        if (!(await props.onAddSelectColumn(next, key, type))) failed();
         return;
       }
       // Only when the types file has none for the key (a key typed there but used nowhere keeps its type).
       if (setType && type !== "select" && type !== "multiselect") await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
-      (props.onAddColumnView ?? props.onChangeView)(next);
+      // Not awaited, as before: the popover closes at once; the result only clears the marker.
+      if (props.onAddColumnView) void props.onAddColumnView(next).then((saved) => saved || failed(), failed);
+      else props.onChangeView(next);
     } catch (error) {
-      // A failed add mustn't leave the marker set, or a later column with this id would take the focus.
-      focusNewColumn.current = null;
+      failed();
       throw error;
     }
   };

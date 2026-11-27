@@ -38,6 +38,8 @@ export class BaseSaver {
   private conflicted = false;
   private version: string;
   private chain: Promise<void> = Promise.resolve();
+  /** #bg7c9bzk: failed sends (errors and conflicts) so far, so a save can tell whether its change landed. */
+  private failures = 0;
 
   constructor(
     version: string,
@@ -88,11 +90,19 @@ export class BaseSaver {
     return this.conflicted;
   }
 
-  /** Queue `config`; written at once unless a conflict waits for the user. */
-  save(config: BaseConfig): Promise<void> {
+  /**
+   * Queue `config`; written at once unless a conflict waits for the user. Resolves true when it was written,
+   * false when a send failed meanwhile (an error, or a conflict that now holds it) or a conflict already held it.
+   */
+  async save(config: BaseConfig): Promise<boolean> {
     this.pending = config;
-    if (this.conflicted) return this.chain;
-    return this.run(false);
+    if (this.conflicted) {
+      await this.chain;
+      return false;
+    }
+    const failures = this.failures;
+    await this.run(false);
+    return this.failures === failures && !this.conflicted;
   }
 
   /** Keep mine: send the held change as a forced save. */
@@ -136,6 +146,7 @@ export class BaseSaver {
       } catch (error) {
         this.writing = false;
         this.inFlight = null;
+        this.failures += 1;
         if (this.options.isConflict(error)) {
           // Keep the newest change: the one that failed, unless the user made a newer one since.
           if (this.pending === null) this.pending = config;
