@@ -129,6 +129,10 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
         { keys: `${withModifier(modifier, "D")}`, label: t("shortcuts.labels.duplicate") },
         { keys: `${withModifier(modifier, "C")} / ${withModifier(modifier, "V")}`, label: t("shortcuts.labels.copyPaste") },
         { keys: "] / [", label: t("shortcuts.labels.bringToFrontSendToBack") },
+        // #b9425ktw D: align and distribute a multi-selection.
+        // ⌥⇧ on a Mac, where the sheet writes ⌘ for the modifier (@opus-editor).
+        { keys: `${modifier === "⌘" ? "⌥⇧" : "Alt+Shift+"}L / C / R / T / M / B`, label: t("shortcuts.labels.alignSelection") },
+        { keys: `${modifier === "⌘" ? "⌥⇧" : "Alt+Shift+"}H / V`, label: t("shortcuts.labels.distributeSelection") },
         { keys: "Delete", label: t("shortcuts.labels.delete") },
         { keys: `${withModifier(modifier, "Z")} / ${modifier}+Shift+Z`, label: t("shortcuts.labels.undoRedo") },
       ],

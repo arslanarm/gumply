@@ -39,6 +39,7 @@ Double-click anything to write in it. Text on stickies, shapes and cards is Mark
 - **Bring to front / send to back:** `]` and `[`. **Frames always sit behind cards and arrows**, as in Obsidian, so these do nothing for frames (the buttons say so).
   - Overlapping frames are layered by size: a smaller frame sits on top of a bigger one, so resizing a frame can move it in front of or behind another.
   - Two frames of the same size keep the order they have in the file; nothing in Gumply changes which of the two is on top.
+- **Align and distribute:** with two or more selected, the **Align** button in the toolbar above them lines up their left edges, centres, right edges, tops, middles or bottoms, or spaces three or more evenly. From the keyboard: `Alt+Shift` (`⌥⇧` on a Mac) with `L`, `C`, `R`, `T`, `M`, `B`, or `H` and `V` to distribute. A frame takes what's inside it along. If your keyboard layout switches on `Alt+Shift`, use the **Align** button.
 - **Zoom:** `Ctrl/Cmd` + scroll, or pinch. `Shift+1` fits the whole board. Zooming stays smooth on big boards too, with a thousand objects or more.
 - **Delete:** `Delete` or `Backspace`. `Ctrl/Cmd+Z` undoes any change; `Ctrl/Cmd+Shift+Z` redoes it.
 

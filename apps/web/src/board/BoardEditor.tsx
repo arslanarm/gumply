@@ -39,6 +39,7 @@ import {
   useState,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -112,6 +113,35 @@ import { t, useT } from "../i18n/index.js";
 import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
 import { clipboardPlainText } from "./clipboard-text.js";
 import { motionMs } from "../lib/motion.js";
+import { freeSpot, nearestFree } from "./placement.js";
+import { useAttributionOutOfTabOrder } from "./attribution.js";
+import { alignNodes, distributeNodes, type Alignment, type Distribution } from "./align.js";
+
+/** #b9425ktw D: Alt+Shift+… for align and distribute, by key position (event.code). */
+const ALIGN_KEYS: Record<string, Alignment | Distribution> = {
+  KeyL: "left",
+  KeyC: "center",
+  KeyR: "right",
+  KeyT: "top",
+  KeyM: "middle",
+  KeyB: "bottom",
+  KeyH: "horizontal",
+  KeyV: "vertical",
+};
+const ALIGN_LETTERS: Record<Alignment | Distribution, string> = {
+  left: "L",
+  center: "C",
+  right: "R",
+  top: "T",
+  middle: "M",
+  bottom: "B",
+  horizontal: "H",
+  vertical: "V",
+};
+/** The keys as written in tooltips: ⌥⇧L on a Mac (where the app writes ⌘), Alt+Shift+L elsewhere (@opus-editor). */
+export function alignShortcut(how: Alignment | Distribution): string {
+  return currentModifierLabel() === "⌘" ? `⌥⇧${ALIGN_LETTERS[how]}` : `Alt+Shift+${ALIGN_LETTERS[how]}`;
+}
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -481,6 +511,7 @@ function BoardCanvas(props: BoardEditorProps) {
   );
   const flow = useReactFlow<BoardFlowNode, BoardFlowEdge>();
   const rootRef = useRef<HTMLDivElement>(null);
+  useAttributionOutOfTabOrder(rootRef);
 
   const [history, setHistory] = useState<BoardHistory>(() => createHistory(props.board));
   const board = history.present;
@@ -511,6 +542,17 @@ function BoardCanvas(props: BoardEditorProps) {
   const [tool, setTool] = useState<BoardTool>("select");
   const [shape, setShape] = useState<GumplyShape>("rect");
   const [shapeMenu, setShapeMenu] = useState(false);
+  // #b9425ktw D: the context toolbar's Align panel (2+ objects selected).
+  const [alignMenu, setAlignMenu] = useState(false);
+  const alignButtonRef = useRef<HTMLButtonElement | null>(null);
+  const alignMenuRef = useRef<HTMLDivElement | null>(null);
+  /** Opened from the keyboard: its first button takes the focus once it's there. */
+  const focusAlignMenu = useRef(false);
+  useEffect(() => {
+    if (!alignMenu || !focusAlignMenu.current) return;
+    focusAlignMenu.current = false;
+    alignMenuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  }, [alignMenu]);
   const [pagePicker, setPagePicker] = useState(false);
   const [dragging, setDragging] = useState(false);
   /** Kept current every render; read by the host through `isBusy`. */
@@ -557,6 +599,10 @@ function BoardCanvas(props: BoardEditorProps) {
     () => board.nodes.filter((node) => selection.nodes.has(node.id)).map((node) => node.id),
     [board, selection],
   );
+  // The Align panel closes with the multi-selection it was for.
+  useEffect(() => {
+    if (selectedNodeIds.length < 2) setAlignMenu(false);
+  }, [selectedNodeIds.length]);
   const selectedEdgeIds = useMemo(
     () => board.edges.filter((edge) => selection.edges.has(edge.id)).map((edge) => edge.id),
     [board, selection],
@@ -722,9 +768,28 @@ function BoardCanvas(props: BoardEditorProps) {
     (path: string, client?: Point) => {
       const at = client ? toFlow(client) : viewCentre();
       const size = PAGE_CARD_SIZE;
-      addAndSelect(createFileNode({ x: at.x - size.width / 2, y: at.y - size.height / 2, ...size }, path));
+      const want = { x: at.x - size.width / 2, y: at.y - size.height / 2, ...size };
+      // #b9425ktw (#fzrwse3y's P3 5): from the toolbar (no drop point), the nearest free spot to the view's centre,
+      // so the card doesn't cover what's there; a card dropped at a point goes exactly there.
+      // Only spots inside the visible part count (@opus-editor); if even the fallback lands outside it (a view
+      // smaller than a card), the view moves to the card, so the new, selected card is never out of sight.
+      const rect = rootRef.current?.getBoundingClientRect();
+      const view = rect ? (() => {
+        const from = toFlow({ x: rect.left, y: rect.top });
+        const to = toFlow({ x: rect.right, y: rect.bottom });
+        return { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
+      })() : undefined;
+      // In view first; zoomed in, nothing may fit there: then the nearest free spot anywhere (the view follows it
+      // below), and only then an offset, so the card never covers an item (the 200 % slot case).
+      const nodes = boardRef.current.nodes;
+      const corner = client ? want : nearestFree(want, nodes, view) ?? nearestFree(want, nodes) ?? freeSpot(want, nodes);
+      addAndSelect(createFileNode({ ...corner, ...size }, path));
+      if (!client && view) {
+        const seen = corner.x < view.x + view.width && corner.x + size.width > view.x && corner.y < view.y + view.height && corner.y + size.height > view.y;
+        if (!seen) void flow.setCenter(corner.x + size.width / 2, corner.y + size.height / 2, { zoom: flow.getZoom(), duration: 0 });
+      }
     },
-    [addAndSelect, toFlow, viewCentre],
+    [addAndSelect, flow, toFlow, viewCentre],
   );
 
   const addUploadedFile = useCallback(
@@ -1333,6 +1398,58 @@ function BoardCanvas(props: BoardEditorProps) {
     [apply],
   );
 
+  /**
+   * #b9425ktw D (@lead): the Align button and its 3×3 panel by keyboard. Enter or Space on the button opens the
+   * panel with the focus on its first button; arrows move in the grid (Home/End to the ends); Escape closes it and
+   * gives the focus back to the button. These keys are taken here (preventDefault), so the board's own (arrows move
+   * objects, Enter edits one, Escape clears the selection) don't also run.
+   */
+  const alignKeys = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const inMenu = alignMenuRef.current?.contains(target) ?? false;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (target === alignButtonRef.current) focusAlignMenu.current = !alignMenu;
+      (target as HTMLButtonElement).click();
+      return;
+    }
+    if (event.key === "Escape" && (inMenu || alignMenu)) {
+      event.preventDefault();
+      setAlignMenu(false);
+      alignButtonRef.current?.focus();
+      return;
+    }
+    if (!inMenu) return;
+    const buttons = [...(alignMenuRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+    const at = buttons.indexOf(target as HTMLButtonElement);
+    if (at === -1) return;
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 3, ArrowUp: -3 }[event.key as string];
+    let next = at;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = buttons.length - 1;
+    else if (step !== undefined) next = at + step;
+    else return;
+    event.preventDefault();
+    // Within the grid; a disabled button (distribute with two objects) is skipped in the direction of travel.
+    const direction = step !== undefined ? Math.sign(step) : event.key === "Home" ? 1 : -1;
+    while (next >= 0 && next < buttons.length && buttons[next]!.disabled) next += direction;
+    if (next >= 0 && next < buttons.length) buttons[next]!.focus();
+  }, [alignMenu]);
+
+  /** #b9425ktw D (#fzrwse3y's P3 6): align or distribute the selected objects; one undo step, said aloud. */
+  const arrange = useCallback(
+    (how: Alignment | Distribution) => {
+      const ids = new Set(selectedRef.current.nodes);
+      const current = boardRef.current;
+      const next = how === "horizontal" || how === "vertical" ? distributeNodes(current, ids, how) : alignNodes(current, ids, how);
+      // Nothing to move (already lined up): no undo step, and nothing said (@opus-editor's nit).
+      if (next === current) return;
+      apply(() => next);
+      announce(t("board.aligned", { count: ids.size }));
+    },
+    [announce, apply],
+  );
+
   const doUndo = useCallback(() => {
     setEditing(null);
     setHistory((current) => undo(current));
@@ -1402,6 +1519,17 @@ function BoardCanvas(props: BoardEditorProps) {
         event.preventDefault();
         select(boardRef.current.nodes.map((node) => node.id));
         return;
+      }
+      // #b9425ktw D (@lead: not mouse-only): Alt+Shift+L/C/R/T/M/B align, Alt+Shift+H/V distribute a multi-selection.
+      // By the key's position (event.code), so they work in any keyboard layout, and Alt's dead keys on macOS don't
+      // matter. Tabbing to the Align button would select one object instead.
+      if (event.altKey && event.shiftKey && !mod) {
+        const how = ALIGN_KEYS[event.code];
+        if (how && selectedRef.current.nodes.length >= 2) {
+          event.preventDefault();
+          arrange(how);
+          return;
+        }
       }
       if (mod || event.altKey) return;
 
@@ -1516,7 +1644,7 @@ function BoardCanvas(props: BoardEditorProps) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [actions, announce, apply, chooseTool, createFromDraft, deleteSelection, describe, doRedo, doUndo, duplicateSelection, fit, focusNode, ownsEvent, reorder, select, tool, viewCentre]);
+  }, [actions, announce, apply, arrange, chooseTool, createFromDraft, deleteSelection, describe, doRedo, doUndo, duplicateSelection, fit, focusNode, ownsEvent, reorder, select, tool, viewCentre]);
 
   /* ---------------- clipboard ---------------- */
 
@@ -1874,137 +2002,8 @@ function BoardCanvas(props: BoardEditorProps) {
           <div className="visually-hidden" role="status" aria-live="polite" data-testid="board-announcer">
             {announcement}
           </div>
-          <ReactFlow<BoardFlowNode, BoardFlowEdge>
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={NODE_TYPES}
-            edgeTypes={EDGE_TYPES}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeDragStart={onNodeDragStart}
-            onNodeDragStop={onNodeDragStop}
-            onConnect={onConnect}
-            onConnectStart={onConnectStartZoomVar}
-            onConnectEnd={onConnectEndZoomVar}
-            isValidConnection={isValidConnection}
-            onNodeDoubleClick={onNodeDoubleClick}
-            onEdgeDoubleClick={onEdgeDoubleClick}
-            onInit={onInit}
-            onMoveEnd={(_event, next) => saveViewport(boardId, next)}
-            {...(initialViewport ? { defaultViewport: initialViewport } : {})}
-            minZoom={MIN_ZOOM}
-            maxZoom={MAX_ZOOM}
-            connectionMode={ConnectionMode.Loose}
-            connectionRadius={28}
-            selectionMode={SelectionMode.Partial}
-            selectionOnDrag={tool === "select"}
-            panOnDrag={hand ? [0, 1] : [1]}
-            panOnScroll
-            zoomOnScroll={false}
-            zoomOnPinch
-            zoomOnDoubleClick={false}
-            nodesDraggable={tool === "select"}
-            nodesConnectable={tool === "select"}
-            elementsSelectable={tool === "select"}
-            elevateNodesOnSelect={false}
-            elevateEdgesOnSelect={false}
-            deleteKeyCode={null}
-            selectionKeyCode={null}
-            multiSelectionKeyCode="Shift"
-            disableKeyboardA11y
-            onlyRenderVisibleElements={nodes.length > 200}
-            nodeDragThreshold={2}
-            proOptions={{ hideAttribution: false }}
-            attributionPosition="bottom-left"
-          >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1.6} className="board-grid" />
-            {settling ? <GroupDragSettler settling={settling} onDone={settleDone} /> : null}
-
-            {/* Mounted only while shown: NodeToolbar subscribes to every id it is
-                given, and on each node update it rebuilds and compares the whole
-                list, which is O(n²) per frame when dragging a big selection
-                (#r6biyzx6). */}
-            {showNodeToolbar ? (
-            <NodeToolbar nodeId={selectedNodeIds} isVisible position={Position.Top} offset={14}>
-              <ClampedToolbar>
-              <div className="board-context" data-testid="board-context-toolbar" onPointerDown={(event) => event.stopPropagation()}>
-                <Palette current={commonColor} onPick={recolour} />
-                {shapesSelected ? (
-                  <div className="board-context-group">
-                    {SHAPES.map((item) => (
-                      <button
-                        type="button"
-                        key={item.shape}
-                        className={`board-context-button${selectedShape === item.shape ? " is-active" : ""}`}
-                        aria-label={item.label}
-                        data-tooltip={item.label}
-                        data-testid={`board-context-shape-${item.shape}`}
-                        onClick={() => reshape(item.shape)}
-                      >
-                        <BoardIcon name={item.shape} size={16} />
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="board-context-group">
-                  <button
-                    type="button"
-                    className="board-context-button"
-                    aria-label={t("board.bringToFront")}
-                    aria-disabled={framesOnly || undefined}
-                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
-                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.bringToFront")} · ]`}
-                    data-testid="board-front"
-                    onClick={() => {
-                      if (!framesOnly) reorder("front");
-                    }}
-                  >
-                    <BoardIcon name="front" size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="board-context-button"
-                    aria-label={t("board.sendToBack")}
-                    aria-disabled={framesOnly || undefined}
-                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
-                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.sendToBack")} · [`}
-                    data-testid="board-back"
-                    onClick={() => {
-                      if (!framesOnly) reorder("back");
-                    }}
-                  >
-                    <BoardIcon name="back" size={16} />
-                  </button>
-                  <button type="button" className="board-context-button is-danger" aria-label={t("common.delete")} data-tooltip={`${t("common.delete")} · Del`} data-testid="board-delete" onClick={deleteSelection}>
-                    <BoardIcon name="trash" size={16} />
-                  </button>
-                </div>
-              </div>
-              </ClampedToolbar>
-            </NodeToolbar>
-            ) : null}
-
-            <Panel position="top-right">
-              <BoardMenu hasSelection={selectedNodeIds.length > 0} busy={exporter.busy} onExport={exporter.start} onOpen={exporter.preload} />
-            </Panel>
-
-            <Panel position="bottom-right" className="board-zoom">
-              <button type="button" className="board-zoom-button" aria-label={t("board.zoomOut")} data-tooltip={t("board.zoomOut")} data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
-                <BoardIcon name="minus" size={16} />
-              </button>
-              <button type="button" className="board-zoom-value" aria-label={t("board.resetZoom")} data-tooltip={t("board.zoomTo100")} data-testid="board-zoom-value" onClick={() => void flow.zoomTo(1, { duration: motionMs(150) })}>
-                <ZoomPercent />
-              </button>
-              <button type="button" className="board-zoom-button" aria-label={t("board.zoomIn")} data-tooltip={t("board.zoomIn")} data-testid="board-zoom-in" onClick={() => void flow.zoomIn({ duration: 150 })}>
-                <BoardIcon name="plus" size={16} />
-              </button>
-              <span className="board-zoom-divider" />
-              <button type="button" className="board-zoom-button" aria-label={t("board.fitToScreen")} data-tooltip={`${t("board.fit")} · Shift+1`} data-testid="board-fit" onClick={fit}>
-                <BoardIcon name="fit" size={16} />
-              </button>
-            </Panel>
-          </ReactFlow>
-
+          {/* #b9425ktw (#fzrwse3y's P3 7): the tool toolbar comes first in the markup, so it's the first Tab stop
+              on the board (it's first on screen); it's positioned absolutely, so where it sits on screen is unchanged. */}
           <div className="board-toolbar" role="toolbar" aria-label={t("board.toolsLabel")} aria-orientation="vertical" data-testid="board-toolbar">
             <div className="board-toolbar-group">
               {TOOLS.map((spec) => (
@@ -2087,6 +2086,186 @@ function BoardCanvas(props: BoardEditorProps) {
               }}
             />
           </div>
+
+          <ReactFlow<BoardFlowNode, BoardFlowEdge>
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDragStop={onNodeDragStop}
+            onConnect={onConnect}
+            onConnectStart={onConnectStartZoomVar}
+            onConnectEnd={onConnectEndZoomVar}
+            isValidConnection={isValidConnection}
+            onNodeDoubleClick={onNodeDoubleClick}
+            onEdgeDoubleClick={onEdgeDoubleClick}
+            onInit={onInit}
+            onMoveEnd={(_event, next) => saveViewport(boardId, next)}
+            {...(initialViewport ? { defaultViewport: initialViewport } : {})}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            connectionMode={ConnectionMode.Loose}
+            connectionRadius={28}
+            selectionMode={SelectionMode.Partial}
+            selectionOnDrag={tool === "select"}
+            panOnDrag={hand ? [0, 1] : [1]}
+            panOnScroll
+            zoomOnScroll={false}
+            zoomOnPinch
+            zoomOnDoubleClick={false}
+            nodesDraggable={tool === "select"}
+            nodesConnectable={tool === "select"}
+            elementsSelectable={tool === "select"}
+            elevateNodesOnSelect={false}
+            elevateEdgesOnSelect={false}
+            deleteKeyCode={null}
+            selectionKeyCode={null}
+            multiSelectionKeyCode="Shift"
+            disableKeyboardA11y
+            onlyRenderVisibleElements={nodes.length > 200}
+            nodeDragThreshold={2}
+            proOptions={{ hideAttribution: false }}
+            attributionPosition="bottom-left"
+          >
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1.6} className="board-grid" />
+            {settling ? <GroupDragSettler settling={settling} onDone={settleDone} /> : null}
+
+            {/* Mounted only while shown: NodeToolbar subscribes to every id it is
+                given, and on each node update it rebuilds and compares the whole
+                list, which is O(n²) per frame when dragging a big selection
+                (#r6biyzx6). */}
+            {showNodeToolbar ? (
+            <NodeToolbar nodeId={selectedNodeIds} isVisible position={Position.Top} offset={14}>
+              <ClampedToolbar>
+              <div className="board-context" data-testid="board-context-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+                <Palette current={commonColor} onPick={recolour} />
+                {shapesSelected ? (
+                  <div className="board-context-group">
+                    {SHAPES.map((item) => (
+                      <button
+                        type="button"
+                        key={item.shape}
+                        className={`board-context-button${selectedShape === item.shape ? " is-active" : ""}`}
+                        aria-label={item.label}
+                        data-tooltip={item.label}
+                        data-testid={`board-context-shape-${item.shape}`}
+                        onClick={() => reshape(item.shape)}
+                      >
+                        <BoardIcon name={item.shape} size={16} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {selectedNodeIds.length >= 2 ? (
+                  <div className="board-context-group board-align" onKeyDown={alignKeys}>
+                    <button
+                      type="button"
+                      ref={alignButtonRef}
+                      className={`board-context-button${alignMenu ? " is-active" : ""}`}
+                      aria-label={t("board.align")}
+                      aria-haspopup="true"
+                      aria-expanded={alignMenu}
+                      data-tooltip={t("board.align")}
+                      data-testid="board-align"
+                      onClick={() => setAlignMenu((open) => !open)}
+                    >
+                      <BoardIcon name="align-left" size={16} />
+                    </button>
+                    {alignMenu ? (
+                      <div className="board-align-menu" ref={alignMenuRef} role="group" aria-label={t("board.align")} data-testid="board-align-menu">
+                        {(
+                          [
+                            ["left", "align-left", "board.alignLeft"],
+                            ["center", "align-center", "board.alignCenter"],
+                            ["right", "align-right", "board.alignRight"],
+                            ["top", "align-top", "board.alignTop"],
+                            ["middle", "align-middle", "board.alignMiddle"],
+                            ["bottom", "align-bottom", "board.alignBottom"],
+                            ["horizontal", "distribute-horizontal", "board.distributeHorizontal"],
+                            ["vertical", "distribute-vertical", "board.distributeVertical"],
+                          ] as const
+                        ).map(([how, icon, label]) => (
+                          <button
+                            type="button"
+                            key={how}
+                            className="board-context-button"
+                            aria-label={t(label)}
+                            data-tooltip={`${t(label)} · ${alignShortcut(how)}`}
+                            aria-keyshortcuts={`Alt+Shift+${ALIGN_LETTERS[how]}`}
+                            data-testid={`board-align-${how}`}
+                            // Distributing needs three: the first and last stay, the ones between move.
+                            disabled={(how === "horizontal" || how === "vertical") && selectedNodeIds.length < 3}
+                            onClick={() => arrange(how)}
+                          >
+                            <BoardIcon name={icon} size={16} />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="board-context-group">
+                  <button
+                    type="button"
+                    className="board-context-button"
+                    aria-label={t("board.bringToFront")}
+                    aria-disabled={framesOnly || undefined}
+                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
+                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.bringToFront")} · ]`}
+                    data-testid="board-front"
+                    onClick={() => {
+                      if (!framesOnly) reorder("front");
+                    }}
+                  >
+                    <BoardIcon name="front" size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="board-context-button"
+                    aria-label={t("board.sendToBack")}
+                    aria-disabled={framesOnly || undefined}
+                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
+                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.sendToBack")} · [`}
+                    data-testid="board-back"
+                    onClick={() => {
+                      if (!framesOnly) reorder("back");
+                    }}
+                  >
+                    <BoardIcon name="back" size={16} />
+                  </button>
+                  <button type="button" className="board-context-button is-danger" aria-label={t("common.delete")} data-tooltip={`${t("common.delete")} · Del`} data-testid="board-delete" onClick={deleteSelection}>
+                    <BoardIcon name="trash" size={16} />
+                  </button>
+                </div>
+              </div>
+              </ClampedToolbar>
+            </NodeToolbar>
+            ) : null}
+
+            <Panel position="top-right">
+              <BoardMenu hasSelection={selectedNodeIds.length > 0} busy={exporter.busy} onExport={exporter.start} onOpen={exporter.preload} />
+            </Panel>
+
+            <Panel position="bottom-right" className="board-zoom">
+              <button type="button" className="board-zoom-button" aria-label={t("board.zoomOut")} data-tooltip={t("board.zoomOut")} data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
+                <BoardIcon name="minus" size={16} />
+              </button>
+              <button type="button" className="board-zoom-value" aria-label={t("board.resetZoom")} data-tooltip={t("board.zoomTo100")} data-testid="board-zoom-value" onClick={() => void flow.zoomTo(1, { duration: motionMs(150) })}>
+                <ZoomPercent />
+              </button>
+              <button type="button" className="board-zoom-button" aria-label={t("board.zoomIn")} data-tooltip={t("board.zoomIn")} data-testid="board-zoom-in" onClick={() => void flow.zoomIn({ duration: 150 })}>
+                <BoardIcon name="plus" size={16} />
+              </button>
+              <span className="board-zoom-divider" />
+              <button type="button" className="board-zoom-button" aria-label={t("board.fitToScreen")} data-tooltip={`${t("board.fit")} · Shift+1`} data-testid="board-fit" onClick={fit}>
+                <BoardIcon name="fit" size={16} />
+              </button>
+            </Panel>
+          </ReactFlow>
+
 
           {creating || tool === "pen" ? (
             <div
