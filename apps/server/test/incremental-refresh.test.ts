@@ -78,10 +78,9 @@ async function counted(store: VaultStore, run: () => Promise<unknown>): Promise<
 async function vaultOf(notes: number): Promise<VaultStore> {
   for (let i = 0; i < notes; i++) await writeFile(join(dir, `Note ${i}.md`), `Links to [[Note ${(i + 1) % notes}]].\n`);
   await writeFile(join(dir, "Hub.md"), "The hub.\n");
-  const store = new VaultStore(dir);
   // #rwgtaffe: these files were all written just now, so the read cache's racy rule would read them again on the
   // next rescan; these tests count the cache's steady state (the rule has its own test, outside-edit-coarse-ctime).
-  (store as unknown as { racyStatMs: number }).racyStatMs = 0;
+  const store = new VaultStore(dir, { racyStatMs: 0 });
   await store.init();
   return store;
 }
