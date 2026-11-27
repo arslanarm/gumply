@@ -55,3 +55,28 @@ describe("distributeNodes", () => {
     expect(distributeNodes(b, new Set(["a", "b"]), "horizontal")).toBe(b);
   });
 });
+
+describe("frames take what's inside them along (@opus-editor's review)", () => {
+  const frame = (id: string, x: number, y: number, width: number, height: number): CanvasNode =>
+    ({ id, type: "group", label: id, x, y, width, height }) as CanvasNode;
+
+  it("aligning a frame and an outside sticky left: the frame's inner sticky moves by the frame's dx, in one board", () => {
+    const b = board(frame("F", 300, 0, 400, 300), node("in", 340, 40), node("out", 0, 500));
+    const next = alignNodes(b, new Set(["F", "out"]), "left");
+    expect(at(next)).toEqual({ F: [0, 0], in: [40, 40], out: [0, 500] });
+  });
+
+  it("an inner item that is itself selected moves on its own (not twice)", () => {
+    const b = board(frame("F", 300, 0, 400, 300), node("in", 340, 40), node("out", 0, 500));
+    const next = alignNodes(b, new Set(["F", "in", "out"]), "left");
+    expect(at(next)).toEqual({ F: [0, 0], in: [0, 40], out: [0, 500] });
+  });
+
+  it("distributing frames carries their contents too", () => {
+    const b = board(frame("A", 0, 0, 100, 100), frame("B", 150, 0, 100, 100), node("inB", 160, 10, 50, 50), frame("C", 600, 0, 100, 100));
+    const next = distributeNodes(b, new Set(["A", "B", "C"]), "horizontal");
+    // Span 0..700, widths 300, gaps 200: B goes to 300 (+150), and inB with it.
+    expect(at(next)).toMatchObject({ B: [300, 0], inB: [310, 10] });
+  });
+});
+
