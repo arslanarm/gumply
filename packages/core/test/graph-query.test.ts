@@ -86,6 +86,12 @@ describe("parseGraphQuery / matchesGraphQuery", () => {
     expect(parseGraphQuery("(a OR b")).toHaveLength(2);
     expect(parseGraphQuery("a)")).toEqual([[{ op: "text", value: "a", negate: false }]]);
     expect(parseGraphQuery("()")).toEqual([]);
+    // -( … ) negates the group (De Morgan), never silently drops the "-" (@lead).
+    expect(parseGraphQuery("-(tag:#a OR tag:#b)")).toEqual([[{ op: "tag", value: "a", negate: true }, { op: "tag", value: "b", negate: true }]]);
+    expect(parseGraphQuery("-(a b)")).toEqual([[{ op: "text", value: "a", negate: true }], [{ op: "text", value: "b", negate: true }]]);
+    expect(parseGraphQuery("x -(a OR -b)")).toEqual([[{ op: "text", value: "x", negate: false }, { op: "text", value: "a", negate: true }, { op: "text", value: "b", negate: false }]]);
+    expect(matches("-(tag:#work OR tag:#личное)", plan)).toBe(false);
+    expect(matches("-(tag:#home OR tag:#личное)", plan)).toBe(true);
     // A quoted phrase keeps its brackets.
     expect(parseGraphQuery('"q1 (draft)"')).toEqual([[{ op: "text", value: "q1 (draft)", negate: false }]]);
   });
