@@ -253,7 +253,8 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
     await expect(page.getByTestId('board-back')).toHaveAttribute('aria-disabled', 'true');
     const order = async () => (await board(page)).nodes.map((node) => node.id).join(',');
     const before = await order();
-    await front.click();
+    // aria-disabled keeps it clickable for people; Playwright counts it as not enabled, so force the click.
+    await front.click({ force: true });
     await page.keyboard.press(']');
     await expect(page.getByTestId('board-announcer')).toHaveText(/Frames always sit behind cards/);
     expect(await order()).toBe(before);
