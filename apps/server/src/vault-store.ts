@@ -1374,10 +1374,10 @@ export class VaultStore {
    */
   private readCache = new Map<string, ReadCacheEntry>();
   /**
-   * #rwgtaffe: the racy window (RACY_STAT_MS). Only tests that count the cache's steady-state reuse right after
-   * writing their files set it to 0, before init(); the rule itself is tested in outside-edit-coarse-ctime.
+   * #rwgtaffe: the racy window (RACY_STAT_MS; the `racyStatMs` option). Only tests that count the cache's
+   * steady-state reuse right after writing their files pass 0; the rule itself is tested in outside-edit-coarse-ctime.
    */
-  private racyStatMs = RACY_STAT_MS;
+  private readonly racyStatMs: number;
   /** Files the watcher reported since the last refresh (absolute paths). */
   private readonly pendingPaths = new Set<string>();
   /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
@@ -1426,7 +1426,7 @@ export class VaultStore {
   /** Test counter (N11): kept frontmatter YAML blocks parsed for properties. */
   propertyYamlParses = 0;
 
-  constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number; instanceId?: string | InstanceId } = {}) {
+  constructor(root: string, options: { historySource?: HistorySource; sessionBytesCap?: number; instanceId?: string | InstanceId; racyStatMs?: number } = {}) {
     this.root = resolve(root);
     const instance = options.instanceId ?? "local";
     this.instance = typeof instance === "string" ? fixedInstanceId(instance) : instance;
@@ -1434,6 +1434,7 @@ export class VaultStore {
     this.propertyTypes = new PropertyTypesStore(this.root);
     this.historySource = options.historySource ?? "app";
     this.sessionBytesCap = options.sessionBytesCap ?? SESSION_BYTES_CAP;
+    this.racyStatMs = options.racyStatMs ?? RACY_STAT_MS;
   }
 
   /**
