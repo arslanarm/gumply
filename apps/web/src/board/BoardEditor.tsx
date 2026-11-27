@@ -722,10 +722,22 @@ function BoardCanvas(props: BoardEditorProps) {
       const want = { x: at.x - size.width / 2, y: at.y - size.height / 2, ...size };
       // #b9425ktw (#fzrwse3y's P3 5): from the toolbar (no drop point), the nearest free spot to the view's centre,
       // so the card doesn't cover what's there; a card dropped at a point goes exactly there.
-      const corner = client ? want : freeSpot(want, boardRef.current.nodes);
+      // Only spots inside the visible part count (@opus-editor); if even the fallback lands outside it (a view
+      // smaller than a card), the view moves to the card, so the new, selected card is never out of sight.
+      const rect = rootRef.current?.getBoundingClientRect();
+      const view = rect ? (() => {
+        const from = toFlow({ x: rect.left, y: rect.top });
+        const to = toFlow({ x: rect.right, y: rect.bottom });
+        return { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
+      })() : undefined;
+      const corner = client ? want : freeSpot(want, boardRef.current.nodes, view);
       addAndSelect(createFileNode({ ...corner, ...size }, path));
+      if (!client && view) {
+        const seen = corner.x < view.x + view.width && corner.x + size.width > view.x && corner.y < view.y + view.height && corner.y + size.height > view.y;
+        if (!seen) void flow.setCenter(corner.x + size.width / 2, corner.y + size.height / 2, { zoom: flow.getZoom(), duration: 0 });
+      }
     },
-    [addAndSelect, toFlow, viewCentre],
+    [addAndSelect, flow, toFlow, viewCentre],
   );
 
   const addUploadedFile = useCallback(

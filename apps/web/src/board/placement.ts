@@ -25,26 +25,33 @@ function hits(x: number, y: number, width: number, height: number, items: readon
   );
 }
 
-/** The top-left corner for a `want`-sized card: `want`'s own if free, else the nearest free one around it. */
-export function freeSpot(want: { x: number; y: number; width: number; height: number }, all: readonly Box[]): { x: number; y: number } {
+/** The search's cells, nearest first by straight-line distance (in grid steps), built once. */
+const CELLS: ReadonlyArray<{ dx: number; dy: number }> = (() => {
+  const cells: Array<{ dx: number; dy: number; d: number }> = [];
+  for (let dx = -RINGS; dx <= RINGS; dx += 1) for (let dy = -RINGS; dy <= RINGS; dy += 1) if (dx || dy) cells.push({ dx, dy, d: Math.hypot(dx, dy) });
+  // By distance across the whole square (a ring's corners are farther than the next ring's edges: @opus-editor).
+  return cells.sort((a, b) => a.d - b.d);
+})();
+
+/**
+ * The top-left corner for a `want`-sized card: `want`'s own if free, else the nearest free one around it. With
+ * `within` (the visible part of the board), only spots wholly inside it count, so the new card is never placed where
+ * the user can't see it (@opus-editor); when none is free there, a small offset from `want`.
+ */
+export function freeSpot(
+  want: { x: number; y: number; width: number; height: number },
+  all: readonly Box[],
+  within?: { x: number; y: number; width: number; height: number },
+): { x: number; y: number } {
   const items = all.filter((item) => item.type !== "group");
   if (!hits(want.x, want.y, want.width, want.height, items)) return { x: want.x, y: want.y };
-  for (let ring = 1; ring <= RINGS; ring += 1) {
-    // The ring's cells, nearest to the wanted spot first.
-    const cells: Array<{ x: number; y: number; d: number }> = [];
-    for (let i = -ring; i <= ring; i += 1) {
-      for (const [dx, dy] of [
-        [i, -ring],
-        [i, ring],
-        [-ring, i],
-        [ring, i],
-      ] as const) {
-        cells.push({ x: want.x + dx * STEP, y: want.y + dy * STEP, d: Math.hypot(dx, dy) });
-      }
-    }
-    cells.sort((a, b) => a.d - b.d);
-    for (const cell of cells) if (!hits(cell.x, cell.y, want.width, want.height, items)) return { x: cell.x, y: cell.y };
+  const inside = (x: number, y: number) =>
+    !within || (x >= within.x && y >= within.y && x + want.width <= within.x + within.width && y + want.height <= within.y + within.height);
+  for (const { dx, dy } of CELLS) {
+    const x = want.x + dx * STEP;
+    const y = want.y + dy * STEP;
+    if (inside(x, y) && !hits(x, y, want.width, want.height, items)) return { x, y };
   }
-  // Crowded everywhere near: at least don't sit exactly on what's there (a cascade offset).
+  // Crowded everywhere near (or in view): at least don't sit exactly on what's there (a cascade offset).
   return { x: want.x + 2 * GAP, y: want.y + 2 * GAP };
 }
