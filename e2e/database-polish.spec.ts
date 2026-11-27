@@ -42,6 +42,20 @@ test('#7: a Select column\'s menu fits at 800 px, "Delete from all rows" include
   expect(bottom).toBeLessThanOrEqual(800);
 });
 
+test('#7: in a tall window a popover is still capped at 36rem (the room on its side only lowers it)', async ({ page, request, vault }) => {
+  void vault;
+  await plants(page, request);
+  await page.setViewportSize({ width: 1280, height: 1600 });
+  await page.getByTestId('base-th-note.light').click();
+  const menu = page.getByTestId('base-column-menu');
+  await expect(menu).toBeVisible();
+  const { maxHeight, rem } = await menu.evaluate((element) => ({
+    maxHeight: parseFloat(getComputedStyle(element).maxHeight),
+    rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+  }));
+  expect(maxHeight).toBeLessThanOrEqual(36 * rem);
+});
+
 test('#11: the paste preview\'s controls sit over their own columns, and a wide sheet stays inside the dialog', async ({ page, request, vault }) => {
   void vault;
   await plants(page, request);
