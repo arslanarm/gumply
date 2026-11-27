@@ -1234,6 +1234,10 @@ function ValueCell(props: {
     wasEditing.current = editing;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
+  // A fresh edit has no save of its own yet (#qchedmun R5).
+  useEffect(() => {
+    if (editing) savePending.current = null;
+  }, [editing]);
   useEffect(() => {
     if (props.editRequested && editable) setEditing(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1250,13 +1254,16 @@ function ValueCell(props: {
     event.stopPropagation();
     // The blur starts the editor's commit (its `onSave`, below, records the save); the row opens once it's settled,
     // so its page loads the saved version, not the one before (@graph-dev).
-    savePending.current = null;
+    // A text editor's own Enter may already have blurred and started the save before this handler runs, so the
+    // pending save is taken as found, never reset first; it's reset when the editor opens.
     (document.activeElement as HTMLElement | null)?.blur();
     setEditing(false);
     const open = props.onOpenRow;
     const col = props.col;
+    const pending = savePending.current;
+    savePending.current = null;
     // A refused save (already reported) keeps the user on the table, where they can retry (@graph-dev, @lead).
-    void (savePending.current ?? Promise.resolve(true)).then((saved) => {
+    void (pending ?? Promise.resolve(true)).then((saved) => {
       if (saved) open(col);
     });
     return true;
