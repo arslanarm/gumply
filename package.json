@@ -1,6 +1,6 @@
 {
   "name": "gumply",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "private": true,
   "description": "Gumply — Notion-simple notes with Obsidian-style links and graph view.",
   "license": "MIT",

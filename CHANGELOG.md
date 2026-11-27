@@ -2,6 +2,17 @@
 
 What changed in each Gumply release, newest first. Installers and full release notes are on [GitHub Releases](https://github.com/arslanarm/gumply/releases) (from 0.5.0 on).
 
+## 0.9.7: edits from other apps and sync tools are never written over (2026-11-27)
+
+A fix release, recommended for everyone on 0.9, especially if you edit the same notes in another app or sync the vault between devices.
+
+**Fixed**
+- **A change made in another app could be written over.** When another app or a sync tool changed a page but left its file time as it was (or set an earlier one; some memory cards and USB drives keep times only to 2 seconds), Gumply didn't notice, and a save of yours from before that change wrote over it. Now a page you haven't touched shows the new text, and if you were typing you get "This page changed on disk" with **Reload** and **Keep mine**. Nothing is written over.
+- **The same for property changes, whiteboards and database views,** including editing a cell in a database table. A renamed or moved page keeps this protection.
+- **Other places that write to your pages check first too:** **Link** in "Unlinked mentions", renaming a tag across the vault, and the link updates a rename makes in other pages.
+- **A folder that's deleted and made again is watched again** (sync tools, `git checkout`, Trash then restore), without restarting.
+- **Restoring a page from the Trash never replaces another file** that another app saved with the same name a moment before; the restored page comes back as "Name 2".
+
 ## 0.9.6: renaming a page with sub-pages keeps its links (2026-11-26)
 
 A fix release, recommended for everyone on 0.9.
