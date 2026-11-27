@@ -39,7 +39,7 @@ Choose **Graph** in the sidebar to see every page as a dot and every link as a l
 ![The graph of a small vault](../img/graph.light.png)
 
 - **Bigger dots** have more links. Boards are squares. A dashed circle is a page that's linked but doesn't exist yet: click it to create it.
-- **Filter** by title in the search box, or by tag with the chips under it.
+- **Filter** with the search box: words, `tag:#work`, `path:Projects`, `-word` to exclude, `OR`, and `( )` to group. The tag chips under it add their tags to the search (two chips mean either tag), and **Show the rest** keeps the other pages, dimmed, instead of hiding them; Enter then fits the view to the matches. A page not created yet counts as tagged like the pages that link to it, so `-tag:#garden` also hides one that a garden page links to.
 - **Graph settings** (the filter button) hide or show tags, attachments, pages that don't exist yet and pages without links. **Groups** colour pages by a query such as `tag:#work` or `path:Projects`. The settings are saved per vault.
 - **Move around:** scroll to zoom, drag to move, **Fit** to see it all. Click a dot to open its page.
 

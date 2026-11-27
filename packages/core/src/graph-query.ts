@@ -11,7 +11,9 @@
  *   all have to match, and `OR` between terms means either side;
  * - `( … )` groups (#yy347xgi): `basil (tag:#a OR tag:#b)` is basil within
  *   either tag, as in Obsidian. A group is expanded into the alternatives;
- *   `-( … )` negates it (`-(a OR b)` is `-a -b`, `-(a b)` is `-a OR -b`).
+ *   `-( … )` negates it (`-(a OR b)` is `-a -b`, `-(a b)` is `-a OR -b`),
+ *   and `tag:( … )` (or `path:`, `file:`) applies the op to the group's bare
+ *   words (`tag:(a OR b)` is `tag:a OR tag:b`).
  *
  * Case-insensitive. Unknown `op:` prefixes are plain text, as in Obsidian.
  */
@@ -47,13 +49,14 @@ function tokens(query: string): string[] {
   return out;
 }
 
-function parseTerm(token: string): GraphQueryTerm | null {
+function parseTerm(token: string, groupOp: GraphQueryOp = "text"): GraphQueryTerm | null {
   const match = /^(-?)(?:([A-Za-z]+):)?(?:"([^"]*)"?|(.*))$/s.exec(token);
   if (!match) return null;
   const negate = match[1] === "-";
   const prefix = match[2]?.toLowerCase();
   const raw = match[3] ?? match[4] ?? "";
-  let op: GraphQueryOp = "text";
+  // Inside `tag:( … )`, a bare word takes the group's op; a word with its own op keeps it.
+  let op: GraphQueryOp = prefix ? "text" : groupOp;
   let value = raw;
   if (prefix && OPS.has(prefix)) op = prefix as GraphQueryOp;
   else if (prefix) value = `${match[2]}:${raw}`; // unknown op: plain text, as written
@@ -83,16 +86,17 @@ function product(left: GraphQuery, right: GraphQuery): GraphQuery {
 export function parseGraphQuery(query: string): GraphQuery {
   const list = tokens(query.trim());
   let at = 0;
-  // expr := and ("OR" and)* ; and := primary* ; primary := "(" expr ")" | term. Returns alternatives of terms.
-  const expr = (): GraphQuery => {
-    const alternatives: GraphQuery = [...and()];
+  // expr := and ("OR" and)* ; and := primary* ; primary := ["-"|op":"] "(" expr ")" | term.
+  // Returns alternatives of terms.
+  const expr = (groupOp: GraphQueryOp = "text"): GraphQuery => {
+    const alternatives: GraphQuery = [...and(groupOp)];
     while (list[at] === "OR") {
       at += 1;
-      alternatives.push(...and());
+      alternatives.push(...and(groupOp));
     }
     return alternatives.slice(0, MAX_ALTERNATIVES);
   };
-  const and = (): GraphQuery => {
+  const and = (groupOp: GraphQueryOp): GraphQuery => {
     let result: GraphQuery = [[]];
     while (at < list.length && list[at] !== "OR" && list[at] !== ")") {
       const token = list[at]!;
@@ -100,18 +104,27 @@ export function parseGraphQuery(query: string): GraphQuery {
       // `-( … )`: the group negated (the tokenizer leaves the `-` on its own before `(`).
       if (token === "-" && list[at] === "(") {
         at += 1;
-        const group = expr();
+        const group = expr(groupOp);
         if (list[at] === ")") at += 1;
         if (group.length) result = product(result, negate(group));
         continue;
       }
+      // `tag:( … )`, `-tag:( … )`: the op applies to the group's bare words.
+      const opGroup = /^(-?)([A-Za-z]+):$/.exec(token);
+      if (opGroup && list[at] === "(" && OPS.has(opGroup[2]!.toLowerCase())) {
+        at += 1;
+        const group = expr(opGroup[2]!.toLowerCase() as GraphQueryOp);
+        if (list[at] === ")") at += 1;
+        if (group.length) result = product(result, opGroup[1] === "-" ? negate(group) : group);
+        continue;
+      }
       if (token === "(") {
-        const group = expr();
+        const group = expr(groupOp);
         if (list[at] === ")") at += 1; // an unclosed group ends at the end
         if (group.length) result = product(result, group);
         continue;
       }
-      const term = parseTerm(token);
+      const term = parseTerm(token, groupOp);
       if (term) result = product(result, [[term]]);
     }
     return result;
