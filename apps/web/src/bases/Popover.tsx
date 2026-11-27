@@ -88,7 +88,8 @@ export function Popover(props: {
         panel.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled)') ??
         panel.querySelector<HTMLElement>("button:not(:disabled):not(.base-rule-remove):not(.is-danger)"));
     // A panel with no control (an owned database's Rows note) takes the focus itself, so it's announced (@opus-editor).
-    (start ?? (props.menu ? null : panel))?.focus();
+    // preventScroll: a just-placed fixed panel mustn't scroll its container (@opus-editor).
+    (start ?? (props.menu ? null : panel))?.focus({ preventScroll: true });
   }, [props.menu, style]);
 
   // #nr3rkgj2: a menu that closes with the keyboard inside it (an item ran) gives it back to the anchor.
