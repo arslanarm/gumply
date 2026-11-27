@@ -1354,11 +1354,14 @@ export function GraphCanvas({
   /** #znabmb8n: the links as typed index pairs, rebuilt when the data version changes. */
   const linkIndexRef = useRef<{ version: number; index: LinkIndex | null }>({ version: -1, index: null });
   /** #yy347xgi (4): which indexed links lie between two matches, per (data, spotlight) version. */
-  const spotlightMaskRef = useRef<{ key: string; mask: Uint8Array | null }>({ key: "", mask: null });
-  const spotlightMask = (index: LinkIndex, spot: ReadonlySet<string>): Uint8Array => {
+  const spotlightMaskRef = useRef<{ key: string; masks: { within: Uint8Array; outside: Uint8Array } | null }>({ key: "", masks: null });
+  const spotlightMask = (index: LinkIndex, spot: ReadonlySet<string>): { within: Uint8Array; outside: Uint8Array } => {
     const key = `${linkIndexRef.current.version}|${spotlightVersionRef.current}`;
-    if (spotlightMaskRef.current.key !== key || !spotlightMaskRef.current.mask) spotlightMaskRef.current = { key, mask: linksWithin(index, spot) };
-    return spotlightMaskRef.current.mask!;
+    if (spotlightMaskRef.current.key !== key || !spotlightMaskRef.current.masks) {
+      const within = linksWithin(index, spot);
+      spotlightMaskRef.current = { key, masks: { within, outside: within.map((bit) => 1 - bit) } };
+    }
+    return spotlightMaskRef.current.masks!;
   };
 
   /**
@@ -1448,16 +1451,18 @@ export function GraphCanvas({
         const spot = spotlightRef.current;
         // #yy347xgi (4): with a spotlight, the resting picture is every link faded, then the links between matches
         // in the idle colour (the hover picture stays all faded, as before).
-        const within = spot && color === linkPaint.idle ? spotlightMask(index, spot) : null;
+        // Each link once: the faded pass leaves out the links between matches (@opus-editor), so they aren't heavier.
+        const masks = spot && color === linkPaint.idle ? spotlightMask(index, spot) : null;
         paintRestingLinks(lctx, index, {
-          color: within ? linkPaint.faded : color,
+          color: masks ? linkPaint.faded : color,
           widthCss: restingLinkWidth(dpr),
           scale,
           dash: GHOST_LINK_DASH,
           // Only what can show: zoomed in, most links lie wholly outside the view.
           view,
+          ...(masks ? { only: masks.outside } : {}),
         });
-        if (within) paintRestingLinks(lctx, index, { color, widthCss: restingLinkWidth(dpr), scale, dash: GHOST_LINK_DASH, view, only: within });
+        if (masks) paintRestingLinks(lctx, index, { color, widthCss: restingLinkWidth(dpr), scale, dash: GHOST_LINK_DASH, view, only: masks.within });
         return layer;
       };
       const faded = hoveredRef.current !== null;

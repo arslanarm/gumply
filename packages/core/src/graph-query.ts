@@ -104,7 +104,8 @@ export function parseGraphQuery(query: string): GraphQuery {
       // `-( … )`: the group negated (the tokenizer leaves the `-` on its own before `(`).
       if (token === "-" && list[at] === "(") {
         at += 1;
-        const group = expr(groupOp);
+        // An empty alternative (`-( )`, `-( OR a)`) says nothing: dropped before negating, as everywhere else.
+        const group = expr(groupOp).filter((terms) => terms.length > 0);
         if (list[at] === ")") at += 1;
         if (group.length) result = product(result, negate(group));
         continue;
@@ -113,7 +114,7 @@ export function parseGraphQuery(query: string): GraphQuery {
       const opGroup = /^(-?)([A-Za-z]+):$/.exec(token);
       if (opGroup && list[at] === "(" && OPS.has(opGroup[2]!.toLowerCase())) {
         at += 1;
-        const group = expr(opGroup[2]!.toLowerCase() as GraphQueryOp);
+        const group = expr(opGroup[2]!.toLowerCase() as GraphQueryOp).filter((terms) => terms.length > 0);
         if (list[at] === ")") at += 1;
         if (group.length) result = product(result, opGroup[1] === "-" ? negate(group) : group);
         continue;

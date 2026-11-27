@@ -577,17 +577,53 @@ function queryTokens(query: string): string[] {
   return query.match(/[()]|-?(?:[A-Za-z]+:)?(?:"[^"]*"?|[^\s()]+)/g) ?? [];
 }
 
-/** Tokens back to text: no space after `(` or before `)`. */
+/** Tokens back to text: no space after `(` or before `)`, nor between `-` or `op:` and the `(` they open. */
 function joinTokens(tokens: readonly string[]): string {
   let out = "";
   for (const token of tokens) {
-    if (out && !out.endsWith("(") && token !== ")") out += " ";
+    const glued = out.endsWith("(") || token === ")" || (token === "(" && (out.endsWith("-") || out.endsWith(":")));
+    if (out && !glued) out += " ";
     out += token;
   }
   return out;
 }
 
 const isTagToken = (token: string): boolean => /^tag:#?[^\s()]+$/i.test(token);
+
+/**
+ * `tag:( a OR b )` typed by hand, in the chips' own form `( tag:#a OR tag:#b )`, so a chip that shows pressed for a
+ * bare word in such a group can find it and take it out (@opus-editor). A word with its own op, a `-word` and
+ * nested brackets are left as they are; `-tag:( … )` too (it's not a chip).
+ */
+function chipForm(tokens: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (!/^tag:$/i.test(token) || tokens[i + 1] !== "(") {
+      out.push(token);
+      continue;
+    }
+    let close = -1;
+    for (let j = i + 2, depth = 0; j < tokens.length; j += 1) {
+      if (tokens[j] === "(") depth += 1;
+      else if (tokens[j] === ")") {
+        if (depth === 0) {
+          close = j;
+          break;
+        }
+        depth -= 1;
+      }
+    }
+    const inside = tokens.slice(i + 2, close === -1 ? tokens.length : close);
+    if (inside.some((word) => word === "(" || word === ")")) {
+      out.push(token);
+      continue;
+    }
+    out.push("(", ...inside.map((word) => (word === "OR" || word.includes(":") || word.startsWith("-") || word.startsWith('"') ? word : `tag:#${word.replace(/^#/, "")}`)), ")");
+    i = close === -1 ? tokens.length : close;
+  }
+  return out;
+}
 
 /**
  * Add the chip's `tag:#x` term to the query, or take every positive term for that tag out of it. Two or more
@@ -600,7 +636,7 @@ export function toggleQueryTag(query: string, tag: string): string {
     const match = /^tag:#?([^\s()]+)$/i.exec(token);
     return Boolean(match && match[1]!.toLowerCase() === wanted);
   };
-  let tokens = queryTokens(query.trim());
+  let tokens = chipForm(queryTokens(query.trim()));
   if (!queryHasTag(query, tag)) {
     const term = `tag:#${tag}`;
     // An existing chip group: `( tag OR tag … )`.
