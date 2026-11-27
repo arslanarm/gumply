@@ -1,6 +1,7 @@
 import { readFile, stat as realStat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { historyDir, readHistory } from "../src/history";
 import { cleanupVaults, createTestServer } from "./helpers";
 
 /**
@@ -81,8 +82,13 @@ describe("a same-size edit that keeps mtime and (coarse) ctime is still seen by 
     await store.rescan();
     const version = store.get(page.id).updated;
     const reads = held.reads.get(file) ?? 0;
-    await store.rescan();
+    const versions = async () => (await readHistory(historyDir(dir, page.id)).catch(() => ({ entries: [] as unknown[] }))).entries.length;
+    const kept = await versions();
+    // A silent read (@graph-dev's review): the rescan reports no change (so nothing is announced to clients or
+    // reindexed), the version stays, and no History version is added.
+    expect(await store.rescan()).toBe(false);
     expect(held.reads.get(file) ?? 0).toBeGreaterThan(reads);
     expect(store.get(page.id).updated).toBe(version);
+    expect(await versions()).toBe(kept);
   });
 });

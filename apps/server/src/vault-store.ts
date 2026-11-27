@@ -595,7 +595,8 @@ type ReadCacheEntry = { key: string; id: PageId; record: PageRecord; racy: boole
 const RACY_STAT_MS = 2_500;
 
 /**
- * #rwgtaffe: `stats` were taken at `statAtMs`, within RACY_STAT_MS of the file's ctime. A ctime ahead of this
+ * #rwgtaffe, git's "racily clean" rule: an entry stat'ed too soon after its file's last change can't be trusted
+ * to show a later one. `stats` were taken at `statAtMs`, within RACY_STAT_MS of the file's ctime. A ctime ahead of this
  * clock (skew, a network drive) counts too, so such a file is read on every rescan for as long as its ctime stays
  * ahead: a cost bounded to those files (one read each per rescan), never a missed edit.
  */
