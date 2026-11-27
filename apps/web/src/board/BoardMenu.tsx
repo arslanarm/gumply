@@ -35,6 +35,44 @@ function saveTransparent(transparent: boolean): void {
   }
 }
 
+function ExportIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 4v11" />
+      <path d="M7.5 10.5 12 15l4.5-4.5" />
+      <path d="M5 19h14" />
+    </svg>
+  );
+}
+
+/**
+ * #pypzxe6i (@lead): the canvas's own entry point, top right where its ⋯ was: one button that opens the export dialog
+ * (the board's row ⋯ and Cmd+K open the same one). While an export runs it shows a spinner.
+ */
+export function BoardExportButton({ busy, onClick }: { busy: ExportFormat | null; onClick: () => void }) {
+  const t = useT();
+  return (
+    <div
+      className="board-menu"
+      // The board must not start a selection, create a sticky or run shortcuts from here.
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="board-menu-button"
+        aria-label={t("board.export.menuItem")}
+        data-tooltip={busy ? t("board.menu.exporting") : t("board.export.menuItem")}
+        data-testid="board-export-button"
+        aria-busy={busy ? "true" : undefined}
+        onClick={onClick}
+      >
+        {busy ? <span className="board-menu-spinner" aria-hidden="true" /> : <ExportIcon />}
+      </button>
+    </div>
+  );
+}
+
 export function BoardExportDialog({ hasSelection, busy, initialFormat = "png", onExport, onClose }: {
   hasSelection: boolean;
   /** An export is running: Export shows it and can't start another. */

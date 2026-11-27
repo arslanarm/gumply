@@ -20,7 +20,6 @@ import type { SaveState } from "../editor/autosave.js";
 import "../styles.css";
 import { BoardView, type BoardViewControls } from "./BoardView.js";
 import { LazyBoardEditor, type BoardPageOption } from "./index.js";
-import type { BoardEditorControls } from "./BoardEditor.js";
 import { createEdge, createFileNode, createShape, createSticky, createText } from "./model.js";
 
 interface LabWindow extends Window {
@@ -125,26 +124,10 @@ function Lab() {
     [lab],
   );
 
-  // #pypzxe6i: the board has no ⋯ of its own any more (the app's is its sidebar row): the lab's Export… opens the
-  // same dialog.
-  const editor = useRef<BoardEditorControls | null>(null);
-
   return (
     <div style={{ position: "fixed", inset: 0 }}>
-      <button
-        type="button"
-        className="button-secondary"
-        data-testid="lab-export"
-        style={{ position: "fixed", top: 12, right: 12, zIndex: 20 }}
-        onClick={() => editor.current?.openExport()}
-      >
-        Export…
-      </button>
       <Suspense fallback={null}>
         <LazyBoardEditor
-          onReady={(controls) => {
-            editor.current = controls;
-          }}
           boardId={`lab:${boardId}`}
           board={board}
           onChange={onChange}

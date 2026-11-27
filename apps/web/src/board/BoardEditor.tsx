@@ -47,7 +47,7 @@ import {
 import { currentModifierLabel, isTypingTarget, withModifier } from "../lib/shortcuts.js";
 import { EDGE_TYPES } from "./BoardEdge.js";
 import { useBoardExport } from "./BoardExport.js";
-import { BoardExportDialog, type ExportFormat } from "./BoardMenu.js";
+import { BoardExportButton, BoardExportDialog, type ExportFormat } from "./BoardMenu.js";
 import { ConnectorToolbar } from "./ConnectorToolbar.js";
 import { BOARD_DRAG_MIME } from "./constants.js";
 import { BoardActionsContext, BoardLookContext, BoardRenderersContext, type BoardActions, type BoardRenderers } from "./context.js";
@@ -2255,6 +2255,10 @@ function BoardCanvas(props: BoardEditorProps) {
               </ClampedToolbar>
             </NodeToolbar>
             ) : null}
+
+            <Panel position="top-right">
+              <BoardExportButton busy={exporter.busy} onClick={() => setExportDialog({})} />
+            </Panel>
 
             <Panel position="bottom-right" className="board-zoom">
               <button type="button" className="board-zoom-button" aria-label={t("board.zoomOut")} data-tooltip={t("board.zoomOut")} data-testid="board-zoom-out" onClick={() => void flow.zoomOut({ duration: 150 })}>
