@@ -43,15 +43,20 @@ import type {
   ConflictsList,
 } from "@gumply/core";
 import { expandGraphLinks, type IndexedGraphData } from "@gumply/core";
-import { currentLanguage } from "../i18n/index.js";
+import { currentLanguage, t } from "../i18n/index.js";
 
 export class ApiRequestError extends Error {
   readonly status: number;
+  /** #hazfav7a: the server's machine-readable cause ("name-taken"), and the title it's about. */
+  readonly reason?: string;
+  readonly title?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, details: { reason?: string; title?: string } = {}) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    if (details.reason) this.reason = details.reason;
+    if (details.title !== undefined) this.title = details.title;
   }
 }
 
@@ -163,13 +168,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
+    const details: { reason?: string; title?: string } = {};
     try {
       const body = (await response.json()) as Partial<ApiError>;
       if (typeof body.error === "string" && body.error.length > 0) message = body.error;
+      if (typeof body.reason === "string") details.reason = body.reason;
+      if (typeof body.title === "string") details.title = body.title;
     } catch {
       // Non-JSON error body: keep the status text.
     }
-    throw new ApiRequestError(response.status, message);
+    // #hazfav7a: a taken name, in the user's language, wherever the message is shown (title, sidebar, a table).
+    if (details.reason === "name-taken" && details.title !== undefined) message = t("errors.nameTaken", { title: details.title });
+    throw new ApiRequestError(response.status, message, details);
   }
 
   if (response.status === 204) return undefined as T;
