@@ -48,11 +48,25 @@ const GROUPED = {
   edges: [{ id: 'e1', fromNode: 't1', fromSide: 'right', toNode: 't2', toSide: 'left', label: 'then', toEnd: 'arrow' }],
 };
 
-async function openGrouped(page: Page, theme: 'light' | 'dark' = 'light') {
+/**
+ * @graph-dev's case: an arrow between two cards outside any frame crosses a third card, and an empty frame
+ * sits last in the array (an empty frame goes to the front). The arrow and its label stay under the card.
+ */
+const CROSSING = {
+  nodes: [
+    { id: 'l', type: 'text', text: 'Left', x: 0, y: 100, width: 160, height: 100 },
+    { id: 'r', type: 'text', text: 'Right', x: 600, y: 100, width: 160, height: 100 },
+    { id: 'm', type: 'text', text: 'Middle', x: 300, y: 50, width: 160, height: 200 },
+    { id: 'empty', type: 'group', label: 'Empty frame', x: 0, y: 400, width: 300, height: 160 },
+  ],
+  edges: [{ id: 'e', fromNode: 'l', fromSide: 'right', toNode: 'r', toSide: 'left', label: 'across', toEnd: 'arrow' }],
+};
+
+async function openGrouped(page: Page, theme: 'light' | 'dark' = 'light', canvas: { nodes: unknown[] } = GROUPED) {
   await page.goto('/board-lab.html?reset=1');
-  await page.evaluate((json) => window.localStorage.setItem('gumply:board-lab:lab', json), JSON.stringify(GROUPED));
+  await page.evaluate((json) => window.localStorage.setItem('gumply:board-lab:lab', json), JSON.stringify(canvas));
   await openLab(page, { reset: false, theme });
-  await expect(page.locator('.react-flow__node')).toHaveCount(3);
+  await expect(page.locator('.react-flow__node')).toHaveCount(canvas.nodes.length);
   await page.getByTestId('board-fit').click();
 }
 
@@ -159,6 +173,34 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
     const label = svg.indexOf('>then<');
     expect(frameName).toBeGreaterThan(-1);
     expect(label).toBeGreaterThan(frameName);
+  });
+
+  test('an arrow outside frames stays under a card it crosses, with an empty frame last, live and in the SVG', async ({ page }) => {
+    await openGrouped(page, 'light', CROSSING);
+    const middle = () =>
+      page.evaluate(() => {
+        const path = document.querySelector<SVGPathElement>('.react-flow__edge path.board-edge-path');
+        const label = document.querySelector<HTMLElement>('[data-testid="board-edge-label"]');
+        const matrix = path?.getScreenCTM();
+        if (!path || !label || !matrix) return null;
+        const mid = path.getPointAtLength(path.getTotalLength() / 2);
+        const point = new DOMPoint(mid.x, mid.y).matrixTransform(matrix);
+        const box = label.getBoundingClientRect();
+        const at = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>('.react-flow__node')?.dataset.id ?? 'not a node';
+        return { line: at(point.x, point.y + 2), label: at(box.x + box.width / 2, box.y + box.height / 2) };
+      });
+    await expect.poll(middle).toEqual({ line: 'm', label: 'm' });
+
+    await page.getByTestId('board-menu-button').click();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('board-export-svg').click()]);
+    const path = await download.path();
+    if (!path) throw new Error('download failed');
+    const svg = readFileSync(path, 'utf8');
+    const card = svg.indexOf('>Middle<');
+    const label = svg.indexOf('>across<');
+    expect(card).toBeGreaterThan(-1);
+    expect(label).toBeGreaterThan(-1);
+    expect(label).toBeLessThan(card);
   });
 
   test('Enter on a focused toolbar button chooses the tool; Enter on the object still edits it', async ({ page }) => {
