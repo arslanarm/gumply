@@ -60,11 +60,12 @@ export function AddColumn(props: {
   // A key already typed elsewhere keeps its type; the list shows it, and the note says why.
   const chosen: AddType = known ? known.type : type;
 
-  const add = async () => {
+  // #qchedmun (R3): the type is passed in, so Enter on a type button adds that type (not a state not applied yet).
+  const add = async (as: AddType = chosen) => {
     if (!key || error || busy || vault === null) return;
     setBusy(true);
     try {
-      await props.onAdd(key, chosen, !known);
+      await props.onAdd(key, known ? chosen : as, !known);
       props.onClose();
     } finally {
       setBusy(false);
@@ -111,6 +112,14 @@ export function AddColumn(props: {
             data-testid={`base-add-column-type-${option}`}
             disabled={Boolean(known)}
             onClick={() => setType(option)}
+            onKeyDown={(event) => {
+              // #qchedmun (R3): Enter on a type picks it and adds the property, as Enter in the name field adds.
+              // Space only picks it (the button's own click).
+              if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              setType(option);
+              void add(option);
+            }}
           >
             {isSelectKind(option) ? <Icon name={option === "select" ? "chevronDown" : "tag"} size={14} /> : <PropertyTypeIcon type={option} size={14} />}
             {isSelectKind(option) ? t(option === "select" ? "bases.selectType" : "bases.multiselectType") : t(`properties.types.${option}`)}

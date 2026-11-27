@@ -74,6 +74,8 @@ export interface TableViewProps {
   onPasteRows?: (rows: PastedRow[]) => Promise<void>;
   /** A row just created: its title opens for typing. */
   renameRowId?: string | null;
+  /** #qchedmun (R4): this table's identity (base and view) for Back to return to the row it opened; none in an embed. */
+  returnKey?: string;
   onRenameDone?: () => void;
 }
 
@@ -104,6 +106,18 @@ export function display(value: BaseValue, type: string): string {
   // `[[Page|alias]]` in a text property reads as its label.
   if (typeof value === "string") return value.replace(new RegExp(String.raw`\[\[(${WIKILINK_PART}*)(?:\|(${WIKILINK_INNER}*))?\]\]`, "g"), (_, target: string, alias?: string) => alias ?? target);
   return String(value);
+}
+
+/**
+ * #qchedmun (R4): the row each table last opened (by its `returnKey`), so Back returns to it as the active cell. Only
+ * a history navigation (popstate) since the open restores it; a fresh visit (the sidebar) forgets it.
+ */
+const returnTo = new Map<string, { rowId: string; col: number }>();
+let poppedSinceOpen = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => {
+    poppedSinceOpen = true;
+  });
 }
 
 export function TableView(props: TableViewProps) {
@@ -227,6 +241,29 @@ export function TableView(props: TableViewProps) {
     if (then) go(moveCell(from, then, rowOrder.length, columns.length));
   };
 
+  /** #qchedmun (R4): open a row, remembering it (and the column) so Back returns to it. */
+  const returnKey = props.returnKey;
+  const onOpenProp = props.onOpen;
+  const openRow = useCallback(
+    (rowId: string, col = 0) => {
+      if (returnKey) {
+        returnTo.set(returnKey, { rowId, col });
+        poppedSinceOpen = false;
+      }
+      onOpenProp(rowId);
+    },
+    [returnKey, onOpenProp],
+  );
+  useEffect(() => {
+    if (!grid || !returnKey) return;
+    const back = returnTo.get(returnKey);
+    if (!back) return;
+    returnTo.delete(returnKey);
+    // A fresh visit, or a row that's gone meanwhile: nothing to return to.
+    if (!poppedSinceOpen || !result.rows.some((row) => row.id === back.rowId)) return;
+    setActive(back);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid, returnKey]);
   /** #12: Tab reached the rows (the first row's Name, while no cell is active): that cell becomes active. */
   const enterGrid = useCallback((rowId: string) => setActive({ rowId, col: 0 }), []);
   const requestEdit = useCallback((rowId: string, col: number) => {
@@ -275,7 +312,7 @@ export function TableView(props: TableViewProps) {
     // #12 (#faqr8pj9): the rows are one Tab stop, so a keyboard user opens a row from its cells: Ctrl/Cmd+Enter.
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
       event.preventDefault();
-      props.onOpen(activeRow.id);
+      openRow(activeRow.id, activePos.col);
       return;
     }
     // Shift+Tab on the very first cell leaves the rows backwards (Tab past the last one already goes to the typing row).
@@ -509,7 +546,7 @@ export function TableView(props: TableViewProps) {
                 renaming={props.renameRowId === row.id}
                 editCol={editRequest?.rowId === row.id ? editRequest.col : null}
                 editSeed={editRequest?.rowId === row.id ? editRequest.seed : undefined}
-                onOpen={props.onOpen}
+                onOpen={openRow}
                 onEditValue={props.onEditValue}
                 onRename={props.onRename}
                 onRenameDone={grid ? renameDone : props.onRenameDone}
@@ -1014,6 +1051,7 @@ const TableRow = memo(function TableRow(props: TableRowProps) {
             {...(props.editCol === col && props.editSeed ? { editSeed: props.editSeed } : {})}
             {...(props.onRequestEdit ? { onRequestEdit: props.onRequestEdit } : {})}
             {...(props.onEditDone ? { onEditDone: props.onEditDone } : {})}
+            {...(props.grid ? { onOpenRow: () => props.onOpen(row.id) } : {})}
           />
         ),
       )}
@@ -1040,11 +1078,35 @@ function TitleCell(props: TableRowProps) {
     if (editing) inputRef.current?.select();
   }, [editing]);
 
+  /** #qchedmun (R5): set once Ctrl/Cmd+Enter has finished this edit, so the input's blur doesn't rename again. */
+  const finished = useRef(false);
+  useEffect(() => {
+    if (editing) finished.current = false;
+  }, [editing]);
   const finish = (save: boolean) => {
+    if (finished.current) return;
+    finished.current = true;
     setEditing(false);
     props.onRenameDone?.();
     const title = draft.trim();
     if (save && title && title !== row.title) void props.onRename(row, title);
+  };
+  /**
+   * #qchedmun (R5): Ctrl/Cmd+Enter renames first, then opens the row under its new id. The rename is awaited, so a
+   * refused one (a name clash) shows its error and opens nothing.
+   */
+  const finishAndOpen = async () => {
+    if (finished.current) return;
+    finished.current = true;
+    setEditing(false);
+    props.onRenameDone?.();
+    const title = draft.trim();
+    if (!title || title === row.title) {
+      props.onOpen(row.id);
+      return;
+    }
+    const id = await props.onRename(row, title);
+    if (typeof id === "string") props.onOpen(id);
   };
 
   return (
@@ -1067,7 +1129,11 @@ function TitleCell(props: TableRowProps) {
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => finish(true)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") finish(true);
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && props.grid) {
+              event.preventDefault();
+              void finishAndOpen();
+            } else if (event.key === "Enter") finish(true);
             else if (event.key === "Escape") finish(false);
           }}
         />
@@ -1115,6 +1181,8 @@ function ValueCell(props: {
   readOnly?: boolean;
   /** #12: in a database grid the cell isn't a Tab stop of its own (the grid's active cell is). */
   grid?: boolean;
+  /** #qchedmun (R5): Ctrl/Cmd+Enter in this cell's editor commits, then opens its row. */
+  onOpenRow?: () => void;
   onEditValue: (row: BaseRow, column: BaseColumn, value: BaseValue) => Promise<boolean>;
   /** #7prbquxu: the database grid asks this cell's editor to open (Enter, F2, a date typed). */
   editRequested?: boolean;
@@ -1159,6 +1227,17 @@ function ValueCell(props: {
   // #5q4vaacm: in the database grid, Tab and Shift+Tab commit the editor (its own blur commit, as clicking away does)
   // and move on, like Notion and a spreadsheet. A Select picker (a portal) bubbles its keys here too: it closes
   // without picking.
+  // #qchedmun (R5): Ctrl/Cmd+Enter in an open editor commits (its own blur commit, as Tab does), then opens the row. A
+  // Select picker closes without picking.
+  const openAfter = (event: React.KeyboardEvent<HTMLElement>): boolean => {
+    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || !props.onOpenRow || event.nativeEvent.isComposing) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    (document.activeElement as HTMLElement | null)?.blur();
+    setEditing(false);
+    props.onOpenRow();
+    return true;
+  };
   const tabOut = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab" || !props.onEditDone || event.nativeEvent.isComposing) return;
     // A date picker (a portal) keeps its own Tab: its month buttons, a datetime's time field, Today and Clear must stay
@@ -1200,7 +1279,9 @@ function ValueCell(props: {
           if (event.currentTarget.contains(event.relatedTarget as Element | null)) return;
           setEditing(false);
         }}
-        onKeyDown={tabOut}
+        onKeyDown={(event) => {
+          if (!openAfter(event)) tabOut(event);
+        }}
       >
         <SelectChips value={value} settings={select} />
         <SelectPicker
@@ -1242,6 +1323,8 @@ function ValueCell(props: {
           // Escape during an IME composition only ends the composition (the editor stays open).
           if (event.key === "Escape") {
             if (!event.nativeEvent.isComposing) setEditing(false);
+          } else if (openAfter(event)) {
+            // Committed and opened (#qchedmun R5).
           } else if (event.key === "Enter" && enterMovesDown && props.onEditDone && !event.nativeEvent.isComposing) {
             // #5q4vaacm (spec §4): Enter commits (the editor's own Enter, a blur) and moves down, as typing over a
             // cell does. Lists keep Enter for their next item, and dates for their picker.
