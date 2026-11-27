@@ -7,6 +7,8 @@ import {
   pickNode,
   visibleBounds,
   type AlphaForce,
+  clockwiseNeighbours,
+  nearestInDirection,
 } from "../src/graph/graph-interaction";
 
 const radius = (node: { r: number }) => node.r;
@@ -145,5 +147,38 @@ describe("fitZoom", () => {
 
   it("is unbounded when everything sits on the centre", () => {
     expect(fitZoom([dot(0, 0)], 0, 0, 100, 100)).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe("keyboard moves on the graph (#5n2p7phw)", () => {
+  const from = { id: "a", x: 100, y: 100 };
+  const points = [
+    from,
+    { id: "right-near-off", x: 140, y: 130 },
+    { id: "right-far-ahead", x: 160, y: 100 },
+    { id: "up", x: 100, y: 40 },
+    { id: "left", x: 30, y: 110 },
+  ];
+
+  it("an arrow goes to the nearest node that way, preferring straight ahead to off to the side", () => {
+    expect(nearestInDirection(from, points, "right")).toBe("right-far-ahead");
+    expect(nearestInDirection(from, points, "up")).toBe("up");
+    expect(nearestInDirection(from, points, "left")).toBe("left");
+  });
+
+  it("nothing that way: stays (null)", () => {
+    expect(nearestInDirection(from, [from, { id: "b", x: 100, y: 50 }], "down")).toBeNull();
+    // Outside the 90° cone (more sideways than ahead) doesn't count.
+    expect(nearestInDirection(from, [from, { id: "c", x: 110, y: 200 }], "right")).toBeNull();
+  });
+
+  it("neighbours go clockwise from 12 o'clock", () => {
+    const around = [
+      { id: "west", x: 50, y: 100 },
+      { id: "south", x: 100, y: 150 },
+      { id: "north", x: 100, y: 50 },
+      { id: "east", x: 150, y: 100 },
+    ];
+    expect(clockwiseNeighbours(from, around)).toEqual(["north", "east", "south", "west"]);
   });
 });

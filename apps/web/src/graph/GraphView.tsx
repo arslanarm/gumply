@@ -98,6 +98,8 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   // #yy347xgi (4): a search dims the rest instead of hiding it (opt-in; isolate stays the default, @lead).
   const [showRest, setShowRest] = useVaultFlag("graph-show-rest");
   const [fitRequest, setFitRequest] = useState<{ ids: ReadonlySet<string>; n: number } | null>(null);
+  /** #5n2p7phw: Escape on the canvas hands the keyboard back to the search field. */
+  const filterRef = useRef<HTMLInputElement | null>(null);
   const reducedMotion = usePrefersReducedMotion();
   // E1: groups and filters, per vault. The graph waits for them, so its first
   // layout already uses them (no restart when they arrive).
@@ -264,6 +266,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               <div className="graph-filter-wrap">
                 <Icon name="search" size={14} className="graph-filter-icon" />
                 <input
+                  ref={filterRef}
                   className="graph-filter"
                   data-testid="graph-filter"
                   type="search"
@@ -439,6 +442,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               forces={settings?.forces}
               spotlight={spotlight}
               fitRequest={fitRequest}
+              onLeave={() => filterRef.current?.focus()}
               onCreatePage={(title) => {
                 const ghost = (drawn ?? filtered).ghosts.find(
                   (candidate) => candidate.title.toLowerCase() === title.toLowerCase(),

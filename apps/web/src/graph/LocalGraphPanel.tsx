@@ -1,5 +1,5 @@
 import type { GraphData, GraphNode, PageId } from "@gumply/core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, fileUrl } from "../api/client.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import { GraphList, useGraphListMode } from "./GraphList.js";
@@ -52,6 +52,8 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
   const t = useT();
   const [depth, setDepth] = useState<Depth>(readDepth);
   const [listMode, setListMode, listModeReady] = useGraphListMode("local");
+  /** #5n2p7phw: Escape on the canvas hands the keyboard to the List toggle (the plain list is one key away). */
+  const listToggleRef = useRef<HTMLButtonElement | null>(null);
   const [data, setData] = useState<GraphData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +165,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
           {/* #62tnekds: the neighbours as a list of links, for the keyboard and screen readers. */}
           <button
             type="button"
+            ref={listToggleRef}
             className={`graph-chip${listMode ? " is-active" : ""}`}
             data-testid="local-graph-list-toggle"
             aria-pressed={listMode}
@@ -221,6 +224,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
             ariaLabel={ariaSummary(filtered)}
             // #yy347xgi (8): zoom in/out and Fit, as on the global graph.
             showControls
+            onLeave={() => listToggleRef.current?.focus()}
             reducedMotion={reducedMotion}
             onOpenPage={openNode}
             colorOf={colorOf}

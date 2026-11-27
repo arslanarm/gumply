@@ -1,0 +1,208 @@
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+
+/**
+ * #5n2p7phw (#62tnekds step 2): the graph canvas from the keyboard. One Tab stop; focus starts on the current page;
+ * the arrows go to the nearest page that way; [ and ] step round the focused page's links; + − 0 zoom and fit;
+ * Enter opens; Escape hands the keyboard back; a polite live region says where the focus is. Synthetic vault.
+ */
+
+const seed = (vault: { seed: (pages: Array<{ title: string; content?: string }>) => Promise<unknown> }) =>
+  vault.seed([
+    { title: 'Hub', content: 'See [[Alpha]], [[Beta]], [[Gamma]] and [[Someday]].' },
+    { title: 'Alpha', content: 'Back to [[Hub]].' },
+    { title: 'Beta', content: 'Back to [[Hub]].' },
+    { title: 'Gamma', content: 'Nothing else.' },
+  ]);
+
+type Probe = { nodes: () => Array<{ id: string; x: number; y: number }>; zoom: () => number };
+const probe = (page: Page, testId: string) =>
+  page.evaluate((id) => {
+    const graph = (window as unknown as { __gumplyGraphs: Record<string, Probe> }).__gumplyGraphs[id]!;
+    return { nodes: graph.nodes(), zoom: graph.zoom() };
+  }, testId);
+
+/** Presses each arrow until the focus moves; the new node must lie that way on screen. */
+async function arrowMoves(page: Page, testId: string) {
+  const canvas = page.getByTestId(testId);
+  for (const [key, check] of [
+    ['ArrowRight', (a: { x: number }, b: { x: number }) => b.x > a.x],
+    ['ArrowLeft', (a: { x: number }, b: { x: number }) => b.x < a.x],
+    ['ArrowDown', (a: { y: number }, b: { y: number }) => b.y > a.y],
+    ['ArrowUp', (a: { y: number }, b: { y: number }) => b.y < a.y],
+  ] as const) {
+    const before = await canvas.getAttribute('data-graph-focused');
+    const nodes = (await probe(page, testId)).nodes;
+    await page.keyboard.press(key);
+    const after = await canvas.getAttribute('data-graph-focused');
+    if (after && after !== before) {
+      const from = nodes.find((node) => node.id === before)!;
+      const to = nodes.find((node) => node.id === after)!;
+      expect(check(from, to), `${key}: ${before} → ${after}`).toBe(true);
+      return after;
+    }
+  }
+  throw new Error('no arrow moved the focus');
+}
+
+test('#5n2p7phw: the global graph by keyboard: Tab in on the current page, arrows, [ ], zoom, Escape back, Enter opens', async ({ page, vault }) => {
+  await seed(vault);
+  await page.goto('/#/Hub');
+  await page.getByTestId('sidebar-graph').click();
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 15_000 });
+
+  // One Tab stop, after the zoom controls; focus starts on the page we came from, and it's announced.
+  await page.getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(canvas).toBeFocused();
+  await expect(canvas).toHaveAttribute('data-graph-focused', 'Hub');
+  await expect(page.getByTestId('graph-canvas-spoken')).toContainText('Hub');
+  await expect(canvas).toHaveAccessibleDescription(/Or switch to List/);
+
+  // ] and [ step round Hub's links, staying on Hub's ring.
+  const ring = ['Alpha', 'Beta', 'Gamma', 'ghost:someday'];
+  await page.keyboard.press(']');
+  const first = await canvas.getAttribute('data-graph-focused');
+  expect(ring).toContain(first);
+  await page.keyboard.press(']');
+  const second = await canvas.getAttribute('data-graph-focused');
+  expect(ring).toContain(second);
+  expect(second).not.toBe(first);
+  await page.keyboard.press('[');
+  await expect(canvas).toHaveAttribute('data-graph-focused', first!);
+
+  // An arrow goes to a page that way on screen, and the live region names it.
+  const moved = await arrowMoves(page, 'graph-canvas');
+  await expect(page.getByTestId('graph-canvas-spoken')).toContainText(moved.replace('ghost:someday', 'Someday'));
+
+  // - zooms out, + zooms in, 0 fits. A five-page graph fits at the zoom cap (8), so - goes first.
+  const fitted = (await probe(page, 'graph-canvas')).zoom;
+  await page.keyboard.press('-');
+  await expect.poll(async () => (await probe(page, 'graph-canvas')).zoom).toBeLessThan(fitted);
+  await page.waitForTimeout(400);
+  const zoom = (await probe(page, 'graph-canvas')).zoom;
+  await page.keyboard.press('+');
+  await expect.poll(async () => (await probe(page, 'graph-canvas')).zoom).toBeGreaterThan(zoom);
+  await page.keyboard.press('0');
+  await expect(canvas).toHaveAttribute('data-graph-fit-reason', 'keyboard');
+
+  // Escape hands the keyboard to the search field; a move's pending announcement doesn't speak after it.
+  await page.keyboard.press(']');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('graph-filter')).toBeFocused();
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('graph-canvas-spoken')).toHaveText('');
+
+  // Back in (the ] before Escape moved it on); Enter does what a click does.
+  await page.getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(canvas).toHaveAttribute('data-graph-focused', /.+/);
+  await page.keyboard.press('Enter');
+  await expect(page).not.toHaveURL(/#graph$/);
+});
+
+test('#5n2p7phw: the local graph by keyboard: in on the page itself, an arrow moves, Enter opens, Escape goes to List', async ({ page, vault }) => {
+  await seed(vault);
+  await page.goto('/#/Hub');
+  await page.getByTestId('local-graph-toggle').click();
+  const local = page.getByTestId('local-graph-canvas');
+  await expect(local).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  await page.getByTestId('local-graph').getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(local).toBeFocused();
+  await expect(local).toHaveAttribute('data-graph-focused', 'Hub');
+  const moved = await arrowMoves(page, 'local-graph-canvas');
+  expect(moved).not.toBe('Hub');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('local-graph-list-toggle')).toBeFocused();
+  // Back in by Tab (a keyboard focus), on the node it left; Enter opens it.
+  await page.getByTestId('local-graph').getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(local).toHaveAttribute('data-graph-focused', moved);
+  await page.keyboard.press('Enter');
+  await expect(page).not.toHaveURL(/#\/Hub$/);
+});
+
+test('#5n2p7phw (@opus-editor): ] by its key position on a ru layout; no ring after a click; a held key is read out once', async ({ page, vault }) => {
+  await seed(vault);
+  await page.goto('/#/Hub');
+  await page.getByTestId('sidebar-graph').click();
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 15_000 });
+
+  // A click on the empty canvas focuses it, but shows no node ring (keyboard mode starts with a key).
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + 6, box.y + box.height - 6);
+  await expect(canvas).toBeFocused();
+  await expect(canvas).not.toHaveAttribute('data-graph-focused', /.+/);
+
+  // Into keyboard mode by Tab, on Hub.
+  await page.getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(canvas).toHaveAttribute('data-graph-focused', 'Hub');
+
+  // A ru layout types "ъ" on the ] key: it still steps round Hub's links (by the key's position).
+  await canvas.evaluate((element) => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'ъ', code: 'BracketRight', bubbles: true, cancelable: true }));
+  });
+  await expect(canvas).not.toHaveAttribute('data-graph-focused', 'Hub');
+  expect(['Alpha', 'Beta', 'Gamma', 'ghost:someday']).toContain(await canvas.getAttribute('data-graph-focused'));
+
+  // A German "+" on the same key position is "+" (zoom in), not "]": the focus stays, the zoom grows.
+  const focusedBefore = await canvas.getAttribute('data-graph-focused');
+  // Zoom out first: the fitted five-page graph is at the zoom cap (8), where + can't grow it.
+  await page.keyboard.press('-');
+  await page.waitForTimeout(400);
+  const zoomBefore = await page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { zoom: () => number }> }).__gumplyGraphs['graph-canvas']!.zoom());
+  await canvas.evaluate((element) => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: '+', code: 'BracketRight', bubbles: true, cancelable: true }));
+  });
+  await expect(canvas).toHaveAttribute('data-graph-focused', focusedBefore!);
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { zoom: () => number }> }).__gumplyGraphs['graph-canvas']!.zoom()))
+    .toBeGreaterThan(zoomBefore);
+
+  // Five quick ] presses (a held key): the live region is written once, after the last.
+  const spoken = page.getByTestId('graph-canvas-spoken');
+  await expect(spoken).not.toHaveText('');
+  await spoken.evaluate((element) => {
+    const w = window as unknown as { __spokenWrites: number };
+    w.__spokenWrites = 0;
+    new MutationObserver(() => {
+      w.__spokenWrites += 1;
+    }).observe(element, { childList: true, characterData: true, subtree: true });
+  });
+  for (let i = 0; i < 5; i += 1) await page.keyboard.press(']', { delay: 10 });
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as unknown as { __spokenWrites: number }).__spokenWrites)).toBe(1);
+});
+
+test('#5n2p7phw (@lead): with a search shown in context ("Show the rest"), the keys walk only the matches', async ({ page, vault }) => {
+  await seed(vault);
+  await page.goto('/#/Hub');
+  await page.getByTestId('sidebar-graph').click();
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  await page.getByTestId('graph-filter').fill('hub OR alpha OR beta');
+  const toggle = page.getByTestId('graph-show-rest');
+  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+  await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 15_000 });
+  const matches = ['Hub', 'Alpha', 'Beta'];
+
+  await page.getByTestId('graph-zoom-in').focus();
+  await page.keyboard.press('Tab');
+  await expect(canvas).toHaveAttribute('data-graph-focused', 'Hub');
+  // ] round Hub's links: only Alpha and Beta (Gamma and the not-created page are dimmed, not walked).
+  for (let i = 0; i < 4; i += 1) {
+    await page.keyboard.press(']');
+    expect(['Alpha', 'Beta']).toContain(await canvas.getAttribute('data-graph-focused'));
+  }
+  // Every arrow lands on a match, or stays.
+  for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowUp']) {
+    await page.keyboard.press(key);
+    expect(matches).toContain(await canvas.getAttribute('data-graph-focused'));
+  }
+});
