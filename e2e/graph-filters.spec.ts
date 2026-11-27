@@ -85,13 +85,16 @@ test('#yy347xgi (4): a search isolates by default; "Show the rest" keeps the res
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  // Enter at once, while the re-drawn graph is still settling: the view fits to the matches, and stays so.
+  await page.getByTestId('graph-filter').press('Enter');
+  await expect(canvas).toHaveAttribute('data-graph-fit-reason', 'matches');
   await expect.poll(async () => (await probe(page)).nodes.length).toBe(4);
   await expect.poll(async () => (await probe(page)).spotlight).toEqual(['Plan']);
   // The subtitle still describes the matches.
   await expect(page.getByTestId('graph-subtitle')).toContainText('1 page');
-
-  // Enter in the field fits the view to the matches.
-  await page.getByTestId('graph-filter').press('Enter');
+  // Once it has settled, no automatic fit has put everything back over the user's fit.
+  await expect(canvas).toHaveAttribute('data-graph-engine', 'stopped', { timeout: 15_000 });
+  await page.waitForTimeout(1000);
   await expect(canvas).toHaveAttribute('data-graph-fit-reason', 'matches');
 
   // Remembered: after a reload, the same search shows in context again.
