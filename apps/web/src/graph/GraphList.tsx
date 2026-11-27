@@ -1,5 +1,6 @@
 import type { GraphNode } from "@gumply/core";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "../api/client.js";
 import { useT } from "../i18n/index.js";
 import { pageHash } from "../lib/routing.js";
 import type { GhostNode } from "./graph-model.js";
@@ -8,6 +9,9 @@ import type { GhostNode } from "./graph-model.js";
  * #62tnekds: the graph as a list, for keyboard and screen-reader use (and anyone who'd rather read it). It lists
  * the pages the graph shows right now (the same search, chips and filters), most linked first, each as a link that
  * opens it; a page not created yet says so, and opening it creates it, as a click on its node does.
+ *
+ * Not virtualized on purpose: it's a list you open on purpose, and even 10,000 pages render once in ~100–200 ms.
+ * Tag and attachment nodes (the graph's "extras") aren't pages and aren't listed.
  */
 export function GraphList(props: {
   nodes: readonly GraphNode[];
@@ -26,22 +30,37 @@ export function GraphList(props: {
       ].sort((a, b) => b.links - a.links || a.title.localeCompare(b.title)),
     [props.nodes, props.ghosts],
   );
+  if (rows.length === 0) {
+    return (
+      <p className="graph-list-empty" role="status" data-testid={`${props.testId}-empty`}>
+        {t("graph.list.empty")}
+      </p>
+    );
+  }
   return (
     <ul className="graph-list" aria-label={props.label} data-testid={props.testId}>
       {rows.map((row) => (
         <li key={row.id} className={`graph-list-row${row.kind === "ghost" ? " is-ghost" : ""}`}>
-          <a
-            href={row.kind === "page" ? pageHash(row.id) : "#"}
-            className="graph-list-title"
-            data-testid={`graph-list-item-${row.id}`}
-            onClick={(event) => {
-              event.preventDefault();
-              if (row.kind === "page") props.onOpenPage(row.id);
-              else props.onCreateGhost(row.ghost);
-            }}
-          >
-            {row.title}
-          </a>
+          {row.kind === "page" ? (
+            <a
+              href={pageHash(row.id)}
+              className="graph-list-title"
+              data-testid={`graph-list-item-${row.id}`}
+              onClick={(event) => {
+                // A modified or non-main click (new tab, new window) is the browser's.
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                props.onOpenPage(row.id);
+              }}
+            >
+              {row.title}
+            </a>
+          ) : (
+            // Creating a page is an action, not a place to go: a button, styled as the titles.
+            <button type="button" className="graph-list-title" data-testid={`graph-list-item-${row.id}`} onClick={() => props.onCreateGhost(row.ghost)}>
+              {row.title}
+            </button>
+          )}
           <span className="graph-list-meta">
             {row.kind === "ghost" ? `${t("graph.list.notCreated")} · ` : ""}
             {t("graph.links", { count: row.links })}
@@ -53,27 +72,59 @@ export function GraphList(props: {
   );
 }
 
-/** #62tnekds: whether the graph shows as a list, remembered per graph (global and local). */
+/** The open vault's path, once per session (the list choice is per vault). */
+let vaultPathPromise: Promise<string> | null = null;
+let vaultPathKnown: string | null = null;
+function vaultPath(): Promise<string> {
+  vaultPathPromise ??= api.health().then(
+    (health) => (vaultPathKnown = health.vaultPath ?? ""),
+    () => (vaultPathKnown = ""),
+  );
+  return vaultPathPromise;
+}
+
+function readListMode(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * #62tnekds: whether the graph shows as a list, remembered per graph (global and local) and **per vault** (keyed by
+ * the vault's path, @lead). It's this browser's view choice, so it lives in local storage, not in the vault's files.
+ */
 export function useGraphListMode(key: "global" | "local"): [boolean, (next: boolean) => void] {
-  const storageKey = `gumply:graph-list:${key}`;
-  const [on, setOn] = useState(() => {
-    try {
-      return window.localStorage.getItem(storageKey) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const storageKey = (vault: string) => `gumply:graph-list:${key}:${vault}`;
+  const [vault, setVault] = useState<string | null>(vaultPathKnown);
+  const [on, setOn] = useState(() => (vaultPathKnown !== null ? readListMode(storageKey(vaultPathKnown)) : false));
+  useEffect(() => {
+    if (vault !== null) return;
+    let live = true;
+    void vaultPath().then((path) => {
+      if (!live) return;
+      setVault(path);
+      setOn(readListMode(storageKey(path)));
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vault]);
   const set = useCallback(
     (next: boolean) => {
       setOn(next);
       try {
-        if (next) window.localStorage.setItem(storageKey, "1");
-        else window.localStorage.removeItem(storageKey);
+        const name = storageKey(vault ?? vaultPathKnown ?? "");
+        if (next) window.localStorage.setItem(name, "1");
+        else window.localStorage.removeItem(name);
       } catch {
         // Private mode: the choice lasts for this visit.
       }
     },
-    [storageKey],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [vault, key],
   );
   return [on, set];
 }

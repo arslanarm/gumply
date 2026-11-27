@@ -37,6 +37,9 @@ test('#62tnekds: List shows the graph\'s pages as links, most linked first; Ente
   await expect(links.first()).toHaveText('Hub');
   await expect(list.getByRole('listitem').filter({ hasText: 'Someday' })).toContainText('not created yet');
   await expect(list.getByRole('listitem').filter({ hasText: 'Hub' })).toContainText('#work');
+  // Creating a page is an action: the not-created row is a button, not a link to nowhere.
+  await expect(list.getByRole('button', { name: 'Someday' })).toBeVisible();
+  await expect(list.getByRole('link', { name: 'Someday' })).toHaveCount(0);
 
   // The picture's own controls aren't there to act on an invisible canvas.
   await expect(page.getByTestId('graph-canvas')).toHaveCount(0);
@@ -46,6 +49,12 @@ test('#62tnekds: List shows the graph\'s pages as links, most linked first; Ente
   await expect(page.getByTestId('graph-forces-toggle')).toHaveCount(0);
   await expect(page.getByTestId('graph-forces-in-list')).toBeVisible();
   await page.getByTestId('graph-panel-toggle').click();
+
+  // A modified click is the browser's (a new tab), not the app's.
+  const opened = page.context().waitForEvent('page');
+  await list.getByRole('link', { name: 'Beta' }).click({ modifiers: ['ControlOrMeta'] });
+  await (await opened).close();
+  await expect(page).toHaveURL(/#graph$/);
 
   // The keyboard reaches a page and Enter opens it.
   await list.getByRole('link', { name: 'Alpha' }).focus();
@@ -63,6 +72,21 @@ test('#62tnekds: the list follows the search and the chips, and the choice is re
   await page.getByTestId('graph-filter').fill('');
   await page.getByRole('button', { name: '#home' }).click();
   await expect(list.getByRole('link')).toHaveText(['Gamma']);
+
+  // Nothing left to list: the graph's own message, not an empty list.
+  await page.getByTestId('graph-panel-toggle').click();
+  await page.getByTestId('graph-filter-showOrphans').click();
+  await page.getByTestId('graph-panel-toggle').click();
+  await expect(page.getByTestId('graph-filter-empty')).toBeVisible();
+  await expect(page.getByTestId('graph-list')).toHaveCount(0);
+  await page.getByTestId('graph-panel-toggle').click();
+  await page.getByTestId('graph-filter-showOrphans').click();
+  await page.getByTestId('graph-panel-toggle').click();
+  await page.getByRole('button', { name: '#home' }).click();
+
+  // Remembered per vault: the key carries the vault's path.
+  const vaultPath = await page.evaluate(async () => (await (await fetch('/api/health')).json()).vaultPath as string);
+  expect(await page.evaluate((path) => window.localStorage.getItem(`gumply:graph-list:global:${path}`), vaultPath)).toBe('1');
 
   // Back on the graph later: still a list.
   await page.reload();

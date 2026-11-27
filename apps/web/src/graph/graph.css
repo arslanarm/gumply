@@ -727,9 +727,14 @@
 }
 
 .graph-list-title {
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text);
-  text-decoration: none;
+  font: inherit;
   font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .graph-list-title:hover {
@@ -744,4 +749,10 @@
 .graph-list-meta {
   color: var(--muted);
   font-size: 0.8125rem;
+}
+
+.graph-list-empty {
+  margin: 0;
+  padding: 1rem;
+  color: var(--muted);
 }
