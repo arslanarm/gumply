@@ -67,6 +67,28 @@ test('#cmun2mix: Filter, Sort, Properties and "+" opened from the keyboard take 
   await expect(page.getByTestId('base-add-column-name')).toBeFocused();
 });
 
+test('#cmun2mix: Filter with a rule starts on a field, never on the rule\'s remove button: Enter right after opening keeps the rule (@opus-editor)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, {
+    ...PEOPLE,
+    'People.base': PEOPLE['People.base'].replace('    name: Table\n', '    name: Table\n    filters:\n      and:\n        - role == "Cook"\n'),
+  });
+  await page.goto('/');
+  await page.getByTestId('page-item-People.base').click();
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann']);
+  await page.getByTestId('base-filter-button').focus();
+  await page.keyboard.press('Enter');
+  const panel = page.getByTestId('base-filter-panel');
+  await expect(panel.getByTestId('base-rule')).toHaveCount(1);
+  await expect.poll(() => panel.evaluate((element) => element.contains(document.activeElement) && document.activeElement !== element)).toBe(true);
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('base-rule-remove'))).toBe(false);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann']);
+  await expect.poll(() => fs.readFile(path.join(E2E_VAULT, 'People.base'), 'utf8')).toContain('role == "Cook"');
+});
+
 test('#cmun2mix: a view\'s menu is a menu: Enter on the active tab opens it on its first item, the arrows move, Escape gives the tab back', async ({ page, request, vault }) => {
   void vault;
   await writeVault(request, PEOPLE);

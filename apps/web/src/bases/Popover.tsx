@@ -72,7 +72,7 @@ export function Popover(props: {
 
   // Focus the first control, so the keyboard can start right away: once the panel is placed. Before that it's
   // `visibility: hidden`, where focus() does nothing (#nr3rkgj2 found it for the column menu; #cmun2mix: every
-  // popover left the keyboard on its trigger). A menu starts on its first item; a panel on its first control. A
+  // popover left the keyboard on its trigger). A menu starts on its first item; a panel on a safe first control. A
   // control that already took the focus inside the panel keeps it.
   const focused = useRef(false);
   useEffect(() => {
@@ -80,7 +80,14 @@ export function Popover(props: {
     focused.current = true;
     const panel = panelRef.current;
     if (!panel || panel.contains(document.activeElement)) return;
-    panel.querySelector<HTMLElement>(props.menu ? `input, ${MENU_ITEMS}` : "input, select, textarea, button")?.focus();
+    // A panel starts where a control asks to (`data-autofocus`), else on its first field, else on its first button
+    // that doesn't remove anything (@opus-editor: an Enter right after opening mustn't delete a rule).
+    const start = props.menu
+      ? panel.querySelector<HTMLElement>(`input, ${MENU_ITEMS}`)
+      : (panel.querySelector<HTMLElement>("[data-autofocus]") ??
+        panel.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled)') ??
+        panel.querySelector<HTMLElement>("button:not(:disabled):not(.base-rule-remove):not(.is-danger)"));
+    start?.focus();
   }, [props.menu, style]);
 
   // #nr3rkgj2: a menu that closes with the keyboard inside it (an item ran) gives it back to the anchor.
