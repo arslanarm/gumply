@@ -77,6 +77,7 @@ import {
   addEdges,
   addFrame,
   addNodes,
+  CLIPBOARD_MIME,
   clipboardFromText,
   clipboardToText,
   closestSides,
@@ -109,6 +110,7 @@ import { NODE_TYPES } from "./nodes.js";
 import { Palette } from "./Swatch.js";
 import { t, useT } from "../i18n/index.js";
 import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
+import { clipboardPlainText } from "./clipboard-text.js";
 import { motionMs } from "../lib/motion.js";
 import { freeSpot, nearestFree } from "./placement.js";
 
@@ -189,6 +191,8 @@ export interface BoardEditorProps {
 const NO_OPEN = () => {};
 /** Attachment size limit (D18), checked before uploading. */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+/** Focusable controls whose own Enter wins over the board's (#sdwrzdgx). */
+const CONTROL_SELECTOR = "button, a[href], [role='button'], [role='menuitem'], [role='menuitemcheckbox'], [role='option'], [role='tab']";
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
 const CLICK_SLOP = 5;
@@ -1462,6 +1466,9 @@ function BoardCanvas(props: BoardEditorProps) {
         return;
       }
       if (key === "Enter") {
+        // #sdwrzdgx: on a focused button (a tool, a colour, zoom, a card's Open) Enter presses
+        // it; only on the board or an object does it place or edit.
+        if (event.target instanceof Element && event.target.closest(CONTROL_SELECTOR)) return;
         // With a tool chosen: place the object in the middle of the view and start typing in it.
         if (tool === "sticky" || tool === "text" || tool === "shape" || tool === "frame") {
           event.preventDefault();
@@ -1500,12 +1507,11 @@ function BoardCanvas(props: BoardEditorProps) {
         fit();
         return;
       }
-      if (key === "]") {
-        reorder("front");
-        return;
-      }
-      if (key === "[") {
-        reorder("back");
+      if (key === "]" || key === "[") {
+        // #sdwrzdgx: frames always sit behind cards, so a frames-only selection doesn't reorder; say why.
+        const chosen = boardRef.current.nodes.filter((node) => selectedRef.current.nodes.includes(node.id));
+        if (chosen.length > 0 && chosen.every((node) => node.type === "group")) announce(t("board.framesBehind"));
+        else reorder(key === "]" ? "front" : "back");
         return;
       }
       if (event.shiftKey) return;
@@ -1540,7 +1546,10 @@ function BoardCanvas(props: BoardEditorProps) {
       const ids = new Set(selectedRef.current.nodes);
       if (ids.size === 0) return;
       event.preventDefault();
-      event.clipboardData?.setData("text/plain", clipboardToText(copySelection(boardRef.current, ids)));
+      const clip = copySelection(boardRef.current, ids);
+      // #sdwrzdgx: the board format under its own type; readable text for pages and other apps.
+      event.clipboardData?.setData(CLIPBOARD_MIME, clipboardToText(clip));
+      event.clipboardData?.setData("text/plain", clipboardPlainText(clip, pagesRef.current));
       pasteCount.current = 0;
       if (cut) apply((current) => deleteElements(current, ids));
     };
@@ -1557,9 +1566,10 @@ function BoardCanvas(props: BoardEditorProps) {
         return;
       }
       const text = data.getData("text/plain");
-      if (!text) return;
+      // The board format, or (copied before #sdwrzdgx) the same JSON as text.
+      const clip = clipboardFromText(data.getData(CLIPBOARD_MIME)) ?? clipboardFromText(text);
+      if (!text && !clip) return;
       event.preventDefault();
-      const clip = clipboardFromText(text);
       const at = pointerRef.current ?? viewCentre();
       if (clip) {
         pasteCount.current += 1;
@@ -1812,6 +1822,8 @@ function BoardCanvas(props: BoardEditorProps) {
   );
   const commonColor =
     selectedNodes.length > 0 && selectedNodes.every((node) => node.color === selectedNodes[0]?.color) ? selectedNodes[0]?.color : null;
+  // #sdwrzdgx: frames always sit behind cards (as in Obsidian), so front/back can't move frames-only selections.
+  const framesOnly = selectedNodes.length > 0 && selectedNodes.every((node) => node.type === "group");
   const shapesSelected = selectedNodes.length > 0 && selectedNodes.every((node) => gumplyNodeData(node)?.kind === "shape");
   const selectedShape = shapesSelected ? (gumplyNodeData(selectedNodes[0] as CanvasNode) as { shape: GumplyShape }).shape : null;
   const showNodeToolbar = selectedNodeIds.length > 0 && !editing && !dragging && tool === "select";
@@ -1955,10 +1967,32 @@ function BoardCanvas(props: BoardEditorProps) {
                   </div>
                 ) : null}
                 <div className="board-context-group">
-                  <button type="button" className="board-context-button" aria-label={t("board.bringToFront")} data-tooltip={`${t("board.bringToFront")} · ]`} data-testid="board-front" onClick={() => reorder("front")}>
+                  <button
+                    type="button"
+                    className="board-context-button"
+                    aria-label={t("board.bringToFront")}
+                    aria-disabled={framesOnly || undefined}
+                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
+                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.bringToFront")} · ]`}
+                    data-testid="board-front"
+                    onClick={() => {
+                      if (!framesOnly) reorder("front");
+                    }}
+                  >
                     <BoardIcon name="front" size={16} />
                   </button>
-                  <button type="button" className="board-context-button" aria-label={t("board.sendToBack")} data-tooltip={`${t("board.sendToBack")} · [`} data-testid="board-back" onClick={() => reorder("back")}>
+                  <button
+                    type="button"
+                    className="board-context-button"
+                    aria-label={t("board.sendToBack")}
+                    aria-disabled={framesOnly || undefined}
+                    aria-description={framesOnly ? t("board.framesBehind") : undefined}
+                    data-tooltip={framesOnly ? t("board.framesBehind") : `${t("board.sendToBack")} · [`}
+                    data-testid="board-back"
+                    onClick={() => {
+                      if (!framesOnly) reorder("back");
+                    }}
+                  >
                     <BoardIcon name="back" size={16} />
                   </button>
                   <button type="button" className="board-context-button is-danger" aria-label={t("common.delete")} data-tooltip={`${t("common.delete")} · Del`} data-testid="board-delete" onClick={deleteSelection}>
