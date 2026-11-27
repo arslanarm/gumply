@@ -1520,6 +1520,17 @@ function BoardCanvas(props: BoardEditorProps) {
         select(boardRef.current.nodes.map((node) => node.id));
         return;
       }
+      // #b9425ktw D (@lead: not mouse-only): Alt+Shift+L/C/R/T/M/B align, Alt+Shift+H/V distribute a multi-selection.
+      // By the key's position (event.code), so they work in any keyboard layout, and Alt's dead keys on macOS don't
+      // matter. Tabbing to the Align button would select one object instead.
+      if (event.altKey && event.shiftKey && !mod) {
+        const how = ALIGN_KEYS[event.code];
+        if (how && selectedRef.current.nodes.length >= 2) {
+          event.preventDefault();
+          arrange(how);
+          return;
+        }
+      }
       if (mod || event.altKey) return;
 
       // Tab / Shift+Tab: the next object in reading order; past either end, out of the board.
@@ -1598,17 +1609,6 @@ function BoardCanvas(props: BoardEditorProps) {
         const [first] = selectedRef.current.nodes;
         if (first) announce(t("board.a11y.moved", { label: ids.size === 1 ? describe(first) : String(ids.size) }));
         return;
-      }
-      // #b9425ktw D (@lead: not mouse-only): Alt+Shift+L/C/R/T/M/B align, Alt+Shift+H/V distribute a multi-selection.
-      // By the key's position (event.code), so they work in any keyboard layout, and Alt's dead keys on macOS don't
-      // matter. Tabbing to the Align button would select one object instead.
-      if (event.altKey && event.shiftKey && !mod) {
-        const how = ALIGN_KEYS[event.code];
-        if (how && selectedRef.current.nodes.length >= 2) {
-          event.preventDefault();
-          arrange(how);
-          return;
-        }
       }
       if (key === "!" || (event.shiftKey && event.code === "Digit1")) {
         event.preventDefault();
