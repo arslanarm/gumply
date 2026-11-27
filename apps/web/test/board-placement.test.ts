@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { freeSpot } from "../src/board/placement";
+import { freeSpot, nearestFree } from "../src/board/placement";
 
 /**
  * #b9425ktw (#fzrwse3y's P3 5): a new page card goes where nothing is, near where it was asked for, instead of on
@@ -59,5 +59,14 @@ describe("freeSpot", () => {
     const items = [{ x: -400, y: -400, width: 1100, height: 520 }];
     const at = freeSpot({ x: 0, y: 0, width: 100, height: 60 }, items);
     expect(Math.hypot(at.x, at.y)).toBeLessThanOrEqual(160);
+  });
+
+  it("nearestFree says when nothing is free (in view): the caller then looks wider and moves the view, rather than covering an item", () => {
+    const view = { x: -150, y: -100, width: 400, height: 300 };
+    const items = [{ x: -100, y: -100, width: 200, height: 200 }];
+    expect(nearestFree({ x: 0, y: 0, ...card }, items, view)).toBeNull();
+    const wider = nearestFree({ x: 0, y: 0, ...card }, items);
+    expect(wider).not.toBeNull();
+    expect(overlaps({ ...wider!, ...card }, items[0]!)).toBe(false);
   });
 });
