@@ -1476,6 +1476,13 @@ ol.base-list {
   overflow-x: auto;
 }
 
+/* #bg7c9bzk (@lead): columns cut off at the right fade out over the last 3rem, so a wide sheet says it scrolls
+   even where the scrollbar is hidden until used. A mask, so it works on any background, light or dark. */
+.base-paste-grid[data-overflow="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
+}
+
 /* #bg7c9bzk (#11): the controls are the sample's header row, so they line up with its columns. */
 .base-paste-sample col {
   width: 10rem;
