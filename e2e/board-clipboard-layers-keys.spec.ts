@@ -62,6 +62,21 @@ const CROSSING = {
   edges: [{ id: 'e', fromNode: 'l', fromSide: 'right', toNode: 'r', toSide: 'left', label: 'across', toEnd: 'arrow' }],
 };
 
+/**
+ * Measured in Obsidian 1.14 (#sdwrzdgx slot): an arrow from a card inside a frame to one outside passes *under* a
+ * card listed before the frame, and that card shows over the frame's fill (frames are always at the back).
+ */
+const LEAVING = {
+  nodes: [
+    { id: 'under', type: 'text', text: 'Listed first', x: 40, y: 220, width: 160, height: 60 },
+    { id: 'c', type: 'text', text: 'Earlier', x: 550, y: 50, width: 160, height: 200 },
+    { id: 'g', type: 'group', label: 'Frame', x: 0, y: 0, width: 400, height: 300 },
+    { id: 'in', type: 'text', text: 'Inside', x: 40, y: 100, width: 160, height: 100 },
+    { id: 'out', type: 'text', text: 'Outside', x: 800, y: 100, width: 160, height: 100 },
+  ],
+  edges: [{ id: 'e', fromNode: 'in', fromSide: 'right', toNode: 'out', toSide: 'left', label: 'leaves', toEnd: 'arrow' }],
+};
+
 async function openGrouped(page: Page, theme: 'light' | 'dark' = 'light', canvas: { nodes: unknown[] } = GROUPED) {
   await page.goto('/board-lab.html?reset=1');
   await page.evaluate((json) => window.localStorage.setItem('gumply:board-lab:lab', json), JSON.stringify(canvas));
@@ -201,6 +216,32 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
     expect(card).toBeGreaterThan(-1);
     expect(label).toBeGreaterThan(-1);
     expect(label).toBeLessThan(card);
+  });
+
+  test('as in Obsidian: an arrow leaving a frame passes under a card listed before the frame, which shows over the fill', async ({ page }) => {
+    await openGrouped(page, 'light', LEAVING);
+    const hits = () =>
+      page.evaluate(() => {
+        const path = document.querySelector<SVGPathElement>('.react-flow__edge path.board-edge-path');
+        const matrix = path?.getScreenCTM();
+        const earlier = document.querySelector<HTMLElement>('.react-flow__node[data-id="c"]')?.getBoundingClientRect();
+        const first = document.querySelector<HTMLElement>('.react-flow__node[data-id="under"]')?.getBoundingClientRect();
+        if (!path || !matrix || !earlier || !first) return null;
+        const at = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>('.react-flow__node')?.dataset.id ?? 'not a node';
+        // The point of the arrow that lies over the earlier card.
+        let over = 'none';
+        const length = path.getTotalLength();
+        for (let i = 1; i < 40; i += 1) {
+          const p = path.getPointAtLength((length * i) / 40);
+          const s = new DOMPoint(p.x, p.y).matrixTransform(matrix);
+          if (s.x > earlier.left + 8 && s.x < earlier.right - 8) {
+            over = at(s.x, s.y);
+            break;
+          }
+        }
+        return { over, first: at(first.x + first.width / 2, first.y + first.height / 2) };
+      });
+    await expect.poll(hits).toEqual({ over: 'c', first: 'under' });
   });
 
   test('Enter on a focused toolbar button chooses the tool; Enter on the object still edits it', async ({ page }) => {
