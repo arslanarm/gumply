@@ -9,7 +9,7 @@
  */
 import { canvasNodeKind, type CanvasBoard, type CanvasEdge, type CanvasNode, type CanvasNodeKind } from "@gumply/core";
 import type { Edge, Node } from "@xyflow/react";
-import { closestSides, nodesInside } from "./model.js";
+import { closestSides } from "./model.js";
 
 export interface BoardNodeData extends Record<string, unknown> {
   node: CanvasNode;
@@ -22,7 +22,7 @@ export interface BoardNodeData extends Record<string, unknown> {
 export interface BoardEdgeData extends Record<string, unknown> {
   edge: CanvasEdge;
   editing: boolean;
-  /** The edges' z-index (see {@link edgeLayer}); their labels use it too. */
+  /** The edges' z-index (see {@link boardLayers}); their labels use it too. */
   layer: number;
 }
 
@@ -44,7 +44,7 @@ export function flowNodeType(kind: CanvasNodeKind): string {
   }
 }
 
-function buildNode(node: CanvasNode, index: number, editing: boolean, selected: boolean, resizable: boolean): BoardFlowNode {
+function buildNode(node: CanvasNode, z: number, editing: boolean, selected: boolean, resizable: boolean): BoardFlowNode {
   const kind = canvasNodeKind(node);
   const flowNode: BoardFlowNode = {
     id: node.id,
@@ -52,8 +52,8 @@ function buildNode(node: CanvasNode, index: number, editing: boolean, selected: 
     position: { x: node.x, y: node.y },
     width: node.width,
     height: node.height,
-    // Array order is the z-order (JSON Canvas / Obsidian); see nodeLayer.
-    zIndex: nodeLayer(index),
+    // Frames at the back, then edges, then the other nodes in array order (as Obsidian draws them); see boardLayers.
+    zIndex: z,
     data: { node, kind, editing, resizable },
     draggable: !editing,
     className: `board-node board-node-${kind}`,
@@ -73,8 +73,10 @@ export function syncNodes(
   selected: ReadonlySet<string>,
 ): BoardFlowNode[] {
   const byId = new Map(previous.map((node) => [node.id, node]));
-  return board.nodes.map((node, index) => {
+  const layers = boardLayers(board).nodes;
+  return board.nodes.map((node) => {
     const old = byId.get(node.id);
+    const z = layers.get(node.id) ?? 0;
     const editing = node.id === editingId;
     const isSelected = selected.has(node.id);
     const resizable = isSelected && selected.size === 1 && !editing;
@@ -85,7 +87,7 @@ export function syncNodes(
     if (
       old &&
       old.data.node === node &&
-      old.zIndex === nodeLayer(index) &&
+      old.zIndex === z &&
       old.data.editing === editing &&
       old.data.resizable === resizable &&
       Boolean(old.selected) === isSelected &&
@@ -98,39 +100,36 @@ export function syncNodes(
     ) {
       return old;
     }
-    const next = buildNode(node, index, editing, isSelected, resizable);
+    const next = buildNode(node, z, editing, isSelected, resizable);
     if (old?.measured) next.measured = old.measured;
     return next;
   });
 }
 
 /**
- * Layers (#sdwrzdgx): nodes sit on even z-indexes in array order. An edge
- * sits just above the highest frame (group) that holds either of its ends, so
- * an arrow inside a frame is drawn over the frame's fill (as in Obsidian) but
- * stays under the cards; an edge with no end in a frame stays on 0, under
- * every node, as before.
+ * Layers (#sdwrzdgx), as Obsidian 1.14 draws a canvas (measured in a sealed Obsidian): frames (groups) always at
+ * the back, a larger one behind a smaller one; then every edge and edge label; then the other nodes in array order.
+ * So arrows show over a frame's fill and pass under every card, and a card listed before its frame still shows.
  */
-export function nodeLayer(index: number): number {
-  return index * 2;
+export interface BoardLayers {
+  /** Each node's z-index. */
+  nodes: Map<string, number>;
+  /** The z-index every edge (and its label) is drawn on. */
+  edges: number;
 }
 
-/** Each node's layer floor for edges: one above the highest frame it lies inside (0 if none). */
-export function edgeFloors(board: CanvasBoard): Map<string, number> {
-  const floors = new Map<string, number>();
-  const frames = board.nodes.map((node, index) => ({ node, index })).filter(({ node }) => node.type === "group");
-  if (frames.length === 0) return floors;
-  for (const { node: frame, index } of frames) {
-    for (const inner of nodesInside(board, frame)) {
-      const layer = nodeLayer(index) + 1;
-      if ((floors.get(inner.id) ?? 0) < layer) floors.set(inner.id, layer);
-    }
-  }
-  return floors;
-}
-
-export function edgeLayer(edge: CanvasEdge, floors: ReadonlyMap<string, number>): number {
-  return Math.max(floors.get(edge.fromNode) ?? 0, floors.get(edge.toNode) ?? 0);
+export function boardLayers(board: CanvasBoard): BoardLayers {
+  const frames = board.nodes
+    .map((node, index) => ({ node, index }))
+    .filter(({ node }) => node.type === "group")
+    .sort((a, b) => b.node.width * b.node.height - a.node.width * a.node.height || a.index - b.index);
+  const nodes = new Map<string, number>();
+  frames.forEach(({ node }, rank) => nodes.set(node.id, rank));
+  const edges = frames.length;
+  board.nodes.forEach((node, index) => {
+    if (node.type !== "group") nodes.set(node.id, edges + 1 + index);
+  });
+  return { nodes, edges };
 }
 
 function edgeSides(edge: CanvasEdge, nodes: ReadonlyMap<string, CanvasNode>): [string, string] {
@@ -149,9 +148,8 @@ export function syncEdges(
 ): BoardFlowEdge[] {
   const byId = new Map(previous.map((edge) => [edge.id, edge]));
   const nodes = new Map(board.nodes.map((node) => [node.id, node]));
-  const floors = edgeFloors(board);
+  const layer = boardLayers(board).edges;
   return board.edges.map((edge) => {
-    const layer = edgeLayer(edge, floors);
     const old = byId.get(edge.id);
     const editing = edge.id === editingId;
     const [sourceHandle, targetHandle] = edgeSides(edge, nodes);
