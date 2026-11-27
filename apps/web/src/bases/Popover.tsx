@@ -70,18 +70,17 @@ export function Popover(props: {
     };
   }, [anchor, onClose]);
 
+  // Focus the first control, so the keyboard can start right away: once the panel is placed. Before that it's
+  // `visibility: hidden`, where focus() does nothing (#nr3rkgj2 found it for the column menu; #cmun2mix: every
+  // popover left the keyboard on its trigger). A menu starts on its first item; a panel on its first control. A
+  // control that already took the focus inside the panel keeps it.
+  const focused = useRef(false);
   useEffect(() => {
-    // Focus the first control, so the keyboard can start right away.
-    panelRef.current?.querySelector<HTMLElement>("input, select, button")?.focus();
-  }, []);
-
-  // #nr3rkgj2: the effect above runs while the panel is still `visibility: hidden` (before it's placed), so its
-  // focus() does nothing and the keyboard stayed on the anchor. A menu takes the keyboard once it's placed.
-  const menuFocused = useRef(false);
-  useEffect(() => {
-    if (!props.menu || menuFocused.current || style.visibility === "hidden") return;
-    menuFocused.current = true;
-    panelRef.current?.querySelector<HTMLElement>(`input, ${MENU_ITEMS}`)?.focus();
+    if (focused.current || style.visibility === "hidden") return;
+    focused.current = true;
+    const panel = panelRef.current;
+    if (!panel || panel.contains(document.activeElement)) return;
+    panel.querySelector<HTMLElement>(props.menu ? `input, ${MENU_ITEMS}` : "input, select, textarea, button")?.focus();
   }, [props.menu, style]);
 
   // #nr3rkgj2: a menu that closes with the keyboard inside it (an item ran) gives it back to the anchor.
