@@ -94,6 +94,23 @@ test.describe('sidebar row menu (#ux5cukze)', () => {
     await expect(page.locator('[data-page-id="People.base"]')).toHaveAttribute('aria-selected', 'true');
   });
 
+  test('#pypzxe6i: a board row\'s ⋯ has its own export and no page-only items (the exact list)', async ({ page, request, vault }) => {
+    await vault.seed([{ title: 'Alpha', content: 'A' }]);
+    await createBoard(request, 'Sketch');
+    await page.goto(`/${hashOf('Alpha')}`);
+    await page.getByTestId('page-item-Sketch.canvas').hover();
+    await page.getByTestId('page-menu-button-Sketch.canvas').click();
+    await expect(page.getByTestId('page-menu-Sketch.canvas').getByRole('menuitem')).toHaveText([
+      'Rename',
+      'Duplicate',
+      'Copy link',
+      'Move to…',
+      'Export as image…',
+      'History…',
+      'Delete whiteboard',
+    ]);
+  });
+
   test("a database's own rows folder is hidden under it; its ⋯ menu shows them, and the menu's exact list (#7prbquxu phase 4)", async ({ page, request, vault }) => {
     void vault;
     const created = await request.post(`${API_URL}/api/bases`, { data: { title: 'People', rows: true, viewName: 'Table' } });
