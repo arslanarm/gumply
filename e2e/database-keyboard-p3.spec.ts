@@ -120,3 +120,24 @@ test('R5: Ctrl/Cmd+Enter in an open editor commits, then opens the row; in the N
   await expect(page).toHaveURL(/#\/People\/Annie$/);
   await expect.poll(() => fs.access(path.join(E2E_VAULT, 'People/Annie.md')).then(() => true, () => false)).toBe(true);
 });
+
+test('R5: when the save is refused, Ctrl/Cmd+Enter stays on the table with the error, so the user can retry (@graph-dev, @lead)', async ({ page, request, vault }) => {
+  void vault;
+  await writeVault(request, PEOPLE);
+  await openPeople(page);
+  // Bo's next save is refused (as a change made elsewhere meanwhile would be).
+  await page.route(/\/api\/pages\/People(%2F|\/)Bo$/, async (route) => {
+    if (route.request().method() === 'PUT') await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'Bo changed on disk' }) });
+    else await route.fallback();
+  });
+  await page.getByTestId('base-row-People/Bo').locator('[data-grid-col]').nth(1).click();
+  const editor = page.getByTestId('base-cell-editor-People/Bo-note.role').locator('input').first();
+  await expect(editor).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('Diver');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.getByRole('alert').first()).toBeVisible();
+  await expect(page).toHaveURL(/People\.base/);
+  await expect(page.getByTestId('base-table')).toBeVisible();
+  expect(await read('People/Bo.md')).toBe(PEOPLE['People/Bo.md']);
+});
