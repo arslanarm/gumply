@@ -112,13 +112,14 @@ test('#yy347xgi (4): a fit pinned to matches that a filter then removes is forgo
   await openGraph(page);
   const canvas = page.getByTestId('graph-canvas');
   await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
-  // Pin the fit to the not-created page's match.
-  await page.getByTestId('graph-filter').fill('someday');
+  // Pin the fit to two matches, one of them the not-created page (a real one keeps the canvas on screen).
+  await page.getByTestId('graph-filter').fill('someday OR notes');
   const toggle = page.getByTestId('graph-show-rest');
   if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
   await page.getByTestId('graph-filter').press('Enter');
   await expect(canvas).toHaveAttribute('data-graph-fit-reason', 'matches');
-  // "Existing files only" removes that page: the pin goes, and the next fit is the ordinary one.
+  // "Existing files only" removes the not-created page: the matches change, the pin goes, and the next fit is the
+  // ordinary one.
   await page.getByTestId('graph-panel-toggle').click();
   await page.getByTestId('graph-filter-hideUnresolved').click();
   await expect(canvas).not.toHaveAttribute('data-graph-fit-reason', 'matches', { timeout: 10_000 });
