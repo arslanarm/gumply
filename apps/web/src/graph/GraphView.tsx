@@ -1,5 +1,5 @@
 import type { GraphData, GraphNode, GraphSettings, PageId } from "@gumply/core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, fileUrl, isVaultIndexing } from "../api/client.js";
 import { Icon } from "../components/Icon.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
@@ -41,6 +41,10 @@ export interface GraphViewProps {
 
 type Status = "loading" | "ready" | "error";
 
+/** #yy347xgi (2): below this graph width the legend starts closed. */
+const LEGEND_MIN_WIDTH = 900;
+const LEGEND_KEY = "gumply:graph-legend";
+
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) return error.message;
@@ -57,7 +61,35 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [legendOpen, setLegendOpen] = useState(true);
+  // #yy347xgi (2): the legend is open on a wide graph and closed on a narrow one (under 900 px it covers too much),
+  // until the user chooses; then their choice is kept (this browser).
+  const [legendChoice, setLegendChoice] = useState<boolean | null>(() => {
+    try {
+      const stored = window.localStorage.getItem(LEGEND_KEY);
+      return stored === null ? null : stored === "1";
+    } catch {
+      return null;
+    }
+  });
+  const [bodyWidth, setBodyWidth] = useState<number | null>(null);
+  const bodyObserver = useRef<ResizeObserver | null>(null);
+  const bodyRef = useCallback((element: HTMLDivElement | null) => {
+    bodyObserver.current?.disconnect();
+    bodyObserver.current = null;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    setBodyWidth(element.clientWidth);
+    bodyObserver.current = new ResizeObserver(() => setBodyWidth(element.clientWidth));
+    bodyObserver.current.observe(element);
+  }, []);
+  const legendOpen = legendChoice ?? (bodyWidth === null || bodyWidth >= LEGEND_MIN_WIDTH);
+  const setLegendOpen = (next: boolean) => {
+    setLegendChoice(next);
+    try {
+      window.localStorage.setItem(LEGEND_KEY, next ? "1" : "0");
+    } catch {
+      // Private mode: the choice lasts for this visit.
+    }
+  };
   const [controlsOpen, setControlsOpen] = useState(false);
   const [listMode, setListMode, listModeReady] = useGraphListMode("global");
   // #yy347xgi (4): a search dims the rest instead of hiding it (opt-in; isolate stays the default, @lead).
@@ -207,7 +239,17 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
         <div>
           <h2>{t("graph.title")}</h2>
           <p className="graph-subtitle" data-testid="graph-subtitle">
-            {hasPages && data && filtered ? graphSubtitle(filtered) : t("graph.subtitle")}
+            {/* #yy347xgi (15): each part stays whole on a narrow window ("8 not created yet" never splits). */}
+            {hasPages && data && filtered
+              ? graphSubtitle(filtered)
+                  .split(" · ")
+                  .map((part, index) => (
+                    <span key={index} className="graph-subtitle-part">
+                      {index > 0 ? " · " : ""}
+                      {part}
+                    </span>
+                  ))
+              : t("graph.subtitle")}
           </p>
         </div>
         <div className="graph-toolbar">
@@ -287,7 +329,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
                 className={`button-secondary graph-legend-toggle${legendOpen ? " is-active" : ""}`}
                 aria-expanded={legendOpen}
                 aria-controls="graph-legend"
-                onClick={() => setLegendOpen((value) => !value)}
+                onClick={() => setLegendOpen(!legendOpen)}
               >
                 {t("graph.legend")}
               </button>
@@ -327,7 +369,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
         </div>
       ) : null}
 
-      <div className="graph-body">
+      <div className="graph-body" ref={bodyRef}>
         {status === "loading" || !settings || !listModeReady ? (
           <div className="graph-state graph-state-loading" data-testid="graph-loading">
             {/* #g95wkd9y: a vault just opened is still indexing its links; the graph waits for them. */}
@@ -442,6 +484,18 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
                 {t("graph.legendIcon")}
               </p>
             ) : null}
+            {/* #yy347xgi (12): the ring around the page you came from. */}
+            {highlightId && drawn?.nodes.some((node) => node.id === highlightId) ? (
+              <p className="graph-legend-row" data-testid="graph-legend-current">
+                <span className="graph-legend-ring" aria-hidden="true" /> {t("graph.legendCurrent")}
+              </p>
+            ) : null}
+            {/* #yy347xgi (5): with the Tags filter on, tag nodes (drawn with a ring of their colour). */}
+            {settings?.filters.showTags ? (
+              <p className="graph-legend-row" data-testid="graph-legend-tag-node">
+                <span className="graph-legend-tag-node" aria-hidden="true" /> {t("graph.legendTagNode")}
+              </p>
+            ) : null}
             {legendTags.length > 0 ? (
               <p className="graph-legend-caption">{t("graph.legendColour")}</p>
             ) : null}
@@ -456,6 +510,12 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
                 #{tag}
               </p>
             ))}
+            {/* #yy347xgi (11): grey is a page with no tag (or one no group colours). */}
+            {legendTags.length > 0 ? (
+              <p className="graph-legend-row" data-testid="graph-legend-no-tag">
+                <span className="graph-legend-solid" aria-hidden="true" /> {t("graph.legendNoTag")}
+              </p>
+            ) : null}
           </aside>
         ) : null}
       </div>

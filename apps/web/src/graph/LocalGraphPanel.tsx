@@ -137,6 +137,10 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
         {embedded ? null : <h2>{t("graph.localTitle")}</h2>}
         <div className="local-graph-actions">
           <div className="local-graph-depth" role="group" aria-label={t("graph.linkDepth")}>
+            {/* #yy347xgi (7): a visible label for the 1 / 2 (the group's own name stays for screen readers). */}
+            <span className="local-graph-depth-label" aria-hidden="true">
+              {t("graph.depth")}
+            </span>
             <button
               type="button"
               className={`graph-chip${depth === 1 ? " is-active" : ""}`}
@@ -215,6 +219,8 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
             centerId={pageId}
             testId="local-graph-canvas"
             ariaLabel={ariaSummary(filtered)}
+            // #yy347xgi (8): zoom in/out and Fit, as on the global graph.
+            showControls
             reducedMotion={reducedMotion}
             onOpenPage={openNode}
             colorOf={colorOf}

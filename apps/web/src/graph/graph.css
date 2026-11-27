@@ -757,3 +757,37 @@
   padding: 1rem;
   color: var(--muted);
 }
+
+/* #yy347xgi (15): a subtitle part never splits across lines. */
+.graph-subtitle-part {
+  white-space: nowrap;
+}
+
+/* #yy347xgi (12): the ring drawn around the page you came from. */
+.graph-legend-ring {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+/* #yy347xgi (5): a tag node, drawn with a ring of its colour around the dot. */
+.graph-legend-tag-node {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 2px;
+  border-radius: 50%;
+  background: var(--graph-page);
+  box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 3px var(--graph-page);
+}
+
+/* #yy347xgi (7): the local graph's depth buttons say what they are. */
+.local-graph-depth-label {
+  align-self: center;
+  margin-right: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}

@@ -10,6 +10,7 @@ import {
   ghostDetail,
   graphPaletteFromStyles,
   isGhostId,
+  isTagNodeId,
   labelledIds,
   neighbourIds,
   nodeColor,
@@ -117,6 +118,8 @@ const FIT_PADDING = 40;
 const LABEL_ALLOWANCE = 16;
 /** Auto-fit never zooms in further than this (matches the user max zoom). */
 const MAX_FIT_ZOOM = 8;
+/** #yy347xgi (5): the gap between a tag node's dot and its ring, in CSS px. */
+const TAG_RING_GAP_PX = 2.5;
 /** #yy347xgi (4): up to this many matches of a search shown in context get their labels. */
 const MATCH_LABELS = 30;
 /** ... nor further out (very large vaults still show every node). */
@@ -895,6 +898,9 @@ export function GraphCanvas({
         if (items.length === 0) return;
         ctx.globalAlpha = alpha;
         const fills = new Map<string, Path2D>();
+        // #yy347xgi (5): tag nodes get a ring of their own colour around the dot, at every size, so they read apart
+        // from pages (keep it if dots ever shrink, #t38fvsrw).
+        const rings = new Map<string, Path2D>();
         const outlines = new Path2D();
         const ghosts = new Path2D();
         let ghostCount = 0;
@@ -928,6 +934,16 @@ export function GraphCanvas({
           path.arc(x, y, r, 0, Math.PI * 2);
           outlines.moveTo(x + r, y);
           outlines.arc(x, y, r, 0, Math.PI * 2);
+          if (isTagNodeId(node.id)) {
+            let ring = rings.get(style.fill);
+            if (!ring) {
+              ring = new Path2D();
+              rings.set(style.fill, ring);
+            }
+            const ringR = r + TAG_RING_GAP_PX / k;
+            ring.moveTo(x + ringR, y);
+            ring.arc(x, y, ringR, 0, Math.PI * 2);
+          }
         }
         for (const [fill, path] of fills) {
           ctx.fillStyle = fill;
@@ -937,6 +953,13 @@ export function GraphCanvas({
           ctx.lineWidth = 1.2 / k;
           ctx.strokeStyle = colors.panel;
           ctx.stroke(outlines);
+        }
+        if (rings.size > 0) {
+          ctx.lineWidth = 1.5 / k;
+          for (const [fill, ring] of rings) {
+            ctx.strokeStyle = fill;
+            ctx.stroke(ring);
+          }
         }
         if (ghostCount > 0) {
           ctx.setLineDash([4 / k, 3 / k]);

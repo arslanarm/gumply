@@ -113,7 +113,11 @@
       "localLabel": "Pages linked with this one",
       "empty": "No pages to list."
     },
-    "showRest": "Show the rest"
+    "showRest": "Show the rest",
+    "legendCurrent": "Current page",
+    "legendTagNode": "Tag",
+    "legendNoTag": "No tag",
+    "depth": "Depth"
   },
   "sidebar": {
     "hide": "Hide sidebar",
