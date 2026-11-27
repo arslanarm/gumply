@@ -50,7 +50,9 @@ describe("a same-size edit that keeps mtime and (coarse) ctime is still seen by 
     const file = join(dir, `${result.id}.md`);
     const bytes = await readFile(file, "utf8");
     const { mtime } = await realStat(file);
-    // From here the file system shows one ctime for this file, as a coarse clock or vfat would.
+    // A whole-millisecond mtime first, so restoring it after the edit (utimes takes a Date) leaves it exactly as
+    // the cache saw it; from here the file system shows one ctime for this file, as a coarse clock or vfat would.
+    await utimes(file, mtime, mtime);
     held.ctimeMs = Date.now();
     await store.rescan();
     const before = store.get(result.id).updated;
