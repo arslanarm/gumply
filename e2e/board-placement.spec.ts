@@ -48,7 +48,13 @@ test('a page card added from the toolbar lands next to the items at the view\'s 
 test('zoomed in to about 200 % with the centre taken, the new card is still in view (@opus-editor)', async ({ page }) => {
   await page.goto('/board-lab.html?theme=light&reset=1');
   const zoom = page.getByTestId('board-zoom-value');
-  for (let i = 0; i < 12 && parseInt((await zoom.textContent()) ?? '100', 10) < 200; i += 1) await page.getByTestId('board-zoom-in').click();
+  // One step at a time: each zoom animates (150 ms), and a click during it starts from the zoom so far.
+  for (let i = 0; i < 12 && parseInt((await zoom.textContent()) ?? '100', 10) < 200; i += 1) {
+    const before = await zoom.textContent();
+    await page.getByTestId('board-zoom-in').click();
+    await expect(zoom).not.toHaveText(before ?? '');
+    await page.waitForTimeout(200);
+  }
   expect(parseInt((await zoom.textContent()) ?? '0', 10)).toBeGreaterThanOrEqual(190);
   const view = (await page.getByTestId('board').boundingBox())!;
   await page.mouse.dblclick(view.x + view.width / 2, view.y + view.height / 2);
