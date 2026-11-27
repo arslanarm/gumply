@@ -11,7 +11,8 @@ const tabStops = (page: Page): Promise<string[]> =>
   page.getByTestId('board').evaluate((root) =>
     [...root.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]')]
       .filter((element) => element.tabIndex >= 0 && !(element as HTMLButtonElement).disabled && element.getClientRects().length > 0)
-      .map((element) => element.dataset.testid ?? (element.classList.contains('react-flow__node') ? 'node' : element.tagName.toLowerCase())),
+      // A node first: React Flow gives each its own data-testid (rf__node-…).
+      .map((element) => (element.classList.contains('react-flow__node') ? 'node' : (element.dataset.testid ?? element.tagName.toLowerCase()))),
   );
 
 test('the tool toolbar comes before the objects in Tab order, and the attribution is visible but not a Tab stop', async ({ page }) => {
