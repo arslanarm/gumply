@@ -70,6 +70,7 @@ Your notes are plain files in a folder you choose (your *vault*). You can read a
   - a top-level `"gumply"` with the board's `icon` and `tags`.
 - A text card without a `gumply` key is shown as an ordinary Obsidian card.
 - Keys Gumply doesn't know are kept. Moving one card rewrites only that card's numbers.
+- **Drawing order is Obsidian's:** frames (`group`) at the back, larger behind smaller, then every arrow and its label, then the other cards in array order. Frames of the same size keep their array order. A card listed before a frame still shows over it.
 
 ### Database views (`.base`)
 
