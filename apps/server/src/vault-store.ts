@@ -594,7 +594,11 @@ type ReadCacheEntry = { key: string; id: PageId; record: PageRecord; racy: boole
  */
 const RACY_STAT_MS = 2_500;
 
-/** #rwgtaffe: `stats` were taken at `statAtMs`, within RACY_STAT_MS of the file's ctime (or a ctime ahead). */
+/**
+ * #rwgtaffe: `stats` were taken at `statAtMs`, within RACY_STAT_MS of the file's ctime. A ctime ahead of this
+ * clock (skew, a network drive) counts too, so such a file is read on every rescan for as long as its ctime stays
+ * ahead: a cost bounded to those files (one read each per rescan), never a missed edit.
+ */
 function isRacy(stats: { ctimeMs: number }, statAtMs: number): boolean {
   return stats.ctimeMs > statAtMs - RACY_STAT_MS;
 }
