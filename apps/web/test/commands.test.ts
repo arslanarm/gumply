@@ -97,6 +97,9 @@ describe("context", () => {
     const board = ids(context(meta("Map.canvas", "whiteboard")));
     expect(board).toContain("page.history");
     expect(board).not.toContain("page.export-html");
+    // #pypzxe6i: a board's own export, and only a board's.
+    expect(board).toContain("page.export-board");
+    expect(note).not.toContain("page.export-board");
     expect(board).not.toContain("page.add-board");
     expect(board).not.toContain("page.new-from-template");
 
