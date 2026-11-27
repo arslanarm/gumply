@@ -110,7 +110,7 @@ import { Palette } from "./Swatch.js";
 import { t, useT } from "../i18n/index.js";
 import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
 import { motionMs } from "../lib/motion.js";
-import { freeSpot } from "./placement.js";
+import { freeSpot, nearestFree } from "./placement.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -730,7 +730,10 @@ function BoardCanvas(props: BoardEditorProps) {
         const to = toFlow({ x: rect.right, y: rect.bottom });
         return { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
       })() : undefined;
-      const corner = client ? want : freeSpot(want, boardRef.current.nodes, view);
+      // In view first; zoomed in, nothing may fit there: then the nearest free spot anywhere (the view follows it
+      // below), and only then an offset, so the card never covers an item (the 200 % slot case).
+      const nodes = boardRef.current.nodes;
+      const corner = client ? want : nearestFree(want, nodes, view) ?? nearestFree(want, nodes) ?? freeSpot(want, nodes);
       addAndSelect(createFileNode({ ...corner, ...size }, path));
       if (!client && view) {
         const seen = corner.x < view.x + view.width && corner.x + size.width > view.x && corner.y < view.y + view.height && corner.y + size.height > view.y;

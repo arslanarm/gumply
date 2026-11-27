@@ -34,24 +34,34 @@ const CELLS: ReadonlyArray<{ dx: number; dy: number }> = (() => {
 })();
 
 /**
- * The top-left corner for a `want`-sized card: `want`'s own if free, else the nearest free one around it. With
- * `within` (the visible part of the board), only spots wholly inside it count, so the new card is never placed where
- * the user can't see it (@opus-editor); when none is free there, a small offset from `want`.
+ * The nearest free top-left corner for a `want`-sized card (`want`'s own if free), or null when there's none. With
+ * `within` (the visible part of the board), only spots wholly inside it count.
+ */
+export function nearestFree(
+  want: { x: number; y: number; width: number; height: number },
+  all: readonly Box[],
+  within?: { x: number; y: number; width: number; height: number },
+): { x: number; y: number } | null {
+  const items = all.filter((item) => item.type !== "group");
+  const inside = (x: number, y: number) =>
+    !within || (x >= within.x && y >= within.y && x + want.width <= within.x + within.width && y + want.height <= within.y + within.height);
+  if (inside(want.x, want.y) && !hits(want.x, want.y, want.width, want.height, items)) return { x: want.x, y: want.y };
+  for (const { dx, dy } of CELLS) {
+    const x = want.x + dx * STEP;
+    const y = want.y + dy * STEP;
+    if (inside(x, y) && !hits(x, y, want.width, want.height, items)) return { x, y };
+  }
+  return null;
+}
+
+/**
+ * The top-left corner for a `want`-sized card: the nearest free one (in `within` if given), else a small offset from
+ * `want`, so it at least doesn't sit exactly on what's there.
  */
 export function freeSpot(
   want: { x: number; y: number; width: number; height: number },
   all: readonly Box[],
   within?: { x: number; y: number; width: number; height: number },
 ): { x: number; y: number } {
-  const items = all.filter((item) => item.type !== "group");
-  if (!hits(want.x, want.y, want.width, want.height, items)) return { x: want.x, y: want.y };
-  const inside = (x: number, y: number) =>
-    !within || (x >= within.x && y >= within.y && x + want.width <= within.x + within.width && y + want.height <= within.y + within.height);
-  for (const { dx, dy } of CELLS) {
-    const x = want.x + dx * STEP;
-    const y = want.y + dy * STEP;
-    if (inside(x, y) && !hits(x, y, want.width, want.height, items)) return { x, y };
-  }
-  // Crowded everywhere near (or in view): at least don't sit exactly on what's there (a cascade offset).
-  return { x: want.x + 2 * GAP, y: want.y + 2 * GAP };
+  return nearestFree(want, all, within) ?? { x: want.x + 2 * GAP, y: want.y + 2 * GAP };
 }
