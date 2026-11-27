@@ -48,10 +48,19 @@ function errorText(error: unknown): string {
 }
 
 /** #7prbquxu phase 4b: one step of the table's undo or redo. */
+/** #5q4vaacm: how many of a row's versions replaced by this view's own writes are remembered (@graph-dev's nit). */
+const OWN_VERSIONS_KEPT = 8;
+
 type UndoStep =
   | { kind: "files"; input: UndoInput }
   | { kind: "config"; from: BaseConfig; to: BaseConfig }
-  | { kind: "cell"; rowId: string; key: string; before: BaseValue; after: BaseValue; version: string };
+  | { kind: "cell"; rowId: string; key: string; before: BaseValue; after: BaseValue; version: string }
+  /**
+   * #5q4vaacm: a row renamed from the grid. Applying it renames the row now at `toId` (titled `toTitle`) back to
+   * `fromTitle`, through the same rename call (links follow, as for any rename), and only into `fromId` itself:
+   * never "Ann 2" when another row took the name meanwhile.
+   */
+  | { kind: "rename"; fromId: string; fromTitle: string; toId: string; toTitle: string };
 
 export interface BaseViewProps {
   baseId: PageId;
@@ -291,6 +300,9 @@ export function BaseView(props: BaseViewProps) {
     [active, saveConfig],
   );
 
+  /** #5q4vaacm: each row's cell writes in flight (chained), and the versions this view's own writes replaced. */
+  const rowWrites = useRef(new Map<string, Promise<void>>());
+  const ownWrites = useRef(new Map<string, { replaced: Set<string>; latest: string }>());
   const editValue = useCallback(
     async (row: BaseRow, column: BaseColumn, value: BaseValue): Promise<boolean> => {
       if (!column.id.startsWith("note.")) return false;
@@ -305,13 +317,34 @@ export function BaseView(props: BaseViewProps) {
             }
           : current,
       );
+      // #5q4vaacm: Tab or Enter moves on while the cell's save is still on its way, so the next cell of the same row
+      // can be written before the table has the version that save made. One row's writes go one after another, and
+      // a write whose row still shows a version **our own** earlier write replaced goes out from the version that
+      // write made. An outside change in between still makes it a 409, as before.
+      const previous = rowWrites.current.get(row.id) ?? Promise.resolve();
+      let done!: () => void;
+      const mine = new Promise<void>((resolve) => (done = resolve));
+      const chained = previous.then(() => mine);
+      rowWrites.current.set(row.id, chained);
+      await previous;
       let saved = true;
       try {
-        const saved = await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, row.updated);
+        const own = ownWrites.current.get(row.id);
+        const from = own && own.replaced.has(row.updated) ? own.latest : row.updated;
+        const saved = await api.setPageProperties(row.id, { [column.id.slice(5)]: value }, from);
+        const entry = ownWrites.current.get(saved.id) ?? { replaced: new Set<string>(), latest: saved.updated };
+        entry.replaced.add(from);
+        // Only the last few are ever looked up (a table can't be more than a few saves behind its own writes).
+        while (entry.replaced.size > OWN_VERSIONS_KEPT) entry.replaced.delete(entry.replaced.values().next().value!);
+        entry.latest = saved.updated;
+        ownWrites.current.set(saved.id, entry);
         recordStep({ kind: "cell", rowId: saved.id, key: column.id.slice(5), before: row.values[column.id] ?? null, after: value, version: saved.updated });
       } catch (error) {
         saved = false;
         props.onError?.(errorText(error));
+      } finally {
+        done();
+        if (rowWrites.current.get(row.id) === chained) rowWrites.current.delete(row.id);
       }
       await load();
       return saved;
@@ -544,6 +577,28 @@ export function BaseView(props: BaseViewProps) {
     [saveConfig],
   );
 
+  /** #5q4vaacm: a grid rename undone or redone; its inverse, or null when refused (and said so). */
+  const applyRename = async (step: Extract<UndoStep, { kind: "rename" }>): Promise<UndoStep | null> => {
+    const missing = (error: unknown) => error instanceof ApiRequestError && error.status === 404;
+    // The row is still where the step left it, under the name it gave it.
+    const current = await api.getPage(step.toId).catch((error: unknown) => (missing(error) ? null : Promise.reject(error)));
+    if (!current || current.id !== step.toId || current.title !== step.toTitle) {
+      props.onError?.(t("bases.undoChanged"));
+      return null;
+    }
+    // The name to go back to must be free: `exact` makes the server refuse (409) rather than take "Ann 2" when
+    // another page has it, in any case, checked in its own queue (no gap between a check and the rename).
+    let renamed;
+    try {
+      renamed = await api.updatePage(step.toId, { title: step.fromTitle, exact: true });
+    } catch (error) {
+      if (!(error instanceof ApiRequestError && error.status === 409)) throw error;
+      props.onError?.(t("bases.undoRenameTaken", { title: step.fromTitle }));
+      return null;
+    }
+    return { kind: "rename", fromId: step.toId, fromTitle: step.toTitle, toId: renamed.id, toTitle: renamed.title };
+  };
+
   /** Apply one undo or redo step; its inverse, or null when it was refused (and said so). */
   const applyStep = async (step: UndoStep): Promise<UndoStep | null> => {
     await saverRef.current?.flush();
@@ -556,6 +611,7 @@ export function BaseView(props: BaseViewProps) {
       await saveConfig(step.to);
       return { kind: "config", from: step.to, to: step.from };
     }
+    if (step.kind === "rename") return applyRename(step);
     if (step.kind === "cell") {
       try {
         const saved = await api.setPageProperties(step.rowId, { [step.key]: step.before as string | number | boolean | string[] | null }, step.version);
@@ -602,7 +658,11 @@ export function BaseView(props: BaseViewProps) {
     if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "z") return;
     const target = event.target as HTMLElement;
     const sinkIdle = target.dataset.testid === "base-grid-cell" && !target.classList.contains("is-typing");
-    const editing = target.isContentEditable || ((target.tagName === "INPUT" || target.tagName === "TEXTAREA") && !sinkIdle);
+    // #nr3rkgj2: the typing row's field, empty, has nothing of its own to undo (a paste leaves the keyboard there):
+    // Cmd/Ctrl+Z is the table's. With text typed in it, the field keeps its own undo. A trade-off, on purpose: a field
+    // typed in and then emptied by hand undoes the table, not the typing (@lead, #nr3rkgj2).
+    const typingEmpty = target.dataset.testid === "base-typing-input" && (target as HTMLInputElement).value === "";
+    const editing = target.isContentEditable || ((target.tagName === "INPUT" || target.tagName === "TEXTAREA") && !sinkIdle && !typingEmpty);
     if (editing || !ownedRowsFolder(docRef.current.config)) return;
     event.preventDefault();
     void undoOrRedo(event.shiftKey);
@@ -647,7 +707,12 @@ export function BaseView(props: BaseViewProps) {
     async (row: BaseRow, title: string): Promise<string | undefined> => {
       let id: string | undefined;
       try {
-        id = (await api.updatePage(row.id, { title })).id;
+        const renamed = await api.updatePage(row.id, { title });
+        id = renamed.id;
+        // #5q4vaacm: a rename from the table is one undo step (Cmd/Ctrl+Z renames it back).
+        if (renamed.id !== row.id || renamed.title !== row.title) {
+          recordStep({ kind: "rename", fromId: row.id, fromTitle: row.title, toId: renamed.id, toTitle: renamed.title });
+        }
       } catch (error) {
         props.onError?.(errorText(error));
       }

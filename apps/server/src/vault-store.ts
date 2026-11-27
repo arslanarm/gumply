@@ -275,6 +275,12 @@ export interface UpdatePageInput {
   writer?: string;
   /** v1.12 (D34): change frontmatter properties; only those key lines are written. */
   properties?: PropertiesPatch;
+  /**
+   * #5q4vaacm: a title change takes exactly this name or nothing: when another page or folder has it (case-insensitive,
+   * as the file system may see it), the update is refused with a 409 before anything is written, instead of taking
+   * the next free name (" 2"). A table's undo of a rename uses it.
+   */
+  exact?: boolean;
 }
 
 export interface CreateBoardInput {
@@ -4976,7 +4982,7 @@ export class VaultStore {
 
     // D20: only a title change renames the file; body/icon saves never move
     // it (old slug-named files are renamed the next time their title changes).
-    let targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle) : id;
+    let targetId = titleChanged ? await this.renameTarget(id, record.parentId, nextTitle, "page", patch.exact === true) : id;
 
     const changes = ["updated"];
     if (nextTitle !== previousTitle) changes.push("title");
@@ -5030,6 +5036,8 @@ export class VaultStore {
         } catch (error) {
           if (!(error as { nameTaken?: boolean }).nameTaken || attempt >= 20) throw error;
           const taken = targetId;
+          // An `exact` rename is checked before the write above; a file another app made at the name in the moments
+          // since (#e3mwuspu's window) still takes the next free name, so the page is never left half renamed.
           targetId = await this.renameTarget(id, record.parentId, nextTitle);
           if (targetId === id) break;
           // The chain's first step goes under the name the rename now ends at, and leaves the taken one (another
@@ -5774,6 +5782,7 @@ export class VaultStore {
     parentId: PageId | null,
     title: string,
     kind: PageKind = "page",
+    exact = false,
   ): Promise<PageId> {
     const folder = parentOf(id) ?? parentId;
     const stem = childPageId(folder, title);
@@ -5784,7 +5793,10 @@ export class VaultStore {
     const taken = new Set(
       [...this.pages.keys(), ...this.folders.keys()].filter((key) => key !== id).map(collisionKey),
     );
-    return this.freeTarget(stem, this.hasChildren(id), taken, kind);
+    const target = await this.freeTarget(stem, this.hasChildren(id), taken, kind);
+    // #5q4vaacm: `exact` takes this name or nothing (checked here, in the store's queue, before any write).
+    if (exact && target !== desired) throw conflict(`“${title}” is taken now`);
+    return target;
   }
 
   /**

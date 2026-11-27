@@ -101,6 +101,17 @@ export function shortcutGroups(modifier: string): ShortcutGroup[] {
       ],
     },
     {
+      // #12 (#faqr8pj9, #5q4vaacm): a database's table, where its rows are one Tab stop.
+      title: t("shortcuts.groups.database"),
+      items: [
+        { keys: `${t("keys.arrows")} / Tab / Shift+Tab`, label: t("shortcuts.labels.gridMove") },
+        { keys: "Enter / F2", label: t("shortcuts.labels.gridEdit") },
+        { keys: withModifier(modifier, "Enter"), label: t("shortcuts.labels.gridOpenRow") },
+        { keys: "Esc", label: t("shortcuts.labels.gridLeave") },
+        { keys: `${withModifier(modifier, "Z")} / ${modifier}+Shift+Z`, label: t("shortcuts.labels.undoRedo") },
+      ],
+    },
+    {
       title: t("shortcuts.groups.whiteboard"),
       items: [
         { keys: "V / H", label: t("shortcuts.labels.selectHand") },

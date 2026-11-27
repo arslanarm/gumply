@@ -214,6 +214,8 @@ export function createApiRoutes(store: VaultStore): Hono {
     const expectedUpdated = optionalString(body, "expectedUpdated");
     if (expectedUpdated !== undefined) patch.expectedUpdated = expectedUpdated;
     if (body.force === true) patch.force = true;
+    // #5q4vaacm: a title change to exactly this name, or a 409 (no " 2").
+    if (body.exact === true) patch.exact = true;
     const writer = optionalString(body, "writer");
     if (writer !== undefined) patch.writer = writer.slice(0, 64);
     // v1.12 (D34): validated by the store against the page's frontmatter.
