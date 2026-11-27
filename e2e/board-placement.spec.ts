@@ -66,9 +66,14 @@ test('zoomed in to about 200 % with the centre taken, the new card is still in v
   await page.getByTestId('board-tool-page').click();
   await page.getByTestId('board-page-picker-input').fill('q1');
   await page.keyboard.press('Enter');
+  // In view (the view may move to it when nothing free fits in the zoomed-in view).
+  await expect
+    .poll(async () => {
+      const box = (await page.getByTestId('board-card-page').boundingBox())!;
+      return box.x < view.x + view.width && box.x + box.width > view.x && box.y < view.y + view.height && box.y + box.height > view.y;
+    })
+    .toBe(true);
   const card = (await page.getByTestId('board-card-page').boundingBox())!;
-  const seen = card.x < view.x + view.width && card.x + card.width > view.x && card.y < view.y + view.height && card.y + card.height > view.y;
-  expect(seen, `card at ${Math.round(card.x)},${Math.round(card.y)} vs view ${Math.round(view.x)},${Math.round(view.y)} ${Math.round(view.width)}×${Math.round(view.height)}`).toBe(true);
   // And it doesn't cover the sticky.
   const sticky = (await page.getByTestId('board-sticky').boundingBox())!;
   const covers = card.x < sticky.x + sticky.width && sticky.x < card.x + card.width && card.y < sticky.y + sticky.height && sticky.y < card.y + card.height;
