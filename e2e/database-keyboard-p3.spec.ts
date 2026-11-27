@@ -109,8 +109,10 @@ test('R5: Ctrl/Cmd+Enter in an open editor commits, then opens the row; in the N
   // The Name editor: renamed first, then the row opens under its new name.
   await page.goBack();
   await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
-  // The empty part of Ann's Name cell (not its Open button): the cell becomes active.
-  await page.getByTestId('base-row-People/Ann').locator('[data-grid-col]').nth(0).click({ position: { x: 200, y: 10 } });
+  // Back restored Bo's role as the active cell (R4); up and left reach Ann's Name.
+  await expect(page.getByTestId('base-grid-cell')).toHaveAttribute('data-active', /^People\/Bo\|.*role$/);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowLeft');
   await expect(page.getByTestId('base-grid-cell')).toHaveAttribute('data-active', /^People\/Ann\|file\.name$/);
   await page.keyboard.press('Enter');
   const title = page.getByTestId('base-title-input-People/Ann');
