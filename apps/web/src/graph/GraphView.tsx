@@ -4,7 +4,7 @@ import { api, ApiRequestError, fileUrl, isVaultIndexing } from "../api/client.js
 import { Icon } from "../components/Icon.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import { GraphControls } from "./GraphControls.js";
-import { GraphList, useGraphListMode } from "./GraphList.js";
+import { GraphList, useGraphListMode, useVaultFlag } from "./GraphList.js";
 import {
   ariaSummary,
   ATTACHMENT_PALETTE_INDEX,
@@ -60,6 +60,9 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   const [legendOpen, setLegendOpen] = useState(true);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [listMode, setListMode, listModeReady] = useGraphListMode("global");
+  // #yy347xgi (4): a search dims the rest instead of hiding it (opt-in; isolate stays the default, @lead).
+  const [showRest, setShowRest] = useVaultFlag("graph-show-rest");
+  const [fitRequest, setFitRequest] = useState<{ ids: ReadonlySet<string>; n: number } | null>(null);
   const reducedMotion = usePrefersReducedMotion();
   // E1: groups and filters, per vault. The graph waits for them, so its first
   // layout already uses them (no restart when they arrive).
@@ -113,13 +116,34 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
     [model, filters, query, data],
   );
 
+  // #yy347xgi (4): with "Show the rest" and a search, the canvas draws the graph without the search and the
+  // matches are its spotlight (everything else dimmed); the subtitle and the list still describe the matches.
+  const inContext = showRest && query.trim().length > 0;
+  const unsearched = useMemo(
+    () =>
+      inContext && model && filters
+        ? filterGraph(model, {
+            hideUnresolved: filters.hideUnresolved,
+            showOrphans: filters.showOrphans,
+            showTags: filters.showTags,
+            attachments: filters.showAttachments ? data?.attachments : undefined,
+          })
+        : null,
+    [inContext, model, filters, data],
+  );
+  const drawn = unsearched ?? filtered;
+  const spotlight = useMemo<ReadonlySet<string> | null>(
+    () => (inContext && filtered ? new Set([...filtered.nodes, ...filtered.ghosts, ...filtered.extras].map((node) => node.id)) : null),
+    [inContext, filtered],
+  );
+
   // Stable arrays: a new identity on every render would restart the force
   // simulation (and the auto-fit) on unrelated state changes such as hovering.
   const canvasNodes = useMemo<CanvasNode[]>(
-    () => (filtered ? [...filtered.nodes, ...filtered.ghosts, ...filtered.extras] : []),
-    [filtered],
+    () => (drawn ? [...drawn.nodes, ...drawn.ghosts, ...drawn.extras] : []),
+    [drawn],
   );
-  const canvasLinks = useMemo(() => filtered?.links ?? [], [filtered]);
+  const canvasLinks = useMemo(() => drawn?.links ?? [], [drawn]);
 
   // E1: the first matching group colours a node; attachments otherwise share one theme colour.
   const groups = settings?.groups;
@@ -142,7 +166,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   /** Tag nodes search for their tag; attachment nodes open the file. */
   const openNode = (id: string) => {
     if (isTagNodeId(id)) {
-      const node = filtered?.extras.find((candidate) => candidate.id === id);
+      const node = (drawn ?? filtered)?.extras.find((candidate) => candidate.id === id);
       if (node) setQuery(`tag:${node.title}`);
       return;
     }
@@ -203,6 +227,10 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
                     if (event.key === "Escape" && query) {
                       event.preventDefault();
                       setQuery("");
+                    } else if (event.key === "Enter" && spotlight && spotlight.size > 0) {
+                      // #yy347xgi (4): Enter fits the view to the matches (shown in context).
+                      event.preventDefault();
+                      setFitRequest((current) => ({ ids: spotlight, n: (current?.n ?? 0) + 1 }));
                     }
                   }}
                 />
@@ -219,6 +247,18 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
                   </button>
                 ) : null}
               </div>
+              {query.trim() && !listMode ? (
+                // #yy347xgi (4): show the search in context: matches bright, the rest dimmed, not hidden.
+                <button
+                  type="button"
+                  className={`button-secondary graph-show-rest${showRest ? " is-active" : ""}`}
+                  data-testid="graph-show-rest"
+                  aria-pressed={showRest}
+                  onClick={() => setShowRest(!showRest)}
+                >
+                  {t("graph.showRest")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={`button-secondary graph-panel-toggle${controlsOpen ? " is-active" : ""}`}
@@ -349,8 +389,10 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               onOpenPage={openNode}
               colorOf={colorOf}
               forces={settings?.forces}
+              spotlight={spotlight}
+              fitRequest={fitRequest}
               onCreatePage={(title) => {
-                const ghost = filtered.ghosts.find(
+                const ghost = (drawn ?? filtered).ghosts.find(
                   (candidate) => candidate.title.toLowerCase() === title.toLowerCase(),
                 );
                 if (ghost) createGhost(ghost);

@@ -103,7 +103,16 @@ function readListMode(key: string): boolean {
  * the vault's path, @lead). It's this browser's view choice, so it lives in local storage, not in the vault's files.
  */
 export function useGraphListMode(key: "global" | "local"): [boolean, (next: boolean) => void, boolean] {
-  const storageKey = (vault: string) => `gumply:graph-list:${key}:${vault}`;
+  return useVaultFlag(`graph-list:${key}`);
+}
+
+/**
+ * A view choice remembered per vault in this browser (`gumply:<name>:<vault path>`): the graph's List (#62tnekds),
+ * its "Show the rest" (#yy347xgi). The third value says when it's known (the vault path), so nothing flashes.
+ */
+export function useVaultFlag(name: string): [boolean, (next: boolean) => void, boolean] {
+  const key = name;
+  const storageKey = (vault: string) => `gumply:${name}:${vault}`;
   if (vaultPathKnown === null && startupVaultPath !== null) vaultPathKnown = startupVaultPath;
   const [vault, setVault] = useState<string | null>(vaultPathKnown);
   const [on, setOn] = useState(() => (vaultPathKnown !== null ? readListMode(storageKey(vaultPathKnown)) : false));

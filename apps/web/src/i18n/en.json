@@ -112,7 +112,8 @@
       "forcesOff": "Forces arrange the picture. Switch back from List to change them.",
       "localLabel": "Pages linked with this one",
       "empty": "No pages to list."
-    }
+    },
+    "showRest": "Show the rest"
   },
   "sidebar": {
     "hide": "Hide sidebar",
