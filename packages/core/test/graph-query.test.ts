@@ -64,6 +64,46 @@ describe("parseGraphQuery / matchesGraphQuery", () => {
     expect(matches('path:"Projects/Work" -file:draft', plan)).toBe(true);
   });
 
+  it("#yy347xgi: brackets group, so words narrow and an OR stays inside its group", () => {
+    // basil within either tag, not (basil and a) or b.
+    expect(parseGraphQuery("basil (tag:#a OR tag:#b)")).toEqual([
+      [{ op: "text", value: "basil", negate: false }, { op: "tag", value: "a", negate: false }],
+      [{ op: "text", value: "basil", negate: false }, { op: "tag", value: "b", negate: false }],
+    ]);
+    const plan2 = { ...plan, title: "Basil plan" };
+    expect(matches("plan (tag:#work OR tag:#личное)", plan)).toBe(true);
+    expect(matches("plan (tag:#home OR tag:#личное)", plan)).toBe(false);
+    expect(matches("(tag:#home OR tag:#личное)", diary)).toBe(true);
+    expect(matches("basil (tag:#work OR tag:#x)", plan2)).toBe(true);
+    // Without brackets, OR still splits the whole query, as before.
+    expect(parseGraphQuery("basil tag:#a OR tag:#b")).toHaveLength(2);
+    expect(parseGraphQuery("basil tag:#a OR tag:#b")[1]).toEqual([{ op: "tag", value: "b", negate: false }]);
+    // Nested, unclosed, stray and empty brackets don't break anything.
+    expect(parseGraphQuery("(a (b OR c))")).toEqual([
+      [{ op: "text", value: "a", negate: false }, { op: "text", value: "b", negate: false }],
+      [{ op: "text", value: "a", negate: false }, { op: "text", value: "c", negate: false }],
+    ]);
+    expect(parseGraphQuery("(a OR b")).toHaveLength(2);
+    expect(parseGraphQuery("a)")).toEqual([[{ op: "text", value: "a", negate: false }]]);
+    expect(parseGraphQuery("()")).toEqual([]);
+    // -( … ) negates the group (De Morgan), never silently drops the "-" (@lead).
+    expect(parseGraphQuery("-(tag:#a OR tag:#b)")).toEqual([[{ op: "tag", value: "a", negate: true }, { op: "tag", value: "b", negate: true }]]);
+    expect(parseGraphQuery("-(a b)")).toEqual([[{ op: "text", value: "a", negate: true }], [{ op: "text", value: "b", negate: true }]]);
+    expect(parseGraphQuery("x -(a OR -b)")).toEqual([[{ op: "text", value: "x", negate: false }, { op: "text", value: "a", negate: true }, { op: "text", value: "b", negate: false }]]);
+    expect(matches("-(tag:#work OR tag:#личное)", plan)).toBe(false);
+    expect(matches("-(tag:#home OR tag:#личное)", plan)).toBe(true);
+    // An empty alternative in a negated group says nothing: the rest of the query stays (@opus-editor).
+    expect(parseGraphQuery("basil -( )")).toEqual([[{ op: "text", value: "basil", negate: false }]]);
+    expect(parseGraphQuery("basil -( OR a)")).toEqual([[{ op: "text", value: "basil", negate: false }, { op: "text", value: "a", negate: true }]]);
+    // tag:( … ) applies the op to the group's bare words (not words that happen to follow "tag:").
+    expect(parseGraphQuery("tag:(a OR b)")).toEqual([[{ op: "tag", value: "a", negate: false }], [{ op: "tag", value: "b", negate: false }]]);
+    expect(parseGraphQuery("-tag:(a OR b)")).toEqual([[{ op: "tag", value: "a", negate: true }, { op: "tag", value: "b", negate: true }]]);
+    expect(parseGraphQuery("tag:(a path:x)")).toEqual([[{ op: "tag", value: "a", negate: false }, { op: "path", value: "x", negate: false }]]);
+    expect(matches("tag:(home OR work)", plan)).toBe(true);
+    // A quoted phrase keeps its brackets.
+    expect(parseGraphQuery('"q1 (draft)"')).toEqual([[{ op: "text", value: "q1 (draft)", negate: false }]]);
+  });
+
   it("an unknown op: is plain text, as written", () => {
     expect(parseGraphQuery("line:foo")).toEqual([[{ op: "text", value: "line:foo", negate: false }]]);
     expect(parseGraphQuery("-TAG:#X")).toEqual([[{ op: "tag", value: "x", negate: true }]]);

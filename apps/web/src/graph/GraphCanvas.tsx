@@ -32,7 +32,7 @@ import {
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, forcesToken, forceStrengths, LAYOUT_SETTINGS, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
 import { ghostStrokeWidth, linkWidthFor, restingLinkWidth } from "./link-width.js";
-import { buildLinkIndex, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, visibleGraphRect, type LayerLink, type LinkIndex } from "./link-layer.js";
+import { buildLinkIndex, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerData, linkLayerKey, linkLayerStyle, linksWithin, paintRestingLinks, visibleGraphRect, type LayerLink, type LinkIndex } from "./link-layer.js";
 import { startLayout } from "./layout-client.js";
 import { browserLayoutStore, cachedLayout, cachesLayout, keepLayout, layoutCacheKey, type LayoutStore } from "./layout-cache.js";
 
@@ -76,6 +76,13 @@ export interface GraphCanvasProps {
    * Absent: the defaults. A change re-arranges the graph.
    */
   forces?: GraphForces;
+  /**
+   * #yy347xgi (4): a search shown in context ("Show the rest"): these ids are the matches; every other node, its
+   * label and its links are drawn dimmed, as hover dims. Keep it stable (memoised): it's part of the link picture's key.
+   */
+  spotlight?: ReadonlySet<string> | null;
+  /** #yy347xgi (4): fit the view to these ids each time `n` changes (Enter in the search). */
+  fitRequest?: { ids: ReadonlySet<string>; n: number } | null;
 }
 
 interface ThemeColors {
@@ -110,6 +117,8 @@ const FIT_PADDING = 40;
 const LABEL_ALLOWANCE = 16;
 /** Auto-fit never zooms in further than this (matches the user max zoom). */
 const MAX_FIT_ZOOM = 8;
+/** #yy347xgi (4): up to this many matches of a search shown in context get their labels. */
+const MATCH_LABELS = 30;
 /** ... nor further out (very large vaults still show every node). */
 const MIN_FIT_ZOOM = 0.06;
 /** Labels fade in between these zoom levels (Q1b: labels scale with zoom). */
@@ -328,6 +337,8 @@ export function GraphCanvas({
   onCreatePage,
   colorOf,
   forces,
+  spotlight = null,
+  fitRequest = null,
 }: GraphCanvasProps) {
   useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -520,7 +531,7 @@ export function GraphCanvas({
    * has to be kept inside the canvas. Computed here instead of `zoomToFit` so
    * the zoom is capped: a 1–2 node vault doesn't get blown up 20×.
    */
-  const fitTarget = useCallback((): FitTarget | null => {
+  const fitTarget = useCallback((only?: ReadonlySet<string>): FitTarget | null => {
     const { width, height } = sizeRef.current;
     if (width < 40 || height < 40 || nodes.length === 0) return null;
 
@@ -535,6 +546,7 @@ export function GraphCanvas({
     for (const node of nodes as PositionedNode[]) {
       const { x, y } = node;
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (only && !only.has(node.id)) continue;
       const px = x as number;
       const py = y as number;
       minX = Math.min(minX, px);
@@ -628,9 +640,9 @@ export function GraphCanvas({
   useEffect(() => stopCameraAnimation, [stopCameraAnimation]);
 
   const fitView = useCallback(
-    (duration: number, reason: string): void => {
+    (duration: number, reason: string, only?: ReadonlySet<string>): void => {
       const graph = graphRef.current;
-      const target = fitTarget();
+      const target = fitTarget(only);
       if (!graph || !target) return;
       moveCamera(target, duration);
       // The camera is "auto" again until the user moves it.
@@ -640,6 +652,22 @@ export function GraphCanvas({
     },
     [fitTarget, moveCamera],
   );
+
+  // #yy347xgi (4): Enter in the search fits the view to its matches ("Show the rest"; nothing happened, before).
+  // The user asked for this view, so it's kept: a data change's fit (the graph just re-drawn) fits to the matches
+  // again instead of to everything, and the settle's auto-fit leaves it alone. A new spotlight forgets it.
+  const matchFitRef = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    matchFitRef.current = null;
+  }, [spotlight]);
+  const fitRequestN = fitRequest?.n ?? 0;
+  useEffect(() => {
+    if (!fitRequest || fitRequest.ids.size === 0) return;
+    matchFitRef.current = fitRequest.ids;
+    fitView(reducedMotion ? 0 : 400, "matches", fitRequest.ids);
+    userViewRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitRequestN]);
 
   /** Fit only if the user hasn't zoomed, panned or dragged since the last fit. */
   const autoFit = useCallback(
@@ -667,7 +695,12 @@ export function GraphCanvas({
       if (fitTimer.current !== null) window.clearTimeout(fitTimer.current);
       fitTimer.current = window.setTimeout(() => {
         fitTimer.current = null;
-        fitView(duration, reason);
+        // #yy347xgi (4): a fit to the matches the user asked for is kept over a data change.
+        const pinned = matchFitRef.current;
+        if (pinned) {
+          fitView(duration, "matches", pinned);
+          userViewRef.current = true;
+        } else fitView(duration, reason);
         if (markReady) setReady(true);
       }, 80);
     },
@@ -767,6 +800,17 @@ export function GraphCanvas({
   ghostByIdRef.current = ghostById;
   const hoveredRef = useRef(hoveredId);
   hoveredRef.current = hoveredId;
+  const spotlightRef = useRef(spotlight);
+  spotlightRef.current = spotlight;
+  /** #yy347xgi (4): a new number for every new spotlight (the link picture's key carries it). */
+  const spotlightVersionCounter = useRef(0);
+  const spotlightVersion = useMemo(() => {
+    void spotlight;
+    spotlightVersionCounter.current += 1;
+    return spotlightVersionCounter.current;
+  }, [spotlight]);
+  const spotlightVersionRef = useRef(spotlightVersion);
+  spotlightVersionRef.current = spotlightVersion;
   const centerIdRef = useRef(centerId);
   centerIdRef.current = centerId;
 
@@ -793,6 +837,8 @@ export function GraphCanvas({
       },
       zoom: () => graphRef.current?.zoom() ?? 1,
       hovered: () => hoveredRef.current,
+      /** #yy347xgi (4): the matches of a search shown in context, or null. */
+      spotlight: () => (spotlightRef.current ? [...spotlightRef.current] : null),
     };
     return () => {
       delete registry[testId];
@@ -822,10 +868,10 @@ export function GraphCanvas({
         if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) continue;
         const style = styles.get(node.id);
         if (!style) continue;
-        (hoveredId !== null && node.id !== hoveredId && !neighbours.has(node.id)
-          ? dimmedPass
-          : brightPass
-        ).push([node, style]);
+        const hoverDim = hoveredId !== null && node.id !== hoveredId && !neighbours.has(node.id);
+        // #yy347xgi (4): outside a search shown in context; the hovered node and its neighbours still light up.
+        const spotDim = spotlight !== null && !spotlight.has(node.id) && node.id !== hoveredId && !neighbours.has(node.id);
+        (hoverDim || spotDim ? dimmedPass : brightPass).push([node, style]);
       }
 
       ctx.save();
@@ -959,8 +1005,10 @@ export function GraphCanvas({
       const paintLabels = (items: Array<[PositionedNode, NodeStyle]>, dimmed: boolean): void => {
         for (const [node, style] of items) {
           const id = node.id;
-          if (!labelled.has(id) && highlightId !== id) continue;
-          const pinned = id === hoveredId || id === highlightId;
+          // #yy347xgi (4): a few matches are labelled, so "where is it" has an answer at a glance.
+          const matchLabel = spotlight !== null && spotlight.size <= MATCH_LABELS && spotlight.has(id);
+          if (!labelled.has(id) && highlightId !== id && !matchLabel) continue;
+          const pinned = id === hoveredId || id === highlightId || matchLabel;
           const alpha = dimmed ? 0.18 : pinned ? 1 : fade;
           if (alpha <= 0.02) continue;
           ctx.globalAlpha = alpha;
@@ -976,7 +1024,7 @@ export function GraphCanvas({
 
       ctx.restore();
     },
-    [colors, highlightId, hoveredId, neighbours, labelIds, linkPaint],
+    [colors, highlightId, hoveredId, neighbours, labelIds, linkPaint, spotlight],
   );
   // After each painted frame: if the camera is still moving, the idle wait starts over
   // from here (#9x4duwmg B-fix), so a slow frame can't outlast it.
@@ -1318,6 +1366,16 @@ export function GraphCanvas({
   graphDataVersionRef.current = graphDataVersion;
   /** #znabmb8n: the links as typed index pairs, rebuilt when the data version changes. */
   const linkIndexRef = useRef<{ version: number; index: LinkIndex | null }>({ version: -1, index: null });
+  /** #yy347xgi (4): which indexed links lie between two matches, per (data, spotlight) version. */
+  const spotlightMaskRef = useRef<{ key: string; masks: { within: Uint8Array; outside: Uint8Array } | null }>({ key: "", masks: null });
+  const spotlightMask = (index: LinkIndex, spot: ReadonlySet<string>): { within: Uint8Array; outside: Uint8Array } => {
+    const key = `${linkIndexRef.current.version}|${spotlightVersionRef.current}`;
+    if (spotlightMaskRef.current.key !== key || !spotlightMaskRef.current.masks) {
+      const within = linksWithin(index, spot);
+      spotlightMaskRef.current = { key, masks: { within, outside: within.map((bit) => 1 - bit) } };
+    }
+    return spotlightMaskRef.current.masks!;
+  };
 
   /**
    * #pifuz5zs: the resting links as a picture. Built from the frame that would
@@ -1369,7 +1427,8 @@ export function GraphCanvas({
         width,
         height,
         positions: positionsRef.current,
-        data: String(graphDataVersionRef.current),
+        // #yy347xgi (4): the spotlight (a search shown in context) colours the links, so it's part of the key.
+        data: linkLayerData(graphDataVersionRef.current, spotlightVersionRef.current),
         style: linkLayerStyle(linkPaint, dpr),
       });
       if (layers.key !== key) {
@@ -1400,14 +1459,23 @@ export function GraphCanvas({
             ),
           };
         }
-        paintRestingLinks(lctx, linkIndexRef.current.index!, {
-          color,
+        const index = linkIndexRef.current.index!;
+        const view = visibleGraphRect(transform, width, height);
+        const spot = spotlightRef.current;
+        // #yy347xgi (4): with a spotlight, the resting picture is every link faded, then the links between matches
+        // in the idle colour (the hover picture stays all faded, as before).
+        // Each link once: the faded pass leaves out the links between matches (@opus-editor), so they aren't heavier.
+        const masks = spot && color === linkPaint.idle ? spotlightMask(index, spot) : null;
+        paintRestingLinks(lctx, index, {
+          color: masks ? linkPaint.faded : color,
           widthCss: restingLinkWidth(dpr),
           scale,
           dash: GHOST_LINK_DASH,
           // Only what can show: zoomed in, most links lie wholly outside the view.
-          view: visibleGraphRect(transform, width, height),
+          view,
+          ...(masks ? { only: masks.outside } : {}),
         });
+        if (masks) paintRestingLinks(lctx, index, { color, widthCss: restingLinkWidth(dpr), scale, dash: GHOST_LINK_DASH, view, only: masks.within });
         return layer;
       };
       const faded = hoveredRef.current !== null;
@@ -1437,9 +1505,9 @@ export function GraphCanvas({
 
   const linkColor = useCallback(
     (link: LinkObject<CanvasNode, GraphLink>) => {
-      return linkColorFor(endpointId(link.source), endpointId(link.target), hoveredId, linkPaint);
+      return linkColorFor(endpointId(link.source), endpointId(link.target), hoveredId, linkPaint, spotlight);
     },
-    [linkPaint, hoveredId],
+    [linkPaint, hoveredId, spotlight],
   );
 
   const linkWidth = useCallback(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLinkIndex, clipSegment, dashAlignedStart, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerKey, linkLayerStyle, paintRestingLinks, visibleGraphRect, type LinkColors, type LinkLayerInputs, type LinkPainter } from "../src/graph/link-layer";
+import { buildLinkIndex, clipSegment, dashAlignedStart, GHOST_LINK_DASH, linkColorFor, linkDashFor, linkLayerData, linkLayerKey, linkLayerStyle, linksWithin, paintRestingLinks, visibleGraphRect, type LinkColors, type LinkLayerInputs, type LinkPainter } from "../src/graph/link-layer";
 import { linkWidthFor, restingLinkWidth } from "../src/graph/link-width";
 
 /** #pifuz5zs: the cached link picture's key and its drawing (as force-graph strokes resting links). */
@@ -204,8 +204,21 @@ describe("the cached link picture (#pifuz5zs)", () => {
       expect(linkColorFor("A", "B", "A", colors)).toBe(colors.active);
       expect(linkColorFor("A", "B", "B", colors)).toBe(colors.active);
       expect(linkColorFor("A", "B", "C", colors)).toBe(colors.faded);
-      // Four parameters, no more: a new input would be a new parameter (and a new part of the key).
+      // Four required parameters, no more: a new input would be a new parameter (and a new part of the key).
       expect(linkColorFor.length).toBe(4);
+    });
+
+    it("#yy347xgi (4): the spotlight (a search shown in context) is an input: idle between two matches, faded otherwise, and part of the key", () => {
+      const spot = new Set(["A", "B"]);
+      expect(linkColorFor("A", "B", null, colors, spot)).toBe(colors.idle);
+      expect(linkColorFor("A", "C", null, colors, spot)).toBe(colors.faded);
+      expect(linkColorFor("C", "D", null, colors, spot)).toBe(colors.faded);
+      // Hover still wins while a node is hovered.
+      expect(linkColorFor("A", "C", "C", colors, spot)).toBe(colors.active);
+      // So the key's data part carries it: a search change (a new spotlight) rebuilds the picture.
+      const key = (spotlightVersion: number) => linkLayerKey({ ...base, data: linkLayerData(1, spotlightVersion) });
+      expect(key(2)).not.toBe(key(1));
+      expect(key(1)).toBe(key(1));
     });
 
     it("width: every resting link (at rest or faded) has the resting hairline width for the DPR; only the hovered node's are wider", () => {
@@ -231,5 +244,28 @@ describe("the cached link picture (#pifuz5zs)", () => {
       // The active colour is drawn live (the hovered node's links), never into the picture: not in the key.
       expect(linkLayerStyle({ ...colors, active: "x" }, 1)).toBe(style);
     });
+  });
+});
+
+describe("the links between a search's matches (#yy347xgi (4))", () => {
+  it("linksWithin marks exactly the links whose both ends match, and paintRestingLinks' only draws just those", () => {
+    const nodes = [
+      { id: "A", x: 0, y: 0 },
+      { id: "B", x: 10, y: 0 },
+      { id: "C", x: 0, y: 10 },
+    ];
+    const index = buildLinkIndex(nodes, [{ source: "A", target: "B" }, { source: "A", target: "C" }, { source: "B", target: "C" }], () => false);
+    const mask = linksWithin(index, new Set(["A", "B"]));
+    expect([...mask]).toEqual([1, 0, 0]);
+    const all = recorder();
+    paintRestingLinks(all.painter, index, { color: "x", widthCss: 1, scale: 1, dash: GHOST_LINK_DASH });
+    const within = recorder();
+    paintRestingLinks(within.painter, index, { color: "x", widthCss: 1, scale: 1, dash: GHOST_LINK_DASH, only: mask });
+    expect(all.calls.filter((call) => call === "line")).toHaveLength(3);
+    expect(within.calls.filter((call) => call === "line")).toHaveLength(1);
+    // The faded pass with the inverse mask draws the other two: each link exactly once (@opus-editor).
+    const outside = recorder();
+    paintRestingLinks(outside.painter, index, { color: "x", widthCss: 1, scale: 1, dash: GHOST_LINK_DASH, only: mask.map((bit) => 1 - bit) });
+    expect(outside.calls.filter((call) => call === "line")).toHaveLength(2);
   });
 });

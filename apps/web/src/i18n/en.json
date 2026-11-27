@@ -38,8 +38,8 @@
     "pages_other": "{{count}} pages",
     "links_one": "{{count}} link",
     "links_other": "{{count}} links",
-    "missing_one": "{{count}} missing",
-    "missing_other": "{{count}} missing",
+    "missing_one": "{{count}} not created yet",
+    "missing_other": "{{count}} not created yet",
     "ghostDetail": "Not created yet · {{links}} · Click to create",
     "ghostTooltip": "“{{title}}” — not created yet · {{links}} · Click to create",
     "serverDown": "Cannot reach the Gumply server. Is it running?",
@@ -93,7 +93,7 @@
       "moveUp": "Move up",
       "moveDown": "Move down",
       "removeGroup": "Remove group",
-      "groupsHint": "The first matching group colours a page. Queries: tag:#work, path:Folder, file:name, words, -word to exclude, OR.",
+      "groupsHint": "The first matching group colours a page. Queries: tag:#work, path:Folder, file:name, words, -word to exclude, OR, ( ) to group.",
       "forces": "Forces",
       "forceCenter": "Center force",
       "forceRepel": "Repel force",
@@ -104,7 +104,16 @@
       "forcesReset": "Reset forces",
       "forcesHint": "100% is Gumply's own layout. A change re-arranges the graph when you let go of the slider."
     },
-    "legendAttachment": "Attachment"
+    "legendAttachment": "Attachment",
+    "list": {
+      "toggle": "List",
+      "label": "Pages in the graph",
+      "notCreated": "not created yet",
+      "forcesOff": "Forces arrange the picture. Switch back from List to change them.",
+      "localLabel": "Pages linked with this one",
+      "empty": "No pages to list."
+    },
+    "showRest": "Show the rest"
   },
   "sidebar": {
     "hide": "Hide sidebar",

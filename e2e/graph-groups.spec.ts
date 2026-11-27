@@ -90,7 +90,7 @@ test('filters: tags, attachments, existing files only, orphans', async ({ page, 
   await openGraph(page);
   const subtitle = page.getByTestId('graph-subtitle');
   // Alpha↔Beta (2 links) + Alpha→Someday; Gamma and Chart note have none.
-  await expect(subtitle).toHaveText('4 pages · 3 links · 1 missing');
+  await expect(subtitle).toHaveText('4 pages · 3 links · 1 not created yet');
 
   await page.getByTestId('graph-panel-toggle').click();
   await page.getByTestId('graph-filter-hideUnresolved').check();
@@ -183,7 +183,7 @@ test('the local graph uses the same groups and filters (E2)', async ({ page, vau
   await expect(canvas.locator('canvas')).toBeVisible();
   // Alpha ↔ Beta plus the #work tag node; the ghost "Someday" is hidden.
   await expect(canvas).toHaveAttribute('aria-label', /^2 pages, /);
-  await expect(canvas).toHaveAttribute('aria-label', /0 missing/);
+  await expect(canvas).toHaveAttribute('aria-label', /0 not created yet/);
   const painted = () =>
     canvas.locator('canvas').evaluate((element, color) => {
       const node = element as HTMLCanvasElement;

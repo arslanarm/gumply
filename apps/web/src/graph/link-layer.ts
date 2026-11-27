@@ -35,9 +35,19 @@ export interface LinkColors {
 /** The dash of a link to a page not created yet, in graph units (as force-graph sets it). */
 export const GHOST_LINK_DASH = [4, 3];
 
-/** A link's colour: the theme's idle colour at rest; while a node is hovered, active on its links, faded elsewhere. */
-export function linkColorFor(sourceId: string, targetId: string, hoveredId: string | null, colors: LinkColors): string {
-  if (hoveredId === null) return colors.idle;
+/**
+ * A link's colour: the theme's idle colour at rest; while a node is hovered, active on its links, faded elsewhere.
+ * #yy347xgi (4): with a search shown in context ("Show the rest"), a link is idle only between two matches
+ * (`spotlight`), faded otherwise. The cached picture's key carries the spotlight's version.
+ */
+export function linkColorFor(
+  sourceId: string,
+  targetId: string,
+  hoveredId: string | null,
+  colors: LinkColors,
+  spotlight: ReadonlySet<string> | null = null,
+): string {
+  if (hoveredId === null) return spotlight && !(spotlight.has(sourceId) && spotlight.has(targetId)) ? colors.faded : colors.idle;
   return sourceId === hoveredId || targetId === hoveredId ? colors.active : colors.faded;
 }
 
@@ -64,6 +74,14 @@ export interface LinkLayerInputs {
   data: string;
   /** The link colours and the device pixel ratio. */
   style: string;
+}
+
+/**
+ * #yy347xgi (4): the key's data part: the drawn graph's version and the spotlight's (a search shown in context
+ * colours the links), so a search change rebuilds the picture.
+ */
+export function linkLayerData(dataVersion: number, spotlightVersion: number): string {
+  return `${dataVersion}|${spotlightVersion}`;
 }
 
 export function linkLayerKey(inputs: LinkLayerInputs): string {
@@ -211,7 +229,15 @@ export function dashAlignedStart(t0: number, length: number, period: number): nu
 export function paintRestingLinks(
   ctx: LinkPainter,
   index: LinkIndex,
-  options: { color: string; widthCss: number; scale: number; dash: number[]; view?: { minX: number; minY: number; maxX: number; maxY: number } },
+  options: {
+    color: string;
+    widthCss: number;
+    scale: number;
+    dash: number[];
+    view?: { minX: number; minY: number; maxX: number; maxY: number };
+    /** #yy347xgi (4): only the links marked 1 here (the links between a search's matches). */
+    only?: Uint8Array;
+  },
 ): void {
   const lineWidth = options.widthCss / options.scale;
   const view = options.view;
@@ -227,6 +253,7 @@ export function paintRestingLinks(
     let started = false;
     for (let i = 0; i < count; i += 1) {
       if (dashed[i] !== pass) continue;
+      if (options.only && options.only[i] !== 1) continue;
       const a = nodes[source[i]!]!;
       const b = nodes[target[i]!]!;
       const ax = a.x;
@@ -269,4 +296,15 @@ export function paintRestingLinks(
     }
   }
   ctx.setLineDash([]);
+}
+
+/** #yy347xgi (4): marks the links whose both ends are in `ids` (a search's matches), for `paintRestingLinks`' `only`. */
+export function linksWithin(index: LinkIndex, ids: ReadonlySet<string>): Uint8Array {
+  const mask = new Uint8Array(index.count);
+  for (let i = 0; i < index.count; i += 1) {
+    const a = (index.nodes[index.source[i]!] as { id?: unknown } | undefined)?.id;
+    const b = (index.nodes[index.target[i]!] as { id?: unknown } | undefined)?.id;
+    if (typeof a === "string" && typeof b === "string" && ids.has(a) && ids.has(b)) mask[i] = 1;
+  }
+  return mask;
 }

@@ -2,6 +2,7 @@ import type { GraphData, GraphNode, PageId } from "@gumply/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiRequestError, fileUrl } from "../api/client.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
+import { GraphList, useGraphListMode } from "./GraphList.js";
 import {
   ariaSummary,
   ATTACHMENT_PALETTE_INDEX,
@@ -50,6 +51,7 @@ function errorMessage(error: unknown): string {
 export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, embedded = false, tagSlots }: LocalGraphPanelProps) {
   const t = useT();
   const [depth, setDepth] = useState<Depth>(readDepth);
+  const [listMode, setListMode, listModeReady] = useGraphListMode("local");
   const [data, setData] = useState<GraphData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +156,16 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
               2
             </button>
           </div>
+          {/* #62tnekds: the neighbours as a list of links, for the keyboard and screen readers. */}
+          <button
+            type="button"
+            className={`graph-chip${listMode ? " is-active" : ""}`}
+            data-testid="local-graph-list-toggle"
+            aria-pressed={listMode}
+            onClick={() => setListMode(!listMode)}
+          >
+            {t("graph.list.toggle")}
+          </button>
           {embedded ? null : (
           <button
             type="button"
@@ -170,7 +182,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
       </header>
 
       <div className="local-graph-body">
-        {status === "loading" || !settingsReady ? (
+        {status === "loading" || !settingsReady || !listModeReady ? (
           <p className="graph-panel-note">{t("graph.localLoading")}</p>
         ) : status === "error" ? (
           <div className="graph-panel-state">
@@ -186,6 +198,15 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
               {t("graph.noLinksBefore")}<code>[[</code>{t("graph.noLinksAfter")}
             </p>
           </div>
+        ) : listMode ? (
+          <GraphList
+            nodes={filtered.nodes.filter((node) => node.id !== pageId)}
+            ghosts={filtered.ghosts}
+            label={t("graph.list.localLabel")}
+            testId="local-graph-list"
+            onOpenPage={openNode}
+            onCreateGhost={(ghost) => void onCreatePage(ghost.title)}
+          />
         ) : (
           <GraphCanvas
             nodes={canvasNodes}

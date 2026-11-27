@@ -11,6 +11,12 @@
 import { registerSaver } from "./pending-saves.js";
 
 const PREFIX = "gumply:";
+
+/**
+ * #62tnekds: the vault this window has open, from the start-up health check (null until then, or if it failed).
+ * A vault switch reloads the window (the desktop's openVault loads the new server's URL), so it never goes stale.
+ */
+export let startupVaultPath: string | null = null;
 const DELAY = 300;
 
 type Fetch = typeof fetch;
@@ -22,7 +28,11 @@ export async function restoreUiState(storage: Storage = window.localStorage, fet
     // Ask first: in the browser app the route doesn't exist, and a 404 would
     // show up as a console error on every start.
     const health = await fetchImpl("/api/health", { headers: { Accept: "application/json" } });
-    if (!health.ok || ((await health.json()) as { desktop?: unknown }).desktop !== true) return false;
+    if (!health.ok) return false;
+    const body = (await health.json()) as { desktop?: unknown; vaultPath?: unknown };
+    // #62tnekds: the open vault, known before the first render (per-vault view choices read it).
+    if (typeof body.vaultPath === "string") startupVaultPath = body.vaultPath;
+    if (body.desktop !== true) return false;
     const response = await fetchImpl("/api/ui/state", { headers: { Accept: "application/json" } });
     if (!response.ok) return false;
     state = (await response.json()) as Record<string, unknown>;

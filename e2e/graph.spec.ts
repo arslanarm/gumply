@@ -32,8 +32,8 @@ test.describe('graph', () => {
     await expect(canvas).toBeVisible();
     // 2 real pages, 2 links (Source->Target + Source->ghost), 1 missing title.
     // The subtitle and aria summary describe the same picture, ghosts included.
-    await expect(canvas).toHaveAttribute('aria-label', '2 pages, 2 links, 1 missing');
-    await expect(page.getByTestId('graph-subtitle')).toHaveText('2 pages · 2 links · 1 missing');
+    await expect(canvas).toHaveAttribute('aria-label', '2 pages, 2 links, 1 not created yet');
+    await expect(page.getByTestId('graph-subtitle')).toHaveText('2 pages · 2 links · 1 not created yet');
     await expect(page.getByTestId('graph-legend')).toBeVisible();
   });
 

@@ -190,10 +190,15 @@ export function filterGraph(model: GraphModel, filter: GraphFilter = {}): Filter
   );
   const visiblePages = new Set(nodes.map((node) => node.id));
 
+  // #yy347xgi (3): a page not created yet has no tags of its own; for a `tag:` term it carries the tags of the
+  // pages that link to it, so `tag:#x` keeps the not-created pages #x pages link to (as the chips always did), and
+  // `-tag:#x` drops one that #x pages link to (it belongs to #x, @lead).
+  const tagsOfPage = new Map(model.nodes.map((node) => [node.id, node.tags]));
   const ghosts = filter.hideUnresolved
     ? []
     : model.ghosts.filter((ghost) => {
-        if (!matchesGraphQuery(query, { title: ghost.title, path: ghost.title, tags: [] })) return false;
+        const tags = [...new Set(ghost.sources.flatMap((source) => tagsOfPage.get(source) ?? []))];
+        if (!matchesGraphQuery(query, { title: ghost.title, path: ghost.title, tags })) return false;
         // A text query matches ghost titles independently of their sources (spec/ux
         // §9: only a tag filter hides a ghost when all sources are filtered out).
         if (selected.size === 0) return true;
@@ -510,7 +515,7 @@ export function graphCounts(
 }
 
 /**
- * Visible header subtitle, e.g. "12 pages · 20 links · 2 missing". Counts the
+ * Visible header subtitle, e.g. "12 pages · 20 links · 2 not created yet". Counts the
  * same edges as the canvas aria label (ghosts included) and pluralises them.
  */
 export function graphSubtitle(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
@@ -522,7 +527,7 @@ export function graphSubtitle(graph: Pick<GraphModel, "nodes" | "ghosts" | "link
   ].join(" · ");
 }
 
-/** Canvas aria-label, e.g. "12 pages, 20 links, 2 missing" (spec/ux §9). */
+/** Canvas aria-label, e.g. "12 pages, 20 links, 2 not created yet" (spec/ux §9). */
 export function ariaSummary(graph: Pick<GraphModel, "nodes" | "ghosts" | "links">): string {
   const counts = graphCounts(graph);
   return [
@@ -556,4 +561,142 @@ export function ghostDetail(ghost: GhostNode): string {
 /** Tooltip copy for a ghost: `“Title” — not created yet · N links · Click to create`. */
 export function ghostTooltip(ghost: GhostNode): string {
   return t("graph.ghostTooltip", { title: ghost.title, links: t("graph.links", { count: ghost.refCount }) });
+}
+
+/**
+ * #yy347xgi (3): the tag chips are `tag:#x` terms in the search, so the field shows what's applied and the chips
+ * and a typed query can never disagree. A chip is pressed when the query has its positive term.
+ */
+export function queryHasTag(query: string, tag: string): boolean {
+  const wanted = tag.toLowerCase();
+  return parseGraphQuery(query).some((terms) => terms.some((term) => term.op === "tag" && !term.negate && term.value === wanted));
+}
+
+/** The query's tokens, `(` and `)` standing alone, quoted phrases whole (as the core parser splits them). */
+function queryTokens(query: string): string[] {
+  return query.match(/[()]|-?(?:[A-Za-z]+:)?(?:"[^"]*"?|[^\s()]+)/g) ?? [];
+}
+
+/** Tokens back to text: no space after `(` or before `)`, nor between `-` or `op:` and the `(` they open. */
+function joinTokens(tokens: readonly string[]): string {
+  let out = "";
+  for (const token of tokens) {
+    const glued = out.endsWith("(") || token === ")" || (token === "(" && (out.endsWith("-") || out.endsWith(":")));
+    if (out && !glued) out += " ";
+    out += token;
+  }
+  return out;
+}
+
+const isTagToken = (token: string): boolean => /^tag:#?[^\s()]+$/i.test(token);
+/** A chip group's members: `tag:` terms, negated ones too (`-tag:#b`, from a hand-typed `tag:( a OR -b )`). */
+const isGroupTagToken = (token: string): boolean => /^-?tag:#?[^\s()]+$/i.test(token);
+
+/**
+ * `tag:( a OR b )` typed by hand, in the chips' own form `( tag:#a OR tag:#b )`, so a chip that shows pressed for a
+ * bare word in such a group can find it and take it out (@opus-editor). A word with its own op, a `-word` and
+ * nested brackets are left as they are; `-tag:( … )` too (it's not a chip).
+ */
+function chipForm(tokens: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (!/^tag:$/i.test(token) || tokens[i + 1] !== "(") {
+      out.push(token);
+      continue;
+    }
+    let close = -1;
+    for (let j = i + 2, depth = 0; j < tokens.length; j += 1) {
+      if (tokens[j] === "(") depth += 1;
+      else if (tokens[j] === ")") {
+        if (depth === 0) {
+          close = j;
+          break;
+        }
+        depth -= 1;
+      }
+    }
+    const inside = tokens.slice(i + 2, close === -1 ? tokens.length : close);
+    if (inside.some((word) => word === "(" || word === ")")) {
+      out.push(token);
+      continue;
+    }
+    // A bare word is a tag here; `-b` meant "not tag b" inside `tag:( … )`, so it stays a negated tag (@opus-editor).
+    const asTag = (word: string): string => {
+      if (word === "OR" || word.includes(":") || word.startsWith('"') || word.startsWith('-"')) return word;
+      return word.startsWith("-") ? `-tag:#${word.slice(1).replace(/^#/, "")}` : `tag:#${word.replace(/^#/, "")}`;
+    };
+    out.push("(", ...inside.map(asTag), ")");
+    i = close === -1 ? tokens.length : close;
+  }
+  return out;
+}
+
+/**
+ * Add the chip's `tag:#x` term to the query, or take every positive term for that tag out of it. Two or more
+ * chips are one bracketed group, `(tag:#a OR tag:#b)` (@lead): they mean "either tag", while words typed beside
+ * them still narrow. Taking a chip out takes its `OR` along and unwraps a group left with one term.
+ */
+export function toggleQueryTag(query: string, tag: string): string {
+  const wanted = tag.toLowerCase();
+  const isTerm = (token: string) => {
+    const match = /^tag:#?([^\s()]+)$/i.exec(token);
+    return Boolean(match && match[1]!.toLowerCase() === wanted);
+  };
+  let tokens = chipForm(queryTokens(query.trim()));
+  if (!queryHasTag(query, tag)) {
+    const term = `tag:#${tag}`;
+    // An existing chip group: `( tag OR tag … )`.
+    for (let open = 0; open < tokens.length; open += 1) {
+      if (tokens[open] !== "(") continue;
+      const close = tokens.indexOf(")", open);
+      const inside = close === -1 ? [] : tokens.slice(open + 1, close);
+      if (inside.length && inside.every((token, i) => (i % 2 === 0 ? isGroupTagToken(token) : token === "OR"))) {
+        tokens.splice(close, 0, "OR", term);
+        return joinTokens(tokens);
+      }
+    }
+    // A lone chip term at the top level becomes the group.
+    let depth = 0;
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i]!;
+      if (token === "(") depth += 1;
+      else if (token === ")") depth = Math.max(0, depth - 1);
+      else if (depth === 0 && isTagToken(token) && tokens[i - 1] !== "OR" && tokens[i + 1] !== "OR") {
+        tokens.splice(i, 1, "(", token, "OR", term, ")");
+        return joinTokens(tokens);
+      }
+    }
+    return joinTokens([...tokens, term]);
+  }
+  // Out: each term with its OR (the one before it, unless that opens a group; else the one after it).
+  const kept: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (!isTerm(token)) {
+      kept.push(token);
+      continue;
+    }
+    if (kept[kept.length - 1] === "OR") kept.pop();
+    else if (tokens[i + 1] === "OR") i += 1;
+  }
+  // Tidy groups: `()` goes, `(x)` unwraps.
+  tokens = kept;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let i = 0; i < tokens.length; i += 1) {
+      if (tokens[i] !== "(") continue;
+      if (tokens[i + 1] === ")") {
+        tokens.splice(i, 2);
+        changed = true;
+        break;
+      }
+      if (tokens[i + 2] === ")" && tokens[i + 1] !== "(" && tokens[i + 1] !== "OR") {
+        tokens.splice(i, 3, tokens[i + 1]!);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return joinTokens(tokens);
 }

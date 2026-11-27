@@ -22,6 +22,8 @@ export interface GraphControlsProps {
   settings: GraphSettings;
   onChange: (next: GraphSettings) => void;
   onClose: () => void;
+  /** #62tnekds: the graph shows as a list, so the forces (which only arrange the picture) wait. */
+  listMode?: boolean;
 }
 
 type FilterFlag = Exclude<keyof GraphFilters, "search">;
@@ -117,7 +119,7 @@ function ForceSlider({ name, label, value, onCommit }: { name: keyof GraphForces
   );
 }
 
-export function GraphControls({ settings, onChange, onClose }: GraphControlsProps) {
+export function GraphControls({ settings, onChange, onClose, listMode = false }: GraphControlsProps) {
   const t = useT();
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [groupsOpen, setGroupsOpen] = useState(true);
@@ -235,6 +237,12 @@ export function GraphControls({ settings, onChange, onClose }: GraphControlsProp
         ) : null}
       </section>
 
+      {listMode ? (
+        // #62tnekds: forces only arrange the picture; the list doesn't use them, so they wait for the graph.
+        <section className="graph-panel-section">
+          <p className="graph-panel-hint" data-testid="graph-forces-in-list">{t("graph.list.forcesOff")}</p>
+        </section>
+      ) : (
       <section className="graph-panel-section">
         <button
           type="button"
@@ -264,6 +272,7 @@ export function GraphControls({ settings, onChange, onClose }: GraphControlsProp
           </div>
         ) : null}
       </section>
+      )}
     </aside>
   );
 }
