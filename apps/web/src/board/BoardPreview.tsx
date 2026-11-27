@@ -19,6 +19,7 @@ import { boardContentRenderers } from "./content/renderers.js";
 import { syncEdges, syncNodes, type BoardFlowEdge, type BoardFlowNode } from "./flow.js";
 import { lodLevel, type LodLevel } from "./lod.js";
 import { NODE_TYPES } from "./nodes.js";
+import { useAttributionOutOfTabOrder } from "./attribution.js";
 
 /** How a card changed between a version and now (the History panel's Changes, #fr5baurg). */
 export type BoardDiffMark = "added" | "removed" | "changed";
@@ -63,6 +64,7 @@ const CHUNK = 40;
 function Preview({ board, pages = [], loadPage, interactive = false, highlight }: BoardPreviewProps) {
   const flow = useReactFlow<BoardFlowNode, BoardFlowEdge>();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  useAttributionOutOfTabOrder(rootRef);
   const lod = useRef<LodLevel>(0);
   const [nodes, setNodes] = useState<BoardFlowNode[]>(() => readOnlyNodes(syncNodes([], board, null, NONE)));
   const [edges, setEdges] = useState<BoardFlowEdge[]>(() => syncEdges([], board, null, NONE));

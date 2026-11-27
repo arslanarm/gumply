@@ -113,6 +113,7 @@ import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
 import { clipboardPlainText } from "./clipboard-text.js";
 import { motionMs } from "../lib/motion.js";
 import { freeSpot, nearestFree } from "./placement.js";
+import { useAttributionOutOfTabOrder } from "./attribution.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
@@ -482,6 +483,7 @@ function BoardCanvas(props: BoardEditorProps) {
   );
   const flow = useReactFlow<BoardFlowNode, BoardFlowEdge>();
   const rootRef = useRef<HTMLDivElement>(null);
+  useAttributionOutOfTabOrder(rootRef);
 
   const [history, setHistory] = useState<BoardHistory>(() => createHistory(props.board));
   const board = history.present;
@@ -1894,6 +1896,91 @@ function BoardCanvas(props: BoardEditorProps) {
           <div className="visually-hidden" role="status" aria-live="polite" data-testid="board-announcer">
             {announcement}
           </div>
+          {/* #b9425ktw (#fzrwse3y's P3 7): the tool toolbar comes first in the markup, so it's the first Tab stop
+              on the board (it's first on screen); it's positioned absolutely, so where it sits on screen is unchanged. */}
+          <div className="board-toolbar" role="toolbar" aria-label={t("board.toolsLabel")} aria-orientation="vertical" data-testid="board-toolbar">
+            <div className="board-toolbar-group">
+              {TOOLS.map((spec) => (
+                <ToolButton
+                  key={spec.tool}
+                  active={tool === spec.tool}
+                  icon={spec.tool === "shape" ? shape : spec.icon}
+                  label={spec.label}
+                  keys={spec.tool === "connector" ? "C" : spec.keys}
+                  testId={`board-tool-${spec.tool}`}
+                  onClick={() => {
+                    chooseTool(spec.tool);
+                    if (spec.tool === "shape") setShapeMenu((open) => (tool === "shape" ? !open : true));
+                  }}
+                />
+              ))}
+              <ToolButton
+                icon="image"
+                label={uploadFile ? t("board.imageOrFile") : t("board.imageOrFileUnavailable")}
+                testId="board-tool-image"
+                disabled={!uploadFile}
+                onClick={() => fileInputRef.current?.click()}
+              />
+              <ToolButton
+                icon="page"
+                label={t("board.addPageEllipsis")}
+                testId="board-tool-page"
+                active={pagePicker}
+                onClick={() => {
+                  setShapeMenu(false);
+                  setPagePicker((open) => !open);
+                }}
+              />
+            </div>
+            <div className="board-toolbar-group">
+              <ToolButton icon="undo" label={t("common.undo")} keys={withModifier(modifier, "Z")} testId="board-undo" disabled={!canUndo(history)} onClick={doUndo} />
+              <ToolButton icon="redo" label={t("board.redo")} keys={`${modifier}+Shift+Z`} testId="board-redo" disabled={!canRedo(history)} onClick={doRedo} />
+            </div>
+            {shapeMenu && tool === "shape" ? (
+              <div className="board-popover board-shape-menu" data-testid="board-shape-menu" role="menu">
+                {SHAPES.map((item) => (
+                  <button
+                    type="button"
+                    key={item.shape}
+                    role="menuitemradio"
+                    aria-checked={shape === item.shape}
+                    className={`board-tool${shape === item.shape ? " is-active" : ""}`}
+                    aria-label={item.label}
+                    data-tooltip={item.label}
+                    data-testid={`board-shape-${item.shape}`}
+                    onClick={() => {
+                      setShape(item.shape);
+                      setShapeMenu(false);
+                    }}
+                  >
+                    <BoardIcon name={item.shape} />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {pagePicker ? (
+              <PagePicker
+                pages={pages}
+                onClose={() => setPagePicker(false)}
+                onPick={(page) => {
+                  setPagePicker(false);
+                  addFileCard(page.path);
+                }}
+              />
+            ) : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              hidden
+              data-testid="board-file-input"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                event.target.value = "";
+                files.forEach((file) => void addUploadedFile(file));
+              }}
+            />
+          </div>
+
           <ReactFlow<BoardFlowNode, BoardFlowEdge>
             nodes={nodes}
             edges={edges}
@@ -2025,88 +2112,6 @@ function BoardCanvas(props: BoardEditorProps) {
             </Panel>
           </ReactFlow>
 
-          <div className="board-toolbar" role="toolbar" aria-label={t("board.toolsLabel")} aria-orientation="vertical" data-testid="board-toolbar">
-            <div className="board-toolbar-group">
-              {TOOLS.map((spec) => (
-                <ToolButton
-                  key={spec.tool}
-                  active={tool === spec.tool}
-                  icon={spec.tool === "shape" ? shape : spec.icon}
-                  label={spec.label}
-                  keys={spec.tool === "connector" ? "C" : spec.keys}
-                  testId={`board-tool-${spec.tool}`}
-                  onClick={() => {
-                    chooseTool(spec.tool);
-                    if (spec.tool === "shape") setShapeMenu((open) => (tool === "shape" ? !open : true));
-                  }}
-                />
-              ))}
-              <ToolButton
-                icon="image"
-                label={uploadFile ? t("board.imageOrFile") : t("board.imageOrFileUnavailable")}
-                testId="board-tool-image"
-                disabled={!uploadFile}
-                onClick={() => fileInputRef.current?.click()}
-              />
-              <ToolButton
-                icon="page"
-                label={t("board.addPageEllipsis")}
-                testId="board-tool-page"
-                active={pagePicker}
-                onClick={() => {
-                  setShapeMenu(false);
-                  setPagePicker((open) => !open);
-                }}
-              />
-            </div>
-            <div className="board-toolbar-group">
-              <ToolButton icon="undo" label={t("common.undo")} keys={withModifier(modifier, "Z")} testId="board-undo" disabled={!canUndo(history)} onClick={doUndo} />
-              <ToolButton icon="redo" label={t("board.redo")} keys={`${modifier}+Shift+Z`} testId="board-redo" disabled={!canRedo(history)} onClick={doRedo} />
-            </div>
-            {shapeMenu && tool === "shape" ? (
-              <div className="board-popover board-shape-menu" data-testid="board-shape-menu" role="menu">
-                {SHAPES.map((item) => (
-                  <button
-                    type="button"
-                    key={item.shape}
-                    role="menuitemradio"
-                    aria-checked={shape === item.shape}
-                    className={`board-tool${shape === item.shape ? " is-active" : ""}`}
-                    aria-label={item.label}
-                    data-tooltip={item.label}
-                    data-testid={`board-shape-${item.shape}`}
-                    onClick={() => {
-                      setShape(item.shape);
-                      setShapeMenu(false);
-                    }}
-                  >
-                    <BoardIcon name={item.shape} />
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {pagePicker ? (
-              <PagePicker
-                pages={pages}
-                onClose={() => setPagePicker(false)}
-                onPick={(page) => {
-                  setPagePicker(false);
-                  addFileCard(page.path);
-                }}
-              />
-            ) : null}
-            <input
-              ref={fileInputRef}
-              type="file"
-              hidden
-              data-testid="board-file-input"
-              onChange={(event) => {
-                const files = Array.from(event.target.files ?? []);
-                event.target.value = "";
-                files.forEach((file) => void addUploadedFile(file));
-              }}
-            />
-          </div>
 
           {creating || tool === "pen" ? (
             <div
