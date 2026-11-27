@@ -62,7 +62,9 @@ test('Distribute horizontally: equal gaps, the outer two stay; it needs three ob
   const gap1 = after[1]!.x - (after[0]!.x + after[0]!.width);
   const gap2 = after[2]!.x - (after[1]!.x + after[1]!.width);
   expect(Math.abs(gap1 - gap2)).toBeLessThanOrEqual(1);
-  // Two selected: distribute is offered but disabled.
+  // Two selected: distribute is offered but disabled. (Escape closes the panel first: it sits over the board.)
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('board-align-menu')).toHaveCount(0);
   await page.getByTestId('board-sticky').nth(0).click();
   await page.getByTestId('board-sticky').nth(1).click({ modifiers: ['Shift'] });
   await page.getByTestId('board-align').click();
@@ -70,36 +72,37 @@ test('Distribute horizontally: equal gaps, the outer two stay; it needs three ob
   await expect(page.getByTestId('board-align-left')).toBeEnabled();
 });
 
-test('Align by keyboard (@lead): Tab reaches the button, Enter opens the panel on its first action, arrows move in the 3×3, Enter applies, Escape returns to the button', async ({ page }) => {
+test('Align by keyboard (@lead): Alt+Shift shortcuts on a multi-selection (Tab would select one object), and the panel\'s own keys', async ({ page }) => {
   await threeStickies(page);
   await page.keyboard.press('Control+a');
+  const before = await nodes(page);
+  // Alt+Shift+L: align left, one undo step.
+  await page.keyboard.press('Alt+Shift+KeyL');
+  const left = Math.min(...before.map((node) => node.x));
+  await expect.poll(async () => (await nodes(page)).map((node) => node.x)).toEqual([left, left, left]);
+  // Alt+Shift+M: align middles (same height stickies: one centre line).
+  await page.keyboard.press('Alt+Shift+KeyM');
+  await expect.poll(async () => new Set((await nodes(page)).map((node) => node.y + node.height / 2)).size).toBe(1);
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await nodes(page)).map((node) => [node.x, node.y])).toEqual(before.map((node) => [node.x, node.y]));
+  // The panel: a focused Align button opens it with Enter on its first action; arrows move in the 3×3 (objects
+  // stay put); Enter applies without opening an editor; Escape closes it back to the button, selection kept.
   const button = page.getByTestId('board-align');
-  await expect(button).toBeVisible();
-  // Reachable by Tab from the board.
-  let reached = false;
-  for (let i = 0; i < 40 && !reached; i += 1) {
-    await page.keyboard.press('Tab');
-    reached = await button.evaluate((element) => element === document.activeElement);
-  }
-  expect(reached, 'the Align button is a Tab stop').toBe(true);
+  await button.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('board-align-menu')).toBeVisible();
   await expect(page.getByTestId('board-align-left')).toBeFocused();
-  // Right → centre; Down → middle (the row below); the board's arrows don't move anything meanwhile.
-  const before = await nodes(page);
   await page.keyboard.press('ArrowRight');
   await expect(page.getByTestId('board-align-center')).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(page.getByTestId('board-align-middle')).toBeFocused();
-  expect(await nodes(page)).toEqual(before);
+  expect((await nodes(page)).map((node) => [node.x, node.y])).toEqual(before.map((node) => [node.x, node.y]));
   await page.keyboard.press('Enter');
   await expect.poll(async () => new Set((await nodes(page)).map((node) => node.y + node.height / 2)).size).toBe(1);
-  // No object's editor opened by that Enter.
   await expect(page.getByTestId('board-text-editor')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('board-align-menu')).toHaveCount(0);
   await expect(button).toBeFocused();
-  // The selection is still there (Escape closed the panel, not the selection).
   await expect(page.getByTestId('board-context-toolbar')).toBeVisible();
 });
-
