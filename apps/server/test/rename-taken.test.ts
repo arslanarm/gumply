@@ -88,4 +88,12 @@ describe("a rename to a taken name is refused (#hazfav7a)", () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "A page called “Pantry” is already here", reason: "name-taken", title: "Pantry" });
   });
+
+  it("a move into a folder that has that name already: refused the same way (it was already refused, without the reason)", async () => {
+    const { dir, store } = await vault({ "Pantry.md": "Shelves.\n", "Kitchen/Pantry.md": "Jars.\n" });
+    const error = await refusal(() => store.move("Kitchen/Pantry", null));
+    expect([error.status, error.reason, error.title]).toEqual([409, "name-taken", "Pantry"]);
+    expect(await readFile(join(dir, "Kitchen/Pantry.md"), "utf8")).toBe("Jars.\n");
+    expect(existsSync(join(dir, "Pantry 2.md"))).toBe(false);
+  });
 });
