@@ -41,6 +41,8 @@ describe("the registry", () => {
       const all = [
         ...availableCommands(context(meta("P"), { editor: true, board: true, desktop: true }), { modifier: "Ctrl" }),
         ...availableCommands(context(owned), { modifier: "Ctrl" }),
+        // #pypzxe6i: a board's own commands (Export as image…).
+        ...availableCommands(context(meta("Map.canvas", "whiteboard")), { modifier: "Ctrl" }),
       ];
       for (const id of STATIC_COMMAND_IDS.filter((item) => item !== "view.search")) {
         const command = all.find((item) => item.id === id);
