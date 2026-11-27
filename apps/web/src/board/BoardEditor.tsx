@@ -117,6 +117,29 @@ import { freeSpot, nearestFree } from "./placement.js";
 import { useAttributionOutOfTabOrder } from "./attribution.js";
 import { alignNodes, distributeNodes, type Alignment, type Distribution } from "./align.js";
 
+/** #b9425ktw D: Alt+Shift+… for align and distribute, by key position (event.code). */
+const ALIGN_KEYS: Record<string, Alignment | Distribution> = {
+  KeyL: "left",
+  KeyC: "center",
+  KeyR: "right",
+  KeyT: "top",
+  KeyM: "middle",
+  KeyB: "bottom",
+  KeyH: "horizontal",
+  KeyV: "vertical",
+};
+/** The same keys as written in tooltips and the `?` sheet. */
+export const ALIGN_SHORTCUTS: Record<Alignment | Distribution, string> = {
+  left: "Alt+Shift+L",
+  center: "Alt+Shift+C",
+  right: "Alt+Shift+R",
+  top: "Alt+Shift+T",
+  middle: "Alt+Shift+M",
+  bottom: "Alt+Shift+B",
+  horizontal: "Alt+Shift+H",
+  vertical: "Alt+Shift+V",
+};
+
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
 
 /** A page or board offered by "Add page…" (the host maps its tree to paths). */
@@ -1571,6 +1594,17 @@ function BoardCanvas(props: BoardEditorProps) {
         if (first) announce(t("board.a11y.moved", { label: ids.size === 1 ? describe(first) : String(ids.size) }));
         return;
       }
+      // #b9425ktw D (@lead: not mouse-only): Alt+Shift+L/C/R/T/M/B align, Alt+Shift+H/V distribute a multi-selection.
+      // By the key's position (event.code), so they work in any keyboard layout, and Alt's dead keys on macOS don't
+      // matter. Tabbing to the Align button would select one object instead.
+      if (event.altKey && event.shiftKey && !mod) {
+        const how = ALIGN_KEYS[event.code];
+        if (how && selectedRef.current.nodes.length >= 2) {
+          event.preventDefault();
+          arrange(how);
+          return;
+        }
+      }
       if (key === "!" || (event.shiftKey && event.code === "Digit1")) {
         event.preventDefault();
         fit();
@@ -1605,7 +1639,7 @@ function BoardCanvas(props: BoardEditorProps) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [actions, announce, apply, chooseTool, createFromDraft, deleteSelection, describe, doRedo, doUndo, duplicateSelection, fit, focusNode, ownsEvent, reorder, select, tool, viewCentre]);
+  }, [actions, announce, apply, arrange, chooseTool, createFromDraft, deleteSelection, describe, doRedo, doUndo, duplicateSelection, fit, focusNode, ownsEvent, reorder, select, tool, viewCentre]);
 
   /* ---------------- clipboard ---------------- */
 
@@ -2154,7 +2188,8 @@ function BoardCanvas(props: BoardEditorProps) {
                             key={how}
                             className="board-context-button"
                             aria-label={t(label)}
-                            data-tooltip={t(label)}
+                            data-tooltip={`${t(label)} · ${ALIGN_SHORTCUTS[how]}`}
+                            aria-keyshortcuts={ALIGN_SHORTCUTS[how]}
                             data-testid={`board-align-${how}`}
                             // Distributing needs three: the first and last stay, the ones between move.
                             disabled={(how === "horizontal" || how === "vertical") && selectedNodeIds.length < 3}

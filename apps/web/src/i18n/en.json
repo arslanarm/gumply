@@ -238,6 +238,8 @@
       "duplicate": "Duplicate",
       "copyPaste": "Copy / paste",
       "bringToFrontSendToBack": "Bring to front / send to back",
+      "alignSelection": "Align left / centre / right / top / middle / bottom",
+      "distributeSelection": "Distribute horizontally / vertically",
       "delete": "Delete",
       "undoRedo": "Undo / redo",
       "openToday": "Open today's note",
