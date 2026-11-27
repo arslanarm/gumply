@@ -242,6 +242,24 @@ test.describe('board P2s from the hunt (#sdwrzdgx)', () => {
         return { over, first: at(first.x + first.width / 2, first.y + first.height / 2) };
       });
     await expect.poll(hits).toEqual({ over: 'c', first: 'under' });
+
+    // So "Bring to front" / "Send to back" can't move a frame over cards: disabled for frames, saying why.
+    const frame = (await page.locator('.react-flow__node[data-id="g"]').boundingBox())!;
+    await page.mouse.click(frame.x + frame.width - 20, frame.y + frame.height - 20);
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
+    const front = page.getByTestId('board-front');
+    await expect(front).toHaveAttribute('aria-disabled', 'true');
+    await expect(front).toHaveAttribute('data-tooltip', 'Frames always sit behind cards');
+    await expect(page.getByTestId('board-back')).toHaveAttribute('aria-disabled', 'true');
+    const order = async () => (await board(page)).nodes.map((node) => node.id).join(',');
+    const before = await order();
+    await front.click();
+    await page.keyboard.press(']');
+    await expect(page.getByTestId('board-announcer')).toHaveText(/Frames always sit behind cards/);
+    expect(await order()).toBe(before);
+    // A card in the selection: enabled again.
+    await page.locator('.react-flow__node[data-id="c"]').click({ modifiers: ['Shift'] });
+    await expect(front).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   test('Enter on a focused toolbar button chooses the tool; Enter on the object still edits it', async ({ page }) => {
