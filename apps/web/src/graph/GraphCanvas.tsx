@@ -1,5 +1,5 @@
 import type { GraphForces, GraphNode } from "@gumply/core";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, useId } from "react";
 import ForceGraph2D, {
   type ForceGraphMethods,
   type LinkObject,
@@ -28,7 +28,10 @@ import {
   pickNode,
   visibleBounds,
   type AlphaForce,
+  type ArrowDirection,
   type FitItem,
+  clockwiseNeighbours,
+  nearestInDirection,
 } from "./graph-interaction.js";
 import { emojiNodeSize, emojiSprite, normaliseIcon } from "./emoji-sprites.js";
 import { engineTicks, forcesToken, forceStrengths, LAYOUT_SETTINGS, layoutInputFor, STREAM_MAX_NODES } from "./layout-forces.js";
@@ -66,6 +69,8 @@ export interface GraphCanvasProps {
   reducedMotion?: boolean;
   onOpenPage: (id: string) => void;
   onCreatePage?: (title: string) => void;
+  /** #5n2p7phw: Escape on the canvas hands the keyboard here (the search field, the List toggle). */
+  onLeave?: () => void;
   /**
    * E1: a node's fill instead of the default (first tag, else the page
    * colour), given the theme's palette; null keeps the default. Keep it
@@ -120,6 +125,8 @@ const LABEL_ALLOWANCE = 16;
 const MAX_FIT_ZOOM = 8;
 /** #yy347xgi (5): the gap between a tag node's dot and its ring, in CSS px. */
 const TAG_RING_GAP_PX = 2.5;
+/** #5n2p7phw: a keyboard move brings its node in when it's this close to the canvas's edge (CSS px). */
+const KEYBOARD_EDGE_PX = 40;
 /** #yy347xgi (4): up to this many matches of a search shown in context get their labels. */
 const MATCH_LABELS = 30;
 /** ... nor further out (very large vaults still show every node). */
@@ -296,6 +303,8 @@ interface NodeStyle {
   /** Label width at LABEL_FONT_PX, in CSS px (for label-aware fitting). */
   labelWidth: number;
   tooltip: string;
+  /** #5n2p7phw: what the live region says when the keyboard reaches it ("Basil, 16 links, #garden"). */
+  spoken: string;
 }
 
 let measureContext: CanvasRenderingContext2D | null | undefined;
@@ -338,6 +347,7 @@ export function GraphCanvas({
   reducedMotion = false,
   onOpenPage,
   onCreatePage,
+  onLeave,
   colorOf,
   forces,
   spotlight = null,
@@ -418,7 +428,17 @@ export function GraphCanvas({
     armGestureEnd();
   }, [armGestureEnd]);
   useEffect(() => () => window.clearTimeout(gestureTimerRef.current), []);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [pointerHoverId, setHoveredId] = useState<string | null>(null);
+  // #5n2p7phw: the node the keyboard is on. It's drawn (and its links cached) exactly as hover: the pointer's node
+  // wins while it's over one, and the keyboard's shows again when it leaves.
+  const [keyboardId, setKeyboardId] = useState<string | null>(null);
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+  const hoveredId = pointerHoverId ?? (keyboardFocus ? keyboardId : null);
+  const keyboardRingId = keyboardFocus ? keyboardId : null;
+  const [spoken, setSpoken] = useState("");
+  /** `[` / `]`: the node whose neighbours are being stepped through, where in its ring, and the node landed on. */
+  const neighbourCursor = useRef<{ of: string; at: number; landed: string } | null>(null);
+  const hintId = useId();
   /**
    * #pifuz5zs: a worker-laid graph whose layout has finished draws its resting
    * links from a cached picture (see `onFramePre`); force-graph then draws only
@@ -500,6 +520,7 @@ export function GraphCanvas({
         // The hovered node's label already shows the title; only repeat it
         // when the label had to be truncated.
         tooltip: truncated ? `${title} · ${detail}` : detail,
+        spoken: `${title}, ${detail.split(" · ").join(", ")}`,
       });
     }
     return styles;
@@ -1021,6 +1042,18 @@ export function GraphCanvas({
         ctx.arc(node.x as number, node.y as number, (style.radius + 3) / k, 0, Math.PI * 2);
         ctx.stroke();
       }
+      // #5n2p7phw: the keyboard's node gets a dashed ring outside the hover ring, so focus reads apart from hover.
+      if (keyboardRingId) {
+        const focused = (nodesRef.current as PositionedNode[]).find((node) => node.id === keyboardRingId);
+        const style = styles.get(keyboardRingId);
+        if (focused?.x !== undefined && focused.y !== undefined && style) {
+          ctx.setLineDash([3 / k, 2 / k]);
+          ctx.beginPath();
+          ctx.arc(focused.x, focused.y, (style.radius + 6) / k, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
 
       // Labels last, so they sit above every node (Obsidian does the same).
       const labelled = labelIds;
@@ -1052,7 +1085,7 @@ export function GraphCanvas({
 
       ctx.restore();
     },
-    [colors, highlightId, hoveredId, neighbours, labelIds, linkPaint, spotlight],
+    [colors, highlightId, hoveredId, neighbours, labelIds, linkPaint, spotlight, keyboardRingId],
   );
   // After each painted frame: if the camera is still moving, the idle wait starts over
   // from here (#9x4duwmg B-fix), so a slow frame can't outlast it.
@@ -1550,6 +1583,117 @@ export function GraphCanvas({
     [],
   );
 
+  // #5n2p7phw: the canvas from the keyboard. Positions are read on screen (what the user sees), from the same nodes
+  // the drawing uses; moves go through the hover state, so the drawing and the link picture need nothing new.
+  const screenPoints = (): Array<{ id: string; x: number; y: number }> => {
+    const graph = graphRef.current;
+    if (!graph) return [];
+    const points: Array<{ id: string; x: number; y: number }> = [];
+    for (const node of nodesRef.current as PositionedNode[]) {
+      if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
+      const point = graph.graph2ScreenCoords(node.x as number, node.y as number);
+      points.push({ id: node.id, x: point.x, y: point.y });
+    }
+    return points;
+  };
+  const startNode = (): string | null => {
+    const ids = new Set((nodesRef.current as PositionedNode[]).map((node) => node.id));
+    for (const id of [highlightId, centerId]) if (id && ids.has(id)) return id;
+    let best: string | null = null;
+    let most = -1;
+    for (const node of nodesRef.current as CanvasNode[]) {
+      const count = "linkCount" in node ? (node as GraphNode).linkCount : (node as GhostNode).refCount ?? 0;
+      if (count > most) {
+        most = count;
+        best = node.id;
+      }
+    }
+    return best;
+  };
+  const focusNode = (id: string, keepCursor = false): void => {
+    setKeyboardId(id);
+    if (!keepCursor) neighbourCursor.current = null;
+    setSpoken(nodeStylesRef.current.get(id)?.spoken ?? "");
+    // The view follows: a node off screen (or near its edge) is brought in, as the user's own view.
+    const graph = graphRef.current;
+    const node = (nodesRef.current as PositionedNode[]).find((candidate) => candidate.id === id);
+    if (!graph || node?.x === undefined || node.y === undefined) return;
+    const point = graph.graph2ScreenCoords(node.x, node.y);
+    const { width, height } = sizeRef.current;
+    const margin = KEYBOARD_EDGE_PX;
+    if (point.x < margin || point.y < margin || point.x > width - margin || point.y > height - margin) {
+      stopCameraAnimation();
+      userViewRef.current = true;
+      graph.centerAt(node.x, node.y, reducedMotion ? 0 : 250);
+    }
+  };
+  const onCanvasFocus = (event: React.FocusEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return;
+    setKeyboardFocus(true);
+    const id = keyboardId && nodeStylesRef.current.has(keyboardId) ? keyboardId : startNode();
+    if (id) focusNode(id);
+  };
+  const onCanvasKey = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return;
+    const graph = graphRef.current;
+    const current = keyboardId;
+    const arrows: Record<string, ArrowDirection> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+    if (arrows[event.key] && current) {
+      event.preventDefault();
+      const points = screenPoints();
+      const from = points.find((point) => point.id === current);
+      const next = from ? nearestInDirection(from, points, arrows[event.key]!) : null;
+      if (next) focusNode(next);
+      return;
+    }
+    if ((event.key === "]" || event.key === "[") && current) {
+      event.preventDefault();
+      // Still stepping round the same node (the focus is where the last step landed)? Else this node is the centre.
+      const cursor = neighbourCursor.current;
+      const anchor = cursor && cursor.landed === current ? cursor.of : current;
+      const points = screenPoints();
+      const center = points.find((point) => point.id === anchor);
+      const around = neighbourIds(links, anchor);
+      const ring = center ? clockwiseNeighbours(center, points.filter((point) => around.has(point.id))) : [];
+      if (ring.length === 0) return;
+      const at = cursor && cursor.of === anchor && cursor.landed === current ? cursor.at : -1;
+      const step = event.key === "]" ? 1 : -1;
+      const index = at === -1 ? (step === 1 ? 0 : ring.length - 1) : (at + step + ring.length) % ring.length;
+      const target = ring[index]!;
+      neighbourCursor.current = { of: anchor, at: index, landed: target };
+      focusNode(target, true);
+      return;
+    }
+    if (event.key === "Enter" && current) {
+      event.preventDefault();
+      const node = (nodesRef.current as CanvasNode[]).find((candidate) => candidate.id === current);
+      if (node) handleNodeClickRef.current(node);
+      return;
+    }
+    if ((event.key === "+" || event.key === "=" || event.key === "-") && graph) {
+      event.preventDefault();
+      stopCameraAnimation();
+      userViewRef.current = true;
+      const k = graph.zoom();
+      graph.zoom(event.key === "-" ? Math.max(0.06, k / 1.5) : Math.min(8, k * 1.5), reducedMotion ? 0 : 200);
+      const node = (nodesRef.current as PositionedNode[]).find((candidate) => candidate.id === current);
+      if (node?.x !== undefined && node.y !== undefined) graph.centerAt(node.x, node.y, reducedMotion ? 0 : 200);
+      return;
+    }
+    if (event.key === "0") {
+      event.preventDefault();
+      fitView(reducedMotion ? 0 : 300, "keyboard");
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setKeyboardFocus(false);
+      setSpoken("");
+      if (onLeave) onLeave();
+      else event.currentTarget.blur();
+    }
+  };
+
   return (
     <div className="graph-canvas-wrap">
       {showControls ? (
@@ -1605,9 +1749,25 @@ export function GraphCanvas({
         data-graph-layout={engine.worker ? "worker" : "engine"}
         data-graph-forces-runs={String(forcesRuns)}
         data-graph-arranging={arranging === null ? undefined : "true"}
-        role="img"
+        // #5n2p7phw: one Tab stop; the keys go to the canvas while it has the focus (see onCanvasKey).
+        role="application"
+        aria-roledescription={t("graph.roleDescription")}
         aria-label={ariaLabel}
+        aria-describedby={hintId}
+        tabIndex={0}
+        onFocus={onCanvasFocus}
+        onBlur={(event) => {
+          if (event.target === event.currentTarget) setKeyboardFocus(false);
+        }}
+        onKeyDown={onCanvasKey}
+        data-graph-focused={keyboardRingId ?? undefined}
       >
+        <p id={hintId} className="visually-hidden">
+          {t("graph.keysHint")}
+        </p>
+        <div className="visually-hidden" aria-live="polite" data-testid={`${testId}-spoken`}>
+          {keyboardFocus ? spoken : ""}
+        </div>
         {size.width > 0 && size.height > 0 ? (
           <ForceGraph2D<CanvasNode, GraphLink>
             ref={graphRef}

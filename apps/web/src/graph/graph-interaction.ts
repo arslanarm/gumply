@@ -144,3 +144,46 @@ export function fitZoom(
   }
   return zoom;
 }
+
+/** #5n2p7phw: a node's place on screen, for keyboard moves. */
+export interface ScreenPoint {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export type ArrowDirection = "left" | "right" | "up" | "down";
+
+/**
+ * #5n2p7phw: the node an arrow key moves to: the nearest one in that direction on screen, within a 90° cone
+ * around it, scored by distance plus twice the sideways offset (so a node straight ahead beats a closer one off to
+ * the side). Null when nothing lies that way.
+ */
+export function nearestInDirection(from: ScreenPoint, points: readonly ScreenPoint[], direction: ArrowDirection): string | null {
+  let best: string | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const point of points) {
+    if (point.id === from.id) continue;
+    const dx = point.x - from.x;
+    const dy = point.y - from.y;
+    const ahead = direction === "right" ? dx : direction === "left" ? -dx : direction === "down" ? dy : -dy;
+    const side = Math.abs(direction === "left" || direction === "right" ? dy : dx);
+    if (ahead <= 0 || side > ahead) continue;
+    const score = Math.hypot(dx, dy) + 2 * side;
+    if (score < bestScore) {
+      bestScore = score;
+      best = point.id;
+    }
+  }
+  return best;
+}
+
+/** #5n2p7phw: a node's neighbours in clockwise order on screen, starting from 12 o'clock (`[` and `]` step through). */
+export function clockwiseNeighbours(center: ScreenPoint, neighbours: readonly ScreenPoint[]): string[] {
+  const angle = (point: ScreenPoint) => {
+    // 0 at 12 o'clock, growing clockwise (screen y grows downwards).
+    const a = Math.atan2(point.x - center.x, -(point.y - center.y));
+    return a < 0 ? a + Math.PI * 2 : a;
+  };
+  return [...neighbours].sort((a, b) => angle(a) - angle(b) || a.id.localeCompare(b.id)).map((point) => point.id);
+}

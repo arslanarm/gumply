@@ -118,7 +118,9 @@
     "legendCurrent": "Current page",
     "legendTagNode": "Tag",
     "legendNoTag": "No tag",
-    "depth": "Depth"
+    "depth": "Depth",
+    "roleDescription": "graph",
+    "keysHint": "Arrow keys: nearest page · [ and ]: linked pages · Enter: open · + − 0: zoom · Escape: leave. Or switch to List for a plain list."
   },
   "sidebar": {
     "hide": "Hide sidebar",
