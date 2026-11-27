@@ -600,8 +600,8 @@ const RACY_STAT_MS = 2_500;
  * clock (skew, a network drive) counts too, so such a file is read on every rescan for as long as its ctime stays
  * ahead: a cost bounded to those files (one read each per rescan), never a missed edit.
  */
-function isRacy(stats: { ctimeMs: number }, statAtMs: number): boolean {
-  return stats.ctimeMs > statAtMs - RACY_STAT_MS;
+function isRacy(stats: { ctimeMs: number }, statAtMs: number, windowMs = RACY_STAT_MS): boolean {
+  return stats.ctimeMs > statAtMs - windowMs;
 }
 
 /**
@@ -1373,6 +1373,11 @@ export class VaultStore {
    * is then a directory walk plus stats, not 10,000 reads and parses.
    */
   private readCache = new Map<string, ReadCacheEntry>();
+  /**
+   * #rwgtaffe: the racy window (RACY_STAT_MS). Only tests that count the cache's steady-state reuse right after
+   * writing their files set it to 0, before init(); the rule itself is tested in outside-edit-coarse-ctime.
+   */
+  private racyStatMs = RACY_STAT_MS;
   /** Files the watcher reported since the last refresh (absolute paths). */
   private readonly pendingPaths = new Set<string>();
   /** The watcher saw something a path list can't describe (a directory, an unknown name, an error). */
@@ -1800,7 +1805,7 @@ export class VaultStore {
       // #g95wkd9y: an unchanged file keeps its record; a file the watcher named is always read.
       // #rwgtaffe: not an entry stat'ed too close to its ctime: the same key may hide a later same-size edit.
       if (cached && cached.key === key && cached.id === id && !cached.racy && !reread?.has(absolute)) return { kind: "cached", key, record: cached.record, racy: false };
-      const racy = isRacy(stats, statAtMs);
+      const racy = isRacy(stats, statAtMs, this.racyStatMs);
       const read = await this.readIfPresent(absolute, id);
       if (read === null) return { kind: "gone" }; // Deleted between the stat and the read.
       // #35q6kt6e: this one file can't be read right now (permissions, a lock
@@ -1856,7 +1861,7 @@ export class VaultStore {
       try {
         const statAtMs = Date.now();
         const stats = await stat(absolute);
-        reads.push({ absolute, id: cached.id, key: statKey(stats), racy: isRacy(stats, statAtMs) });
+        reads.push({ absolute, id: cached.id, key: statKey(stats), racy: isRacy(stats, statAtMs, this.racyStatMs) });
       } catch {
         return null; // Deleted: the walk settles ids, parents and folders.
       }
