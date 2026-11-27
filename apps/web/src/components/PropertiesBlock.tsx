@@ -543,6 +543,8 @@ function ListEditor({ property, autoFocus, onSave, links, adornment }: Omit<Valu
   // Chips change at once (typing the next one before the save lands keeps both).
   const [items, change] = useOptimistic(saved);
   const [draft, setDraft] = useState("");
+  /** #5n2yvfjy: an Escape cancels the typed item; its blur must not add it (the cleared draft isn't applied yet). */
+  const cancelled = useRef(false);
   const tags = property.type === "tags";
   // #6imze6ux: all-digit tags Obsidian doesn't count, shown muted.
   const notTags = new Set(property.issue?.kind === "tags-digits" ? property.issue.tags : []);
@@ -561,6 +563,12 @@ function ListEditor({ property, autoFocus, onSave, links, adornment }: Omit<Valu
       add();
     } else if (event.key === "Backspace" && draft === "" && items.length > 0) {
       setItems(items.slice(0, -1));
+    } else if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+      // #5n2yvfjy: like the text and number editors, Escape cancels what was typed and leaves the field (an IME's
+      // Escape only ends its composition).
+      cancelled.current = true;
+      setDraft("");
+      event.currentTarget.blur();
     }
   };
   return (
@@ -593,7 +601,16 @@ function ListEditor({ property, autoFocus, onSave, links, adornment }: Omit<Valu
         autoFocus={autoFocus}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={onKeyDown}
-        onBlur={add}
+        onFocus={() => {
+          cancelled.current = false;
+        }}
+        onBlur={() => {
+          if (cancelled.current) {
+            cancelled.current = false;
+            return;
+          }
+          add();
+        }}
       />
     </div>
   );
