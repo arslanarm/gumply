@@ -54,6 +54,7 @@ The desktop app in MCP mode opens no window and doesn't stop you from opening Gu
 | `WRITES_DISABLED: Writing is turned off for this vault` | The vault is set to *Read only* (or writing was lowered). Choose *Read and add* or *Read and edit*, then restart the AI app's connection. |
 | The AI app only offers reading tools | Same as above: the tools an AI app sees follow the setting when it connected. |
 | `CONFLICT: … changed since it was read` | You (or another app) changed the page after the AI read it. Nothing was overwritten; the AI app should read it again. |
+| `CONFLICT: A page called “…” is already here` | `update_page` with a `title` another page, board or database in that folder already has (any letter case). Nothing was written; the error carries `reason: "name-taken"` and the `title`. Pick another title. |
 | `READ_ONLY: This file is read-only on disk…` | The page's file was made read-only (by you, or by another app such as a sync tool). Gumply never replaces it, so nothing was written. Make the file writable again, then ask the AI app to retry. |
 | `RATE_LIMITED` | More than 30 changes a minute (or 1,000 a day). Wait a moment. |
 | Linux: `Missing X server or $DISPLAY` / `Failed to connect to Wayland display` | Copy the snippet again from Settings: it includes `--ozone-platform=headless`, so no display is needed. |
