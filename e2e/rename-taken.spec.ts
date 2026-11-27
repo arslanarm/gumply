@@ -20,7 +20,7 @@ test('the title field: refused with a message, the title goes back, and the body
   await page.keyboard.press('Control+a');
   await page.keyboard.type('Pantry');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('A page called “Pantry” is already here');
+  await expect(page.getByRole('alert')).toContainText('“Pantry” is already used here');
   await expect(page.getByTestId('page-title')).toHaveText('Notes');
   // Typing in the body goes on, and is saved under the old name.
   await page.getByTestId('editor-content').click();
@@ -40,7 +40,7 @@ test('the sidebar rename: refused, in another letter case too; the item keeps it
   await page.getByTestId('rename-page-Notes').click();
   await page.getByTestId('page-rename-input-Notes').fill('pantry');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('already here');
+  await expect(page.getByRole('alert')).toContainText('is already used here');
   await expect(page.getByTestId('page-item-Notes')).toBeVisible();
   expect(await exists('pantry 2.md')).toBe(false);
   expect(await exists('Notes.md')).toBe(true);
@@ -64,7 +64,7 @@ test('a database Name cell: refused, the row keeps its name; and ru says it in R
   await page.locator('[data-row-id="People/Bo"] .base-cell-edit').click();
   await page.getByTestId('base-title-input-People/Bo').fill('Ann');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('alert').filter({ hasText: 'Ann' })).toContainText('уже');
+  await expect(page.getByRole('alert').filter({ hasText: 'Ann' })).toContainText('уже занято');
   await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ann', 'Bo']);
   expect(await exists('People/Ann 2.md')).toBe(false);
 });

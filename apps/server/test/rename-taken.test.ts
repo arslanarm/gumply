@@ -45,7 +45,7 @@ describe("a rename to a taken name is refused (#hazfav7a)", () => {
     expect(error).toBeInstanceOf(VaultError);
     expect(error.status).toBe(409);
     expect(error.reason).toBe("name-taken");
-    expect(error.message).toBe("A page called “Pantry” is already here");
+    expect(error.message).toBe("“Pantry” is already used here");
     expect(await readFile(join(dir, "Notes.md"), "utf8")).toBe("Body.\n");
     expect(existsSync(join(dir, "Pantry 2.md"))).toBe(false);
     expect(store.get("Notes").title).toBe("Notes");
@@ -86,7 +86,7 @@ describe("a rename to a taken name is refused (#hazfav7a)", () => {
     const { app } = await vault({ "Pantry.md": "Shelves.\n", "Notes.md": "Body.\n" });
     const response = await jsonRequest(app, "PUT", `/api/pages/${encodeURIComponent("Notes")}`, { title: "Pantry" });
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "A page called “Pantry” is already here", reason: "name-taken", title: "Pantry" });
+    expect(await response.json()).toEqual({ error: "“Pantry” is already used here", reason: "name-taken", title: "Pantry" });
   });
 
   it("a move into a folder that has that name already: refused the same way (it was already refused, without the reason)", async () => {
@@ -95,5 +95,13 @@ describe("a rename to a taken name is refused (#hazfav7a)", () => {
     expect([error.status, error.reason, error.title]).toEqual([409, "name-taken", "Pantry"]);
     expect(await readFile(join(dir, "Kitchen/Pantry.md"), "utf8")).toBe("Jars.\n");
     expect(existsSync(join(dir, "Pantry 2.md"))).toBe(false);
+  });
+
+  it("a board moved into a folder that has a board of that name: the same refusal, nothing moved", async () => {
+    const { dir, store } = await vault({ "Pantry.canvas": '{"nodes":[],"edges":[]}', "Kitchen/Pantry.canvas": '{"nodes":[],"edges":[]}' });
+    const error = await refusal(() => store.move("Kitchen/Pantry.canvas", null));
+    expect([error.status, error.reason]).toEqual([409, "name-taken"]);
+    expect(existsSync(join(dir, "Kitchen/Pantry.canvas"))).toBe(true);
+    expect(existsSync(join(dir, "Pantry 2.canvas"))).toBe(false);
   });
 });
