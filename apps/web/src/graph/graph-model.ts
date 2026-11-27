@@ -190,13 +190,14 @@ export function filterGraph(model: GraphModel, filter: GraphFilter = {}): Filter
   );
   const visiblePages = new Set(nodes.map((node) => node.id));
 
-  // #yy347xgi (3): a page not created yet has no tags of its own; for a `tag:` term it carries its visible
-  // sources' tags, so `tag:#x` keeps the not-created pages that #x pages link to, as the tag chips always did.
-  const tagsOfVisible = new Map(nodes.map((node) => [node.id, node.tags]));
+  // #yy347xgi (3): a page not created yet has no tags of its own; for a `tag:` term it carries the tags of the
+  // pages that link to it, so `tag:#x` keeps the not-created pages #x pages link to (as the chips always did), and
+  // `-tag:#x` drops one that #x pages link to (it belongs to #x, @lead).
+  const tagsOfPage = new Map(model.nodes.map((node) => [node.id, node.tags]));
   const ghosts = filter.hideUnresolved
     ? []
     : model.ghosts.filter((ghost) => {
-        const tags = [...new Set(ghost.sources.flatMap((source) => tagsOfVisible.get(source) ?? []))];
+        const tags = [...new Set(ghost.sources.flatMap((source) => tagsOfPage.get(source) ?? []))];
         if (!matchesGraphQuery(query, { title: ghost.title, path: ghost.title, tags })) return false;
         // A text query matches ghost titles independently of their sources (spec/ux
         // §9: only a tag filter hides a ghost when all sources are filtered out).
@@ -571,18 +572,31 @@ export function queryHasTag(query: string, tag: string): boolean {
   return parseGraphQuery(query).some((terms) => terms.some((term) => term.op === "tag" && !term.negate && term.value === wanted));
 }
 
-/** Add the chip's `tag:#x` term to the query, or take every positive term for that tag out of it. */
+/**
+ * Add the chip's `tag:#x` term to the query, or take every positive term for that tag out of it. A second chip
+ * is written `OR tag:#b` (two chips mean "these tags", @lead), and taking one out takes its `OR` with it, so the
+ * query stays valid.
+ */
 export function toggleQueryTag(query: string, tag: string): string {
   const wanted = tag.toLowerCase();
-  if (!queryHasTag(query, tag)) return [query.trim(), `tag:#${tag}`].filter(Boolean).join(" ");
-  return query
-    .split(/\s+/)
-    .filter((token) => {
-      const match = /^tag:#?(.+)$/i.exec(token);
-      return !(match && match[1]!.toLowerCase() === wanted);
-    })
-    .join(" ")
-    .replace(/(^|\s)OR(\s+OR)+(\s|$)/g, "$1OR$3")
-    .replace(/^\s*OR\s+|\s+OR\s*$/g, "")
-    .trim();
+  const tokens = query.trim().split(/\s+/).filter(Boolean);
+  const isTerm = (token: string) => {
+    const match = /^tag:#?(.+)$/i.exec(token);
+    return Boolean(match && match[1]!.toLowerCase() === wanted);
+  };
+  if (!queryHasTag(query, tag)) {
+    const otherChip = tokens.some((token) => /^tag:#?.+$/i.test(token));
+    return [...tokens, ...(otherChip ? ["OR"] : []), `tag:#${tag}`].join(" ");
+  }
+  const kept: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!isTerm(tokens[i]!)) {
+      kept.push(tokens[i]!);
+      continue;
+    }
+    // Take its OR along: the one before it, else the one after it.
+    if (kept[kept.length - 1] === "OR") kept.pop();
+    else if (tokens[i + 1] === "OR") i += 1;
+  }
+  return kept.join(" ");
 }
