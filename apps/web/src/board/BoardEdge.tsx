@@ -142,6 +142,8 @@ export const BoardEdge = memo(function BoardEdge(props: EdgeProps<BoardFlowEdge>
             className={`board-edge-label nodrag nopan${selected ? " is-selected" : ""}`}
             style={{
               transform: labelTransform,
+              // Over a frame's fill like its edge (#sdwrzdgx).
+              zIndex: data?.layer ?? 0,
               ...(color ? { color } : {}),
             }}
             data-testid="board-edge-label"

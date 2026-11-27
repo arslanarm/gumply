@@ -22,6 +22,8 @@ export interface BoardNodeData extends Record<string, unknown> {
 export interface BoardEdgeData extends Record<string, unknown> {
   edge: CanvasEdge;
   editing: boolean;
+  /** The edges' z-index (see {@link boardLayers}); their labels use it too. */
+  layer: number;
 }
 
 export type BoardFlowNode = Node<BoardNodeData>;
@@ -42,7 +44,7 @@ export function flowNodeType(kind: CanvasNodeKind): string {
   }
 }
 
-function buildNode(node: CanvasNode, index: number, editing: boolean, selected: boolean, resizable: boolean): BoardFlowNode {
+function buildNode(node: CanvasNode, z: number, editing: boolean, selected: boolean, resizable: boolean): BoardFlowNode {
   const kind = canvasNodeKind(node);
   const flowNode: BoardFlowNode = {
     id: node.id,
@@ -50,8 +52,8 @@ function buildNode(node: CanvasNode, index: number, editing: boolean, selected: 
     position: { x: node.x, y: node.y },
     width: node.width,
     height: node.height,
-    // Array order is the z-order (JSON Canvas / Obsidian).
-    zIndex: index,
+    // Frames at the back, then edges, then the other nodes in array order (as Obsidian draws them); see boardLayers.
+    zIndex: z,
     data: { node, kind, editing, resizable },
     draggable: !editing,
     className: `board-node board-node-${kind}`,
@@ -71,8 +73,10 @@ export function syncNodes(
   selected: ReadonlySet<string>,
 ): BoardFlowNode[] {
   const byId = new Map(previous.map((node) => [node.id, node]));
-  return board.nodes.map((node, index) => {
+  const layers = boardLayers(board).nodes;
+  return board.nodes.map((node) => {
     const old = byId.get(node.id);
+    const z = layers.get(node.id) ?? 0;
     const editing = node.id === editingId;
     const isSelected = selected.has(node.id);
     const resizable = isSelected && selected.size === 1 && !editing;
@@ -83,7 +87,7 @@ export function syncNodes(
     if (
       old &&
       old.data.node === node &&
-      old.zIndex === index &&
+      old.zIndex === z &&
       old.data.editing === editing &&
       old.data.resizable === resizable &&
       Boolean(old.selected) === isSelected &&
@@ -96,10 +100,36 @@ export function syncNodes(
     ) {
       return old;
     }
-    const next = buildNode(node, index, editing, isSelected, resizable);
+    const next = buildNode(node, z, editing, isSelected, resizable);
     if (old?.measured) next.measured = old.measured;
     return next;
   });
+}
+
+/**
+ * Layers (#sdwrzdgx), as Obsidian 1.14 draws a canvas (measured in a sealed Obsidian): frames (groups) always at
+ * the back, a larger one behind a smaller one; then every edge and edge label; then the other nodes in array order.
+ * So arrows show over a frame's fill and pass under every card, and a card listed before its frame still shows.
+ */
+export interface BoardLayers {
+  /** Each node's z-index. */
+  nodes: Map<string, number>;
+  /** The z-index every edge (and its label) is drawn on. */
+  edges: number;
+}
+
+export function boardLayers(board: CanvasBoard): BoardLayers {
+  const frames = board.nodes
+    .map((node, index) => ({ node, index }))
+    .filter(({ node }) => node.type === "group")
+    .sort((a, b) => b.node.width * b.node.height - a.node.width * a.node.height || a.index - b.index);
+  const nodes = new Map<string, number>();
+  frames.forEach(({ node }, rank) => nodes.set(node.id, rank));
+  const edges = frames.length;
+  board.nodes.forEach((node, index) => {
+    if (node.type !== "group") nodes.set(node.id, edges + 1 + index);
+  });
+  return { nodes, edges };
 }
 
 function edgeSides(edge: CanvasEdge, nodes: ReadonlyMap<string, CanvasNode>): [string, string] {
@@ -118,6 +148,7 @@ export function syncEdges(
 ): BoardFlowEdge[] {
   const byId = new Map(previous.map((edge) => [edge.id, edge]));
   const nodes = new Map(board.nodes.map((node) => [node.id, node]));
+  const layer = boardLayers(board).edges;
   return board.edges.map((edge) => {
     const old = byId.get(edge.id);
     const editing = edge.id === editingId;
@@ -129,6 +160,7 @@ export function syncEdges(
       old &&
       old.data?.edge === edge &&
       old.data.editing === editing &&
+      old.data.layer === layer &&
       Boolean(old.selected) === isSelected &&
       !autoSided
     ) {
@@ -141,7 +173,8 @@ export function syncEdges(
       target: edge.toNode,
       sourceHandle,
       targetHandle,
-      data: { edge, editing },
+      zIndex: layer,
+      data: { edge, editing, layer },
     };
     if (isSelected) flowEdge.selected = true;
     return flowEdge;

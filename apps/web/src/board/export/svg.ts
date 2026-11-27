@@ -454,6 +454,27 @@ export interface SvgResult {
   italic: boolean;
 }
 
+/** React Flow's layers: their children share the viewport's stacking context. */
+const LAYER_CLASSES = ["react-flow__edges", "react-flow__edgelabel-renderer", "react-flow__nodes"];
+
+/**
+ * The viewport's objects in the order the browser paints them (#sdwrzdgx):
+ * the edges, edge labels and nodes of every layer, sorted by z-index, ties in
+ * DOM order. Edges sit above frames, so DOM order alone would hide them.
+ */
+function paintOrder(root: Element): Element[] {
+  const items: Element[] = [];
+  for (const child of Array.from(root.children)) {
+    if (LAYER_CLASSES.some((name) => child.classList.contains(name))) items.push(...Array.from(child.children));
+    else items.push(child);
+  }
+  const z = (element: Element): number => {
+    const value = Number.parseInt(getComputedStyle(element).zIndex, 10);
+    return Number.isFinite(value) ? value : 0;
+  };
+  return items.map((element, index) => ({ element, index, z: z(element) })).sort((a, b) => a.z - b.z || a.index - b.index).map(({ element }) => element);
+}
+
 /**
  * Build the SVG for everything under `root`. `fontCss` may be a function of
  * the text drawn, so only the font subsets actually needed are embedded.
@@ -464,7 +485,7 @@ export async function elementToSvg(
 ): Promise<SvgResult> {
   const out: Output = { defs: [], body: [], nextId: 0, images: [], text: [], italic: false };
   const resolved: SvgOptions = { ...options, fontCss: "" };
-  for (const child of Array.from(root.children)) visit(out, child, resolved);
+  for (const child of paintOrder(root)) visit(out, child, resolved);
   await Promise.all(out.images);
   const text = out.text.join("\n");
   const fontCss = typeof options.fontCss === "string" ? options.fontCss : await options.fontCss({ text, italic: out.italic });

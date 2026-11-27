@@ -1242,3 +1242,13 @@ img.board-card-image {
     top: calc(100% + 8px);
   }
 }
+
+/* #sdwrzdgx: front/back on a frames-only selection (frames always sit behind cards). The app's shared disabled look
+   (.button-primary:disabled): --muted ink (AA on the toolbar) and a not-allowed cursor, no fading; no hover fill, so it
+   doesn't read as pressed. */
+.board-context-button[aria-disabled="true"],
+.board-context-button[aria-disabled="true"]:hover {
+  background: transparent;
+  color: var(--muted);
+  cursor: not-allowed;
+}

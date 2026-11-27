@@ -530,6 +530,7 @@
     },
     "bringToFront": "Bring to front",
     "sendToBack": "Send to back",
+    "framesBehind": "Frames always sit behind cards",
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
     "resetZoom": "Reset zoom to 100%",
