@@ -2,6 +2,7 @@ import { readFile, stat as realStat, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { historyDir, readHistory } from "../src/history";
+import { VaultStore } from "../src/vault-store";
 import { cleanupVaults, createTestServer } from "./helpers";
 
 /**
@@ -92,5 +93,19 @@ describe("a same-size edit that keeps mtime and (coarse) ctime is still seen by 
     expect(held.reads.get(file) ?? 0).toBeGreaterThan(reads);
     expect(store.get(page.id).updated).toBe(version);
     expect(await versions()).toBe(kept);
+  });
+  it("racyStatMs 0 turns the rule off, even for a ctime in the same millisecond as the stat or ahead of the clock (trial-main31)", async () => {
+    const { dir } = await createTestServer();
+    await writeFile(join(dir, "Steady.md"), "Steady.\n");
+    // A ctime a little ahead of the clock (or in the stat's own millisecond, as a file written just before a rescan).
+    held.ctimeMs = Date.now() + 5;
+    const store = new VaultStore(dir, { racyStatMs: 0 });
+    await store.init();
+    const file = join(dir, "Steady.md");
+    const reads = held.reads.get(file) ?? 0;
+    await store.rescan();
+    await store.rescan();
+    expect(held.reads.get(file) ?? 0).toBe(reads);
+    store.stopWatching();
   });
 });
