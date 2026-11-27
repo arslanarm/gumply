@@ -1,9 +1,10 @@
 /**
- * The board's export dialog (spec/v0-6 §D): PNG (2×) or SVG, for the whole board or the selection, on the theme
- * background or transparent; "transparent" is remembered for the next export. #pypzxe6i: it's opened from the
- * board's own ⋯ (its sidebar row, and Cmd+K), as the canvas's own ⋯ menu was a second ⋯ for one board.
+ * The board's export (spec/v0-6 §D): PNG (2×) or SVG, for the whole board or the selection, on the theme background
+ * or transparent; "transparent" is remembered for the next export. #pypzxe6i: one dialog, opened by the canvas's export
+ * button, the board's row ⋯ and Cmd+K.
  */
 import { useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "./board-menu.css";
 import { useT } from "../i18n/index.js";
 import { useModal } from "../lib/modal.js";
@@ -96,12 +97,20 @@ export function BoardExportDialog({ hasSelection, busy, initialFormat = "png", o
     onClose();
   };
 
-  return (
+  // On the page's body (@opus-editor): the board root is a size container (#3nnx98m4), so a fixed backdrop inside it
+  // would cover and fit only the board, not the window. Out of the board root, its keys never reach the board either.
+  return createPortal(
     <div
       className="modal-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
+      // A portal still bubbles React events to its React parents (the board root): pointer and double-click events
+      // stop here, so nothing in the dialog starts a selection or a sticky on the board.
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
       // The board must not take these keys (Escape is the dialog's).
       onKeyDown={(event) => {
         event.stopPropagation();
@@ -157,6 +166,7 @@ export function BoardExportDialog({ hasSelection, busy, initialFormat = "png", o
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

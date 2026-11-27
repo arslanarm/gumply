@@ -2388,6 +2388,11 @@ export function App() {
   editTitleRef.current = editTitleId;
   /** #pypzxe6i: "Export as image…" on a board that wasn't open yet: its dialog opens once the board is ready. */
   const pendingBoardExport = useRef<PageId | null>(null);
+  // Gone elsewhere before the board was ready (@opus-editor): the request lapses, so opening that board later doesn't
+  // pop the dialog up unasked.
+  useEffect(() => {
+    if (pendingBoardExport.current !== null && pendingBoardExport.current !== selectedId) pendingBoardExport.current = null;
+  }, [selectedId]);
   const exportBoard = useCallback(
     (id: PageId) => {
       if (selectedRef.current === id && boardControls.current) {

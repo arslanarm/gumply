@@ -833,7 +833,7 @@ function BoardCanvas(props: BoardEditorProps) {
   // #snuin2ja: tool and view actions for Cmd+K, defined further down.
   const paletteRef = useRef<{ setTool: (tool: BoardTool) => void; view: (action: "fit" | "in" | "out" | "reset") => void } | null>(null);
 
-  // #pypzxe6i: the export dialog (its format, if one was asked for); the canvas has no ⋯ of its own.
+  // #pypzxe6i: the export dialog (its format, if one was asked for): the canvas's export button, the row ⋯ and Cmd+K open it.
   const [exportDialog, setExportDialog] = useState<{ format?: ExportFormat } | null>(null);
   // Start loading the export code as the dialog opens, as the old menu did.
   const preloadExport = exporter.preload;

@@ -95,7 +95,7 @@ const PAGE_COMMANDS = {
   "page.import-notion": { group: "new", icon: "folderOpen", label: "notionImport.command", words: "search.importWords", en: "import from notion", testId: "search-import-notion", when: (c) => !kind(c.page)?.leaf },
   "page.export-html": { group: "page", icon: "download", label: "export.command", words: "search.exportWords", en: "export as html page save", testId: "search-export-html", when: (c) => !!kind(c.page)?.note },
   "page.export-pdf": { group: "page", icon: "file", label: "export.pdf.command", words: "search.pdfWords", en: "export as pdf print page", testId: "search-export-pdf", when: (c) => !!kind(c.page)?.note },
-  // #pypzxe6i: a board's own export (its canvas has no ⋯ any more): a dialog with the format and options.
+  // #pypzxe6i: a board's export dialog (the canvas's export button, the row ⋯ and Cmd+K open the same one).
   "page.export-board": { group: "page", icon: "download", label: "board.export.command", en: "export board as image png svg picture save", when: (c) => !!kind(c.page)?.board },
   "page.history": { group: "page", icon: "clock", label: "history.command", words: "search.historyWords", en: "history page history show page history version history versions restore version", testId: "search-history", when: (c) => !!kind(c.page) && !kind(c.page)!.folder },
   // #7prbquxu phase 4: a database that owns its rows folder shows or hides it in the sidebar.

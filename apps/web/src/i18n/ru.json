@@ -611,12 +611,7 @@
     },
     "linkPage": "Ссылка на страницу",
     "menu": {
-      "label": "Меню доски",
-      "menuLabel": "Доска",
       "exporting": "Экспорт…",
-      "more": "Ещё",
-      "exportPng": "Экспорт в PNG",
-      "exportSvg": "Экспорт в SVG",
       "selectionOnly": "Только выделенное",
       "transparent": "Прозрачный фон"
     },

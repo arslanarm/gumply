@@ -595,12 +595,7 @@
     },
     "linkPage": "Link a page",
     "menu": {
-      "label": "Board menu",
-      "menuLabel": "Board",
       "exporting": "Exporting…",
-      "more": "More",
-      "exportPng": "Export as PNG",
-      "exportSvg": "Export as SVG",
       "selectionOnly": "Selection only",
       "transparent": "Transparent background"
     },
