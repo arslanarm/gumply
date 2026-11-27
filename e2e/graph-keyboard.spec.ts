@@ -140,6 +140,17 @@ test('#5n2p7phw (@opus-editor): ] by its key position on a ru layout; no ring af
   await expect(canvas).not.toHaveAttribute('data-graph-focused', 'Hub');
   expect(['Alpha', 'Beta', 'Gamma', 'ghost:someday']).toContain(await canvas.getAttribute('data-graph-focused'));
 
+  // A German "+" on the same key position is "+" (zoom in), not "]": the focus stays, the zoom grows.
+  const focusedBefore = await canvas.getAttribute('data-graph-focused');
+  const zoomBefore = await page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { zoom: () => number }> }).__gumplyGraphs['graph-canvas']!.zoom());
+  await canvas.evaluate((element) => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: '+', code: 'BracketRight', bubbles: true, cancelable: true }));
+  });
+  await expect(canvas).toHaveAttribute('data-graph-focused', focusedBefore!);
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { zoom: () => number }> }).__gumplyGraphs['graph-canvas']!.zoom()))
+    .toBeGreaterThan(zoomBefore);
+
   // Five quick ] presses (a held key): the live region is written once, after the last.
   const spoken = page.getByTestId('graph-canvas-spoken');
   await expect(spoken).not.toHaveText('');

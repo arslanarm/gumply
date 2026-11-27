@@ -1662,8 +1662,12 @@ export function GraphCanvas({
   const onCanvasKey = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return;
     // Keys by position where layouts differ (a ru layout types х/ъ on [ ]), @opus-editor.
+    // Only a non-Latin letter falls back to the position: a German "+" or a French "$" sits where US has "]", and
+    // must stay itself (here "+" zooms).
     const code = event.nativeEvent.code;
-    const bracket = code === "BracketRight" || event.key === "]" ? "]" : code === "BracketLeft" || event.key === "[" ? "[" : null;
+    const nonLatinLetter = /^\p{L}$/u.test(event.key) && !/^[a-z]$/i.test(event.key);
+    const bracket =
+      event.key === "]" || (nonLatinLetter && code === "BracketRight") ? "]" : event.key === "[" || (nonLatinLetter && code === "BracketLeft") ? "[" : null;
     const zoomIn = event.key === "+" || event.key === "=" || code === "NumpadAdd";
     const zoomOut = event.key === "-" || code === "NumpadSubtract" || code === "Minus";
     const fitKey = event.key === "0" || code === "Digit0" || code === "Numpad0";
