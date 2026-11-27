@@ -47,3 +47,48 @@ test('#yy347xgi: a tag chip is its tag: term in the search, and the chip and the
   await expect(field).toHaveValue('');
   await expect(chip).toHaveAttribute('aria-pressed', 'false');
 });
+
+type Probe = { nodes: () => Array<{ id: string }>; spotlight: () => string[] | null };
+const probe = (page: Page) =>
+  page.evaluate(() => {
+    const graph = (window as unknown as { __gumplyGraphs: Record<string, Probe> }).__gumplyGraphs['graph-canvas']!;
+    return { nodes: graph.nodes().map((node) => node.id).sort(), spotlight: graph.spotlight() };
+  });
+
+test('#yy347xgi (4): a search isolates by default; "Show the rest" keeps the rest dimmed, Enter fits to the matches, and it is remembered', async ({ page, vault }) => {
+  await vault.seed([
+    { title: 'Plan', content: 'See [[Notes]] and [[Someday]]. #work' },
+    { title: 'Notes', content: 'Back to [[Plan]]. #work' },
+    { title: 'Garden', content: 'Nothing here. #home' },
+  ]);
+  await openGraph(page);
+  const canvas = page.getByTestId('graph-canvas');
+  await expect(canvas).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
+  // No search: no toggle.
+  await expect(page.getByTestId('graph-show-rest')).toHaveCount(0);
+
+  // Default, unchanged: the search isolates its matches.
+  await page.getByTestId('graph-filter').fill('plan');
+  await expect.poll(async () => (await probe(page)).nodes).toEqual(['Plan']);
+  await expect.poll(async () => (await probe(page)).spotlight).toBeNull();
+
+  // Show the rest: every node is drawn again, the match is the spotlight (the rest dimmed).
+  const toggle = page.getByTestId('graph-show-rest');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await probe(page)).nodes.length).toBe(4);
+  await expect.poll(async () => (await probe(page)).spotlight).toEqual(['Plan']);
+  // The subtitle still describes the matches.
+  await expect(page.getByTestId('graph-subtitle')).toContainText('1 page');
+
+  // Enter in the field fits the view to the matches.
+  await page.getByTestId('graph-filter').press('Enter');
+  await expect(canvas).toHaveAttribute('data-graph-fit-reason', 'matches');
+
+  // Remembered: after a reload, the same search shows in context again.
+  await page.reload();
+  await page.getByTestId('graph-filter').fill('plan');
+  await expect(page.getByTestId('graph-show-rest')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await probe(page)).spotlight).toEqual(['Plan']);
+});
