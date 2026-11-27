@@ -654,10 +654,18 @@ export function GraphCanvas({
   );
 
   // #yy347xgi (4): Enter in the search fits the view to its matches ("Show the rest"; nothing happened, before).
+  // The user asked for this view, so it's kept: a data change's fit (the graph just re-drawn) fits to the matches
+  // again instead of to everything, and the settle's auto-fit leaves it alone. A new spotlight forgets it.
+  const matchFitRef = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    matchFitRef.current = null;
+  }, [spotlight]);
   const fitRequestN = fitRequest?.n ?? 0;
   useEffect(() => {
     if (!fitRequest || fitRequest.ids.size === 0) return;
+    matchFitRef.current = fitRequest.ids;
     fitView(reducedMotion ? 0 : 400, "matches", fitRequest.ids);
+    userViewRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitRequestN]);
 
@@ -687,7 +695,12 @@ export function GraphCanvas({
       if (fitTimer.current !== null) window.clearTimeout(fitTimer.current);
       fitTimer.current = window.setTimeout(() => {
         fitTimer.current = null;
-        fitView(duration, reason);
+        // #yy347xgi (4): a fit to the matches the user asked for is kept over a data change.
+        const pinned = matchFitRef.current;
+        if (pinned) {
+          fitView(duration, "matches", pinned);
+          userViewRef.current = true;
+        } else fitView(duration, reason);
         if (markReady) setReady(true);
       }, 80);
     },
