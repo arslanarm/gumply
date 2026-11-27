@@ -10,7 +10,8 @@
  * - `"a quoted phrase"` for spaces, `-term` for "not", terms side by side
  *   all have to match, and `OR` between terms means either side;
  * - `( … )` groups (#yy347xgi): `basil (tag:#a OR tag:#b)` is basil within
- *   either tag, as in Obsidian. A group is expanded into the alternatives.
+ *   either tag, as in Obsidian. A group is expanded into the alternatives;
+ *   `-( … )` negates it (`-(a OR b)` is `-a -b`, `-(a b)` is `-a OR -b`).
  *
  * Case-insensitive. Unknown `op:` prefixes are plain text, as in Obsidian.
  */
@@ -65,6 +66,13 @@ function parseTerm(token: string): GraphQueryTerm | null {
 /** A query that expands past this many alternatives keeps the first ones (a pathological nesting of ORs). */
 const MAX_ALTERNATIVES = 256;
 
+/** Not (any alternative): for each alternative, one of its terms negated; every combination (De Morgan). */
+function negate(query: GraphQuery): GraphQuery {
+  let out: GraphQuery = [[]];
+  for (const terms of query) out = product(out, terms.map((term) => [{ ...term, negate: !term.negate }]));
+  return out;
+}
+
 /** Terms side by side: every combination of their alternatives (`a (b OR c)` → `a b`, `a c`). */
 function product(left: GraphQuery, right: GraphQuery): GraphQuery {
   const out: GraphQuery = [];
@@ -89,6 +97,14 @@ export function parseGraphQuery(query: string): GraphQuery {
     while (at < list.length && list[at] !== "OR" && list[at] !== ")") {
       const token = list[at]!;
       at += 1;
+      // `-( … )`: the group negated (the tokenizer leaves the `-` on its own before `(`).
+      if (token === "-" && list[at] === "(") {
+        at += 1;
+        const group = expr();
+        if (list[at] === ")") at += 1;
+        if (group.length) result = product(result, negate(group));
+        continue;
+      }
       if (token === "(") {
         const group = expr();
         if (list[at] === ")") at += 1; // an unclosed group ends at the end
