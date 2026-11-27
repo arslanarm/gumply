@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modifierLabel, shortcutGroups, withModifier } from "../src/lib/shortcuts.js";
+import { layoutKey, modifierLabel, shortcutGroups, withModifier } from "../src/lib/shortcuts.js";
 
 describe("shortcut platform label", () => {
   it("uses ⌘ on Apple platforms and Ctrl elsewhere", () => {
@@ -48,5 +48,29 @@ describe("shortcut platform label", () => {
     expect(keys.filter((key) => /Ctrl[A-Z\\]/.test(key))).toEqual([]);
     expect(withModifier("⌘", "K")).toBe("⌘K");
     expect(withModifier("Ctrl", "K")).toBe("Ctrl+K");
+  });
+});
+
+describe("layoutKey (#9ajce8q3)", () => {
+  it("keeps a Latin layout's letters and brackets (QWERTY, Dvorak)", () => {
+    expect(layoutKey({ key: "V", code: "KeyV" })).toBe("v");
+    // Dvorak: the key at QWERTY's L types "n": it's N, not L.
+    expect(layoutKey({ key: "n", code: "KeyL" })).toBe("n");
+    expect(layoutKey({ key: "]", code: "BracketRight" })).toBe("]");
+  });
+
+  it("falls back to the key's position on a non-Latin layout (ЙЦУКЕН)", () => {
+    expect(layoutKey({ key: "м", code: "KeyV" })).toBe("v");
+    expect(layoutKey({ key: "Я", code: "KeyZ" })).toBe("z");
+    expect(layoutKey({ key: "ъ", code: "BracketRight" })).toBe("]");
+    expect(layoutKey({ key: "х", code: "BracketLeft" })).toBe("[");
+  });
+
+  it("leaves other keys as they are, lower-cased", () => {
+    expect(layoutKey({ key: "Enter", code: "Enter" })).toBe("enter");
+    expect(layoutKey({ key: "ArrowLeft", code: "ArrowLeft" })).toBe("arrowleft");
+    expect(layoutKey({ key: "!", code: "Digit1" })).toBe("!");
+    // A dead key or an unidentified one on a letter position is not a letter.
+    expect(layoutKey({ key: "Dead", code: "KeyE" })).toBe("dead");
   });
 });
