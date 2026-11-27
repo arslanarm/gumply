@@ -263,5 +263,9 @@ describe("the links between a search's matches (#yy347xgi (4))", () => {
     paintRestingLinks(within.painter, index, { color: "x", widthCss: 1, scale: 1, dash: GHOST_LINK_DASH, only: mask });
     expect(all.calls.filter((call) => call === "line")).toHaveLength(3);
     expect(within.calls.filter((call) => call === "line")).toHaveLength(1);
+    // The faded pass with the inverse mask draws the other two: each link exactly once (@opus-editor).
+    const outside = recorder();
+    paintRestingLinks(outside.painter, index, { color: "x", widthCss: 1, scale: 1, dash: GHOST_LINK_DASH, only: mask.map((bit) => 1 - bit) });
+    expect(outside.calls.filter((call) => call === "line")).toHaveLength(2);
   });
 });

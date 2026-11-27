@@ -92,6 +92,9 @@ describe("parseGraphQuery / matchesGraphQuery", () => {
     expect(parseGraphQuery("x -(a OR -b)")).toEqual([[{ op: "text", value: "x", negate: false }, { op: "text", value: "a", negate: true }, { op: "text", value: "b", negate: false }]]);
     expect(matches("-(tag:#work OR tag:#личное)", plan)).toBe(false);
     expect(matches("-(tag:#home OR tag:#личное)", plan)).toBe(true);
+    // An empty alternative in a negated group says nothing: the rest of the query stays (@opus-editor).
+    expect(parseGraphQuery("basil -( )")).toEqual([[{ op: "text", value: "basil", negate: false }]]);
+    expect(parseGraphQuery("basil -( OR a)")).toEqual([[{ op: "text", value: "basil", negate: false }, { op: "text", value: "a", negate: true }]]);
     // tag:( … ) applies the op to the group's bare words (not words that happen to follow "tag:").
     expect(parseGraphQuery("tag:(a OR b)")).toEqual([[{ op: "tag", value: "a", negate: false }], [{ op: "tag", value: "b", negate: false }]]);
     expect(parseGraphQuery("-tag:(a OR b)")).toEqual([[{ op: "tag", value: "a", negate: true }, { op: "tag", value: "b", negate: true }]]);

@@ -393,4 +393,13 @@ describe("tag chips as query terms (#yy347xgi (3))", () => {
     expect(toggleQueryTag(withWord, "work")).toBe("basil tag:#home");
     expect(toggleQueryTag("basil tag:#work OR tag:#home", "work")).toBe("basil tag:#home");
   });
+
+  it("a hand-typed tag:( … ) group: the chip it presses takes its word out, and a new chip joins it (@opus-editor)", () => {
+    expect(queryHasTag("tag:(work OR home)", "work")).toBe(true);
+    expect(toggleQueryTag("tag:(work OR home)", "work")).toBe("tag:#home");
+    expect(toggleQueryTag("basil tag:(work OR home)", "home")).toBe("basil tag:#work");
+    expect(toggleQueryTag("tag:(work OR home)", "x")).toBe("(tag:#work OR tag:#home OR tag:#x)");
+    // A negated group isn't a chip: left as typed.
+    expect(toggleQueryTag("-tag:(work)", "home")).toBe("-tag:(work) tag:#home");
+  });
 });
