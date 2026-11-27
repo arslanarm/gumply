@@ -87,7 +87,8 @@ export function Popover(props: {
       : (panel.querySelector<HTMLElement>("[data-autofocus]") ??
         panel.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled)') ??
         panel.querySelector<HTMLElement>("button:not(:disabled):not(.base-rule-remove):not(.is-danger)"));
-    start?.focus();
+    // A panel with no control (an owned database's Rows note) takes the focus itself, so it's announced (@opus-editor).
+    (start ?? (props.menu ? null : panel))?.focus();
   }, [props.menu, style]);
 
   // #nr3rkgj2: a menu that closes with the keyboard inside it (an item ran) gives it back to the anchor.
@@ -129,6 +130,7 @@ export function Popover(props: {
       ref={panelRef}
       className={`base-popover${props.className ? ` ${props.className}` : ""}`}
       role={props.menu ? "menu" : "dialog"}
+      tabIndex={-1}
       aria-label={props.label}
       {...(props.menu ? { onKeyDown: onMenuKey } : {})}
       data-testid={props.testId}

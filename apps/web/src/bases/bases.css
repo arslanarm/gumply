@@ -193,6 +193,11 @@
   font-size: 0.8125rem;
 }
 
+/* #cmun2mix: a panel with no control takes the focus itself (to be announced); it needs no ring. */
+.base-popover:focus {
+  outline: none;
+}
+
 .base-popover.is-wide {
   width: min(34rem, 90vw);
 }

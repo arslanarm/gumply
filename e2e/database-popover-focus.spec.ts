@@ -65,6 +65,15 @@ test('#cmun2mix: Filter, Sort, Properties and "+" opened from the keyboard take 
   // "+" starts on its name field, ready for typing.
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('base-add-column-name')).toBeFocused();
+  await page.keyboard.press('Escape');
+
+  // The Rows panel has no control: it takes the focus itself, so it's announced (@opus-editor); Escape gives it back.
+  const rows = page.getByTestId('base-source-button');
+  await rows.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('base-rows-panel')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(rows).toBeFocused();
 });
 
 test('#cmun2mix: Filter with a rule starts on a field, never on the rule\'s remove button: Enter right after opening keeps the rule (@opus-editor)', async ({ page, request, vault }) => {
