@@ -77,7 +77,11 @@ test('#5n2p7phw: the global graph by keyboard: Tab in on the current page, arrow
   const moved = await arrowMoves(page, 'graph-canvas');
   await expect(page.getByTestId('graph-canvas-spoken')).toContainText(moved.replace('ghost:someday', 'Someday'));
 
-  // + zooms in; 0 fits.
+  // - zooms out, + zooms in, 0 fits. A five-page graph fits at the zoom cap (8), so - goes first.
+  const fitted = (await probe(page, 'graph-canvas')).zoom;
+  await page.keyboard.press('-');
+  await expect.poll(async () => (await probe(page, 'graph-canvas')).zoom).toBeLessThan(fitted);
+  await page.waitForTimeout(400);
   const zoom = (await probe(page, 'graph-canvas')).zoom;
   await page.keyboard.press('+');
   await expect.poll(async () => (await probe(page, 'graph-canvas')).zoom).toBeGreaterThan(zoom);
@@ -149,6 +153,9 @@ test('#5n2p7phw (@opus-editor): ] by its key position on a ru layout; no ring af
 
   // A German "+" on the same key position is "+" (zoom in), not "]": the focus stays, the zoom grows.
   const focusedBefore = await canvas.getAttribute('data-graph-focused');
+  // Zoom out first: the fitted five-page graph is at the zoom cap (8), where + can't grow it.
+  await page.keyboard.press('-');
+  await page.waitForTimeout(400);
   const zoomBefore = await page.evaluate(() => (window as unknown as { __gumplyGraphs: Record<string, { zoom: () => number }> }).__gumplyGraphs['graph-canvas']!.zoom());
   await canvas.evaluate((element) => {
     element.dispatchEvent(new KeyboardEvent('keydown', { key: '+', code: 'BracketRight', bubbles: true, cancelable: true }));
