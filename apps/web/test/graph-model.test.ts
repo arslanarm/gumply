@@ -402,6 +402,9 @@ describe("tag chips as query terms (#yy347xgi (3))", () => {
     // A -word inside tag:( … ) meant "not tag b": it stays a negated tag, and a new chip still joins the group (@lead).
     expect(toggleQueryTag("tag:(a OR -b)", "x")).toBe("(tag:#a OR -tag:#b OR tag:#x)");
     expect(toggleQueryTag("tag:(a OR -b)", "a")).toBe("-tag:#b");
+    // A stray "-" in the group stays as typed, never "-tag:#".
+    expect(toggleQueryTag("tag:(a -)", "x")).not.toContain("-tag:#)");
+    expect(toggleQueryTag("tag:(a -)", "x")).not.toMatch(/-tag:#(\s|\)|$)/);
     expect(parseGraphQuery(toggleQueryTag("tag:(a OR -b)", "x"))).toEqual(parseGraphQuery("tag:(a OR -b OR x)"));
     // A negated group isn't a chip: left as typed.
     expect(toggleQueryTag("-tag:(work)", "home")).toBe("-tag:(work) tag:#home");

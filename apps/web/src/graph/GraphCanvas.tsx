@@ -700,14 +700,18 @@ export function GraphCanvas({
         fitTimer.current = null;
         // #yy347xgi (4): a fit to the matches the user asked for is kept over a data change.
         const pinned = matchFitRef.current;
-        if (pinned) {
+        // Matches renamed or deleted meanwhile (none left to fit): forget the pin and fit as usual (@opus-editor).
+        if (pinned && fitTarget(pinned)) {
           fitView(duration, "matches", pinned);
           userViewRef.current = true;
-        } else fitView(duration, reason);
+        } else {
+          matchFitRef.current = null;
+          fitView(duration, reason);
+        }
         if (markReady) setReady(true);
       }, 80);
     },
-    [fitView],
+    [fitView, fitTarget],
   );
 
   const lastDataKey = useRef<string | null>(null);

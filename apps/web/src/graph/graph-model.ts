@@ -624,7 +624,9 @@ function chipForm(tokens: readonly string[]): string[] {
     // A bare word is a tag here; `-b` meant "not tag b" inside `tag:( … )`, so it stays a negated tag (@opus-editor).
     const asTag = (word: string): string => {
       if (word === "OR" || word.includes(":") || word.startsWith('"') || word.startsWith('-"')) return word;
-      return word.startsWith("-") ? `-tag:#${word.slice(1).replace(/^#/, "")}` : `tag:#${word.replace(/^#/, "")}`;
+      // A stray "-" (or "-#") alone isn't a tag: left as typed (@opus-editor).
+      if (word.startsWith("-")) return word.replace(/^-#?/, "") ? `-tag:#${word.slice(1).replace(/^#/, "")}` : word;
+      return `tag:#${word.replace(/^#/, "")}`;
     };
     out.push("(", ...inside.map(asTag), ")");
     i = close === -1 ? tokens.length : close;
