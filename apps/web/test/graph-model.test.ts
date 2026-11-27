@@ -399,6 +399,10 @@ describe("tag chips as query terms (#yy347xgi (3))", () => {
     expect(toggleQueryTag("tag:(work OR home)", "work")).toBe("tag:#home");
     expect(toggleQueryTag("basil tag:(work OR home)", "home")).toBe("basil tag:#work");
     expect(toggleQueryTag("tag:(work OR home)", "x")).toBe("(tag:#work OR tag:#home OR tag:#x)");
+    // A -word inside tag:( … ) meant "not tag b": it stays a negated tag, and a new chip still joins the group (@lead).
+    expect(toggleQueryTag("tag:(a OR -b)", "x")).toBe("(tag:#a OR -tag:#b OR tag:#x)");
+    expect(toggleQueryTag("tag:(a OR -b)", "a")).toBe("-tag:#b");
+    expect(parseGraphQuery(toggleQueryTag("tag:(a OR -b)", "x"))).toEqual(parseGraphQuery("tag:(a OR -b OR x)"));
     // A negated group isn't a chip: left as typed.
     expect(toggleQueryTag("-tag:(work)", "home")).toBe("-tag:(work) tag:#home");
   });

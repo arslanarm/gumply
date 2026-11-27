@@ -589,6 +589,8 @@ function joinTokens(tokens: readonly string[]): string {
 }
 
 const isTagToken = (token: string): boolean => /^tag:#?[^\s()]+$/i.test(token);
+/** A chip group's members: `tag:` terms, negated ones too (`-tag:#b`, from a hand-typed `tag:( a OR -b )`). */
+const isGroupTagToken = (token: string): boolean => /^-?tag:#?[^\s()]+$/i.test(token);
 
 /**
  * `tag:( a OR b )` typed by hand, in the chips' own form `( tag:#a OR tag:#b )`, so a chip that shows pressed for a
@@ -619,7 +621,12 @@ function chipForm(tokens: readonly string[]): string[] {
       out.push(token);
       continue;
     }
-    out.push("(", ...inside.map((word) => (word === "OR" || word.includes(":") || word.startsWith("-") || word.startsWith('"') ? word : `tag:#${word.replace(/^#/, "")}`)), ")");
+    // A bare word is a tag here; `-b` meant "not tag b" inside `tag:( … )`, so it stays a negated tag (@opus-editor).
+    const asTag = (word: string): string => {
+      if (word === "OR" || word.includes(":") || word.startsWith('"') || word.startsWith('-"')) return word;
+      return word.startsWith("-") ? `-tag:#${word.slice(1).replace(/^#/, "")}` : `tag:#${word.replace(/^#/, "")}`;
+    };
+    out.push("(", ...inside.map(asTag), ")");
     i = close === -1 ? tokens.length : close;
   }
   return out;
@@ -644,7 +651,7 @@ export function toggleQueryTag(query: string, tag: string): string {
       if (tokens[open] !== "(") continue;
       const close = tokens.indexOf(")", open);
       const inside = close === -1 ? [] : tokens.slice(open + 1, close);
-      if (inside.length && inside.every((token, i) => (i % 2 === 0 ? isTagToken(token) : token === "OR"))) {
+      if (inside.length && inside.every((token, i) => (i % 2 === 0 ? isGroupTagToken(token) : token === "OR"))) {
         tokens.splice(close, 0, "OR", term);
         return joinTokens(tokens);
       }
