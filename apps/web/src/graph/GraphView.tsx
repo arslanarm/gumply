@@ -519,7 +519,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
             {/* #yy347xgi (11): grey is a page with no tag (or one no group colours). */}
             {legendTags.length > 0 ? (
               <p className="graph-legend-row" data-testid="graph-legend-no-tag">
-                <span className="graph-legend-solid" aria-hidden="true" /> {t("graph.legendNoTag")}
+                <span className="graph-legend-untagged" aria-hidden="true" /> {t("graph.legendNoTag")}
               </p>
             ) : null}
           </aside>

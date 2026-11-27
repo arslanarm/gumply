@@ -22,8 +22,9 @@ async function openGraph(page: Page) {
 test('#yy347xgi (2): the legend starts closed on a narrow graph, open on a wide one, and keeps the user\'s choice', async ({ page, vault }) => {
   await seedVault(vault);
   await page.setViewportSize({ width: 800, height: 700 });
-  await page.goto('/');
-  await openGraph(page);
+  // At 800 px the sidebar is collapsed: open the graph by its address.
+  await page.goto('/#graph');
+  await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-graph-ready', 'true', { timeout: 15_000 });
   await expect(page.getByTestId('graph-legend')).toHaveCount(0);
   await page.setViewportSize({ width: 1500, height: 800 });
   await expect(page.getByTestId('graph-legend')).toBeVisible();

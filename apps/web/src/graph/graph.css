@@ -791,3 +791,12 @@
   color: var(--muted);
   font-size: 0.75rem;
 }
+
+/* #yy347xgi (11): the grey of a page with no tag (its own class: .graph-legend-solid is "solid = page"). */
+.graph-legend-untagged {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--graph-page);
+}
