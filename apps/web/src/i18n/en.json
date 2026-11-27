@@ -109,7 +109,8 @@
       "toggle": "List",
       "label": "Pages in the graph",
       "notCreated": "not created yet",
-      "forcesOff": "Forces arrange the picture. Switch back from List to change them."
+      "forcesOff": "Forces arrange the picture. Switch back from List to change them.",
+      "localLabel": "Pages linked with this one"
     }
   },
   "sidebar": {

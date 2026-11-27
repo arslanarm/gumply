@@ -1,5 +1,5 @@
 import type { GraphNode } from "@gumply/core";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useT } from "../i18n/index.js";
 import { pageHash } from "../lib/routing.js";
 import type { GhostNode } from "./graph-model.js";
@@ -51,4 +51,29 @@ export function GraphList(props: {
       ))}
     </ul>
   );
+}
+
+/** #62tnekds: whether the graph shows as a list, remembered per graph (global and local). */
+export function useGraphListMode(key: "global" | "local"): [boolean, (next: boolean) => void] {
+  const storageKey = `gumply:graph-list:${key}`;
+  const [on, setOn] = useState(() => {
+    try {
+      return window.localStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const set = useCallback(
+    (next: boolean) => {
+      setOn(next);
+      try {
+        if (next) window.localStorage.setItem(storageKey, "1");
+        else window.localStorage.removeItem(storageKey);
+      } catch {
+        // Private mode: the choice lasts for this visit.
+      }
+    },
+    [storageKey],
+  );
+  return [on, set];
 }

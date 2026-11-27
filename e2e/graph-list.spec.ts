@@ -73,3 +73,21 @@ test('#62tnekds: the list follows the search and the chips, and the choice is re
   await page.getByTestId('graph-list-toggle').click();
   await expect(page.getByTestId('graph-canvas')).toBeVisible();
 });
+
+test('#62tnekds: the local graph has the same List: the page\'s neighbours as links, Enter opens one', async ({ page, vault }) => {
+  await seedVault(vault);
+  await page.goto('/#/Hub');
+  await page.getByTestId('local-graph-toggle').click();
+  const toggle = page.getByTestId('local-graph-list-toggle');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  const list = page.getByRole('list', { name: 'Pages linked with this one' });
+  // Hub itself isn't listed; its neighbours are, the not-created one marked.
+  await expect(list.getByRole('link', { name: 'Hub' })).toHaveCount(0);
+  await expect(list.getByRole('link', { name: 'Alpha' })).toBeVisible();
+  await expect(list.getByRole('listitem').filter({ hasText: 'Someday' })).toContainText('not created yet');
+  await expect(page.getByTestId('local-graph-canvas')).toHaveCount(0);
+  await list.getByRole('link', { name: 'Gamma' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/#\/Gamma$/);
+});

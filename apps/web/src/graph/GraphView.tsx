@@ -4,7 +4,7 @@ import { api, ApiRequestError, fileUrl, isVaultIndexing } from "../api/client.js
 import { Icon } from "../components/Icon.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import { GraphControls } from "./GraphControls.js";
-import { GraphList } from "./GraphList.js";
+import { GraphList, useGraphListMode } from "./GraphList.js";
 import {
   ariaSummary,
   ATTACHMENT_PALETTE_INDEX,
@@ -39,30 +39,6 @@ export interface GraphViewProps {
 
 type Status = "loading" | "ready" | "error";
 
-/** #62tnekds: whether the graph shows as a list, remembered per graph (global and local). */
-export function useGraphListMode(key: "global" | "local"): [boolean, (next: boolean) => void] {
-  const storageKey = `gumply:graph-list:${key}`;
-  const [on, setOn] = useState(() => {
-    try {
-      return window.localStorage.getItem(storageKey) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const set = useCallback(
-    (next: boolean) => {
-      setOn(next);
-      try {
-        if (next) window.localStorage.setItem(storageKey, "1");
-        else window.localStorage.removeItem(storageKey);
-      } catch {
-        // Private mode: the choice lasts for this visit.
-      }
-    },
-    [storageKey],
-  );
-  return [on, set];
-}
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) return error.message;
