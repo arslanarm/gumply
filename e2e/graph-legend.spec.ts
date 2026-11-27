@@ -66,3 +66,22 @@ test('#yy347xgi (7, 8): the local graph labels its depth and has zoom and Fit', 
   await local.getByTestId('graph-fit').click();
   await expect(local.getByTestId('local-graph-canvas')).toHaveAttribute('data-graph-fit-reason', 'button');
 });
+
+test('#yy347xgi (6): a new group takes a colour no tag uses yet, and its query takes the keyboard', async ({ page, vault }) => {
+  await seedVault(vault);
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await page.goto('/');
+  await openGraph(page);
+  // The colours the legend's tags are drawn in.
+  const tagColours = await page
+    .getByTestId('graph-legend-tag')
+    .evaluateAll((rows) => rows.map((row) => getComputedStyle(row.querySelector('.graph-legend-dot')!).backgroundColor));
+  expect(tagColours.length).toBeGreaterThan(0);
+  await page.getByTestId('graph-panel-toggle').click();
+  await page.getByTestId('graph-group-add').click();
+  const query = page.getByTestId('graph-group-query').last();
+  await expect(query).toBeFocused();
+  const groupColour = await page.getByTestId('graph-group').last().locator('input[type="color"]').inputValue();
+  const asRgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+  expect(tagColours).not.toContain(asRgb(groupColour));
+});
