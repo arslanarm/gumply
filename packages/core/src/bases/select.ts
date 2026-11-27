@@ -92,10 +92,17 @@ export function withSelectSettings(config: BaseConfig, key: string, settings: Se
   return next;
 }
 
-/** The colour for a new option: the first not used yet, in palette order (gray last, being the default). */
+/**
+ * The order new options take their colours in. #bg7c9bzk (#faqr8pj9's #17): neighbours differ in hue, so a
+ * database's first two or three options never look alike (the palette's order, brown, orange, yellow, did). Gray
+ * isn't in it: it's the colour of a value with no option.
+ */
+export const NEW_OPTION_COLORS: readonly SelectColor[] = ["blue", "orange", "green", "purple", "red", "yellow", "pink", "brown"];
+
+/** The colour for a new option: the first not used yet, in NEW_OPTION_COLORS's order; when all are, they repeat. */
 export function nextOptionColor(options: readonly SelectOption[]): SelectColor {
   const used = new Set(options.map((option) => option.color));
-  return SELECT_COLORS.slice(1).find((color) => !used.has(color)) ?? SELECT_COLORS[(options.length % (SELECT_COLORS.length - 1)) + 1]!;
+  return NEW_OPTION_COLORS.find((color) => !used.has(color)) ?? NEW_OPTION_COLORS[options.length % NEW_OPTION_COLORS.length]!;
 }
 
 /** A row's value as a list of option values (a Select's text, a Multi-select's list; anything else none). */

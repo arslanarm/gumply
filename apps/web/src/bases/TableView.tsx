@@ -1083,7 +1083,7 @@ function TitleCell(props: TableRowProps) {
               type="button"
               className="base-cell-edit"
               tabIndex={props.grid ? -1 : undefined}
-              aria-label={t("sidebar.rename")}
+              aria-label={t("bases.renameRow", { title: row.title })}
               data-tooltip={t("sidebar.rename")}
               onClick={() => {
                 setDraft(row.title);

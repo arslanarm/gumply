@@ -132,63 +132,75 @@ export function PastePreview(props: {
           <input type="checkbox" data-testid="base-paste-headers" checked={headers} onChange={(event) => setHeaders(event.target.checked)} />
           <span>{t("bases.pasteHeaders")}</span>
         </label>
-        <div className="base-paste-columns">
-          <div className="base-paste-column is-name">
-            <span className="base-panel-title">{t("bases.pasteNameColumn")}</span>
-            <span className="base-paste-first">{headers ? (headerRow[0] ?? "") : t("bases.pasteColumn", { n: 1 })}</span>
-          </div>
-          {columns.map((col) => {
-            const known = props.known.has(nameOf(col).trim());
-            const values = body.map((row) => row[col] ?? "");
-            const noSelect = !known && tooManyOptions(col, "select") && tooManyOptions(col, "multiselect");
-            return (
-              <div className="base-paste-column" key={col}>
-                <input
-                  className="base-input"
-                  data-testid={`base-paste-name-${col}`}
-                  aria-label={t("bases.columnName")}
-                  value={nameOf(col)}
-                  // #8s94nyhn: the field the problem is about is marked and points at it.
-                  aria-invalid={isValidPropertyKey(nameOf(col).trim()) ? undefined : true}
-                  aria-describedby={problem && !isValidPropertyKey(nameOf(col).trim()) ? `${id}-problem` : undefined}
-                  onChange={(event) => setNames((current) => ({ ...current, [col]: event.target.value }))}
-                />
-                <select
-                  className="base-select"
-                  data-testid={`base-paste-type-${col}`}
-                  aria-label={t("properties.type")}
-                  value={typeOf(col)}
-                  disabled={known}
-                  onChange={(event) => setTypes((current) => ({ ...current, [col]: event.target.value as PreviewType }))}
-                >
-                  {PREVIEW_TYPES.map((type) => (
-                    <option key={type} value={type} disabled={noSelect && isSelectKind(type)}>
-                      {type === "select" ? t("bases.selectType") : type === "multiselect" ? t("bases.multiselectType") : t(`properties.types.${type}`)}
-                    </option>
-                  ))}
-                </select>
-                {known ? (
-                  <span className="base-paste-hint">{t("bases.pasteKnownColumn")}</span>
-                ) : noSelect ? (
-                  <span className="base-paste-hint" data-testid={`base-paste-no-select-${col}`}>
-                    {t("bases.pasteNoSelect", { count: MAX_PASTE_OPTIONS })}
-                  </span>
-                ) : offersSelect(values) && !isSelectKind(typeOf(col)) ? <span className="base-paste-hint" data-testid={`base-paste-select-hint-${col}`}>{t("bases.pasteSelectHint")}</span> : null}
-              </div>
-            );
-          })}
-        </div>
-        <table className="base-paste-sample" data-testid="base-paste-sample">
-          <tbody>
-            {shown.map((cells, r) => (
-              <tr key={r}>
-                {Array.from({ length: width }, (_, c) => (
-                  <td key={c}>{cells[c] ?? ""}</td>
-                ))}
+        {/* #bg7c9bzk (#faqr8pj9's #11): one table, so each column's name and type sit over its own cells; it scrolls
+            sideways inside the dialog when the sheet is wide, rather than running past its edge. */}
+        <div className="base-paste-grid">
+          <table className="base-paste-sample" data-testid="base-paste-sample">
+            <colgroup>
+              <col className="is-name" />
+              {columns.map((col) => (
+                <col key={col} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="base-paste-column is-name" scope="col">
+                  <span className="base-panel-title">{t("bases.pasteNameColumn")}</span>
+                  <span className="base-paste-first">{headers ? (headerRow[0] ?? "") : t("bases.pasteColumn", { n: 1 })}</span>
+                </th>
+                {columns.map((col) => {
+                  const known = props.known.has(nameOf(col).trim());
+                  const values = body.map((row) => row[col] ?? "");
+                  const noSelect = !known && tooManyOptions(col, "select") && tooManyOptions(col, "multiselect");
+                  return (
+                    <th className="base-paste-column" key={col} scope="col">
+                      <input
+                        className="base-input"
+                        data-testid={`base-paste-name-${col}`}
+                        aria-label={t("bases.columnName")}
+                        value={nameOf(col)}
+                        // #8s94nyhn: the field the problem is about is marked and points at it.
+                        aria-invalid={isValidPropertyKey(nameOf(col).trim()) ? undefined : true}
+                        aria-describedby={problem && !isValidPropertyKey(nameOf(col).trim()) ? `${id}-problem` : undefined}
+                        onChange={(event) => setNames((current) => ({ ...current, [col]: event.target.value }))}
+                      />
+                      <select
+                        className="base-select"
+                        data-testid={`base-paste-type-${col}`}
+                        aria-label={t("properties.type")}
+                        value={typeOf(col)}
+                        disabled={known}
+                        onChange={(event) => setTypes((current) => ({ ...current, [col]: event.target.value as PreviewType }))}
+                      >
+                        {PREVIEW_TYPES.map((type) => (
+                          <option key={type} value={type} disabled={noSelect && isSelectKind(type)}>
+                            {type === "select" ? t("bases.selectType") : type === "multiselect" ? t("bases.multiselectType") : t(`properties.types.${type}`)}
+                          </option>
+                        ))}
+                      </select>
+                      {known ? (
+                        <span className="base-paste-hint">{t("bases.pasteKnownColumn")}</span>
+                      ) : noSelect ? (
+                        <span className="base-paste-hint" data-testid={`base-paste-no-select-${col}`}>
+                          {t("bases.pasteNoSelect", { count: MAX_PASTE_OPTIONS })}
+                        </span>
+                      ) : offersSelect(values) && !isSelectKind(typeOf(col)) ? <span className="base-paste-hint" data-testid={`base-paste-select-hint-${col}`}>{t("bases.pasteSelectHint")}</span> : null}
+                    </th>
+                  );
+                })}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {shown.map((cells, r) => (
+                <tr key={r}>
+                  {Array.from({ length: width }, (_, c) => (
+                    <td key={c}>{cells[c] ?? ""}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {problem ? (
           <p className="base-add-column-note is-error" role="alert" id={`${id}-problem`} data-testid="base-paste-problem">
             {problem}
