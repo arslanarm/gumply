@@ -1669,7 +1669,8 @@ export function GraphCanvas({
     const bracket =
       event.key === "]" || (nonLatinLetter && code === "BracketRight") ? "]" : event.key === "[" || (nonLatinLetter && code === "BracketLeft") ? "[" : null;
     const zoomIn = event.key === "+" || event.key === "=" || code === "NumpadAdd";
-    const zoomOut = event.key === "-" || code === "NumpadSubtract" || code === "Minus";
+    // "-" itself (or the numpad's): the Minus key types «ß» or «)» on German or French layouts.
+    const zoomOut = event.key === "-" || code === "NumpadSubtract";
     const fitKey = event.key === "0" || code === "Digit0" || code === "Numpad0";
     const moveKey = Boolean(bracket) || event.key.startsWith("Arrow") || event.key === "Enter";
     // The first move key after a click on the canvas starts keyboard mode on the start node.
