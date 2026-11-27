@@ -66,6 +66,16 @@ describe("layoutKey (#9ajce8q3)", () => {
     expect(layoutKey({ key: "х", code: "BracketLeft" })).toBe("[");
   });
 
+  it("leaves a Latin layout's punctuation alone, even on a bracket or letter position (@graph-dev)", () => {
+    // German QWERTZ types + on the ] key, French AZERTY $ there and "," on KeyM: none of them is a shortcut letter.
+    expect(layoutKey({ key: "+", code: "BracketRight" })).toBe("+");
+    expect(layoutKey({ key: "$", code: "BracketRight" })).toBe("$");
+    expect(layoutKey({ key: ",", code: "KeyM" })).toBe(",");
+    // Only a non-Latin letter falls back to the position (ЙЦУКЕН, Greek).
+    expect(layoutKey({ key: "ъ", code: "BracketRight" })).toBe("]");
+    expect(layoutKey({ key: "ω", code: "KeyV" })).toBe("v");
+  });
+
   it("leaves other keys as they are, lower-cased", () => {
     expect(layoutKey({ key: "Enter", code: "Enter" })).toBe("enter");
     expect(layoutKey({ key: "ArrowLeft", code: "ArrowLeft" })).toBe("arrowleft");
