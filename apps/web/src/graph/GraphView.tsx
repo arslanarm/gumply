@@ -58,7 +58,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [legendOpen, setLegendOpen] = useState(true);
   const [controlsOpen, setControlsOpen] = useState(false);
-  const [listMode, setListMode] = useGraphListMode("global");
+  const [listMode, setListMode, listModeReady] = useGraphListMode("global");
   const reducedMotion = usePrefersReducedMotion();
   // E1: groups and filters, per vault. The graph waits for them, so its first
   // layout already uses them (no restart when they arrive).
@@ -294,7 +294,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
       ) : null}
 
       <div className="graph-body">
-        {status === "loading" || !settings ? (
+        {status === "loading" || !settings || !listModeReady ? (
           <div className="graph-state graph-state-loading" data-testid="graph-loading">
             {/* #g95wkd9y: a vault just opened is still indexing its links; the graph waits for them. */}
             <p>{isVaultIndexing() ? t("graph.indexing") : t("graph.loading")}</p>

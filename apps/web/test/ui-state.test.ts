@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { restoreUiState } from "../src/lib/ui-state";
+import { restoreUiState, startupVaultPath } from "../src/lib/ui-state";
 
 class MemoryStorage {
   private data = new Map<string, string>();
@@ -108,5 +108,13 @@ describe("desktop UI preferences mirror (#c7fzzxk8)", () => {
     const { flushAllOnExit } = await import("../src/lib/pending-saves");
     expect(flushAllOnExit()).toBe(true);
     expect(calls.at(-1)).toMatchObject({ method: "PUT", keepalive: true, body: { set: { "gumply:theme": "dark" } } });
+  });
+});
+
+describe("the open vault's path (#62tnekds)", () => {
+  it("is recorded from start-up's health check, in the browser app too", async () => {
+    const impl = vi.fn(async () => new Response(JSON.stringify({ ok: true, vaultPath: "/vaults/Notes" }), { status: 200 }));
+    expect(await restoreUiState(storage(), impl as unknown as typeof fetch)).toBe(false);
+    expect(startupVaultPath).toBe("/vaults/Notes");
   });
 });

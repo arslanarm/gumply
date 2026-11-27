@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client.js";
 import { useT } from "../i18n/index.js";
 import { pageHash } from "../lib/routing.js";
+import { startupVaultPath } from "../lib/ui-state.js";
 import type { GhostNode } from "./graph-model.js";
 
 /**
@@ -72,10 +73,16 @@ export function GraphList(props: {
   );
 }
 
-/** The open vault's path, once per session (the list choice is per vault). */
+/**
+ * The open vault's path (the list choice is per vault): known from start-up's health check, else fetched once.
+ * Cached per window: switching vaults reloads the window (the desktop's openVault loads the new server's URL), so
+ * this module starts afresh with the new vault.
+ */
 let vaultPathPromise: Promise<string> | null = null;
 let vaultPathKnown: string | null = null;
 function vaultPath(): Promise<string> {
+  if (vaultPathKnown === null && startupVaultPath !== null) vaultPathKnown = startupVaultPath;
+  if (vaultPathKnown !== null) return Promise.resolve(vaultPathKnown);
   vaultPathPromise ??= api.health().then(
     (health) => (vaultPathKnown = health.vaultPath ?? ""),
     () => (vaultPathKnown = ""),
@@ -95,8 +102,9 @@ function readListMode(key: string): boolean {
  * #62tnekds: whether the graph shows as a list, remembered per graph (global and local) and **per vault** (keyed by
  * the vault's path, @lead). It's this browser's view choice, so it lives in local storage, not in the vault's files.
  */
-export function useGraphListMode(key: "global" | "local"): [boolean, (next: boolean) => void] {
+export function useGraphListMode(key: "global" | "local"): [boolean, (next: boolean) => void, boolean] {
   const storageKey = (vault: string) => `gumply:graph-list:${key}:${vault}`;
+  if (vaultPathKnown === null && startupVaultPath !== null) vaultPathKnown = startupVaultPath;
   const [vault, setVault] = useState<string | null>(vaultPathKnown);
   const [on, setOn] = useState(() => (vaultPathKnown !== null ? readListMode(storageKey(vaultPathKnown)) : false));
   useEffect(() => {
@@ -126,5 +134,7 @@ export function useGraphListMode(key: "global" | "local"): [boolean, (next: bool
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [vault, key],
   );
-  return [on, set];
+  // Ready once the vault is known: until then the caller shows nothing in the graph's place, so a list left on
+  // never flashes the canvas first (@opus-editor).
+  return [on, set, vault !== null];
 }

@@ -51,7 +51,7 @@ function errorMessage(error: unknown): string {
 export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, embedded = false, tagSlots }: LocalGraphPanelProps) {
   const t = useT();
   const [depth, setDepth] = useState<Depth>(readDepth);
-  const [listMode, setListMode] = useGraphListMode("local");
+  const [listMode, setListMode, listModeReady] = useGraphListMode("local");
   const [data, setData] = useState<GraphData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -182,7 +182,7 @@ export function LocalGraphPanel({ pageId, onOpenPage, onCreatePage, onClose, emb
       </header>
 
       <div className="local-graph-body">
-        {status === "loading" || !settingsReady ? (
+        {status === "loading" || !settingsReady || !listModeReady ? (
           <p className="graph-panel-note">{t("graph.localLoading")}</p>
         ) : status === "error" ? (
           <div className="graph-panel-state">
