@@ -96,7 +96,8 @@
   outline-offset: 2px;
 }
 
-.graph-legend-toggle.is-active {
+.graph-legend-toggle.is-active,
+.graph-list-toggle.is-active {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -705,4 +706,42 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* #62tnekds: the graph as a list (pages and links in text, for the keyboard and screen readers). */
+.graph-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.graph-list-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.3rem 1rem;
+}
+
+.graph-list-title {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.graph-list-title:hover {
+  text-decoration: underline;
+}
+
+.graph-list-row.is-ghost .graph-list-title {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.graph-list-meta {
+  color: var(--muted);
+  font-size: 0.8125rem;
 }

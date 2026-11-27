@@ -4,6 +4,7 @@ import { api, ApiRequestError, fileUrl, isVaultIndexing } from "../api/client.js
 import { Icon } from "../components/Icon.js";
 import { GraphCanvas, type CanvasNode } from "./GraphCanvas.js";
 import { GraphControls } from "./GraphControls.js";
+import { GraphList } from "./GraphList.js";
 import {
   ariaSummary,
   ATTACHMENT_PALETTE_INDEX,
@@ -38,6 +39,31 @@ export interface GraphViewProps {
 
 type Status = "loading" | "ready" | "error";
 
+/** #62tnekds: whether the graph shows as a list, remembered per graph (global and local). */
+export function useGraphListMode(key: "global" | "local"): [boolean, (next: boolean) => void] {
+  const storageKey = `gumply:graph-list:${key}`;
+  const [on, setOn] = useState(() => {
+    try {
+      return window.localStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const set = useCallback(
+    (next: boolean) => {
+      setOn(next);
+      try {
+        if (next) window.localStorage.setItem(storageKey, "1");
+        else window.localStorage.removeItem(storageKey);
+      } catch {
+        // Private mode: the choice lasts for this visit.
+      }
+    },
+    [storageKey],
+  );
+  return [on, set];
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) return error.message;
   if (error instanceof Error && /fetch|network|load failed/i.test(error.message)) {
@@ -56,6 +82,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [legendOpen, setLegendOpen] = useState(true);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [listMode, setListMode] = useGraphListMode("global");
   const reducedMotion = usePrefersReducedMotion();
   // E1: groups and filters, per vault. The graph waits for them, so its first
   // layout already uses them (no restart when they arrive).
@@ -234,6 +261,17 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               >
                 <Icon name="filter" size={14} />
               </button>
+              {/* #62tnekds: the graph as a list of links, for the keyboard and screen readers. */}
+              <button
+                type="button"
+                className={`button-secondary graph-list-toggle${listMode ? " is-active" : ""}`}
+                data-testid="graph-list-toggle"
+                aria-pressed={listMode}
+                onClick={() => setListMode(!listMode)}
+              >
+                {t("graph.list.toggle")}
+              </button>
+              {listMode ? null : (
               <button
                 type="button"
                 className={`button-secondary graph-legend-toggle${legendOpen ? " is-active" : ""}`}
@@ -243,6 +281,7 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               >
                 {t("graph.legend")}
               </button>
+              )}
             </>
           ) : null}
         </div>
@@ -318,6 +357,15 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
               {t("graph.clearFilter")}
             </button>
           </div>
+        ) : filtered && listMode ? (
+          <GraphList
+            nodes={filtered.nodes}
+            ghosts={filtered.ghosts}
+            label={t("graph.list.label")}
+            testId="graph-list"
+            onOpenPage={openNode}
+            onCreateGhost={createGhost}
+          />
         ) : filtered ? (
           <>
             <GraphCanvas
@@ -343,10 +391,10 @@ export function GraphView({ highlightId, onOpenPage, onCreatePage, onNewPage, ta
         ) : null}
 
         {controlsOpen && settings && status === "ready" && hasPages ? (
-          <GraphControls settings={settings} onChange={(next: GraphSettings) => updateSettings(next)} onClose={() => setControlsOpen(false)} />
+          <GraphControls settings={settings} listMode={listMode} onChange={(next: GraphSettings) => updateSettings(next)} onClose={() => setControlsOpen(false)} />
         ) : null}
 
-        {legendOpen && status === "ready" && hasPages ? (
+        {legendOpen && !listMode && status === "ready" && hasPages ? (
           <aside className="graph-legend" id="graph-legend" data-testid="graph-legend">
             <p className="graph-legend-title">{t("graph.legend")}</p>
             {legendGroups.map((group, index) => (

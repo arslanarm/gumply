@@ -104,7 +104,13 @@
       "forcesReset": "Reset forces",
       "forcesHint": "100% is Gumply's own layout. A change re-arranges the graph when you let go of the slider."
     },
-    "legendAttachment": "Attachment"
+    "legendAttachment": "Attachment",
+    "list": {
+      "toggle": "List",
+      "label": "Pages in the graph",
+      "notCreated": "not created yet",
+      "forcesOff": "Forces arrange the picture. Switch back from List to change them."
+    }
   },
   "sidebar": {
     "hide": "Hide sidebar",
