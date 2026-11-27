@@ -338,16 +338,34 @@ export function TableView(props: TableViewProps) {
   };
   const viewOrder = Array.isArray(view.order) && view.order.length ? view.order.map(String) : ["file.name"];
   // #7prbquxu: "+" adds a column (spec/database-tables §4); the type goes to types.json only for a new key.
+  // #bg7c9bzk (#faqr8pj9's #8): the column "+" just added takes the keyboard once its header is there (the popover
+  // closing would otherwise leave focus on the page body).
+  const focusNewColumn = useRef<string | null>(null);
+  useEffect(() => {
+    const id = focusNewColumn.current;
+    if (!id) return;
+    const header = document.querySelector<HTMLElement>(`[data-testid="base-th-${CSS.escape(id)}"]`);
+    if (!header) return;
+    focusNewColumn.current = null;
+    header.focus();
+  });
   const addColumn = async (key: string, type: PropertyType | SelectKind, setType: boolean) => {
+    focusNewColumn.current = propertyId(key);
     const next = { ...view, order: [...viewOrder, key] };
-    // A Select or Multi-select: the column and its (empty) options in one base write (@lead, spec §4).
-    if ((type === "select" || type === "multiselect") && props.onAddSelectColumn) {
-      await props.onAddSelectColumn(next, key, type);
-      return;
+    try {
+      // A Select or Multi-select: the column and its (empty) options in one base write (@lead, spec §4).
+      if ((type === "select" || type === "multiselect") && props.onAddSelectColumn) {
+        await props.onAddSelectColumn(next, key, type);
+        return;
+      }
+      // Only when the types file has none for the key (a key typed there but used nowhere keeps its type).
+      if (setType && type !== "select" && type !== "multiselect") await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
+      (props.onAddColumnView ?? props.onChangeView)(next);
+    } catch (error) {
+      // A failed add mustn't leave the marker set, or a later column with this id would take the focus.
+      focusNewColumn.current = null;
+      throw error;
     }
-    // Only when the types file has none for the key (a key typed there but used nowhere keeps its type).
-    if (setType && type !== "select" && type !== "multiselect") await api.setPropertyType(key, type, { ifAbsent: true }).catch(() => undefined);
-    (props.onAddColumnView ?? props.onChangeView)(next);
   };
   const sorts = Array.isArray(view.sort) ? view.sort : [];
 

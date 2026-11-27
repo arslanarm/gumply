@@ -8,6 +8,7 @@
  * types.json merged with the inferred types, as a page's properties show them.
  */
 import {
+  ownedRowsFolder,
   runBaseView,
   typedProperties,
   type BaseSourceRow,
@@ -26,12 +27,17 @@ export class BaseQueries {
   async run(baseId: string, options: { view?: string; thisId?: string; now?: number } = {}): Promise<BaseViewResult> {
     const document = this.store.getBase(baseId);
     if (document.error) throw notFound(`This base can't be read: ${document.error}`);
-    const [withProperties, typeMap, infos] = await Promise.all([
+    const [withProperties, typeMap, infos, stored] = await Promise.all([
       this.store.listWithProperties(),
       this.store.propertyTypeMap(),
       this.store.listProperties(),
+      this.store.storedPropertyTypes(),
     ]);
     const types = new Map<string, string>(typeMap);
+    // #bg7c9bzk (#faqr8pj9's #10): a key typed in types.json that no page uses yet (a column just added as Number)
+    // keeps that type, rather than reading as text. This brings in types for keys no row of this base uses either;
+    // that's harmless: they only type a column the view orders, and are never listed as properties.
+    for (const [key, type] of Object.entries(stored)) if (!types.has(key)) types.set(key, type);
     const propertiesOf = new Map(withProperties.map((meta) => [meta.id, meta.properties ?? []]));
     // #g95wkd9y: a base's link columns need the link index complete.
     await this.store.whenIndexed();
@@ -105,6 +111,29 @@ export class BaseQueries {
         const link = typeof value === "string" ? new RegExp(String.raw`^!?\[\[(${WIKILINK_TARGET}+)${WIKILINK_INNER}*\]\]$`).exec(value.trim())?.[1]?.trim() : undefined;
         if (link) row.files = { [link]: this.store.fileIndex.resolve(link, pathOf.get(row.id) ?? null) };
       }
+    }
+    // #bg7c9bzk (#faqr8pj9's #9, @lead's revised ruling): a database Gumply owns whose view has no sort lists its
+    // rows oldest first by the `created:` each row stores (never the file's birth time, which sync and git reset).
+    // Rows without one (made in Obsidian, or before) count as oldest: first, by name; so new rows land at the bottom.
+    // A grouped view keeps its groups and orders the rows within each group the same way (a group's rows are
+    // indexes into `rows`, so they're remapped). A base Gumply doesn't own keeps its order.
+    const sorts = Array.isArray(view?.sort) ? view.sort : [];
+    if (ownedRowsFolder(document.config) !== null && sorts.length === 0) {
+      const made = new Map(index.map((entry) => [entry.meta.id, entry.createdInFile ? Date.parse(entry.meta.created) : Number.NaN]));
+      const named = (row: { title: string }) => row.title.toLowerCase();
+      const order = result.rows.map((_, position) => position).sort((i, j) => {
+        const a = result.rows[i]!;
+        const b = result.rows[j]!;
+        const x = made.get(a.id) ?? Number.NaN;
+        const y = made.get(b.id) ?? Number.NaN;
+        if (Number.isFinite(x) && Number.isFinite(y)) return x - y || named(a).localeCompare(named(b));
+        if (Number.isFinite(x)) return 1;
+        if (Number.isFinite(y)) return -1;
+        return named(a).localeCompare(named(b));
+      });
+      const moved = new Map(order.map((from, to) => [from, to]));
+      result.rows = order.map((from) => result.rows[from]!);
+      for (const group of result.groups ?? []) group.rows = group.rows.map((from) => moved.get(from)!).sort((a, b) => a - b);
     }
     result.properties = infos
       .map((info) => ({ id: `note.${info.key}`, type: info.type, count: info.count }))

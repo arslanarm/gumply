@@ -142,7 +142,15 @@ export function pastedOptions(values: readonly string[], kind: "select" | "multi
 export function offersSelect(values: readonly string[]): boolean {
   const filled = values.map((value) => value.trim()).filter((value) => value !== "");
   const distinct = new Set(filled);
-  return filled.length > 1 && distinct.size <= 12 && distinct.size < filled.length;
+  // #bg7c9bzk (#faqr8pj9's #13): the hint says "only a few values, each repeated", so it's offered only when that's
+  // mostly true: a text column (numbers, dates and checkboxes have their own types), at most 12 values, and at least
+  // half the cells hold a value used more than once. One repeat among many unique values isn't a Select.
+  if (filled.length < 2 || distinct.size > 12 || distinct.size === filled.length) return false;
+  const uses = new Map<string, number>();
+  for (const value of filled) uses.set(value, (uses.get(value) ?? 0) + 1);
+  const inRepeats = filled.filter((value) => (uses.get(value) ?? 0) > 1).length;
+  if (inRepeats * 2 < filled.length) return false;
+  return guessType(filled) === "text";
 }
 
 /**
