@@ -372,18 +372,25 @@ describe("tag chips as query terms (#yy347xgi (3))", () => {
     expect(queryHasTag("tag:#workshop", "work")).toBe(false);
   });
 
-  it("two chips mean either tag (OR, @lead), and taking one out keeps the query valid", () => {
+  it("two chips are one group, either tag (OR, @lead); words beside them still narrow; taking one out keeps the query valid", () => {
     const both = toggleQueryTag(toggleQueryTag("", "work"), "home");
-    expect(both).toBe("tag:#work OR tag:#home");
+    expect(both).toBe("(tag:#work OR tag:#home)");
     expect(queryHasTag(both, "work") && queryHasTag(both, "home")).toBe(true);
     // Two alternatives, one tag term each: either tag.
     expect(parseGraphQuery(both)).toEqual([
       [{ op: "tag", value: "work", negate: false }],
       [{ op: "tag", value: "home", negate: false }],
     ]);
-    // Out with the first: its OR goes too; out with the second: the same.
+    // A third chip joins the group.
+    expect(toggleQueryTag(both, "x")).toBe("(tag:#work OR tag:#home OR tag:#x)");
+    // A word typed beside the chips narrows both: basil within either tag.
+    const withWord = toggleQueryTag(toggleQueryTag("basil", "work"), "home");
+    expect(withWord).toBe("basil (tag:#work OR tag:#home)");
+    expect(parseGraphQuery(withWord).every((terms) => terms.some((term) => term.value === "basil"))).toBe(true);
+    // Out with either: its OR goes too, and a group of one unwraps.
     expect(toggleQueryTag(both, "work")).toBe("tag:#home");
     expect(toggleQueryTag(both, "home")).toBe("tag:#work");
+    expect(toggleQueryTag(withWord, "work")).toBe("basil tag:#home");
     expect(toggleQueryTag("basil tag:#work OR tag:#home", "work")).toBe("basil tag:#home");
   });
 });
