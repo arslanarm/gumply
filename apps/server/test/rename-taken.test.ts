@@ -104,4 +104,20 @@ describe("a rename to a taken name is refused (#hazfav7a)", () => {
     expect(existsSync(join(dir, "Kitchen/Pantry.canvas"))).toBe(true);
     expect(existsSync(join(dir, "Pantry 2.canvas"))).toBe(false);
   });
+
+  it("#pypzxe6i: a folder moved onto a taken name: the same name-taken refusal, nothing moved", async () => {
+    const { dir, store } = await vault({ "Recipes/Soup.md": "Soup.\n", "Kitchen/Recipes/Bread.md": "Bread.\n" });
+    const error = await refusal(() => store.move("Kitchen/Recipes", null));
+    expect([error.status, error.reason, error.title]).toEqual([409, "name-taken", "Recipes"]);
+    expect(existsSync(join(dir, "Kitchen/Recipes/Bread.md"))).toBe(true);
+  });
+
+  it("#pypzxe6i: a database moved with its rows folder onto a taken name: the same refusal, nothing moved", async () => {
+    const { dir, store } = await vault({ "Plants/Fern.md": "Fern.\n", "Garden/x.md": "x\n" });
+    const base = await store.createBase({ title: "Plants", parentId: "Garden", rows: true });
+    const error = await refusal(() => store.move(base.meta.id, null));
+    expect([error.status, error.reason, error.title]).toEqual([409, "name-taken", "Plants"]);
+    expect(existsSync(join(dir, "Garden/Plants.base"))).toBe(true);
+    expect(existsSync(join(dir, "Plants/Fern.md"))).toBe(true);
+  });
 });
