@@ -443,8 +443,10 @@ test('board export saves through the download handler; other downloads are refus
     await window.getByTestId('template-kanban').click();
     await expect(window.getByTestId('board-frame')).toHaveCount(3);
     await window.keyboard.press('Escape');
-    await window.getByTestId('board-menu-button').click();
-    await window.getByTestId('board-export-png').click();
+    // #pypzxe6i: the canvas's export button opens the export dialog (PNG is the default format).
+    await window.getByTestId('board-export-button').click();
+    await window.getByTestId('board-export-format-png').check();
+    await window.getByTestId('board-export-confirm').click();
     await expect.poll(() => readdirSafe(downloads)).toContain('Kanban.png');
     await expect.poll(() => readFileSync(join(downloads, 'Kanban.png')).length).toBeGreaterThan(1000);
     expect(readFileSync(join(downloads, 'Kanban.png')).subarray(1, 4).toString()).toBe('PNG');
