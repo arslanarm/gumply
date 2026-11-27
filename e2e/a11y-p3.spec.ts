@@ -133,14 +133,15 @@ test('contrast (1.4.3): board text in the six preset colours reads ≥ 4.5:1, li
   }
 });
 
-test('non-text content (1.1.1): the global and the local graph are images named by their counts', async ({ page, vault }) => {
+test('non-text content (1.1.1): the global and the local graph are named by their counts (an interactive graph, #5n2p7phw)', async ({ page, vault }) => {
   await vault.seed([{ title: 'Alpha', content: 'See [[Beta]] and [[Nowhere]].' }, { title: 'Beta', content: 'Back to [[Alpha]].' }]);
   await page.goto('/#graph');
-  const graph = page.getByRole('img', { name: /^2 pages, \d+ links?, 1 not created yet$/ });
+  const graph = page.getByRole('application', { name: /^2 pages, \d+ links?, 1 not created yet$/ });
   await expect(graph).toHaveCount(1);
+  await expect(graph).toHaveAttribute('aria-roledescription', 'graph');
   await page.goto('/#/Alpha');
   await page.getByTestId('local-graph-toggle').click();
-  await expect(page.getByTestId('local-graph').getByRole('img', { name: /pages?, .*links?/ })).toHaveCount(1);
+  await expect(page.getByTestId('local-graph').getByRole('application', { name: /pages?, .*links?/ })).toHaveCount(1);
 });
 
 test('focus visible (2.4.7): a focused property input shows an accent border, ≥ 3:1 against the page', async ({ page }) => {
