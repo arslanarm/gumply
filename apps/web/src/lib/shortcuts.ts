@@ -149,3 +149,19 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   }
   return target.closest('[contenteditable="true"]') !== null;
 }
+
+/**
+ * #9ajce8q3: the key a letter or bracket shortcut should match, lower-case. A Latin layout (QWERTY, Dvorak, Colemak)
+ * keeps its own letters, so a shortcut follows the letter printed on the key. A non-Latin layout (ЙЦУКЕН: «м» on the
+ * V key, «ъ» on ]) falls back to the key's position, `event.code`, so the shortcuts still work without switching the
+ * layout. Other keys (Enter, arrows, digits…) come back as `event.key`, lower-cased.
+ */
+export function layoutKey(event: Pick<KeyboardEvent, "key" | "code">): string {
+  const key = event.key.toLowerCase();
+  if (/^[a-z]$/.test(key) || key === "[" || key === "]") return key;
+  const letter = /^Key([A-Z])$/.exec(event.code);
+  if (letter && key.length === 1) return letter[1]!.toLowerCase();
+  if (key.length === 1 && event.code === "BracketLeft") return "[";
+  if (key.length === 1 && event.code === "BracketRight") return "]";
+  return key;
+}

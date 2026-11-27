@@ -44,7 +44,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { currentModifierLabel, isTypingTarget, withModifier } from "../lib/shortcuts.js";
+import { currentModifierLabel, isTypingTarget, layoutKey, withModifier } from "../lib/shortcuts.js";
 import { EDGE_TYPES } from "./BoardEdge.js";
 import { useBoardExport } from "./BoardExport.js";
 import { BoardMenu } from "./BoardMenu.js";
@@ -1497,7 +1497,8 @@ function BoardCanvas(props: BoardEditorProps) {
       if (event.defaultPrevented || !ownsEvent(event.target) || isTypingTarget(event.target)) return;
       const key = event.key;
       const mod = isMod(event);
-      const lower = key.toLowerCase();
+      // #9ajce8q3: letters and brackets by the layout's letter, or by position on a non-Latin layout (ЙЦУКЕН).
+      const lower = layoutKey(event);
 
       if (mod && lower === "z") {
         event.preventDefault();
@@ -1615,11 +1616,11 @@ function BoardCanvas(props: BoardEditorProps) {
         fit();
         return;
       }
-      if (key === "]" || key === "[") {
+      if (lower === "]" || lower === "[") {
         // #sdwrzdgx: frames always sit behind cards, so a frames-only selection doesn't reorder; say why.
         const chosen = boardRef.current.nodes.filter((node) => selectedRef.current.nodes.includes(node.id));
         if (chosen.length > 0 && chosen.every((node) => node.type === "group")) announce(t("board.framesBehind"));
-        else reorder(key === "]" ? "front" : "back");
+        else reorder(lower === "]" ? "front" : "back");
         return;
       }
       if (event.shiftKey) return;
