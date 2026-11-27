@@ -493,13 +493,13 @@ test('the column menu makes a column a Select: its options come from the rows, i
   await page.getByTestId('base-column-type-select').click();
   await expect
     .poll(() => read('People.base'))
-    .toContain('properties:\n  note.role:\n    gumplyType: select\n    gumplyOptions:\n      - value: Cook\n        color: brown\n      - value: Pilot\n        color: orange\n');
+    .toContain('properties:\n  note.role:\n    gumplyType: select\n    gumplyOptions:\n      - value: Cook\n        color: blue\n      - value: Pilot\n        color: orange\n');
   // The rows are untouched: a Select is plain text in them.
   expect(await read('People/Ann.md')).toBe(PEOPLE['People/Ann.md']);
   // The cells show coloured chips.
   const chips = page.getByTestId('base-table').getByTestId('base-option-chip');
   await expect(chips).toHaveText(['Cook', 'Pilot']);
-  await expect(chips.first()).toHaveAttribute('data-color', 'brown');
+  await expect(chips.first()).toHaveAttribute('data-color', 'blue');
   // The menu now says Select; choosing Text drops the options again.
   await page.getByTestId('base-th-note.role').click();
   await expect(page.getByTestId('base-column-type-select')).toHaveAttribute('aria-checked', 'true');
@@ -536,7 +536,7 @@ test('typing on a Select cell opens its picker: Enter picks the match, or adds a
   await page.keyboard.type('iver');
   await page.keyboard.press('Enter');
   await expect.poll(() => read('People/Bo.md')).toBe('---\nrole: Diver\nage: 41\n---\nBo\n');
-  await expect.poll(() => read('People.base')).toContain('      - value: Diver\n        color: yellow\n');
+  await expect.poll(() => read('People.base')).toContain('      - value: Diver\n        color: green\n');
 });
 
 test('a new database in Russian names its first view «Таблица» (@polish-dev)', async ({ page, request, vault }) => {
@@ -571,7 +571,7 @@ test('"Edit options…" renames an option in the rows, recolours and reorders it
   await name.fill('Chef');
   await name.press('Enter');
   await expect.poll(() => read('People/Ann.md')).toBe('---\nrole: Chef\nage: 30\n---\nAnn\n');
-  await expect.poll(() => read('People.base')).toContain('      - value: Chef\n        color: brown\n');
+  await expect.poll(() => read('People.base')).toContain('      - value: Chef\n        color: blue\n');
 
   // Recolour Pilot and move Chef below it: the base only.
   await page.getByTestId('base-option-color-Pilot-green').click();
@@ -653,7 +653,7 @@ test('the paste preview offers Select for a column of repeated values, and makes
   await page.getByTestId('base-paste-confirm').click();
   // #bg7c9bzk (#9, @lead's revised ruling): a paste's rows are listed in the sheet's order.
   await expect(page.getByTestId('base-table').locator('.base-title-text')).toHaveText(['Ivy', 'Otto', 'Al']);
-  await expect.poll(() => read('People.base')).toContain('  note.stage:\n    gumplyType: select\n    gumplyOptions:\n      - value: Todo\n        color: brown\n      - value: Done\n        color: orange\n');
+  await expect.poll(() => read('People.base')).toContain('  note.stage:\n    gumplyType: select\n    gumplyOptions:\n      - value: Todo\n        color: blue\n      - value: Done\n        color: orange\n');
   await expect.poll(() => read('People/Ivy.md')).toMatch(/stage: Todo\n/);
   expect(writes).toEqual([`POST /api/bases/${encodeURIComponent('People.base')}/rows-paste`]);
   await expect(page.getByTestId('base-table').getByTestId('base-option-chip').first()).toBeVisible();

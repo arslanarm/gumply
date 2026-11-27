@@ -79,8 +79,11 @@ describe("withSelectSettings", () => {
 
 describe("helpers", () => {
   it("nextOptionColor takes the first unused colour after gray", () => {
-    expect(nextOptionColor([])).toBe("brown");
-    expect(nextOptionColor([{ value: "a", color: "brown" }, { value: "b", color: "orange" }])).toBe("yellow");
+    // #bg7c9bzk (#faqr8pj9's #17): new options start blue, orange, green (brown, orange, yellow looked alike).
+    expect(nextOptionColor([])).toBe("blue");
+    expect(nextOptionColor([{ value: "a", color: "blue" }, { value: "b", color: "orange" }])).toBe("green");
+    // A colour picked by hand is skipped: the next unused one in that order.
+    expect(nextOptionColor([{ value: "a", color: "orange" }])).toBe("blue");
   });
 
   it("selectedValues reads a Select's text or a Multi-select's list", () => {

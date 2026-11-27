@@ -460,8 +460,8 @@ describe("database views in the tree (D34, spec/api-bases)", () => {
     });
     const text = await readFile(join(dir, "People.base"), "utf8");
     const config = parseBase(text);
-    expect(config.properties?.["note.stage"]).toEqual({ gumplyType: "select", gumplyOptions: [{ value: "Todo", color: "brown" }, { value: "Done", color: "orange" }] });
-    expect(config.properties?.["note.skills"]).toEqual({ gumplyType: "multiselect", gumplyOptions: [{ value: "Go", color: "brown" }, { value: "Rust", color: "orange" }] });
+    expect(config.properties?.["note.stage"]).toEqual({ gumplyType: "select", gumplyOptions: [{ value: "Todo", color: "blue" }, { value: "Done", color: "orange" }] });
+    expect(config.properties?.["note.skills"]).toEqual({ gumplyType: "multiselect", gumplyOptions: [{ value: "Go", color: "blue" }, { value: "Rust", color: "orange" }] });
     expect(config.views[0]!.order).toEqual(["file.name", "stage", "skills"]);
     // A Select kind that isn't one: refused before any write.
     await expect(
