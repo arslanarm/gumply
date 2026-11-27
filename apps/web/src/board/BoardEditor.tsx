@@ -77,6 +77,7 @@ import {
   addEdges,
   addFrame,
   addNodes,
+  CLIPBOARD_MIME,
   clipboardFromText,
   clipboardToText,
   closestSides,
@@ -109,6 +110,7 @@ import { NODE_TYPES } from "./nodes.js";
 import { Palette } from "./Swatch.js";
 import { t, useT } from "../i18n/index.js";
 import { describeNode, nextInOrder, readingOrder } from "./a11y.js";
+import { clipboardPlainText } from "./clipboard-text.js";
 import { motionMs } from "../lib/motion.js";
 
 export type BoardTool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "frame" | "pen";
@@ -188,6 +190,8 @@ export interface BoardEditorProps {
 const NO_OPEN = () => {};
 /** Attachment size limit (D18), checked before uploading. */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+/** Focusable controls whose own Enter wins over the board's (#sdwrzdgx). */
+const CONTROL_SELECTOR = "button, a[href], [role='button'], [role='menuitem'], [role='menuitemcheckbox'], [role='option'], [role='tab']";
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
 const CLICK_SLOP = 5;
@@ -1442,6 +1446,9 @@ function BoardCanvas(props: BoardEditorProps) {
         return;
       }
       if (key === "Enter") {
+        // #sdwrzdgx: on a focused button (a tool, a colour, zoom, a card's Open) Enter presses
+        // it; only on the board or an object does it place or edit.
+        if (event.target instanceof Element && event.target.closest(CONTROL_SELECTOR)) return;
         // With a tool chosen: place the object in the middle of the view and start typing in it.
         if (tool === "sticky" || tool === "text" || tool === "shape" || tool === "frame") {
           event.preventDefault();
@@ -1520,7 +1527,10 @@ function BoardCanvas(props: BoardEditorProps) {
       const ids = new Set(selectedRef.current.nodes);
       if (ids.size === 0) return;
       event.preventDefault();
-      event.clipboardData?.setData("text/plain", clipboardToText(copySelection(boardRef.current, ids)));
+      const clip = copySelection(boardRef.current, ids);
+      // #sdwrzdgx: the board format under its own type; readable text for pages and other apps.
+      event.clipboardData?.setData(CLIPBOARD_MIME, clipboardToText(clip));
+      event.clipboardData?.setData("text/plain", clipboardPlainText(clip, pagesRef.current));
       pasteCount.current = 0;
       if (cut) apply((current) => deleteElements(current, ids));
     };
@@ -1537,9 +1547,10 @@ function BoardCanvas(props: BoardEditorProps) {
         return;
       }
       const text = data.getData("text/plain");
-      if (!text) return;
+      // The board format, or (copied before #sdwrzdgx) the same JSON as text.
+      const clip = clipboardFromText(data.getData(CLIPBOARD_MIME)) ?? clipboardFromText(text);
+      if (!text && !clip) return;
       event.preventDefault();
-      const clip = clipboardFromText(text);
       const at = pointerRef.current ?? viewCentre();
       if (clip) {
         pasteCount.current += 1;

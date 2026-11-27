@@ -22,6 +22,8 @@ export interface BoardNodeData extends Record<string, unknown> {
 export interface BoardEdgeData extends Record<string, unknown> {
   edge: CanvasEdge;
   editing: boolean;
+  /** The edges' z-index (see {@link edgeLayer}); their labels use it too. */
+  layer: number;
 }
 
 export type BoardFlowNode = Node<BoardNodeData>;
@@ -50,8 +52,8 @@ function buildNode(node: CanvasNode, index: number, editing: boolean, selected: 
     position: { x: node.x, y: node.y },
     width: node.width,
     height: node.height,
-    // Array order is the z-order (JSON Canvas / Obsidian).
-    zIndex: index,
+    // Array order is the z-order (JSON Canvas / Obsidian); see nodeLayer.
+    zIndex: nodeLayer(index),
     data: { node, kind, editing, resizable },
     draggable: !editing,
     className: `board-node board-node-${kind}`,
@@ -83,7 +85,7 @@ export function syncNodes(
     if (
       old &&
       old.data.node === node &&
-      old.zIndex === index &&
+      old.zIndex === nodeLayer(index) &&
       old.data.editing === editing &&
       old.data.resizable === resizable &&
       Boolean(old.selected) === isSelected &&
@@ -102,6 +104,24 @@ export function syncNodes(
   });
 }
 
+/**
+ * Layers (#sdwrzdgx): nodes sit on even z-indexes in array order, and every
+ * edge one above the last frame (group), so arrows between objects inside a
+ * frame are drawn over its fill, as Obsidian does, and still under the cards.
+ * Without frames, edges stay under every node.
+ */
+export function nodeLayer(index: number): number {
+  return index * 2;
+}
+
+export function edgeLayer(board: CanvasBoard): number {
+  let last = -1;
+  board.nodes.forEach((node, index) => {
+    if (node.type === "group") last = index;
+  });
+  return last < 0 ? 0 : nodeLayer(last) + 1;
+}
+
 function edgeSides(edge: CanvasEdge, nodes: ReadonlyMap<string, CanvasNode>): [string, string] {
   if (edge.fromSide && edge.toSide) return [edge.fromSide, edge.toSide];
   const from = nodes.get(edge.fromNode);
@@ -118,6 +138,7 @@ export function syncEdges(
 ): BoardFlowEdge[] {
   const byId = new Map(previous.map((edge) => [edge.id, edge]));
   const nodes = new Map(board.nodes.map((node) => [node.id, node]));
+  const layer = edgeLayer(board);
   return board.edges.map((edge) => {
     const old = byId.get(edge.id);
     const editing = edge.id === editingId;
@@ -129,6 +150,7 @@ export function syncEdges(
       old &&
       old.data?.edge === edge &&
       old.data.editing === editing &&
+      old.data.layer === layer &&
       Boolean(old.selected) === isSelected &&
       !autoSided
     ) {
@@ -141,7 +163,8 @@ export function syncEdges(
       target: edge.toNode,
       sourceHandle,
       targetHandle,
-      data: { edge, editing },
+      zIndex: layer,
+      data: { edge, editing, layer },
     };
     if (isSelected) flowEdge.selected = true;
     return flowEdge;
