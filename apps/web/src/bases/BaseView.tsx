@@ -1045,7 +1045,7 @@ function ViewTabs(props: {
       </button>
 
       {adding ? (
-        <Popover anchor={adding} onClose={() => setAdding(null)} label={t("bases.addView")} testId="base-add-view-menu" className="is-menu">
+        <Popover anchor={adding} onClose={() => setAdding(null)} label={t("bases.addView")} testId="base-add-view-menu" className="is-menu" menu>
           {LAYOUTS.map((type) => (
             <button
               key={type}
@@ -1069,7 +1069,7 @@ function ViewTabs(props: {
       ) : null}
 
       {menu ? (
-        <Popover anchor={menu.anchor} onClose={() => setMenu(null)} label={t("bases.viewMenu", { name: menu.name })} testId="base-view-menu" className="is-menu">
+        <Popover anchor={menu.anchor} onClose={() => setMenu(null)} label={t("bases.viewMenu", { name: menu.name })} testId="base-view-menu" className="is-menu" menu>
           <button
             type="button"
             role="menuitem"
