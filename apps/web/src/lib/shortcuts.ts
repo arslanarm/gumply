@@ -152,16 +152,19 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 
 /**
  * #9ajce8q3: the key a letter or bracket shortcut should match, lower-case. A Latin layout (QWERTY, Dvorak, Colemak)
- * keeps its own letters, so a shortcut follows the letter printed on the key. A non-Latin layout (ЙЦУКЕН: «м» on the
- * V key, «ъ» on ]) falls back to the key's position, `event.code`, so the shortcuts still work without switching the
- * layout. Other keys (Enter, arrows, digits…) come back as `event.key`, lower-cased.
+ * keeps its own letters and punctuation, so a shortcut follows what's printed on the key. A non-Latin letter (ЙЦУКЕН:
+ * «м» on the V key, «ъ» on ]) falls back to the key's position, `event.code`, so the shortcuts still work without
+ * switching the layout. Other keys (Enter, arrows, digits…) come back as `event.key`, lower-cased.
  */
 export function layoutKey(event: Pick<KeyboardEvent, "key" | "code">): string {
   const key = event.key.toLowerCase();
   if (/^[a-z]$/.test(key) || key === "[" || key === "]") return key;
+  // Only a non-Latin letter (ЙЦУКЕН's «м», «ъ», Greek…) falls back to the position. A Latin layout's punctuation on
+  // those keys stays itself: German QWERTZ types + on ], French AZERTY $ there and "," on M (@graph-dev).
+  if (!/^\p{L}$/u.test(key)) return key;
   const letter = /^Key([A-Z])$/.exec(event.code);
-  if (letter && key.length === 1) return letter[1]!.toLowerCase();
-  if (key.length === 1 && event.code === "BracketLeft") return "[";
-  if (key.length === 1 && event.code === "BracketRight") return "]";
+  if (letter) return letter[1]!.toLowerCase();
+  if (event.code === "BracketLeft") return "[";
+  if (event.code === "BracketRight") return "]";
   return key;
 }
